@@ -1,6 +1,6 @@
 import type { SessionInfo } from '@shared/types'
 import type { OpenTab } from './openTabs'
-import { bracketedPaste, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
+import { pasteFor, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
 
 export interface SleepingTabsDeps {
   write(tabId: string, data: string): void
@@ -75,7 +75,7 @@ export class SleepingTabs {
 
   heldPaste(tabId: string, text: string, typedAfter = ''): boolean {
     if (!this.typedWhileAsleep.has(tabId)) return false
-    this.write(tabId, bracketedPaste(text) + typedAfter)
+    this.write(tabId, pasteFor(text, this.tabs.get(tabId)?.kind) + typedAfter)
     return true
   }
 

@@ -96,7 +96,7 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { butlerStart } from '@shared/butlerStart'
+import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -139,7 +139,13 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import {
+  barePath,
+  formatRemoteKey,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -702,6 +708,7 @@ const sessionBackends = new SessionBackends({
     startedSessions.bound(tabId, key)
     koloftInbox.rebound(tabId, key)
     slash.bound(tabId, key)
+    ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
@@ -1722,14 +1729,30 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  return butlerStart(
-    preferredAssistBackend(settings),
-    {
-      enabled: settings.sessionMethods.enabled,
-      installed: await installedBackends(),
-      accounts: listAccounts()
-    },
-    butlerNameNow()
+  const preferred = preferredAssistBackend(settings)
+  const inputs = {
+    enabled: settings.sessionMethods.enabled,
+    installed: await installedBackends(),
+    accounts: listAccounts()
+  }
+  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
+  if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
+  return choice
+}
+
+function logWhyButlerIsNotOn(
+  preferred: BackendId,
+  inputs: Parameters<typeof butlerStart>[1],
+  said: string
+): void {
+  const probe = inputs.installed.find((b) => b.id === preferred)
+  const found = probe?.available ? 'found' : `not found (${probe?.reason ?? 'no answer'})`
+  const accounts = inputs.accounts
+    .filter((a) => ACCOUNT_KINDS_OF[preferred].includes(a.kind))
+    .map((a) => (a.enabled ? a.status : 'turned off'))
+  console.error(
+    `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
@@ -1978,11 +2001,14 @@ const claudeDialogs = new ClaudeDialogWatch({
     return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
-  closed: (tabId) => {
+  dialogShown: (tabId, onScreen) => tracker.showDialog(tabId, onScreen),
+  closed: (tabId, stateAfter) => {
     askEnded(tabId, true)
     void askButtons?.check(tabId)
+    if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
+tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
@@ -2051,6 +2077,7 @@ const agentRequests = new AgentRequests({
       sleep
     }),
     gh: githubVerb({
+      writesInEnglishOnly: butlerSide,
       // PLATFORM§1 ADR-0036
       run: async (args, tabId, cwd) => {
         await loginEnvReady()
@@ -3454,6 +3481,10 @@ app.whenReady().then(() => {
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      homeOf: (sessionId) => {
+        const name = sessionAccounts?.of('codex', sessionId)
+        return name && codexHomeOf(userData, name)
+      },
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
@@ -4019,6 +4050,7 @@ app.whenReady().then(() => {
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
+    onToolShells: (host, outputs) => tracker.toolShellsOnMachineSaid(host, outputs),
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) => {
       void pageForwards.checkMaster(host)
@@ -7183,6 +7215,13 @@ function registerIpc(): void {
       ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
       : { base: null, status: {}, numstat: {}, missing: false }
   )
+  // PLATFORM§30
+  ipcMain.handle(CH.fs.gitHeadLog, async (_e, root: string) => {
+    if (typeof root !== 'string' || !root) return null
+    const host = hosts.of(root)
+    const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
+    return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
+  })
   ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitDiff(root, baseArg(base))

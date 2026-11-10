@@ -43,6 +43,7 @@ import {
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
   switchToRow,
+  terminalText,
   TWO_LINE_PROMPT,
   waitBooted,
   wsRows
@@ -142,6 +143,31 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await page.keyboard.press('Enter')
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(line).toHaveText('Last: Wrote muse-notes.txt')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§11
+  test('Esc on a command approval in a Muse tab declines it and takes its row off waiting for approval at once', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startMuse(page, env)
+      const row = museRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await runIn(page, centerTerm(page), '/approve')
+      await expect(row).toHaveClass(/\bst-approval\b/)
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      await page.keyboard.press('Escape')
+      await expect.poll(() => terminalText(page, tabId)).toContain('Denied: ls -la')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
     } finally {
       await quitAndClose(app)
     }

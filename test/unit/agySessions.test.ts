@@ -19,7 +19,6 @@ import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
 import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
-
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 
@@ -333,6 +332,20 @@ describe('AgySessions launch', () => {
     ])
   })
 
+  it('a first prompt that starts with / is typed into the tab once agy shows its prompt, not given with -i, so agy sends the skill it names; until then nobody else is told the tab takes typing', async () => {
+    const { id } = await launch({ firstPrompt: '/review do X' })
+    expect(created[0].argv).not.toContain('-i')
+    title(id, { conversation_id: '', agent_state: 'initializing' })
+    say(id, state('idle'))
+    expect(pty.write).not.toHaveBeenCalled()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    await hooksTaken(id)
+    expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review do X${ESC}[201~\r`]])
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+  })
+
   it('asks before every action by default, "edit without asking" starts accept-edits mode, and a resume opens the stored conversation with the permission it had', async () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
@@ -408,6 +421,18 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(false)
     await launch({ trustFolder: true })
     expect(sessions.trustsFolder(repo)).toBe(true)
+  })
+
+  // AGY§32
+  it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
+    const memory = path.join(repo, 'AGENTS.md')
+    await launch()
+    expect(fs.existsSync(memory)).toBe(false)
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toMatch(/memory/)
+    fs.writeFileSync(memory, 'Favourite fruit: lychee.\n')
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
   })
 
   // AGY§5
@@ -1165,9 +1190,20 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
       hook(id, 'PreToolUse', { toolCall: { name, args: { Path: file } } })
       await hooksTaken(id)
       say(id, state('blocked', `:kind=permission:msg=${b64('Approve a file change')}`))
-      expect(sessions.openApproval(id)).toMatchObject({ command: file })
+      expect(sessions.openApproval(id)).toMatchObject({ command: file, file })
+      expect(sessions.openApproval(id)?.read).toBeUndefined()
       expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     }
+  })
+
+  // AGY§26
+  it('marks an approval for read_file, from its Path, as a read', async () => {
+    const id = await boundTab()
+    const file = '/elsewhere/outside.txt'
+    hook(id, 'PreToolUse', { toolCall: { name: 'read_file', args: { Path: file } } })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
+    expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
   })
 
   it("answers an approval through agy's API when it answers, and presses no key", async () => {
@@ -1265,26 +1301,28 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
   })
 
   // AGY§14
-  it('holds no question Koloft could answer while a question in the ask picks several options, from the tool call or the API', async () => {
+  it('holds a question that takes several picks open as one, from the tool call or the API; through the API its picks go as the ids of every option picked', async () => {
     const id = await boundTab()
-    const asked = async (multi: boolean): Promise<void> => {
-      hook(id, 'PreToolUse', {
-        toolCall: {
-          name: 'ask_question',
-          args: {
-            questions: [
-              { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: multi }
-            ]
-          }
+    hook(id, 'PreToolUse', {
+      toolCall: {
+        name: 'ask_question',
+        args: {
+          questions: [
+            { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: true }
+          ]
         }
-      })
-      await hooksTaken(id)
-      say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    const fruits = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }],
+      ownWords: true,
+      multiSelect: true
     }
-    await asked(true)
-    expect(sessions.openQuestion(id)).toBeUndefined()
-    expect(sessions.openApproval(id)).toBeUndefined()
-    expect(await sessions.answer(id, '1')).toBe(false)
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, '1, 2')).toBe(false)
 
     say(id, state('working'))
     apiAnswers = true
@@ -1294,26 +1332,37 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
           {
             question: 'Which fruits?',
             options: [
-              { id: '1', text: 'Apple' },
-              { id: '2', text: 'Banana' }
+              { id: 'a', text: 'Apple' },
+              { id: 'b', text: 'Banana' }
             ],
             isMultiSelect: true
           }
         ]
       }
     })
-    await asked(false)
-    expect(sessions.openQuestion(id)?.questions).toHaveLength(1)
-    await vi.waitFor(() => expect(sessions.openQuestion(id)).toBeUndefined())
-    expect(sessions.openApproval(id)).toBeUndefined()
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, 'banana, 1')).toEqual({})
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: {
+          trajectoryId: 't9',
+          stepIndex: 2,
+          askQuestion: { responses: [{ question: 'Which fruits?', selectedOptionIds: ['a', 'b'] }] }
+        }
+      }
+    ])
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('approves a plan waiting for review by sending agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
+  it('a plan waiting for review carries its own text, and approving it sends agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
     apiAnswers = true
     trajectory = waitingStep({})
     const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
     fs.mkdirSync(brain, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'implementation_plan.md'), '# Plan\n\n1. Do the thing.\n')
     fs.writeFileSync(
       path.join(brain, 'implementation_plan.md.metadata.json'),
       JSON.stringify({ summary: 'x', requestFeedback: true })
@@ -1324,7 +1373,11 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     )
     const id = await boundTab()
     say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
-    expect(sessions.openApproval(id)).toMatchObject({ command: 'implementation_plan.md' })
+    expect(sessions.openApproval(id)).toMatchObject({
+      command: 'implementation_plan.md',
+      reason: '# Plan\n\n1. Do the thing.',
+      plan: true
+    })
     expect(await sessions.answer(id, 'yes')).toEqual({})
     expect(sent('SendUserCascadeMessage')).toEqual([
       {
@@ -1336,20 +1389,24 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('rejects a plan by pasting "[Rejected] <plan>" into agy when its API does not answer', async () => {
+  it('rejects a plan by pasting "[Rejected] <plan>" into agy when its API does not answer; the plan agy writes again after that is a new ask, so a card already shown for the old one does not hide it', async () => {
     const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
     fs.mkdirSync(brain, { recursive: true })
-    fs.writeFileSync(
-      path.join(brain, 'implementation_plan.md.metadata.json'),
-      JSON.stringify({ requestFeedback: true })
-    )
+    const sidecar = path.join(brain, 'implementation_plan.md.metadata.json')
+    fs.writeFileSync(sidecar, JSON.stringify({ requestFeedback: true, updatedAt: 'T1' }))
     const id = await boundTab()
     say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
-    expect(sessions.openApproval(id)).toMatchObject({ command: 'implementation_plan.md' })
+    const first = sessions.openApproval(id)
+    expect(first).toMatchObject({ command: 'implementation_plan.md' })
     await sessions.answer(id, 'no')
     expect(pty.write.mock.calls).toEqual([
       [id, '\x1b[200~[Rejected] implementation_plan.md\x1b[201~\r']
     ])
+
+    say(id, state('working'))
+    fs.writeFileSync(sidecar, JSON.stringify({ requestFeedback: true, updatedAt: 'T2' }))
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
+    expect(sessions.openApproval(id)?.id).not.toBe(first?.id)
   })
 
   it("delivers a message Koloft sends to the tab through agy's API, and says so when it could not", async () => {
@@ -1446,6 +1503,17 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(spec.program.run).toMatch(/'-i' 'hi'\n$/)
   })
 
+  it('a first prompt that starts with / is typed into the tab once the mirrored title says agy is idle, not given with -i', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, firstPrompt: '/review' })
+    expect(machine.launches[0].program.run).not.toContain("'-i'")
+    mirrored(id, [{ conversation_id: '', agent_state: 'authenticating' }])
+    expect(pty.write).not.toHaveBeenCalled()
+    mirrored(id, [{ conversation_id: '', agent_state: 'idle' }])
+    await vi.waitFor(() =>
+      expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review${ESC}[201~\r`]])
+    )
+  })
+
   it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {
     const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
     mirrored(id, [
@@ -1471,6 +1539,62 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       { type: 'prompt' },
       { type: 'stop' }
     ])
+  })
+
+  it('an ask declined with Esc or 4 there, which sends the title script idle and no Stop, leaves waiting for approval at once', async () => {
+    const asking = { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const afterEsc = [idle, idle]
+    const afterFour = [asking, idle]
+    for (const declined of [afterEsc, afterFour]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        asking
+      ])
+      await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+      mirrored(id, declined)
+      expect(shown()).toEqual([
+        { type: 'prompt' },
+        { type: 'notify', need: 'approval' },
+        { type: 'stop' }
+      ])
+      expect(sessions.openApproval(id)).toBeUndefined()
+      await sessions.stop(id)
+    }
+  })
+
+  it('a turn stopped with Esc there, which sends the title script idle and no Stop, ends once the title has said working, but not on the idle line every prompt sends just before or just after its PreInvocation', async () => {
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const working = { conversation_id: A, agent_state: 'working' }
+    const preInvocation = { event: 'PreInvocation', input: { conversationId: A } }
+    const idleFirst = [idle, preInvocation]
+    const idleAfter = [preInvocation, idle]
+    for (const prompt of [idleFirst, idleAfter]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        preInvocation,
+        { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+        idle,
+        ...prompt
+      ])
+      const firstTurnAndPrompt = [{ type: 'prompt' }, { type: 'stop' }, { type: 'prompt' }]
+      expect(shown()).toEqual(firstTurnAndPrompt)
+      mirrored(id, [working, idle, idle])
+      expect(shown()).toEqual([...firstTurnAndPrompt, { type: 'stop' }])
+      await sessions.stop(id)
+    }
   })
 
   it('a tab started on a conversation there, whose first title line carries its id and idle before anyone types, shows idle so Koloft can type into it, and again when it moves to another conversation, but not on the idle line that follows a finished turn', async () => {

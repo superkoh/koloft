@@ -10,6 +10,7 @@ import { writeExec } from './remote'
 const FIXTURES = path.join(__dirname, '..', 'fixtures')
 const IMAGE_SOURCES = ['sshd.Dockerfile', 'sshd-entrypoint.sh', 'fake-claude.js']
 const OLD_GIT_IMAGE_SOURCES = ['sshd-oldgit.Dockerfile']
+const NO_NODE_IMAGE_SOURCES = ['sshd-nonode.Dockerfile', 'fake-claude.js']
 const DOCKER_OFF_THE_PLAYWRIGHT_PATH = [
   'docker',
   '/opt/homebrew/bin/docker',
@@ -33,7 +34,8 @@ export const LAB_ALIASES = [
   'kt-newhost',
   'kt-proxycmd',
   'kt-agent',
-  'kt-oldgit'
+  'kt-oldgit',
+  'kt-nonode'
 ] as const
 export type LabAlias = (typeof LAB_ALIASES)[number]
 
@@ -44,6 +46,7 @@ export interface SshLab {
   bastion: string
   target: string
   oldGit: string
+  noNode: string
   port: number
   config: string
   key: string
@@ -116,6 +119,9 @@ function labConfig(lab: SshLab, emptyKnownHosts: string, agentOnlyPub: string): 
     'Host kt-oldgit',
     `  HostName ${lab.oldGit}`,
     '  User kuser',
+    'Host kt-nonode',
+    `  HostName ${lab.noNode}`,
+    '  User kuser',
     'Host kt-jump',
     '  HostName 127.0.0.1',
     `  Port ${lab.port}`,
@@ -168,7 +174,10 @@ function sshWorks(lab: SshLab, alias: LabAlias): boolean {
   )
 }
 
-export async function startSshLab(env: E2EEnv, opts: { oldGit?: boolean } = {}): Promise<SshLab> {
+export async function startSshLab(
+  env: E2EEnv,
+  opts: { oldGit?: boolean; noNode?: boolean } = {}
+): Promise<SshLab> {
   const dir = path.join(env.home, 'ssh-lab')
   fs.mkdirSync(dir, { recursive: true })
   const image = ensureImage('koloft-e2e-sshd', IMAGE_SOURCES)
@@ -178,6 +187,7 @@ export async function startSshLab(env: E2EEnv, opts: { oldGit?: boolean } = {}):
     bastion: `kl-bastion-${id}`,
     target: `kl-target-${id}`,
     oldGit: `kl-oldgit-${id}`,
+    noNode: `kl-nonode-${id}`,
     port: 0,
     config: path.join(dir, 'config'),
     key: path.join(dir, 'id_lab'),
@@ -222,6 +232,8 @@ export async function startSshLab(env: E2EEnv, opts: { oldGit?: boolean } = {}):
     run(lab.target, [])
     if (opts.oldGit)
       run(lab.oldGit, [], ensureImage('koloft-e2e-sshd-oldgit', OLD_GIT_IMAGE_SOURCES))
+    if (opts.noNode)
+      run(lab.noNode, [], ensureImage('koloft-e2e-sshd-nonode', NO_NODE_IMAGE_SOURCES))
     run(lab.bastion, ['-p', '127.0.0.1::22'])
     lab.port = Number(/:(\d+)/.exec(dk(['port', lab.bastion, '22/tcp']))?.[1])
     const [bastionKey, targetKey] = await Promise.all([
@@ -229,9 +241,10 @@ export async function startSshLab(env: E2EEnv, opts: { oldGit?: boolean } = {}):
       hostKeyOf(lab.target)
     ])
     const oldGitKey = opts.oldGit ? `${lab.oldGit} ${await hostKeyOf(lab.oldGit)}\n` : ''
+    const noNodeKey = opts.noNode ? `${lab.noNode} ${await hostKeyOf(lab.noNode)}\n` : ''
     fs.writeFileSync(
       lab.knownHosts,
-      `[127.0.0.1]:${lab.port} ${bastionKey}\n${lab.target} ${targetKey}\n${oldGitKey}`
+      `[127.0.0.1]:${lab.port} ${bastionKey}\n${lab.target} ${targetKey}\n${oldGitKey}${noNodeKey}`
     )
     const emptyKnownHosts = path.join(dir, 'known_hosts_first_contact')
     fs.writeFileSync(emptyKnownHosts, '')
@@ -242,7 +255,11 @@ export async function startSshLab(env: E2EEnv, opts: { oldGit?: boolean } = {}):
       `#!/bin/sh\nexec ${SSH} -F ${JSON.stringify(lab.config)} -W "$1:$2" kt-jump\n`
     )
     const deadline = Date.now() + LAB_READY_DEADLINE_MS
-    while (!sshWorks(lab, 'kt-key') || (opts.oldGit && !sshWorks(lab, 'kt-oldgit'))) {
+    while (
+      !sshWorks(lab, 'kt-key') ||
+      (opts.oldGit && !sshWorks(lab, 'kt-oldgit')) ||
+      (opts.noNode && !sshWorks(lab, 'kt-nonode'))
+    ) {
       if (Date.now() > deadline)
         throw new Error(`ssh lab never came up: ${dk(['logs', lab.target])}`)
       await sleep(LAB_POLL_MS)
@@ -279,7 +296,9 @@ export function closeLabMasters(lab: SshLab, controlDir: string): void {
 
 export function stopSshLab(lab: SshLab, controlDir?: string): void {
   if (controlDir) closeLabMasters(lab, controlDir)
-  spawnSync(docker(), ['rm', '-f', lab.bastion, lab.target, lab.oldGit], { stdio: 'ignore' })
+  spawnSync(docker(), ['rm', '-f', lab.bastion, lab.target, lab.oldGit, lab.noNode], {
+    stdio: 'ignore'
+  })
   spawnSync(docker(), ['network', 'rm', lab.network], { stdio: 'ignore' })
 }
 

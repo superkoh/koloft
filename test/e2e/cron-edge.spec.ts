@@ -468,8 +468,8 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
         .toBe(
-          'Could not start — Claude did not start — this folder was never opened in Claude; ' +
-            'start one session here first'
+          'Could not start — Claude did not start — Koloft cannot see that Claude trusts this ' +
+            'folder; start one session here first'
         )
       await expect.poll(() => termIds(page), { timeout: 15_000 }).toEqual(idsBefore)
       await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
@@ -1050,7 +1050,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await edOpenDialog(first.page, 'ws-a')
       await edOpenForm(first.page)
       await expect(edFormRow(first.page, 'Where it runs').locator('p.field-hint.warn')).toHaveText(
-        'Claude has never been opened in this folder. Start one session here first — a ' +
+        'Koloft cannot see that Claude trusts this folder. Start one session here first — a ' +
           'scheduled run would stall on Claude\'s "do you trust this project?" question and ' +
           'be stopped at the deadline.'
       )

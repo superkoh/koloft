@@ -124,6 +124,26 @@ it("keeps the machine's git answer (asked every 20s, kept while out of touch) an
   expect(sync.gitInfo('devbox', '/home/koh/api')?.worktrees.length).toBe(2)
 })
 
+// CC§8
+it("hands on the claude tool calls in flight the machine's heartbeat lists, and none once the heartbeat fails, so a call seen before the link dropped holds nothing", async () => {
+  const said: string[][] = []
+  sync = new RemoteSync({
+    run: () => (answers.shift() ?? answerWhenQueueEmpty!)(),
+    rsync: () => Promise.resolve(rsyncAnswer),
+    targets: () => [target],
+    onChange: () => {},
+    onToolShells: (_host, outputs) => said.push(outputs)
+  })
+  const output = '/tmp/claude-1000/-home-koh-api/sid/tasks/bfg.output'
+  answers.push(() => Promise.resolve(ok(`k-aaa\ntoolshell ${output}\n`)))
+  answerWhenQueueEmpty = () => Promise.resolve({ code: 255, stdout: '', stderr: 'down' })
+  sync.start()
+  await tick(1)
+  expect(said).toEqual([[output]])
+  await tick(2000)
+  expect(said.at(-1)).toEqual([])
+})
+
 // CC§2
 it('pulls the slug of the path the machine resolved, not the one that was pinned', async () => {
   answerWhenQueueEmpty = () =>

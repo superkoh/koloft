@@ -19,6 +19,7 @@ import {
 import {
   dockerAvailable,
   installLabSsh,
+  installOnTarget,
   remoteKeyFor,
   runOnTarget,
   runOnTargetWhileServing,
@@ -196,6 +197,60 @@ function basicLogins(forge: FakeForge): { username: string; password: string }[]
   return forge.hits.flatMap((h) => (h.basic ? [h.basic] : []))
 }
 
+async function withGithubOnTheMachine(
+  env: E2EEnv,
+  ghAt: { dir: string; onPathOnlyIn?: string },
+  body?: (ctx: { page: Page; lab: SshLab }) => Promise<void>
+): Promise<void> {
+  const github = await startFakeGithub()
+  github.addUser(REMOTE_GH_TOKEN, { login: 'bob', id: 42, name: 'Bob Example' })
+  env.launchEnv.KOLOFT_GITHUB_URL = github.url
+  env.launchEnv.KOLOFT_GITHUB_API_URL = github.url
+  env.launchEnv.KOLOFT_TEST_GH_LOGIN = FAKE_LOGIN
+  env.launchEnv.KOLOFT_FAKE_GH_LOGIN_HOME = env.home
+  seedSettings(env, { gitAutoFetch: false })
+  try {
+    await withLab(env, async ({ page, lab }) => {
+      const fakeGh = path.join(env.home, 'remote-gh')
+      fs.writeFileSync(
+        fakeGh,
+        '#!/bin/sh\nprintf \'%s %s %s\\n\' "$GH_HOST" "$GH_TOKEN" "$*" >> /tmp/gh-calls.txt\n' +
+          'case "$1 $2" in "api graphql") echo \'{"data":{"repository":{"issues":{"totalCount":12},"pullRequests":{"totalCount":3}}}}\' ;; *) echo \'[]\' ;; esac\n'
+      )
+      if (ghAt.onPathOnlyIn)
+        runOnTarget(
+          lab,
+          'kuser',
+          `mkdir -p ${ghAt.dir} && printf '%s\\n' 'export PATH="${ghAt.dir}:$PATH"' >> ${ghAt.onPathOnlyIn}`
+        )
+      installOnTarget(lab, fakeGh, `${ghAt.dir}/gh`)
+      repoOnTheMachine(lab, 'https://github.com/acme/widget.git')
+      expect((await addWorkspace(page, remoteKeyFor('kt-key', 'kuser'))).code).toBe('added')
+
+      await onMachineInSettings(page, 'kt-key')
+      await page.getByRole('button', { name: 'Add account', exact: true }).click()
+      await page.getByRole('button', { name: 'Next', exact: true }).click()
+      await expect(page.getByText('ABCD-1234')).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+      fs.writeFileSync(path.join(env.home, 'approve-gh-login'), '')
+      await expect(accountRow(page, 'bob')).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+      expect(filesHolding(env.home, REMOTE_GH_TOKEN)).toEqual([])
+      await page.keyboard.press('Escape')
+
+      await pickInPanel(page, 'kt-key', 'bob')
+      await expect
+        .poll(() => runOnTarget(lab, 'kuser', 'cat /tmp/gh-calls.txt 2>/dev/null || true'))
+        .toContain(`github.com ${REMOTE_GH_TOKEN} api graphql`)
+      const panel = await openGitPanel(page, 'kt-key')
+      await expect(panel.locator('.tbu-act', { hasText: '12 open issues' })).toBeVisible()
+      await expect(panel.locator('.tbu-pop-head', { hasText: 'GitHub' })).toContainText('as bob')
+      await page.mouse.move(1, 1)
+      await body?.({ page, lab })
+    })
+  } finally {
+    await github.close()
+  }
+}
+
 test.describe('Git accounts on a remote machine (Docker SSH lab)', () => {
   test("RGA-01: Settings switches to the machine and adds a token account there; it is kept only on the machine (0700/0600) and the Mac keeps no copy; picking it in the remote workspace's panel makes a session's git send it; a Mac account picked for a Mac repository never reaches the machine; removing it deletes the token there", async ({
     env
@@ -326,54 +381,23 @@ test.describe('Git accounts on a remote machine (Docker SSH lab)', () => {
   test("RGA-03: a GitHub sign-in for the machine goes through the Mac's sandboxed gh and lands only on the machine; the remote workspace's GitHub counts and its session's gh run on the machine with that token, and gh's own sign-in commands are refused there", async ({
     env
   }) => {
-    const github = await startFakeGithub()
-    github.addUser(REMOTE_GH_TOKEN, { login: 'bob', id: 42, name: 'Bob Example' })
-    env.launchEnv.KOLOFT_GITHUB_URL = github.url
-    env.launchEnv.KOLOFT_GITHUB_API_URL = github.url
-    env.launchEnv.KOLOFT_TEST_GH_LOGIN = FAKE_LOGIN
-    env.launchEnv.KOLOFT_FAKE_GH_LOGIN_HOME = env.home
-    seedSettings(env, { gitAutoFetch: false })
-    try {
-      await withLab(env, async ({ page, lab }) => {
-        const fakeGh = path.join(env.home, 'remote-gh')
-        fs.writeFileSync(
-          fakeGh,
-          '#!/bin/sh\nprintf \'%s %s %s\\n\' "$GH_HOST" "$GH_TOKEN" "$*" >> /tmp/gh-calls.txt\n' +
-            'case "$1 $2" in "api graphql") echo \'{"data":{"repository":{"issues":{"totalCount":12},"pullRequests":{"totalCount":3}}}}\' ;; *) echo \'[]\' ;; esac\n'
-        )
-        execFileSync('docker', ['cp', fakeGh, `${lab.target}:/usr/local/bin/gh`])
-        execFileSync('docker', ['exec', lab.target, 'chmod', '755', '/usr/local/bin/gh'])
-        repoOnTheMachine(lab, 'https://github.com/acme/widget.git')
-        expect((await addWorkspace(page, remoteKeyFor('kt-key', 'kuser'))).code).toBe('added')
+    await withGithubOnTheMachine(env, { dir: '/usr/local/bin' }, async ({ page, lab }) => {
+      const run = await sessionShell(page, 'kt-key')
+      expect(await run('cd ~/proj && gh auth status')).toContain('sh exit=1')
+      await run('cd ~/proj && gh issue list')
+      const calls = runOnTarget(lab, 'kuser', 'cat /tmp/gh-calls.txt')
+      expect(calls).toContain(`github.com ${REMOTE_GH_TOKEN} issue list`)
+      expect(calls).not.toContain('auth status')
+    })
+  })
 
-        await onMachineInSettings(page, 'kt-key')
-        await page.getByRole('button', { name: 'Add account', exact: true }).click()
-        await page.getByRole('button', { name: 'Next', exact: true }).click()
-        await expect(page.getByText('ABCD-1234')).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
-        fs.writeFileSync(path.join(env.home, 'approve-gh-login'), '')
-        await expect(accountRow(page, 'bob')).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
-        expect(filesHolding(env.home, REMOTE_GH_TOKEN)).toEqual([])
-        await page.keyboard.press('Escape')
-
-        await pickInPanel(page, 'kt-key', 'bob')
-        await expect
-          .poll(() => runOnTarget(lab, 'kuser', 'cat /tmp/gh-calls.txt 2>/dev/null || true'))
-          .toContain(`github.com ${REMOTE_GH_TOKEN} api graphql`)
-        const panel = await openGitPanel(page, 'kt-key')
-        await expect(panel.locator('.tbu-act', { hasText: '12 open issues' })).toBeVisible()
-        await expect(panel.locator('.tbu-pop-head', { hasText: 'GitHub' })).toContainText('as bob')
-        await page.mouse.move(1, 1)
-
-        const run = await sessionShell(page, 'kt-key')
-        expect(await run('cd ~/proj && gh auth status')).toContain('sh exit=1')
-        await run('cd ~/proj && gh issue list')
-        const calls = runOnTarget(lab, 'kuser', 'cat /tmp/gh-calls.txt')
-        expect(calls).toContain(`github.com ${REMOTE_GH_TOKEN} issue list`)
-        expect(calls).not.toContain('auth status')
-      })
-    } finally {
-      await github.close()
-    }
+  test("RGA-05: a gh only the user's own interactive login shell finds (a Linuxbrew folder, put on PATH at the end of ~/.bashrc) still gives the remote workspace its GitHub counts", async ({
+    env
+  }) => {
+    await withGithubOnTheMachine(env, {
+      dir: '/home/kuser/.linuxbrew/bin',
+      onPathOnlyIn: '.bashrc'
+    })
   })
 
   test('RGA-04: a machine with git 2.30 takes an account and its git sends it; a machine whose git is older than 2.13 is told so plainly and keeps no account', async ({

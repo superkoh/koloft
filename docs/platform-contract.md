@@ -124,6 +124,12 @@ method. A recheck adds its date, version and command to the bullet.
   the program as a byte. (2026-11-01, Python `pty` probe,
   macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
   instead threw the queued keys away.)
+- **zsh and bash turn bracketed paste off as they take each typed line.** Two lines
+  written together at the signal (`export …; clear` CR, `exec <agent>` CR) came back as
+  `?2004l`, the shell's next prompt with `?2004h`, `?2004l`, and then the agent's own
+  `?2004h` (2026-11-08, a python `pty`: macOS 27.0 `/bin/zsh` 5.9 with Claude Code
+  2.1.319 and Codex 0.166.0 as the agent; Debian's bash 5 in Docker with Muse Code
+  1.4.11).
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -131,6 +137,10 @@ method. A recheck adds its date, version and command to the bullet.
   running.
 - **A non-interactive bash gives a background job `/dev/null` as stdin.** `<&0` is
   needed to pass the real stdin through.
+- **Ctrl+A and Ctrl+E go to the line's start and end in both shells; Ctrl+U differs.**
+  zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
+  caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
+  `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
 
 ## §3 macOS system tools and limits
 
@@ -179,6 +189,13 @@ method. A recheck adds its date, version and command to the bullet.
   attribute (a quarantine flag is enough); `COPYFILE_DISABLE=1` turns this off. Pushed
   to another machine, claude reads `._settings.json` as a second, broken settings file.
   (Reproduced in a unit test with `xattr -w` and real macOS tar.)
+- **macOS `tar` also writes each extended attribute as a `LIBARCHIVE.xattr.<name>` pax
+  header, and GNU tar prints `Ignoring unknown extended header keyword` for each one**
+  as it unpacks. Every file a process here creates gets `com.apple.provenance`, so a
+  package of 5 files and its folder gave 6 such lines; `--no-xattrs` (after `cf -`)
+  leaves the headers out, and the same package then unpacked whole with no output on
+  `debian:bookworm-slim` (GNU tar 1.34) and `alpine:3` (BusyBox). (2026-11-09, bsdtar
+  3.5.3 on macOS 27, piped into `docker run -i <image> tar xzf -`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
@@ -202,6 +219,16 @@ method. A recheck adds its date, version and command to the bullet.
   belong to another process.
 - **On a network share or exFAT, mtime is only precise to 1–2 s.** An edit that keeps
   the same size inside one clock tick changes neither mtime nor size.
+- **Without the Command Line Tools, `/usr/bin/python3` is still there, as a stub.** Run
+  over ssh it prints `xcode-select: note: No developer tools were found, requesting
+  install.` and two more lines, and exits 1 at once; it does not wait. Whether it also
+  puts an install dialog on that Mac's screen was not seen (the VM ran with no display),
+  so each run may do so. With them, it is
+  python 3.9.6, which has `pty` and `termios`. **`/bin/sh` (bash 3.2) remembers where it
+  found `python3`**, stub included, so a `python3` that `brew install` puts earlier on
+  `PATH` is not run by that same shell until `hash -r`: in one script the stub exited 1,
+  then 1 again after Homebrew's `python3` was in place, then 0 after `hash -r`
+  (2026-11-09, a macOS 26.6 VM over ssh, the Command Line Tools moved aside).
 
 ## §4 Electron: app identity, packaging and opening things
 
@@ -1078,6 +1105,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   read the buffer through the xterm instance.
 - **xterm's CSS hard-codes the IME composition box** (`.xterm .composition-view`) to
   `background:#000`, a black box over a themed terminal while typing through an IME.
+- **xterm turns no ⌘ key into a line edit.** With ⌘ held, ←, →, ↑ and ↓ send nothing
+  to the program, and ⌘⌫ sends DEL (0x7f), the same as a plain ⌫, so it deletes one
+  character. Read from xterm 6.1.0-beta.302's `src/common/input/Keyboard.ts`
+  (2026-11-09).
 
 ## §22 xterm.js input method (IME) defects
 
@@ -1164,6 +1195,23 @@ inferred, not checked.
   73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
   Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
   the same guard is still on xterm.js master that day.
+- **Session terminals share one atlas; Workbench shells use another.** The two draw on
+  different backgrounds (`#070708` and `#0c0c0d`), and the background is part of the
+  atlas key, so output in a Workbench shell never adds, merges or clears a page of the
+  atlas a Claude Code screen draws from. Measured 2026-11-09, addon 0.20.0-beta.298.
+- **With every Koloft atlas repair switched off, a shown window kept its glyphs.** In a
+  shown (not hidden) window on a real Mac display, 16 terminals, one Claude Code screen
+  of 952 coloured CJK glyphs was grabbed after: opening a session, opening and closing a
+  Workbench shell, 38k distinct coloured CJK glyph keys painted screen by screen into
+  another session tab sharing its atlas (100 page merges), closing a tab, the Workbench
+  opening, going full width, back and closing, and a sleeping tab waking. With join,
+  leave and full repairs all made no-ops, every glyph matched the first grab
+  (per-glyph correlation ≥ 0.88; 3 runs, and the same with the repairs on). The same
+  check flagged 81 of 84 glyphs when three rows were shifted by one glyph, and all 968
+  when the atlas was cleared without the terminal rebuilding its texture coordinates
+  (what addons before `pageLayoutVersion` did) or the glyph textures were wiped.
+  Measured 2026-11-09, Electron 43, addon 0.20.0-beta.298, which makes every renderer
+  sharing an atlas rebuild its model on a clear, merge or eviction.
 
 ## §24 DOM, CSS and form controls in Chromium
 
@@ -1473,6 +1521,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `gitdir: <repo>/.git/worktrees/<name>` (a submodule: `.git/modules/<name>`); the
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
+- **A commit writes nothing inside the checkout's own folder, only under its git dir**
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  there, plus the branch ref, its log and new objects in the common `.git`. For a
+  linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
+  worktree's folder, so a folder watch on the worktree sees no commit at all.
+  **`logs/HEAD` moves on every move of HEAD and only then**: `fs.watchFile` (500 ms
+  poll) on it fired about 260 ms after a commit in a plain checkout and in a linked
+  worktree, and also on `commit --amend` and `reset --hard`; `git status` and
+  `git add` left it alone. **A plain `git status` rewrites `index`** whenever a
+  tracked file's time changed since the index was written (it did so on two runs in
+  a row), while `status` and `diff` run with `GIT_OPTIONAL_LOCKS=0` touched nothing in
+  the git dir — so a watch on `index` would fire on every status line refresh, and one
+  on `logs/HEAD` does not. (Measured 2026-11-08, git 2.54.0, macOS APFS, on a
+  throwaway repo with one linked worktree.)
 - **A worktree made inside the repo (under `.claude/worktrees/`) is not ignored by
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
@@ -1687,6 +1749,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
   `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
   takes `--`.
+- **`gh issue create` and `gh pr create` are also `gh issue new` and `gh pr new`** (ALIASES
+  in their `--help`), and `-R`/`--repo` may come before the subcommand:
+  `gh issue -R acme/app new --help` prints the create help. Their title and body come from
+  `-t`/`--title`, `-b`/`--body` and `-F`/`--body-file` (`-` is standard input).
+  (2026-11-09, gh 2.89.0, by hand.)
 
 ## §33 ssh
 
@@ -1700,6 +1767,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   program**, which can be fish. `~/.local/bin`, `~/.koloft/node/bin` and, on a macOS
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
+- **A program the user's rc files put on PATH is missing from `ssh host cmd`, and the
+  user's own `"$SHELL" -lic` is what finds it.** A fake `gh` only in
+  `/home/linuxbrew/.linuxbrew/bin`, looked for with `command -v gh` inside Koloft's own
+  `sh -c` wrapper (PATH plus `~/.local/bin`, `~/.koloft/node/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`), and again after adding the PATH a login shell printed:
+
+  | login shell, where its PATH line is | plain | `bash -lc` | `"$SHELL" -lic` |
+  |---|---|---|---|
+  | bash, `~/.profile` | missing | found | found |
+  | bash, end of `~/.bashrc` (below Debian's "not interactive: return") | missing | missing | found |
+  | zsh, `~/.zshrc` | missing | missing | found |
+  | fish, `config.fish` | found | found | found |
+  | tcsh, `~/.login` | missing | missing | missing: `Unknown option: -lic`, nothing on stdout |
+  | `/snap/bin` in `/etc/environment`, no rc line | found | found | found |
+
+  `/etc/environment` reaches `ssh host cmd` through sshd's `pam_env`, while Debian's
+  `/etc/profile` sets PATH afresh, so a login shell's PATH there no longer held
+  `/snap/bin` and only the appended PATH kept it. A `.bashrc` that echoes a line puts
+  it on stdout, even for `ssh host cmd`. A `.bashrc` that leaves a job running in the
+  background (`(sleep 20 &)`, `sleep 25 &`) holds a `$(… -lic … | sed …)` open until that
+  job ends: 25.1 s; with the shell's own stdout and stderr sent to `/dev/null` and the
+  PATH written to a file it names instead, the same lookup came back in 109 ms. Each
+  other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
+  macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
+  5.9, reached directly, a scratch node script.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
@@ -1858,6 +1950,16 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
+  ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
+  (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq
+  allow-passthrough on` is dropped without a word and no pane is left in a mode; a remote
+  Muse tab's wrapped 7501 frames (idle, working, done) still came out to the outer
+  terminal unwrapped, none left as `ESC P tmux;`. On both, the rest of Koloft's tmux.conf
+  loaded with no error screen, `rename-session -t $TMUX_PANE`, `attach -d` to the renamed
+  session and `set-titles` with `#{pane_title}` worked as on 3.3a (2026-11-09, Docker,
+  Koloft's own tab script, tmux.conf and Muse wrapper, muse 1.4.11 on `--provider echo`,
+  the client run in a python pty with `TERM=xterm-256color`).
 - **A pane's window title (`ESC ] 0 ; … BEL`) reaches the terminal outside tmux only with
   `set-titles on` and `set-titles-string '#{pane_title}'`**, and an empty one then arrives
   as `ESC ] 0 ; BEL`. Off (the default) nothing arrives; `set-titles on` alone sends the
@@ -1966,13 +2068,31 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
     (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
     105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
   - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
-- **tmux 3.3a drops a pane's OSC 8 links** under Koloft's tmux.conf: muse wrote 160
-  `ESC ] 8 ; ; <url>` links into a pane and 0 reached the outer terminal (5 of 5 runs;
-  2026-11-08, Debian 12's tmux 3.3a in Docker, the client started with
-  `TERM=xterm-256color` from a python pty as the outer terminal). Whether 3.3a knows
-  the `hyperlinks` feature that the conf's `terminal-features ',xterm*:RGB:hyperlinks'`
-  names was not checked (`set -asq` hides an unknown one); later tmux versions were not
-  run.
+- **OSC 8 links from a pane reach the outer terminal from tmux 3.4 on, and only with the
+  `hyperlinks` terminal feature.** Under Koloft's tmux.conf a pane that wrote 160
+  `ESC ] 8 ; ; <url>` links (BEL- and ST-ended alike) got all 160 out on 3.4, 3.5a and
+  3.8, 5 of 5 runs each, and on 3.4 each around its own words (counted there only, 3 of 3
+  runs); tmux adds its own `id=` to each one
+  (`ESC ] 8 ; id=tmux1 ; <url>`). Without the conf's `terminal-features
+  ',xterm*:RGB:hyperlinks'` line, 3.4 got 0 out (3 of 3), and `#{client_termfeatures}`
+  lacked `hyperlinks`.
+  - **tmux 3.3a drops them all**: 0 of 160, from a printing script as from muse 1.4.11
+    (5 of 5 runs each). 3.3a keeps the `hyperlinks` line in `terminal-features` but
+    does not know the feature: `#{client_termfeatures}` has no `hyperlinks`.
+  - **Wrapped for passthrough (`ESC P tmux; ESC ESC ] 8 ; ; <url> BEL ESC \`), 3.3a lets
+    each link's start and end through but not around its words**: 160 starts and 160
+    ends arrived, 0 of them around their text, because a passthrough goes out as soon as
+    tmux reads it and the text only at the end of that read (see the DEC 2026 bullet
+    above).
+
+  (2026-11-08 for muse on 3.3a; 2026-11-09 for the rest: Docker, Debian 12's 3.3a,
+  Ubuntu 24.04's 3.4, Debian 13's 3.5a, 3.8 built from its release tarball; the client
+  started with `TERM=xterm-256color` from a python pty answering like xterm.js; the
+  same script printed the links outside tmux and all 160 arrived on each.)
+- **tmux 3.3a passes on only the pane's own bracketed-paste switch.** Started in a pty
+  as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
+  `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
+  tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
 
 ## §36 ccstatusline
 
@@ -1992,6 +2112,17 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+- **It can run inside a process that already read its input.** 2.2.33's entry reads
+  its input only by iterating `process.stdin` (`for await`, unless `isTTY`) and takes
+  `--config` from `process.argv`. A script that sets `process.stdin` to a `Readable`
+  holding the JSON and `process.argv` to `[node, entry, '--config', file]`, then
+  `import()`s the entry, prints byte for byte what a second process given the same
+  JSON prints (2026-11-09, Electron 43.8.6 as node on macOS arm64, 10 renders each,
+  median: 213 ms when the script starts a second process, 186 ms in one process,
+  156 ms in one process with `NODE_COMPILE_CACHE`). The same script as a `.cjs` in a
+  `{"type":"module"}` folder also renders on node 22.12.0 (Docker
+  `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
+  folder itself.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 
@@ -3116,3 +3247,32 @@ Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK
 
 Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
 `electronPackage.test.ts` fails if that setting goes.
+
+## §66 Web fonts and the terminal: `document.fonts` and xterm.js
+
+- **`document.fonts.check()` answers `true` for a face that is not loaded.** Measured
+  2026-11-10 (Electron 43.8.6, the hidden e2e window, Koloft's bundled JetBrainsMono
+  Nerd Font faces declared by `@font-face` in `styles.css`): at `DOMContentLoaded`, with
+  every face `unloaded`, `check('italic 400 13px "JetBrainsMono Nerd Font"')` was `true`,
+  with and without system fonts after it in the list; 30 ms later, with the 700 italic
+  face still `unloaded`, `check('italic 700 13px …')` was still `true`. So `check()`
+  cannot tell whether a terminal may be measured yet.
+- **`document.fonts.load(font)` resolves once the matching face is loaded**: in the same
+  run, `load('italic 400 13px …')` resolved with that face `loaded` while the other
+  italic face, not asked for, stayed `unloaded`.
+- **xterm.js measures its cell size and draws glyphs with whatever face is ready at that
+  moment, and does not look again when a web font finishes loading**: nothing in
+  `@xterm/xterm` 6.1.0-beta.302 or `@xterm/addon-webgl` listens to `document.fonts`
+  (read from their sources, not measured). Setting `fontFamily` or `fontSize` to a new
+  value measures again; setting the value it already has does nothing.
+- **Mermaid sizes each label box from its text as measured while it draws**, with
+  `htmlLabels: false`, and does not redraw when a font arrives later (read from
+  `mermaidRender.ts`'s settings, not measured).
+- **Until a web font loads, a page lays out its text with the next font in the list**:
+  the `--mono` list falls to Menlo on macOS (neither SF Mono nor JetBrains Mono is
+  installed), whose glyphs are as wide as JetBrainsMono Nerd Font's within 0.3 %
+  (`↑12 ⑂345 ●6` at bold 12 px: 79.30 px against 79.05 px, measured the same day).
+
+Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
+`TerminalView` waits on before it builds a terminal and before it hands one a new font,
+and which `mermaidRender` waits on before its first diagram.

@@ -91,6 +91,7 @@ import {
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
 import { keepSkillsIn } from './agentPlugin'
+import { seedAssistMemory } from './assistMemory'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
@@ -199,7 +200,9 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
+  lastTitleState?: string
   statesBeforeBind?: ProgramStatus[]
+  firstLine?: string
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -268,11 +271,17 @@ function permissionFlags(permission: LaunchPermission): string[] {
   return []
 }
 
-// AGY§1 AGY§21 AGY§26
+// AGY§31
+function firstLineToType(opts: CreateTabOptions, resumeId: string | undefined): string | undefined {
+  return !resumeId && opts.firstPrompt?.startsWith('/') ? opts.firstPrompt : undefined
+}
+
+// AGY§1 AGY§21 AGY§26 AGY§31
 function agyArgs(
   opts: CreateTabOptions,
   resumeId: string | undefined,
-  permission: LaunchPermission
+  permission: LaunchPermission,
+  firstLine: string | undefined
 ): string[] {
   return [
     ...(opts.model ? ['--model', opts.model] : []),
@@ -280,16 +289,21 @@ function agyArgs(
     ...permissionFlags(permission),
     ...(resumeId
       ? [`--conversation=${resumeId}`]
-      : opts.firstPrompt
+      : opts.firstPrompt && !firstLine
         ? ['-i', opts.firstPrompt]
         : [])
   ]
 }
 
 // AGY§14
-function agyQuestion(question: string, raw: unknown): Question {
+function agyQuestion(question: string, raw: unknown, multiSelect: boolean): Question {
   const options = labelsOf(raw)
-  return { question, options, ...(options.length > 0 && { ownWords: true as const }) }
+  return {
+    question,
+    options,
+    ...(options.length > 0 && { ownWords: true as const }),
+    ...(multiSelect && { multiSelect: true as const })
+  }
 }
 
 // AGY§8
@@ -371,7 +385,13 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
     return undefined
   }
   const { agentState, confirmationPending } = read.title
-  if (agentState === 'idle' && run.shown === undefined) return { state: 'idle' }
+  const interruptedMidTurn = run.shown === 'working' && run.lastTitleState === 'working'
+  run.lastTitleState = agentState
+  if (
+    agentState === 'idle' &&
+    (run.shown === undefined || run.shown === 'blocked' || interruptedMidTurn)
+  )
+    return { state: 'idle' }
   if (agentState === 'tool_use' && confirmationPending)
     return {
       state: 'blocked',
@@ -600,12 +620,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     { binary, pick, env }: AgyLaunch
   ): Promise<AgyRun> {
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
+    const firstLine = firstLineToType(opts, resumeId)
     const apiKey = await this.deps.apiKeyOf(pick.account)
     if (resumeId && (await this.heldElsewhere(resumeId))) throw new Error(HELD_ELSEWHERE)
     this.assertStarting()
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
+    if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const permission = this.permissionOf(opts)
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
@@ -664,7 +686,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const argv = [
         `--gemini_dir=${pick.home}`,
         `--csrf_token=${token}`,
-        ...agyArgs(opts, resumeId, permission)
+        ...agyArgs(opts, resumeId, permission, firstLine)
       ]
       this.parsers.set(tabId, new ProgramStatusParser())
       const handle = this.deps.pty.create({
@@ -709,6 +731,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         givenTitle: opts.name,
         permission: opts.permission ?? 'default',
         bypassing: permission === 'bypass',
+        firstLine,
         account: pick.account,
         brain: agyBrain(pick.home),
         pid,
@@ -740,6 +763,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const { remote } = this.deps
     const machine = remote.machine(where.host)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
+    const firstLine = firstLineToType(opts, resumeId)
     if (
       resumeId &&
       (remote.gone(where.host, resumeId) || (await machine.endedByKoloft(resumeId))) &&
@@ -798,7 +822,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         banner: pick.banner,
         args: [
           `--csrf_token=${randomBytes(24).toString('hex')}`,
-          ...agyArgs(opts, resumeId, permission)
+          ...agyArgs(opts, resumeId, permission, firstLine)
         ],
         settings: agyJsonText(settings),
         hooks: agyJsonText(hooks),
@@ -839,6 +863,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resumeKey: opts.resumeSessionId,
       permission: opts.permission ?? 'default',
       bypassing: permission === 'bypass',
+      firstLine,
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
@@ -1022,6 +1047,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§9 AGY§11
   private onTitle(run: AgyRun, state: AgyTitleState): void {
     if (run.explicitStop || run.stopping) return
+    // AGY§31
+    if (run.firstLine && state.agentState === 'idle') {
+      this.deps.pty.write(run.tabId, bracketedPaste(run.firstLine) + '\r')
+      run.firstLine = undefined
+    }
     const before = run.title
     run.title = state
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
@@ -1048,6 +1078,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.background = undefined
     run.waiting = undefined
     run.shown = undefined
+    run.lastTitleState = undefined
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
@@ -1198,7 +1229,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§8 AGY§10
   showsPromptBeforeBind(tabId: string): boolean {
     const run = this.runs.get(tabId)
-    return !!run && !run.info && !run.explicitStop && run.statesBeforeBind?.at(-1)?.state === 'idle'
+    return (
+      !!run &&
+      !run.info &&
+      !run.explicitStop &&
+      !run.firstLine &&
+      run.statesBeforeBind?.at(-1)?.state === 'idle'
+    )
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {
@@ -1329,14 +1366,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
               ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {})
             }
           }
-        : questions.length && !questions.some((q) => q.multiSelect)
+        : questions.length
           ? {
               question: {
                 id: askId,
                 questions: questions.map((q) =>
                   agyQuestion(
                     q.question,
-                    q.options.map((o) => o.text)
+                    q.options.map((o) => o.text),
+                    !!q.multiSelect
                   )
                 )
               }
@@ -1346,19 +1384,22 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.changedSoon()
   }
 
-  // AGY§12 AGY§13
+  // AGY§12 AGY§13 AGY§26
   private askFromHook(run: AgyRun, status: ProgramStatus): AgyAsk {
     const id = `hook:${Date.now()}`
     const tool = run.lastTool
     if (status.kind === 'question' && tool?.name === 'ask_question') {
       const raw = record(tool.args).questions
       const asked = (Array.isArray(raw) && raw.length ? raw : [undefined]).map(record)
-      if (asked.some((q) => q.is_multi_select === true)) return {}
       return {
         question: {
           id,
           questions: asked.map((q) =>
-            agyQuestion(typeof q.question === 'string' ? q.question : (status.msg ?? ''), q.options)
+            agyQuestion(
+              typeof q.question === 'string' ? q.question : (status.msg ?? ''),
+              q.options,
+              q.is_multi_select === true
+            )
           )
         }
       }
@@ -1369,7 +1410,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? (argOf(tool.args, 'TargetFile') ?? argOf(tool.args, 'Path'))
         : undefined
     return {
-      approval: { id, command: commandLine ?? file ?? status.msg, ...(file ? { file } : {}) }
+      approval: {
+        id,
+        command: commandLine ?? file ?? status.msg,
+        ...(file ? { file, ...(tool?.name === 'read_file' && { read: true as const }) } : {})
+      }
     }
   }
 
@@ -1385,14 +1430,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     } catch {}
     const waiting = names
       .map((n) => ({ n, meta: readJson(path.join(brain, n)) }))
-      .filter((x) => x.meta.requestFeedback === true)
-      .map((x) => x.n.replace(/\.metadata\.json$/, ''))
-    const plan = waiting[0]
-    if (!plan) return
-    const askId = `plan:${id}:${plan}`
+      .find((x) => x.meta.requestFeedback === true)
+    if (!waiting) return
+    const plan = waiting.n.replace(/\.metadata\.json$/, '')
+    const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
+    const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,
-      approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
+      approval: { id: askId, command: plan, ...(text && { reason: text }), plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
     this.changedSoon()

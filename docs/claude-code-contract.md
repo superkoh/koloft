@@ -1445,7 +1445,14 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   full-scope login token. Long-lived tokens (from claude setup-token or
   CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So Claude's own phone remote
   does not work for a Koloft session.
-- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
+- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.2
+  $8/$40, 1M (cache read $0.20) — the default `fable` since CC 2.1.321 (changelog: "Added
+  Claude Fable 5.2 (`claude-fable-5-2`), now the default Fable model — 1M context, $8/$40
+  per Mtok with $0.20/Mtok cache reads"; the 2.1.322 binary names its tier
+  `tier_8_40_cache_read_0_20` and `latest_per_family` `fable: "claude-fable-5-2"`,
+  `strings`, 2026-11-10; its fast-mode price object, shared with `claude-mythos-5-2`, is
+  $16/$80 with cache writes $20 (5m) and $32 (1h) and reads $0.40 — twice each standard
+  figure, so the standard writes are the usual 1.25× and 2× input, $10 and $16); Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
@@ -1455,8 +1462,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   account, three requests: every cache write was `ephemeral_1h_input_tokens`, none 5m;
   CC's own `total_cost_usd` matched 2× input on them to the cent, and the transcript's
   `message.usage.cache_creation` carries the same split). A cache read costs 0.10×
-  input, as ccusage applies it — except the 5.5-generation rows, whose cache read is their own
-  figure: Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
+  input, as ccusage applies it — except the rows whose cache read is their own
+  figure: Fable 5.2 $0.20 (above), Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
   fetched 2026-10-11, which also gives Haiku 5.5 $0.01, the plain 0.10×). Sources (2026-07): the Anthropic model catalog (through the
   local claude-api skill reference) for current families, Anthropic's public pricing
   page for older Opus/Sonnet, and the Sonnet 5 change noted against CC 2.1.243. The Opus
@@ -1562,6 +1569,20 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   id, during the call or in its tool result after. So the process table cannot
   tie such a call to the agent that made it; it only shows that some foreground call
   is in flight. Other foreground tools and other builds are not probed yet.
+- **On Linux the same tool shell shows in `/proc`, with no `lsof`.** Measured 2026-11-08 on
+  CC 2.1.319 (linux-arm64), interactive in tmux inside the e2e SSH lab image (Debian
+  bookworm slim, no `lsof` installed), as a normal user, the model a fake Messages API
+  answering one Bash call; 1 run. A FOREGROUND `perl -e 'sleep 40'` ran as
+  `/bin/bash -c source ~/.claude/shell-snapshots/… && … eval …`, a direct child of
+  `claude`, and `readlink /proc/<pid>/fd/1` of that shell and of `perl` both gave
+  `/tmp/claude-<uid>/<cwd slug>/<session id>/tasks/b<…>.output`.
+  `find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%l\n'` listed
+  exactly those two in 2 ms with about 20 processes in the container, and took 6–24 ms
+  over three runs with 1015 processes; Koloft's whole machine heartbeat with it took
+  10–22 ms. A process left holding such a file that is not a tool shell (a stray
+  `perl … > …/tasks/b….output &`) differs from the tool shell only by its command line,
+  which lacks `shell-snapshots`. A bare `sleep 40` was refused by CC itself ("Blocked: standalone sleep 40"),
+  so a probe needs another long command. A macOS machine (no `/proc`) is not probed.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
@@ -1711,10 +1732,32 @@ inferred, not checked.
   the `queue-operation` pair; that session, opened by `/goal`, got no `ai-title`.
   Which shape a task finishing mid-turn gets is not probed yet. Terminal `<status>` values are
   `completed`, `failed`, `killed`, `stopped`, `cancelled`, `canceled`; `stopped` comes
-  for a task killed from the UI, by a Monitor timeout, or by agent teardown. Long-lived
-  tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
+  for a task killed from the UI, by a Monitor timeout, or by agent teardown. A Monitor
+  also sends progress notifications, which carry only its `<task-id>` (the bullet above;
+  rechecked below on 2.1.322).
   The terminal notification wakes the model, so a wrap-up turn with its own Stop
   follows. Every ack kind gets one — except a teammate.
+  **2.1.322 cuts a long command in the middle of the summary** (the 2.1.321 changelog
+  names that release; 2.1.320 and 2.1.321 were not run). For a background shell whose
+  command is over 1,000 characters, 2.1.322 keeps the first 500 and the last 300
+  characters of the raw `<summary>` text (counted before `>` is escaped as `&gt;`) and
+  puts `\n\n... [N characters truncated] ...\n\n` between them; 2.1.319 wrote the
+  whole command. The marker holds no `<`, and `<task-id>`, `<tool-use-id>` and
+  `<status>` are unchanged. The Stop hook's `background_tasks[].command` and
+  `.description` were already cut near 1,000 characters with `… [+N chars]` on both
+  builds. Rechecked the same day on both builds, unchanged: the notification opens with
+  `<task-notification>` and carries `<task-id>`, `<tool-use-id>` and
+  `<status>completed</status>`; a Monitor event is `<summary>Monitor event: "<description>"</summary>`
+  with no `<status>` or `<tool-use-id>`, and its end is `<status>completed</status>` with
+  `Monitor "<description>" stream ended`; a task that finishes while CC sits idle is
+  written as the `queue-operation` enqueue, then a user record with `origin.kind:
+  'task-notification'` and no `isMeta`, and the UserPromptSubmit `prompt` opens with
+  `<task-notification>`; Stop's `background_tasks` entries hold `id`, `type`, `status`,
+  `description` and `command`, a Monitor as `type: "shell"`. (2026-11-10, CC 2.1.319 and
+  2.1.322 darwin-arm64, interactive TUI in a Python pty, scratch `HOME` and
+  `CLAUDE_CONFIG_DIR`, one 1,224-character background command, one short one and one
+  Monitor; the 1,000 threshold is the 2.1.321 changelog's, only 1,224 was run. Not
+  probed: the `attachment` path, which neither run wrote, and `TaskStop`'s result.)
 - **A teammate never gets a `<task-notification>`** (measured: 149 `teammate_spawned`
   acks across 41 recent transcripts, zero named by one). It reports through an
   `Another Claude session sent a message: <teammate-message …>` record, which carries
@@ -2088,33 +2131,58 @@ branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 `src/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
-`src/main/remote/launch.ts`, and the remote launch and trust in
-`src/main/host/sshHost.ts`.
+`src/main/remote/launch.ts`, the remote launch and trust check in
+`src/main/host/sshHost.ts`, and the remote trust write, which the tab script in
+`src/main/remote/launch.ts` runs with node once `ensure.sh` has put node there.
 
 ## §10 The official install script (`https://claude.ai/install.sh`)
 
 How established: the script as served on 2026-09-08 was fetched and read, alongside
 the official install docs; Claude Code 2.1.263 was the current version that day. The
-bullets dated 2026-10-11 were measured against a real install on macOS.
+bullets dated 2026-10-11 were measured against a real install on macOS; the 2026-11-10
+rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
+(`node:22-bookworm`, linux-arm64).
 
 - **It is `#!/bin/bash`** (uses `[[ ]]` and `=~`), so `sh` cannot run it — a machine
-  without bash needs bash installed first. It needs `curl` or `wget` and `sha256sum` or
-  `shasum`, detects `x86_64` / `aarch64` and musl by itself, **refuses to run under
-  `sudo`** (plain root is fine), and installs a self-contained native binary to
-  `~/.local/bin/claude`, so a machine with claude need not have node.
+  without bash needs bash installed first. It needs `curl` or `wget`, and `shasum -a
+  256` on macOS or `sha256sum` on Linux (each OS uses only its own), detects `x86_64` /
+  `aarch64` and musl by itself, **refuses to run under `sudo`** (plain root is fine), and
+  installs a self-contained native binary to `~/.local/bin/claude`, so a machine with
+  claude need not have node. Rechecked 2026-11-10 on the script serving 2.1.322: under
+  `dash` it stops with `Syntax error: "(" unexpected` (exit 2); as root with
+  `SUDO_USER=node` it prints "Error: do not run this installer with sudo." and exits 1
+  (`CLAUDE_INSTALL_ALLOW_SUDO` lifts that); `~/.local/bin/claude` points into
+  `~/.local/share/claude/versions/2.1.322` on macOS and in a `node:22-bookworm`
+  container alike.
 - **The installer writes no shell rc file.** It only prints "~/.local/bin is not in your
   PATH" with an `echo … >> ~/.zshrc` line for the user to run, so neither `zsh -l -c` nor
   `zsh -l -i -c` finds `claude` afterwards. It does create `~/.claude.json` (install
   method, user and machine ids — no `hasCompletedOnboarding`). (2026-10-11, Claude Code
   2.1.296, macOS 27: `curl -fsSL https://claude.ai/install.sh | bash` under `zsh -l -i`
   with a fresh temporary `HOME` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, then the home's
-  files listed and `command -v claude` run through both shells.)
+  files listed and `command -v claude` run through both shells. Rechecked 2026-11-10 on
+  2.1.322, the same way on macOS, and on Linux in `node:22-bookworm`: still no rc file
+  written, `.bashrc` and `.profile` unchanged; there `bash -l` does find `claude`, but
+  only because Debian's stock `.profile` adds `~/.local/bin`.)
 - **The binary download prints nothing.** The script fetches the native binary with
   `curl -fsSL -o` (or `wget -q -O`) and prints its first line, "Setting up Claude
   Code...", only after the download and checksum. For 2.1.316 the macOS download is
   107 MB (arm64) or 114 MB (x64) when `zstd` is on the machine, 310 MB or 324 MB without
   it, so at 2 Mbit/s it is silent for 7 to 22 minutes. (2026-11-01: the served script
   read; `latest` answered 2.1.316, sizes from its `manifest.json` and `manifest.zst.json`.)
+  For 2.1.322: darwin-arm64 111.9 MB with `zstd` / 323.7 MB without, darwin-x64 119.1 /
+  338.4 MB, linux-arm64 123.3 / 341.5 MB, linux-x64 124.5 / 341.9 MB (its manifests,
+  2026-11-10).
+- **On macOS the `claude install` step then downloads the whole binary again, in
+  silence.** After "Installing Claude Code native build latest..." it fetches the
+  uncompressed build into `~/.cache/claude/staging` even with `zstd` on the Mac, 323.7 MB
+  on arm64, and the terminal gets no byte meanwhile: at 2 Mbit/s a second silent stretch
+  of about 22 minutes. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
+  script serving 2.1.322: three darwin-arm64 installs in a Python pty with a scratch
+  `HOME`, `/opt/homebrew/bin/zstd` on the login PATH, 41.7, 52.6 and 46.3 s of no output
+  while the staging file grew to 323.7 MB; one in `node:22-bookworm`. Inferred, not
+  checked: the same on x64 (338.4 MB uncompressed, per the manifest), on a Mac without
+  `zstd`, and on 2.1.316.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -2346,6 +2414,20 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
   300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
   2.1.286); the setup was not re-run here.
+- **A line typed before claude starts lands in the input box unsent.** At zsh's
+  `ESC[?2004h`, one write of the launch line (`exec claude …` CR) and `hello` CR — or
+  `hello` LF — showed `❯ hello` in the box and sent nothing in 14 s (2.1.319 twice for
+  CR, once for LF; 2.1.318 once). Sent at once (`❯ hello`, the fake model's answer, a
+  `user` record `"hello"`): `hello` in that write and a lone CR 0.3 s or 3 s later;
+  `hello` CR written 0.3 s after the launch line; `hello` written when claude turned on
+  bracketed paste (its `?2004h`, 0.24 s after zsh's) and CR 0.3 s after that. Its
+  SessionStart hook ran 0.09 s after that `?2004h`. claude writes the `?2004h` before it
+  draws the folder-trust question, and runs no SessionStart hook until the folder is
+  trusted; `hello` CR typed either way (with the launch line, or at the `?2004h`) left
+  the question on screen, `No, exit` still picked, and the text gone. Measured 2026-11-08,
+  a python `pty` running `zsh -i` (scratch `HOME`, `.zshrc` of `sleep 1`), the binary
+  started directly with `apiKeyHelper` and a fake Messages API on localhost, the screen
+  read through `pyte`.
 - **Typing while claude is in the middle of a turn queues the message**: the screen
   shows "Press up to edit queued messages", and claude takes it once the running tool
   call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the
@@ -2560,6 +2642,17 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   (58 within 0.4 s) — killed by SIGHUP, or exit 129, or exit 0 — and no process was
   left: none with the run's marker argument (`ps`), and none of the children seen at the
   close (`security` keychain lookups) still alive after it.
+- **Ctrl+A, Ctrl+E and Ctrl+U edit the input box one line at a time.** In `hello world`,
+  Ctrl+A (0x01) put the caret before `h` and Ctrl+E (0x05) after the last letter; Ctrl+U
+  (0x15) with the caret after the third letter deleted those three and kept the rest
+  ("Ctrl+Y to paste deleted text" showed), and at the end of the line emptied it. In a
+  two-line box (`one`, `\n`, `two`), Ctrl+A went to the start of the second line, not
+  of the box; Ctrl+E then Ctrl+U emptied only that line, and a second Ctrl+U deleted the
+  line break, leaving `one`. Home (`ESC[H`) and End (`ESC[F`) moved like Ctrl+A and
+  Ctrl+E; Option+← as xterm sends it (`ESC[1;3D`) moved one word left and Option+⌫
+  (`ESC DEL`) deleted one word. 2026-11-09, CC 2.1.319, a python pty read back through
+  `pyte`, scratch `CLAUDE_CONFIG_DIR`, an `apiKeyHelper` key, one key per write 0.4 s
+  apart.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
@@ -3115,6 +3208,38 @@ below was one run.
   highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
   approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
   unchanged (6 of 6).
+- **A plan dialog can draw four rows (measured) or five (from strings).** 2026-11-08,
+  CC 2.1.319, the setup of the plan bullet above (python pty through `pyte`, scratch
+  `HOME` and `CLAUDE_CONFIG_DIR`, the fake Messages API, logging hooks); one run per line.
+  - The user setting `showClearContextOnPlanAccept: true` (in `settings.json`; strings:
+    "When true, the plan-approval dialog offers a "clear context" option. Defaults to
+    false.") adds a first row: `1. Yes, clear context (0% used) and use auto mode`, then
+    `2. Yes, and use auto mode`, `3. Yes, manually approve edits`, `4. Tell Claude what to
+    change`. In a bypass session row 1 reads `… and bypass permissions` and row 2 `Yes, and
+    switch to BYPASS PERMISSIONS …`; a manual session (`--permission-mode default`, two
+    Shift+Tabs into plan mode) drew the same rows as the auto one. Down from row 4 wraps
+    to row 1.
+  - With it on, Shift+Tab picks row 1, from row 1 (auto, bypass and manual sessions) and
+    from row 4 holding `hello`, and so does `1`: CC ends the session (`SessionEnd`
+    reason `clear`), starts a new one in the same terminal (`SessionStart` source
+    `clear`, a new session id), and sends the plan as that one's first prompt,
+    "Implement the following plan: …", ending "User feedback on this plan: hello" when
+    row 4 held text. The old transcript records the `ExitPlanMode` call as turned down
+    ("The user doesn't want to proceed with this tool use…", `is_error: true`), so a
+    plan approved this way never shows as approved there. OSC 7501 went from
+    `blocked:kind=permission` to `idle` 20 ms after Shift+Tab. Esc rejected the plan and
+    kept plan mode.
+  - The three-row run (Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab) sent `hello` along
+    from row 1 with `hello` left in row 4 (1 run). Ctrl+U and Down five and four times,
+    then Shift+Tab, sent no text on four rows (from row 1 and row 2 with `hello` left in
+    row 4, from row 4 holding it, untouched: 4 runs) and on three rows (from row 1 with
+    `hello` left in row 3, untouched: 2 runs, each the usual approval).
+  - From strings, not drawn (inferred, not checked): a row `No, refine with Ultraplan in
+    a cloud session` sits just above the text row when the server flag
+    `tengu_ultraplan_config` is on and remote sessions are allowed, so with both a plan
+    dialog has five rows; Shift+Tab is handled by the whole dialog, not by a row, so it
+    should approve from that row too. A row for "Yes, manually approve edits" is left out
+    when the model needs auto or plan mode, so three rows can also be two.
 - **2.1.319 adds a settings key, `permissions.denyInsteadOfPrompting` (boolean): a call
   that would wait on a permission dialog is refused at once and the turn goes on — but
   PermissionRequest fires first, and the hook's answer wins.** Measured 2026-11-07

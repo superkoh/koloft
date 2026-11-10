@@ -80,7 +80,7 @@ describe('what a row says while the session waits on you', () => {
     expect(ask('mcp__fs__read_file', { path: '/a/b.txt' })).toBe('Wants to use: read_file')
   })
 
-  it('Codex, Muse Code and Antigravity: a question, a command, a file edit or a plan', () => {
+  it('Codex, Muse Code and Antigravity: a question, a command, a file edit, a file read or a plan', () => {
     expect(
       storedAskLine({
         id: 1,
@@ -93,6 +93,9 @@ describe('what a row says while the session waits on you', () => {
     expect(storedAskLine({ id: 2, command: 'rm -rf build' })).toBe('Wants to run: rm -rf build')
     expect(storedAskLine({ id: 3, command: '/r/e.go', file: '/r/e.go' })).toBe(
       'Wants to edit: e.go'
+    )
+    expect(storedAskLine({ id: 6, command: '/etc/hosts', file: '/etc/hosts', read: true })).toBe(
+      'Wants to read: hosts'
     )
     expect(
       storedAskLine({ id: 4, command: 'plan.md', reason: 'Approve the plan', plan: true })
