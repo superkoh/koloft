@@ -95,6 +95,13 @@ describe('one login shell answers every agent lookup at startup', () => {
     expect(round.env.PATH).toBeTruthy()
   })
 
+  it('reads the answer of a shell that printed everything and then exited non-zero', async () => {
+    fs.writeFileSync(path.join(zdotdir, '.zshrc'), 'claude() { :; }\n')
+    const { shell } = countingZsh('/bin/zsh "$@"\nexit 1')
+    const round = await agentsInLoginShell({ PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir }, shell)
+    expect(round.commandV.claude).toBe('claude')
+  })
+
   it('never hands a shell that failed to the next caller', async () => {
     const { shell, runs } = countingZsh('exit 3')
     const env = { PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir }

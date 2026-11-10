@@ -39,9 +39,10 @@ export async function readLoginShell(opts: {
       )
     ).stdout
   } catch (e) {
-    throw new LoginShellError(
-      typeof (e as { code?: unknown }).code === 'number' ? 'exited' : 'failed'
-    )
+    const { code, stdout: printed } = e as { code?: unknown; stdout?: unknown }
+    if (typeof code !== 'number') throw new LoginShellError('failed')
+    if (typeof printed !== 'string' || !printed.includes(end)) throw new LoginShellError('exited')
+    stdout = printed
   }
   const start = stdout.indexOf(begin)
   const finish = stdout.indexOf(end, start + begin.length)

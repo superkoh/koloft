@@ -61,7 +61,7 @@ export async function resolveCliRuntime(
       const printed = login.commandV[spec.command]
       binary =
         !printed || path.isAbsolute(printed) ? printed : fileOnPath(spec.command, login.env.PATH)
-      resolved = login.env
+      resolved = { ...login.env }
       const offPath = spec.installedOffPath?.(resolved)
       if (!binary && offPath && executable(offPath)) binary = offPath
     } catch (e) {
