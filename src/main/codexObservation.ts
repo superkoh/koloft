@@ -27,6 +27,15 @@ export function record(value: unknown): Record<string, unknown> {
     : {}
 }
 
+export function jsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return record(value)
+  try {
+    return record(JSON.parse(value))
+  } catch {
+    return {}
+  }
+}
+
 export interface CodexThread {
   id: string
   cwd: string
@@ -700,6 +709,32 @@ export class CodexObservation {
           })
         }
         changed = true
+      }
+    } else if (
+      (method === 'item/started' || method === 'item/completed') &&
+      item.type === 'subAgentActivity' &&
+      typeof item.agentThreadId === 'string' &&
+      item.agentThreadId !== root
+    ) {
+      // CODEX§4
+      const id = item.agentThreadId
+      const key = `agent:${id}`
+      if (item.kind === 'started') {
+        this.childRoots.set(id, root)
+        this.activities.set(key, {
+          id: key,
+          kind: 'agent',
+          label: `Agent ${id.slice(0, 8)}`,
+          state: 'working',
+          owner: id,
+          root,
+          visible: true
+        })
+        changed = true
+      } else if (item.kind === 'completed' || item.kind === 'interrupted') {
+        this.childRoots.delete(id)
+        this.childTurns.delete(id)
+        changed = this.activities.delete(key)
       }
     } else if (
       (method === 'item/started' || method === 'item/completed') &&

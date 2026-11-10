@@ -183,6 +183,13 @@ method. A recheck adds its date, version and command to the bullet.
   attribute (a quarantine flag is enough); `COPYFILE_DISABLE=1` turns this off. Pushed
   to another machine, claude reads `._settings.json` as a second, broken settings file.
   (Reproduced in a unit test with `xattr -w` and real macOS tar.)
+- **macOS `tar` also writes each extended attribute as a `LIBARCHIVE.xattr.<name>` pax
+  header, and GNU tar prints `Ignoring unknown extended header keyword` for each one**
+  as it unpacks. Every file a process here creates gets `com.apple.provenance`, so a
+  package of 5 files and its folder gave 6 such lines; `--no-xattrs` (after `cf -`)
+  leaves the headers out, and the same package then unpacked whole with no output on
+  `debian:bookworm-slim` (GNU tar 1.34) and `alpine:3` (BusyBox). (2026-11-09, bsdtar
+  3.5.3 on macOS 27, piped into `docker run -i <image> tar xzf -`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
@@ -2090,6 +2097,17 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+- **It can run inside a process that already read its input.** 2.2.33's entry reads
+  its input only by iterating `process.stdin` (`for await`, unless `isTTY`) and takes
+  `--config` from `process.argv`. A script that sets `process.stdin` to a `Readable`
+  holding the JSON and `process.argv` to `[node, entry, '--config', file]`, then
+  `import()`s the entry, prints byte for byte what a second process given the same
+  JSON prints (2026-11-09, Electron 43.8.6 as node on macOS arm64, 10 renders each,
+  median: 213 ms when the script starts a second process, 186 ms in one process,
+  156 ms in one process with `NODE_COMPILE_CACHE`). The same script as a `.cjs` in a
+  `{"type":"module"}` folder also renders on node 22.12.0 (Docker
+  `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
+  folder itself.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 
@@ -3214,3 +3232,32 @@ Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK
 
 Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
 `electronPackage.test.ts` fails if that setting goes.
+
+## §66 Web fonts and the terminal: `document.fonts` and xterm.js
+
+- **`document.fonts.check()` answers `true` for a face that is not loaded.** Measured
+  2026-11-10 (Electron 43.8.6, the hidden e2e window, Koloft's bundled JetBrainsMono
+  Nerd Font faces declared by `@font-face` in `styles.css`): at `DOMContentLoaded`, with
+  every face `unloaded`, `check('italic 400 13px "JetBrainsMono Nerd Font"')` was `true`,
+  with and without system fonts after it in the list; 30 ms later, with the 700 italic
+  face still `unloaded`, `check('italic 700 13px …')` was still `true`. So `check()`
+  cannot tell whether a terminal may be measured yet.
+- **`document.fonts.load(font)` resolves once the matching face is loaded**: in the same
+  run, `load('italic 400 13px …')` resolved with that face `loaded` while the other
+  italic face, not asked for, stayed `unloaded`.
+- **xterm.js measures its cell size and draws glyphs with whatever face is ready at that
+  moment, and does not look again when a web font finishes loading**: nothing in
+  `@xterm/xterm` 6.1.0-beta.302 or `@xterm/addon-webgl` listens to `document.fonts`
+  (read from their sources, not measured). Setting `fontFamily` or `fontSize` to a new
+  value measures again; setting the value it already has does nothing.
+- **Mermaid sizes each label box from its text as measured while it draws**, with
+  `htmlLabels: false`, and does not redraw when a font arrives later (read from
+  `mermaidRender.ts`'s settings, not measured).
+- **Until a web font loads, a page lays out its text with the next font in the list**:
+  the `--mono` list falls to Menlo on macOS (neither SF Mono nor JetBrains Mono is
+  installed), whose glyphs are as wide as JetBrainsMono Nerd Font's within 0.3 %
+  (`↑12 ⑂345 ●6` at bold 12 px: 79.30 px against 79.05 px, measured the same day).
+
+Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
+`TerminalView` waits on before it builds a terminal and before it hands one a new font,
+and which `mermaidRender` waits on before its first diagram.

@@ -110,6 +110,7 @@ function geminiPricing(model: string): ModelPricing | undefined {
 
 // CC§7
 export const MODEL_PRICING: Record<string, ModelPricing> = {
+  'claude-fable-5-2': tier(8, 40, M, 0.2),
   'claude-fable-5-1': tier(10, 50, M, 0.25),
   'claude-fable-5': tier(10, 50, M),
   'claude-mythos-5': tier(10, 50, M),

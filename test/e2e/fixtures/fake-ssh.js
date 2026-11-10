@@ -49,10 +49,6 @@ if (remoteCmd.includes('tar xf -')) {
   done(runSh(remoteCmd, 'inherit'))
 }
 
-if (remoteCmd.includes('test -d "$HOME/.koloft/m-')) {
-  done(runSh(remoteCmd, 'ignore'))
-}
-
 if (argv.includes('-tt')) {
   const m = /tabs\/([^"/]+)\.sh"?\s+(\w+)/.exec(remoteCmd)
   if (!m) done(2)
@@ -75,6 +71,10 @@ if (argv.includes('-tt')) {
 
 if (argv.includes('-t')) {
   done(runSh(remoteCmd, 'inherit'))
+}
+
+if (remoteCmd.includes('test -d "$HOME/.koloft/m-')) {
+  done(runSh(remoteCmd, 'ignore'))
 }
 
 // PLATFORM§33
