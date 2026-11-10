@@ -284,6 +284,50 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     expect(await y.locator(CV.diffRow).count()).toBe(compactY)
   })
 
+  test('a ⤢ expanded file that leaves the change set is forgotten: later polls pull no full diff for it, and it comes back folded', async ({
+    app,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    const [leaves, stays] = fx.paths.changeable
+    const relaunched = await relaunchWithGitLog(app, env)
+    const p = relaunched.page
+    const fullDiffsOf = (abs: string): number =>
+      countGitSpawns(env, {
+        subcommand: 'diff',
+        argv: (argv) => argv.includes(abs) && argv.some((a) => a.startsWith('-U'))
+      })
+    const aggregates = (): number => countGitSpawns(env, { argv: isAggregateDiff })
+    try {
+      await openChanges(p)
+      await waitStream(p, 2)
+      const x = blockOf(p, 'src/change-1.ts')
+      await x.locator(CV.expand).click()
+      await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'true')
+      await expect.poll(() => fullDiffsOf(leaves), { timeout: 20_000 }).toBeGreaterThan(0)
+
+      fx.git('checkout', '--', leaves)
+      await expect(rows(p)).toHaveCount(1, { timeout: 30_000 })
+      await waitGitQuiet(env)
+
+      const fullBefore = fullDiffsOf(leaves)
+      const aggBefore = aggregates()
+      fx.editTracked(stays)
+      await expect.poll(aggregates, { timeout: 30_000 }).toBeGreaterThan(aggBefore)
+      await waitGitQuiet(env)
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
+
+      fx.editTracked(leaves)
+      await waitStream(p, 2)
+      await waitGitQuiet(env)
+      await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
+    } finally {
+      await relaunched.app.close().catch(() => {})
+    }
+  })
+
   test('WB-C19: ✎ comment pastes the path and the hunk in a diff fence into the session’s input box and types the note after it, unsent, with the caret in the session; it is greyed while an approval is up', async ({
     page,
     env
