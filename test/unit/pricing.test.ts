@@ -84,15 +84,6 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('claude-fable-5-1-20260901')).toEqual(p51)
   })
 
-  it('prices Fable 5.2, the default fable model of Claude Code 2.1.321+, at $8/$40 with $0.20 cache reads and a 1M window', () => {
-    expect(resolvePricing('claude-fable-5-2')).toMatchObject({
-      inPerM: 8,
-      outPerM: 40,
-      cacheReadPerM: 0.2,
-      windowTokens: 1_000_000
-    })
-  })
-
   it('prices Sonnet 5 at its $2/$10 list price (#5)', () => {
     const p = resolvePricing('claude-sonnet-5')!
     expect(p.inPerM).toBe(2)
@@ -112,6 +103,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
   })
 
   it.each([
+    ['claude-fable-5-2', { inPerM: 8, outPerM: 40, cacheReadPerM: 0.2, windowTokens: 1_000_000 }],
     ['claude-sonnet-5-5', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1, windowTokens: 1_000_000 }],
     [
       'claude-haiku-5-5',
@@ -149,7 +141,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('claude-sonnet-4-5')!.windowTokens).toBe(200_000)
   })
 
-  it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment), but for the 5.5-generation rows with their own cache-read price', () => {
+  it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment), but for the rows with their own cache-read price', () => {
     const OWN_CACHE_READ: Record<string, number> = {
       'claude-fable-5-2': 0.2,
       'claude-fable-5-1': 0.25,
@@ -165,6 +157,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
 
   it('covers the required current families', () => {
     for (const id of [
+      'claude-fable-5-2',
       'claude-fable-5-1',
       'claude-fable-5',
       'claude-sonnet-4-5',
