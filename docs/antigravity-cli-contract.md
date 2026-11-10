@@ -1098,6 +1098,12 @@ only downloaded the public release.
   shift+a approve all, `p` preview, Esc; `y` sends a new user turn "[Approved]
   implementation_plan.md", `n` "[Rejected] …". Any new message, also one sent with
   `SendUserCascadeMessage`, clears the review state.
+- When the "Approve plan" frame arrives, the plan is already on disk: `brain/<id>/`
+  holds `<name>.md` with the whole plan and `<name>.md.metadata.json` with
+  `requestFeedback: true`, so the plan's name is the sidecar's name less
+  `.metadata.json` (2026-11-06, 1.3.6 Linux arm64 in Docker, fake Gemini server; the
+  directory listed at the frame). 1.3.6's `write_to_file` refuses `ArtifactType` in
+  `ArtifactMetadata` and needs `UserFacing` and `toolAction`.
 - `/plan` goes to the model as text. Plan mode is a separate switch (`--mode plan`,
   Agent Mode in `/config`).
 

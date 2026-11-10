@@ -3,9 +3,11 @@ import {
   askHow,
   claudeDialog,
   claudeKeysFor,
+  codexDialog,
   codexKeyFor,
   dialogText,
   hookAnswer,
+  PLAN_IS_IN_ITS_SESSION,
   isAskedCall
 } from '../../src/main/discord/dialog'
 
@@ -156,6 +158,12 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     expect(dialogText({ tool_name: 'Write', tool_input: { file_path: '/a', content: 'x' } })).toBe(
       'Write asks to run:\n{"file_path":"/a","content":"x"}'
     )
+  })
+
+  it('a plan another agent waits on reads like Claude’s: the whole plan under "Approve this plan?", with Approve and Reject; with its text unread, it says where to read it', () => {
+    const asked = { id: 'plan:1', command: 'implementation_plan.md', plan: true as const }
+    expect(codexDialog({ ...asked, reason: 'Create plan-ok.txt.' })).toEqual(claudeDialog(plan))
+    expect(codexDialog(asked).text).toBe(`Approve this plan?\n\n${PLAN_IS_IN_ITS_SESSION}`)
   })
 
   const DOWN = '\x1b[B'
