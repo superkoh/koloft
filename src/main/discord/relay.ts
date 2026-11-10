@@ -170,6 +170,10 @@ interface Inbound {
 
 type DiscordAnswer = 'message' | 'turn'
 
+interface KeysTyped {
+  at?: number
+}
+
 interface OpenClaudeAsk {
   payload: AskPayload
   hook?: string
@@ -192,6 +196,7 @@ export class DiscordRelay {
   private asks = new Map<string, OpenClaudeAsk>()
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
+  private codexTyped = new Map<string, KeysTyped>()
   private quietReplies = new Set<string>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
@@ -671,6 +676,27 @@ export class DiscordRelay {
     return this.press(tab, keys, () => !this.d.touchedSinceAsked(tab))
   }
 
+  private codexOnItsWay(tab: string): boolean {
+    const typed = this.codexTyped.get(tab)
+    if (!typed) return false
+    return typed.at === undefined || Date.now() - typed.at < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
+  }
+
+  private async pressOnce(tab: string, press: () => Promise<boolean>): Promise<boolean> {
+    const typed: KeysTyped = {}
+    this.codexTyped.set(tab, typed)
+    const ours = (): boolean => this.codexTyped.get(tab) === typed
+    try {
+      const pressed = await press()
+      if (pressed) typed.at = Date.now()
+      else if (ours()) this.codexTyped.delete(tab)
+      return pressed
+    } catch (error) {
+      if (ours()) this.codexTyped.delete(tab)
+      throw error
+    }
+  }
+
   answerSession(tab: string, reply: string, toItsCard = false): Promise<string | undefined> {
     return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard))
   }
@@ -707,6 +733,7 @@ export class DiscordRelay {
     const backend = this.d.backendOf(tab)
     const answerKeysFor = answerKeysOf(backend)
     if (backend && answerKeysFor) {
+      if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
         this.codexAsks.delete(tab)
@@ -714,11 +741,13 @@ export class DiscordRelay {
         return inPlace
       }
       const label = BACKEND_LABEL[backend]
-      if (this.d.pendingApproval(tab)) {
+      const approval = this.d.pendingApproval(tab)
+      if (approval) {
         const key = codexKeyFor(reply)
         if (!key) return { error: toItsCard ? CODEX_NEEDS_YES_OR_NO : takesYesOrNo(label) }
+        if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
         this.d.answered(tab, reply)
-        await this.press(tab, [key])
+        await this.pressOnce(tab, () => this.press(tab, [key]))
         return { watch: true }
       }
       const question = this.d.pendingQuestion(tab)
@@ -728,9 +757,10 @@ export class DiscordRelay {
       if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
       // CODEX§20 MUSE§11 AGY§14
       if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
+      if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
       this.d.answered(tab, reply)
-      if (await this.pressAnswer(tab, answerKeys(answerKeysFor, question, answers)))
-        return { watch: true }
+      const keys = answerKeys(answerKeysFor, question, answers)
+      if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
       this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
       return { error: STARTED_IN_THE_TERMINAL }
     }
@@ -788,6 +818,7 @@ export class DiscordRelay {
 
   dialogGone(tab: string, closed: boolean): void {
     for (const settle of this.awaitingTaken.get(tab) ?? []) settle(true)
+    this.codexTyped.delete(tab)
     const ask = this.asks.get(tab)
     if (ask && !ask.hook && (closed || ask.typedAt !== undefined)) this.asks.delete(tab)
   }
@@ -824,6 +855,7 @@ export class DiscordRelay {
     for (const settle of this.awaitingTaken.get(tab) ?? []) settle(false)
     this.answer(tab, {})
     this.codexAsks.delete(tab)
+    this.codexTyped.delete(tab)
     this.askHooks.delete(tab)
     this.answering.delete(tab)
     this.held.delete(tab)
