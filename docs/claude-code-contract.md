@@ -824,6 +824,23 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   whose `~/.claude.json` trusted the repo, no login, driven in a python pty with a
   `--settings` SessionStart hook, then `git worktree list`, `git branch -v`, `git reflog`
   and `git fsck`.
+- **A dialog open when claude is killed does not come back on `--resume`.** Measured
+  2026-11-09, CC 2.1.321 (the native binary), a python pty with `pyte`, scratch `HOME`
+  and `CLAUDE_CONFIG_DIR`, a local fake Messages API, logging hooks on every event; an
+  `AskUserQuestion` (Red / Green) killed 3 s after it drew with SIGHUP (2 runs) or
+  SIGKILL (1), and an `ExitPlanMode` plan with SIGHUP (1), then `claude --resume <id>`
+  in a new pty, 20 s with no key, then a typed line. SIGHUP exits 129 after a
+  `SessionEnd` (`reason: "other"`) and appends only two `cost-state` records; SIGKILL
+  appends nothing. Either way the transcript's last message stays the `tool_use` with
+  no result. On resume no dialog draws, no `PermissionRequest` or `PreToolUse` fires,
+  OSC 7501 says only `idle`, and no request goes to the model; the screen shows `User
+  declined to answer questions` (`User rejected Claude's plan:` for the plan, which
+  stays in plan mode). Only with the next prompt does CC write, and send, a
+  `tool_result` with `is_error: true` and `[Tool call interrupted: the session ended
+  before this call's result was recorded, so its outcome is unknown. …]`, then an
+  assistant `"No response requested."` (`model: "<synthetic>"`), then the prompt. So
+  after a restart the question can be answered only by a message, and a plan only by
+  asking claude to ask again.
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`

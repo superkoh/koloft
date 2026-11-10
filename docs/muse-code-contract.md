@@ -613,6 +613,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   3 s later ran it (3 of 3, the "Session usage" panel), and so did one 2 s later (3 of
   3). `ESC` then CR in two writes
   0.3 s apart ran it at once (2 of 2). So a box can hold empty rows under the `❯` row.
+- **A question or approval open when muse is hung up does not come back on `muse
+  resume`.** Measured 2026-11-09, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker with no
+  network, a python pty (160×50) through `pyte`, a fake `/responses` model, `--trust-workspace
+  --approval-judge off`; SIGHUP 2.5 s after `blocked` (as node-pty's `kill()` sends),
+  then `muse resume <id>` in a new pty; 3 runs with a one-question `request_user_input`,
+  2 with a `require_escalated` bash. Muse dies at once with no 7501 frame; `session.jsonl`
+  ends on `user_input_prompt_requested` (or the approval's `requested`). On resume no box
+  draws, the only frame is `idle`, no model request goes out in 20 s, and the screen
+  shows `◆ <title> — unresolved` / `manual reconciliation required` / `No answer
+  recorded` / `◆ Interrupted`; muse appends `session.end {exit_reason:
+  "crash_inferred"}` and a `function_call_output` "The previous process terminated while
+  this tool call was in flight, and no result was recorded. …". The next typed line is
+  sent after that output and an assistant `[Previous turn ended without an assistant
+  reply.]`; a typed `2` is just the message "2". `approval/listPending` (§5) still lists
+  the dead question after the resume, so it cannot tell whether one is still open.
 
 ## §12 Handing muse instructions
 

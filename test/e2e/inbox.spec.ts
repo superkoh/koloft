@@ -32,7 +32,11 @@ import {
   killFakeRemote,
   machineHome
 } from './helpers/remote'
-import { ANSWER_NOT_TAKEN_ON_A_CARD, ASK_NO_LONGER_ON_SCREEN } from '../../src/main/koloftInbox'
+import {
+  ALLOW_AFTER_STOP,
+  ANSWER_NOT_TAKEN_ON_A_CARD,
+  ASKED_BEFORE_IT_STOPPED
+} from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
@@ -592,6 +596,8 @@ for (const remote of [false, true]) {
 const fileText = (file: string): string =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 
+const allowOn = (card: Locator): Locator => card.locator('.ibx-btn', { hasText: 'Allow' })
+
 const OTHER_AGENTS = [
   {
     name: 'Codex',
@@ -600,6 +606,8 @@ const OTHER_AGENTS = [
     startsOnFirstLine: false,
     askLine: 'please approve',
     askTitle: 'wants to run a command',
+    answerAfterRestart: allowOn,
+    messageAfterRestart: ALLOW_AFTER_STOP,
     said: /Codex fixture answered: Shall I merge PR #12\?/,
     got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-codex-wire.jsonl'))
   },
@@ -613,6 +621,8 @@ const OTHER_AGENTS = [
     startsOnFirstLine: false,
     askLine: '/approve',
     askTitle: 'wants to run a command',
+    answerAfterRestart: allowOn,
+    messageAfterRestart: ALLOW_AFTER_STOP,
     said: /echo: Shall I merge PR #12\?/,
     got: async (env: E2EEnv, page: Page, tabId: string) => terminalText(page, tabId)
   },
@@ -626,14 +636,16 @@ const OTHER_AGENTS = [
     startsOnFirstLine: true,
     askLine: '/ask Which colour?|Red|Green',
     askTitle: 'asks a question',
+    answerAfterRestart: (card: Locator) => card.locator('.ibx-choice', { hasText: 'Green' }),
+    messageAfterRestart: 'Which colour? «Green»',
     said: /Answer to: Shall I merge PR #12\?/,
     got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-agy-api.jsonl'))
   }
 ] as const
 
-const RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS = 120_000
+const A_RESUMED_SESSION_TAKES_A_MESSAGE_MS = 60_000
 
-test('a question and a finished turn of Claude Code still waiting on the owner stay in Needs you across a Koloft restart, and the question then shows its options and sends the owner to its tab', async ({
+test('a question and a finished turn of Claude Code still waiting on the owner stay in Needs you across a Koloft restart, and a pick on the question then reaches the resumed session as a message', async ({
   env
 }) => {
   test.setTimeout(180_000)
@@ -656,10 +668,7 @@ test('a question and a finished turn of Claude Code still waiting on the owner s
     await quitAndClose(app)
   }
 
-  fs.writeFileSync(
-    path.join(env.home, 'fake-claude-delay'),
-    String(RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS)
-  )
+  fs.writeFileSync(path.join(env.home, 'fake-claude-no-status'), '')
   app = await launchApp(env)
   try {
     const page = await app.firstWindow()
@@ -667,14 +676,18 @@ test('a question and a finished turn of Claude Code still waiting on the owner s
     await openInbox(page)
     await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({ timeout: 15_000 })
     const question = inboxCard(page, 'asks a question')
-    await expect(question).toContainText(/Which colour\?\s+1\. Red\b.*\s+2\. Green\b/)
-    await expectSentToItsTab(question)
+    await expect(question).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 15_000 })
+    await question.locator('.ibx-choice', { hasText: 'Green' }).click()
+    await expect
+      .poll(() => peerMessages(env), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
+      .toContain('Which colour? «Green»')
+    await expect(await doneStatus(page, 'asks a question')).toContainText('Answered')
   } finally {
     await quitAndClose(app)
   }
 })
 
-test('a question a remote Claude Code session still shows after a Koloft restart is still a card in Needs you, and picking an answer there reaches the session', async ({
+test('a question a remote Claude Code session still shows after a Koloft restart is still one card in Needs you, and picking an answer there reaches the session and moves that one card to Done', async ({
   env
 }) => {
   test.setTimeout(180_000)
@@ -708,17 +721,12 @@ test('a question a remote Claude Code session still shows after a Koloft restart
       .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
       .toMatch(/Picked: Green/)
     await expect(inboxCard(page, 'asks a question')).toHaveCount(0)
+    await expect(await doneStatus(page, 'asks a question')).toContainText('Answered')
+    await expect(inboxCard(page, 'asks a question')).toHaveCount(1)
   } finally {
     await quitAndClose(app)
   }
 })
-
-async function expectSentToItsTab(card: Locator): Promise<void> {
-  await expect(card).toContainText(ASK_NO_LONGER_ON_SCREEN, { timeout: 15_000 })
-  await expect(card.locator('.ibx-choice')).toHaveCount(0)
-  await expect(card.locator('.ibx-btn')).toHaveText(['Dismiss'])
-  await expect(card.locator('.ibx-link')).toHaveText(['Open session ›'])
-}
 
 async function tabOf(page: Page, agent: (typeof OTHER_AGENTS)[number]): Promise<string> {
   return (await page.evaluate(() => window.api.sessions.list())).find(
@@ -772,7 +780,7 @@ async function acrossARestart(
 }
 
 for (const agent of OTHER_AGENTS) {
-  test(`a question or command of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart, and then sends the owner to its tab`, async ({
+  test(`a question or command of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart, and the owner’s answer there then reaches the resumed session as a message`, async ({
     env
   }) => {
     test.setTimeout(150_000)
@@ -784,7 +792,18 @@ for (const agent of OTHER_AGENTS) {
         expect(
           inboxCard(page, agent.askTitle).locator('.ibx-btn, .ibx-choice').first()
         ).toBeVisible({ timeout: 30_000 }),
-      (page) => expectSentToItsTab(inboxCard(page, agent.askTitle))
+      async (page) => {
+        const card = inboxCard(page, agent.askTitle)
+        await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 15_000 })
+        await agent.answerAfterRestart(card).click()
+        const tabId = await tabOf(page, agent)
+        await expect
+          .poll(async () => (await agent.got(env, page, tabId)).replace(/\s+/g, ' '), {
+            timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
+          })
+          .toContain(agent.messageAfterRestart)
+        await expect(await doneStatus(page, agent.askTitle)).toContainText('Answered')
+      }
     )
   })
 

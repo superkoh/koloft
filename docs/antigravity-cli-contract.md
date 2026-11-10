@@ -934,6 +934,21 @@ only downloaded the public release.
     above `N+1` opens nothing and the Esc then skips. Koloft does the same as for Codex
     and Muse instead: once the person pressed a key in a question since it was asked, it
     leaves it to them and presses nothing.
+- **A question or command ask open when agy is killed does not come back on
+  `--conversation`.** agy 1.5.3 (build `1.5.3-6604829099950080`, Linux arm64) and 1.3.6,
+  Docker with no network, tmux 3.3a, a fresh `--gemini_dir`, a fake Gemini server, `AGY_CLI_OSC7501=on`,
+  `--csrf_token`, 2026-11-09; 7 runs (question with SIGHUP ×4, with SIGKILL ×2, a
+  `run_command` ask with SIGHUP ×1). On SIGHUP agy cancels the step itself (an `idle`
+  frame, exit 0, the step `status 6` = CANCELED in `conversations/<id>.db`); on SIGKILL
+  the step stays waiting on disk and the resume cancels it. After `--conversation=<id>`
+  no box draws, the only frame is `idle`, no model request goes out in 20 s, the screen
+  shows `● AskQuestion(<question>)` / `⎿  Interrupted · What should Antigravity CLI do
+  instead?`, `GetCascadeTrajectory` (§16) shows the step `CORTEX_STEP_STATUS_CANCELED`,
+  and `HandleCascadeUserInteraction` on it answers `500 "input not registered for step
+  <n>"`. The next typed line reaches the model after a `functionResponse` whose error is
+  `Tool execution was canceled` (in `output` on 1.3.6), followed by a system notice that
+  "All your subagents and background tasks have been stopped due to server restart". A
+  canceled command never ran.
 
 ## §15 Typing into it
 

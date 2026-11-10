@@ -3225,6 +3225,22 @@ trusted. One run of each.
   (no relay in between), the app-server sent SIGKILL: both drew "Reconnecting to
   server… ⌃c quit" and were still running 45 s later. The 0.166.0 notes' "Improve TUI
   reconnect recovery" was not told apart from 0.165.0 by this.
+- **A question or command approval open when the app-server stops does not come back on
+  `thread/resume`.** 2026-11-09, codex-cli 0.166.0, a stdio `app-server` with
+  `-c features.default_mode_request_user_input=true` in a throwaway `CODEX_HOME`, a local
+  fake Responses provider; stopped the way Koloft stops it (stdin closed, then SIGTERM to
+  its process group; it exited 0 within 30 ms) or by SIGKILL; 13 runs across a question,
+  a Plan-mode question (`isBlocking: true`), a command approval and the real TUI on
+  `--remote`. Before the stop the rollout's last line is the `function_call` holding the
+  whole question. Koloft's stop appends `function_call_output` `"aborted by user after
+  <N>s"` (`"Wall time: … aborted by user"` for a command), a user message
+  `<turn_aborted>` "The user interrupted the previous turn on purpose…" and
+  `turn_aborted {reason: "interrupted"}`; SIGKILL appends nothing. A fresh app-server's
+  `thread/resume` answers the thread `idle` and the turn `interrupted`, re-sends no
+  server request for 20 s and calls no model; the TUI draws "Conversation interrupted"
+  and no question. A `turn/start` after it sends the model the old call, an "aborted"
+  output in its place, then the new text, so after a restart the owner's answer can
+  reach the model only as a message. The command never ran.
 
 ## 35. Links in a reply
 

@@ -3,6 +3,7 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { ReplyChoices, Verdict } from './turnNews'
 import {
   CARD_SESSION,
+  type InboxAction,
   type InboxAnswers,
   type InboxBlock,
   type InboxCard,
@@ -14,7 +15,6 @@ import type { AnswerResult, Inbox, InboxCaller } from './inbox'
 import {
   planOf,
   questionsOf,
-  questionText,
   type CodexApproval,
   type CodexQuestion,
   ANSWER_NOT_TAKEN,
@@ -51,6 +51,7 @@ export interface KoloftInboxDeps {
   liveTabOf(ref: string): { tabId: string; backend: BackendId } | undefined
   askOf(tabId: string): Promise<KoloftAsk | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
+  tell(sessionRef: string, text: string): Promise<boolean>
   butlerSide(tabId: string): boolean
   watching(): string | null
 }
@@ -75,8 +76,21 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
 }
 
-export const ASK_NO_LONGER_ON_SCREEN =
-  'Its session stopped after asking, so this no longer shows there and cannot be answered here. Open the session and reply to it.'
+export const ASKED_BEFORE_IT_STOPPED =
+  'Its session stopped after asking, so its tab no longer shows this. Your answer reaches it as a message.'
+export const PLAN_BEFORE_IT_STOPPED =
+  'Its session stopped after asking, so its tab no longer shows the plan. Koloft asks it to show the plan again as soon as its session runs.'
+export const ANSWER_AFTER_STOP =
+  'Your session stopped while your question waited for the owner, so it no longer shows on your screen. The owner answers: {answer:q}'
+export const ALLOW_AFTER_STOP =
+  'Your session stopped while your command waited for the owner’s approval, so that approval no longer shows on your screen. The owner allows it: run it now.'
+export const DENY_AFTER_STOP =
+  'Your session stopped while your command waited for the owner’s approval, so that approval no longer shows on your screen. The owner does not allow it: do not run it, and carry on without it.'
+export const SHOW_PLAN_AGAIN =
+  'Your session stopped while your plan waited for the owner’s approval, so it no longer shows on your screen. Ask for approval of the same plan again, the same way as before.'
+export const REJECT_PLAN_AFTER_STOP =
+  'Your session stopped while your plan waited for the owner’s approval. The owner rejects the plan: do not carry it out.'
+const PLAN = 'Plan'
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
@@ -141,6 +155,25 @@ export function replyFor(
 const ANSWERED = { state: 'closed' as const, status: 'Answered' }
 const HANDLED = { state: 'closed' as const, status: 'Handled in its tab' }
 
+function isPlan(c: InboxCard): boolean {
+  return c.blocks.some((b) => b.type === 'quote' && b.who === PLAN)
+}
+
+function answeredByMessage(c: InboxCard): boolean {
+  return (
+    c.key.startsWith(`${SIGNAL_OF.approval}:`) &&
+    c.actions.some((a) => a.run.type === 'session' && a.run.message !== undefined)
+  )
+}
+
+function sayAfterStop(a: InboxAction, message: string): InboxAction {
+  return {
+    ...a,
+    run: { type: 'session', session: CARD_SESSION, message },
+    then: { done: ANSWERED }
+  }
+}
+
 export function askCard(
   m: AttentionEvent,
   s: AskedSession,
@@ -181,7 +214,7 @@ export function askCard(
       title: ask.plan
         ? `“${s.title}” asks you to approve a plan`
         : `“${s.title}” wants to run a command`,
-      blocks: what ? [{ type: 'quote', who: ask.plan ? 'Plan' : 'Command', text: what }] : [],
+      blocks: what ? [{ type: 'quote', who: ask.plan ? PLAN : 'Command', text: what }] : [],
       actions: [
         {
           id: 'allow',
@@ -342,6 +375,7 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
 export class KoloftInbox {
   private building = new Set<string>()
   private finished = new Map<string, { reply: string; forTheOwner: boolean }>()
+  private showingPlanAgain = new Set<string>()
 
   constructor(private d: KoloftInboxDeps) {
     d.inbox.register(KOLOFT_SOURCE)
@@ -353,6 +387,7 @@ export class KoloftInbox {
     const askOnceOnScreen = new Set(
       marks.filter((m) => m.kind === 'turn-done').map((m) => signalKey({ ...m, kind: 'approval' }))
     )
+    const askingNow = new Set(marks.filter((m) => m.kind === 'approval').map((m) => m.sessionId))
     for (const c of this.d.inbox.all()) {
       if (
         !isSignal(c) ||
@@ -362,7 +397,14 @@ export class KoloftInbox {
       )
         continue
       if (askOnceOnScreen.has(c.key)) {
-        if (c.actions.length) this.askOnlyInItsTab(c)
+        this.answerByMessage(c)
+        if (isPlan(c)) void this.showPlanAgain(c.key)
+        continue
+      }
+      if (!c.press && answeredByMessage(c) && c.session && askingNow.has(c.session)) {
+        try {
+          this.d.inbox.delete(KOLOFT, c.key)
+        } catch {}
         continue
       }
       try {
@@ -379,29 +421,53 @@ export class KoloftInbox {
         void this.post(m, true)
   }
 
-  private askOnlyInItsTab(c: InboxCard): void {
+  // CC§3 CODEX§34 MUSE§11 AGY§14
+  private answerByMessage(c: InboxCard): void {
+    if (!c.actions.length || answeredByMessage(c)) return
+    const choice = c.blocks.find((b) => b.type === 'choice')
+    const plan = isPlan(c)
     const blocks: InboxBlock[] = c.blocks.map((b) =>
       b.type === 'choice'
-        ? {
-            type: 'quote',
-            who: 'It asked',
-            text: b.questions
-              .map((q) =>
-                questionText({
-                  question: q.text,
-                  options: q.options.map((o) => ({ label: o.label, description: o.detail }))
-                })
-              )
-              .join('\n\n')
-          }
+        ? { ...b, questions: b.questions.map((q) => ({ ...q, ownAnswer: true })) }
         : b
     )
     try {
       this.d.inbox.update(KOLOFT, c.key, {
-        blocks: [...blocks, { type: 'text', text: ASK_NO_LONGER_ON_SCREEN }],
-        actions: []
+        blocks: [
+          ...blocks,
+          { type: 'text', text: plan ? PLAN_BEFORE_IT_STOPPED : ASKED_BEFORE_IT_STOPPED }
+        ],
+        actions: choice
+          ? [{ ...sayAfterStop(c.actions[0], ANSWER_AFTER_STOP), takes: [choice.id] }]
+          : plan
+            ? [
+                sayAfterStop({ ...c.actions[0], label: 'Show it again' }, SHOW_PLAN_AGAIN),
+                sayAfterStop(c.actions[1], REJECT_PLAN_AFTER_STOP)
+              ]
+            : [
+                sayAfterStop(c.actions[0], ALLOW_AFTER_STOP),
+                sayAfterStop(c.actions[1], DENY_AFTER_STOP)
+              ]
       })
     } catch {}
+  }
+
+  private async showPlanAgain(key: string): Promise<void> {
+    const c = this.d.inbox.find(KOLOFT, key)
+    if (!c?.session || this.showingPlanAgain.has(key) || !this.d.liveTabOf(c.session)) return
+    this.showingPlanAgain.add(key)
+    try {
+      if (await this.d.tell(c.session, SHOW_PLAN_AGAIN))
+        this.d.inbox.move(
+          KOLOFT,
+          key,
+          { state: 'closed', status: 'Asked to show it again' },
+          'Koloft asked it to show the plan again'
+        )
+    } catch {
+    } finally {
+      this.showingPlanAgain.delete(key)
+    }
   }
 
   turnEnded(tabId: string, reply: string, handedOff: boolean): void {
