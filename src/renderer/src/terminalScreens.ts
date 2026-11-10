@@ -6,6 +6,7 @@ interface Shown {
 }
 
 const shown = new Map<string, Shown>()
+const LONGEST_WAIT_FOR_OUTPUT_ALREADY_SENT_MS = 1000
 let answering = false
 
 function screenLines(term: Terminal): string[] {
@@ -22,13 +23,18 @@ function answerScreenRequests(): void {
   window.api.terminal.onScreenRequest(({ requestId, tabId }) => {
     const s = shown.get(tabId)
     if (!s) return window.api.terminal.answerScreen({ requestId, lines: null, sizedToPane: false })
-    s.term.write('', () =>
+    let answered = false
+    const answer = (): void => {
+      if (answered) return
+      answered = true
       window.api.terminal.answerScreen({
         requestId,
         lines: screenLines(s.term),
         sizedToPane: s.sizedToPane
       })
-    )
+    }
+    s.term.write('', answer)
+    setTimeout(answer, LONGEST_WAIT_FOR_OUTPUT_ALREADY_SENT_MS)
   })
 }
 

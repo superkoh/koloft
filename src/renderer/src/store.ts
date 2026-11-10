@@ -503,29 +503,35 @@ function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
 }
 
 const keptJson = new WeakMap<object, string>()
+const keptJsonWithoutFiles = new WeakMap<SessionInfo, string>()
 
-function jsonOf<T extends object>(kept: T, part: (x: T) => unknown = (x) => x): string {
-  let json = keptJson.get(kept)
-  if (json === undefined) keptJson.set(kept, (json = JSON.stringify(part(kept))))
-  return json
+function jsonOf<T extends object>(
+  kept: T,
+  cache: WeakMap<T, string>,
+  json: (x: T) => string
+): string {
+  let s = cache.get(kept)
+  if (s === undefined) cache.set(kept, (s = json(kept)))
+  return s
 }
 
 function keepIfSame<T extends object>(old: T | undefined, pushed: T | undefined): T | undefined {
   if (!pushed) return pushed
   const json = JSON.stringify(pushed)
-  if (old && json === jsonOf(old)) return old
+  if (old && json === jsonOf(old, keptJson, JSON.stringify)) return old
   keptJson.set(pushed, json)
   return pushed
 }
 
-const withoutFiles = (s: SessionInfo): unknown => ({ ...s, files: 0 })
+const jsonWithoutFiles = (s: SessionInfo): string => JSON.stringify({ ...s, files: 0 })
 
 function keepUnchangedSession(old: SessionInfo, pushed: SessionInfo): SessionInfo {
   const files = keepIfSame(old.files, pushed.files)
-  const rest = JSON.stringify(withoutFiles(pushed))
-  if (files === old.files && rest === jsonOf(old, withoutFiles)) return old
+  const rest = jsonWithoutFiles(pushed)
+  if (files === old.files && rest === jsonOf(old, keptJsonWithoutFiles, jsonWithoutFiles))
+    return old
   const kept = files === pushed.files ? pushed : { ...pushed, files }
-  keptJson.set(kept, rest)
+  keptJsonWithoutFiles.set(kept, rest)
   return kept
 }
 

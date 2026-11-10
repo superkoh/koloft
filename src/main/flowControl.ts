@@ -104,9 +104,9 @@ export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): stri
 
 // PLATFORM§21
 const QUESTION_FOR_THE_TERMINAL =
-  /\x1b\[(?:[?>=]?[\d;]*[cn]|\??[\d;]*\$p|>[\d;]*q|\?u|(?:1[1-9]|2[01])t)|\x1b\]\d+;(?:[^\x07\x1b]*;)?\?(?:\x07|\x1b\\)|\x1bP[$+]q/
+  /\x1b\[(?:[?>=]?[\d;]*[cn]|\??[\d;]*\$p|>[\d;]*q|\?u|(?:1[1-9]|2[01])(?:;[\d;]*)?t)|\x1b\]\d+;(?:[^\x07\x1b]*;)?\?(?:\x07|\x1b\\)|\x1bP[$+]q/
 
-const LONGEST_QUESTION_SPLIT_ACROSS_READS = 16
+const QUESTION_START_KEPT_FROM_THE_LAST_READ = 12
 
 export function asksTheTerminal(data: string): boolean {
   return QUESTION_FOR_THE_TERMINAL.test(data)
@@ -117,7 +117,7 @@ interface TabOutput {
   units: number
   lastSentAt: number
   timer: ReturnType<typeof setTimeout> | null
-  lastRead: string
+  readTail: string
 }
 
 function takeSlice(tab: TabOutput): string {
@@ -153,20 +153,22 @@ export class TerminalOutput {
     if (!this.d.rendererUp()) return
     let tab = this.tabs.get(id)
     if (!tab) {
-      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null, lastRead: '' }
+      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null, readTail: '' }
       this.tabs.set(id, tab)
     }
     tab.chunks.push(data)
     tab.units += data.length
-    const lastRead = tab.lastRead
-    tab.lastRead = data
     const offScreen = this.offScreen.has(id)
-    if (
-      offScreen &&
-      (tab.units >= FLOW_SLICE_UTF16_UNITS ||
-        asksTheTerminal(lastRead.slice(-LONGEST_QUESTION_SPLIT_ACROSS_READS) + data))
-    )
-      return this.flush(id)
+    if (offScreen) {
+      const kept = QUESTION_START_KEPT_FROM_THE_LAST_READ
+      const asks = asksTheTerminal(tab.readTail + data.slice(0, kept)) || asksTheTerminal(data)
+      tab.readTail = asks
+        ? ''
+        : data.length >= kept
+          ? data.slice(-kept)
+          : (tab.readTail + data).slice(-kept)
+      if (asks || tab.units >= FLOW_SLICE_UTF16_UNITS) return this.restart(id, true)
+    }
     if (tab.timer) return
     const every = offScreen ? PTY_OUTPUT_COALESCE_OFF_SCREEN_MS : PTY_OUTPUT_COALESCE_ONE_FRAME_MS
     const sinceSent = this.d.now() - tab.lastSentAt
@@ -180,19 +182,20 @@ export class TerminalOutput {
   }
 
   flush(id: string): void {
-    const tab = this.tabs.get(id)
-    if (!tab?.units) return
-    if (tab.timer) clearTimeout(tab.timer)
-    tab.timer = null
-    this.sendSlice(id, tab)
+    this.restart(id, true)
   }
 
   wake(id: string): void {
+    this.restart(id, false)
+  }
+
+  private restart(id: string, now: boolean): void {
     const tab = this.tabs.get(id)
     if (!tab?.units) return
     if (tab.timer) clearTimeout(tab.timer)
     tab.timer = null
-    this.schedule(id, tab, 0)
+    if (now) this.sendSlice(id, tab)
+    else this.schedule(id, tab, 0)
   }
 
   end(id: string, showTheRest: boolean): void {

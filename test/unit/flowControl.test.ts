@@ -401,7 +401,14 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
   })
 
   it('a program asking the terminal a question off screen is not kept waiting for the batch', () => {
-    for (const question of ['\x1b[6n', '\x1b[c', '\x1b[>q', '\x1b[?2026$p', '\x1b]11;?\x07']) {
+    for (const question of [
+      '\x1b[6n',
+      '\x1b[c',
+      '\x1b[>q',
+      '\x1b[?2026$p',
+      '\x1b]11;?\x07',
+      '\x1b[14;2t'
+    ]) {
       const { out, sent } = offScreenTab()
       out.push('t', 'a')
       vi.advanceTimersByTime(1)
@@ -411,12 +418,23 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
     }
   })
 
-  it('a question split across two reads is still not kept waiting', () => {
+  it('a question split across several reads is still not kept waiting', () => {
     const { out, sent } = offScreenTab()
     out.push('t', 'a')
     vi.advanceTimersByTime(1)
-    out.push('t', 'b\x1b[')
-    out.push('t', '6n')
+    out.push('t', 'b\x1b]')
+    out.push('t', '11;')
+    out.push('t', '?\x07')
+    expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b]11;?\x07'])
+  })
+
+  it('output after a question that went out waits for the batch again', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b\x1b[6n')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'c')
     expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b[6n'])
   })
 
