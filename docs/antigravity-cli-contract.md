@@ -939,6 +939,20 @@ only downloaded the public release.
 
 - A bracketed paste lands in the input box unsent; Enter sends it. Plain text then CR
   sends too.
+- A bracketed paste loses its trailing line feeds as it lands in the box, before any
+  send: `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s
+  later and CR 0.3 s after that sent `…```keep the old name`, and the box showed the
+  typed text on the ``` line. Line feeds typed as plain keys right after the paste, in
+  the paste's own write or 0.3 s later, stay: the same paste without its `\n\n`, then
+  `\n\n`, then the text and CR sent `…```\n\nkeep the old name`, also inside tmux 3.3a
+  with Koloft's `TMUX_CONF`. At the send agy drops the whole prompt's leading
+  whitespace and its trailing line feeds, so line feeds with nothing typed after them
+  are lost either way. `\r\n` or a lone `\r` inside a paste becomes `\n` and sends
+  nothing early; a 60-line paste shows as `[Pasted text #1 +60 lines]` and is sent
+  whole; a paste with no Enter after it sent nothing in 3 s. (agy 1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
+  API-key route against a fake Gemini server, a python pty answering the TUI's queries,
+  2026-11-08; 1 run each.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
@@ -1098,6 +1112,12 @@ only downloaded the public release.
   shift+a approve all, `p` preview, Esc; `y` sends a new user turn "[Approved]
   implementation_plan.md", `n` "[Rejected] …". Any new message, also one sent with
   `SendUserCascadeMessage`, clears the review state.
+- When the "Approve plan" frame arrives, the plan is already on disk: `brain/<id>/`
+  holds `<name>.md` with the whole plan and `<name>.md.metadata.json` with
+  `requestFeedback: true`, so the plan's name is the sidecar's name less
+  `.metadata.json` (2026-11-06, 1.3.6 Linux arm64 in Docker, fake Gemini server; the
+  directory listed at the frame). 1.3.6's `write_to_file` refuses `ArtifactType` in
+  `ArtifactMetadata` and needs `UserFacing` and `toolAction`.
 - `/plan` goes to the model as text. Plan mode is a separate switch (`--mode plan`,
   Agent Mode in `/config`).
 
@@ -1593,3 +1613,40 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+
+## §32 The folder's AGENTS.md as a memory
+
+2026-11-07, agy 1.5.3 (the manifest's `linux_arm64.json`, sha512 matched), Docker
+`--network none`, user `u`, fake Gemini server on the API-key route,
+`WSL_INTEROP=koloft`, launched as Koloft does (`--gemini_dir=<gd>`, the cwd in
+`trustedWorkspaces`, onboarding seeded); the TUI in tmux and `-p --output-format json`;
+every request saved and searched for codewords. The cwd was a plain folder, not a
+repository, like the butler's.
+
+- **agy has no memory of its own.** The 12 tools are those of §13 for 1.4.7; none keeps
+  anything past one conversation. The system instruction lists the plain folder under
+  `Active Workspaces`. Its only "persisted" place is `brain/<conversation-id>/scratch/`,
+  which belongs to that one conversation; `/learn` is something the model may suggest to
+  the user, not use. `-p` and the TUI sent the same system instruction and tools.
+- **The cwd's `AGENTS.md` reaches the model whole, as a rule**: inside `<user_rules>`
+  ("rules that you MUST ALWAYS FOLLOW WITHOUT ANY EXCEPTION…"), as
+  `<RULE[<absolute path>/AGENTS.md]>…</RULE[…]>`, so the model sees where the file is.
+  An untrusted folder's reached it too in `-p`; the TUI in an untrusted folder sent no
+  request before its trust question was answered. `GEMINI.md` beside it is read too,
+  after it. A parent folder's `AGENTS.md` was not read.
+- **A line the model adds is there from the next turn on.** With a seeded `AGENTS.md`
+  ("This file is your memory folder. When the owner asks you to remember something, add
+  it here as one short line…"), the fake model answered with `write_file {Path:
+  <absolute path>, Content: "- …\n", Append: true}`. In the default approval mode the
+  TUI asked first ("Create file … Allow creation of this file? 1. Yes, allow creation 2.
+  No, deny creation", although the file existed) and wrote nothing before `1`; with
+  `--dangerously-skip-permissions` it wrote without asking; `-p` in the default mode
+  auto-denied it (`denied_actions`). The line was appended, the rest kept. The request
+  right after the write, in the same turn, did not hold it; the next turn of that
+  conversation did, and so did a new conversation after `/clear`, a `-c` resume after
+  the process was killed, and a fresh `-p`.
+- Not probed: the macOS build, `--mode accept-edits`, the Google sign-in route, and the
+  owner's own `~/.gemini/GEMINI.md` beside it.
+
+Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
+starts, as a Codex one does (`src/main/assistMemory.ts`).

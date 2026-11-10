@@ -23,8 +23,11 @@ import {
   setupAgyStatusline,
   statusLineSetting,
   remoteWrapperScript,
-  DEFAULT_THEME
+  DEFAULT_THEME,
+  AGY_STATUSLINE_JS
 } from '../../src/main/statusline'
+import { AGY_COST_ENV } from '../../src/main/agyHooks'
+import { agyStatuslineScript } from '../../src/main/remote/agyTab'
 
 let wrapper: string
 let config: string
@@ -138,6 +141,71 @@ describe('built-in statusline', () => {
     // CC§6
     expect(Date.now() - started).toBeLessThan(8000)
     expect(res.stdout).toContain('[')
+  }, 30_000)
+})
+
+describe('Antigravity statusline', () => {
+  it('renders agy’s status JSON through the vendored bundle with the cost Koloft priced added', () => {
+    const command = setupAgyStatusline({ wrapper, config })
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-sl-'))
+    const costFile = path.join(dir, 'agy-cost')
+    fs.writeFileSync(costFile, '0.4321')
+    try {
+      const res = spawnSync('/bin/sh', ['-c', command], {
+        input: JSON.stringify({
+          cwd: dir,
+          session_id: 'agy-statusline-unit',
+          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
+          workspace: { current_dir: dir, project_dir: dir },
+          version: '1.4.7',
+          product: 'antigravity'
+        }),
+        encoding: 'utf8',
+        env: { ...process.env, COLUMNS: '120', [AGY_COST_ENV]: costFile },
+        timeout: 25_000
+      })
+      expect(res.status).toBe(0)
+      expect(res.stdout).toMatch(/Gemini.3\.1.Pro/)
+      expect(res.stdout).toContain('$0.43')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('renders on a remote machine from the statusline folder Koloft ships there, on the node it installed', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-remote-sl-'))
+    const dir = path.join(home, 'statusline')
+    const bundleDir = path.join(__dirname, '..', '..', 'node_modules', 'ccstatusline', 'dist')
+    fs.cpSync(bundleDir, dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}\n')
+    fs.writeFileSync(path.join(dir, 'theme.json'), JSON.stringify(DEFAULT_THEME))
+    fs.writeFileSync(path.join(dir, 'agy.cjs'), AGY_STATUSLINE_JS)
+    fs.writeFileSync(path.join(dir, 'agy.sh'), agyStatuslineScript())
+    const bin = path.join(home, '.koloft', 'node', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.symlinkSync(process.execPath, path.join(bin, 'node'))
+    const costFile = path.join(home, 'agy-cost')
+    fs.writeFileSync(costFile, '1.25')
+    try {
+      const res = spawnSync('/bin/sh', [path.join(dir, 'agy.sh')], {
+        input: JSON.stringify({
+          cwd: home,
+          session_id: 'agy-remote-statusline-unit',
+          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
+          workspace: { current_dir: home, project_dir: home },
+          version: '1.4.7'
+        }),
+        cwd: home,
+        encoding: 'utf8',
+        env: { HOME: home, PATH: '/usr/bin:/bin', COLUMNS: '120', [AGY_COST_ENV]: costFile },
+        timeout: 25_000
+      })
+      expect(res.status).toBe(0)
+      expect(res.stdout).toMatch(/Gemini.3\.1.Pro/)
+      expect(res.stdout).toContain('$1.25')
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+    }
   }, 30_000)
 })
 

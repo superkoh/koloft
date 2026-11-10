@@ -1508,6 +1508,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `gitdir: <repo>/.git/worktrees/<name>` (a submodule: `.git/modules/<name>`); the
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
+- **A commit writes nothing inside the checkout's own folder, only under its git dir**
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  there, plus the branch ref, its log and new objects in the common `.git`. For a
+  linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
+  worktree's folder, so a folder watch on the worktree sees no commit at all.
+  **`logs/HEAD` moves on every move of HEAD and only then**: `fs.watchFile` (500 ms
+  poll) on it fired about 260 ms after a commit in a plain checkout and in a linked
+  worktree, and also on `commit --amend` and `reset --hard`; `git status` and
+  `git add` left it alone. **A plain `git status` rewrites `index`** whenever a
+  tracked file's time changed since the index was written (it did so on two runs in
+  a row), while `status` and `diff` run with `GIT_OPTIONAL_LOCKS=0` touched nothing in
+  the git dir — so a watch on `index` would fire on every status line refresh, and one
+  on `logs/HEAD` does not. (Measured 2026-11-08, git 2.54.0, macOS APFS, on a
+  throwaway repo with one linked worktree.)
 - **A worktree made inside the repo (under `.claude/worktrees/`) is not ignored by
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
@@ -1735,6 +1749,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   program**, which can be fish. `~/.local/bin`, `~/.koloft/node/bin` and, on a macOS
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
+- **A program the user's rc files put on PATH is missing from `ssh host cmd`, and the
+  user's own `"$SHELL" -lic` is what finds it.** A fake `gh` only in
+  `/home/linuxbrew/.linuxbrew/bin`, looked for with `command -v gh` inside Koloft's own
+  `sh -c` wrapper (PATH plus `~/.local/bin`, `~/.koloft/node/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`), and again after adding the PATH a login shell printed:
+
+  | login shell, where its PATH line is | plain | `bash -lc` | `"$SHELL" -lic` |
+  |---|---|---|---|
+  | bash, `~/.profile` | missing | found | found |
+  | bash, end of `~/.bashrc` (below Debian's "not interactive: return") | missing | missing | found |
+  | zsh, `~/.zshrc` | missing | missing | found |
+  | fish, `config.fish` | found | found | found |
+  | tcsh, `~/.login` | missing | missing | missing: `Unknown option: -lic`, nothing on stdout |
+  | `/snap/bin` in `/etc/environment`, no rc line | found | found | found |
+
+  `/etc/environment` reaches `ssh host cmd` through sshd's `pam_env`, while Debian's
+  `/etc/profile` sets PATH afresh, so a login shell's PATH there no longer held
+  `/snap/bin` and only the appended PATH kept it. A `.bashrc` that echoes a line puts
+  it on stdout, even for `ssh host cmd`. A `.bashrc` that leaves a job running in the
+  background (`(sleep 20 &)`, `sleep 25 &`) holds a `$(… -lic … | sed …)` open until that
+  job ends: 25.1 s; with the shell's own stdout and stderr sent to `/dev/null` and the
+  PATH written to a file it names instead, the same lookup came back in 109 ms. Each
+  other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
+  macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
+  5.9, reached directly, a scratch node script.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
@@ -2051,6 +2090,17 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+- **It can run inside a process that already read its input.** 2.2.33's entry reads
+  its input only by iterating `process.stdin` (`for await`, unless `isTTY`) and takes
+  `--config` from `process.argv`. A script that sets `process.stdin` to a `Readable`
+  holding the JSON and `process.argv` to `[node, entry, '--config', file]`, then
+  `import()`s the entry, prints byte for byte what a second process given the same
+  JSON prints (2026-11-09, Electron 43.8.6 as node on macOS arm64, 10 renders each,
+  median: 213 ms when the script starts a second process, 186 ms in one process,
+  156 ms in one process with `NODE_COMPILE_CACHE`). The same script as a `.cjs` in a
+  `{"type":"module"}` folder also renders on node 22.12.0 (Docker
+  `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
+  folder itself.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 
@@ -3175,3 +3225,32 @@ Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK
 
 Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
 `electronPackage.test.ts` fails if that setting goes.
+
+## §66 Web fonts and the terminal: `document.fonts` and xterm.js
+
+- **`document.fonts.check()` answers `true` for a face that is not loaded.** Measured
+  2026-11-10 (Electron 43.8.6, the hidden e2e window, Koloft's bundled JetBrainsMono
+  Nerd Font faces declared by `@font-face` in `styles.css`): at `DOMContentLoaded`, with
+  every face `unloaded`, `check('italic 400 13px "JetBrainsMono Nerd Font"')` was `true`,
+  with and without system fonts after it in the list; 30 ms later, with the 700 italic
+  face still `unloaded`, `check('italic 700 13px …')` was still `true`. So `check()`
+  cannot tell whether a terminal may be measured yet.
+- **`document.fonts.load(font)` resolves once the matching face is loaded**: in the same
+  run, `load('italic 400 13px …')` resolved with that face `loaded` while the other
+  italic face, not asked for, stayed `unloaded`.
+- **xterm.js measures its cell size and draws glyphs with whatever face is ready at that
+  moment, and does not look again when a web font finishes loading**: nothing in
+  `@xterm/xterm` 6.1.0-beta.302 or `@xterm/addon-webgl` listens to `document.fonts`
+  (read from their sources, not measured). Setting `fontFamily` or `fontSize` to a new
+  value measures again; setting the value it already has does nothing.
+- **Mermaid sizes each label box from its text as measured while it draws**, with
+  `htmlLabels: false`, and does not redraw when a font arrives later (read from
+  `mermaidRender.ts`'s settings, not measured).
+- **Until a web font loads, a page lays out its text with the next font in the list**:
+  the `--mono` list falls to Menlo on macOS (neither SF Mono nor JetBrains Mono is
+  installed), whose glyphs are as wide as JetBrainsMono Nerd Font's within 0.3 %
+  (`↑12 ⑂345 ●6` at bold 12 px: 79.30 px against 79.05 px, measured the same day).
+
+Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
+`TerminalView` waits on before it builds a terminal and before it hands one a new font,
+and which `mermaidRender` waits on before its first diagram.

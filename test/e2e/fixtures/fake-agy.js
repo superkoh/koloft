@@ -2103,7 +2103,8 @@ function feed(chunk) {
         pasteBuffer += text.slice(i)
         return
       }
-      typed += (pasteBuffer + text.slice(i, end)).replace(/\r\n?/g, '\n')
+      // AGY§15
+      typed += (pasteBuffer + text.slice(i, end)).replace(/\r\n?/g, '\n').replace(/\n+$/, '')
       pasteBuffer = null
       i = end + PASTE_END.length
       continue

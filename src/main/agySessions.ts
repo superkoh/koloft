@@ -91,6 +91,7 @@ import {
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
 import { keepSkillsIn } from './agentPlugin'
+import { seedAssistMemory } from './assistMemory'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
@@ -613,6 +614,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
+    if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const permission = this.permissionOf(opts)
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
@@ -1393,14 +1395,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     } catch {}
     const waiting = names
       .map((n) => ({ n, meta: readJson(path.join(brain, n)) }))
-      .filter((x) => x.meta.requestFeedback === true)
-      .map((x) => x.n.replace(/\.metadata\.json$/, ''))
-    const plan = waiting[0]
-    if (!plan) return
-    const askId = `plan:${id}:${plan}`
+      .find((x) => x.meta.requestFeedback === true)
+    if (!waiting) return
+    const plan = waiting.n.replace(/\.metadata\.json$/, '')
+    const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
+    const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,
-      approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
+      approval: { id: askId, command: plan, ...(text && { reason: text }), plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
     this.changedSoon()

@@ -6,6 +6,4 @@ import { installTitleTips } from './titleTips'
 
 installTitleTips()
 
-void Promise.allSettled([...document.fonts].map((face) => face.load())).then(() =>
-  createRoot(document.getElementById('root')!).render(<App />)
-)
+createRoot(document.getElementById('root')!).render(<App />)

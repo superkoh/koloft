@@ -286,6 +286,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the terminal.
 - While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
   input box unsent until the next Enter.
+- A bracketed paste is kept as written, trailing line feeds too:
+  `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s later
+  and CR 0.3 s after that was one `turn_submit` of exactly the paste and the typed text
+  (2 of 2 runs, and 2 of 2 inside tmux 3.3a with Koloft's `TMUX_CONF`); the paste
+  alone with no Enter sent nothing in 3 s. Only a carriage return changes: `\r\n` or a
+  lone `\r` inside a paste becomes `\n`, and never sends. A paste of 3001 characters on
+  61 lines shows as `[Pasted Content 3001 chars]` ("Paste again to expand for editing")
+  and is sent whole. (`Muse Code 1.4.11 (1.4.11-R6667.1)`, `--provider echo`,
+  `koloft-muse-probe-1411` Docker image `--network none`, a python pty answering the
+  TUI's queries, the prompt read from the session log, 2026-11-08.)
 - A line feed (`\n`) inside typed text is a new line in the input box, not an Enter:
   `first line\nsecond line\nthird line` written in one go, with or without
   bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
@@ -1064,3 +1074,34 @@ Koloft dependents: the account folder's `settings.json` and `approval-policy.jso
 (`src/main/museAccounts.ts`); the Playwright variables, empty without the Workbench
 browser, in every muse Koloft starts on that folder (`museAccountEnv`) and in the shim's
 `muse exec` (`src/main/shim.ts`).
+
+## §22 Muse's own memory
+
+2026-11-07, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker `--network none`, the fake model
+server of the opening note, a new `muse exec --approval-mode never` process per step in a
+trusted plain folder (not a repository), every request saved and every file under HOME
+and `/tmp` compared before and after.
+
+- **The model gets three tools**, in a namespace `muse`: `read_memory {path, scope?,
+  offset?, limit?}`, `add_memory {path, content, scope?, description?, type?}` (creates
+  the file or appends to it), `edit_memory {path, old_str, new_str, scope?}`. `scope` is
+  `personal`, `personal_project` (the default) or `project`. The first developer message
+  says "Use persistent memory when the user asks you to remember something".
+- **Where it lands**: `personal_project` →
+  `~/.local/share/muse/memory/projects/<folder slug>-<hash>/MEMORY.md`, one per folder;
+  `personal` → `~/.local/share/muse/memory/personal/MEMORY.md`, every folder; `project`
+  → `<cwd>/.agents/memory/MEMORY.md`. Nothing under `XDG_CONFIG_HOME`.
+- **A new session gets it without asking**: a new process in the same folder carried each
+  scope's `MEMORY.md` text in its first developer message (`<system-reminder
+  source="memory-snapshot">`, `## Memory scope: personal_project\nMEMORY.md:\n- …`).
+  Another file in a scope shows only by name, under "Other Markdown files:".
+- **Another `XDG_CONFIG_HOME` keeps it**: the same folder with a different config home,
+  as when Koloft switches the Muse account (§2, §13), still got every scope's memory.
+- Not probed: whether `/clear` or `/new` in the TUI takes a fresh snapshot, a large
+  `MEMORY.md`, macOS (§2 puts the data folder in the same place), and a real model
+  choosing `add_memory` when told to remember.
+
+Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
+or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
+butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.
