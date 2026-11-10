@@ -14,6 +14,7 @@ import {
   skillsFromMachineLine,
   machineToolProgram,
   tabScript,
+  utilShellLine,
   writeTabPackage,
   type ClaudeTab,
   type TabSpec
@@ -334,6 +335,54 @@ describe('U-LINE-*: the launch line', () => {
     expect(entries.filter((e) => e.startsWith('m-'))).toEqual([a.pkg.name])
     expect(fs.readFileSync(koloft(r, a.pkg.name, 'ccstatusline.js')).equals(big)).toBe(true)
   }, 60_000)
+})
+
+describe('the Workbench shell of a remote session', () => {
+  const shellLine = (r: Remote): string =>
+    utilShellLine({
+      host: 'dev.box',
+      sshOptions: ['-o', 'ControlPath=/tmp/koloft-1/%C'],
+      machine: buildMachinePackage(path.join(r.dir, 'pkg'), {
+        'util.sh':
+          'echo "shell up in $1 for $2"\nexit "$(cat "$HOME/shell-exit" 2>/dev/null || echo 0)"\n'
+      }),
+      tabId: 'W',
+      dir: "/srv/it's here"
+    })
+
+  it('opens with its one ssh once the machine package is there, even where the login shell prints a greeting; on a machine without it, the package goes over once and the shell opens after', () => {
+    const r = remote()
+    r.greet('Welcome to the box')
+    const first = typeLine(r, shellLine(r))
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain("shell up in /srv/it's here for W")
+    expect(r.calls()).toBe(4)
+
+    const again = typeLine(r, shellLine(r))
+    expect(again.status).toBe(0)
+    expect(again.stdout).toContain("shell up in /srv/it's here for W")
+    expect(r.calls()).toBe(5)
+  })
+
+  it('a shell the owner ends with the same code Koloft uses for a missing package just ends, with nothing sent and no second shell', () => {
+    const r = remote()
+    typeLine(r, shellLine(r))
+    const opened = r.calls()
+    fs.writeFileSync(path.join(r.machineHome, 'shell-exit'), '97')
+    const res = typeLine(r, shellLine(r))
+    expect(res.status).toBe(97)
+    expect(res.stdout.match(/shell up/g)).toHaveLength(1)
+    expect(r.calls()).toBe(opened + 2)
+  })
+
+  it('stops with a word from Koloft when the machine package cannot be sent', () => {
+    const r = remote()
+    r.fail(3, 1)
+    const res = typeLine(r, shellLine(r))
+    expect(res.status).toBe(4)
+    expect(res.stdout).toContain('[Koloft] could not connect')
+    expect(r.calls()).toBe(3)
+  })
 })
 
 interface Box {
