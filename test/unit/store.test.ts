@@ -272,25 +272,6 @@ describe('store: a sessions push changes only what it changed', () => {
     expect(after[0]).toBe(k1)
     expect(after[1].title).toBe('Renamed')
   })
-
-  it('a session whose state changed but whose file list did not keeps the file list it had', () => {
-    const s = useStore.getState()
-    const files = [{ src: '/w/a.ts', label: 'a.ts', access: 'wrote' as const }]
-    s.setSessions([{ ...session('f1'), files }])
-    const [before] = useStore.getState().sessions
-    s.setSessions([{ ...session('f1'), files: files.map((f) => ({ ...f })), status: 'working' }])
-    const [after] = useStore.getState().sessions
-    expect(after).not.toBe(before)
-    expect(after.status).toBe('working')
-    expect(after.files).toBe(before.files)
-  })
-
-  it('a session whose file list changed gets the new list', () => {
-    const s = useStore.getState()
-    s.setSessions([{ ...session('f2'), files: [{ src: '/w/a.ts', label: 'a.ts' }] }])
-    s.setSessions([{ ...session('f2'), files: [{ src: '/w/b.ts', label: 'b.ts' }] }])
-    expect(useStore.getState().sessions[0].files?.map((f) => f.src)).toEqual(['/w/b.ts'])
-  })
 })
 
 describe('store: a workspace rows push changes only what it changed', () => {

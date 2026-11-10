@@ -169,12 +169,12 @@ export interface SessionIndex {
   outsideCandidates: PreviewItem[]
 }
 
-export function sessionIndex(files: PreviewItem[] | undefined, root: string): SessionIndex {
+export function sessionIndex(session: SessionInfo | null, root: string): SessionIndex {
   const wrote = new Map<string, PreviewItem>()
   const touchedInProject: string[] = []
   const touchedDirCount = new Map<string, number>()
   const outsideCandidates: PreviewItem[] = []
-  for (const f of files ?? []) {
+  for (const f of session?.files ?? []) {
     if (f.access !== 'wrote') continue
     wrote.set(f.src, f)
     if (!inRoot(f.src, root)) {

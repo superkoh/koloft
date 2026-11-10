@@ -1,10 +1,4 @@
-import type {
-  GitFileStatus,
-  GitNumstatMap,
-  GitStatusMap,
-  PreviewItem,
-  SessionInfo
-} from '@shared/types'
+import type { GitFileStatus, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { isDocPath, relOf, splitPath, type ChangeFilters } from './filesModel'
 
 export type ChangeKind = 'text' | 'renamed' | 'binary' | 'deleted' | 'conflict'
@@ -175,9 +169,9 @@ export function commentBlocked(session: SessionInfo | null): string | null {
   return null
 }
 
-export function writtenPaths(files: PreviewItem[] | undefined): Set<string> {
+export function writtenPaths(session: SessionInfo | null): Set<string> {
   const out = new Set<string>()
-  for (const f of files ?? []) if (f.access === 'wrote') out.add(f.src)
+  for (const f of session?.files ?? []) if (f.access === 'wrote') out.add(f.src)
   return out
 }
 

@@ -502,51 +502,31 @@ function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
     : undefined
 }
 
-const keptJson = new WeakMap<object, string>()
-const keptJsonWithoutFiles = new WeakMap<SessionInfo, string>()
-
-function jsonOf<T extends object>(
-  kept: T,
-  cache: WeakMap<T, string>,
-  json: (x: T) => string
-): string {
-  let s = cache.get(kept)
-  if (s === undefined) cache.set(kept, (s = json(kept)))
-  return s
-}
-
-function keepIfSame<T extends object>(old: T | undefined, pushed: T | undefined): T | undefined {
-  if (!pushed) return pushed
-  const json = JSON.stringify(pushed)
-  if (old && json === jsonOf(old, keptJson, JSON.stringify)) return old
-  keptJson.set(pushed, json)
-  return pushed
-}
-
-const jsonWithoutFiles = (s: SessionInfo): string => JSON.stringify({ ...s, files: 0 })
-
-function keepUnchangedSession(old: SessionInfo, pushed: SessionInfo): SessionInfo {
-  const files = keepIfSame(old.files, pushed.files)
-  const rest = jsonWithoutFiles(pushed)
-  if (files === old.files && rest === jsonOf(old, keptJsonWithoutFiles, jsonWithoutFiles))
-    return old
-  const kept = files === pushed.files ? pushed : { ...pushed, files }
-  keptJsonWithoutFiles.set(kept, rest)
-  return kept
-}
-
 function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
   const before = new Map(prev.map((x) => [x.tabId, x]))
   const next = pushed.map((x) => {
     const old = before.get(x.tabId)
-    return old ? keepUnchangedSession(old, x) : x
+    return old && JSON.stringify(old) === JSON.stringify(x) ? old : x
   })
   return next.length === prev.length && next.every((x, i) => x === prev[i]) ? prev : next
 }
 
+const keptRowsJson = new WeakMap<WorkspaceRows, string>()
+
+function keepIfSame(old: WorkspaceRows | undefined, pushed: WorkspaceRows): WorkspaceRows {
+  const json = JSON.stringify(pushed)
+  if (old) {
+    let oldJson = keptRowsJson.get(old)
+    if (oldJson === undefined) keptRowsJson.set(old, (oldJson = JSON.stringify(old)))
+    if (json === oldJson) return old
+  }
+  keptRowsJson.set(pushed, json)
+  return pushed
+}
+
 function keepUnchangedWorkspaces(prev: WorkspaceRows[], pushed: WorkspaceRows[]): WorkspaceRows[] {
   const before = new Map(prev.map((w) => [w.workspace.path, w]))
-  const next = pushed.map((w) => keepIfSame(before.get(w.workspace.path), w)!)
+  const next = pushed.map((w) => keepIfSame(before.get(w.workspace.path), w))
   return next.length === prev.length && next.every((w, i) => w === prev[i]) ? prev : next
 }
 
@@ -1152,11 +1132,8 @@ export const useStore = create<AppState>((set, get) => ({
         s.workspaceRows,
         all.filter((w) => !w.workspace.butler)
       )
-      const butlerWorkspace =
-        keepIfSame(
-          s.butlerWorkspace ?? undefined,
-          all.find((w) => w.workspace.butler)
-        ) ?? null
+      const butler = all.find((w) => w.workspace.butler)
+      const butlerWorkspace = butler ? keepIfSame(s.butlerWorkspace ?? undefined, butler) : null
       const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
         ? s.selectedWs
         : null
