@@ -167,8 +167,12 @@ export function validate(f: JobFields, now = new Date(), saved?: Schedule): Vali
   return { ok: true, input }
 }
 
-export function suggest(text: string, skills: SkillSuggestion[]): SkillSuggestion[] {
-  if (!text.startsWith('/')) return []
+export function suggest(
+  text: string,
+  skills: SkillSuggestion[],
+  prefix: string | null
+): SkillSuggestion[] {
+  if (prefix === null || !text.startsWith(prefix)) return []
   const q = text.toLowerCase()
   const out: SkillSuggestion[] = []
   for (const s of skills) {

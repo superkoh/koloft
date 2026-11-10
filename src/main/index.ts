@@ -6319,7 +6319,11 @@ const hosts = new Hosts(
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
     docsPlugin: () => claudeDocsPlugin,
-    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey)
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+    agentHomes: () => ({
+      codexHome: path.dirname(codexSharedConfig()),
+      configHome: museConfigHome(museSessions?.defaultEnv ?? process.env)
+    })
   }),
   (machine) =>
     new SshHost(machine, {
@@ -6614,8 +6618,8 @@ function registerIpc(): void {
     CH.cron.runNow,
     (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
   )
-  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string) =>
-    hosts.of(workspacePath).listSkills(workspacePath)
+  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string, backend: BackendId) =>
+    hosts.of(workspacePath).listSkills(workspacePath, backend)
   )
   ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
