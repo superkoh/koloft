@@ -3214,3 +3214,32 @@ Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK
 
 Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
 `electronPackage.test.ts` fails if that setting goes.
+
+## §66 Web fonts and the terminal: `document.fonts` and xterm.js
+
+- **`document.fonts.check()` answers `true` for a face that is not loaded.** Measured
+  2026-11-10 (Electron 43.8.6, the hidden e2e window, Koloft's bundled JetBrainsMono
+  Nerd Font faces declared by `@font-face` in `styles.css`): at `DOMContentLoaded`, with
+  every face `unloaded`, `check('italic 400 13px "JetBrainsMono Nerd Font"')` was `true`,
+  with and without system fonts after it in the list; 30 ms later, with the 700 italic
+  face still `unloaded`, `check('italic 700 13px …')` was still `true`. So `check()`
+  cannot tell whether a terminal may be measured yet.
+- **`document.fonts.load(font)` resolves once the matching face is loaded**: in the same
+  run, `load('italic 400 13px …')` resolved with that face `loaded` while the other
+  italic face, not asked for, stayed `unloaded`.
+- **xterm.js measures its cell size and draws glyphs with whatever face is ready at that
+  moment, and does not look again when a web font finishes loading**: nothing in
+  `@xterm/xterm` 6.1.0-beta.302 or `@xterm/addon-webgl` listens to `document.fonts`
+  (read from their sources, not measured). Setting `fontFamily` or `fontSize` to a new
+  value measures again; setting the value it already has does nothing.
+- **Mermaid sizes each label box from its text as measured while it draws**, with
+  `htmlLabels: false`, and does not redraw when a font arrives later (read from
+  `mermaidRender.ts`'s settings, not measured).
+- **Until a web font loads, a page lays out its text with the next font in the list**:
+  the `--mono` list falls to Menlo on macOS (neither SF Mono nor JetBrains Mono is
+  installed), whose glyphs are as wide as JetBrainsMono Nerd Font's within 0.3 %
+  (`↑12 ⑂345 ●6` at bold 12 px: 79.30 px against 79.05 px, measured the same day).
+
+Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
+`TerminalView` waits on before it builds a terminal and before it hands one a new font,
+and which `mermaidRender` waits on before its first diagram.

@@ -286,6 +286,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the terminal.
 - While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
   input box unsent until the next Enter.
+- A bracketed paste is kept as written, trailing line feeds too:
+  `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s later
+  and CR 0.3 s after that was one `turn_submit` of exactly the paste and the typed text
+  (2 of 2 runs, and 2 of 2 inside tmux 3.3a with Koloft's `TMUX_CONF`); the paste
+  alone with no Enter sent nothing in 3 s. Only a carriage return changes: `\r\n` or a
+  lone `\r` inside a paste becomes `\n`, and never sends. A paste of 3001 characters on
+  61 lines shows as `[Pasted Content 3001 chars]` ("Paste again to expand for editing")
+  and is sent whole. (`Muse Code 1.4.11 (1.4.11-R6667.1)`, `--provider echo`,
+  `koloft-muse-probe-1411` Docker image `--network none`, a python pty answering the
+  TUI's queries, the prompt read from the session log, 2026-11-08.)
 - A line feed (`\n`) inside typed text is a new line in the input box, not an Enter:
   `first line\nsecond line\nthird line` written in one go, with or without
   bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
