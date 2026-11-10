@@ -2,7 +2,7 @@ import { test, expect } from './helpers/app'
 import { startSessionIn, waitBooted } from './helpers/p1'
 
 test.describe('the terminal font ships with the app', () => {
-  test('every bundled JetBrainsMono Nerd Font face has loaded before the first terminal opens', async ({
+  test('the four JetBrainsMono Nerd Font faces a terminal draws with (regular, bold, italic, bold italic) have loaded before the first terminal opens', async ({
     page
   }) => {
     await waitBooted(page)
@@ -14,7 +14,9 @@ test.describe('the terminal font ships with the app', () => {
         if (!document.querySelector('.xterm')) return
         seen.disconnect()
         w.__bundledFacesAtFirstTerminal = [...document.fonts]
-          .filter((f) => f.family.replace(/["']/g, '') === 'JetBrainsMono Nerd Font')
+          .filter(
+            (f) => f.family.replace(/["']/g, '') === 'JetBrainsMono Nerd Font' && f.weight !== '600'
+          )
           .map((f) => `${f.style} ${f.weight} ${f.status}`)
           .sort()
       })
@@ -33,7 +35,6 @@ test.describe('the terminal font ships with the app', () => {
       'italic 400 loaded',
       'italic 700 loaded',
       'normal 400 loaded',
-      'normal 600 loaded',
       'normal 700 loaded'
     ])
   })

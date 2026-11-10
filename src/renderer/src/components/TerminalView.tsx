@@ -13,7 +13,7 @@ import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
 import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
-import { loadTerminalFonts, terminalFontsLoaded } from '../terminalFonts'
+import { loadMonoFonts, monoFontsLoaded } from '../monoFonts'
 import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
 
 const RESIZE_QUIET_MS = 100
@@ -50,24 +50,29 @@ type TerminalViewProps = {
 }
 
 export function TerminalView(props: TerminalViewProps): JSX.Element {
-  const [fontsReady, setFontsReady] = useState(() =>
-    terminalFontsLoaded(useStore.getState().settings.fontFamily)
+  const fontFamily = useStore((s) => s.settings.fontFamily)
+  const [loadedFamily, setLoadedFamily] = useState(() =>
+    monoFontsLoaded(fontFamily) ? fontFamily : null
   )
   useEffect(() => {
-    if (fontsReady) return undefined
+    if (loadedFamily !== null) return undefined
     let live = true
-    const { fontFamily, fontSize } = useStore.getState().settings
-    void loadTerminalFonts(fontFamily, fontSize).then(() => {
-      if (live) setFontsReady(true)
+    void loadMonoFonts(fontFamily).then(() => {
+      if (live) setLoadedFamily(fontFamily)
     })
     return () => {
       live = false
     }
-  }, [fontsReady])
-  return fontsReady ? <LiveTerminal {...props} /> : <div className="term" />
+  }, [loadedFamily, fontFamily])
+  return loadedFamily === null ? (
+    <div className="term" />
+  ) : (
+    <LiveTerminal {...props} loadedFamily={loadedFamily} />
+  )
 }
 
 function LiveTerminal({
+  loadedFamily,
   id,
   active,
   onUserInput,
@@ -78,7 +83,7 @@ function LiveTerminal({
   onOutput,
   maxCols,
   copiesToClipboard = false
-}: TerminalViewProps): JSX.Element {
+}: TerminalViewProps & { loadedFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -184,7 +189,7 @@ function LiveTerminal({
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
       fontSize: useStore.getState().settings.fontSize,
-      fontFamily: useStore.getState().settings.fontFamily,
+      fontFamily: loadedFamily,
       cursorBlink: true,
       allowProposedApi: true,
       scrollbar: { showScrollbar: scrollbar },
@@ -486,17 +491,19 @@ function LiveTerminal({
       webglRef.current = null
       term.dispose()
     }
-  }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
+  }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard, loadedFamily])
 
   useEffect(() => {
     let live = true
-    void loadTerminalFonts(fontFamily, fontSize).then(() => {
+    const apply = (): void => {
       const term = termRef.current
       if (!live || !term) return
       term.options.fontFamily = fontFamily
       term.options.fontSize = fontSize
       safeFit()
-    })
+    }
+    if (monoFontsLoaded(fontFamily)) apply()
+    else void loadMonoFonts(fontFamily).then(apply)
     return () => {
       live = false
     }
