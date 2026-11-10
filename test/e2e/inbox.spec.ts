@@ -385,6 +385,39 @@ test('a command a Muse session wants to run is a card in the Inbox; Allow there 
   }
 })
 
+// AGY§19
+test('a plan an Antigravity session waits on is a card quoting the whole plan; Approve there tells agy the plan is approved and moves the card to Done as Answered', async ({
+  env
+}) => {
+  installAgy(env)
+  trustInAgy(env, env.workspaces.a)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', 'Antigravity')
+    const agyTab = (await wsRows(page, 'ws-a').getAttribute('data-tab-id')) as string
+    await expect
+      .poll(() => terminalText(page, agyTab), { timeout: 30_000 })
+      .toContain('Antigravity CLI')
+    await runIn(page, centerTerm(page), '/plan')
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    const card = inboxCard(page, 'asks you to approve a plan')
+    await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
+    await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+    const sentToAgy = path.join(env.home, 'fake-agy-api.jsonl')
+    await expect
+      .poll(() => (fs.existsSync(sentToAgy) ? fs.readFileSync(sentToAgy, 'utf8') : ''), {
+        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+      })
+      .toContain('[Approved] implementation_plan.md')
+    await expect(await doneStatus(page, 'asks you to approve a plan')).toContainText('Answered')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
 test('the sidebar Inbox edge stays still while nothing new arrives, turns once when a card comes in, then rests again — and a reload with that card still waiting does not turn it', async ({
   app,
   page

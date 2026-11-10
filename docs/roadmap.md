@@ -67,8 +67,6 @@ when it works. That is what "judged against" means.
 - **Measure-first performance backlog** — the file watcher, cold start, a Zustand audit,
   pty-host isolation. Each carries the symptom that would justify it; none is scheduled
   on a hunch.
-- **Changes stream memory** — every diff block lives in the DOM and the count is
-  unbounded. Measure before folding.
 - **PDF previews outside the guest budget** — one PDFium process per changed PDF, not
   counted against the 12-guest cap.
 

@@ -61,7 +61,6 @@ import {
   playwrightCacheRootOverride,
   playwrightMcpOverrides,
   SANDBOX_NETWORK,
-  seedAssistMemory,
   STATUS_LINE_CONFIG,
   trustedInPlace,
   type KoloftHook
@@ -95,6 +94,7 @@ import {
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from './mapAtMost'
+import { seedAssistMemory } from './assistMemory'
 import { pipeSecretTo } from './secretOnStdin'
 import {
   CODEX_TMP_DIR,
