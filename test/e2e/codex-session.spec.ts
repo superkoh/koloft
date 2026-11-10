@@ -1712,8 +1712,12 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
-      const [firstTab] = await termIds(page)
-      await expect.poll(() => terminalText(page, firstTab)).toContain('Codex done')
+      await expect
+        .poll(async () => {
+          const [tab] = await termIds(page)
+          return tab ? terminalText(page, tab) : ''
+        })
+        .toContain('Codex done')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(codexRows(page)).toHaveClass(/cold/)

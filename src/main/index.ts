@@ -3343,7 +3343,7 @@ app.whenReady().then(() => {
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
-    terminalOutput.push(d.id, d.data)
+    if (!loginPtys.has(d.id)) terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
     sendToRenderer(CH.terminal.processTitle, t)

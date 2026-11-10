@@ -1014,7 +1014,7 @@ test('a Codex, Muse or Antigravity account found signed out leaves the pool with
   }
 })
 
-test('E10: guided login captures the printed token (even wrapped at 80 columns) from a hidden pty into the Keychain and the pool, sending the auth page to the user’s own browser', async ({
+test('E10: guided login captures the printed token (even wrapped at 80 columns) from a hidden pty into the Keychain and the pool, sending the auth page to the user’s own browser, and the hidden pty’s output never travels to the renderer', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -1034,6 +1034,21 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await openSettings(page)
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
+    await app.evaluate(({ BrowserWindow }) => {
+      const sent: string[] = []
+      ;(globalThis as unknown as { __terminalDataSent: string[] }).__terminalDataSent = sent
+      for (const win of BrowserWindow.getAllWindows()) {
+        const send = win.webContents.send.bind(win.webContents)
+        win.webContents.send = (channel: string, ...args: unknown[]) => {
+          if (channel === 'terminal:data') sent.push(JSON.stringify(args))
+          return send(channel, ...args)
+        }
+      }
+    })
+    const terminalDataSent = (): Promise<string> =>
+      app.evaluate(() =>
+        (globalThis as unknown as { __terminalDataSent: string[] }).__terminalDataSent.join('')
+      )
     const tabsBefore = await page.locator('.ws .ws-tab').count()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
@@ -1057,6 +1072,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
 
     await expect(page.locator('.acct-login-state.ok')).toContainText('Saved bravo')
     expect(await page.locator('.ws .ws-tab').count()).toBe(tabsBefore)
+    expect(await terminalDataSent()).not.toContain('guided0login0fixture')
 
     await expect
       .poll(() =>

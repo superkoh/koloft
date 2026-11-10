@@ -12,9 +12,11 @@ let answering = false
 function screenOnceShown(id: string): Promise<Terminal> {
   const term = shown.get(id)?.term
   if (term) return Promise.resolve(term)
-  return new Promise((resolve) =>
-    awaitingAScreen.set(id, [...(awaitingAScreen.get(id) ?? []), resolve])
-  )
+  return new Promise((resolve) => {
+    const waiting = awaitingAScreen.get(id)
+    if (waiting) waiting.push(resolve)
+    else awaitingAScreen.set(id, [resolve])
+  })
 }
 
 function screenLines(term: Terminal): string[] {
