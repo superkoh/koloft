@@ -1646,7 +1646,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   })
 
   for (const backend of SESSION_BACKENDS) {
-    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running, a plain gh in its own folder too`, async ({
+    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth, a plain gh in its own folder too, and an issue in Chinese, without gh running`, async ({
       env
     }) => {
       installLocalAgents(env, [backend])
@@ -1661,6 +1661,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           OWNER,
           `${backend === 'agy' ? '/bash' : '/sh'} gh auth token >'${plainGhSaid}' 2>&1; echo exit=$? >>'${plainGhSaid}'`
         )
+        fake.say(OWNER, '/koloft gh issue create --repo acme/app --title 搜索框失去焦点 --body x')
         fake.say(OWNER, '/koloft gh pr merge 389 --squash --repo acme/app')
         await expect
           .poll(() => fileText(ghLog), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
