@@ -3290,6 +3290,15 @@ and which `mermaidRender` waits on before its first diagram.
   `lsof -nP -iTCP -sTCP:LISTEN` on this Mac with a real `agy` tab open. The `-a` point
   was measured 2026-10-11 on this Mac (a shell's grandchild listener found, every
   listening socket of the user listed without `-a`); on 2026-11-06 only the `-a` form ran.
+- **A tmux pane keeps the tab id its session started with.** A remote tab that a
+  restarted Koloft attaches to an older tmux session has a new tab id, while every
+  program in that session, and every server it started, still carries the first one.
+  `tmux -L koloft list-panes -s -t '=<name>:' -F '#{pane_pid}'` prints the pane's pid;
+  the `KOLOFT_TAB_ID` its descendants carry is that first id. Measured 2026-11-10 in
+  `koloft-e2e-sshd` (Debian, tmux 3.3a, no `lsof`): a pane whose shell exported
+  `KOLOFT_TAB_ID=pty-old-1`, one server still in the pane and one through
+  `setsid nohup`; a scan for `pty-new-1` with the tmux name listed both, without it
+  none, and a third server with another tab's id was never listed.
 
 Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
 menu's listening ports).

@@ -7030,8 +7030,10 @@ function registerIpc(): void {
     ]
     const machine = machineOfTab(tabId)
     if (!machine) return parseSessionPorts(await scanPortsHere(tags))
+    const tmuxName =
+      tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
     await loginEnvReady()
-    const r = await runSsh(machine, remoteShCommand(SESSION_PORTS_SH, [tags.join(' ')]), {
+    const r = await runSsh(machine, remoteShCommand(SESSION_PORTS_SH, [tags.join(' '), tmuxName]), {
       controlDir: remoteControlDir
     })
     return parseSessionPorts(r.stdout)

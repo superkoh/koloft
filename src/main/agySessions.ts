@@ -983,6 +983,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     }
   }
 
+  tmuxOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.remote?.tmuxName
+  }
+
   tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {
     for (const run of this.runs.values()) {
       if (run.remote?.host !== host || run.explicitStop) continue

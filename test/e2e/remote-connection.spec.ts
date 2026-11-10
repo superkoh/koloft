@@ -42,6 +42,7 @@ import {
 } from './helpers/p1'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { codexCalls } from './helpers/codex'
+import { portFreeOnTheMac, servesAFolderOn } from './helpers/fixtureServer'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
@@ -141,6 +142,12 @@ const ON_THE_MACHINE: Record<
     runningThere: liveTmuxSessions,
     afterARestart: 'attached to the same agy there, never a second one'
   }
+}
+
+const RUNS_A_COMMAND_IN_ITS_SESSION: Partial<Record<AgentName, (command: string) => string>> = {
+  Claude: (command) => `/sh ${command}`,
+  Muse: (command) => `/sh ${command}`,
+  Antigravity: (command) => `!${command}`
 }
 
 const EVERY_AGENT_ON_THE_MACHINE: {
@@ -501,6 +508,62 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         expect(there.launches(env)).toBe(launches)
       } finally {
         await quitAndClose(app)
+      }
+    })
+  }
+
+  for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
+    const typedToRun = RUNS_A_COMMAND_IN_ITS_SESSION[agent.label]
+    if (!typedToRun) continue
+
+    // PLATFORM§67
+    test(`after a Koloft restart attaches a remote ${agent.label} tab again, its listening ports still list the server the session started before the restart, and one it starts after`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const [before, after] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+      const pids = path.join(machineHome(env), 'servers.pid')
+      const startServer = (page: Page, port: number): Promise<void> =>
+        runIn(page, centerTerm(page), typedToRun(`${servesAFolderOn(port)} echo $! >> ${pids}`))
+      const portsOf = (page: Page, tab: string): Promise<number[] | undefined> =>
+        page.evaluate((t) => window.api.sessions.ports(t), tab).then((l) => l?.map((p) => p.port))
+      try {
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(page, env)
+          await startOnTheMachine(page, agent)
+          const [tab] = await remoteTabIds(page)
+          await startServer(page, before)
+          await expect.poll(() => portsOf(page, tab), { timeout: 60_000 }).toEqual([before])
+          await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+        } finally {
+          await quitAndClose(app)
+        }
+
+        const app2 = await launchApp(env)
+        try {
+          const page2 = await app2.firstWindow()
+          await waitBooted(page2)
+          await expect.poll(() => attachesThere(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+          const row = wsRows(page2, REMOTE_WS_NAME).first()
+          await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
+            timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+          })
+          const [tab] = await remoteTabIds(page2)
+          await expect.poll(() => portsOf(page2, tab), { timeout: 60_000 }).toEqual([before])
+          await switchToRow(page2, row)
+          await startServer(page2, after)
+          await expect
+            .poll(() => portsOf(page2, tab), { timeout: 60_000 })
+            .toEqual([before, after].sort((a, b) => a - b))
+        } finally {
+          await quitAndClose(app2)
+        }
+      } finally {
+        for (const pid of fs.existsSync(pids) ? fs.readFileSync(pids, 'utf8').split('\n') : [])
+          if (pid) process.kill(Number(pid), 'SIGKILL')
       }
     })
   }

@@ -15,11 +15,22 @@ tags() {
     ps -A -E -ww -o pid= -o command= | awk '{ s = $0; while (match(s, /KOLOFT_(TAB_ID|HOLD_TAB)=[^ ]+/)) { t = substr(s, RSTART, RLENGTH); sub(/^[^=]*=/, "", t); print $1, t; s = substr(s, RSTART + RLENGTH) } }'
   fi
 }
-members=$({ tags; echo -; ps -A -ww -o pid= -o ppid= -o args=; } | awk -v ids="$ids" '
+panes=" "
+[ -n "$2" ] && for p in $(tmux -L koloft list-panes -s -t "=$2:" -F '#{pane_pid}' 2>/dev/null); do panes="$panes$p "; done
+members=$({ tags; echo -; ps -A -ww -o pid= -o ppid= -o args=; } | awk -v ids="$ids" -v panes="$panes" '
 !table && $0 == "-" { table = 1; next }
-!table { if (index(ids, " " $2 " ")) mine[$1] = 1; else other[$1] = 1; next }
+!table { tagged[++t] = $1; tag[t] = $2; next }
 { pid = $1; up[pid] = $2; a = $0; sub(/^ *[0-9]+ +[0-9]+ */, "", a); args[pid] = a; order[++m] = pid }
 END {
+  for (grew = 1; grew; ) {
+    grew = 0
+    for (i = 1; i <= m; i++) {
+      p = order[i]
+      if (!(p in pane) && (index(panes, " " p " ") || (up[p] in pane))) { pane[p] = 1; grew = 1 }
+    }
+  }
+  for (j = 1; j <= t; j++) if (tagged[j] in pane) ids = ids tag[j] " "
+  for (j = 1; j <= t; j++) if (index(ids, " " tag[j] " ")) mine[tagged[j]] = 1; else other[tagged[j]] = 1
   for (grew = 1; grew; ) {
     grew = 0
     for (i = 1; i <= m; i++) {
