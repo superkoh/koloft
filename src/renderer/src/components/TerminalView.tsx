@@ -428,6 +428,7 @@ export function TerminalView({
     const vis = new IntersectionObserver(
       (entries) => {
         const visible = entries[entries.length - 1].isIntersecting
+        window.api.terminal.onScreen(id, visible)
         if (!visible) {
           wasHidden = true
           repaintedRef.current = false
@@ -457,6 +458,7 @@ export function TerminalView({
       ta?.removeEventListener('compositionend', onCompEnd)
       ro.disconnect()
       vis.disconnect()
+      window.api.terminal.onScreen(id, true)
       delete (window as unknown as { __koloftTerms?: Record<string, Terminal> }).__koloftTerms?.[id]
       unregisterScreen()
       dprCleanup?.()

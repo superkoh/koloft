@@ -5,6 +5,7 @@ export const FLOW_QUEUE_PAUSE = 8 * 1024 * 1024
 export const FLOW_QUEUE_RESUME = 2 * 1024 * 1024
 export const FLOW_SLICE_UTF16_UNITS = 128 * 1024
 export const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
+export const PTY_OUTPUT_COALESCE_OFF_SCREEN_MS = 200
 
 import type { FlowStats } from '@shared/types'
 import { endsMidPair } from '@shared/utf16'
@@ -101,6 +102,14 @@ export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): stri
   return data.slice(0, endsMidPair(data, maxUnits) ? maxUnits - 1 : maxUnits)
 }
 
+// PLATFORM§21
+const QUESTION_FOR_THE_TERMINAL =
+  /\x1b\[(?:[?>=]?[\d;]*[cn]|\??[\d;]*\$p|>[\d;]*q|\?u|(?:1[1-9]|2[01])t)|\x1b\]\d+;(?:[^\x07\x1b]*;)?\?(?:\x07|\x1b\\)|\x1bP[$+]q/
+
+export function asksTheTerminal(data: string): boolean {
+  return QUESTION_FOR_THE_TERMINAL.test(data)
+}
+
 interface TabOutput {
   chunks: string[]
   units: number
@@ -133,6 +142,7 @@ export interface TerminalOutputDeps {
 
 export class TerminalOutput {
   private readonly tabs = new Map<string, TabOutput>()
+  private readonly offScreen = new Set<string>()
 
   constructor(private readonly d: TerminalOutputDeps) {}
 
@@ -145,10 +155,28 @@ export class TerminalOutput {
     }
     tab.chunks.push(data)
     tab.units += data.length
+    const offScreen = this.offScreen.has(id)
+    if (offScreen && (tab.units >= FLOW_SLICE_UTF16_UNITS || asksTheTerminal(data)))
+      return this.flush(id)
     if (tab.timer) return
+    const every = offScreen ? PTY_OUTPUT_COALESCE_OFF_SCREEN_MS : PTY_OUTPUT_COALESCE_ONE_FRAME_MS
     const sinceSent = this.d.now() - tab.lastSentAt
-    if (sinceSent >= PTY_OUTPUT_COALESCE_ONE_FRAME_MS) this.sendSlice(id, tab)
-    else this.schedule(id, tab, PTY_OUTPUT_COALESCE_ONE_FRAME_MS - sinceSent)
+    if (sinceSent >= every) this.sendSlice(id, tab)
+    else this.schedule(id, tab, every - sinceSent)
+  }
+
+  onScreen(id: string, shown: boolean): void {
+    if (!shown) return void this.offScreen.add(id)
+    if (this.offScreen.delete(id)) this.flush(id)
+  }
+
+  flush(id: string): void {
+    const tab = this.tabs.get(id)
+    while (tab?.units && this.tabs.get(id) === tab && this.d.gate(id).maySend()) {
+      if (tab.timer) clearTimeout(tab.timer)
+      tab.timer = null
+      this.sendSlice(id, tab)
+    }
   }
 
   wake(id: string): void {
@@ -160,6 +188,7 @@ export class TerminalOutput {
   }
 
   end(id: string, showTheRest: boolean): void {
+    this.offScreen.delete(id)
     const tab = this.tabs.get(id)
     if (!tab) return
     if (tab.timer) clearTimeout(tab.timer)
@@ -170,6 +199,7 @@ export class TerminalOutput {
   clear(): void {
     for (const tab of this.tabs.values()) if (tab.timer) clearTimeout(tab.timer)
     this.tabs.clear()
+    this.offScreen.clear()
   }
 
   private schedule(id: string, tab: TabOutput, ms: number): void {

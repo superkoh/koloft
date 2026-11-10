@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { execFileSync } from 'child_process'
-import type { GitNumstatMap, GitStatusMap, SessionInfo } from '../../src/shared/types'
+import type { GitNumstatMap, GitStatusMap, PreviewItem, SessionInfo } from '../../src/shared/types'
 import {
   BIG_DIFF_LINES,
   CHANGES_MSG,
@@ -315,15 +315,13 @@ describe('classifyKind precedence', () => {
 
 describe('writtenPaths', () => {
   it('takes the transcript’s wrote-access files only', () => {
-    const session = {
-      files: [
-        { src: '/w/a.ts', label: 'a.ts', access: 'wrote' },
-        { src: '/w/b.ts', label: 'b.ts', access: 'read' },
-        { src: '/w/c.ts', label: 'c.ts' }
-      ]
-    } as unknown as SessionInfo
-    expect([...writtenPaths(session)]).toEqual(['/w/a.ts'])
-    expect(writtenPaths(null).size).toBe(0)
+    const files: PreviewItem[] = [
+      { src: '/w/a.ts', label: 'a.ts', access: 'wrote' },
+      { src: '/w/b.ts', label: 'b.ts', access: 'read' },
+      { src: '/w/c.ts', label: 'c.ts' }
+    ]
+    expect([...writtenPaths(files)]).toEqual(['/w/a.ts'])
+    expect(writtenPaths(undefined).size).toBe(0)
   })
 })
 

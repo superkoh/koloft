@@ -142,7 +142,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const gitRef = useRef(git)
   gitRef.current = git
 
-  const written = useMemo(() => writtenPaths(session), [session])
+  const sessionFiles = session?.files
+  const written = useMemo(() => writtenPaths(sessionFiles), [sessionFiles])
   const sections = useMemo(() => ({ ...perFile, ...agg }), [perFile, agg])
   const fresh = useMemo(
     () => buildEntries({ git, numstat, root, written, sections }),

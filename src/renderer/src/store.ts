@@ -502,13 +502,32 @@ function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
     : undefined
 }
 
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function keepUnchangedSession(old: SessionInfo, pushed: SessionInfo): SessionInfo {
+  const files = sameJson(old.files, pushed.files) ? old.files : pushed.files
+  if (files === old.files && sameJson({ ...old, files: 0 }, { ...pushed, files: 0 })) return old
+  return files === pushed.files ? pushed : { ...pushed, files }
+}
+
 function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
   const before = new Map(prev.map((x) => [x.tabId, x]))
   const next = pushed.map((x) => {
     const old = before.get(x.tabId)
-    return old && JSON.stringify(old) === JSON.stringify(x) ? old : x
+    return old ? keepUnchangedSession(old, x) : x
   })
   return next.length === prev.length && next.every((x, i) => x === prev[i]) ? prev : next
+}
+
+function keepUnchangedWorkspaces(prev: WorkspaceRows[], pushed: WorkspaceRows[]): WorkspaceRows[] {
+  const before = new Map(prev.map((w) => [w.workspace.path, w]))
+  const next = pushed.map((w) => {
+    const old = before.get(w.workspace.path)
+    return old && sameJson(old, w) ? old : w
+  })
+  return next.length === prev.length && next.every((w, i) => w === prev[i]) ? prev : next
 }
 
 function tabIsWoken(s: Pick<AppState, 'sessions'>, tabId: string): boolean {
@@ -1109,14 +1128,30 @@ export const useStore = create<AppState>((set, get) => ({
       workbenchParked.delete(k)
     }
     set((s) => {
-      const workspaceRows = all.filter((w) => !w.workspace.butler)
+      const workspaceRows = keepUnchangedWorkspaces(
+        s.workspaceRows,
+        all.filter((w) => !w.workspace.butler)
+      )
+      const butler = all.find((w) => w.workspace.butler) ?? null
+      const butlerWorkspace =
+        butler && s.butlerWorkspace && sameJson(butler, s.butlerWorkspace)
+          ? s.butlerWorkspace
+          : butler
+      const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
+        ? s.selectedWs
+        : null
+      if (
+        gone.length === 0 &&
+        workspaceRows === s.workspaceRows &&
+        butlerWorkspace === s.butlerWorkspace &&
+        selectedWs === s.selectedWs
+      )
+        return s
       return {
         ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
-        butlerWorkspace: all.find((w) => w.workspace.butler) ?? null,
-        selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs)
-          ? s.selectedWs
-          : null
+        butlerWorkspace,
+        selectedWs
       }
     })
   },

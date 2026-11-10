@@ -423,7 +423,8 @@ export function BrowseView({
     }
   }, [active, scratchpadDir, agyScratch, scratchLive, root, relist, relistChanged])
 
-  const idx = useMemo(() => sessionIndex(session, root), [session, root])
+  const sessionFiles = session?.files
+  const idx = useMemo(() => sessionIndex(sessionFiles, root), [sessionFiles, root])
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])
   const live = livePath(session)
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])

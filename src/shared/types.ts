@@ -1126,6 +1126,7 @@ export interface KoloftApi {
     copy(text: string): void
     ack(id: string, utf16Units: number): void
     attach(id: string): void
+    onScreen(id: string, onScreen: boolean): void
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
     kill(id: string, restarting?: boolean): void

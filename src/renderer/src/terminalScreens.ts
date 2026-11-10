@@ -21,11 +21,14 @@ function answerScreenRequests(): void {
   answering = true
   window.api.terminal.onScreenRequest(({ requestId, tabId }) => {
     const s = shown.get(tabId)
-    window.api.terminal.answerScreen({
-      requestId,
-      lines: s ? screenLines(s.term) : null,
-      sizedToPane: s?.sizedToPane ?? false
-    })
+    if (!s) return window.api.terminal.answerScreen({ requestId, lines: null, sizedToPane: false })
+    s.term.write('', () =>
+      window.api.terminal.answerScreen({
+        requestId,
+        lines: screenLines(s.term),
+        sizedToPane: s.sizedToPane
+      })
+    )
   })
 }
 

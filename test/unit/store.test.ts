@@ -272,6 +272,54 @@ describe('store: a sessions push changes only what it changed', () => {
     expect(after[0]).toBe(k1)
     expect(after[1].title).toBe('Renamed')
   })
+
+  it('a session whose state changed but whose file list did not keeps the file list it had', () => {
+    const s = useStore.getState()
+    const files = [{ src: '/w/a.ts', label: 'a.ts', access: 'wrote' as const }]
+    s.setSessions([{ ...session('f1'), files }])
+    const [before] = useStore.getState().sessions
+    s.setSessions([{ ...session('f1'), files: files.map((f) => ({ ...f })), status: 'working' }])
+    const [after] = useStore.getState().sessions
+    expect(after).not.toBe(before)
+    expect(after.status).toBe('working')
+    expect(after.files).toBe(before.files)
+  })
+
+  it('a session whose file list changed gets the new list', () => {
+    const s = useStore.getState()
+    s.setSessions([{ ...session('f2'), files: [{ src: '/w/a.ts', label: 'a.ts' }] }])
+    s.setSessions([{ ...session('f2'), files: [{ src: '/w/b.ts', label: 'b.ts' }] }])
+    expect(useStore.getState().sessions[0].files?.map((f) => f.src)).toEqual(['/w/b.ts'])
+  })
+})
+
+describe('store: a workspace rows push changes only what it changed', () => {
+  const ws = (path: string, title = 'one'): WorkspaceRows => ({
+    workspace: { path, missing: false, isGit: true, hasHistory: true },
+    rows: [{ id: path + '-r', title } as WorkspaceRows['rows'][number]]
+  })
+
+  it('a push that changes nothing leaves the rows as they were and notifies nobody', () => {
+    const s = useStore.getState()
+    s.setWorkspaceRows([ws('/w/p1'), ws('/w/p2')])
+    const before = useStore.getState().workspaceRows
+    const heard = vi.fn()
+    const off = useStore.subscribe(heard)
+    s.setWorkspaceRows([ws('/w/p1'), ws('/w/p2')])
+    off()
+    expect(useStore.getState().workspaceRows).toBe(before)
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('a push keeps the object of every workspace it did not change', () => {
+    const s = useStore.getState()
+    s.setWorkspaceRows([ws('/w/p3'), ws('/w/p4')])
+    const [p3] = useStore.getState().workspaceRows
+    s.setWorkspaceRows([ws('/w/p3'), ws('/w/p4', 'two')])
+    const after = useStore.getState().workspaceRows
+    expect(after[0]).toBe(p3)
+    expect(after[1].rows[0].title).toBe('two')
+  })
 })
 
 describe('store: intercepted file open routing — the open always surfaces, tagged so it stays out of Recent', () => {

@@ -74,6 +74,7 @@ const api: KoloftApi = {
     copy: (text) => ipcRenderer.send(CH.terminal.copy, text),
     ack: (id, utf16Units) => ipcRenderer.send(CH.terminal.ack, id, utf16Units),
     attach: (id) => ipcRenderer.send(CH.terminal.attach, id),
+    onScreen: (id, onScreen) => ipcRenderer.send(CH.terminal.onScreen, id, onScreen),
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
     resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),

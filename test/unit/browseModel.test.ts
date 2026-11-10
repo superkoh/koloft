@@ -274,13 +274,13 @@ describe('FR-46 — ↗ Outside', () => {
 describe('sessionIndex — FR-47 decoration inputs', () => {
   it('counts writes only, splits in/out of root, and aggregates per directory', () => {
     const idx = sessionIndex(
-      session([
+      [
         wrote(ROOT + '/src/a.ts', { added: 3, removed: 1 }),
         wrote(ROOT + '/src/b.ts'),
         { src: ROOT + '/src/read-only.ts', label: 'read-only.ts', access: 'read' },
         wrote('/tmp/notes/x.md'),
         wrote(ROOT)
-      ]),
+      ],
       ROOT
     )
     expect([...idx.wrote.keys()]).toEqual([
@@ -296,7 +296,7 @@ describe('sessionIndex — FR-47 decoration inputs', () => {
   })
 
   it('is empty for no session', () => {
-    const idx = sessionIndex(null, ROOT)
+    const idx = sessionIndex(undefined, ROOT)
     expect(idx.touchedInProject).toEqual([])
     expect(idx.outsideCandidates).toEqual([])
   })
