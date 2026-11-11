@@ -39,6 +39,7 @@ import {
   bareScreenPointOf,
   chooseOnBanner,
   bringFinderToFront,
+  closeButtonCenter,
   dockBadgeDrawn,
   dockItemCenter,
   notificationCenterRunning,
@@ -237,6 +238,48 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     expect(dockBadgeDrawn(DOCK_NAME)).toBe('1')
     await typeInSession(page, tabId, '/busy\r')
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
+  })
+
+  test('the red button clicked with the mouse only hides the window: its session goes on working, and a click on the Dock icon shows that same window again', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    const tabId = await sessionIn(page, 'ws-a')
+    const windows = (): Promise<{ id: number; visible: boolean }[]> =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().map((w) => ({ id: w.webContents.id, visible: w.isVisible() }))
+      )
+    const [before] = await windows()
+    realClick(await closeButtonCenter(app))
+    await expect.poll(windows).toEqual([{ id: before.id, visible: false }])
+    screenshot(testInfo.outputPath('window-hidden.png'))
+    await typeInSession(page, tabId, '/answer while-hidden\r')
+    const unwrapped = async (): Promise<string> =>
+      (await terminalText(page, tabId)).replace(/\s+/g, '')
+    await expect.poll(unwrapped).toContain('answered:while-hidden')
+    await comeBackThroughTheDock(app)
+    expect(await windows()).toEqual([{ id: before.id, visible: true }])
+    screenshot(testInfo.outputPath('window-back.png'))
+  })
+
+  // PLATFORM§5
+  test('closing the window while it is in fullscreen leaves fullscreen and hides it, so the desktop shows rather than a black screen, and a click on the Dock icon brings it back in fullscreen', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    await sessionIn(page, 'ws-a')
+    const look = (): Promise<{ visible: boolean; fullScreen: boolean }[]> =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().map((w) => ({
+          visible: w.isVisible(),
+          fullScreen: w.isFullScreen()
+        }))
+      )
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true))
+    await expect.poll(look, { timeout: 15_000 }).toEqual([{ visible: true, fullScreen: true }])
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+    await expect.poll(look, { timeout: 15_000 }).toEqual([{ visible: false, fullScreen: false }])
+    screenshot(testInfo.outputPath('fullscreen-closed.png'))
+    await comeBackThroughTheDock(app)
+    await expect.poll(look, { timeout: 15_000 }).toEqual([{ visible: true, fullScreen: true }])
   })
 
   test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened, once macOS has asked and been told Allow', async ({
