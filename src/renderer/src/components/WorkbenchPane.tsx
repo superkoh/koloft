@@ -497,7 +497,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       if (!going.size) return
       for (const id of going) {
         droppedForMemory.current.add(id)
-        patchRuntime(id, { loading: false, canBack: false, canForward: false, zoom: 1 })
+        patchRuntime(id, { loading: false, canBack: false, canForward: false })
       }
       setLive((prev) => prev.filter((id) => !going.has(id)))
     })

@@ -70,8 +70,6 @@ export class MachineRoom {
     const memoryTight = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_WARNING
     const memoryCritical = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_CRITICAL
     this.criticalReadingsInARow = memoryCritical ? this.criticalReadingsInARow + 1 : 0
-    if (this.criticalReadingsInARow >= CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING)
-      this.d.memoryStaysCritical?.()
     const loadHigh = r.load1 >= BUSY_AT_LOAD_PER_CORE * this.d.cores
     const loadCalm = r.load1 < ROOMY_BELOW_LOAD_PER_CORE * this.d.cores
     this.loadHighSince = loadHigh ? (this.loadHighSince ?? now) : undefined
@@ -93,6 +91,8 @@ export class MachineRoom {
         `[koloft] machine: ${this.busyNow ? 'busy' : 'roomy'} · memory pressure ${r.pressure ?? '-'} · load ${r.load1.toFixed(1)} on ${this.d.cores} cores`
       )
     }
+    if (this.criticalReadingsInARow >= CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING)
+      this.d.memoryStaysCritical?.()
   }
 
   private syncMarker(): void {

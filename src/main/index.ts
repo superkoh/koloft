@@ -4511,20 +4511,19 @@ function setupBrowserAuth(): void {
 
 const pendingJsDialogs = new Map<string, (answer: BrowserDialogAnswer) => void>()
 let pageOfTheModalUp = 0
-const pagesGrantedAPermission = new Set<number>()
+const pagesGivenMicOrCamera = new Set<number>()
 
 function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
-const signInWindows = new WeakSet<BaseWindow>()
-const pagesWithASignInWindow = new Map<BaseWindow, WebContents>()
+const pageOfSignInWindow = new Map<BaseWindow, WebContents>()
 
 function keptBySignInWindow(
   from: BaseWindow | undefined,
   key: 'closes-it' | 'acts-on-its-page' | 'acts-on-the-app'
 ): boolean {
-  if (!from || !signInWindows.has(from)) return false
+  if (!from || !pageOfSignInWindow.has(from)) return false
   if (key === 'closes-it') from.close()
   if (key !== 'acts-on-the-app') return true
   if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
@@ -4543,8 +4542,7 @@ function onEveryWebPage(watch: (contents: WebContents) => void): void {
 }
 
 function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
-  signInWindows.add(win)
-  pagesWithASignInWindow.set(win, opener)
+  pageOfSignInWindow.set(win, opener)
   popup.on('input-event', handsOnKoloft)
   const host = mainWindow
   const close = (): void => {
@@ -4553,7 +4551,7 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
   opener.once('destroyed', close)
   host?.once('closed', close)
   win.once('closed', () => {
-    pagesWithASignInWindow.delete(win)
+    pageOfSignInWindow.delete(win)
     opener.removeListener('destroyed', close)
     host?.removeListener('closed', close)
   })
@@ -4824,7 +4822,7 @@ function isOverlayGuest(contents: WebContents): boolean {
 function pagesInUse(): BrowserPagesInUse {
   const guestIds = new Set<number>([
     ...pagesDownloading.values(),
-    ...pagesGrantedAPermission,
+    ...pagesGivenMicOrCamera,
     ...[...pendingPermissions.values()].map((p) => p.guestId)
   ])
   if (modalSlotTaken()) guestIds.add(pageOfTheModalUp)
@@ -4834,7 +4832,7 @@ function pagesInUse(): BrowserPagesInUse {
     const owner = guestOwners.get(page)
     if (owner) owners.add(owner)
   }
-  for (const opener of pagesWithASignInWindow.values()) keepOwnerOf(opener)
+  for (const opener of pageOfSignInWindow.values()) if (!opener.isDestroyed()) keepOwnerOf(opener)
   for (const ask of secretAsks?.views() ?? []) {
     if (ask.kind === 'sudo') continue
     owners.add(ask.tabId)
@@ -5217,7 +5215,13 @@ function setupBrowserPartition(): void {
     }
     if (decision.kind === 'ask') {
       const answer = (granted: boolean): void => {
-        if (granted) pagesGrantedAPermission.add(_wc.id)
+        if (granted && permission === 'media' && !pagesGivenMicOrCamera.has(_wc.id)) {
+          const id = _wc.id
+          const forget = (): void => void pagesGivenMicOrCamera.delete(id)
+          pagesGivenMicOrCamera.add(id)
+          _wc.once('destroyed', forget)
+          _wc.once('did-navigate', forget)
+        }
         callback(granted)
       }
       const remembered = rememberedPermission(decision.origin, decision.permission)
