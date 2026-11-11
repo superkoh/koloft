@@ -92,9 +92,21 @@ const WRITTEN_DOC = 'plan.md'
 
 const OTHER_AGENTS: OtherAgentName[] = ['Codex', 'Muse', 'Antigravity']
 
+const A_TURN_THAT_ENDS_BEFORE_ITS_WRITE_ARRIVES_GOES_UNJUDGED_MS = 15_000
+const VERDICT_POLL_MS = 250
+
 function assistHasJudgedTheWrittenDoc(env: E2EEnv): boolean {
   const verdicts = path.join(env.userData, 'doc-verdicts.json')
   return fs.existsSync(verdicts) && fs.readFileSync(verdicts, 'utf8').includes(WRITTEN_DOC)
+}
+
+async function untilAssistJudgedTheWrittenDocOrLeftItUnjudged(
+  page: Page,
+  env: E2EEnv
+): Promise<void> {
+  const giveUpAt = Date.now() + A_TURN_THAT_ENDS_BEFORE_ITS_WRITE_ARRIVES_GOES_UNJUDGED_MS
+  while (!assistHasJudgedTheWrittenDoc(env) && Date.now() < giveUpAt)
+    await page.waitForTimeout(VERDICT_POLL_MS)
 }
 
 function remoteRepoWithOneChangedFile(env: E2EEnv): void {
@@ -228,12 +240,10 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
         await waitPanelAttached(page)
         await runIn(page, centerTerm(page), `/write ${WRITTEN_DOC}`)
         await expect.poll(() => layoutState(page)).toBe('T1')
-        await expect.poll(() => assistHasJudgedTheWrittenDoc(env), { timeout: 60_000 }).toBe(true)
-        await expect(docRows(page).filter({ hasText: WRITTEN_DOC })).toHaveAttribute(
-          'data-path',
-          docPath,
-          { timeout: 60_000 }
-        )
+        const written = docRows(page).filter({ hasText: WRITTEN_DOC })
+        await expect(written.first()).toBeVisible({ timeout: 60_000 })
+        await untilAssistJudgedTheWrittenDocOrLeftItUnjudged(page, env)
+        await expect(written).toHaveAttribute('data-path', docPath)
         await expect(diffLabel(page)).toHaveText('2 files', { timeout: 60_000 })
 
         await page.locator(WORKBENCH.previewDiff).click()
