@@ -2,6 +2,8 @@ import path from 'path'
 import type { ListeningPort } from '@shared/types'
 import { AGENT_PROGRAM } from './machineTrees'
 import { makeExec } from './taskProcs'
+import { remoteAnswerCommand } from './remote/install'
+import { runSsh } from './remote/ssh'
 
 const SCAN_DEADLINE_MS = 5000
 const SCAN_FINISHED = 'scanned'
@@ -77,4 +79,14 @@ const runHere = makeExec(SCAN_DEADLINE_MS)
 
 export function scanPortsHere(tags: string[]): Promise<string> {
   return runHere('/bin/sh', ['-c', SESSION_PORTS_SH, 'ports', tags.join(' ')])
+}
+
+export async function scanPortsOnMachine(
+  machine: string,
+  tags: string[],
+  tmuxName: string,
+  controlDir: string
+): Promise<string> {
+  const cmd = remoteAnswerCommand(SESSION_PORTS_SH, [tags.join(' '), tmuxName])
+  return (await runSsh(machine, cmd, { controlDir })).stdout
 }
