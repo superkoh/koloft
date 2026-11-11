@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>#758 · past sessions in a folder's empty panel</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px 40px 80px;
+        background: #0c0c0e;
+        color: #d8d8dc;
+        font: 15px/1.6 -apple-system, 'Helvetica Neue', sans-serif;
+      }
+      main {
+        max-width: 1320px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 6px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 44px 0 6px;
+      }
+      p {
+        max-width: 860px;
+        margin: 6px 0;
+      }
+      .lead {
+        font-size: 17px;
+        color: #fff;
+      }
+      .dim {
+        color: #8d8d96;
+      }
+      .pick {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 1px 8px;
+        border-radius: 6px;
+        background: #e9946b;
+        color: #1a1009;
+        font-size: 12px;
+        font-weight: 650;
+        vertical-align: 2px;
+      }
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(2, 640px);
+        gap: 22px 28px;
+        margin-top: 14px;
+      }
+      figure {
+        margin: 0;
+      }
+      .shot {
+        width: 640px;
+        height: 400px;
+        overflow: hidden;
+        border: 1px solid #2a2a30;
+        border-radius: 10px;
+      }
+      .shot iframe {
+        width: 1280px;
+        height: 800px;
+        border: 0;
+        transform: scale(0.5);
+        transform-origin: 0 0;
+      }
+      figcaption {
+        margin-top: 6px;
+        font-size: 13.5px;
+        color: #a9a9b2;
+      }
+      table {
+        border-collapse: collapse;
+        margin-top: 12px;
+        font-size: 14px;
+      }
+      th,
+      td {
+        border: 1px solid #2a2a30;
+        padding: 7px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #17171b;
+        color: #fff;
+      }
+      code {
+        font: 13px ui-monospace, Menlo, monospace;
+        color: #e9c9a0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>#758 · A folder you add shows its past sessions in the middle panel</h1>
+      <p class="lead">
+        Today: you add a folder you already worked in, and the app shows nothing about that work.
+        After: the middle panel lists it, one click to carry on.
+      </p>
+      <p class="dim">
+        Every frame below is the real app's page and stylesheet, captured from a build of
+        <code>main</code>; only the middle panel (and, in option B, the sidebar rows) was changed
+        by hand. Words in the frames are the app's own English.
+      </p>
+
+      <h2>What is still broken</h2>
+      <p>
+        The welcome's own path is already fixed: since the new welcome, the folders it pins bring
+        their last sessions into the sidebar (test T-OB-02). What is left is every folder added by
+        hand (⇧⌘O, the folder button, a remote directory): the sidebar and the panel stay empty,
+        and the past sessions sit behind the folder menu's "Restore session…". A probe on
+        <code>main</code> shows it (<code>notes/758/probe-758.spec.ts</code>).
+      </p>
+      <div class="frames">
+        <figure>
+          <div class="shot"><iframe src="today.html"></iframe></div>
+          <figcaption>
+            Today, right after adding "old-work", which has three past sessions.
+          </figcaption>
+        </figure>
+        <figure>
+          <div class="shot"><iframe src="restore-dialog.html"></iframe></div>
+          <figcaption>
+            Today, where they are: right-click the folder ▸ "Restore session…".
+          </figcaption>
+        </figure>
+      </div>
+
+      <h2>Option A · list them in the panel <span class="pick">suggested</span></h2>
+      <p>
+        Under the buttons, a "Past sessions" block: the newest three sessions of this folder that
+        are not in the sidebar, each with its branch and age, as the Restore dialog words them.
+        Clicking one does what the dialog does: the session resumes and its row joins the sidebar.
+        With more than three, a last row opens the Restore dialog with all of them. The sidebar
+        stays as it is. It shows for every folder with such sessions, old or new.
+      </p>
+      <div class="frames">
+        <figure>
+          <div class="shot"><iframe src="a-list.html"></iframe></div>
+          <figcaption>A freshly added folder with three past sessions.</figcaption>
+        </figure>
+        <figure>
+          <div class="shot"><iframe src="a-many.html"></iframe></div>
+          <figcaption>
+            Twelve past sessions from several agents: each row carries its agent's mark, a session
+            touched in the last minute carries the dialog's "may be running elsewhere" tag, and the
+            last row opens the full list.
+          </figcaption>
+        </figure>
+        <figure>
+          <div class="shot"><iframe src="a-both.html"></iframe></div>
+          <figcaption>
+            A folder that also has rows in the sidebar: today's "Recent" block stays, "Past
+            sessions" comes under it.
+          </figcaption>
+        </figure>
+      </div>
+
+      <h2>Option B · adding a folder brings its last sessions into the sidebar</h2>
+      <p>
+        No new block. Adding a folder by hand does what the welcome does: up to four sessions from
+        the last two weeks become grey rows in the sidebar, and today's "Recent" block lists them.
+        Older sessions stay behind "Restore session…". Folders that are already pinned do not
+        change.
+      </p>
+      <div class="frames">
+        <figure>
+          <div class="shot"><iframe src="b-adopt.html"></iframe></div>
+          <figcaption>
+            Right after adding "old-work": the two sessions from the last two weeks are rows; the
+            20-day-old one is not shown anywhere.
+          </figcaption>
+        </figure>
+      </div>
+
+      <h2>Option C · one button with the count</h2>
+      <p>
+        Under the buttons, "Restore session… · 3 past sessions", which opens the dialog that exists
+        today. The smallest change; the sessions' names are still one click away.
+      </p>
+      <div class="frames">
+        <figure>
+          <div class="shot"><iframe src="c-button.html"></iframe></div>
+          <figcaption>A freshly added folder with three past sessions.</figcaption>
+        </figure>
+      </div>
+
+      <h2>What each kind of folder and agent does (options A and C)</h2>
+      <p>
+        The block reads the same list the Restore dialog reads, so the two always agree. The panel
+        and its buttons show at once; the block fills in when the list answers.
+      </p>
+      <table>
+        <tr>
+          <th>Agent</th>
+          <th>Folder on this Mac</th>
+          <th>Folder on another machine (SSH)</th>
+        </tr>
+        <tr>
+          <td>Claude Code</td>
+          <td>From its transcript files, already read: shows at once.</td>
+          <td>
+            From the copy of the machine's transcripts kept on this Mac: shows at once, also while
+            the machine is off line (the last copy). Never connected yet: nothing until the first
+            copy arrives.
+          </td>
+        </tr>
+        <tr>
+          <td>Codex</td>
+          <td>Asks the local Codex for its thread list each time the panel shows.</td>
+          <td>
+            Asks Codex on the machine over SSH (answer kept 15 s, gives up after 10 s). Machine out
+            of reach: no Codex rows, no error.
+          </td>
+        </tr>
+        <tr>
+          <td>Muse</td>
+          <td>Asks the local Muse for its session list each time the panel shows.</td>
+          <td>
+            Listed from the machines connected at that moment. Not connected: the list from
+            earlier in this run, none after a restart.
+          </td>
+        </tr>
+        <tr>
+          <td>Antigravity</td>
+          <td>Reads its local conversation files each time the panel shows.</td>
+          <td>Same as Muse.</td>
+        </tr>
+      </table>
+      <p class="dim">
+        Run and seen: Claude Code on this Mac (the probe). The other seven cells are read from the
+        code and from the existing Restore tests, not yet run for this panel. Option B on a remote
+        folder is not probed yet: at the moment of adding, the machine is usually not connected, so
+        there is nothing to bring in until later.
+      </p>
+
+      <h2>After an upgrade</h2>
+      <p>
+        A and C: every pinned folder that has sessions behind "Restore session…" starts showing the
+        block or the button in its empty panel, including sessions the user took off the list by
+        hand. Nothing moves in the sidebar, nothing is lost. B: nothing changes for folders already
+        pinned.
+      </p>
+    </main>
+  </body>
+</html>
