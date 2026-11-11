@@ -464,21 +464,26 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§16
-  it("a remote machine's open Codex line that fails a listing is closed, and the listing is asked again on a new line once the machine's Codex home is seen there", async () => {
+  it("a listing that fails on a remote machine's open Codex line is asked again once the machine's Codex home is seen there, and a machine out of reach is said to be so", async () => {
+    let linkUp = true
     let homeChecks = 0
     deps.machine = fakeMachine({
       run: async (_machine, command) => {
         if (command === HAS_CODEX_HOME_CMD) homeChecks++
-        return { code: 0, stdout: '', stderr: '' }
+        return { code: linkUp ? 0 : 255, stdout: '', stderr: 'ssh: connect to host box: timed out' }
       }
     })
-    mocks.request.mockImplementation(async () => ({ data: [{ id: A, cwd: '/srv/repo' }] }))
+    const threads = { data: [{ id: A, cwd: '/srv/repo' }] }
+    mocks.request.mockImplementation(async () => threads)
     await sessions.refreshMachineHistory('box', true)
-    mocks.request.mockRejectedValueOnce(new Error('line stalled'))
+    mocks.request.mockReset()
+    mocks.request.mockRejectedValueOnce(new Error('line stalled')).mockResolvedValue(threads)
     await sessions.refreshMachineHistory('box', true)
     expect(homeChecks).toBe(2)
-    expect(mocks.close).toHaveBeenCalledTimes(1)
-    expect(mocks.rpcOptions).toHaveLength(2)
+    expect(mocks.request).toHaveBeenCalledTimes(3)
+    linkUp = false
+    mocks.request.mockRejectedValue(new Error('line stalled'))
+    await expect(sessions.refreshMachineHistory('box', true)).rejects.toThrow('timed out')
   })
 
   it('offers the welcome one folder use per thread on this Mac, leaving out archived threads and a remote machine’s', async () => {

@@ -1752,15 +1752,18 @@ not a network.
 
 **An app-server will not start on a missing `CODEX_HOME`, and one already running answers
 an empty `thread/list` once its home is removed.** Measured 2026-11-11, `codex-cli 0.166.0`
-on the Mac, `app-server --stdio -c check_for_update_on_startup=false`, a temp `CODEX_HOME`,
-no login. Started with `CODEX_HOME` set to a folder that does not exist, the process
-exited 1 before answering `initialize` (`Error: CODEX_HOME points to "<path>", but that
-path does not exist`) and did not create the folder. Started on an empty folder, it
-answered `initialize`, `thread/start` and `thread/list` (`data: []`, the thread had no
-turn); with the folder then removed (`rm -rf`) while it ran, the next two `thread/list`
-calls each answered `data: []` with no error, the folder was not created again and the
-process stayed up. A home that held listed threads before it was removed, and all of this
-on Linux: not probed.
+on the Mac and, by npm, on Debian 12 (`node:22-bookworm-slim` in Docker, arm64, a non-root
+user), the same on both: `app-server --stdio -c check_for_update_on_startup=false`, a
+temp `CODEX_HOME`, no login. Started with `CODEX_HOME` set to a folder that does not
+exist, the process exited 1 before answering `initialize` (`Error: CODEX_HOME points to
+"<path>", but that path does not exist`) and did not create the folder. Started on a home
+holding one hand-written rollout (a `session_meta` line with `source: "cli"`, then one
+user message), `thread/list` answered `data` of length 1, at once and 4 s later. With the
+home then removed (`rm -rf`) while the server ran, the next two `thread/list` calls each
+answered `data: []` with no error, the folder was not created again and the process
+stayed up; with the home and its rollout put back, the very next `thread/list` on that
+same server held the thread again. A rollout whose only lines are `session_meta` and
+settings, with no user message, was never listed.
 
 **A `--listen` app-server shrugs off SIGTERM.** Measured 2026-10-17, `@openai/codex@0.162.0`
 installed by npm on Debian 12 (Docker, arm64), signed in with `chatgptAuthTokens`, idle

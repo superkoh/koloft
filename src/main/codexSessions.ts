@@ -654,7 +654,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.withMachineRpc(machine, (rpc) => listThreads(rpc))
     // CODEX§16
     const onOpenLine = this.machineSideServers.isOpen(machine)
-      ? await list().catch(() => this.machineSideServers.forget(machine).then(() => undefined))
+      ? await list().catch(() => undefined)
       : undefined
     let threads = onOpenLine ?? []
     let homeThere = threads.length > 0
