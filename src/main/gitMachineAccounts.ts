@@ -43,6 +43,7 @@ import type { SuggestDeps } from './gitAccountSuggest'
 const GCM_INSTALL_TIMEOUT_MS = 5 * 60_000
 const MACHINE_STEP_TIMEOUT_MS = 30_000
 const LOGIN_PATH_KEPT_MS = 30 * 60_000
+const FAILED_LOGIN_PATH_ASK_KEPT_MS = 60_000
 
 export type MachineRun = (
   machine: string,
@@ -78,7 +79,7 @@ function filesUnder(dir: string): Map<string, Buffer> {
 
 export class GitMachineAccounts {
   private facts = new Map<string, MachineFacts>()
-  private loginPaths = new Map<string, { asked: number; path: Promise<string> }>()
+  private loginPaths = new Map<string, { until: number; path: Promise<string> }>()
 
   constructor(private run: MachineRun) {}
 
@@ -215,16 +216,22 @@ export class GitMachineAccounts {
 
   private knownLoginPath(machine: string): Promise<string> | undefined {
     const known = this.loginPaths.get(machine)
-    return known && Date.now() - known.asked < LOGIN_PATH_KEPT_MS ? known.path : undefined
+    return known && Date.now() < known.until ? known.path : undefined
   }
 
   // PLATFORM§33
   private askLoginPath(machine: string): Promise<string> {
-    const found = this.run(machine, MACHINE_LOGIN_PATH, [], {
+    const asked = Date.now()
+    const kept = { until: asked + LOGIN_PATH_KEPT_MS, path: Promise.resolve('') }
+    kept.path = this.run(machine, MACHINE_LOGIN_PATH, [], {
       timeoutMs: MACHINE_STEP_TIMEOUT_MS
-    }).then((r) => (r.code === 0 ? absoluteLoginPath(r.stdout) : ''))
-    this.loginPaths.set(machine, { asked: Date.now(), path: found })
-    return found
+    }).then((r) => {
+      if (r.code === 0) return absoluteLoginPath(r.stdout)
+      kept.until = asked + FAILED_LOGIN_PATH_ASK_KEPT_MS
+      return ''
+    })
+    this.loginPaths.set(machine, kept)
+    return kept.path
   }
 
   loginPath(machine: string): Promise<string> {

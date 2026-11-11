@@ -120,13 +120,12 @@ describe('the tab script of a Codex session on a machine', () => {
   })
 
   it("copies the koloft-docs skill from the machine package into the tab's Codex home every time, and the koloft skill only with agent tools on", () => {
-    const script = (agentTools: boolean): string => tabScript(agentTools)
     const docs = 'cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$"'
     const koloft = 'cp -R "$M/agent-plugin/skills/koloft" "$H/skills/koloft.new-$$"'
-    expect(script(true)).toContain(docs)
-    expect(script(true)).toContain(koloft)
-    expect(script(false)).toContain(docs)
-    expect(script(false)).not.toContain(koloft)
+    expect(tabScript(true)).toContain(docs)
+    expect(tabScript(true)).toContain(koloft)
+    expect(tabScript(false)).toContain(docs)
+    expect(tabScript(false)).not.toContain(koloft)
   })
 })
 
