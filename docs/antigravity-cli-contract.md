@@ -1738,8 +1738,9 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   Enter, `/<name> say hi` put the body in the user turn for a skill in each of the three
   folders too. One `name` in more than one folder is listed once and `/<name>` sends
   that copy's body: `.agent/skills/` beat the other two and `.agents/skills/` beat
-  `_agents/skills/`, whichever copy's own folder name sorted first. Not probed:
-  `/SKILL`.
+  `_agents/skills/`, no matter which copy's own folder name sorted first. Not probed:
+  `/SKILL`, an empty `name`, a `name` with a space or one agy's own command has, two
+  copies of a `name` inside one folder, and a workspace agy does not trust.
 
 ## §32 The folder's AGENTS.md as a memory
 
