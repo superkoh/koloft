@@ -18,6 +18,7 @@ import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
 import { relOf } from './filesModel'
+import type { CommentTarget } from './CommentBox'
 import { parseUnifiedDiff } from '@shared/unifiedDiff'
 import { langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
 import { highlightCodeOffThread } from '../offThread'
@@ -219,9 +220,7 @@ export interface ArtifactPaneProps {
   onUnmount?: (tabId: string, scrollTop: number) => void
   editText?: string
   editUnsaved?: boolean
-  pasteTab: string | null
-  commentBlocked: string | null
-  onReturnFocus: () => void
+  commentTo: CommentTarget
 }
 
 export function ArtifactPane({
@@ -246,9 +245,7 @@ export function ArtifactPane({
   onUnmount,
   editText,
   editUnsaved,
-  pasteTab,
-  commentBlocked,
-  onReturnFocus
+  commentTo
 }: ArtifactPaneProps): JSX.Element {
   const kind = previewKindForPath(path)
   const isBinaryKind = kind === 'image' || kind === 'pdf'
@@ -596,14 +593,7 @@ export function ArtifactPane({
           item={{ kind: 'markdown', src: path, label: basename(path) }}
           tick={reloadTick}
           onHeadings={setMdHeadings}
-          comment={{
-            rel: barePath(relOf(path, wsRoot)),
-            blocked: commentBlocked,
-            put: ({ pasted, typed }) => {
-              if (!pasteTab) return
-              void window.api.terminal.paste(pasteTab, pasted, typed).then(onReturnFocus)
-            }
-          }}
+          comment={{ ...commentTo, rel: barePath(relOf(path, wsRoot)) }}
         />
       )
     }

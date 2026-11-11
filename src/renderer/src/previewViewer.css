@@ -198,6 +198,7 @@
   letter-spacing: 0.04em;
   color: #8c867c;
   pointer-events: none;
+  user-select: none;
 }
 .md-wrap .md-code-copy,
 .md-wrap .mmd-copy,
@@ -227,6 +228,7 @@
   position: absolute;
   top: 4px;
   right: 6px;
+  user-select: none;
 }
 .md-body .md-bidi {
   padding: 0 2px;

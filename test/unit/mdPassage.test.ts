@@ -54,18 +54,33 @@ describe('which lines of the file a selection in the rendered Markdown names', (
     expect(linesOfRange(select([t, 0], [t, 7]), body, drawn)).toEqual([5, 6])
   })
 
-  it('names the whole list when the selection runs over two of its items', async () => {
+  it('names only the two list items a selection runs over, not the whole list', async () => {
     const { body, drawn } = await draw(PLAN)
     const a = textNode(body, 'Wait')
     const b = textNode(body, 'Give up')
-    expect(linesOfRange(select([a, 0], [b, 4]), body, drawn)).toEqual([4, 8])
+    expect(linesOfRange(select([a, 0], [b, 4]), body, drawn)).toEqual([4, 6])
   })
 
-  it('runs from the first block’s first line to the last block’s end when the selection crosses blocks', async () => {
+  it('runs from the first block’s first line to the end of the item it ends in when the selection crosses blocks', async () => {
     const { body, drawn } = await draw(PLAN)
     const a = textNode(body, 'sync job')
     const b = textNode(body, 'Give up')
-    expect(linesOfRange(select([a, 4], [b, 4]), body, drawn)).toEqual([2, 8])
+    expect(linesOfRange(select([a, 4], [b, 4]), body, drawn)).toEqual([2, 6])
+  })
+
+  it('names the one item when a triple-click ends the selection between two items of the list', async () => {
+    const { body, drawn } = await draw(PLAN)
+    const t = textNode(body, 'Give up')
+    const li = t.parentElement!
+    const ul = li.parentElement!
+    const after = Array.from(ul.childNodes).indexOf(li) + 1
+    expect(linesOfRange(select([t, 0], [ul, after]), body, drawn)).toEqual([5, 6])
+  })
+
+  it('takes the block’s own lines when the file’s raw HTML carries a line mark of its own', async () => {
+    const { body, drawn } = await draw('intro\n\n<div data-ln="x,y">\nraw words\n</div>\n')
+    const t = textNode(body, 'raw words')
+    expect(linesOfRange(select([t, 0], [t, 3]), body, drawn)).toEqual([2, 5])
   })
 
   it('leaves out the next block when a triple-click ends the selection at its very start', async () => {

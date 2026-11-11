@@ -1,6 +1,34 @@
-import type { JSX } from 'react'
+import { useMemo, type JSX } from 'react'
+import type { SessionInfo } from '@shared/types'
 import { isComposing } from '../keys'
+import { useStore } from '../store'
+import { CHANGES_MSG, commentBlocked, type HunkPrompt } from './changesModel'
 import '../changesView.css'
+
+export interface CommentTarget {
+  blocked: string | null
+  put: (prompt: HunkPrompt) => void
+}
+
+export function useCommentTarget(
+  session: SessionInfo | null,
+  onReturnFocus: () => void
+): CommentTarget {
+  const tab = session?.tabId ?? null
+  const blocked = commentBlocked(session)
+  return useMemo(
+    () => ({
+      blocked,
+      put: ({ pasted, typed }) => {
+        if (!tab) return
+        window.api.terminal
+          .paste(tab, pasted, typed)
+          .then(onReturnFocus, () => useStore.getState().showToast(CHANGES_MSG.commentNotPasted))
+      }
+    }),
+    [tab, blocked, onReturnFocus]
+  )
+}
 
 export function CommentBox({
   on,

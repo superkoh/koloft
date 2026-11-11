@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
 import {
@@ -12,6 +14,7 @@ import {
 import {
   PLAN_WORDS,
   artifactBody,
+  browseRow,
   claudePrompts,
   commentOnPlan,
   expectOnePromptFromThePassage,
@@ -20,6 +23,7 @@ import {
   passageCommentButton,
   planPassagePaste,
   selectWords,
+  showBrowse,
   writePlan
 } from './helpers/workbench'
 import type { E2EEnv } from './helpers/env'
@@ -74,6 +78,25 @@ test.describe('✎ comment on a rendered Markdown file puts the passage in the s
     await expectOnePromptFromThePassage(() => claudePrompts(transcript), note, planPassagePaste(8))
   })
 
+  test('MD-C04: a selection running through a code block names the lines from its first block to its last and quotes the words without the code block’s language label or Copy button', async ({
+    page,
+    env
+  }) => {
+    const doc = path.join(env.workspaces.a, 'docs', 'code.md')
+    fs.mkdirSync(path.dirname(doc), { recursive: true })
+    fs.writeFileSync(doc, 'Run this first:\n\n```ts\nconst tries = 3\n```\n\nThen wait.\n')
+    await startSessionIn(page, 'ws-a')
+    await claudeTranscriptOf(page, env)
+    await openInBrowse(page, doc)
+
+    await selectWords(page, 'this first', 'Then wait')
+    const button = passageCommentButton(page)
+    await expect(button).toBeEnabled({ timeout: 30_000 })
+    await button.click()
+    const head = artifactBody(page).locator('.cv-comment .cv-hunk-hd')
+    await expect(head).toHaveText('docs/code.md:1-7 · “this first: const tries = 3 Then wait”')
+  })
+
   test('MD-C03: ✎ comment is greyed in a workspace’s own Workbench, which has no session, and in a session waiting for an approval, and comes back once it is answered', async ({
     page,
     env
@@ -90,7 +113,8 @@ test.describe('✎ comment on a rendered Markdown file puts the passage in the s
     await claudeTranscriptOf(page, env)
     await runIn(page, centerTerm(page), '/need-approval')
     await expect(wsRows(page, 'ws-a').first()).toHaveClass(/st-approval/, { timeout: 30_000 })
-    await openInBrowse(page, plan)
+    await showBrowse(page)
+    await browseRow(page, plan).click()
     await selectWords(page, PLAN_WORDS)
     await expect(button).toBeDisabled()
     await expect(button).toHaveAttribute('title', /waiting for an approval/)

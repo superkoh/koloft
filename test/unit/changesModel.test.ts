@@ -395,6 +395,12 @@ describe('passagePrompt — what a ✎ comment on a rendered Markdown file puts 
     })
   })
 
+  it('cuts a long selection to its first 300 characters, since the file’s own lines already carry it whole', () => {
+    const p = passageAt('a.md', plan, [0, 1], 'word '.repeat(200))
+    expect(p.selected).toHaveLength(301)
+    expect(p.selected.endsWith('…')).toBe(true)
+  })
+
   it('names only the path when the selected block has no lines, and still quotes the words', () => {
     const p = passageAt('a.md', plan, null, 'raw html')
     expect(passagePrompt(p, 'x').pasted).toBe('\n\na.md\nSelected: “raw html”\n\n')

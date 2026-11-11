@@ -351,7 +351,7 @@ export async function openInBrowse(
     }
   }
   await page
-    .locator(`${WORKBENCH.browseRows}.ft-file[data-row-id="tree:${absPath}"]`)
+    .locator(`${WORKBENCH.browseRows}.ft-file[data-path="${absPath}"]`)
     .click({ timeout: 30_000 })
 }
 
@@ -421,28 +421,38 @@ export function planPassagePaste(line = 6): string {
   return `${PLAN_REL}:${line}\n\`\`\`markdown\n${PLAN_LINE}\n\`\`\`\nSelected: “${PLAN_WORDS}”\n\n`
 }
 
-export async function selectWords(page: Page, words: string): Promise<void> {
+export async function selectWords(page: Page, words: string, upTo = words): Promise<void> {
   const body = artifactBody(page).locator('.md-body')
-  await expect(body).toContainText(words, { timeout: 30_000 })
-  const at = await body.evaluate((el, w) => {
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-    while (walk.nextNode()) {
-      const n = walk.currentNode as Text
-      const i = n.data.indexOf(w)
-      if (i < 0) continue
-      n.parentElement?.scrollIntoView({ block: 'center' })
-      const r = document.createRange()
-      r.setStart(n, i)
-      r.setEnd(n, i + w.length)
-      const box = r.getBoundingClientRect()
-      return { left: box.left, right: box.right, y: box.top + box.height / 2 }
-    }
-    return null
-  }, words)
-  if (!at) throw new Error(`"${words}" is not in one piece of the rendered text`)
-  await page.mouse.move(at.left + 1, at.y)
+  await expect(body).toContainText(upTo, { timeout: 30_000 })
+  const at = await body.evaluate(
+    (el, [first, last]) => {
+      const find = (w: string, scroll = false): DOMRect | null => {
+        const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+        while (walk.nextNode()) {
+          const n = walk.currentNode as Text
+          const i = n.data.indexOf(w)
+          if (i < 0) continue
+          if (scroll) n.parentElement?.scrollIntoView({ block: 'start' })
+          const r = document.createRange()
+          r.setStart(n, i)
+          r.setEnd(n, i + w.length)
+          return r.getBoundingClientRect()
+        }
+        return null
+      }
+      find(first, true)
+      const a = find(first)
+      const z = find(last)
+      return a && z
+        ? { x0: a.left, y0: a.top + a.height / 2, x1: z.right, y1: z.top + z.height / 2 }
+        : null
+    },
+    [words, upTo]
+  )
+  if (!at) throw new Error(`"${words}" … "${upTo}" is not in the rendered text`)
+  await page.mouse.move(at.x0 + 1, at.y0)
   await page.mouse.down()
-  await page.mouse.move(at.right - 1, at.y, { steps: 6 })
+  await page.mouse.move(at.x1 - 1, at.y1, { steps: 6 })
   await page.mouse.up()
 }
 

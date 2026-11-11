@@ -29,7 +29,7 @@ import { useEditProbe } from './EditPane'
 import { FullWidthButton } from './WorkbenchBars'
 import { keepCaretInSessionTerminal } from '../keys'
 import { ChangesView } from './ChangesView'
-import { commentBlocked } from './changesModel'
+import { useCommentTarget, type CommentTarget } from './CommentBox'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
 import {
@@ -506,6 +506,7 @@ export const FilesBody = memo(function FilesBody({
   const openFile = useActiveOpenFile()
   const activeTabId = useStore((s) => s.activeTabId)
   const setOpenFile = useStore((s) => s.setOpenFile)
+  const commentTo = useCommentTarget(session, onReturnFocus)
 
   const fvRef = useRef<HTMLDivElement>(null)
   const [sideWidth, setSideWidth] = useState(readSideWidth)
@@ -649,9 +650,7 @@ export const FilesBody = memo(function FilesBody({
                 onEdit={onEdit}
                 onPathMenu={openContextMenu}
                 onClose={() => setOpenFile(null)}
-                pasteTab={session?.tabId ?? null}
-                commentBlocked={commentBlocked(session)}
-                onReturnFocus={onReturnFocus}
+                commentTo={commentTo}
               />
             ) : (
               <div className="fv-empty">
@@ -701,9 +700,7 @@ function ReadingArea({
   onEdit,
   onPathMenu,
   onClose,
-  pasteTab,
-  commentBlocked,
-  onReturnFocus
+  commentTo
 }: {
   c: FilesController
   file: OpenFile
@@ -718,9 +715,7 @@ function ReadingArea({
   onEdit: (path: string) => void
   onPathMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   onClose: () => void
-  pasteTab: string | null
-  commentBlocked: string | null
-  onReturnFocus: () => void
+  commentTo: CommentTarget
 }): JSX.Element {
   const { dir, name } = splitPath(file.src, root)
   const status = git[file.src]
@@ -805,9 +800,7 @@ function ReadingArea({
           onCloseZoom={onCloseZoom}
           onOutlineClose={() => c.setOutlineOpen(false)}
           onClose={onClose}
-          pasteTab={pasteTab}
-          commentBlocked={commentBlocked}
-          onReturnFocus={onReturnFocus}
+          commentTo={commentTo}
         />
       </div>
     </>

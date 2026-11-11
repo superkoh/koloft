@@ -21,7 +21,7 @@ import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
 import { keepCaretInSessionTerminal } from '../keys'
-import { CommentBox } from './CommentBox'
+import { CommentBox, useCommentTarget } from './CommentBox'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
@@ -29,7 +29,6 @@ import {
   baseUnresolved,
   blocksPastBudget,
   buildEntries,
-  commentBlocked,
   emptyStreamMessage,
   groupByDir,
   hunkPrompt,
@@ -455,16 +454,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [onScrollRequest]
   )
 
-  const pasteTab = session?.tabId ?? null
-  const blocked = commentBlocked(session)
-  const putInSession = useCallback(
-    async ({ pasted, typed }: HunkPrompt): Promise<void> => {
-      if (!pasteTab) return
-      await window.api.terminal.paste(pasteTab, pasted, typed)
-      onReturnFocus()
-    },
-    [pasteTab, onReturnFocus]
-  )
+  const { blocked, put: putInSession } = useCommentTarget(session, onReturnFocus)
 
   const listEl = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -613,7 +603,7 @@ interface BlockProps {
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
-  onComment: (prompt: HunkPrompt) => Promise<void>
+  onComment: (prompt: HunkPrompt) => void
 }
 
 const ChangeBlock = memo(function ChangeBlock({
@@ -799,7 +789,7 @@ function Hunks({
   expanded: boolean
   blocked: string | null
   onToggleExpand: (path: string) => void
-  onComment: (prompt: HunkPrompt) => Promise<void>
+  onComment: (prompt: HunkPrompt) => void
 }): JSX.Element {
   const [commentedHunk, setCommentedHunk] = useState<string | null>(null)
   const commenting = hunks.findIndex((h) => h.text === commentedHunk)
@@ -843,7 +833,7 @@ function Hunks({
               onClose={() => openComment(null)}
               onPut={() => {
                 openComment(null)
-                void onComment(hunkPrompt(entry.rel, h.text, note))
+                onComment(hunkPrompt(entry.rel, h.text, note))
               }}
             />
           )}

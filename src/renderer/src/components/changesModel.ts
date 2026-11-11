@@ -177,6 +177,7 @@ export interface Passage {
 }
 
 const MARKDOWN_IT_NEWLINE = /\r\n?|\n/
+const SELECTED_CHARS_KEPT = 300
 
 export function passageAt(
   rel: string,
@@ -184,7 +185,9 @@ export function passageAt(
   lines: SourceLines | null,
   selected: string
 ): Passage {
-  const words = selected.replace(/\s+/g, ' ').trim()
+  const whole = selected.replace(/\s+/g, ' ').trim()
+  const words =
+    whole.length > SELECTED_CHARS_KEPT ? whole.slice(0, SELECTED_CHARS_KEPT) + '…' : whole
   if (!lines) return { place: rel, source: null, selected: words }
   const all = text.split(MARKDOWN_IT_NEWLINE)
   const from = lines[0]
@@ -390,6 +393,7 @@ export const CHANGES_MSG = {
   noDiff: 'No diff available.',
   comment: 'Comment on this hunk and put it in the session’s input box',
   commentPassage: 'Comment on this passage and put it in the session’s input box',
+  commentNotPasted: 'The comment could not be put in the session.',
   commentNoSession: 'No running session to put it in',
   commentApproval: 'The session is waiting for an approval — answer it in the session first',
   totals: (t: ChangeTotals): string => {

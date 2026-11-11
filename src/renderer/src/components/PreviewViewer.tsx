@@ -5,21 +5,9 @@ import { WebView } from './WebView'
 import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import type { SourceLines } from '../markdown/lines'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
-import { CommentBox } from './CommentBox'
-import {
-  CHANGES_MSG,
-  passageAt,
-  passagePrompt,
-  type HunkPrompt,
-  type Passage
-} from './changesModel'
-import {
-  findInBlocks,
-  linesOfRange,
-  selectedRangeIn,
-  swapMark,
-  withoutEmptyTail
-} from './mdPassage'
+import { CommentBox, type CommentTarget } from './CommentBox'
+import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
+import { findInBlocks, linesOfRange, selectedRangeIn, swapMark } from './mdPassage'
 import '../previewViewer.css'
 
 export interface MdHeading {
@@ -28,11 +16,7 @@ export interface MdHeading {
   level: number
 }
 
-export interface PassageComment {
-  rel: string
-  blocked: string | null
-  put: (prompt: HunkPrompt) => void
-}
+export type PassageComment = CommentTarget & { rel: string }
 
 const DIAGRAM_RENDER_AHEAD_PX = 150
 const PAINT_SLICE_MS = 8
@@ -61,7 +45,7 @@ interface Shown {
 interface OpenComment {
   passage: Passage
   lines: SourceLines | null
-  selected: string
+  marked: string
 }
 
 interface Diagrams {
@@ -227,8 +211,8 @@ export function PreviewViewer({
   const markAgainIfRedrawn = (): void => {
     const was = mark.current
     const o = openRef.current
-    if (!was || !o || was.toString() === o.selected) return
-    const again = findInBlocks(shown.current, o.lines, o.selected)
+    if (!was || !o || was.toString() === o.marked) return
+    const again = findInBlocks(shown.current, o.lines, o.marked)
     swapMark(again, was)
     mark.current = again
   }
@@ -443,11 +427,14 @@ export function PreviewViewer({
     let raf = 0
     const place = (): void => {
       raf = 0
-      const r = selectedRangeIn(body)
-      const rects = r?.getClientRects()
+      const rects = selectedRangeIn(body)?.getClientRects()
       const end = rects?.[rects.length - 1]
+      if (!end) {
+        setPick(null)
+        return
+      }
       const view = body.getBoundingClientRect()
-      if (!end || end.bottom < view.top || end.top > view.bottom) {
+      if (end.bottom < view.top || end.top > view.bottom) {
         setPick(null)
         return
       }
@@ -479,15 +466,15 @@ export function PreviewViewer({
 
   const openComment = (): void => {
     const body = bodyRef.current
-    const picked = body && selectedRangeIn(body)
-    if (!body || !picked || !comment) return
-    const range = withoutEmptyTail(picked, body)
+    const range = body && selectedRangeIn(body)
+    if (!body || !range || !comment) return
     const lines = linesOfRange(range, body, shown.current)
-    const selected = range.toString()
+    // PLATFORM§68
+    const said = document.getSelection()?.toString() ?? ''
     setOpen({
-      passage: passageAt(comment.rel, drawnText.current, lines, selected),
+      passage: passageAt(comment.rel, drawnText.current, lines, said),
       lines,
-      selected
+      marked: range.toString()
     })
     setNote('')
     setPick(null)
