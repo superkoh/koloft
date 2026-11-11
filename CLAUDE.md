@@ -181,7 +181,11 @@ Working principles:
   dev build you started. Ask first only to merge, release, push to `main` or delete
   on GitHub; an audit or review round changes nothing until the owner says so. The
   go to merge is also the go to clean up: wait for the PR's CI
-  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` — the repo
+  (`gh pr checks <n> --watch`), then `gh pr merge <n> --squash --admin` — `main`
+  takes a PR only with one approval and nobody can approve their own, so the
+  owner's merge goes through the admin exemption (without `--admin` it is refused:
+  "the base branch policy prohibits the merge"). `--admin` skips the checks too,
+  so the wait before it is the only CI gate. The repo
   allows only squash and GitHub deletes the PR's branch on merge, so never ask
   about either; `--delete-branch` fails in a worktree. Then call ExitWorktree
   (`remove` deletes the worktree; `discard_changes: true`, as the squash
