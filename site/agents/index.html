@@ -107,9 +107,11 @@
           </li>
           <li><code>koloft diff</code> — show you what changed in a file since the last commit</li>
           <li>
-            when the session has a <a href="../discord/#rooms">room on Discord</a> and you are away
-            or talking to it from there, what <code>koloft open</code> and
-            <code>koloft diff</code> show also goes to that room
+            when the session has a <a href="../discord/#rooms">room on Discord</a> (or is your
+            butler or one of its helpers, whose place is your butler's channel), what
+            <code>koloft open</code> and <code>koloft diff</code> show also goes there: at once
+            while you are away or talking to it from there, or else just before a question it sends
+            there in that same turn
           </li>
           <li>
             <code>koloft note</code> — read the <a href="../workbench/#note">note</a> it shows (its
@@ -316,7 +318,9 @@
             session's own folder, and print what it said. Refused: <code>gh auth</code>,
             <code>alias</code>, <code>extension</code>, <code>config</code> and
             <code>copilot</code>, aliases and extensions, a <code>--jq</code> filter that reads the
-            environment, and a <code>--</code>, since each could reach the GitHub sign-in
+            environment, and a <code>--</code>, since each could reach the GitHub sign-in. For your
+            butler and its helpers, a new issue or pull request whose title or body has Chinese,
+            Japanese or Korean in it is refused too, so it is opened in English
           </li>
         </ul>
         <p>
