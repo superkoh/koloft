@@ -1080,6 +1080,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   data past a hard cap of about 50 MB (`DISCARD_WATERMARK = 50000000` in
   `src/common/input/WriteBuffer.ts`, read 2026-09-24 in 6.1.0-beta.302). Its
   flow-control guide says to keep about 500 KB or less pending.
+- **A resize drops an empty write's callback.** `write('', cb)` queues an empty chunk;
+  `resize` first runs `WriteBuffer.flushSync()`, whose `while (chunk = shift())` loop
+  stops at that falsy `''` and then empties the queue and its callbacks, so `cb` never
+  runs (read in `lib/xterm.mjs` and `src/common/input/WriteBuffer.ts`,
+  6.1.0-beta.302, 2026-11-10). Seen in `agent-exit.spec.ts`: an agent that exited
+  before its tab's terminal mounted never got its exit notice, because the terminal's
+  first fit resized it right after the empty write. A non-empty write keeps its
+  callback.
 - **Resize inside synchronized output shows black.** xterm holds back every row refresh
   while DEC mode 2026 is on, until `?2026l` or a 1000 ms safety timeout, but
   `RenderService.handleResize` ignores the mode: under WebGL it resets `canvas.width`,

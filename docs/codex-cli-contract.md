@@ -1393,9 +1393,7 @@ plain successes, no error. `thread/resume` from D returned the turn (1 turn, 14
 items), and from then on `thread/read` in D returned it too, also from a fresh
 app-server on D. A rollout copied into a fresh home's `sessions/` behaves the same
 (listed, 0 turns until a resume), and the home that ran the session reads its turns
-with no resume. So Koloft's read of a closed session's turns, which asks the default
-home, comes back empty for a session that ran in an account home and was never
-resumed from the default home (issue #486). Not probed: 0.159.3 (the
+with no resume. Not probed: 0.159.3 (the
 §19 read was from the home that made the session), and whether
 `codex migrate-rollouts --apply` fills the index. A `codex exec` rollout (`source: "exec"`) is not in the
 default listing, which asks for interactive sources only.
@@ -2645,8 +2643,7 @@ the one before, the screen read back through `pyte`.
   binary), the same with or without `TERM_PROGRAM`, and under `--remote`. The strings
   also name `blocked` (not seen) and an iTerm2 `OSC 21337;status=…` (not seen).
   Unlike Claude Code's (CC§12: query-gated, with `id` and `kind`), it carries only
-  `state` and `app`. 0.162.1 writes none of it. Koloft's terminal does not handle 7501
-  for either CLI (issue #487). The startup and exit sequences are otherwise the same on
+  `state` and `app`. 0.162.1 writes none of it. The startup and exit sequences are otherwise the same on
   both versions and both env shapes (on 0.166.0, 2026-10-30, Koloft's env shape, too,
   except that the `?u` and DA1 queries now come before `6n`): `?2004h`, `>7u`,
   `?1004h`, the `6n`, OSC 10/11 and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit

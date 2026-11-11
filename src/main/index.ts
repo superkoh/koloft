@@ -509,7 +509,13 @@ import {
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
+import {
+  sendPhoneCopy,
+  sendWholeCopy,
+  shownOf,
+  tooLarge,
+  type PhoneCopyDeps
+} from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -3404,7 +3410,7 @@ app.whenReady().then(() => {
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
-    loginPtys.delete(e.id)
+    const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
@@ -3435,7 +3441,7 @@ app.whenReady().then(() => {
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     // PLATFORM§21
-    terminalOutput.end(e.id, !sleepers.has(e.id))
+    terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     claudeAsks.delete(e.id)
     const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
@@ -5947,31 +5953,34 @@ async function copyToPhone(
   view?: ArtifactView
 ): Promise<string | undefined> {
   const relay = discordRelay
-  const reaches = relay?.reaches(tabId) && !relay.quietTurn(tabId)
-  const channelId = reaches ? phoneChannelOf(tabId) : undefined
-  const shown = channelId && shownOf(target, machineOfTab(tabId), view)
-  if (!relay || !channelId || !shown) return undefined
+  const channelId = askChannelOfTab(tabId)
+  if (!relay || !channelId || relay.quietTurn(tabId)) return undefined
+  const shown = shownOf(target, machineOfTab(tabId), view)
+  if (!shown) return undefined
+  const copyTo = (channelId: string): PhoneCopyDeps => ({
+    shoot: (url, machine) => shootPage(url, { machine }),
+    shootHtml,
+    size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
+    readBytes: (file) =>
+      hosts
+        .of(file)
+        .readBytes(file)
+        .catch((error: unknown) => {
+          throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
+        }),
+    fileDiff: (file) => hosts.of(file).gitFileDiff(file),
+    send: (files, parts) => relay.sendParts(channelId, files, parts)
+  })
+  if (!relay.reaches(tabId)) {
+    relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
+    return undefined
+  }
   const where = butler?.channelOfTab(tabId)
     ? 'the Discord channel the owner talks to you in'
-    : "this session's room on the owner's Discord"
-  return sendPhoneCopy(
-    {
-      shoot: (url, machine) => shootPage(url, { machine }),
-      shootHtml,
-      size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
-      readBytes: (file) =>
-        hosts
-          .of(file)
-          .readBytes(file)
-          .catch((error: unknown) => {
-            throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
-          }),
-      fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-      send: (files, parts) => relay.sendParts(channelId, files, parts)
-    },
-    shown,
-    where
-  )
+    : butlerSide(tabId)
+      ? `${butlerNameNow()}'s Discord channel, where the owner sees your question cards`
+      : "this session's room on the owner's Discord"
+  return sendPhoneCopy(copyTo(channelId), shown, where)
 }
 
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000

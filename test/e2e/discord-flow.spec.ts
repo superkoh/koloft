@@ -760,10 +760,12 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and a press on the card’s button answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
+  test('a helper the butler starts in its own folder sends what it shows with koloft open to the butler’s channel and asks its question there, on a card that names it as the butler’s helper, and a press on the card’s button answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
     env
   }) => {
     seedConductor(env, 'claude')
+    const shot = path.join(env.home, 'shot.bin')
+    fs.writeFileSync(shot, 'a screenshot')
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
@@ -774,6 +776,16 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       }
       await expect.poll(helper, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
       const { tabId: tab, sessionId: helperId } = (await helper())!
+      await page.evaluate(([id, file]) => window.api.terminal.write(id, `/koloft open ${file}\r`), [
+        tab,
+        shot
+      ] as const)
+      await expect
+        .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('koloft exit=0')
+      expect(uploads(fake).map((p) => [p.channelId, p.files.map((f) => f.text)])).toEqual([
+        [CHANNEL, ['a screenshot']]
+      ])
       await page.evaluate(
         (id) => window.api.terminal.write(id, '/ask Merge #41?|Merge|Leave it\r'),
         tab
@@ -795,6 +807,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => said(fake).some(passedOn), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toBe(true)
       expect(said(fake).filter((p) => p.includes('Picked: Merge') && !passedOn(p))).toEqual([])
+      expect(uploads(fake)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
       await fake.close()
