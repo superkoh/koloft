@@ -909,15 +909,17 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
     whole viewport taken right before were right every time (6 of 6). On the Mac's
     own screen the no-rect capture was right.
   - **In a window hidden by `hide()`, with background throttling on,** the picture
-    and both kinds of click worked in 9 of 9 rounds (launches that were not the
-    first after the VM booted; up to 30 s after hiding). In the first Electron launch
-    after each of 4 VM boots, commands went unanswered for 8 s in the first round
-    (`Input.dispatchMouseEvent`, the host's `executeJavaScript`), and in 2 of the 4
+    and both kinds of click worked in 11 of 11 rounds of launches that were not the
+    first after the VM booted (up to 30 s after hiding). In the first Electron launch
+    after each of 5 VM boots, commands went unanswered for 8 s in the first round
+    (`Input.dispatchMouseEvent`, the host's `executeJavaScript`), and in 2 of the 5
     the root-session clicks ran no handler in the second round either, while the
-    click through the iframe's own session landed in the second round in all 4. With
-    `backgroundThrottling: false` (2 rounds) nothing went unanswered. Whether the
-    fresh boot or the hidden window caused the unanswered commands was not
-    separated.
+    click through the iframe's own session landed in the second round in all 5. With
+    `backgroundThrottling: false` (2 rounds, not a first launch), and with
+    `setBackgroundThrottling(false)` called right after `hide()` (4 rounds that were
+    not a first launch), nothing went unanswered; a first launch with that call still
+    had unanswered commands. Whether the fresh boot or the hidden window caused them
+    was not separated.
   - With the screen locked (`SACLockScreenImmediate`, Electron's idle state
     `locked`) and the window shown: the picture and both kinds of click worked.
 - **A frame from the page's own site is not a target of its own.** Same day and

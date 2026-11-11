@@ -194,7 +194,8 @@
 
   <div class="flow">
     <div>
-      A session's page stops at a robot check. The session runs <code>koloft page tap</code>.
+      A session's page stops at a robot check. The session runs
+      <code>koloft page tap "&lt;the check&gt;"</code>.
     </div>
     <span>→</span>
     <div>Owner at the Mac: the page comes to the front; they click it themselves.</div>
@@ -210,7 +211,8 @@
   <p class="note">
     The picture is a real one: the Workbench page's own capture of a check's picture question, taken
     in a hidden window on 2026-11-11. Only the grid, the card and the buttons are drawn here. The
-    card and the "Tap squares" box reuse the look and parts of today's password card ("Enter it").
+    card and the "Tap squares" box reuse the look of today's password card ("Enter it"); the picture
+    is a message of its own just before the card.
   </p>
   <div class="phones">
     <div class="phone">
@@ -239,7 +241,7 @@
       <h3>2 · “Tap squares” opens a box; then a new picture comes</h3>
       <div class="modal">
         <label>Squares to tap, in order</label>
-        <div class="in">B5 H4 F8</div>
+        <div class="in">B5 I5 F9</div>
         <div class="btns"><span class="main">Submit</span></div>
       </div>
       <p style="color: #949ba4; font-size: 12px; margin: 10px 0 4px">a moment later</p>
@@ -249,7 +251,7 @@
         <div class="grid" id="g2"></div>
       </div>
       <div style="color: #949ba4; font-size: 12px">
-        Tapped B5, H4, F8. This is the page now. (In the real thing this picture shows what the
+        Tapped B5, I5, F9. This is the page now. (In the real thing this picture shows what the
         check did with the taps; the blue squares only mark them in this mockup.)
       </div>
     </div>
@@ -257,8 +259,9 @@
 
   <h2>How fine the grid is</h2>
   <p>
-    Koloft cuts the picture down to the check (the frames on the page that come from another site)
-    and sizes the squares to it, so a square is never wider than the smallest thing to hit:
+    The session names the smallest part of the page that holds the check. Koloft shows that part,
+    plus any frame that appears after a tap (a picture question), and sizes the squares to it: about
+    120 to 135 squares, columns A to Z at most, never under 24 px.
   </p>
   <table>
     <tr>
@@ -274,25 +277,27 @@
     <tr>
       <td>A picture question (about 520 × 570, above)</td>
       <td>the question</td>
-      <td>52 px: 10 × 11</td>
+      <td>50 px: 11 × 12</td>
     </tr>
     <tr>
-      <td>No frame from another site, or the session names a part of the page</td>
-      <td>that part, or the whole visible page</td>
-      <td>sized the same way, never under 24 px</td>
+      <td>A bigger part of the page (say 1280 × 800)</td>
+      <td>that part</td>
+      <td>
+        93 px: 14 × 9. Too coarse for a small tick, which is why the session names a small part.
+      </td>
     </tr>
   </table>
 </main>
 <script>
-  const COLS = 10,
-    ROWS = 11
+  const COLS = 11,
+    ROWS = 12
   for (const [id, hits] of [
     ['g1', []],
-    ['g2', ['B5', 'H4', 'F8']]
+    ['g2', ['B5', 'I5', 'F9']]
   ]) {
     const g = document.getElementById(id)
-    g.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`
-    g.style.gridTemplateRows = `repeat(${ROWS}, 1fr)`
+    g.style.gridTemplateColumns = `repeat(${COLS - 1}, 50fr) 20fr`
+    g.style.gridTemplateRows = `repeat(${ROWS - 1}, 50fr) 20fr`
     for (let r = 1; r <= ROWS; r++)
       for (let c = 0; c < COLS; c++) {
         const name = String.fromCharCode(65 + c) + r
