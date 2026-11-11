@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { test, expect, pendingAttention } from './helpers/app'
+import { test, expect, osOutlets, pendingAttention } from './helpers/app'
 import type { Locator, Page } from '@playwright/test'
 import {
   centerTerm,
@@ -665,5 +665,27 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
 
     await exited
     expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
+  })
+
+  test('quitting with unsaved work while the red button has hidden the window shows the window to ask, rather than asking where nobody sees it', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    const fx = setupChangeFixture(env.workspaces.a)
+    const ed = seedEditFixture(env.workspaces.a)
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    await dirtyEditor(page, fx.root, ed)
+
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
+    await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(true)
+    await app.evaluate(({ app: electronApp }) => electronApp.quit())
+    await expect(modal(page)).toBeVisible({ timeout: 20_000 })
+    expect((await osOutlets(app)).windowHidden).toBe(false)
+
+    await modal(page).getByRole('button', { name: 'Cancel' }).click()
+    await closeDiscardingEdits(app)
   })
 })

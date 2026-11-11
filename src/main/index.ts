@@ -242,6 +242,7 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
+import { mutedWhileHidden } from './mutedWhileHidden'
 import { loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
@@ -1139,7 +1140,11 @@ function projectFolderName(event: AttentionEvent): string | undefined {
   return root ? path.basename(root) : undefined
 }
 
-const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadge: '' }
+const osOutletsSeenByTests: OsOutletsSeenByTests = {
+  notifications: [],
+  dockBadge: '',
+  windowHidden: false
+}
 ;(globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets =
   osOutletsSeenByTests
 
@@ -1150,13 +1155,52 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
+const pagesMutedWhileHidden = mutedWhileHidden()
+
+const browserPages = (): WebContents[] =>
+  webContents
+    .getAllWebContents()
+    .filter((wc) => !wc.isDestroyed() && wc.session === session.fromPartition(BROWSER_PARTITION))
+
+let hiddenByClose = false
+let hiddenFromFullScreen = false
+
+function hideMainWindow(win: BrowserWindow): void {
+  hiddenByClose = true
+  pagesMutedWhileHidden.hide(browserPages())
+  if (OFF_SCREEN_TEST) {
+    osOutletsSeenByTests.windowHidden = true
+    return
+  }
+  // PLATFORM§5
+  if (win.isFullScreen()) {
+    hiddenFromFullScreen = true
+    win.once('leave-full-screen', () => {
+      if (hiddenByClose) win.hide()
+    })
+    win.setFullScreen(false)
+  } else win.hide()
+}
+
+function showMainWindow(win: BrowserWindow): void {
+  hiddenByClose = false
+  pagesMutedWhileHidden.show()
+  if (OFF_SCREEN_TEST) {
+    osOutletsSeenByTests.windowHidden = false
+    return
+  }
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+  if (hiddenFromFullScreen) win.setFullScreen(true)
+  hiddenFromFullScreen = false
+}
+
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
     uiActiveTabId = tabId
     tracker.noteActivity(tabId)
-    if (win.isMinimized()) win.restore()
-    if (!win.isVisible()) win.show()
+    showMainWindow(win)
     win.focus()
     app.focus({ steal: true })
     sendToRenderer(CH.attention.activateTab, { tabId })
@@ -3094,6 +3138,12 @@ function createWindow(): void {
     if (!details.isMainFrame || details.isSameDocument) return
     rendererTeardown()
   })
+  const win = mainWindow
+  win.on('close', (e) => {
+    if (quitCommitted) return
+    e.preventDefault()
+    hideMainWindow(win)
+  })
   mainWindow.on('closed', () => {
     rendererTeardown()
     mainWindow = null
@@ -3169,6 +3219,7 @@ app.whenReady().then(() => {
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
+  onEveryWebPage(pagesMutedWhileHidden.opened)
   setupGuestGestures()
   setupGuestLinkReports()
   setupGuestPermissionQuery()
@@ -4241,7 +4292,8 @@ app.whenReady().then(() => {
   probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
+    else createWindow()
   })
 })
 
@@ -4448,7 +4500,7 @@ function keptBySignInWindow(
   if (!from || !signInWindows.has(from)) return false
   if (key === 'closes-it') from.close()
   if (key !== 'acts-on-the-app') return true
-  mainWindow?.show()
+  if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
   return false
 }
 
@@ -7000,6 +7052,7 @@ function registerIpc(): void {
   ipcMain.on(CH.app.quitHeld, () => {
     clearQuitFallback()
     resetQuitGuard()
+    if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
   })
   ipcMain.on(CH.app.quitDeclined, () => {
     clearQuitFallback()

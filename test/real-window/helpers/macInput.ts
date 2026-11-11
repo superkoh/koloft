@@ -55,6 +55,12 @@ export function dockItemCenter(appName: string): Point {
   return { x, y }
 }
 
+export async function closeButtonCenter(app: ElectronApplication): Promise<Point> {
+  const pid = await app.evaluate(() => process.pid)
+  const [x, y] = osa('close-button-center', pid).split(' ').map(Number)
+  return { x, y }
+}
+
 export function selectInputSource(id: string): void {
   osa('select-input-source', id)
 }

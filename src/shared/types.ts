@@ -724,6 +724,7 @@ export interface AttentionEvent extends AttentionSubject {
 export interface OsOutletsSeenByTests {
   notifications: { title: string; body: string }[]
   dockBadge: string
+  windowHidden: boolean
 }
 
 export const ATTENTION_REASON: Record<AttentionKind, string> = {

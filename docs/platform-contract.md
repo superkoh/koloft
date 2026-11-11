@@ -282,6 +282,19 @@ method. A recheck adds its date, version and command to the bullet.
   hidden or minimized window (so a renderer's acks slow down) and xterm, which draws on
   rAF, stops drawing. In a window that is never shown, the next animation frame can
   still take a long time to arrive.
+- **`hide()` on a window in macOS fullscreen leaves its Space black.** The window reports
+  `isVisible()` false and `isFullScreen()` true, the screen stays black, and a click on
+  the Dock icon brings nothing back (the Dock is hidden in that Space, and the window
+  stays hidden). Leaving fullscreen first and calling `hide()` in `leave-full-screen`
+  returns to the desktop; `show()` then `setFullScreen(true)` puts it back in fullscreen.
+  Measured 2026-11-10, Electron 43.8.6, macOS 27.0 in a tart VM, real-window layer with
+  screenshots.
+- **A hidden window with background throttling on still answers a screen read fast.**
+  With `backgroundThrottling` on (the shipped setting) and the window hidden by
+  `hide()`, a `koloft session screen` read took 0.1 s median, 0.65 s at worst right
+  after the hide and 0.17 s after six minutes hidden (past Chromium's five-minute
+  intensive timer throttling); about 1 MB of terminal output printed while hidden was
+  already in the read 0.1 s later. Same run as above.
 - **After `render-process-gone` Electron does not reload the window by itself**; it stays
   dead until main calls `webContents.reload()`.
 - **`did-start-navigation` for a hard reload fires while the OLD document still runs**,
