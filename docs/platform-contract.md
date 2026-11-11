@@ -1805,6 +1805,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   fail** with `Cannot execute command-line and remote command.` (exit 255);
   `-o RemoteCommand=none` placed first wins over the config and the command runs.
   (2026-09-29, OpenSSH_10.3p1 on macOS 27 to Ubuntu 24.04.)
+- **What the user's shell prints as it starts lands on `ssh host cmd`'s stdout, in front
+  of the command's own output.** A `sh -c '…'` command run with `ssh -n -o
+  RequestTTY=no`: an `echo` on line 1 of a bash user's `~/.bashrc` (above Debian's "not
+  interactive, do nothing" guard) and an `echo` in a fish user's
+  `~/.config/fish/config.fish` both came back as the first stdout line; an `echo` at the
+  end of `~/.bashrc` (below that guard) and one in `~/.profile` did not. So a script
+  whose output is read prints a mark of its own first, and only what follows the mark is
+  its answer. (2026-11-08, OpenSSH_10.3p1 on macOS 27 to Debian 12 with bash 5.2.15 and
+  fish 3.6.0, the e2e Docker ssh lab image, a scratch node script.)
 - **`RequestTTY force` in the config gives even `ssh -n host cmd` a terminal**, and the
   terminal turns each `\n` of the output into `\r\n` (`printf "a\nb"` came back as
   `a \r \n b`), and a `tar | ssh host 'tar xf -'` push through it fails; `-o
@@ -2225,6 +2234,20 @@ command by hand:
   `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
   locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
   `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **How long a hook line written on the machine takes to turn a remote tab's row in
+  Koloft.** With only the 2-second sync round: a turn's first hook line (the prompt) to
+  the row reading working took 1574, 1867, 2105 and 2055 ms, and the Stop line to the
+  row reading waiting 663, 707, 1004 and 911 ms (a turn kept the 2-second round going
+  the whole time). With a sh loop on the machine that looks at `~/.koloft/hook-sessions`
+  every 0.2 s (`find … -exec stat` piped into `cksum`) and says so over one long-lived
+  `ssh -n`, each line starting a round (at least 0.3 s after the last one ended): 393,
+  814, 804, 423, 373, 437, 529 and 414 ms to working, and 380, 357, 403, 763, 275, 309,
+  378 and 613 ms to waiting; over those runs 20 short turns (a Read, then Stop) each
+  ended on waiting and stayed there. The loop's `sleep 0.2`, `find`, `stat` and `cksum`
+  ran in dash on Debian and in macOS 27's sh. (2026-11-08: the e2e Docker ssh lab, the
+  `kt-key` machine behind the jump host, fake claude's `/busy` turn, four turns without
+  the loop and eight with it, the machine's log and the row each read every 0.1–0.3 s,
+  so each figure is good to about that much.)
 - **`tar xzf -` works even on bare container images.** `gzip` is there in `alpine:3`
   (BusyBox v1.37.0, whose `tar` lists `-z`), `debian:bookworm-slim` (gzip 1.12),
   `ubuntu:24.04` (1.12), `fedora:42` (1.13) and `rockylinux:9` (1.12), with nothing
@@ -3284,3 +3307,44 @@ Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the b
 Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
 `TerminalView` waits on before it builds a terminal and before it hands one a new font,
 and which `mermaidRender` waits on before its first diagram.
+
+## §67 Which ports a tab's processes listen on, on macOS and Linux
+
+- **`lsof` needs `-a` to AND its selectors.** `lsof -p <pids> -iTCP -sTCP:LISTEN`
+  without `-a` ORs them and lists every listening socket of the user; with `-a` it lists
+  only those of the given pids. `-nP` keeps addresses and ports as numbers.
+- **A process's environment shows who started it, even after it leaves its parent.** On
+  macOS, `ps -A -E -ww -o pid= -o command=` appends each process's start-time environment
+  (§59). On Linux, `/proc/<pid>/environ` holds it NUL-separated, and
+  `grep -a -o -s -E 'KOLOFT_TAB_ID=[^[:cntrl:]]+' /proc/[0-9]*/environ` reads every one
+  the user may read in one call. A server started with `nohup … &` (macOS) or
+  `setsid nohup … &` (Linux), whose parent becomes pid 1, still carries the variable.
+- **Linux without `lsof`.** The e2e sshd image (Debian) has no `lsof`. There, the socket
+  inodes of a process are the `socket:[N]` links under `/proc/<pid>/fd`, and
+  `/proc/net/tcp` and `/proc/net/tcp6` list each socket's inode (column 10), state
+  (column 4, `0A` is listening) and local address (column 2, the port in hex after the
+  last `:`).
+- **macOS `awk` (the one-true-awk) refuses a `-v` value with a newline** (`newline in
+  string`), so a list goes to awk on standard input.
+- **Antigravity's `agy` itself listens on two 127.0.0.1 ports** (its own service), so
+  a list of a session's servers leaves out the agent programs' own sockets.
+- Measured 2026-11-06 on macOS 27.0 (Darwin 27.0.0) and in `koloft-e2e-sshd` (Debian,
+  as root, with and without `lsof` on `PATH`): three `python3 -m http.server` listeners
+  started with two different `KOLOFT_TAB_ID` values, one through `nohup` (macOS) or
+  `setsid nohup` (Linux); each tab's scan listed exactly its own ports (about 0.25 s on
+  this Mac), a tab id no process carried listed none. The `agy` point is from
+  `lsof -nP -iTCP -sTCP:LISTEN` on this Mac with a real `agy` tab open. The `-a` point
+  was measured 2026-10-11 on this Mac (a shell's grandchild listener found, every
+  listening socket of the user listed without `-a`); on 2026-11-06 only the `-a` form ran.
+- **A tmux pane keeps the tab id its session started with.** A remote tab that a
+  restarted Koloft attaches to an older tmux session has a new tab id, while every
+  program in that session, and every server it started, still carries the first one.
+  `tmux -L koloft list-panes -s -t '=<name>:' -F '#{pane_pid}'` prints the pane's pid;
+  the `KOLOFT_TAB_ID` its descendants carry is that first id. Measured 2026-11-10 in
+  `koloft-e2e-sshd` (Debian, tmux 3.3a, no `lsof`): a pane whose shell exported
+  `KOLOFT_TAB_ID=pty-old-1`, one server still in the pane and one through
+  `setsid nohup`; a scan for `pty-new-1` with the tmux name listed both, without it
+  none, and a third server with another tab's id was never listed.
+
+Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
+menu's listening ports).

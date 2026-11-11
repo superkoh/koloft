@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'child_process'
 import fs from 'fs'
+import readline from 'readline'
 
 // PLATFORM§3
 export function defaultControlDir(): string {
@@ -85,6 +86,14 @@ export function problemOf(r: { code: number | null; stderr: string }): string {
   return NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr)
     ? `${said} — start a session on this machine and sign in there`
     : said
+}
+
+export const ANSWER_STARTS = 'koloft-answer-starts-here'
+
+// PLATFORM§33
+export function answerOf(remoteCmd: string, stdout: Buffer): Buffer {
+  const at = remoteCmd.includes(ANSWER_STARTS) ? stdout.indexOf(`${ANSWER_STARTS}\n`) : -1
+  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
 }
 
 export interface RunResult {
@@ -182,7 +191,32 @@ export function runSshBytes(
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, r))
+  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(remoteCmd, r.stdout) }))
+}
+
+const STDERR_TAIL_KEPT = 4096
+
+export function listenOverSsh(
+  host: string,
+  remoteCmd: string,
+  opts: { controlDir: string },
+  onLine: (line: string) => void,
+  onEnd: () => void
+): () => void {
+  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, remoteCmd], {
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  let stderr = ''
+  readline.createInterface({ input: child.stdout }).on('line', onLine)
+  child.stderr
+    .setEncoding('utf8')
+    .on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-STDERR_TAIL_KEPT)))
+  child.on('error', () => {})
+  child.on('close', (code) => {
+    noteMasterRoom(host, { code, stderr })
+    onEnd()
+  })
+  return () => child.kill()
 }
 
 // PLATFORM§33 CC§13

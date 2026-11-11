@@ -645,9 +645,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
-      !opts.scheduled &&
-      !!resource?.managed &&
-      [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
+      !!resource?.managed && [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
@@ -779,9 +777,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const permission = this.permissionOf(opts)
     const workspacePath = parseRemoteKey(workspace)?.path ?? where.path
     const koloftWorktreeOfTrustedWorkspace =
-      !opts.scheduled &&
-      !!resource?.managed &&
-      trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
+      !!resource?.managed && trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
     const trusted = freshWorktree || opts.trustFolder || koloftWorktreeOfTrustedWorkspace
     const trust = [where.path, workspacePath].filter((d, i, all) => all.indexOf(d) === i)
     const m = remote.machineName()
@@ -992,6 +988,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         void this.stop(run.tabId, 1).catch((error) => this.deps.error(String(error)))
       }, REMOTE_EXIT_WAIT_MS).unref()
     }
+  }
+
+  tmuxOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.remote?.tmuxName
   }
 
   tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {

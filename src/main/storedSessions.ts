@@ -156,6 +156,7 @@ export interface SessionsWithStore {
   noticeRemoteExits?(host: string, sessionIds: string[]): void
   followMirrors?(host: string): void
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
+  tmuxOfTab?(tabId: string): string | undefined
 }
 
 type Place = ProjectInfo & { missing: boolean }

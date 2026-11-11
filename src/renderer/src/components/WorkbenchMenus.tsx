@@ -1,18 +1,67 @@
-import type { JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
+import type { ListeningPort } from '@shared/types'
 import { IconCopyLink, IconFile, IconTerminal, IconWebPage } from '../icons'
 
+function SessionPorts({
+  tabId,
+  onPort
+}: {
+  tabId: string
+  onPort: (port: number) => void
+}): JSX.Element {
+  const [ports, setPorts] = useState<ListeningPort[] | null | undefined>(undefined)
+  useEffect(() => {
+    let shown = true
+    const show = (found: ListeningPort[] | null): void => {
+      if (shown) setPorts(found)
+    }
+    window.api.sessions.ports(tabId).then(show, () => show(null))
+    return () => {
+      shown = false
+    }
+  }, [tabId])
+  const head =
+    ports === undefined
+      ? 'Looking for listening ports…'
+      : ports === null
+        ? 'Could not read listening ports'
+        : ports.length
+          ? 'Listening ports'
+          : 'No listening ports'
+  return (
+    <>
+      <div className="sep" />
+      <div className="mi head">{head}</div>
+      {ports?.map((p) => (
+        <button
+          key={p.port}
+          className="mi"
+          role="menuitem"
+          title={`${p.process} (pid ${p.pid})`}
+          onClick={() => onPort(p.port)}
+        >
+          <IconWebPage size={14} />
+          localhost:{p.port}
+        </button>
+      ))}
+    </>
+  )
+}
+
 export function NewTabMenu({
-  canTerminal,
+  liveSession,
   onClose,
   onWeb,
   onFile,
-  onTerminal
+  onTerminal,
+  onPort
 }: {
-  canTerminal: boolean
+  liveSession: string | null
   onClose: () => void
   onWeb: () => void
   onFile: () => void
   onTerminal: () => void
+  onPort: (port: number) => void
 }): JSX.Element {
   return (
     <div
@@ -49,7 +98,7 @@ export function NewTabMenu({
         <IconFile size={14} />
         Open file…
       </button>
-      {canTerminal && (
+      {liveSession && (
         <button
           className="mi"
           role="menuitem"
@@ -61,6 +110,15 @@ export function NewTabMenu({
           <IconTerminal size={14} />
           New terminal
         </button>
+      )}
+      {liveSession && (
+        <SessionPorts
+          tabId={liveSession}
+          onPort={(port) => {
+            onClose()
+            onPort(port)
+          }}
+        />
       )}
     </div>
   )

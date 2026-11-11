@@ -171,9 +171,35 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     ])
   })
 
-  it('an approval from the last run comes back as turn-done — the prompt died with the process', () => {
+  it('an approval from the last run comes back as turn-done that remembers it was asking — the prompt may have died with the process', () => {
     const { t } = makeTracker(lastRun)
-    expect(t.list().find((e) => e.sessionId === 'sid-2')?.kind).toBe('turn-done')
+    expect(t.list().find((e) => e.sessionId === 'sid-2')).toMatchObject({
+      kind: 'turn-done',
+      wasAsking: true
+    })
+    expect(t.list().find((e) => e.sessionId === 'sid-1')?.wasAsking).toBeUndefined()
+  })
+
+  it('a session that turns out to still show its ask after the restart raises it again under the same time, so it stays the same ask, and silently, as the owner was told already', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    expect(t.list()).toContainEqual(
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: 2 })
+    )
+    t.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-2' })
+    const again = t.list().find((e) => e.tabId === 'tab-new')
+    expect(again).toMatchObject({ kind: 'approval', at: 2 })
+    expect(again?.wasAsking).toBeUndefined()
+    expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('a reattached tab that shows its ask before it binds keeps asking once bound, as the same ask as before the restart', () => {
+    const { t } = makeTracker(lastRun)
+    t.onStatusChange('tab-new', undefined, 'approval')
+    t.bound('tab-new', 'sid-2')
+    expect(t.list().filter((e) => e.sessionId === 'sid-2')).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'approval', at: 2 })
+    ])
   })
 })
 

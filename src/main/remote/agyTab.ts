@@ -5,11 +5,18 @@ import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { CSRF_HEADER, SERVICE } from '../agyApi'
-import { remoteShCommand } from './install'
-import { machineToolProgram, skillsFromMachineLine, type TabProgram } from './launch'
+import { remoteAnswerCommand, remoteShCommand } from './install'
+import {
+  EXEC_ARGS_THROUGH_THE_STATUS_RELAY,
+  machineToolProgram,
+  skillsFromMachineLine,
+  type TabProgram
+} from './launch'
 import { REMOTE_COMPILE_CACHE, REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
+import { STATUS_RELAY_FILE } from './statusRelay'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
+const AGY_STATUS_FRAMES_ENV = 'AGY_CLI_OSC7501'
 export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
 
 // AGY§8 AGY§19
@@ -95,7 +102,12 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `[ "$(readlink "$A/${rel}")" = "$G/${rel}" ] || { rm -rf "$A/${rel}"; ln -s "$G/${rel}" "$A/${rel}"; }`
   const seed = (file: string, target: string): string =>
     `[ -f "$T.${file}" ] && { [ -f "${target}" ] || mv "$T.${file}" "${target}"; rm -f "$T.${file}"; }`
-  const exported = [AGY_LOG_ENV, NOTICE_ENV, ...(s.start ? [AGY_START_ENV] : [])]
+  const exported = [
+    AGY_LOG_ENV,
+    NOTICE_ENV,
+    AGY_STATUS_FRAMES_ENV,
+    ...(s.start ? [AGY_START_ENV] : [])
+  ]
   const run = [
     // PLATFORM§35
     ...(s.banner ? [`printf '%s\\n' ${shq(s.banner)}`] : []),
@@ -110,9 +122,13 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
+    // AGY§10 AGY§29
+    `${AGY_STATUS_FRAMES_ENV}=off`,
     ...(s.start ? [`${AGY_START_ENV}="$T.start.json"`] : []),
     `export ${exported.join(' ')}`,
-    `exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`
+    `set -- agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`,
+    // AGY§29
+    ...EXEC_ARGS_THROUGH_THE_STATUS_RELAY
   ]
   const file = (name: string): string => `${s.tabId}.${name}`
   return machineToolProgram('agy', run.map((line) => `  ${line}\n`).join(''), {
@@ -129,7 +145,7 @@ const CONFIG_SPLIT = '\u0001'
 // AGY§4 AGY§5
 export function readAgyConfigCmd(account: string): string {
   const f = (p: string): string => `cat "${p}" 2>/dev/null; printf '${CONFIG_SPLIT}'`
-  return remoteShCommand(
+  return remoteAnswerCommand(
     [
       `A=${remoteAgyHome(account)}`,
       f(`${REMOTE_GEMINI}/${AGY_APP_DIR}/settings.json`),
@@ -163,7 +179,7 @@ export function parseAgyConfig(stdout: string): RemoteAgyConfig {
 // AGY§8
 export function listAgyCmd(machineName: string): string {
   const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
-  return remoteShCommand(
+  return remoteAnswerCommand(
     `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { echo "Koloft's files are not on this machine yet." >&2; exit 1; }
 exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations"`,
     [machineName, TOP_LEVEL_ROWS]
@@ -209,7 +225,8 @@ for (let size = 0; size !== tree.size; ) {
   size = tree.size
   for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
 }
-const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args))
+const isTheRelay = (args) => args.includes('/${STATUS_RELAY_FILE} agy ')
+const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args) && !isTheRelay(p.args))
 if (!agy) process.exit(1)
 const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
 function ports() {

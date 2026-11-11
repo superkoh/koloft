@@ -164,6 +164,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.sessions.leftovers, handler)
     },
     stopLeftover: (sessionId, pid) => ipcRenderer.invoke(CH.sessions.stopLeftover, sessionId, pid),
+    ports: (tabId) => ipcRenderer.invoke(CH.sessions.ports, tabId),
     search: (searchId, term) => ipcRenderer.send(CH.sessions.search, searchId, term),
     onSearchHits: (cb) => {
       const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
@@ -527,7 +528,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.gitAccounts.loginProgress, handler)
     },
     addToken: (add) => ipcRenderer.invoke(CH.gitAccounts.addToken, add),
-    remove: (id, machine) => ipcRenderer.invoke(CH.gitAccounts.remove, id, machine),
+    remove: (id, machine, anyway) => ipcRenderer.invoke(CH.gitAccounts.remove, id, machine, anyway),
     makeDefault: (id, machine) => ipcRenderer.invoke(CH.gitAccounts.makeDefault, id, machine),
     check: () => ipcRenderer.invoke(CH.gitAccounts.check),
     pick: (wsPath, id) => ipcRenderer.invoke(CH.gitAccounts.pick, wsPath, id),
