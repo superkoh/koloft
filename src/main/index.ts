@@ -1583,8 +1583,8 @@ function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
 
 function pushHomeAccount(name: string, kind: SignInFolderKind): void {
   const key = viewKey(name, kind)
-  const signedIn = findAccount(name, kind)?.status === 'ok'
-  saveHomeUsage(savedHomeUsage, key, signedIn, usageViews.get(key), Date.now())
+  if (findAccount(name, kind)?.status === 'ok')
+    saveHomeUsage(savedHomeUsage, key, usageViews.get(key), Date.now())
   pushAccounts()
 }
 
@@ -2577,6 +2577,7 @@ async function addAccount(
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  if (!signedIn) savedHomeUsage.delete(viewKey(name, kind))
   const acct = findAccount(name, kind)
   if (!acct) return
   const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
