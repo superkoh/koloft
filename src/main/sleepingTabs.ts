@@ -79,6 +79,10 @@ export class SleepingTabs {
     return true
   }
 
+  liveTabOf(tabId: string): string {
+    return this.wokenAs.get(tabId) ?? tabId
+  }
+
   write(tabId: string, data: string): void {
     const typed = this.typedWhileAsleep.get(tabId)
     const woken = this.wokenAs.get(tabId)

@@ -6472,7 +6472,7 @@ function registerIpc(): void {
     ownerTouched(id)
     ownerTouchedTheScreen(id)
     if (sleepers.heldPaste(id, text, typedAfter)) return
-    return ptyMgr.paste(id, text, typedAfter)
+    return ptyMgr.paste(sleepers.liveTabOf(id), text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
     if (typeof text === 'string' && text) clipboard.writeText(text)
