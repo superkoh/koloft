@@ -874,6 +874,67 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **An agent's click inside a cross-origin iframe does not land through the relay**
   (measured the same day: Playwright's `frame.click()` on a button in such an iframe
   left the page's click counter at 0, with no element pick running).
+- **Real input into an iframe of a guest, and a picture of it.** Measured 2026-11-11,
+  Electron 43.8.6 / macOS 27.0, by a scratch main script: a host page with two
+  `<webview>`s (one with a visible box, one `visibility:hidden`), each showing a page
+  on `127.0.0.1` with an iframe from `localhost` (its own target) that counts clicks
+  and holds a text field. On this Mac in a window never shown (app not active), and
+  in a tart VM with the window shown and focused, and shown with the display asleep
+  (Electron's idle state `locked`):
+  - A real `Input.dispatchMouseEvent` (moved, pressed, released) on the guest's root
+    session at a point over the iframe ran the iframe's click handler with
+    `isTrusted: true` when the guest had a visible box. On the `visibility:hidden`
+    guest the same click ran the parent page's handler instead, and the iframe's not
+    at all.
+  - Through the iframe's own session (`Target.attachToTarget {flatten: true}`), the
+    same command with the iframe's own coordinates landed in every one of those
+    states, on the `visibility:hidden` guest too; `Input.dispatchKeyEvent` and
+    `Input.insertText` on that session typed into the iframe's field.
+    `Page.captureScreenshot` on that session fails: "Command can only be executed on
+    top-level targets".
+  - Either real click made the `<webview>` the host's `document.activeElement` and
+    the host's `document.hasFocus()` false, taking the caret from a focused host
+    field; the keys that followed went to the iframe, none to the host field.
+  - `webContents.sendInputEvent` `mouseDown` + `mouseUp` on the guest ran no click
+    handler in the iframe, in any state.
+  - The guest's `capturePage(rect)` and a root-session `Page.captureScreenshot` with
+    a `clip` both drew the iframe in its place (the button's red inside it, the
+    page's blue beside it) for the guest with a visible box, display asleep included.
+    The transparent iframe of 2026-10-28 above did not show here; what differs is not
+    known.
+  - **`capturePage()` with no rect can draw the iframe in the wrong place.** In the
+    VM, 7 of 12 such captures drew the iframe's content at the picture's top-left
+    corner instead of at its (100, 150), while the page reported no scroll and the
+    iframe at (100, 150); the `capturePage(rect)` and CDP `clip` captures of the
+    whole viewport taken right before were right every time (6 of 6). On the Mac's
+    own screen the no-rect capture was right.
+  - **In a window hidden by `hide()`, with background throttling on,** the picture
+    and both kinds of click worked in 9 of 9 rounds (launches that were not the
+    first after the VM booted; up to 30 s after hiding). In the first Electron launch
+    after each of 4 VM boots, commands went unanswered for 8 s in the first round
+    (`Input.dispatchMouseEvent`, the host's `executeJavaScript`), and in 2 of the 4
+    the root-session clicks ran no handler in the second round either, while the
+    click through the iframe's own session landed in the second round in all 4. With
+    `backgroundThrottling: false` (2 rounds) nothing went unanswered. Whether the
+    fresh boot or the hidden window caused the unanswered commands was not
+    separated.
+  - With the screen locked (`SACLockScreenImmediate`, Electron's idle state
+    `locked`) and the window shown: the picture and both kinds of click worked.
+- **A frame from the page's own site is not a target of its own.** Same day and
+  script family, real pages in a never-shown window: the frames of the reCAPTCHA demo
+  on `www.google.com` and of the hCaptcha demo (page on `accounts.hcaptcha.com`,
+  frames on `newassets.hcaptcha.com`) were in `Page.getFrameTree` and not in
+  `Target.getTargets`; `Page.createIsolatedWorld {frameId}` plus `Runtime.evaluate
+  {contextId}` read their DOM, and `DOM.getFrameOwner` plus `DOM.getBoxModel` gave
+  their place in the page. A Turnstile frame (`challenges.cloudflare.com`) on another
+  site's page was a target of its own, and no element in it could be found from
+  script (a closed shadow tree). One real root-session click on the reCAPTCHA demo's
+  28 px tick box set `aria-checked="true"` (1 of 1); one on hCaptcha's tick box
+  opened its picture question, which is a single 500 × 470 `<canvas>` with no element
+  per picture. A Cloudflare whole-page check ("Just a moment…") moved on 9 s after
+  one click through its Turnstile frame's own session, but a load of the same address
+  minutes later, in the same profile, was past the check with no click, so the click
+  is not shown to be what passed it.
 
 ## §17 Playwright as a CDP client
 
