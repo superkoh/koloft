@@ -10,6 +10,7 @@ import {
   remoteAnswerCommand,
   remoteShCommand
 } from './install'
+import { LOGIN_SHELL_WRITES_ITS_PATH_TO_F } from './gitAccounts'
 import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -67,9 +68,13 @@ const SERVER_START_TRIES = 150
 // CODEX§16
 const NO_LOGIN_SHELL = 'allow_login_shell=false'
 
-// CODEX§16
-const LOGIN_PATH_TOO = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
-[ -n "$login_path" ] && PATH="$PATH:$login_path"`
+// CODEX§16 PLATFORM§33
+const LOGIN_PATH_TOO = `if f="$(mktemp)"; then
+  ( cd; ${LOGIN_SHELL_WRITES_ITS_PATH_TO_F} )
+  login_path=$(tr : '\\n' < "$f" | grep '^/' | paste -sd: -)
+  rm -f "$f"
+  [ -n "$login_path" ] && PATH="$PATH:$login_path"
+fi`
 
 const REPLY_LANGUAGE_FILE = 'codex-reply-language.sh'
 const REPLY_LANGUAGE_IN_BASH = 'codex-reply-language.bash'
