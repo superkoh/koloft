@@ -60,6 +60,7 @@ export class BackgroundFile {
 
   private async drain(): Promise<void> {
     this.writing = true
+    let genTriedAgain = 0
     while (this.savedGen < this.latestGen) {
       let gen = this.latestGen
       const target = this.file()
@@ -74,9 +75,10 @@ export class BackgroundFile {
         if (gen > this.savedGen) await fs.promises.rename(tmp, target)
         else await fs.promises.rm(tmp, { force: true })
       } catch {
-        const theFolderMayBeGoneSoMakeItAndTryOnce = this.folderMadeFor === target
         this.folderMadeFor = undefined
-        if (theFolderMayBeGoneSoMakeItAndTryOnce) continue
+        const theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore = genTriedAgain !== gen
+        genTriedAgain = gen
+        if (theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore) continue
       }
       this.savedGen = Math.max(this.savedGen, gen)
     }

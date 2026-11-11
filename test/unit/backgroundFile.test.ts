@@ -81,6 +81,22 @@ describe('BackgroundFile', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('v2')
   })
 
+  it('gives up on a text the disk keeps refusing after one more try, and saves the next text', async () => {
+    const refused = vi
+      .spyOn(fs.promises, 'writeFile')
+      .mockRejectedValue(Object.assign(new Error('disk full'), { code: 'ENOSPC' }))
+    const out = new BackgroundFile(() => file)
+    out.write('v1')
+    await BackgroundFile.whenAllWritten()
+    expect(refused).toHaveBeenCalledTimes(2)
+    expect(fs.existsSync(file)).toBe(false)
+
+    refused.mockRestore()
+    out.write('v2')
+    await BackgroundFile.whenAllWritten()
+    expect(fs.readFileSync(file, 'utf8')).toBe('v2')
+  })
+
   it('a flush at quit wins over an earlier save still being moved into place', async () => {
     let release!: () => void
     const held = new Promise<void>((r) => (release = r))

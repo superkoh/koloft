@@ -3429,7 +3429,8 @@ below a folder D, once every 5 ms:
     longest 330 ms, in a run where the other calls were already off the main thread). A
     one-byte asynchronous `fs.write` to `/dev/null` through the libuv pool, every 50 ms,
     waited up to 384 ms (10 over 20 ms). After, in two runs: 1 stall each (247 ms and
-    91 ms, both an `fs.statSync` of a folder) in 100 and 121 switches, the pool write at
+    91 ms, each an `fs.statSync` of a folder: the first in `dirExistsSync`, the second
+    the check `fileWatch.ts` makes before it reuses a kept watcher) in 100 and 121 switches, the pool write at
     most 23 ms and 9 ms, the save's `fs.renameSync` in the workspace at most 7 ms. Three
     rounds a run; the Mac's load average was 9–17 from other work, memory pressure
     level 1–2.
