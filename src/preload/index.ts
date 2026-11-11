@@ -530,7 +530,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.gitAccounts.loginProgress, handler)
     },
     addToken: (add) => ipcRenderer.invoke(CH.gitAccounts.addToken, add),
-    remove: (id, machine) => ipcRenderer.invoke(CH.gitAccounts.remove, id, machine),
+    remove: (id, machine, anyway) => ipcRenderer.invoke(CH.gitAccounts.remove, id, machine, anyway),
     makeDefault: (id, machine) => ipcRenderer.invoke(CH.gitAccounts.makeDefault, id, machine),
     check: () => ipcRenderer.invoke(CH.gitAccounts.check),
     pick: (wsPath, id) => ipcRenderer.invoke(CH.gitAccounts.pick, wsPath, id),

@@ -6695,8 +6695,8 @@ function registerIpc(): void {
         })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown) =>
-    isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
+  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown, anyway: unknown) =>
+    isText(id) ? gitAccounts?.remove(id, machineOf(machine), anyway === true) : undefined
   )
   ipcMain.handle(CH.gitAccounts.makeDefault, (_e, id: unknown, machine: unknown) =>
     isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined

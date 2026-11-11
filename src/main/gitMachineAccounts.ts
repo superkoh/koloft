@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { formatRemoteKey } from '@shared/remoteKey'
-import type { GitAccount, GitRepoPick } from '@shared/types'
+import type { GitAccount, GitAccountRemoveResult, GitRepoPick } from '@shared/types'
 import { accountConfigText, fileNameOf, gitAccountFiles } from './gitConfigFile'
 import type { GhResult } from './prChecks'
 import { problemOf, type RunResult } from './remote/ssh'
@@ -155,11 +155,12 @@ export class GitMachineAccounts {
     return r.code === 0
   }
 
-  async forget(machine: string, a: GitAccount): Promise<void> {
-    await this.run(machine, FORGET_SECRETS, [
+  async forget(machine: string, a: GitAccount): Promise<GitAccountRemoveResult> {
+    const r = await this.run(machine, FORGET_SECRETS, [
       a.gcmNamespace ? '' : fileNameOf(a.id),
       a.gcmNamespace ?? ''
     ])
+    return r.code === 0 ? { ok: true } : { ok: false, problem: problemOf(r) }
   }
 
   async sync(
