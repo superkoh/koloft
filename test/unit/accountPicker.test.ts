@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { describe, it, expect, beforeEach, onTestFinished, vi } from 'vitest'
 import type { AccountMeta, UsageSnapshot } from '../../src/shared/types'
 import {
   AccountPicker,
@@ -7,8 +10,10 @@ import {
   PICK_BUDGET_MS,
   PROBE_TIMEOUT_MS,
   type LaunchedSession,
-  type PickDeps
+  type PickDeps,
+  type UsageSnapshots
 } from '../../src/main/accountPicker'
+import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
 import type { ProbeResult } from '../../src/main/usageProbe'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 
@@ -25,7 +30,10 @@ interface Harness {
   advance(ms: number): void
 }
 
-function makeHarness(accounts: AccountMeta[], opts?: { fablePriority?: boolean }): Harness {
+function makeHarness(
+  accounts: AccountMeta[],
+  opts?: { fablePriority?: boolean; cache?: UsageSnapshots }
+): Harness {
   const results = new Map<string, ProbeResult>()
   const probeCalls: string[] = []
   const secretOf = new Map(accounts.map((a) => [`${a.kind}:${a.name}`, `tok-${a.name}`]))
@@ -47,7 +55,7 @@ function makeHarness(accounts: AccountMeta[], opts?: { fablePriority?: boolean }
     now: () => clock
   }
   return {
-    picker: new AccountPicker(deps),
+    picker: new AccountPicker(deps, opts?.cache),
     probeCalls,
     setProbe: (name, r) => results.set(name, r),
     advance: (ms) => {
@@ -559,6 +567,52 @@ describe('U4 · cache short-circuit and single-flight', () => {
     h.advance(31_000)
     h.setProbe('b', { ok: false, error: 'network' })
     expect((await h.picker.pick()).account).toBe('a')
+  })
+
+  it('a snapshot the last run saved lets the first pick after a restart answer without waiting for the probe', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-saved-usage-')), 'u.json')
+    onTestFinished(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }))
+    const lastRun = new SavedUsage(file, NOW_MS)
+    const lastPicker = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })], {
+      cache: lastRun
+    })
+    lastPicker.picker.cacheUsage('oauth', 'a', usage({ u5: 0.9 }))
+    lastPicker.picker.cacheUsage('oauth', 'b', usage({ u5: 0.1 }))
+    lastRun.flushSync()
+
+    const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })], {
+      cache: new SavedUsage(file, NOW_MS)
+    })
+    const deps = (h.picker as unknown as { deps: PickDeps }).deps
+    deps.probe = () => new Promise<ProbeResult>(() => {})
+    const t0 = Date.now()
+    expect((await h.picker.pick()).account).toBe('b')
+    expect(Date.now() - t0).toBeLessThan(PICK_BUDGET_MS)
+  })
+
+  it('a snapshot saved longer ago than the 5-hour window is not read back, so that first pick waits for the probe as before', () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-saved-usage-')), 'u.json')
+    onTestFinished(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }))
+    const saved = new SavedUsage(file, NOW_MS)
+    saved.set('oauth:a', usage({ u5: 0.1 }))
+    saved.flushSync()
+    const restartAt = (ms: number): SavedUsage => new SavedUsage(file, NOW_MS + ms)
+    expect(restartAt(SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS - 1).get('oauth:a')).toBeDefined()
+    expect(restartAt(SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS).get('oauth:a')).toBeUndefined()
+  })
+
+  it('a probe that says the token expired drops that account’s snapshot, saved one included', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-saved-usage-')), 'u.json')
+    onTestFinished(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }))
+    const saved = new SavedUsage(file, NOW_MS)
+    const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })], { cache: saved })
+    h.picker.cacheUsage('oauth', 'a', usage({ u5: 0.1 }))
+    h.picker.cacheUsage('oauth', 'b', usage({ u5: 0.9 }))
+    h.picker.probed('oauth', 'a', { ok: false, error: 'expired' })
+    h.picker.probed('oauth', 'b', { ok: false, error: 'network' })
+    saved.flushSync()
+    expect(new SavedUsage(file, NOW_MS).get('oauth:a')).toBeUndefined()
+    expect(new SavedUsage(file, NOW_MS).get('oauth:b')).toBeDefined()
   })
 
   it('cacheUsage (settings-panel refresh) feeds the SAME cache selection scores from', async () => {

@@ -83,6 +83,7 @@ import {
   type OpenTabs
 } from './openTabs'
 import { SessionAccounts } from './sessionAccounts'
+import { SavedUsage } from './savedUsage'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -204,7 +205,7 @@ import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
-import { readLoginShell, sshEnvFromLogin } from './loginShell'
+import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   AGY_STATUSLINE_JS,
@@ -1373,7 +1374,7 @@ process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
-  return (loginEnv ??= readLoginShell({ env: process.env })
+  return (loginEnv ??= agentsInLoginShell(process.env)
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
@@ -1544,7 +1545,6 @@ function foldProbeResult(
     recordProbeOutcome(name, kind, 'ok')
     if (result.fable) recordFableCapability(name, kind, result.fable)
     usageViews.set(key, { usage: result.usage ?? usageViews.get(key)?.usage })
-    if (result.usage) picker.cacheUsage(kind, name, result.usage)
   } else {
     const status = recordProbeOutcome(name, kind, result.error === 'expired' ? '401' : 'fail')
     usageViews.set(key, { ...usageViews.get(key), probeError: result.error })
@@ -1553,20 +1553,24 @@ function foldProbeResult(
   pushAccounts()
 }
 
-const picker = new AccountPicker({
-  listAccounts,
-  fablePriority: () => loadSettings().fablePriority,
-  readSecret: (kind, name) => keychainRead(kind, name),
-  probe: (a, secret) =>
-    probeAccount(a.kind, secret, {
-      timeoutMs: PROBE_TIMEOUT_MS,
-      skipFable: shouldSkipFable(a, Date.now())
-    }),
-  onProbeOutcome: foldProbeResult,
-  launchedSessions: () => tracker.launchedSessions(),
-  recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
-  now: () => Date.now()
-})
+const savedUsage = new SavedUsage(path.join(app.getPath('userData'), 'usage-snapshots.json'))
+const picker = new AccountPicker(
+  {
+    listAccounts,
+    fablePriority: () => loadSettings().fablePriority,
+    readSecret: (kind, name) => keychainRead(kind, name),
+    probe: (a, secret) =>
+      probeAccount(a.kind, secret, {
+        timeoutMs: PROBE_TIMEOUT_MS,
+        skipFable: shouldSkipFable(a, Date.now())
+      }),
+    onProbeOutcome: foldProbeResult,
+    launchedSessions: () => tracker.launchedSessions(),
+    recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
+    now: () => Date.now()
+  },
+  savedUsage
+)
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
@@ -2460,7 +2464,7 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
   const key = viewKey(name, 'oauth')
   if (result.ok) {
     usageViews.set(key, { usage: result.usage })
-    if (result.usage) picker.cacheUsage('oauth', name, result.usage)
+    picker.probed('oauth', name, result)
   } else {
     usageViews.set(key, { probeError: result.error })
   }
@@ -2498,6 +2502,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
           model: a.model
         })
         foldProbeResult(a.name, a.kind, result)
+        picker.probed(a.kind, a.name, result)
       })
     ])
     pushAccounts()
@@ -4387,6 +4392,7 @@ app.on('before-quit', (e) => {
   flushLayout()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
+  savedUsage.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   flushInbox()

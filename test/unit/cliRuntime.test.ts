@@ -16,7 +16,7 @@ import { isNewer } from '../../src/main/releaseNotes'
 let directory: string
 let environment: NodeJS.ProcessEnv
 
-const COMMAND = 'koloft-fixture-cli'
+const COMMAND = 'agy'
 const spec: CliSpec = {
   command: COMMAND,
   testCommandEnv: 'KOLOFT_FIXTURE_CLI_CMD',
@@ -80,6 +80,21 @@ describe('resolveCliRuntime for a CLI whose installer leaves it off the login PA
     await expect(resolveCliRuntime(spec, { env: environment })).rejects.toThrow(
       'Install the Fixture CLI.'
     )
+  })
+})
+
+describe('resolveCliRuntime when the login shell names a function or alias of the same name', () => {
+  it.each([
+    { kind: 'function', zshrc: `${COMMAND}() { command ${COMMAND} "$@"; }\n` },
+    { kind: 'alias', zshrc: `alias ${COMMAND}='${COMMAND} --flag'\n` }
+  ])('still finds the file behind a $kind, on the login PATH', async ({ zshrc }) => {
+    const onPath = path.join(directory, 'bin', COMMAND)
+    writeCli(onPath, '1.4.0')
+    fs.appendFileSync(path.join(directory, '.zshrc'), `export PATH="$ZDOTDIR/bin:$PATH"\n${zshrc}`)
+    expect(await resolveCliRuntime(spec, { env: environment })).toMatchObject({
+      binary: onPath,
+      version: '1.4.0'
+    })
   })
 })
 
