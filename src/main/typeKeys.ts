@@ -33,11 +33,10 @@ const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
 // CC§18 CODEX§23 MUSE§7 AGY§15
 export function pasteFor(text: string, kind: TabKind | undefined): string {
   const backend = backendIdOf(kind)
-  if (!backend || pasteKeepsItsLastLineFeeds(backend))
-    return bracketedPaste(APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + text)
-  const typedAfter = LAST_LINE_FEEDS.exec(text)?.[0] ?? ''
+  const typedAfter =
+    backend && !pasteKeepsItsLastLineFeeds(backend) ? (LAST_LINE_FEEDS.exec(text)?.[0] ?? '') : ''
   const pasted = text.slice(0, text.length - typedAfter.length)
-  return APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + bracketedPaste(pasted) + typedAfter
+  return bracketedPaste(APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + pasted) + typedAfter
 }
 
 // CC§18

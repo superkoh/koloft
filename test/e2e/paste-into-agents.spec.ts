@@ -256,11 +256,13 @@ for (const agent of AGENTS) {
         await showChanges(page)
 
         const note = `${agent.label} keep the old name.`
-        await putCommentOnFirstHunkInSession(page, 'src/change-1.ts', note)
+        const head = await putCommentOnFirstHunkInSession(page, 'src/change-1.ts', note)
         await sendFailingChecks(page)
         const fromNote = (): string[] => agent.prompts(env).filter((p) => p.includes(note))
         await expect.poll(fromNote, { timeout: 30_000 }).toHaveLength(1)
-        expect(fromNote()[0]).toContain(`${note}\n\n${FAILING_CHECK_PASTE_HEAD}`)
+        const [prompt] = fromNote()
+        expect(prompt.startsWith(head)).toBe(true)
+        expect(prompt).toContain(`${note}\n\n${FAILING_CHECK_PASTE_HEAD}`)
       } finally {
         await quitAndClose(app)
       }

@@ -37,14 +37,13 @@ describe('a bracketed paste', () => {
 
 describe('a paste from the Workbench into a session', () => {
   // CC§18 CODEX§23 MUSE§7
-  it('starts with two line feeds inside the paste for Claude Code, Codex and Muse, so a picked element or failing checks put in before Enter do not run on from the note typed after a comment', () => {
+  it('starts with two line feeds, so a picked element or failing checks put in before Enter do not run on from the note typed after a comment', () => {
     for (const kind of ['claude', 'codex', 'muse'] as const)
       expect(pasteFor('checks\n\n', kind)).toBe('\x1b[200~\n\nchecks\n\n\x1b[201~')
   })
 
   // AGY§15
-  it('types the two line feeds before an Antigravity paste and its last line feeds after it, since agy keeps a typed line feed and drops those at a paste’s end', () => {
-    expect(pasteFor('checks\n\n', 'agy')).toBe('\n\n\x1b[200~checks\x1b[201~\n\n')
-    expect(pasteFor('picked', 'agy')).toBe('\n\n\x1b[200~picked\x1b[201~')
+  it('starts an Antigravity paste the same way, and types its last line feeds after it, since agy drops only those at a paste’s end', () => {
+    expect(pasteFor('checks\n\n', 'agy')).toBe('\x1b[200~\n\nchecks\x1b[201~\n\n')
   })
 })
