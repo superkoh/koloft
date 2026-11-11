@@ -546,15 +546,19 @@ generate-json-schema` (plain and `--experimental`) is byte-identical; sections 1
 one-word turn with no command sent 10 kinds of notification, the same 10 on both — not
 comparable with 0.167.0's 18 above, which came from a different turn), 13/14
 (`model/list` the same eight models, default `gpt-6.1-sol`; the token-usage fields and
-the rollout record types and counts of a turn) and 15 (the rollout's size and its
-`additional_tools` record, see there) were measured again, the same on both, and the
-same e2e specs passed, the remote ones (E-SSH-23/24/25) too, with 0.167.1 on the Linux
-lab machine as well: Koloft hands the Mac's version to `ensure-codex.sh`, which stops
-the tab unless the machine's `codex --version` prints it (`install.ts`; the printed
-version itself was not watched in the run). No other section was probed by hand on
-0.167.1 — sections 3, 5, 11, 16, 17, 20–25, 27, 28, 30 and 34 stand on 0.167.0's
-measurements above and on those specs. Not reached on 0.167.1: compaction
-(`compact_remote_v2_attempt.rs` changed) and a web search tool in a turn (§15). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+the rollout record types and counts of a turn) and, of 15, only the rollout's size and
+its `additional_tools` record (see there) were measured again, the same on both, and
+the same e2e specs passed, the remote ones (E-SSH-23/24/25) too. That the Linux lab
+machine ran 0.167.1 is **inferred, not checked**: Koloft passes the Mac's version to
+`ensure-codex.sh` (`codexMachine.ts`), which installs that version with npm when the
+machine's `codex --version` differs and fails the tab if it still differs
+(`install.ts`); the printed version was not watched in the run. No other section was
+probed by hand on 0.167.1: sections 3, 5, 16, 17, 18, 20–28, 30 and 34, and 15's login
+parts, stand on 0.167.0's measurements above and on those specs; 11 stands on 0.166.0's.
+Not reached on 0.167.1: compaction, whose upstream code (`compact_remote_v2_attempt.rs`)
+changed, so §21's auto-compaction, last measured on 0.162.x, is **inferred, not
+checked** for 0.167.1; and a web search tool in a turn (§15).
+Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -1521,7 +1525,8 @@ third of a first turn, not most of it; 0.164.0's split was not measured again); 
 turn added about 48 KB, mostly a `world_state` record holding `host_skills` and a
 developer message. Every model in the home's `models_cache.json` has
 `use_responses_lite: true`, so the `incremental_tools` flag (`stable true` on both)
-decides. That 0.167.1's new `incremental_tools_legacy` (`under development false`) turns
+decides whether that record is written (**inferred, not checked**: read from the
+upstream code, the flag was not turned off). That 0.167.1's new `incremental_tools_legacy` (`under development false`) turns
 tool declarations on only for an Amazon Bedrock provider, and that 0.167.1 keeps a web
 search tool in the request's top-level tools instead of the history's, are read from the
 upstream change — **inferred, not checked**: no `web_search` appeared in either build's
@@ -1722,7 +1727,8 @@ server here ended within 3 s of SIGTERM, idle or after a stand-in turn — not t
 two-turn case with a `codex-code-mode` child measured below, which was not rerun. On
 Linux, `codex --help` lacks only the Mac's `app` line, and `app-server --help` is the
 same as the Mac's. On 0.167.1 (2026-11-11) none of this was probed by hand; only the
-remote e2e specs ran, and passed, with 0.167.1 installed there (§7).
+remote e2e specs ran, and passed, with the Mac on 0.167.1 (that the machine ran 0.167.1
+too is **inferred, not checked**, §7).
 
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
