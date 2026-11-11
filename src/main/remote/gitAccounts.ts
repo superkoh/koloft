@@ -276,12 +276,9 @@ export function parseClueEnv(stdout: string): NodeJS.ProcessEnv {
 const LOGIN_PATH_LINE_TAG = 'login-path '
 
 // PLATFORM§33
-export const LOGIN_SHELL_WRITES_ITS_PATH_TO_F = `KOLOFT_LOGIN_PATH_FILE="$f" "\${SHELL:-/bin/sh}" -lic 'printf %s "$PATH" > "$KOLOFT_LOGIN_PATH_FILE"' </dev/null >/dev/null 2>&1`
-
-// PLATFORM§33
 export const MACHINE_LOGIN_PATH = `f="$(mktemp)" || exit 1
 cd
-${LOGIN_SHELL_WRITES_ITS_PATH_TO_F}
+KOLOFT_LOGIN_PATH_FILE="$f" "\${SHELL:-/bin/sh}" -lic 'printf %s "$PATH" > "$KOLOFT_LOGIN_PATH_FILE"' </dev/null >/dev/null 2>&1
 printf '\\n${LOGIN_PATH_LINE_TAG}%s\\n' "$(cat "$f")"
 rm -f "$f"
 exit 0`

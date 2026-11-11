@@ -10,7 +10,6 @@ import {
   remoteAnswerCommand,
   remoteShCommand
 } from './install'
-import { LOGIN_SHELL_WRITES_ITS_PATH_TO_F } from './gitAccounts'
 import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -61,20 +60,13 @@ export interface CodexTabSpec {
   hookTrust: { key: string; hash: string }[]
   ownerWords?: string
   agentTools: boolean
+  loginPath: string
 }
 
 const SERVER_START_TRIES = 150
 
 // CODEX§16
 const NO_LOGIN_SHELL = 'allow_login_shell=false'
-
-// CODEX§16 PLATFORM§33
-const LOGIN_PATH_TOO = `if f="$(mktemp)"; then
-  ( cd; ${LOGIN_SHELL_WRITES_ITS_PATH_TO_F} )
-  login_path=$(tr : '\\n' < "$f" | grep '^/' | paste -sd: -)
-  rm -f "$f"
-  [ -n "$login_path" ] && PATH="$PATH:$login_path"
-fi`
 
 const REPLY_LANGUAGE_FILE = 'codex-reply-language.sh'
 const REPLY_LANGUAGE_IN_BASH = 'codex-reply-language.bash'
@@ -131,6 +123,8 @@ export function codexTabScript(s: CodexTabSpec): string {
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
   const skill = `${skillsFromMachineLine('$H/skills', '$M', s.agentTools)}\n`
+  // CODEX§16 PLATFORM§33
+  const loginPathToo = s.loginPath ? `PATH="$PATH":${shq(s.loginPath)}\n` : ''
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
@@ -141,8 +135,7 @@ mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" "${serversDir(s.inst
 ${skill}cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S".* "${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
-${ownerWords}${LOGIN_PATH_TOO}
-(
+${ownerWords}${loginPathToo}(
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"
   ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"

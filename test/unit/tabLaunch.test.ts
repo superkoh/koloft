@@ -205,7 +205,8 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
       fileExists: async () => false,
       keyed: (machine, p) => `ssh://${machine}${p}`,
       mirrorDir: () => tabDirs,
-      nextPull: async () => {}
+      nextPull: async () => {},
+      loginPath: async () => ''
     },
     changed: () => {},
     events: () => {},

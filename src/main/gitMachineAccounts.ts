@@ -227,6 +227,10 @@ export class GitMachineAccounts {
     return found
   }
 
+  loginPath(machine: string): Promise<string> {
+    return this.knownLoginPath(machine) ?? this.askLoginPath(machine)
+  }
+
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {
     const ghWith = (loginPath: string): Promise<RunResult> =>
       this.run(machine, MACHINE_GH, [repoDir, loginPath, ...args], {
@@ -236,7 +240,7 @@ export class GitMachineAccounts {
     const known = this.knownLoginPath(machine)
     const r = await ghWith(known ? await known : '')
     if (known || !machineGhMissing(r.code)) return done(r)
-    const loginPath = await (this.knownLoginPath(machine) ?? this.askLoginPath(machine))
+    const loginPath = await this.loginPath(machine)
     return done(loginPath ? await ghWith(loginPath) : r)
   }
 
