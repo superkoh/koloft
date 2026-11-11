@@ -48,9 +48,10 @@ import type {
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
 import type { InboxSnapshot } from '@shared/inbox'
+import { TerminalDataSinks } from './terminalDataSinks'
 
-const terminalDataSinks = new Map<string, (data: string) => void>()
-ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.get(d.id)?.(d.data))
+const terminalDataSinks = new TerminalDataSinks()
+ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.deliver(d.id, d.data))
 
 const api: KoloftApi = {
   isDev: ipcRenderer.sendSync(CH.app.isDev) as boolean,
@@ -77,10 +78,7 @@ const api: KoloftApi = {
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
     resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),
-    onData: (id, cb) => {
-      terminalDataSinks.set(id, cb)
-      return () => terminalDataSinks.delete(id)
-    },
+    onData: (id, cb) => terminalDataSinks.listen(id, cb),
     onExit: (cb) => {
       const handler = (_e: unknown, e: TerminalExit): void => cb(e)
       ipcRenderer.on(CH.terminal.exit, handler)

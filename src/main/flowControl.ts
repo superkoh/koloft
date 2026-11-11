@@ -143,6 +143,10 @@ export class TerminalOutput {
     this.wake(id)
   }
 
+  isAttached(id: string): boolean {
+    return !!this.gates.get(id)?.isAttached()
+  }
+
   ack(id: string, utf16Units: unknown): void {
     if (typeof utf16Units !== 'number' || !Number.isFinite(utf16Units) || utf16Units <= 0) return
     if (this.gates.get(id)?.onAck(utf16Units)) this.wake(id)

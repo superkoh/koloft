@@ -3410,7 +3410,7 @@ app.whenReady().then(() => {
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
-    loginPtys.delete(e.id)
+    const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
@@ -3441,7 +3441,7 @@ app.whenReady().then(() => {
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     // PLATFORM§21
-    terminalOutput.end(e.id, !sleepers.has(e.id))
+    terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     claudeAsks.delete(e.id)
     const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
