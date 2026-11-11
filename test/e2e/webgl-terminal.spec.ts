@@ -249,10 +249,13 @@ test.describe('the WebGL terminal users run (the suite otherwise draws with the 
           t._core._renderService._renderer.value._gl
       }, s1)
 
+      let beforeTheNewest: string[] = []
       for (const title of ['S2', 'S3', 'S4']) {
+        beforeTheNewest = await termIds(page)
         setNextSessionTitle(env, title)
         await startSessionIn(page, 'ws-a')
       }
+      const s4 = (await termIds(page)).find((id) => !beforeTheNewest.includes(id))!
       await expect.poll(() => idsDrawnByWebGL(page)).not.toContain(s1)
       expect(
         await page.evaluate(() =>
@@ -262,11 +265,18 @@ test.describe('the WebGL terminal users run (the suite otherwise draws with the 
         )
       ).toBe(true)
       expect(await idsDrawnByWebGL(page)).toHaveLength(3)
+      await writeTo(page, s4, '\r\nwebgl-stays-while-others-come-and-go 中文\r\n')
+      const s4Before = await settledPictureOf(page, s4)
 
       await switchToRow(page, rowTitled(page, 'S1'))
       await expectDrawnByWebGL(page, s1)
       await expectSamePictureAgain(page, s1, before)
-      expect(await idsDrawnByWebGL(page)).toHaveLength(3)
+      await expect.poll(async () => (await idsDrawnByWebGL(page)).length).toBe(3)
+      await expectSamePictureAgain(page, s1, before)
+
+      await switchToRow(page, rowTitled(page, 'S4'))
+      await expectDrawnByWebGL(page, s4)
+      await expectSamePictureAgain(page, s4, s4Before)
     } finally {
       await app.close().catch(() => {})
     }

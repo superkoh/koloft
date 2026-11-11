@@ -12,8 +12,8 @@ import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
 import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
 import {
+  disposeThenReturnGpuMemory,
   forgetWebglThatLeftItsAtlasAsItWas,
-  gpuMemoryReturnerOf,
   registerWebglRepair,
   unregisterWebglRepair
 } from '../webglRepair'
@@ -273,10 +273,9 @@ function LiveTerminal({
       }
       const detachWebgl = (): void => {
         forgetWebglThatLeftItsAtlasAsItWas(id)
-        const returnGpuMemory = gpuMemoryReturnerOf(webglRef.current)
-        webglRef.current?.dispose()
+        const addon = webglRef.current
         webglRef.current = null
-        returnGpuMemory()
+        disposeThenReturnGpuMemory(addon, () => addon?.dispose())
       }
       enrollWebgl(id, attachWebgl, detachWebgl)
 
@@ -497,10 +496,9 @@ function LiveTerminal({
       dprCleanup?.()
       unregisterWebglRepair(id)
       releaseWebgl(id)
-      const returnGpuMemory = gpuMemoryReturnerOf(webglRef.current)
+      const addon = webglRef.current
       webglRef.current = null
-      term.dispose()
-      returnGpuMemory()
+      disposeThenReturnGpuMemory(addon, () => term.dispose())
     }
   }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
 
