@@ -237,14 +237,13 @@
         </ul>
         <p>
           In a Markdown file shown the way it looks (in Browse or in a file tab), select a few
-          words: a small <code>✎ comment</code> button shows under them. Click it, write a note,
-          press <kbd>⏎</kbd>. The session's input box gets the file's path and line, the lines of
-          the file the words sit in, the words you picked, and your note, not sent. You read it over
-          and press <kbd>⏎</kbd> there, as with a hunk comment. Words in one list item or one table
-          row bring only that item or row, not the whole list or table. Every agent gets the same,
-          on your Mac and on a <a href="../remote/">remote folder</a>. While the session waits for
-          your OK or has ended, and in a folder's own Workbench (it has no session), the button is
-          greyed and says why.
+          words: a small <code>✎ comment</code> button shows under them. It works like a hunk's:
+          write a note, press <kbd>⏎</kbd>, and the file's path and line, the lines the words sit
+          in, the words themselves and your note land in the session's input box, not yet sent.
+          Words in one list item or one table row bring only that item or row. Every agent gets the
+          same, on your Mac and on a <a href="../remote/">remote folder</a>. The button is greyed,
+          and says why, while the session waits for your OK, after it has ended, and in a
+          <a href="#folder-workbench">folder's own Workbench</a> (which has no session).
         </p>
 
         <h2 id="web-tabs">Web tabs</h2>
@@ -261,14 +260,13 @@
         <p>
           The <code>+</code> at the right end of the tab strip opens a menu:
           <code>New web tab</code>, <code>Open file…</code>, and, while the session runs,
-          <code>New terminal</code> and its <code>Listening ports</code>. Those are the ports the
-          session's own programs listen on, like a dev server it started or one you started in its
-          terminal tab, shown as <code>localhost:5173</code>; hover one to see the program. Click it
-          and the page opens in a web tab. The agent's own ports are left out. With none, the menu
-          says <code>No listening ports</code>. On a
-          <a href="../remote/#localhost">remote folder</a> the list is read on the machine, and the
-          page opens from the machine. Muse's sandbox may stop the commands Muse runs from listening
-          on a port, so a Muse session's list can stay empty.
+          <code>New terminal</code> and <code>Listening ports</code>. That lists the ports the
+          session's own programs listen on, like a dev server it or you started in its terminal tab,
+          each shown as <code>localhost:5173</code>. Hover one to see the program; click it to open
+          the page in a web tab. With none, the menu says <code>No listening ports</code>, and
+          <code>Could not read listening ports</code> when Koloft cannot tell. Every agent gets the
+          same. On a <a href="../remote/#localhost">remote folder</a>, the list and the page both
+          come from that machine.
         </p>
         <p>
           A sign-in popup (what a page opens when you click "Continue with Google", say) opens as a

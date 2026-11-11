@@ -265,6 +265,13 @@ your Mac
           from there (see <a href="#secrets">below</a>).
         </p>
         <p>
+          What a session with a room, your butler or a helper in its folder shows with
+          <code>koloft open</code> or <code>koloft diff</code> while you use Koloft waits too. If it
+          then asks you something in that same turn, and that card goes to Discord, what it showed
+          is sent first, just before the card. If the turn ends with no such card, what it showed is
+          never sent.
+        </p>
+        <p>
           While the <a href="../sessions/#asleep">moon</a> in the sidebar is on, Discord stays quiet
           the same way. Any message, button press, form or slash command you send in your butler's
           channel turns the moon off.
@@ -295,7 +302,8 @@ your Mac
         </p>
         <p>
           A helper your butler started in its own folder is different: its questions come to the
-          channel, titled with its name and <code>(Alfred's helper)</code>. Like the butler's own,
+          channel, titled with its name and <code>(Alfred's helper)</code>, and so does what it
+          shows with <code>koloft open</code> or <code>koloft diff</code>. Like the butler's own,
           they wait while you use Koloft. Press a button on the card to answer one. Words you type
           in the channel go to your butler alone, never to a helper.
         </p>
@@ -345,9 +353,8 @@ your Mac
             the room says <code>⚠ It stopped unexpectedly.</code>
           </li>
           <li>
-            A helper your butler started in its own folder gets no room: its questions, and what it
-            shows with <code>koloft open</code> or <code>koloft diff</code>, come to your butler's
-            channel.
+            A helper your butler started in its own folder gets no room: its questions already come
+            to your butler's channel.
           </li>
         </ul>
         <p>
@@ -356,13 +363,8 @@ your Mac
           pictures (at most 10, top to bottom), a Markdown file as text with the file attached, any
           other file as itself, and a diff as a picture of the changed lines. A file can be up to 20
           MB (megabytes). A page on a remote folder's machine (an HTML file there, or its
-          <code>localhost</code>) comes as pictures too, as that machine shows it.
-        </p>
-        <p>
-          What it shows while you are at the Mac is kept back. If it then asks you something in that
-          same turn, and the card goes to Discord because you left, what it showed comes first, then
-          the card. If the turn ends with no such card, it is never sent. A page is pictured as it
-          looks when the card goes out.
+          <code>localhost</code>) comes as pictures too, as that machine shows it. What it shows
+          while you use Koloft waits (see <a href="#at-the-mac">above</a>).
         </p>
         <p>
           Rooms work for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
@@ -443,14 +445,14 @@ your Mac
           as several, top to bottom, at most 10.
         </p>
         <p>
-          What your butler, or a helper in its folder, shows you with <code>koloft open</code> or
-          <code>koloft diff</code> comes to its channel too, the same way a session's comes to its
-          <a href="#rooms">room</a>.
+          What your butler shows you with <code>koloft open</code> or <code>koloft diff</code> comes
+          to its channel too, the same way a session's comes to its <a href="#rooms">room</a>.
         </p>
         <p>
           While you <a href="#at-the-mac">use Koloft</a>, your butler cannot send files or pictures
-          with <code>koloft discord send</code> or <code>shot</code>, unless it is answering what
-          you sent from Discord. It is told to show the file or page in the Workbench instead.
+          with <code>koloft discord send</code> or <code>koloft discord shot</code>, unless it is
+          answering what you sent from Discord. It is told to show the file or page in the Workbench
+          instead.
         </p>
 
         <p>
@@ -487,24 +489,25 @@ your Mac
                 <td>
                   For a session you gave a room: its name, folder and agent, its replies and its
                   question cards (held back while you use Koloft, as your butler's are), and copies
-                  of what it shows with <code>koloft open</code> or <code>koloft diff</code>: at
-                  once while you are away or talking to it from there, or, if shown while you use
-                  Koloft, just before a question card it sends in that same turn.
+                  of what it shows with <code>koloft open</code> or <code>koloft diff</code> (see
+                  <a href="#at-the-mac">while you use Koloft</a> for when).
                 </td>
               </tr>
               <tr>
                 <td>helper questions</td>
                 <td>
                   The question cards of the helpers your butler started in its own folder, held
-                  while you use Koloft like the butler's, and copies of what they show with
-                  <code>koloft open</code> or <code>koloft diff</code>.
+                  while you use Koloft like the butler's.
                 </td>
               </tr>
               <tr>
                 <td>files and pictures</td>
                 <td>
                   What your butler sends with <code>koloft discord send</code> or shot; while you
-                  use Koloft, only when it answers what you sent from Discord.
+                  use Koloft, only when it answers what you sent from Discord. Also copies of what
+                  your butler or a helper in its folder shows with <code>koloft open</code> or
+                  <code>koloft diff</code> (see <a href="#at-the-mac">while you use Koloft</a> for
+                  when).
                 </td>
               </tr>
               <tr>
