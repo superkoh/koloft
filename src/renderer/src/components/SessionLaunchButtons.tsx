@@ -37,7 +37,7 @@ export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => P
 export function useLaunchChoice(host: HostId) {
   const methods = useStore((s) => s.settings.sessionMethods)
   const [retry, setRetry] = useState(0)
-  const { installed: detected, checkFailed } = useInstalledBackends(retry)
+  const { installed: detected, checkFailed, answeredSinceMount } = useInstalledBackends(retry)
   const accountIssue = useAccountIssue()
   const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
   const listedOn = (on: HostId): BackendId[] =>
@@ -71,7 +71,10 @@ export function useLaunchChoice(host: HostId) {
     note,
     choice,
     retry: () => setRetry((n) => n + 1),
-    checkFailed
+    checkFailed,
+    answeredSinceMount,
+    noAgentOnThisMac:
+      host === 'local' && !!detected && !checkFailed && !detected.some((b) => b.available)
   }
 }
 
