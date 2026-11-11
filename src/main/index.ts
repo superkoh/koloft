@@ -6461,7 +6461,7 @@ function registerIpc(): void {
     if (guard?.isBackground(live) && ownerTyped(data)) void guard.free(live)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(live)
-    if (touchesADialog(live, data)) ownerTouchedTheScreen(live)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
