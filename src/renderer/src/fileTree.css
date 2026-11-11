@@ -252,6 +252,11 @@
   background: inherit;
   animation: ft-pls 1.4s var(--ease) infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .ft-pulse::before {
+    animation: none;
+  }
+}
 @keyframes ft-pls {
   0% {
     opacity: 0.5;

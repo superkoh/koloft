@@ -235,7 +235,7 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
     }
   })
 
-  test('BB-M10: a load in progress shows a progress indicator that clears on completion', async ({
+  test('BB-M10: a load in progress shows a progress indicator that clears on completion, and with Reduce motion on the indicator stays but stands still', async ({
     app,
     page,
     env
@@ -249,7 +249,13 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
       const guest = await guestByUrl(app, `:${server.port}/a`)
 
       await typeInAddressBar(page, server.url('/slow?ms=6000'))
-      await expect(page.locator(BROWSER.progress)).toBeVisible({ timeout: 20_000 })
+      const progress = page.locator(BROWSER.progress)
+      await expect(progress).toBeVisible({ timeout: 20_000 })
+      const moving = (): Promise<number> => progress.evaluate((el) => el.getAnimations().length)
+      expect(await moving()).toBe(1)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(moving).toBe(0)
+      await expect(progress).toBeVisible()
 
       await expect(guest.locator('#slow-done')).toBeVisible({ timeout: 40_000 })
       await expect(page.locator(BROWSER.progress)).toHaveCount(0, { timeout: 20_000 })

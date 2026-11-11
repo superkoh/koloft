@@ -337,6 +337,11 @@
   );
   animation: lspin 6s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .ibx-focus-edge::before {
+    animation: none;
+  }
+}
 
 .ibx-item.done {
   cursor: default;
