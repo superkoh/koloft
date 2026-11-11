@@ -337,7 +337,7 @@ describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {
 })
 
 describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted and the note typed', () => {
-  it('writes the pasted part as one bracketed paste and nothing else when there is nothing to type after it', async () => {
+  it('writes the pasted part as one bracketed paste that starts with two line feeds, so it never runs on from what the input box already holds, and nothing else when there is nothing to type after it', async () => {
     const write = vi.spyOn(mocks.proc, 'write')
     try {
       const mgr = new PtyManager()
@@ -345,7 +345,7 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
       write.mockClear()
       await mgr.paste(h.id, 'a.md\n```diff\n+b\n```\n')
       expect(write.mock.calls.map(([d]) => d)).toEqual([
-        '\x1b[200~a.md\n```diff\n+b\n```\n\x1b[201~'
+        '\x1b[200~\n\na.md\n```diff\n+b\n```\n\x1b[201~'
       ])
     } finally {
       write.mockRestore()
@@ -364,7 +364,7 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
       await vi.runAllTimersAsync()
       await done
       const [pasted, ...typed] = write.mock.calls.map(([d]) => d)
-      expect(pasted).toBe('\x1b[200~hunk\n\n\x1b[201~')
+      expect(pasted).toBe('\x1b[200~\n\nhunk\n\n\x1b[201~')
       expect(typed.length).toBeGreaterThan(1)
       expect(typed.join('')).toBe(note)
       for (const piece of typed) {

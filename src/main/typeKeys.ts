@@ -28,12 +28,16 @@ export function bracketedPaste(text: string): string {
 
 const LAST_LINE_FEEDS = /\n+$/
 
+const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
+
+// CODEX§23
 export function pasteFor(text: string, kind: TabKind | undefined): string {
+  const apart = APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + text
   const backend = backendIdOf(kind)
   const typed =
     backend && !pasteKeepsItsLastLineFeeds(backend) ? LAST_LINE_FEEDS.exec(text)?.[0] : undefined
-  if (!typed) return bracketedPaste(text)
-  return bracketedPaste(text.slice(0, -typed.length)) + typed
+  if (!typed) return bracketedPaste(apart)
+  return bracketedPaste(apart.slice(0, -typed.length)) + typed
 }
 
 // CC§18
