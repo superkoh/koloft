@@ -5,7 +5,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
-import { parseSessionPorts, scanPortsHere, SESSION_PORTS_SH } from '../../src/main/sessionPorts'
+import {
+  parseSessionPorts,
+  scanPortsHere,
+  scanPortsOnMachine,
+  SESSION_PORTS_SH
+} from '../../src/main/sessionPorts'
 
 const run = promisify(execFile)
 
@@ -78,6 +83,36 @@ describe('a session tab’s listening ports', () => {
     expect(await portsWithFakes({ tmux }, reattached, tmuxName)).toEqual(
       [inPane.port, leftThePane.port].sort((a, b) => a - b)
     )
+  })
+
+  it('lists, on a machine whose shell prints a greeting and a title escape as it starts, each server under its own program, as on a machine that prints nothing', async () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-ssh-'))
+    fakeBins.push(bin)
+    fs.writeFileSync(
+      path.join(bin, 'ssh'),
+      `#!/bin/sh\nprintf 'Welcome to the box\\n\\033]0;box\\007'\nshift $(($# - 1))\nexec /bin/sh -c "$1"\n`,
+      { mode: 0o755 }
+    )
+    const savedPath = process.env.PATH
+    process.env.PATH = `${bin}:${savedPath}`
+    try {
+      const tab = `pty-t${randomUUID().slice(0, 8)}-1`
+      const server = spawn(process.execPath, ['-e', SERVER], {
+        env: { ...process.env, KOLOFT_TAB_ID: tab },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+      started.push(server)
+      const port = await new Promise<number>((resolve) =>
+        server.stdout?.once('data', (b: Buffer) => resolve(Number(String(b).trim())))
+      )
+      const found = parseSessionPorts(await scanPortsOnMachine('box', [tab], '', bin))
+      expect(found?.map((p) => [p.port, p.process])).toEqual([
+        [port, path.basename(process.execPath)]
+      ])
+    } finally {
+      process.env.PATH = savedPath
+    }
   })
 
   it('lists nothing for a tab no process carries', async () => {

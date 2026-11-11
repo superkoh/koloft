@@ -383,7 +383,7 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
-import { parseSessionPorts, scanPortsHere, SESSION_PORTS_SH } from './sessionPorts'
+import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
@@ -6968,10 +6968,7 @@ function registerIpc(): void {
     const tmuxName =
       tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
     await loginEnvReady()
-    const r = await runSsh(machine, remoteShCommand(SESSION_PORTS_SH, [tags.join(' '), tmuxName]), {
-      controlDir: remoteControlDir
-    })
-    return parseSessionPorts(r.stdout)
+    return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
   })
   ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
