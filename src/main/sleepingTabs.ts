@@ -16,6 +16,7 @@ export class SleepingTabs {
   private readonly tabs = new Map<string, OpenTab>()
   private readonly typedWhileAsleep = new Map<string, string>()
   private readonly wokenAs = new Map<string, string>()
+  private readonly kindWhileTypingIsHeld = new Map<string, OpenTab['kind']>()
   private restoredSeq = 0
 
   constructor(private readonly d: SleepingTabsDeps) {}
@@ -39,6 +40,7 @@ export class SleepingTabs {
   add(tabId: string, t: OpenTab): void {
     this.tabs.set(tabId, t)
     this.typedWhileAsleep.set(tabId, '')
+    this.kindWhileTypingIsHeld.set(tabId, t.kind)
   }
 
   addRestored(t: OpenTab): string {
@@ -50,6 +52,7 @@ export class SleepingTabs {
   forget(tabId: string): void {
     this.tabs.delete(tabId)
     this.typedWhileAsleep.delete(tabId)
+    this.kindWhileTypingIsHeld.delete(tabId)
   }
 
   tabOf(sessionId: string): string | undefined {
@@ -75,7 +78,7 @@ export class SleepingTabs {
 
   heldPaste(tabId: string, text: string, typedAfter = ''): boolean {
     if (!this.typedWhileAsleep.has(tabId)) return false
-    this.write(tabId, pasteFor(text, this.tabs.get(tabId)?.kind) + typedAfter)
+    this.write(tabId, pasteFor(text, this.kindWhileTypingIsHeld.get(tabId)) + typedAfter)
     return true
   }
 
@@ -105,6 +108,7 @@ export class SleepingTabs {
     const ready = await this.d.ready(newId)
     const typed = this.typedWhileAsleep.get(oldId) ?? ''
     this.typedWhileAsleep.delete(oldId)
+    this.kindWhileTypingIsHeld.delete(oldId)
     if (!ready || !typed) return
     const keys = typed
       .split(PASTE_OR_ENTER)

@@ -88,6 +88,15 @@ describe('SleepingTabs — typing into a tab that is asleep', () => {
     expect(typed).toEqual([{ tabId: 'new', keys: [PASTE, '\r'] }])
   })
 
+  it('a paste that arrives while the tab is waking is still shaped for its agent: the line feeds Antigravity drops from a paste are typed after it', async () => {
+    const { sleepers, typed, becomeReady } = makeSleepers()
+    sleepers.add('old', { ...tab('s1'), kind: 'agy' })
+    sleepers.settle([live('new', 's1')])
+    expect(sleepers.heldPaste('old', 'text\n')).toBe(true)
+    await becomeReady('new')
+    expect(typed[0].keys.join('')).toBe('\x1b[200~text\x1b[201~\n')
+  })
+
   it('a paste into a tab that is not asleep is left for the tab itself', () => {
     const { sleepers, writes } = makeSleepers()
     expect(sleepers.heldPaste('t', 'text')).toBe(false)
@@ -113,6 +122,7 @@ describe('SleepingTabs — after the wake', () => {
     await becomeReady('new')
     sleepers.write('old', `y${CLICK}${FOCUS_IN}`)
     expect(writes).toEqual([{ tabId: 'new', data: 'y' }])
+    expect(sleepers.liveTabOf('old')).toBe('new')
   })
 
   it('once the woken tab exits, the old tab id stops reaching it', async () => {
@@ -123,6 +133,7 @@ describe('SleepingTabs — after the wake', () => {
     sleepers.exited('new', 's1')
     sleepers.write('old', 'y')
     expect(writes).toEqual([{ tabId: 'old', data: 'y' }])
+    expect(sleepers.liveTabOf('old')).toBe('old')
   })
 
   it('a sleeper wakes only when its session runs in another live tab', () => {

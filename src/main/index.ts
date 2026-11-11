@@ -6457,22 +6457,24 @@ function registerIpc(): void {
   )
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
-    if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    const live = sleepers.liveTabOf(id)
+    if (guard?.isBackground(live) && ownerTyped(data)) void guard.free(live)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
-    if (ownerTyped(data)) ownerTouched(id)
-    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
+    if (ownerTyped(data)) ownerTouched(live)
+    if (touchesADialog(live, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
   ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
-    if (guard?.isBackground(id)) void guard.free(id)
+    const live = sleepers.liveTabOf(id)
+    if (guard?.isBackground(live)) void guard.free(live)
     if (typedAfter?.includes('\r')) ownerCameBack()
-    ownerTouched(id)
-    ownerTouchedTheScreen(id)
+    ownerTouched(live)
+    ownerTouchedTheScreen(live)
     if (sleepers.heldPaste(id, text, typedAfter)) return
-    return ptyMgr.paste(sleepers.liveTabOf(id), text, typedAfter)
+    return ptyMgr.paste(live, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
     if (typeof text === 'string' && text) clipboard.writeText(text)
