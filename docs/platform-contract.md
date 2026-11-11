@@ -3428,9 +3428,11 @@ below a folder D, once every 5 ms:
     `userData` (2, 257 ms) and `fs.watch` of the workspace (2, 199 ms; 13 of them,
     longest 330 ms, in a run where the other calls were already off the main thread). A
     one-byte asynchronous `fs.write` to `/dev/null` through the libuv pool, every 50 ms,
-    waited up to 384 ms (10 over 20 ms). After: 1 stall (247 ms, an `fs.statSync` of a
-    folder) in 100 switches, the pool write at most 23 ms. One run of three rounds each;
-    the Mac's load average was 9–17 from other work, memory pressure level 1–2.
+    waited up to 384 ms (10 over 20 ms). After, in two runs: 1 stall each (247 ms and
+    91 ms, both an `fs.statSync` of a folder) in 100 and 121 switches, the pool write at
+    most 23 ms and 9 ms, the save's `fs.renameSync` in the workspace at most 7 ms. Three
+    rounds a run; the Mac's load average was 9–17 from other work, memory pressure
+    level 1–2.
   - A settings save (`fs.writeFileSync` of a new `settings.json.tmp` in `userData`, 31
     of them in the busy 30 s): 19 over 50 ms, longest 315 ms.
 - **What the busy disk did not slow in any of those runs**: `fs.statSync` and
