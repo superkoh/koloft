@@ -146,7 +146,7 @@ function sidebarFolders(page: Page): Locator {
 }
 
 test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
-  test('T-OB-01: a first run opens the welcome over the whole window, the four agents side by side, the one on this Mac ready and the rest offered to install', async ({
+  test('T-OB-01: a first run opens the welcome over the whole window, the four agents side by side, the one on this Mac ready and the rest offered to install; with Reduce motion on nothing on it moves without end', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -175,6 +175,17 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
         ).toBeVisible()
       }
       await expect(welcome(page).locator('.wl-skip')).toContainText('Skip setup')
+      const endlessMotions = (): Promise<number> =>
+        page.evaluate(
+          () =>
+            document
+              .getAnimations()
+              .filter((a) => a.effect?.getComputedTiming().iterations === Infinity).length
+        )
+      expect(await endlessMotions()).toBeGreaterThan(0)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(endlessMotions).toBe(0)
+      await page.emulateMedia({ reducedMotion: null })
       await snap(page, 'T-OB-01')
     } finally {
       await quitAndClose(app)
