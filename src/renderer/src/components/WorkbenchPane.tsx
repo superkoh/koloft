@@ -478,6 +478,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     return window.api.browser.onMemoryCritical((inUse) => {
       const now = panelNow.current
       const used = { guestIds: new Set(inUse.guestIds), owners: new Set(inUse.owners) }
+      for (const s of useStore.getState().sessions)
+        if (s.tabId && (s.status === 'working' || s.status === 'approval')) used.owners.add(s.tabId)
       const going = new Set(
         [...els.current].flatMap(([id, el]) => {
           const owner = webIndexRef.current.get(id)?.owner

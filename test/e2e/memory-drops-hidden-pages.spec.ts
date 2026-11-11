@@ -9,6 +9,7 @@ import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { wbFrozenTabs, wbTabByTitle } from './helpers/workbench'
 
 const TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS = 40_000
+const SLOW_ENOUGH_TO_SEE_THE_LOADING_BAR_MS = 2000
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
 
 let server: FixtureServer
@@ -43,6 +44,47 @@ async function pagesAlive(app: ElectronApplication): Promise<string[]> {
 }
 
 test.describe('when memory turns critical, Koloft lets go of the Workbench web pages nobody can see', () => {
+  test('the pages of a session whose turn is still running stay, go once the turn is over, and on return the address bar shows the page loading again', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const slow = server.route('/mid-turn', (_q, res) => {
+      setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'text/html' })
+        res.end('<!doctype html><title>mid-turn</title><p>mid-turn</p>')
+      }, SLOW_ENOUGH_TO_SEE_THE_LOADING_BAR_MS)
+    })
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const busyRow = wsRows(page, 'ws-a').first()
+    const busyTab = (await busyRow.getAttribute('data-tab-id'))!
+    await runIn(page, centerTerm(page), `/open ${slow}`)
+    await wbTabByTitle(page, 'mid-turn').click()
+    await expect((await guestByUrl(app, '/mid-turn')).locator('p')).toHaveText('mid-turn')
+    await runIn(page, centerTerm(page), '/hold')
+    await expect(busyRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+
+    await startSessionIn(page, 'ws-b')
+    await openAndShow(page, 'unused')
+    await openAndShow(page, 'on-screen')
+    memoryPressure(env, 4)
+    await expect
+      .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
+      .toEqual(['mid-turn', 'on-screen'])
+
+    await page.evaluate((id) => window.api.terminal.write(id, '\x1b'), busyTab)
+    await expect(busyRow).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await expect
+      .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
+      .toEqual(['on-screen'])
+
+    await switchToRow(page, busyRow)
+    await expect(page.locator(BROWSER.progress)).toBeVisible()
+    await expect((await guestByUrl(app, '/mid-turn')).locator('p')).toHaveText('mid-turn')
+  })
+
   test('at warning nothing goes; at critical every hidden page goes — another tab of the shown session, another session’s — the one on screen stays, each comes back by itself when the owner returns to it, and a page hidden later, while memory is still critical, goes too', async ({
     app,
     page,
