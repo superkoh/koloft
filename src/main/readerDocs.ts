@@ -86,7 +86,9 @@ export class ReaderDocs {
     if (!s?.sessionId) return
     const since = turn.said[0]?.at ?? this.lastTurnEnd.get(tabId) ?? 0
     this.lastTurnEnd.set(tabId, turn.at)
-    const host = s.remote?.host
+    const keyedCwd = parseRemoteKey(s.cwd)
+    const host = s.remote?.host ?? keyedCwd?.host
+    const cwd = keyedCwd?.path ?? s.cwd
     const files = s.files ?? []
     const wrote = files.filter((f) => f.access === 'wrote')
     const written = wrote
@@ -96,7 +98,7 @@ export class ReaderDocs {
       .map((f) => f.src)
     const known = new Set([...wrote.map((f) => f.src), ...Object.keys(this.of(s.sessionId) ?? {})])
     const namesANewDoc = turn.reply.split(BETWEEN_PATHS_IN_PROSE).some((word) => {
-      const src = docIn(word, s.cwd, host)
+      const src = docIn(word, cwd, host)
       return src !== null && !known.has(src)
     })
     if (!written.length && !namesANewDoc) return
@@ -104,14 +106,14 @@ export class ReaderDocs {
       system: SYSTEM,
       prompt: promptFor(
         turn,
-        s.cwd,
+        cwd,
         written.map((src) => parseRemoteKey(src)?.path ?? src)
       )
     })
     if (reply === null) return
     const found = await Promise.all(
       reply.split('\n').map(async (line) => {
-        const src = docIn(line, s.cwd, host)
+        const src = docIn(line, cwd, host)
         if (!src || written.includes(src)) return src
         if (host)
           return (await this.deps.remoteFileExists(host, src).catch(() => false)) ? src : null

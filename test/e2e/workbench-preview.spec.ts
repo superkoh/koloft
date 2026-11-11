@@ -2,15 +2,26 @@ import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import {
   addRemoteWorkspace,
+  agyReady,
   killFakeRemote,
   launchWithRemote,
   machineHome,
+  OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
   remoteDir,
-  remoteKey
+  remoteKey,
+  type OtherAgentName
 } from './helpers/remote'
 import {
   centerTerm,
@@ -82,6 +93,39 @@ function recordedTermFrames(page: Page): Promise<string[]> {
     w.__stopTermFrames = true
     return w.__termFrames
   })
+}
+
+const WRITTEN_DOC = 'plan.md'
+
+const LOCAL_OTHER_AGENTS: { label: OtherAgentName; install: (env: E2EEnv) => void }[] = [
+  { label: 'Codex', install: (env) => installCodex(env) },
+  {
+    label: 'Muse',
+    install: (env) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    }
+  },
+  {
+    label: 'Antigravity',
+    install: (env) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    }
+  }
+]
+
+function assistHasJudgedTheDocsOfATurn(env: E2EEnv): boolean {
+  return fs.existsSync(path.join(env.userData, 'doc-verdicts.json'))
+}
+
+function remoteRepoWithOneChangedFile(env: E2EEnv): void {
+  const dir = remoteDir(env)
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+  fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+  gitInit(dir)
+  gitCommitAll(dir)
+  fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
 }
 
 function collapsedWithoutTips(env: E2EEnv): void {
@@ -163,24 +207,62 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     }
   })
 
-  test('WB-P03: a Codex session gets the same card with its total diff', async ({ env }) => {
-    test.setTimeout(180_000)
-    const fx = setupChangeFixture(env.workspaces.a)
-    fx.modifyTracked(2)
-    installCodex(env)
-    const { app, page } = await launchCollapsed(env)
-    try {
-      await newSessionInWith(page, 'ws-a', 'Codex')
-      await waitPanelAttached(page)
-      await expect.poll(() => layoutState(page)).toBe('T1')
-      await expect(diffLabel(page)).toHaveText('2 files', { timeout: 30_000 })
-      await page.locator(WORKBENCH.previewDiff).click()
-      await expect.poll(() => layoutState(page)).toBe('T2')
-      await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes')
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+  for (const tab of [
+    ...LOCAL_OTHER_AGENTS.map((agent) => ({
+      kind: `a local ${agent.label}`,
+      label: agent.label,
+      open: async (env: E2EEnv) => {
+        setupChangeFixture(env.workspaces.a).modifyTracked(1)
+        agent.install(env)
+        return {
+          ...(await launchCollapsed(env)),
+          wsName: 'ws-a',
+          docPath: path.join(env.workspaces.a, WRITTEN_DOC)
+        }
+      }
+    })),
+    ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
+      kind: `a remote (ssh) ${agent.label}`,
+      label: agent.label,
+      open: async (env: E2EEnv) => {
+        collapsedWithoutTips(env)
+        agent.install(env)
+        const { app, page } = await launchWithRemote(env)
+        remoteRepoWithOneChangedFile(env)
+        await addRemoteWorkspace(page, env)
+        return { app, page, wsName: REMOTE_WS_NAME, docPath: `${remoteKey(env)}/${WRITTEN_DOC}` }
+      }
+    }))
+  ]) {
+    test(`WB-P03: ${tab.kind} session gets the same card: its total diff, and the doc it wrote`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      const { app, page, wsName, docPath } = await tab.open(env)
+      try {
+        await newSessionInWith(page, wsName, tab.label)
+        await expect(wsRows(page, wsName)).toHaveCount(1, { timeout: 30_000 })
+        if (tab.label === 'Antigravity') await agyReady(page)
+        else await waitPanelAttached(page)
+        await runIn(page, centerTerm(page), `/write ${WRITTEN_DOC}`)
+        await waitPanelAttached(page)
+        await expect.poll(() => layoutState(page)).toBe('T1')
+        await expect.poll(() => assistHasJudgedTheDocsOfATurn(env), { timeout: 60_000 }).toBe(true)
+        await expect(docRows(page).filter({ hasText: WRITTEN_DOC })).toHaveAttribute(
+          'data-path',
+          docPath,
+          { timeout: 60_000 }
+        )
+        await expect(diffLabel(page)).toHaveText('2 files', { timeout: 60_000 })
+
+        await page.locator(WORKBENCH.previewDiff).click()
+        await expect.poll(() => layoutState(page)).toBe('T2')
+        await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   for (const tab of [
     {
@@ -322,13 +404,7 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     collapsedWithoutTips(env)
     const { app, page } = await launchWithRemote(env)
     try {
-      const dir = remoteDir(env)
-      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
-      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
-      gitInit(dir)
-      gitCommitAll(dir)
-      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
-
+      remoteRepoWithOneChangedFile(env)
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await wsRows(page, REMOTE_WS_NAME).first().click()
