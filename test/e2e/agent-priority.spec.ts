@@ -45,7 +45,7 @@ test('the program of every kind of agent tab on this Mac — Claude Code, Codex,
   try {
     const page = await app.firstWindow()
     await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
+    await startSessionIn(page, 'ws-a', { method: 'Claude' })
     const codex = await startCodex(page, env)
     const serverOfItsTab = fakeCodexLog<{ pid: number; tabId: string | null }>(
       env,
