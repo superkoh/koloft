@@ -58,7 +58,7 @@ let gemini: string
 let sessions: AgySessions
 let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
-let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
+let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv; aboveItsTools?: boolean }[]
 let agentTools: boolean
 let browserEndpoint: string
 let picked: AgyHomePick | undefined
@@ -207,8 +207,13 @@ beforeEach(() => {
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
-    create: vi.fn((args: { id: string; argv: string[]; processEnv: NodeJS.ProcessEnv }) => {
-      created.push({ id: args.id, argv: args.argv, env: args.processEnv })
+    create: vi.fn((args: (typeof created)[number] & { processEnv: NodeJS.ProcessEnv }) => {
+      created.push({
+        id: args.id,
+        argv: args.argv,
+        env: args.processEnv,
+        aboveItsTools: args.aboveItsTools
+      })
       return { id: args.id, startedAt: Date.now() }
     }),
     pidOf: vi.fn(() => process.pid),
@@ -318,6 +323,12 @@ function storedMember(id: string, permission?: 'bypass'): void {
 }
 
 describe('AgySessions launch', () => {
+  it('asks for agy on this Mac to start above its tools, and never for the ssh line of a tab on another machine', async () => {
+    await launch()
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    expect(created.map((c) => !!c.aboveItsTools)).toEqual([true, false])
+  })
+
   it("starts agy on the account's own folder with a token for its API, the model and effort it was given, and the first prompt typed in", async () => {
     await launch({ model: 'gemini-3.1-pro-high', effort: 'high', firstPrompt: 'hello' })
     expect(created[0].argv).toEqual([

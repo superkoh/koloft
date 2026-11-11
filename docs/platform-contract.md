@@ -3194,6 +3194,25 @@ server unless a line says so.
 - Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
   Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
   tab.
+- **`taskpolicy -a <program>` puts the program above the ones it starts.** `ps -M` showed
+  the main thread of `/usr/sbin/taskpolicy -a /bin/sh -c '/bin/sleep 3 & /bin/sleep 3 &
+  wait'` at priority 46 and both `sleep` children at 31; without `-a` all three were at
+  31. `taskpolicy` replaces itself with the program: the pid it was started with is the
+  program's, and `ps -o comm=` names the program. It ran without sudo.
+- **`-a` works only at launch.** `taskpolicy -a -p <pid>` on a running `/bin/sleep`
+  exited 0 and left it at 31. A program started with `-a` went 46 → 4 under `taskpolicy
+  -b -p <pid>` and back to 46 under `-B -p`; nothing moved it to 31.
+- **A real agent started that way keeps the step, and what it starts does not get
+  it.** Claude Code 2.1.322 started as `taskpolicy -a <claude>` in a python pty (a fake
+  Messages API on localhost, a throwaway `CLAUDE_CONFIG_DIR`): its main thread read 46,
+  the zsh of its Bash tool and the python that zsh ran read 31, and a `claude -p` that
+  python started read 31. Codex 0.166.0's TUI started the same way read 46.
+- All three measured 2026-11-11 on the same Mac (macOS 27.0, Darwin 27.0.0), by python
+  scripts run from a Koloft Claude Code tab, one run each. Not probed: whether macOS
+  lowers a `-a` program while its app is not frontmost or the screen is locked.
+
+Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
+program on this Mac through `taskpolicy -a` (ADR-0042).
 
 ## §60 Electron: is someone at the Mac
 

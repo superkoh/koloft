@@ -698,6 +698,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         rows: opts.rows,
         executable: binary,
         argv,
+        aboveItsTools: true,
         // AGY§27
         banner: pick.banner,
         processEnv: {

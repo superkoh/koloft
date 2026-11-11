@@ -741,6 +741,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         rows: opts.rows,
         executable: binary,
         argv,
+        aboveItsTools: true,
         // MUSE§1
         banner,
         processEnv: {
