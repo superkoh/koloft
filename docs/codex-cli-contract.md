@@ -2537,9 +2537,9 @@ message" (3 runs).
   `thread/queue/add` (§17), not the composer. Three things are pasted into the composer:
   a picked element (`Element picked in the Workbench browser`, `elementPick.ts`),
   failing checks (`CI check "…"`, `prChecks.ts`) and a hunk or passage comment (the
-  file's path, `hunkPrompt`, `passagePrompt`, `changesModel.ts`). Each goes through
-  `pasteFor` (`typeKeys.ts`), which puts two LFs before it; whether those LFs keep a
-  comment on a file whose name starts with `!` out of Shell mode was not probed.
+  file's path, `hunkPrompt`, `passagePrompt`, `changesModel.ts`). Each is pasted with
+  two LFs before it; whether those LFs keep a comment on a file whose name starts with
+  `!` out of Shell mode was not probed.
 - **A second paste lands right after whatever the composer holds, with nothing between.**
   2026-11-10, Codex CLI 0.166.0 on this Mac, Koloft's ✎ comment on a rendered Markdown
   file done twice before any Enter (`agent-tools-real-smoke.spec.ts` › "a real Codex

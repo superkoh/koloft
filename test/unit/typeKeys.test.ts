@@ -36,18 +36,15 @@ describe('a bracketed paste', () => {
 })
 
 describe('a paste from the Workbench into a session', () => {
-  // CODEX§23
-  it('starts on its own lines, so a picked element or failing checks put in before Enter do not run on from the note typed after a comment', () => {
-    const inTheBox = 'a.md\n\n' + 'make it 5 tries.'
-    for (const kind of ['claude', 'codex', 'muse', 'agy'] as const)
-      expect(inTheBox + pasteFor('Element picked in the Workbench browser', kind)).toContain(
-        'make it 5 tries.\x1b[200~\n\nElement picked in the Workbench browser'
-      )
+  // CC§18 CODEX§23 MUSE§7
+  it('starts with two line feeds inside the paste for Claude Code, Codex and Muse, so a picked element or failing checks put in before Enter do not run on from the note typed after a comment', () => {
+    for (const kind of ['claude', 'codex', 'muse'] as const)
+      expect(pasteFor('checks\n\n', kind)).toBe('\x1b[200~\n\nchecks\n\n\x1b[201~')
   })
 
   // AGY§15
-  it('types an Antigravity paste’s last line feeds after it, and still starts it on its own lines', () => {
-    expect(pasteFor('checks\n\n', 'agy')).toBe('\x1b[200~\n\nchecks\x1b[201~\n\n')
-    expect(pasteFor('checks\n\n', 'codex')).toBe('\x1b[200~\n\nchecks\n\n\x1b[201~')
+  it('types the two line feeds before an Antigravity paste and its last line feeds after it, since agy keeps a typed line feed and drops those at a paste’s end', () => {
+    expect(pasteFor('checks\n\n', 'agy')).toBe('\n\n\x1b[200~checks\x1b[201~\n\n')
+    expect(pasteFor('picked', 'agy')).toBe('\n\n\x1b[200~picked\x1b[201~')
   })
 })
