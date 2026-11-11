@@ -64,9 +64,11 @@ export type PaletteItem =
 export interface PaletteGroup {
   title: 'Sessions' | 'In conversations' | 'Workspaces' | 'Actions'
   items: PaletteItem[]
+  hidden?: number
 }
 
 export const CONVERSATION_HITS_SHOWN = 3
+export const SESSION_ROWS_PER_BATCH = 50
 
 export function matchesQuery(text: string, query: string): boolean {
   const hay = text.toLowerCase()
@@ -230,13 +232,18 @@ export function paletteGroups(
   workspaces: PaletteWorkspace[],
   actions: PaletteAction[],
   query: string,
-  hits: SessionSearchHit[] = []
+  hits: SessionSearchHit[] = [],
+  sessionRows = SESSION_ROWS_PER_BATCH
 ): PaletteGroup[] {
   if (!query.trim()) return []
   const matched = sessions.filter((s) => matchesQuery(s.text, query))
   const shown = new Set(matched.map((s) => s.row.id))
   const groups: PaletteGroup[] = [
-    { title: 'Sessions', items: matched },
+    {
+      title: 'Sessions',
+      items: matched.slice(0, sessionRows),
+      hidden: Math.max(0, matched.length - sessionRows)
+    },
     { title: 'In conversations', items: conversationItems(hits, shown) },
     { title: 'Workspaces', items: workspaces.filter((w) => matchesQuery(w.note, query)) },
     { title: 'Actions', items: actions.filter((a) => matchesAction(a, query)) }

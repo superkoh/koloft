@@ -34,6 +34,7 @@ import {
   subscribeDirty
 } from '../editRegistry'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
+import type { EditOpenResult } from '@shared/types'
 import '../editPane.css'
 import '../artifactPane.css'
 
@@ -58,6 +59,32 @@ export function editRefusal(failure: string): string {
   return 'Cannot edit this file — ' + (reasonSentence(null, failure) || 'unknown reason')
 }
 
+const readsInFlight = new Map<string, Promise<EditOpenResult>>()
+let lastRead: { path: string; result: EditOpenResult } | null = null
+
+export function readForEdit(path: string): Promise<EditOpenResult> {
+  const going = readsInFlight.get(path)
+  if (going) return going
+  const read = window.api.edit.open(path).then(
+    (result) => {
+      readsInFlight.delete(path)
+      lastRead = { path, result }
+      return result
+    },
+    (err: unknown) => {
+      readsInFlight.delete(path)
+      if (lastRead?.path === path) lastRead = null
+      throw err
+    }
+  )
+  readsInFlight.set(path, read)
+  return read
+}
+
+export function lastReadForEdit(path: string): EditOpenResult | null {
+  return lastRead?.path === path ? lastRead.result : null
+}
+
 export interface EditProbe {
   ready: boolean
   can: boolean
@@ -73,8 +100,7 @@ export function useEditProbe(path: string | null): EditProbe {
     }
     let cancelled = false
     setProbe({ ready: false, can: false, title: '' })
-    window.api.edit
-      .open(path)
+    readForEdit(path)
       .then((r) => {
         if (cancelled) return
         setProbe({
@@ -247,8 +273,7 @@ export function EditPane({
     if (!path) return
     window.api.fs.watchFile(path)
     const readDisk = (): void => {
-      window.api.edit
-        .open(path)
+      readForEdit(path)
         .then((r) =>
           reconcileDisk(ownerTab, tabId, {
             text: r.text,

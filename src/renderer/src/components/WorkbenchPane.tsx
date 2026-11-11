@@ -15,7 +15,13 @@ import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
-import type { ArtifactView, BrowserCdpOp, EditFingerprint, GithubTarget } from '@shared/types'
+import type {
+  ArtifactView,
+  BrowserCdpOp,
+  EditFingerprint,
+  EditOpenResult,
+  GithubTarget
+} from '@shared/types'
 import { CommitDialog } from './CommitDialog'
 import { useChangeTotals } from './FilesTabLabel'
 import { BrowserActions } from './BrowserActions'
@@ -33,7 +39,7 @@ import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { relOf } from './filesModel'
 import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
-import { editRefusal, useEditProbe } from './EditPane'
+import { editRefusal, lastReadForEdit, readForEdit, useEditProbe } from './EditPane'
 import {
   allEditTabs,
   beginEdit,
@@ -487,8 +493,22 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         arm()
         return
       }
-      void window.api.edit
-        .open(path)
+      const begin = (r: EditOpenResult): void => {
+        beginEdit(sid, tabId, {
+          path,
+          text: r.text,
+          eol: r.eol,
+          stamp: { mtimeMs: r.mtimeMs, size: r.size },
+          readOnly: r.readOnly
+        })
+        arm()
+      }
+      const seen = lastReadForEdit(path)
+      if (seen) {
+        begin(seen)
+        return
+      }
+      void readForEdit(path)
         .then((r) => {
           const now = statesRef.current[sid]?.tabs.find((t) => t.id === tabId)
           if (!now || now.path !== path) return
@@ -496,14 +516,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             arm()
             return
           }
-          beginEdit(sid, tabId, {
-            path,
-            text: r.text,
-            eol: r.eol,
-            stamp: { mtimeMs: r.mtimeMs, size: r.size },
-            readOnly: r.readOnly
-          })
-          arm()
+          begin(r)
         })
         .catch((err: unknown) => {
           useStore.getState().showToast(editRefusal(String((err as Error)?.message ?? '')))
