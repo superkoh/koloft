@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { AccountView, CodexLimits, QuotaBucket, SignInFolderKind } from '@shared/types'
 import { HomeAccountPicker } from '../../src/main/codexAccounts'
 import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
-import { saveHomeUsage, withSavedHomeUsage, type HomeUsage } from '../../src/main/savedHomeUsage'
+import { saveHomeUsage, type HomeUsage } from '../../src/main/savedHomeUsage'
 
 const WEEK_MINUTES = 7 * 24 * 60
+const SIGNED_IN = true
+const SIGNED_OUT = false
 const dirs: string[] = []
 
 function snapshotFile(): string {
@@ -52,6 +54,10 @@ function reopened(
   return new SavedUsage<HomeUsage>(file, nowMs)
 }
 
+function pickerOver(kind: SignInFolderKind, store: SavedUsage<HomeUsage>): HomeAccountPicker {
+  return new HomeAccountPicker(kind, (a) => store.get(a.name))
+}
+
 describe('usage of Codex, Muse and Antigravity accounts kept across a restart', () => {
   it.each<[SignInFolderKind, (used: number, nowMs: number) => Partial<AccountView>]>([
     ['codex-home', (used, nowMs) => ({ limits: weekLimits(used, nowMs) })],
@@ -63,16 +69,14 @@ describe('usage of Codex, Muse and Antigravity accounts kept across a restart', 
       const file = snapshotFile()
       const nowMs = Date.now()
       const before = new SavedUsage<HomeUsage>(file, nowMs)
-      saveHomeUsage(before, { name: 'Full', kind }, usage(1, nowMs), nowMs)
-      saveHomeUsage(before, { name: 'roomy', kind }, usage(0.1, nowMs), nowMs)
+      saveHomeUsage(before, 'full', SIGNED_IN, usage(1, nowMs), nowMs)
+      saveHomeUsage(before, 'roomy', SIGNED_IN, usage(0.1, nowMs), nowMs)
 
       const after = reopened(file, before, nowMs + 60_000)
-      const nothingReadYet = [account('Full', kind), account('roomy', kind)]
+      const nothingReadYet = [account('full', kind), account('roomy', kind)]
 
-      expect(new HomeAccountPicker(kind).pick(nothingReadYet)?.name).toBe('Full')
-      expect(
-        new HomeAccountPicker(kind).pick(withSavedHomeUsage(nothingReadYet, after))?.name
-      ).toBe('roomy')
+      expect(new HomeAccountPicker(kind).pick(nothingReadYet)?.name).toBe('full')
+      expect(pickerOver(kind, after).pick(nothingReadYet)?.name).toBe('roomy')
     }
   )
 
@@ -80,37 +84,40 @@ describe('usage of Codex, Muse and Antigravity accounts kept across a restart', 
     const file = snapshotFile()
     const nowMs = Date.now()
     const before = new SavedUsage<HomeUsage>(file, nowMs)
-    saveHomeUsage(before, { name: 'a', kind: 'agy-home' }, { quota: weekQuota(1, nowMs) }, nowMs)
+    saveHomeUsage(before, 'full', SIGNED_IN, { quota: weekQuota(1, nowMs) }, nowMs)
+    saveHomeUsage(before, 'roomy', SIGNED_IN, { quota: weekQuota(0.1, nowMs) }, nowMs)
 
     const after = reopened(file, before, nowMs + SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS)
 
-    const views = [account('a', 'agy-home')]
-    expect(withSavedHomeUsage(views, after)).toEqual(views)
+    const nothingReadYet = [account('full', 'agy-home'), account('roomy', 'agy-home')]
+    expect(pickerOver('agy-home', after).pick(nothingReadYet)?.name).toBe('full')
   })
 
   it('what this run has read wins over what was saved, and a read that failed keeps what was saved', () => {
-    const file = snapshotFile()
     const nowMs = Date.now()
-    const store = new SavedUsage<HomeUsage>(file, nowMs)
-    const a = { name: 'a', kind: 'codex-home' as const }
-    saveHomeUsage(store, a, { limits: weekLimits(0.9, nowMs) }, nowMs)
-    saveHomeUsage(store, a, { probeError: 'network' }, nowMs)
+    const store = new SavedUsage<HomeUsage>(snapshotFile(), nowMs)
+    saveHomeUsage(store, 'a', SIGNED_IN, { limits: weekLimits(1, nowMs) }, nowMs)
+    saveHomeUsage(store, 'b', SIGNED_IN, { limits: weekLimits(0.5, nowMs) }, nowMs)
+    saveHomeUsage(store, 'a', SIGNED_IN, { probeError: 'network' }, nowMs)
+    const picker = pickerOver('codex-home', store)
 
-    const failed = { ...account('a', 'codex-home'), probeError: 'network' as const }
-    expect(withSavedHomeUsage([failed], store)[0].limits?.windows[0].used).toBe(0.9)
+    const aFailed = { ...account('a', 'codex-home'), probeError: 'network' as const }
+    expect(picker.pick([aFailed, account('b', 'codex-home')])?.name).toBe('b')
 
-    const live = { ...account('a', 'codex-home'), limits: weekLimits(0.2, nowMs + 1) }
-    expect(withSavedHomeUsage([live], store)[0]).toBe(live)
+    const aReadEmpty = { ...account('a', 'codex-home'), limits: weekLimits(0, nowMs + 1) }
+    expect(picker.pick([aReadEmpty, account('b', 'codex-home')])?.name).toBe('a')
   })
 
-  it('an account that turns out to run on an API key drops its saved usage', () => {
+  it.each<[string, boolean, Partial<AccountView>]>([
+    ['is found signed out', SIGNED_OUT, {}],
+    ['turns out to run on an API key', SIGNED_IN, { apiKey: true }]
+  ])('an account that %s drops its saved usage', (_what, signedIn, probed) => {
     const file = snapshotFile()
     const nowMs = Date.now()
     const store = new SavedUsage<HomeUsage>(file, nowMs)
-    const a = { name: 'a', kind: 'muse-home' as const }
-    saveHomeUsage(store, a, { limits: weekLimits(0.9, nowMs) }, nowMs)
-    saveHomeUsage(store, a, { apiKey: true }, nowMs)
+    saveHomeUsage(store, 'a', SIGNED_IN, { limits: weekLimits(0.9, nowMs) }, nowMs)
+    saveHomeUsage(store, 'a', signedIn, probed, nowMs)
 
-    expect(reopened(file, store, nowMs).get('muse-home:a')).toBeUndefined()
+    expect(reopened(file, store, nowMs).get('a')).toBeUndefined()
   })
 })

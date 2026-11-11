@@ -1,47 +1,30 @@
-import type { AccountMeta, AccountView, CodexLimits, QuotaBucket } from '@shared/types'
+import type { AccountMeta, AccountView } from '@shared/types'
+import type { SavedUsage } from './savedUsage'
 
-export interface HomeUsage {
-  limits?: CodexLimits
-  quota?: QuotaBucket[]
-  at: number
-}
+export type HomeUsage = Pick<AccountView, 'limits' | 'quota'> & { at: number }
 
-export interface HomeUsageStore {
-  get(key: string): HomeUsage | undefined
-  set(key: string, usage: HomeUsage): void
-  delete(key: string): void
-}
-
-type ProbedView = Omit<AccountView, keyof AccountMeta>
-
-function keyOf(a: Pick<AccountMeta, 'name' | 'kind'>): string {
-  return `${a.kind}:${a.name.toLowerCase()}`
-}
+export type SavedHomeUsageOf = (a: AccountView) => HomeUsage | undefined
 
 export function saveHomeUsage(
-  store: HomeUsageStore,
-  account: Pick<AccountMeta, 'name' | 'kind'>,
-  probed: ProbedView | undefined,
+  store: SavedUsage<HomeUsage>,
+  key: string,
+  signedIn: boolean,
+  probed: Omit<AccountView, keyof AccountMeta> | undefined,
   nowMs: number
 ): void {
-  const key = keyOf(account)
-  if (probed?.apiKey) store.delete(key)
-  else if (!probed || probed.probeError) return
-  else if (probed.limits) {
-    if (store.get(key)?.at !== probed.limits.at)
-      store.set(key, { limits: probed.limits, at: probed.limits.at })
-  } else if (probed.quota?.length) store.set(key, { quota: probed.quota, at: nowMs })
+  if (!signedIn || probed?.apiKey) return store.delete(key)
+  if (!probed || probed.probeError) return
+  if (probed.limits) store.set(key, { limits: probed.limits, at: probed.limits.at })
+  else if (probed.quota?.length) store.set(key, { quota: probed.quota, at: nowMs })
 }
 
-export function withSavedHomeUsage(views: AccountView[], store: HomeUsageStore): AccountView[] {
-  return views.map((a) => {
+export function withSavedHomeUsage(
+  accounts: AccountView[],
+  savedOf: SavedHomeUsageOf
+): AccountView[] {
+  return accounts.map((a) => {
     if (a.limits || a.quota || a.apiKey) return a
-    const saved = store.get(keyOf(a))
-    if (!saved) return a
-    return {
-      ...a,
-      ...(saved.limits && { limits: saved.limits }),
-      ...(saved.quota && { quota: saved.quota })
-    }
+    const saved = savedOf(a)
+    return saved ? { ...a, limits: saved.limits, quota: saved.quota } : a
   })
 }

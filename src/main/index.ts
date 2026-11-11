@@ -84,7 +84,7 @@ import {
 } from './openTabs'
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
-import { saveHomeUsage, withSavedHomeUsage, type HomeUsage } from './savedHomeUsage'
+import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -1577,12 +1577,14 @@ const savedHomeUsage = new SavedUsage<HomeUsage>(
   path.join(app.getPath('userData'), 'home-usage-snapshots.json')
 )
 
-function homePickViews(views = accountViews()): AccountView[] {
-  return withSavedHomeUsage(views, savedHomeUsage)
+function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
+  return savedHomeUsage.get(viewKey(a.name, a.kind))
 }
 
 function pushHomeAccount(name: string, kind: SignInFolderKind): void {
-  saveHomeUsage(savedHomeUsage, { name, kind }, usageViews.get(viewKey(name, kind)), Date.now())
+  const key = viewKey(name, kind)
+  const signedIn = findAccount(name, kind)?.status === 'ok'
+  saveHomeUsage(savedHomeUsage, key, signedIn, usageViews.get(key), Date.now())
   pushAccounts()
 }
 
@@ -1779,7 +1781,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
     return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
   },
   muse: async () => {
-    const picked = musePicker.pick(homePickViews())
+    const picked = musePicker.pick(accountViews())
     return picked ? ((await museServeFor(picked.name)) ?? null) : null
   },
   agy: () => agyOneShotTarget()
@@ -2583,7 +2585,7 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
   if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
 }
 
-const codexPicker = new HomeAccountPicker('codex-home')
+const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
 const MUSE_QUOTA_FOLDER = 'muse-quota'
 const museProbedAt = new Map<string, number>()
 
@@ -2597,7 +2599,7 @@ function pickCodexHome(
 ): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(
-    homePickViews(views),
+    views,
     sessionAccounts?.of('codex', resumeSessionId),
     codexSessions?.launchedSessions()
   )
@@ -2778,7 +2780,7 @@ async function signInToHome(
   return { ok: true, ...tab }
 }
 
-const musePicker = new HomeAccountPicker('muse-home')
+const musePicker = new HomeAccountPicker('muse-home', savedHomeUsageOf)
 const preparedMuseHomes = new Set<string>()
 
 // MUSE§2 MUSE§13
@@ -2795,7 +2797,7 @@ function museHomeFor(name: string): string {
 function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
   const picked = musePicker.pick(
-    homePickViews(views),
+    views,
     sessionAccounts?.of('muse', resumeSessionId),
     museSessions?.launchedSessions()
   )
@@ -2858,7 +2860,7 @@ function probeMuseAccounts(): Promise<void> {
   return museProbeRound
 }
 
-const agyPicker = new HomeAccountPicker('agy-home')
+const agyPicker = new HomeAccountPicker('agy-home', savedHomeUsageOf)
 const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
@@ -2883,9 +2885,9 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
   const views = accountViews()
   const picked = onlyAsking
-    ? agyPicker.peek(homePickViews(views))
+    ? agyPicker.peek(views)
     : agyPicker.pick(
-        homePickViews(views),
+        views,
         sessionAccounts?.of('agy', resumeSessionId),
         agySessions?.launchedSessions()
       )
@@ -2989,7 +2991,7 @@ async function addHomeKey(
 
 // AGY§6 AGY§20
 async function agyOneShotTarget(): Promise<AssistTarget | null> {
-  const picked = agyPicker.pick(homePickViews())
+  const picked = agyPicker.pick(accountViews())
   const binary = await agyBinary()
   if (!picked || !binary) return null
   const apiKey = await agyApiKeyOf(picked.name)
