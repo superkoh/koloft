@@ -924,49 +924,44 @@ describe('ending a session that runs on the machine', () => {
   describe('while the rename that follows a moved conversation is still on its way to the machine', () => {
     const moved = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const renamed = `k-${moved}`
-    const renameOnItsWay = () => {
-      const kills: string[] = []
-      let renameComesBack = (_code: number): void => {}
-      const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
-      const host = machine(
-        (cmd, opts) => {
-          if (cmd === renameSessionCmd('pty-1', tmux, renamed))
-            return new Promise((done) => {
-              renameComesBack = (code) => done({ code, stdout: Buffer.alloc(0), stderr: '' })
-            })
-          if (cmd !== killSessionCmd(tmux) && cmd !== killSessionCmd(renamed))
-            return runOnMachine(cmd, opts)
-          kills.push(cmd)
-          return Promise.resolve({ code: 0, stdout: Buffer.alloc(0), stderr: '' })
-        },
-        { alive: () => new Set([live, moved]), pickAccount }
+    const tmuxWhoseOnlySessionIs = (name: string): string => {
+      const bin = path.join(home, '.local', 'bin')
+      fs.mkdirSync(bin, { recursive: true })
+      const killed = path.join(home, 'killed-sessions')
+      fs.writeFileSync(
+        path.join(bin, 'tmux'),
+        `#!/bin/sh
+[ "$3" = kill-session ] || exit 0
+[ "$5" = ${name} ] || { echo "can't find session: $5" >&2; exit 1; }
+printf '%s\\n' "$5" >> ${JSON.stringify(killed)}
+`,
+        { mode: 0o755 }
       )
-      void host.renameTmuxSession('pty-1', tmux, renamed)
-      return { host, kills, pickAccount, renameComesBack: (code: number) => renameComesBack(code) }
+      return killed
     }
 
-    it('a kill under the old name waits for the rename, ends the session under its new name, and the next launch of the moved conversation starts afresh', async () => {
-      const { host, kills, pickAccount, renameComesBack } = renameOnItsWay()
-      const ending = host.endTmuxSession(tmux)
-      const relaunching = host.launch({ root: keyed('/w'), resumeSessionId: moved })
-      expect(kills).toEqual([])
-      renameComesBack(0)
-      expect(await ending).toBeUndefined()
-      expect(kills).toEqual([killSessionCmd(renamed)])
-      await relaunching
-      expect(pickAccount).toHaveBeenCalled()
-    })
+    it.each([
+      ['has not reached the machine yet', tmux],
+      ['has already renamed the session there', renamed]
+    ])(
+      'a kill under the old name, sent when the rename %s, ends the session, and the next launch of the moved conversation starts afresh',
+      async (_when, nameOnTheMachine) => {
+        const killed = tmuxWhoseOnlySessionIs(nameOnTheMachine)
+        const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+        const neverBack = new Promise<BytesResult>(() => {})
+        const host = machine(
+          (cmd, opts) =>
+            cmd === renameSessionCmd('pty-1', tmux, renamed) ? neverBack : runOnMachine(cmd, opts),
+          { alive: () => new Set([moved]), pickAccount }
+        )
+        void host.renameTmuxSession('pty-1', tmux, renamed)
 
-    it('a kill under the old name ends the session under that name when the rename did not take, and the next launch of that conversation starts afresh', async () => {
-      const { host, kills, pickAccount, renameComesBack } = renameOnItsWay()
-      const ending = host.endTmuxSession(tmux)
-      const relaunching = host.launch({ root: keyed('/w'), resumeSessionId: live })
-      renameComesBack(1)
-      await ending
-      expect(kills).toEqual([killSessionCmd(tmux)])
-      await relaunching
-      expect(pickAccount).toHaveBeenCalled()
-    })
+        expect(await host.endTmuxSession(tmux)).toBeUndefined()
+        expect(fs.readFileSync(killed, 'utf8')).toBe(`${nameOnTheMachine}\n`)
+        await host.launch({ root: keyed('/w'), resumeSessionId: moved })
+        expect(pickAccount).toHaveBeenCalled()
+      }
+    )
   })
 })
 

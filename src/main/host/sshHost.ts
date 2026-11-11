@@ -599,7 +599,7 @@ export class SshHost implements Host {
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
-  private renames = new Map<string, { to: string; took: Promise<boolean> }>()
+  private renamesOnTheWire = new Map<string, string>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
   private wholeReads = 0
@@ -948,13 +948,10 @@ export class SshHost implements Host {
 
   // ADR-0044
   endTmuxSession(tmuxName: string): Promise<string | undefined> {
-    const renaming = this.renames.get(tmuxName)
-    const namesItMayHave = renaming ? [tmuxName, renaming.to] : [tmuxName]
+    const renamingTo = this.renamesOnTheWire.get(tmuxName)
+    const namesItMayHave = renamingTo ? [tmuxName, renamingTo] : [tmuxName]
     const killedIds = namesItMayHave.flatMap((name) => sessionIdOfTmux(name) ?? [])
-    const killed = renaming
-      ? renaming.took.then((took) => this.deps.run(killSessionCmd(took ? renaming.to : tmuxName)))
-      : this.deps.run(killSessionCmd(tmuxName))
-    const kill = killed.then((r) => {
+    const kill = this.deps.run(killSessionCmd(tmuxName, renamingTo)).then((r) => {
       for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
       if (!sshLinkBroke(r)) return undefined
       for (const id of killedIds) this.killedSessions.delete(id)
@@ -971,13 +968,11 @@ export class SshHost implements Host {
   }
 
   async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
-    const took = this.deps.run(renameSessionCmd(tabId, from, to)).then((r) => r.code === 0)
-    const renaming = { to, took }
-    this.renames.set(from, renaming)
+    this.renamesOnTheWire.set(from, to)
     try {
-      return await took
+      return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
     } finally {
-      if (this.renames.get(from) === renaming) this.renames.delete(from)
+      if (this.renamesOnTheWire.get(from) === to) this.renamesOnTheWire.delete(from)
     }
   }
 
