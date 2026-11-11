@@ -252,24 +252,18 @@ const CONTEXT_SUMMARY = 'context_summary'
 const LISTED_TITLE_AFTER_PROMPT_MS = 1000
 // AGY§14 AGY§26
 const KEYS = { yes: '1', noCommand: '4', noEdit: '2', noCreateOrRead: '\x1b' } as const
-const NO_KEY_OF_THE_TOOL_ASKING: Record<string, string> = {
-  EditFile: KEYS.noEdit,
-  ReplaceFileContent: KEYS.noEdit,
-  WriteFile: KEYS.noCreateOrRead,
-  WriteToFile: KEYS.noCreateOrRead,
-  ReadFile: KEYS.noCreateOrRead,
-  ViewFile: KEYS.noCreateOrRead
-}
 const TOOL_IN_BLOCKED_MESSAGE_RE = /^Approve (\w+):/
-const asTheBlockedMessageNamesIt = (tool: string): string =>
-  tool.replace(/(?:^|_)(\w)/g, (_, first: string) => first.toUpperCase())
+const EDITS_RE = /^(EditFile|ReplaceFileContent|edit_file|replace_file_content)$/
+const CREATES_OR_READS_RE =
+  /^(WriteFile|WriteToFile|ReadFile|ViewFile|write_file|write_to_file|read_file|view_file)$/
+// AGY§13
+const READING_TOOLS = new Set(['read_file', 'view_file'])
 
 // AGY§26 AGY§29
 function noKeyFor(blockedMessage: string | undefined, toolFromHook: string | undefined): string {
-  const asking =
-    TOOL_IN_BLOCKED_MESSAGE_RE.exec(blockedMessage ?? '')?.[1] ??
-    asTheBlockedMessageNamesIt(toolFromHook ?? '')
-  return NO_KEY_OF_THE_TOOL_ASKING[asking] ?? KEYS.noCommand
+  const asking = TOOL_IN_BLOCKED_MESSAGE_RE.exec(blockedMessage ?? '')?.[1] ?? toolFromHook ?? ''
+  if (EDITS_RE.test(asking)) return KEYS.noEdit
+  return CREATES_OR_READS_RE.test(asking) ? KEYS.noCreateOrRead : KEYS.noCommand
 }
 // AGY§9 AGY§24
 const HELD_ELSEWHERE =
@@ -1431,14 +1425,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const commandLine = tool && argOf(tool.args, 'CommandLine')
     const file =
       tool && !commandLine
-        ? (argOf(tool.args, 'TargetFile') ?? argOf(tool.args, 'Path'))
+        ? (argOf(tool.args, 'TargetFile') ??
+          argOf(tool.args, 'Path') ??
+          argOf(tool.args, 'AbsolutePath'))
         : undefined
     return {
       noKey: noKeyFor(status.msg, tool?.name),
       approval: {
         id,
         command: commandLine ?? file ?? status.msg,
-        ...(file ? { file, ...(tool?.name === 'read_file' && { read: true as const }) } : {})
+        ...(file ? { file, ...(READING_TOOLS.has(tool!.name) && { read: true as const }) } : {})
       }
     }
   }

@@ -1394,12 +1394,12 @@ only downloaded the public release.
   terminal and 7501 queries, a fake Gemini server making one tool call, the key sent 1.5
   s after `blocked`, 2026-11-11; one run per cell, the three versions agreeing wherever
   more than one ran (1.4.2 with its own `write_to_file`, `replace_file_content` and
-  `view_file`).
+  `view_file {AbsolutePath, toolSummary, toolAction}`).
 
   | ask, its 7501 msg | the box | `2` | `3` | `4` | Esc |
   |---|---|---|---|---|---|
   | create or overwrite a file outside the workspace, "Approve WriteFile: Write: <path>" ("WriteToFile" on 1.4.2) | 1 Yes / 2 Yes, and always allow non-workspace access / 3 No, deny creation | **writes the file and saves `"allowNonWorkspaceAccess": true`** | declines | nothing | declines |
-  | create a file inside it, same msg | 1 Yes / 2 No, deny creation | declines | nothing | — | declines |
+  | create or overwrite a file inside it, same msg | 1 Yes / 2 No, deny creation | declines | nothing | — | declines |
   | edit a file, inside or outside, "Approve EditFile: Write: <path>" ("ReplaceFileContent" on 1.4.2) | 1 Yes, accept / 2 No, reject | declines | nothing | — | nothing: "Esc disabled during file edits — press 1 to accept or 2 to reject." |
   | read a file outside it, "Approve ReadFile: Read: <path>" ("ViewFile" on 1.4.2) | 1 Yes / 2 Yes, and always allow non-workspace access / 3 No, deny access | not pressed | declines | nothing | declines |
   | run a command, "Approve RunCommand: <cmd>" | 1 Yes / 2, 3 Yes, and always allow… / 4 No, cancel | not pressed | not pressed | declines | declines |

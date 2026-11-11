@@ -360,7 +360,12 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
         await deny.first().click()
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       }
-      expect(await terminalText(page, tabId)).not.toContain('Wrote ../outside-notes.txt')
+      const screen = await terminalText(page, tabId)
+      expect(screen).not.toContain('Wrote ../outside-notes.txt')
+      expect(screen).toContain('User declined the tool call')
+      expect(machineAgyApiCalls(env).map((c) => c.method)).not.toContain(
+        'HandleCascadeUserInteraction'
+      )
       expect(fs.existsSync(outside)).toBe(false)
       expect(fs.existsSync(inside) ? fs.readFileSync(inside, 'utf8') : null).toBe(before)
     } finally {
