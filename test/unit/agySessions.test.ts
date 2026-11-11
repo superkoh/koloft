@@ -332,6 +332,20 @@ describe('AgySessions launch', () => {
     ])
   })
 
+  it('a first prompt that starts with / is typed into the tab once agy shows its prompt, not given with -i, so agy sends the skill it names; until then nobody else is told the tab takes typing', async () => {
+    const { id } = await launch({ firstPrompt: '/review do X' })
+    expect(created[0].argv).not.toContain('-i')
+    title(id, { conversation_id: '', agent_state: 'initializing' })
+    say(id, state('idle'))
+    expect(pty.write).not.toHaveBeenCalled()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    await hooksTaken(id)
+    expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review do X${ESC}[201~\r`]])
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+  })
+
   it('asks before every action by default, "edit without asking" starts accept-edits mode, and a resume opens the stored conversation with the permission it had', async () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
@@ -1487,6 +1501,17 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
     expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
     expect(spec.program.run).toMatch(/set -- agy .*'-i' 'hi'\n/)
+  })
+
+  it('a first prompt that starts with / is typed into the tab once the mirrored title says agy is idle, not given with -i', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, firstPrompt: '/review' })
+    expect(machine.launches[0].program.run).not.toContain("'-i'")
+    mirrored(id, [{ conversation_id: '', agent_state: 'authenticating' }])
+    expect(pty.write).not.toHaveBeenCalled()
+    mirrored(id, [{ conversation_id: '', agent_state: 'idle' }])
+    await vi.waitFor(() =>
+      expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review${ESC}[201~\r`]])
+    )
   })
 
   it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {

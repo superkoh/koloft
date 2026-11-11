@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { AttentionEvent } from '../../src/shared/types'
+import type { AttentionEvent, BackendId } from '../../src/shared/types'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
-import { pickToPress } from '../../src/shared/inbox'
+import { pickToPress, UNDO_MS, type InboxAnswers } from '../../src/shared/inbox'
 import {
   ANSWER_NOT_TAKEN_ON_A_CARD,
-  ASK_NO_LONGER_ON_SCREEN,
+  ASKED_BEFORE_IT_STOPPED,
+  DENY_AFTER_STOP,
+  SHOW_PLAN_AGAIN,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
@@ -15,10 +17,13 @@ import { ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
 import { SHOWS_NO_DIALOG } from '../../src/main/discord/relay'
 import type { AgentCaller } from '../../src/main/agentRequests'
 
-function host(): InboxHost {
+function host(sent: [string, string][] = []): InboxHost {
   return {
     now: () => Date.now(),
-    sendToSession: async (session) => ({ ok: true, session }),
+    sendToSession: async (session, text) => {
+      sent.push([session, text])
+      return { ok: true, session }
+    },
     answerSession: async () => ({ ok: true }),
     startSession: async () => ({ ok: true, session: 'new' }),
     footer: () => '',
@@ -39,7 +44,8 @@ const twoQuestions: KoloftAsk = {
 }
 
 function world(over: Partial<KoloftInboxDeps> = {}) {
-  const inbox = new Inbox(host())
+  const sent: [string, string][] = []
+  const inbox = new Inbox(host(sent))
   let marks: AttentionEvent[] = []
   const answered: [string, string][] = []
   const deps: KoloftInboxDeps = {
@@ -67,6 +73,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     inbox,
     koloft,
     answered,
+    sent,
     mark: (m: AttentionEvent[]) => {
       marks = m
       koloft.sync()
@@ -75,6 +82,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
 }
 
 const asking: AttentionEvent = { tabId: 't1', kind: 'approval', at: 100, sessionId: 's-t1' }
+const stoppedAsking: AttentionEvent = { ...asking, kind: 'turn-done', wasAsking: true }
 
 describe('Koloft source — a session waiting on the owner is a card, and the card follows the session', () => {
   it('a session that asks gets a high card with every question on it', async () => {
@@ -94,25 +102,141 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
   })
 
-  it('a question still waiting when its session stops (a Koloft restart, a tab restart) stays in Needs you, showing what it asked with its options and sending the owner to its tab, and closes once the session works again', async () => {
+  async function pressAfterTheUndo(
+    w: ReturnType<typeof world>,
+    action: string,
+    answers: InboxAnswers = {}
+  ): Promise<void> {
+    vi.useFakeTimers()
+    try {
+      w.inbox.press(w.inbox.all()[0].id, action, answers)
+      await vi.advanceTimersByTimeAsync(UNDO_MS)
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it('a question still waiting when its session stops (a Koloft restart, a tab restart) keeps its options and own-words answers in Needs you; an answer goes to the session as a message naming the question and the pick, and the card moves to Done as Answered', async () => {
     const w = world()
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    w.mark([{ ...asking, kind: 'turn-done' }])
-    expect(w.inbox.all()[0]).toMatchObject({
+    w.mark([stoppedAsking])
+    const card = w.inbox.all()[0]
+    expect(card).toMatchObject({
       state: 'needs-you',
-      actions: [],
+      actions: [{ label: 'Send answers', takes: ['q'] }],
       blocks: [
-        {
-          type: 'quote',
-          who: 'It asked',
-          text: 'Which colour?\n1. Red\n2. Blue\n\nWhich sizes?\n1. S\n2. M\n3. L'
-        },
-        { type: 'text', text: ASK_NO_LONGER_ON_SCREEN }
+        { type: 'choice', questions: [{ ownAnswer: true }, { ownAnswer: true }] },
+        { type: 'text', text: ASKED_BEFORE_IT_STOPPED }
       ]
     })
-    w.mark([])
-    expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
+    await pressAfterTheUndo(w, 'answer', {
+      q: { q0: ['o1'], q1: { own: 'just M' } }
+    })
+    expect(w.sent).toHaveLength(1)
+    expect(w.sent[0][0]).toBe('s-t1')
+    expect(w.sent[0][1]).toContain('Which colour? «Blue»; Which sizes? «just M»')
+    expect(w.answered).toEqual([])
+    expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Answered' })
+  })
+
+  it('a command still waiting when its session stops is allowed or denied by a message to the session', async () => {
+    const w = world({ askOf: async () => ({ kind: 'approval', command: 'rm -rf build' }) })
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions.map((a) => a.label)).toEqual(['Allow', 'Deny'])
+    await pressAfterTheUndo(w, 'deny')
+    expect(w.sent[0][1]).toContain(DENY_AFTER_STOP)
+    expect(w.answered).toEqual([])
+  })
+
+  function sessionWorld(
+    over: Partial<KoloftInboxDeps>,
+    on: { machine?: string; backend?: BackendId } = {}
+  ) {
+    let live = true
+    const backend = on.backend ?? 'claude'
+    const w = world({
+      liveTabOf: (ref) => (live ? { tabId: ref.replace(/^s-/, ''), backend } : undefined),
+      sessionOfTab: (tabId) => ({
+        sessionId: `s-${tabId}`,
+        title: 'Fix login',
+        backend,
+        machine: on.machine
+      }),
+      ...over
+    })
+    return { w, setLive: (v: boolean) => (live = v) }
+  }
+  const aPlan = { askOf: async (): Promise<KoloftAsk> => ({ kind: 'approval', plan: '' }) }
+
+  it('a plan, even one with no text, still waiting when its local session stops is asked for once more, by its own “Show it again” with the usual undo, as soon as that session runs again; until then the owner may ask for it or reject it', async () => {
+    const { w, setLive } = sessionWorld(aPlan)
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    setLive(false)
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0]).toMatchObject({
+      state: 'needs-you',
+      actions: [{ label: 'Show it again' }, { label: 'Reject' }]
+    })
+    vi.useFakeTimers()
+    try {
+      setLive(true)
+      w.mark([stoppedAsking])
+      w.mark([stoppedAsking])
+      expect(w.inbox.all()[0].press?.action).toBe('approve')
+      await vi.advanceTimersByTimeAsync(UNDO_MS)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(w.sent).toHaveLength(1)
+    expect(w.sent[0][1]).toContain(SHOW_PLAN_AGAIN)
+    expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Asked to show it again' })
+  })
+
+  it('an ask of a remote Claude Code, Muse or Antigravity session, whose agent lives on in tmux through a Koloft restart, keeps its live buttons, and pressing one before the session is back leaves the card waiting', async () => {
+    const { w, setLive } = sessionWorld(aPlan, { machine: 'build-box' })
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    setLive(false)
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions.map((a) => a.label)).toEqual(['Approve', 'Reject'])
+    expect(await w.koloft.answer('s-t1', { pick: 'yes' })).toMatchObject({ ok: false })
+    expect(w.sent).toEqual([])
+  })
+
+  it('a question of a remote Codex session, whose turn the restart cuts off, is answered by message once its session is back; until then it keeps its live buttons', async () => {
+    const { w, setLive } = sessionWorld({}, { machine: 'build-box', backend: 'codex' })
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    setLive(false)
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions[0].run).toMatchObject({ answer: 'q' })
+    setLive(true)
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions[0].run).toMatchObject({
+      message: expect.stringContaining('{answer:q}')
+    })
+  })
+
+  it('a card answered by message turns back into the same card answering the live question if its session turns out to still show it', async () => {
+    const { w } = sessionWorld({}, { machine: 'build-box', backend: 'codex' })
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    const id = w.inbox.all()[0].id
+    w.mark([stoppedAsking])
+    w.mark([asking])
+    await vi.waitFor(() =>
+      expect(w.inbox.all()).toEqual([
+        expect.objectContaining({
+          id,
+          state: 'needs-you',
+          actions: [expect.objectContaining({ run: expect.objectContaining({ answer: 'q' }) })]
+        })
+      ])
+    )
   })
 
   const finished = (tabId: string): AttentionEvent => ({

@@ -824,6 +824,29 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   whose `~/.claude.json` trusted the repo, no login, driven in a python pty with a
   `--settings` SessionStart hook, then `git worktree list`, `git branch -v`, `git reflog`
   and `git fsck`.
+- **A dialog open when claude is killed does not come back on `--resume`.** Measured
+  2026-11-09, CC 2.1.321 (the native binary), a python pty with `pyte`, scratch `HOME`
+  and `CLAUDE_CONFIG_DIR`, a local fake Messages API, logging hooks on every event; an
+  `AskUserQuestion` (Red / Green) killed 3 s after it drew with SIGHUP (2 runs) or
+  SIGKILL (1), and an `ExitPlanMode` plan with SIGHUP (1), then `claude --resume <id>`
+  in a new pty, 20 s with no key, then a typed line. SIGHUP exits 129 after a
+  `SessionEnd` (`reason: "other"`) and appends only two `cost-state` records; SIGKILL
+  appends nothing. Either way the transcript's last message stays the `tool_use` with
+  no result. On resume no dialog draws, no `PermissionRequest` or `PreToolUse` fires,
+  OSC 7501 says only `idle`, and no request goes to the model; the screen shows `User
+  declined to answer questions` (`User rejected Claude's plan:` for the plan, which
+  stays in plan mode on a bare `--resume`). Only with the next prompt does CC write, and send, a
+  `tool_result` with `is_error: true` and `[Tool call interrupted: the session ended
+  before this call's result was recorded, so its outcome is unknown. …]`, then an
+  assistant `"No response requested."` (`model: "<synthetic>"`), then the prompt. So
+  after a restart the question can be answered only by a message, and a plan only by
+  asking claude to ask again. **Koloft's own resume does not keep plan mode**: 2026-11-10,
+  CC 2.1.322, the hand-test sandbox, a real local Claude tab (Haiku 5.5) with "Skip
+  permission prompts" on, a plan dialog open when Koloft quit; Koloft resumed it with
+  `--dangerously-skip-permissions --resume <id>`, the transcript's mode went from `plan`
+  to `bypassPermissions`, and asked to show the plan again claude called `ExitPlanMode`
+  twice, each refused "You are not in plan mode. To enter plan mode, call the
+  EnterPlanMode tool first…", then asked for approval with an `AskUserQuestion`. 1 run.
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
@@ -1732,10 +1755,32 @@ inferred, not checked.
   the `queue-operation` pair; that session, opened by `/goal`, got no `ai-title`.
   Which shape a task finishing mid-turn gets is not probed yet. Terminal `<status>` values are
   `completed`, `failed`, `killed`, `stopped`, `cancelled`, `canceled`; `stopped` comes
-  for a task killed from the UI, by a Monitor timeout, or by agent teardown. Long-lived
-  tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
+  for a task killed from the UI, by a Monitor timeout, or by agent teardown. A Monitor
+  also sends progress notifications, which carry only its `<task-id>` (the bullet above;
+  rechecked below on 2.1.322).
   The terminal notification wakes the model, so a wrap-up turn with its own Stop
   follows. Every ack kind gets one — except a teammate.
+  **2.1.322 cuts a long command in the middle of the summary** (the 2.1.321 changelog
+  names that release; 2.1.320 and 2.1.321 were not run). For a background shell whose
+  command is over 1,000 characters, 2.1.322 keeps the first 500 and the last 300
+  characters of the raw `<summary>` text (counted before `>` is escaped as `&gt;`) and
+  puts `\n\n... [N characters truncated] ...\n\n` between them; 2.1.319 wrote the
+  whole command. The marker holds no `<`, and `<task-id>`, `<tool-use-id>` and
+  `<status>` are unchanged. The Stop hook's `background_tasks[].command` and
+  `.description` were already cut near 1,000 characters with `… [+N chars]` on both
+  builds. Rechecked the same day on both builds, unchanged: the notification opens with
+  `<task-notification>` and carries `<task-id>`, `<tool-use-id>` and
+  `<status>completed</status>`; a Monitor event is `<summary>Monitor event: "<description>"</summary>`
+  with no `<status>` or `<tool-use-id>`, and its end is `<status>completed</status>` with
+  `Monitor "<description>" stream ended`; a task that finishes while CC sits idle is
+  written as the `queue-operation` enqueue, then a user record with `origin.kind:
+  'task-notification'` and no `isMeta`, and the UserPromptSubmit `prompt` opens with
+  `<task-notification>`; Stop's `background_tasks` entries hold `id`, `type`, `status`,
+  `description` and `command`, a Monitor as `type: "shell"`. (2026-11-10, CC 2.1.319 and
+  2.1.322 darwin-arm64, interactive TUI in a Python pty, scratch `HOME` and
+  `CLAUDE_CONFIG_DIR`, one 1,224-character background command, one short one and one
+  Monitor; the 1,000 threshold is the 2.1.321 changelog's, only 1,224 was run. Not
+  probed: the `attachment` path, which neither run wrote, and `TaskStop`'s result.)
 - **A teammate never gets a `<task-notification>`** (measured: 149 `teammate_spawned`
   acks across 41 recent transcripts, zero named by one). It reports through an
   `Another Claude session sent a message: <teammate-message …>` record, which carries
@@ -2117,26 +2162,50 @@ branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 
 How established: the script as served on 2026-09-08 was fetched and read, alongside
 the official install docs; Claude Code 2.1.263 was the current version that day. The
-bullets dated 2026-10-11 were measured against a real install on macOS.
+bullets dated 2026-10-11 were measured against a real install on macOS; the 2026-11-10
+rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
+(`node:22-bookworm`, linux-arm64).
 
 - **It is `#!/bin/bash`** (uses `[[ ]]` and `=~`), so `sh` cannot run it — a machine
-  without bash needs bash installed first. It needs `curl` or `wget` and `sha256sum` or
-  `shasum`, detects `x86_64` / `aarch64` and musl by itself, **refuses to run under
-  `sudo`** (plain root is fine), and installs a self-contained native binary to
-  `~/.local/bin/claude`, so a machine with claude need not have node.
+  without bash needs bash installed first. It needs `curl` or `wget`, and `shasum -a
+  256` on macOS or `sha256sum` on Linux (each OS uses only its own), detects `x86_64` /
+  `aarch64` and musl by itself, **refuses to run under `sudo`** (plain root is fine), and
+  installs a self-contained native binary to `~/.local/bin/claude`, so a machine with
+  claude need not have node. Rechecked 2026-11-10 on the script serving 2.1.322: under
+  `dash` it stops with `Syntax error: "(" unexpected` (exit 2); as root with
+  `SUDO_USER=node` it prints "Error: do not run this installer with sudo." and exits 1
+  (`CLAUDE_INSTALL_ALLOW_SUDO` lifts that); `~/.local/bin/claude` points into
+  `~/.local/share/claude/versions/2.1.322` on macOS and in a `node:22-bookworm`
+  container alike.
 - **The installer writes no shell rc file.** It only prints "~/.local/bin is not in your
   PATH" with an `echo … >> ~/.zshrc` line for the user to run, so neither `zsh -l -c` nor
   `zsh -l -i -c` finds `claude` afterwards. It does create `~/.claude.json` (install
   method, user and machine ids — no `hasCompletedOnboarding`). (2026-10-11, Claude Code
   2.1.296, macOS 27: `curl -fsSL https://claude.ai/install.sh | bash` under `zsh -l -i`
   with a fresh temporary `HOME` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, then the home's
-  files listed and `command -v claude` run through both shells.)
+  files listed and `command -v claude` run through both shells. Rechecked 2026-11-10 on
+  2.1.322, the same way on macOS, and on Linux in `node:22-bookworm`: still no rc file
+  written, `.bashrc` and `.profile` unchanged; there `bash -l` does find `claude`, but
+  only because Debian's stock `.profile` adds `~/.local/bin`.)
 - **The binary download prints nothing.** The script fetches the native binary with
   `curl -fsSL -o` (or `wget -q -O`) and prints its first line, "Setting up Claude
   Code...", only after the download and checksum. For 2.1.316 the macOS download is
   107 MB (arm64) or 114 MB (x64) when `zstd` is on the machine, 310 MB or 324 MB without
   it, so at 2 Mbit/s it is silent for 7 to 22 minutes. (2026-11-01: the served script
   read; `latest` answered 2.1.316, sizes from its `manifest.json` and `manifest.zst.json`.)
+  For 2.1.322: darwin-arm64 111.9 MB with `zstd` / 323.7 MB without, darwin-x64 119.1 /
+  338.4 MB, linux-arm64 123.3 / 341.5 MB, linux-x64 124.5 / 341.9 MB (its manifests,
+  2026-11-10).
+- **On macOS the `claude install` step then downloads the whole binary again, in
+  silence.** After "Installing Claude Code native build latest..." it fetches the
+  uncompressed build into `~/.cache/claude/staging` even with `zstd` on the Mac, 323.7 MB
+  on arm64, and the terminal gets no byte meanwhile: at 2 Mbit/s a second silent stretch
+  of about 22 minutes. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
+  script serving 2.1.322: three darwin-arm64 installs in a Python pty with a scratch
+  `HOME`, `/opt/homebrew/bin/zstd` on the login PATH, 41.7, 52.6 and 46.3 s of no output
+  while the staging file grew to 323.7 MB; one in `node:22-bookworm`. Inferred, not
+  checked: the same on x64 (338.4 MB uncompressed, per the manifest), on a Mac without
+  `zstd`, and on 2.1.316.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -2368,6 +2437,20 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
   300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
   2.1.286); the setup was not re-run here.
+- **A line typed before claude starts lands in the input box unsent.** At zsh's
+  `ESC[?2004h`, one write of the launch line (`exec claude …` CR) and `hello` CR — or
+  `hello` LF — showed `❯ hello` in the box and sent nothing in 14 s (2.1.319 twice for
+  CR, once for LF; 2.1.318 once). Sent at once (`❯ hello`, the fake model's answer, a
+  `user` record `"hello"`): `hello` in that write and a lone CR 0.3 s or 3 s later;
+  `hello` CR written 0.3 s after the launch line; `hello` written when claude turned on
+  bracketed paste (its `?2004h`, 0.24 s after zsh's) and CR 0.3 s after that. Its
+  SessionStart hook ran 0.09 s after that `?2004h`. claude writes the `?2004h` before it
+  draws the folder-trust question, and runs no SessionStart hook until the folder is
+  trusted; `hello` CR typed either way (with the launch line, or at the `?2004h`) left
+  the question on screen, `No, exit` still picked, and the text gone. Measured 2026-11-08,
+  a python `pty` running `zsh -i` (scratch `HOME`, `.zshrc` of `sleep 1`), the binary
+  started directly with `apiKeyHelper` and a fake Messages API on localhost, the screen
+  read through `pyte`.
 - **Typing while claude is in the middle of a turn queues the message**: the screen
   shows "Press up to edit queued messages", and claude takes it once the running tool
   call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the

@@ -5,7 +5,7 @@ import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { CSRF_HEADER, SERVICE } from '../agyApi'
-import { remoteShCommand } from './install'
+import { remoteAnswerCommand, remoteShCommand } from './install'
 import {
   EXEC_ARGS_THROUGH_THE_STATUS_RELAY,
   machineToolProgram,
@@ -145,7 +145,7 @@ const CONFIG_SPLIT = '\u0001'
 // AGY§4 AGY§5
 export function readAgyConfigCmd(account: string): string {
   const f = (p: string): string => `cat "${p}" 2>/dev/null; printf '${CONFIG_SPLIT}'`
-  return remoteShCommand(
+  return remoteAnswerCommand(
     [
       `A=${remoteAgyHome(account)}`,
       f(`${REMOTE_GEMINI}/${AGY_APP_DIR}/settings.json`),
@@ -179,7 +179,7 @@ export function parseAgyConfig(stdout: string): RemoteAgyConfig {
 // AGY§8
 export function listAgyCmd(machineName: string): string {
   const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
-  return remoteShCommand(
+  return remoteAnswerCommand(
     `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { echo "Koloft's files are not on this machine yet." >&2; exit 1; }
 exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations"`,
     [machineName, TOP_LEVEL_ROWS]

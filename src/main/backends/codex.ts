@@ -1,9 +1,8 @@
 import { hasUsableAccount } from '@shared/accountUsage'
-import { parseRemoteKey } from '@shared/remoteKey'
 import { listAccounts } from '../accounts'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
-import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from '../codexTrust'
+import { acceptCodexTrust, codexConfigFile } from '../codexTrust'
 import type { ResumeProbes } from '../resumePlan'
 import { storedBackend } from './stored'
 
@@ -25,12 +24,7 @@ export function codexBackend(
     resumeProbes,
     {
       accountUsable: () => hasUsableAccount(listAccounts(), 'codex'),
-      trustsFolder: (dir) => {
-        const onMachine = parseRemoteKey(dir)
-        return onMachine
-          ? sessions.machineTrusts(onMachine)
-          : codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir)
-      },
+      trustsFolder: (dir) => sessions.trustsFolder(dir),
       turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
       peerNames: () => async () => null,
       runningElsewhere: () => false

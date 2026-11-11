@@ -955,7 +955,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks', async ({
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks; its task, which starts with /, is typed once agy is ready instead of given with -i, and the run finishes', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -999,10 +999,43 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         'gemini-4-argon',
         '--effort',
         'medium',
-        '--dangerously-skip-permissions',
-        '-i',
-        TASK
+        '--dangerously-skip-permissions'
       ])
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 30_000 }
+        )
+        .toEqual(['done'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('an Antigravity job in a git workspace agy trusts starts in its new worktree without agy asking whether to trust that folder', async ({
+    env
+  }) => {
+    installAgy(env)
+    gitInit(env.workspaces.a)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(1)
+      expect(path.basename(path.dirname(sessionCalls(env)[0].cwd))).toBe('worktrees')
       await expect
         .poll(
           () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),

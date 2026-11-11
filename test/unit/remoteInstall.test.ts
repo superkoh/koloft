@@ -2,15 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { spawnSync } from 'child_process'
+import readline from 'readline'
+import { spawn, spawnSync, type ChildProcess } from 'child_process'
 
 import {
   ENSURE_SH,
+  HOOKS_CHANGED,
   NO_FILES_THERE,
   NODE_VERSION,
   heartbeatCmd,
+  hookBellCmd,
   parseHeartbeat
 } from '../../src/main/remote/install'
+import { answerOf } from '../../src/main/remote/ssh'
 import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
@@ -467,6 +471,41 @@ exit 0`
   })
 })
 
+describe('the hook bell on the machine', () => {
+  const SEVERAL_LOOKS_AT_THE_FOLDER_MS = 1500
+  const A_FEW_LOOKS_EVEN_ON_A_BUSY_MAC_MS = 3000
+  let home = ''
+  let bell: ChildProcess | undefined
+
+  beforeAll(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-bell-'))
+  })
+
+  afterAll(() => {
+    bell?.kill()
+    fs.rmSync(home, { recursive: true, force: true })
+  })
+
+  it('rings once as it starts, so a hook that landed before it looked is not missed, then soon after a hook appends a line, and never while the folder stays as it was', async () => {
+    const hookDir = path.join(home, '.koloft', 'hook-sessions')
+    fs.mkdirSync(hookDir, { recursive: true })
+    const log = path.join(hookDir, 't1.status.jsonl')
+    fs.writeFileSync(log, '{"event":"prompt"}\n')
+    const lines: string[] = []
+    bell = spawn('sh', ['-c', hookBellCmd()], { env: { ...process.env, HOME: home } })
+    readline.createInterface({ input: bell.stdout! }).on('line', (line) => lines.push(line))
+    await expect.poll(() => lines.includes(HOOKS_CHANGED), { timeout: 5000 }).toBe(true)
+    lines.length = 0
+    await new Promise((r) => setTimeout(r, SEVERAL_LOOKS_AT_THE_FOLDER_MS))
+    expect(lines).not.toContain(HOOKS_CHANGED)
+
+    fs.appendFileSync(log, '{"event":"stop"}\n')
+    const appendedAt = Date.now()
+    await expect.poll(() => lines.includes(HOOKS_CHANGED), { timeout: 5000 }).toBe(true)
+    expect(Date.now() - appendedAt).toBeLessThan(A_FEW_LOOKS_EVEN_ON_A_BUSY_MAC_MS)
+  }, 20_000)
+})
+
 describe('the heartbeat question', () => {
   let dir = ''
   let repo = ''
@@ -634,13 +673,10 @@ describe('the heartbeat question', () => {
     fs.writeFileSync(path.join(brain, 'transcript.jsonl'), 'a\n')
     fs.writeFileSync(path.join(other, 'x'), 'a\n')
     const beat = (): ReturnType<typeof parseHeartbeat> => {
-      const res = spawnSync(
-        'sh',
-        ['-c', heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])],
-        { encoding: 'utf8', env: { ...process.env, HOME: home } }
-      )
+      const cmd = heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])
+      const res = spawnSync('sh', ['-c', cmd], { env: { ...process.env, HOME: home } })
       expect(res.status).toBe(0)
-      return parseHeartbeat(res.stdout)
+      return parseHeartbeat(answerOf(cmd, res.stdout).toString('utf8'))
     }
     const first = beat()
     expect(first.mirrors.extras).toHaveLength(3)

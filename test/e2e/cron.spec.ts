@@ -1531,6 +1531,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   })
 
   const REMOTE_TASK = `/daily-report please "quote" it's $HOME`
+  const machineCodexConfig = (env: E2EEnv): string =>
+    path.join(machineHome(env), '.koloft', 'codex-home', 'config.toml')
   const machineWire = (env: E2EEnv): CodexWireLine[] =>
     machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')
   const REMOTE_FIELDS_AGENTS: {
@@ -1547,22 +1549,34 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     {
       agent: 'Codex',
       repo: true,
-      setUp: (env) => installCodexOnFakeRemote(env),
+      setUp: (env) => {
+        installCodexOnFakeRemote(env)
+        fs.mkdirSync(path.dirname(machineCodexConfig(env)), { recursive: true })
+        fs.mkdirSync(remoteDir(env), { recursive: true })
+        fs.writeFileSync(
+          machineCodexConfig(env),
+          `[projects.${JSON.stringify(fs.realpathSync(remoteDir(env)))}]\ntrust_level = "trusted"\n`
+        )
+      },
       pickModel: (dlg) => dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click(),
       launched: (env) => {
         const start = codexCalls(env).find((c) => c.method === 'thread/start')
         return start && { argv: start.argv, cwd: start.effectiveCwd }
       },
       flags: ['-a', 'never', '-s', 'danger-full-access', '-m', 'gpt-6-luna', REMOTE_TASK],
-      // CODEX§17
+      // CODEX§11 CODEX§17
       onTheMachine: {
         read: (env) => ({
           task: codexPromptsSent(machineWire(env)),
           name: machineWire(env).flatMap(({ direction, frame }) =>
             direction === 'client' && frame.method === 'thread/name/set' ? [frame.params?.name] : []
-          )
+          ),
+          runTreeTrusted:
+            /\[projects\."[^"]*\/\.claude\/worktrees\/[^"]+"\]\ntrust_level = "trusted"/.test(
+              fs.readFileSync(machineCodexConfig(env), 'utf8')
+            )
         }),
-        is: { task: [REMOTE_TASK], name: ['Remote report'] }
+        is: { task: [REMOTE_TASK], name: ['Remote report'], runTreeTrusted: true }
       },
       named: 'its name',
       rowTitle: 'Remote report'
@@ -1600,9 +1614,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       },
       pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Argon$/ }).click(),
       launched: (env) => machineAgyCalls(env)[0],
-      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions', '-i', REMOTE_TASK],
-      // AGY§8 AGY§16
-      named: 'no name, its row taking agy’s own title',
+      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions'],
+      // AGY§8 AGY§16 AGY§31
+      named:
+        'no name, its /task typed in once agy is ready rather than given with -i, its row taking agy’s own title',
       rowTitle: REMOTE_TASK
     }
   ]
@@ -1682,6 +1697,40 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       }
     })
   }
+
+  // AGY§5
+  test('an Antigravity job in a remote git workspace agy trusts there starts in its new worktree on the machine without agy asking whether to trust that folder', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    installAgy(env)
+    installRemoteAgy(env)
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const dlg = await openCron(page, REMOTE_WS_NAME)
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { agent: 'Antigravity', name: 'Remote report', task: 'look around' })
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Remote report')
+
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 120_000 }).toBe(1)
+      expect(machineAgyCalls(env)[0].cwd).toBe(
+        runTree(remoteDir(env), path.basename(machineAgyCalls(env)[0].cwd))
+      )
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 120_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
 
   test('BB-M34 on a remote workspace: a run whose agent dies on the machine keeps its tab reading the agent’s own exit code and its folder on the machine, until you close the tab', async ({
     env
@@ -2149,6 +2198,47 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect(job.task).toBe('/gamma\nand more')
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  test("BB-M16 in Codex: a Codex task suggests Codex's own skills after $, and switching back to Claude Code brings back the / list", async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    const put = (dir: string, name: string): void => {
+      fs.mkdirSync(path.join(dir, name), { recursive: true })
+      fs.writeFileSync(path.join(dir, name, 'SKILL.md'), `---\nname: ${name}\n---\n`)
+    }
+    put(path.join(env.workspaces.a, '.claude', 'skills'), 'zeta')
+    put(path.join(env.workspaces.a, '.agents', 'skills'), 'ship')
+    put(path.join(env.home, '.codex', 'skills'), 'tidy')
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      const task = dlg.locator('[aria-label="What to run"]')
+      const listed = dlg.locator('.wt-list .cb-row .wt-name')
+
+      await task.fill('$')
+      await expect(listed).toHaveText(['$ship', '$tidy'])
+      await task.fill('$ti')
+      await page.keyboard.press('Enter')
+      await expect(task).toHaveValue('$tidy ')
+
+      await task.fill('/')
+      await expect(dlg.locator('p.field-hint', { hasText: "skill's $name" })).toBeVisible()
+      await expect(dlg.locator('.wt-list')).toHaveCount(0)
+
+      await dlg.locator('.chip', { hasText: /^Claude$/ }).click()
+      await expect(listed).toHaveText(['/zeta'])
+    } finally {
+      await quitAndClose(app)
     }
   })
 

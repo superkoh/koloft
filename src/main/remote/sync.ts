@@ -2,6 +2,8 @@ import { encodeCwd } from '@shared/cwdKey'
 import { problemOf, type RunResult } from './ssh'
 import {
   heartbeatCmd,
+  hookBellCmd,
+  HOOKS_CHANGED,
   parseHeartbeat,
   type MachineTmp,
   NO_FILES_THERE,
@@ -39,6 +41,9 @@ const IDLE_INTERVAL_MS = 20_000
 const GIT_INTERVAL_MS = 20_000
 const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
 const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
+const ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS = 300
+const A_WORKING_BELL_LIVES_AT_LEAST_MS = 10_000
+const BELL_TRIED_AGAIN_AFTER_A_QUICK_END_MS = 60_000
 
 export interface ExtraPull {
   from: string
@@ -54,6 +59,7 @@ export interface RemoteTarget {
   extraPulls?: ExtraPull[]
   paths: string[]
   hasTabs: boolean
+  agentTabs: boolean
   busy: boolean
   shellTabs?: string[]
 }
@@ -61,6 +67,7 @@ export interface RemoteTarget {
 export interface RemoteSyncDeps {
   run(host: string, cmd: string): Promise<RunResult>
   rsync(host: string, remoteDir: string, localDir: string, extra: string[]): Promise<RunResult>
+  listen(host: string, cmd: string, onLine: (line: string) => void, onEnd: () => void): () => void
   targets(): RemoteTarget[]
   onChange(host: string): void
   onLeft?(host: string, sessionIds: string[]): void
@@ -88,6 +95,10 @@ interface HostState {
   waitingForNextPull: (() => void)[]
   roundEnded: boolean
   waitingForFirstRound: (() => void)[]
+  stopBell?: () => void
+  bellAfter: number
+  rang: boolean
+  endedAt: number
 }
 
 interface Watch {
@@ -117,6 +128,7 @@ export class RemoteSync {
     this.stopped = true
     for (const st of this.hosts.values()) {
       if (st.timer) clearTimeout(st.timer)
+      this.silenceBell(st)
       this.roundOver(st)
     }
     this.hosts.clear()
@@ -194,6 +206,7 @@ export class RemoteSync {
     st.gitAt = 0
     st.failures = 0
     st.pulled = {}
+    st.bellAfter = 0
     st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
     if (st.running) {
       st.again = true
@@ -208,6 +221,43 @@ export class RemoteSync {
     st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
     if (st.running || st.failures || st.dueAt - Date.now() <= FAST_INTERVAL_MS) return
     this.next(host, st, 0)
+  }
+
+  private rung(host: string, st: HostState): void {
+    if (this.stopped || this.hosts.get(host) !== st || st.failures) return
+    if (st.running) {
+      st.rang = true
+      return
+    }
+    const delay = this.nextBellRoundIn(st)
+    if (!st.timer || st.dueAt > Date.now() + delay) this.next(host, st, delay)
+  }
+
+  private nextBellRoundIn(st: HostState): number {
+    return Math.max(0, st.endedAt + ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS - Date.now())
+  }
+
+  private startBell(host: string, st: HostState): void {
+    if (st.stopBell || Date.now() < st.bellAfter) return
+    const startedAt = Date.now()
+    const stop = this.deps.listen(
+      host,
+      hookBellCmd(),
+      (line) => line === HOOKS_CHANGED && st.stopBell === stop && this.rung(host, st),
+      () => {
+        if (st.stopBell !== stop) return
+        st.stopBell = undefined
+        if (Date.now() - startedAt < A_WORKING_BELL_LIVES_AT_LEAST_MS)
+          st.bellAfter = Date.now() + BELL_TRIED_AGAIN_AFTER_A_QUICK_END_MS
+      }
+    )
+    st.stopBell = stop
+  }
+
+  private silenceBell(st: HostState): void {
+    const stop = st.stopBell
+    st.stopBell = undefined
+    stop?.()
   }
 
   private next(host: string, st: HostState, delay: number): void {
@@ -235,7 +285,10 @@ export class RemoteSync {
           again: false,
           waitingForNextPull: [],
           roundEnded: false,
-          waitingForFirstRound: []
+          waitingForFirstRound: [],
+          bellAfter: 0,
+          rang: false,
+          endedAt: 0
         })
       )
     return st
@@ -249,6 +302,7 @@ export class RemoteSync {
       for (const [host, st] of this.hosts) {
         if (hosts.has(host)) continue
         if (st.timer) clearTimeout(st.timer)
+        this.silenceBell(st)
         this.roundOver(st)
         this.hosts.delete(host)
       }
@@ -374,22 +428,27 @@ export class RemoteSync {
       if (st.connected) this.deps.onConnectedRound?.(host)
     } finally {
       st.running = false
+      st.endedAt = Date.now()
       for (const done of waiting) done()
       this.roundOver(st)
       if (this.stopped) return
       const again = st.again
+      const rang = st.rang && !st.failures
       st.again = false
+      st.rang = false
       if (target.busy) st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
-      const steady =
-        Date.now() < st.fastUntil
-          ? FAST_INTERVAL_MS
-          : target.hasTabs
-            ? IDLE_TAB_INTERVAL_MS
-            : IDLE_INTERVAL_MS
+      const fast = Date.now() < st.fastUntil
+      if (st.connected && target.agentTabs && fast) this.startBell(host, st)
+      else this.silenceBell(st)
+      const steady = fast
+        ? FAST_INTERVAL_MS
+        : target.hasTabs
+          ? IDLE_TAB_INTERVAL_MS
+          : IDLE_INTERVAL_MS
       const backoff = st.failures
         ? Math.min(FAST_INTERVAL_MS * 2 ** (st.failures - 1), LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS)
         : 0
-      this.next(host, st, again ? 0 : Math.max(steady, backoff))
+      this.next(host, st, again ? 0 : rang ? this.nextBellRoundIn(st) : Math.max(steady, backoff))
     }
   }
 }

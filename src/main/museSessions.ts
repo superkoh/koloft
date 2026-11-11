@@ -1131,6 +1131,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
   }
 
+  tmuxOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.tmuxName
+  }
+
   tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {
     for (const run of this.runs.values()) {
       if (run.host !== host || run.explicitStop) continue

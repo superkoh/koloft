@@ -718,6 +718,7 @@ export interface AttentionEvent extends AttentionSubject {
   kind: AttentionKind
   at: number
   fyi?: boolean
+  wasAsking?: boolean
 }
 
 export interface OsOutletsSeenByTests {
@@ -751,6 +752,12 @@ export type SessionStatus = 'working' | 'waiting' | 'approval' | 'idle'
 export interface LeftoverProcess {
   pid: number
   command: string
+}
+
+export interface ListeningPort {
+  port: number
+  pid: number
+  process: string
 }
 
 export interface BackgroundItem {
@@ -1171,6 +1178,7 @@ export interface KoloftApi {
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
+    ports(tabId: string): Promise<ListeningPort[] | null>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
@@ -1443,7 +1451,7 @@ export interface KoloftApi {
     delete(jobId: string): Promise<void>
     setEnabled(jobId: string, on: boolean): Promise<void>
     runNow(jobId: string): Promise<CronRunNowResult>
-    skills(workspacePath: string): Promise<SkillSuggestion[]>
+    skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
     // CC§9
     trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void

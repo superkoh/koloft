@@ -957,6 +957,21 @@ only downloaded the public release.
     above `N+1` opens nothing and the Esc then skips. Koloft does the same as for Codex
     and Muse instead: once the person pressed a key in a question since it was asked, it
     leaves it to them and presses nothing.
+- **A question or command ask open when agy is killed does not come back on
+  `--conversation`.** agy 1.5.3 (build `1.5.3-6604829099950080`, Linux arm64) and 1.3.6,
+  Docker with no network, tmux 3.3a, a fresh `--gemini_dir`, a fake Gemini server, `AGY_CLI_OSC7501=on`,
+  `--csrf_token`, 2026-11-09; 7 runs (question with SIGHUP ×4, with SIGKILL ×2, a
+  `run_command` ask with SIGHUP ×1). On SIGHUP agy cancels the step itself (an `idle`
+  frame, exit 0, the step `status 6` = CANCELED in `conversations/<id>.db`); on SIGKILL
+  the step stays waiting on disk and the resume cancels it. After `--conversation=<id>`
+  no box draws, the only frame is `idle`, no model request goes out in 20 s, the screen
+  shows `● AskQuestion(<question>)` / `⎿  Interrupted · What should Antigravity CLI do
+  instead?`, `GetCascadeTrajectory` (§16) shows the step `CORTEX_STEP_STATUS_CANCELED`,
+  and `HandleCascadeUserInteraction` on it answers `500 "input not registered for step
+  <n>"`. The next typed line reaches the model after a `functionResponse` whose error is
+  `Tool execution was canceled` (in `output` on 1.3.6), followed by a system notice that
+  "All your subagents and background tasks have been stopped due to server restart". A
+  canceled command never ran.
 
 ## §15 Typing into it
 
@@ -1663,6 +1678,46 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+- **A first prompt given with `-i` is plain text: a leading `/<name>` does not send the
+  skill.** 2026-11-08, agy 1.5.3 (build `6604829099950080`, `linux_arm64.json`), the same
+  Docker, fake Gemini server and `--gemini_dir` method, the TUI in tmux; a skill in
+  `<gd>/config/skills/<folder>/` whose frontmatter `name` differs from its folder, and one
+  in `<workspace>/.agents/skills/`, each body holding a codeword. Typed in the TUI, and as
+  `-p "/<name> say hi"` (or `-p "/<name>"`), the user turn carried `/<name> is a [Slash
+  Command]: <SKILL>The user has explicitly invoked the (<name>) skill … Here are its
+  contents: <body></SKILL>`. As `-i "/<name> say hi"` (3 runs) the turn held only
+  `<USER_REQUEST>/<name> say hi</USER_REQUEST>`, and `-i "/skills"` went to the model as
+  text too; typing `/<name> …` in that same TUI afterwards sent the body. `/<folder>`,
+  `$<name>`, `@<name>` and a `/<name>` in mid-sentence sent no body on any path; the
+  slash popup lists the frontmatter `name`. Workflow and command files —
+  `<workspace>/{.agents,.agent,_agents}/workflows/*.md`,
+  `<gd>/config/{global_workflows,workflows}/*.md`, `.gemini/commands/*.toml` in the
+  workspace, `<gd>` and the home — were not listed by `-p /skills` or `/help`, and
+  `/<name>` of each sent nothing (agy's own `migrate-workflows` skill calls them
+  deprecated).
+- **A `/<name>` line sends the skill's body when it is typed after agy is ready, and
+  only as plain text when it is given with `-i`.** 2026-11-09, agy 1.5.3 linux-arm64,
+  Docker (`--network none`), agy in tmux 3.3a, a fake Gemini server logging each
+  request, a skill `zebra-skill` in `<gd>/config/skills/` whose body holds a codeword.
+  Typed into the input box as `/zebra-skill do X` and Enter, the request's user turn held
+  `/zebra-skill is a [Slash Command]: <SKILL>The user has explicitly invoked the
+  (zebra-skill) skill … Here are its contents: <body></SKILL>` in each way it was sent:
+  key by key then Enter (1 run), one bracketed paste with `\r` 2 s after the first
+  `idle` (1 run), the same text and `\r` with no paste markers (1 run), the paste with
+  `\r` at once on the first OSC 7501 `idle` frame (3 runs) and at once on the first
+  title-script input with `agent_state` `idle` (2 runs). Started with
+  `-i "/zebra-skill do X"` (2 runs) the turn held only
+  `<USER_REQUEST>/zebra-skill do X</USER_REQUEST>`, no body. At start the title script
+  got `authenticating` twice, then `idle` with `conversation_id` `""` about 0.3 s later,
+  before anything was typed; with `-i` it got no `idle` before the turn. In a folder not
+  yet trusted agy showed its trust question, sent the 7501 frame
+  `blocked:kind=permission` ("Trust this folder?") and the title `initializing`, and no
+  `idle` while the question was up; Enter there picks "Yes, I trust this folder". A line
+  written before agy started was echoed by the tty and lost. Pasted with `\r` the same way
+  (1 run each): `/tmp/notes.txt summarize this` and `/nosuch do X` went to the model as
+  plain text, with no error; `/zebra-skill` alone, with a second skill `zebra-skill-pro`
+  installed, sent `zebra-skill`'s body and not the other's; a three-line paste whose
+  first line was `/zebra-skill do X` sent all three lines and the body.
 
 ## §32 The folder's AGENTS.md as a memory
 

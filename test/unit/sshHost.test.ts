@@ -10,7 +10,7 @@ import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
 import { GithubLookup } from '../../src/main/github'
 import { utilTerminalGuard } from '../../src/main/shim'
-import type { BytesResult } from '../../src/main/remote/ssh'
+import { answerOf, type BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
@@ -34,7 +34,9 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
     let err = ''
     c.stdout.on('data', (d: Buffer) => out.push(d))
     c.stderr.on('data', (d: Buffer) => (err += String(d)))
-    c.on('close', (code) => resolve({ code, stdout: Buffer.concat(out), stderr: err }))
+    c.on('close', (code) =>
+      resolve({ code, stdout: answerOf(cmd, Buffer.concat(out)), stderr: err })
+    )
     c.stdin.on('error', () => {})
     c.stdin.end(opts?.input)
   })
@@ -376,11 +378,39 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       put(path.join(home, '.claude', 'skills', 'tidy', 'SKILL.md'), '---\nname: tidy-up\n---')
       put(path.join(home, '.claude', 'skills', 'ship', 'SKILL.md'), '---\nname: ship\n---')
 
-      expect(await machine().listSkills(keyed(repo))).toEqual([
+      expect(await machine().listSkills(keyed(repo), 'claude')).toEqual([
         { name: '/ship', description: 'Ship it', source: 'project' },
         { name: '/build', source: 'project' },
         { name: '/tidy-up', source: 'home' }
       ])
+    })
+
+    it("offers a Codex or Muse task the machine's own folders for that agent, read on the machine (#675)", async () => {
+      const put = (file: string): void => {
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, '---\ndescription: d\n---')
+      }
+      put(path.join(repo, '.agents', 'skills', 'shared', 'SKILL.md'))
+      put(path.join(repo, '.codex', 'skills', 'codex-only', 'SKILL.md'))
+      put(path.join(repo, '.claude', 'skills', 'claude-only', 'SKILL.md'))
+      put(path.join(home, '.agents', 'skills', 'mine', 'SKILL.md'))
+      put(path.join(home, '.config', 'muse', 'skills', 'muse-mine', 'SKILL.md'))
+
+      const names = async (backend: 'codex' | 'muse'): Promise<string[]> =>
+        (await machine().listSkills(keyed(repo), backend)).map((s) => s.name)
+      expect(await names('codex')).toEqual(['$codex-only', '$shared', '$mine'])
+      expect(await names('muse')).toEqual(['/claude-only', '/shared', '/mine', '/muse-mine'])
+    })
+
+    it("finds a Muse task's skills under the machine's XDG_CONFIG_HOME even when it ends in a slash", async () => {
+      const config = path.join(home, 'cfg')
+      fs.mkdirSync(path.join(config, 'muse', 'skills', 'mine'), { recursive: true })
+      fs.writeFileSync(path.join(config, 'muse', 'skills', 'mine', 'SKILL.md'), '---\n---')
+      const withConfigHome = (cmd: string, opts?: { input?: Buffer }): Promise<BytesResult> =>
+        runOnMachine(`env XDG_CONFIG_HOME='${config}/' ${cmd}`, opts)
+
+      const skills = await machine(withConfigHome).listSkills(keyed(repo), 'muse')
+      expect(skills.map((s) => s.name)).toEqual(['/mine'])
     })
 
     it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {

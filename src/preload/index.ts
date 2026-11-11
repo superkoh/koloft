@@ -166,6 +166,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.sessions.leftovers, handler)
     },
     stopLeftover: (sessionId, pid) => ipcRenderer.invoke(CH.sessions.stopLeftover, sessionId, pid),
+    ports: (tabId) => ipcRenderer.invoke(CH.sessions.ports, tabId),
     search: (searchId, term) => ipcRenderer.send(CH.sessions.search, searchId, term),
     onSearchHits: (cb) => {
       const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
@@ -179,7 +180,7 @@ const api: KoloftApi = {
     delete: (jobId) => ipcRenderer.invoke(CH.cron.delete, jobId),
     setEnabled: (jobId, on) => ipcRenderer.invoke(CH.cron.setEnabled, { jobId, on }),
     runNow: (jobId) => ipcRenderer.invoke(CH.cron.runNow, jobId),
-    skills: (workspacePath) => ipcRenderer.invoke(CH.cron.skills, workspacePath),
+    skills: (workspacePath, backend) => ipcRenderer.invoke(CH.cron.skills, workspacePath, backend),
     trusted: (workspacePath, backend) =>
       ipcRenderer.invoke(CH.cron.trusted, workspacePath, backend),
     onState: (cb) => {

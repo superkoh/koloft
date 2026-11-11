@@ -202,6 +202,7 @@ interface AgyRun extends StoredRun {
   shown?: string
   lastTitleState?: string
   statesBeforeBind?: ProgramStatus[]
+  firstLine?: string
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -270,11 +271,17 @@ function permissionFlags(permission: LaunchPermission): string[] {
   return []
 }
 
-// AGY§1 AGY§21 AGY§26
+// AGY§31
+function firstLineToType(opts: CreateTabOptions, resumeId: string | undefined): string | undefined {
+  return !resumeId && opts.firstPrompt?.startsWith('/') ? opts.firstPrompt : undefined
+}
+
+// AGY§1 AGY§21 AGY§26 AGY§31
 function agyArgs(
   opts: CreateTabOptions,
   resumeId: string | undefined,
-  permission: LaunchPermission
+  permission: LaunchPermission,
+  firstLine: string | undefined
 ): string[] {
   return [
     ...(opts.model ? ['--model', opts.model] : []),
@@ -282,7 +289,7 @@ function agyArgs(
     ...permissionFlags(permission),
     ...(resumeId
       ? [`--conversation=${resumeId}`]
-      : opts.firstPrompt
+      : opts.firstPrompt && !firstLine
         ? ['-i', opts.firstPrompt]
         : [])
   ]
@@ -613,6 +620,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     { binary, pick, env }: AgyLaunch
   ): Promise<AgyRun> {
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
+    const firstLine = firstLineToType(opts, resumeId)
     const apiKey = await this.deps.apiKeyOf(pick.account)
     if (resumeId && (await this.heldElsewhere(resumeId))) throw new Error(HELD_ELSEWHERE)
     this.assertStarting()
@@ -637,9 +645,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
-      !opts.scheduled &&
-      !!resource?.managed &&
-      [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
+      !!resource?.managed && [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
@@ -678,7 +684,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const argv = [
         `--gemini_dir=${pick.home}`,
         `--csrf_token=${token}`,
-        ...agyArgs(opts, resumeId, permission)
+        ...agyArgs(opts, resumeId, permission, firstLine)
       ]
       this.parsers.set(tabId, new ProgramStatusParser())
       const handle = this.deps.pty.create({
@@ -723,6 +729,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         givenTitle: opts.name,
         permission: opts.permission ?? 'default',
         bypassing: permission === 'bypass',
+        firstLine,
         account: pick.account,
         brain: agyBrain(pick.home),
         pid,
@@ -754,6 +761,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const { remote } = this.deps
     const machine = remote.machine(where.host)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
+    const firstLine = firstLineToType(opts, resumeId)
     if (
       resumeId &&
       (remote.gone(where.host, resumeId) || (await machine.endedByKoloft(resumeId))) &&
@@ -769,9 +777,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const permission = this.permissionOf(opts)
     const workspacePath = parseRemoteKey(workspace)?.path ?? where.path
     const koloftWorktreeOfTrustedWorkspace =
-      !opts.scheduled &&
-      !!resource?.managed &&
-      trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
+      !!resource?.managed && trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
     const trusted = freshWorktree || opts.trustFolder || koloftWorktreeOfTrustedWorkspace
     const trust = [where.path, workspacePath].filter((d, i, all) => all.indexOf(d) === i)
     const m = remote.machineName()
@@ -812,7 +818,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         banner: pick.banner,
         args: [
           `--csrf_token=${randomBytes(24).toString('hex')}`,
-          ...agyArgs(opts, resumeId, permission)
+          ...agyArgs(opts, resumeId, permission, firstLine)
         ],
         settings: agyJsonText(settings),
         hooks: agyJsonText(hooks),
@@ -853,6 +859,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resumeKey: opts.resumeSessionId,
       permission: opts.permission ?? 'default',
       bypassing: permission === 'bypass',
+      firstLine,
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
@@ -983,6 +990,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     }
   }
 
+  tmuxOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.remote?.tmuxName
+  }
+
   tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {
     for (const run of this.runs.values()) {
       if (run.remote?.host !== host || run.explicitStop) continue
@@ -1036,6 +1047,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§9 AGY§11
   private onTitle(run: AgyRun, state: AgyTitleState): void {
     if (run.explicitStop || run.stopping) return
+    // AGY§31
+    if (run.firstLine && state.agentState === 'idle') {
+      this.deps.pty.write(run.tabId, bracketedPaste(run.firstLine) + '\r')
+      run.firstLine = undefined
+    }
     const before = run.title
     run.title = state
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
@@ -1213,7 +1229,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§8 AGY§10
   showsPromptBeforeBind(tabId: string): boolean {
     const run = this.runs.get(tabId)
-    return !!run && !run.info && !run.explicitStop && run.statesBeforeBind?.at(-1)?.state === 'idle'
+    return (
+      !!run &&
+      !run.info &&
+      !run.explicitStop &&
+      !run.firstLine &&
+      run.statesBeforeBind?.at(-1)?.state === 'idle'
+    )
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {
