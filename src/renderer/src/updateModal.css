@@ -174,11 +174,6 @@
   width: 35%;
   animation: updateIndet 1.1s ease-in-out infinite;
 }
-@media (prefers-reduced-motion: reduce) {
-  .update-progress-fill.indet {
-    animation: none;
-  }
-}
 @keyframes updateIndet {
   0% {
     margin-left: -35%;

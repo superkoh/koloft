@@ -119,7 +119,7 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<v
 }
 
 test.describe('the update modal: what can and cannot close it, and what can stack on it', () => {
-  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte; with Reduce motion on the bar of unknown length stays but stands still', async ({
+  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte', async ({
     env
   }) => {
     const fixture = withFixtureEnv(env)
@@ -137,16 +137,6 @@ test.describe('the update modal: what can and cannot close it, and what can stac
       await expect(modal.locator('.modal-close')).toHaveCount(0)
       await tryToDismiss(page)
       await expect(modal).toContainText('Downloading update…')
-
-      await sendDownloadProgress(app, -1)
-      const bar = modal.locator('.update-progress-fill.indet')
-      const sliding = (): Promise<number> =>
-        bar.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length)
-      expect(await sliding()).toBe(1)
-      await page.emulateMedia({ reducedMotion: 'reduce' })
-      await expect.poll(sliding).toBe(0)
-      await expect(bar).toBeVisible()
-      await page.emulateMedia({ reducedMotion: null })
 
       await sendDownloadProgress(app, 100)
       await expect(modal).toContainText('Installing & restarting…')
