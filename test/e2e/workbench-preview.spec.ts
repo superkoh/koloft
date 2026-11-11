@@ -2,15 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgentFor, installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
   agyReady,
@@ -24,6 +16,7 @@ import {
   type OtherAgentName
 } from './helpers/remote'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   ENDED_ROW_NOTE,
   gitCommitAll,
@@ -97,26 +90,11 @@ function recordedTermFrames(page: Page): Promise<string[]> {
 
 const WRITTEN_DOC = 'plan.md'
 
-const LOCAL_OTHER_AGENTS: { label: OtherAgentName; install: (env: E2EEnv) => void }[] = [
-  { label: 'Codex', install: (env) => installCodex(env) },
-  {
-    label: 'Muse',
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    }
-  },
-  {
-    label: 'Antigravity',
-    install: (env) => {
-      installAgy(env)
-      trustInAgy(env, env.workspaces.a)
-    }
-  }
-]
+const OTHER_AGENTS: OtherAgentName[] = ['Codex', 'Muse', 'Antigravity']
 
-function assistHasJudgedTheDocsOfATurn(env: E2EEnv): boolean {
-  return fs.existsSync(path.join(env.userData, 'doc-verdicts.json'))
+function assistHasJudgedTheWrittenDoc(env: E2EEnv): boolean {
+  const verdicts = path.join(env.userData, 'doc-verdicts.json')
+  return fs.existsSync(verdicts) && fs.readFileSync(verdicts, 'utf8').includes(WRITTEN_DOC)
 }
 
 function remoteRepoWithOneChangedFile(env: E2EEnv): void {
@@ -208,12 +186,12 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
   })
 
   for (const tab of [
-    ...LOCAL_OTHER_AGENTS.map((agent) => ({
-      kind: `a local ${agent.label}`,
-      label: agent.label,
+    ...OTHER_AGENTS.map((label) => ({
+      kind: `a local ${label}`,
+      label,
       open: async (env: E2EEnv) => {
         setupChangeFixture(env.workspaces.a).modifyTracked(1)
-        agent.install(env)
+        installAgentFor(env, label, env.workspaces.a)
         return {
           ...(await launchCollapsed(env)),
           wsName: 'ws-a',
@@ -242,12 +220,15 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
       try {
         await newSessionInWith(page, wsName, tab.label)
         await expect(wsRows(page, wsName)).toHaveCount(1, { timeout: 30_000 })
-        if (tab.label === 'Antigravity') await agyReady(page)
-        else await waitPanelAttached(page)
-        await runIn(page, centerTerm(page), `/write ${WRITTEN_DOC}`)
+        if (tab.label === 'Antigravity') {
+          await agyReady(page)
+          await runIn(page, centerTerm(page), 'first words')
+          await agyConversationOnceFirstTurnEnded(page)
+        }
         await waitPanelAttached(page)
+        await runIn(page, centerTerm(page), `/write ${WRITTEN_DOC}`)
         await expect.poll(() => layoutState(page)).toBe('T1')
-        await expect.poll(() => assistHasJudgedTheDocsOfATurn(env), { timeout: 60_000 }).toBe(true)
+        await expect.poll(() => assistHasJudgedTheWrittenDoc(env), { timeout: 60_000 }).toBe(true)
         await expect(docRows(page).filter({ hasText: WRITTEN_DOC })).toHaveAttribute(
           'data-path',
           docPath,

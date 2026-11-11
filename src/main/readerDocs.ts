@@ -2,7 +2,7 @@ import os from 'os'
 import path from 'path'
 import type { DocVerdict, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { barePath, formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
 import type { Assist } from './assist'
 import { PrivateRecordFile } from './privateFile'
@@ -86,9 +86,9 @@ export class ReaderDocs {
     if (!s?.sessionId) return
     const since = turn.said[0]?.at ?? this.lastTurnEnd.get(tabId) ?? 0
     this.lastTurnEnd.set(tabId, turn.at)
-    const keyedCwd = parseRemoteKey(s.cwd)
-    const host = s.remote?.host ?? keyedCwd?.host
-    const cwd = keyedCwd?.path ?? s.cwd
+    // ADR-0025
+    const host = s.remote?.host ?? parseRemoteKey(s.cwd)?.host
+    const cwd = barePath(s.cwd)
     const files = s.files ?? []
     const wrote = files.filter((f) => f.access === 'wrote')
     const written = wrote
@@ -104,11 +104,7 @@ export class ReaderDocs {
     if (!written.length && !namesANewDoc) return
     const reply = await this.deps.assist({
       system: SYSTEM,
-      prompt: promptFor(
-        turn,
-        cwd,
-        written.map((src) => parseRemoteKey(src)?.path ?? src)
-      )
+      prompt: promptFor(turn, cwd, written.map(barePath))
     })
     if (reply === null) return
     const found = await Promise.all(
@@ -123,7 +119,7 @@ export class ReaderDocs {
     )
     const home = `${os.homedir()}/`
     const replyGivesFullPath = (src: string): boolean => {
-      const p = parseRemoteKey(src)?.path ?? src
+      const p = barePath(src)
       return turn.reply.includes(p) || (!host && turn.reply.includes(p.replace(home, '~/')))
     }
     if (this.archived.has(s.sessionId)) return
