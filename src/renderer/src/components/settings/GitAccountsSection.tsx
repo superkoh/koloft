@@ -178,14 +178,9 @@ export function GitAccountsSection(): JSX.Element {
   const remove = async (id: string, anyway: boolean): Promise<void> => {
     const m = machine
     setRemoval({ id, machine: m, busy: true })
-    const r = await window.api.gitAccounts.remove(id, m, anyway)
-    setRemoval((cur) =>
-      cur?.busy && cur.id === id && cur.machine === m
-        ? r?.ok === false
-          ? { id, machine: m, problem: r.problem }
-          : null
-        : cur
-    )
+    const r = await window.api.gitAccounts.remove(id, m, anyway).catch(() => undefined)
+    const after: Removal | null = r?.ok === false ? { id, machine: m, problem: r.problem } : null
+    setRemoval((cur) => (cur?.busy && cur.id === id && cur.machine === m ? after : cur))
   }
 
   const signingIn = adding?.step === 'login'
@@ -255,7 +250,7 @@ export function GitAccountsSection(): JSX.Element {
                 onClick={() => {
                   setMachine(m)
                   setAdding(null)
-                  setRemoval(unlessBusy)
+                  setRemoval(null)
                 }}
               >
                 {m ?? 'This Mac'}
@@ -277,7 +272,7 @@ export function GitAccountsSection(): JSX.Element {
                 account={a}
                 where={where}
                 removal={removal?.id === a.id && removal.machine === machine ? removal : null}
-                onAskRemove={() => setRemoval((cur) => unlessBusy(cur) ?? { id: a.id, machine })}
+                onAskRemove={() => setRemoval({ id: a.id, machine })}
                 onCancelRemove={() => setRemoval(null)}
                 onRemove={(anyway) => void remove(a.id, anyway)}
                 onRelogin={() => void begin(a.platform, a.url, a.login)}
@@ -451,19 +446,6 @@ function GitAccountRow({
           <IconClose size={12} />
         </button>
       </div>
-      {removal?.busy && (
-        <div className="acct-confirm">
-          <span>
-            Removing <b>{a.login}</b> from {where}…
-          </span>
-          <button className="mini danger" disabled>
-            Removing…
-          </button>
-          <button className="mini" disabled>
-            Cancel
-          </button>
-        </div>
-      )}
       {removal?.problem && (
         <div className="acct-confirm">
           <span>
@@ -483,17 +465,23 @@ function GitAccountRow({
           </button>
         </div>
       )}
-      {removal && !removal.busy && !removal.problem && (
+      {removal && !removal.problem && (
         <div className="acct-confirm">
-          <span>
-            Remove <b>{a.login}</b> ({a.host}) from {where}?
-            {used.length > 0 &&
-              ` ${workspacesLabel(used.length)} — ${used.join(', ')} — go back to your own git setup.`}
-          </span>
-          <button className="mini danger" onClick={() => onRemove(false)}>
-            Remove
+          {removal.busy ? (
+            <span>
+              Removing <b>{a.login}</b> from {where}…
+            </span>
+          ) : (
+            <span>
+              Remove <b>{a.login}</b> ({a.host}) from {where}?
+              {used.length > 0 &&
+                ` ${workspacesLabel(used.length)} — ${used.join(', ')} — go back to your own git setup.`}
+            </span>
+          )}
+          <button className="mini danger" disabled={removal.busy} onClick={() => onRemove(false)}>
+            {removal.busy ? 'Removing…' : 'Remove'}
           </button>
-          <button className="mini" onClick={onCancelRemove}>
+          <button className="mini" disabled={removal.busy} onClick={onCancelRemove}>
             Cancel
           </button>
         </div>

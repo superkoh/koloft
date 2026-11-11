@@ -670,7 +670,8 @@ export class GitAccountService {
     const synced = await this.changedOn(machine)
     if (synced && (!account.gcmNamespace || (await this.onMachine.helperAnswers(machine, account))))
       return
-    await this.forgetOnMachine(machine, account)
+    await this.onMachine.forget(machine, account)
+    await this.dropOnMachine(machine, account)
     throw new Error('machine setup failed')
   }
 
@@ -810,8 +811,7 @@ export class GitAccountService {
     return { ok: true, login: me.login }
   }
 
-  private async forgetOnMachine(machine: string, a: GitAccount): Promise<void> {
-    await this.onMachine.forget(machine, a)
+  private async dropOnMachine(machine: string, a: GitAccount): Promise<void> {
     removeGitAccount(a.id, machine)
     await this.changedOn(machine)
   }
@@ -819,15 +819,15 @@ export class GitAccountService {
   async remove(id: string, machine?: string, anyway = false): Promise<GitAccountRemoveResult> {
     const a = this.account(id, machine)
     if (!a) return { ok: true }
-    if (machine) {
-      if (!anyway) {
-        const forgot = await this.onMachine.forget(machine, a)
-        if (!forgot.ok) return forgot
-      }
+    if (machine && anyway) {
       removeGitAccount(a.id, machine)
-      if (anyway) this.changed()
-      else await this.changedOn(machine)
+      this.changed()
       return { ok: true }
+    }
+    if (machine) {
+      const forgot = await this.onMachine.forget(machine, a)
+      if (forgot.ok) await this.dropOnMachine(machine, a)
+      return forgot
     }
     if (a.gcmNamespace) await this.gcm.erase(a)
     else await gitTokenDelete(a.host, a.login)

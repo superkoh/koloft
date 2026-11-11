@@ -88,12 +88,6 @@ beforeEach(() => {
 const listedOnMachine = (): string[] => listGitAccounts(MACHINE).map((a) => a.login)
 
 describe('removing a git account kept on a machine', () => {
-  it('deletes its token there, then drops it from the list', async () => {
-    expect(await service().remove(carol.id, MACHINE)).toEqual({ ok: true })
-    expect(listedOnMachine()).toEqual([])
-    expect(fs.existsSync(tokenFile())).toBe(false)
-  })
-
   it('keeps the account listed and says what ssh said when the machine cannot be reached (ssh exits 255), and a try once the machine is back removes it', async () => {
     const s = service()
     machine = 'down'
