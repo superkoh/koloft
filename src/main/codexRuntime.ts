@@ -21,7 +21,7 @@ const CODEX: CliSpec = {
 }
 
 export function resolveCodexRuntime(
-  options: { env?: NodeJS.ProcessEnv; shell?: string; timeoutMs?: number } = {}
+  options: { env?: NodeJS.ProcessEnv; shell?: string } = {}
 ): Promise<CodexRuntime> {
   return resolveCliRuntime(CODEX, options)
 }

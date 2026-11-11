@@ -240,9 +240,30 @@ describe('renderMarkdown', () => {
     expect(doc.blocks).toEqual([
       '<h1 id="a">a</h1>\n',
       '<p>para</p>\n',
-      '<ul>\n<li>x</li>\n<li>y</li>\n</ul>\n',
-      '<blockquote>\n<p>quote</p>\n</blockquote>\n'
+      '<ul>\n<li data-ln="0,1">x</li>\n<li data-ln="1,3">y</li>\n</ul>\n',
+      '<blockquote>\n<p data-ln="0,1">quote</p>\n</blockquote>\n'
     ])
+    expect(doc.lines).toEqual([
+      [0, 1],
+      [2, 3],
+      [4, 7],
+      [7, 8]
+    ])
+  })
+
+  it('names the lines inside a block from the block’s own first line, so a line added above leaves the block’s HTML as it was and only its start moves', async () => {
+    const body = 'intro\n\n- one\n- two\n\n```js\nx\n```\n'
+    const before = await render(body)
+    const after = await render('added\n\n' + body)
+    expect(after.blocks.slice(1)).toEqual(before.blocks)
+    expect(after.lines.slice(1)).toEqual(before.lines.map((l) => [l![0] + 2, l![1] + 2]))
+  })
+
+  it('marks a code block inside a list with its lines, and the footnote list, whose opening carries no line, takes the lines of its notes', async () => {
+    const doc = await render('- item\n\n  ```sh\n  ls\n  ```\n')
+    expect(doc.blocks[0]).toContain('<div class="md-code" data-ln="2,5">')
+    const notes = await render('a[^1]\n\n[^1]: one\n')
+    expect(notes.lines.at(-1)).toEqual([2, 3])
   })
 
   it('keeps raw HTML that opens in one block and closes in a later one inside a single block, so sanitizing it alone cannot cut the element in two', async () => {

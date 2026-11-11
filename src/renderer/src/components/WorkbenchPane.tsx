@@ -75,6 +75,7 @@ import { GithubMenu, useWorkbenchGithub } from './workbenchGithub'
 import { NewTabMenu, PageMoreMenu } from './WorkbenchMenus'
 import { WorkbenchTabStrip, type TabAudio } from './WorkbenchTabStrip'
 import { FileTabHost, TerminalHost } from './WorkbenchTabHosts'
+import { useCommentTarget } from './CommentBox'
 import {
   BLANK_RUNTIME,
   WebGuestHost,
@@ -199,6 +200,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     files.refreshNonce
   )
   const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread)
+  const commentTo = useCommentTarget(session, onReturnFocus)
 
   const addressRef = useRef<HTMLInputElement>(null)
   const els = useRef(new Map<string, GuestElement>())
@@ -586,6 +588,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       openFileTab(picked)
     })
   }, [openHere, applyLive, openFileTab])
+
+  const openPort = useCallback(
+    (port: number): void => {
+      const url = `http://localhost:${port}/`
+      openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
+    },
+    [openHere, applyLive]
+  )
 
   const latestAddress = useRef(0)
 
@@ -1338,11 +1348,12 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
       {newMenuOpen && (
         <NewTabMenu
-          canTerminal={canTerminal}
+          liveSession={canTerminal ? ownerTab : null}
           onClose={() => setNewMenuOpen(false)}
           onWeb={newWebTab}
           onFile={openFilePicker}
           onTerminal={newTerminal}
+          onPort={openPort}
         />
       )}
 
@@ -1545,6 +1556,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
                 onOutlineClose={closeOutline}
                 onClose={close}
                 onUnmount={keepScrollTop}
+                commentTo={commentTo}
               />
             )
           })}
@@ -1571,7 +1583,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             onZoomImage={setZoom}
             zoom={activeKind === 'files' ? zoom : null}
             onCloseZoom={closeZoom}
-            onReturnFocus={onReturnFocus}
+            commentTo={commentTo}
           />
         </div>
 

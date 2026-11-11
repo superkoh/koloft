@@ -455,6 +455,11 @@ only downloaded the public release.
     transcript_full}/00000000.jsonl`.
   - `!cmd` (a shell command the user types) and slash commands other than `/compact`
     are not recorded.
+  - Lines are only ever appended, each written once (2026-11-10, agy 1.5.0, 46 real
+    transcripts up to 3.47 MB read with a script): `step_index` rises on every line,
+    no index appears twice, the 47 steps left `"status":"RUNNING"` are never
+    followed by a later copy, and every file ends with a newline. So a reader may keep
+    its byte offset between turns and read only what was added.
 - Other files under `brain/<id>/`: `.system_generated/steps/<stepIndex>/output.txt`
   (each command's output), `.system_generated/tasks/task-N.log` (background
   commands), empty `.user_uploaded/` and `scratch/`, and artifacts (§19).
@@ -957,6 +962,21 @@ only downloaded the public release.
     above `N+1` opens nothing and the Esc then skips. Koloft does the same as for Codex
     and Muse instead: once the person pressed a key in a question since it was asked, it
     leaves it to them and presses nothing.
+- **A question or command ask open when agy is killed does not come back on
+  `--conversation`.** agy 1.5.3 (build `1.5.3-6604829099950080`, Linux arm64) and 1.3.6,
+  Docker with no network, tmux 3.3a, a fresh `--gemini_dir`, a fake Gemini server, `AGY_CLI_OSC7501=on`,
+  `--csrf_token`, 2026-11-09; 7 runs (question with SIGHUP ×4, with SIGKILL ×2, a
+  `run_command` ask with SIGHUP ×1). On SIGHUP agy cancels the step itself (an `idle`
+  frame, exit 0, the step `status 6` = CANCELED in `conversations/<id>.db`); on SIGKILL
+  the step stays waiting on disk and the resume cancels it. After `--conversation=<id>`
+  no box draws, the only frame is `idle`, no model request goes out in 20 s, the screen
+  shows `● AskQuestion(<question>)` / `⎿  Interrupted · What should Antigravity CLI do
+  instead?`, `GetCascadeTrajectory` (§16) shows the step `CORTEX_STEP_STATUS_CANCELED`,
+  and `HandleCascadeUserInteraction` on it answers `500 "input not registered for step
+  <n>"`. The next typed line reaches the model after a `functionResponse` whose error is
+  `Tool execution was canceled` (in `output` on 1.3.6), followed by a system notice that
+  "All your subagents and background tasks have been stopped due to server restart". A
+  canceled command never ran.
 
 ## §15 Typing into it
 
@@ -1494,8 +1514,8 @@ only downloaded the public release.
   writes no `?2026h` at all: 0 frames, and all 57 redraws of a scroll drawn outside
   one, 4 of 4 runs (outside tmux, answered `;2$y`: 64 frames, 0 of 57 outside, 2 of 2
   runs). Wrapped by hand, for the probe, in Koloft's status relay (`STATUS_RELAY_PY`,
-  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35;
-  a remote agy tab does not start agy through it) agy got `?2026;2$y`, wrote 63–64 frames,
+  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35)
+  agy got `?2026;2$y`, wrote 63–64 frames,
   and the outer terminal got every one of them, with 0 of 57 redraws drawn outside a
   frame (4 of 4 runs). The relay also answers the `7501;?` query, so agy then sent
   `idle`, `working`, `done` and `idle` frames, which the relay passed on. agy sent 0
@@ -1574,8 +1594,21 @@ only downloaded the public release.
 - `/exit` ends the tmux session and `ssh -tt` returns 0; no hook fires at exit. A
   dropped ssh client leaves tmux detached with agy running and the lock held;
   `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.
-- No OSC 7501 and no OSC 0/2 reach the Mac side through tmux (`set-titles` off); the
-  title script's output lands in `#{pane_title}`.
+- With nothing between tmux and agy, no OSC 7501 and no OSC 0/2 reach the Mac side
+  through tmux (`set-titles` off); the title script's output lands in `#{pane_title}`.
+  Behind the status relay 7501 frames do reach it (above), unless agy runs with
+  `AGY_CLI_OSC7501=off` (§10).
+- **With `AGY_CLI_OSC7501=off` agy still frames its redraws behind the relay, and sends
+  no 7501.** Koloft's own remote tab script for agy (relay, `=off`) in tmux 3.3a: 65–67
+  `?2026h` frames reached the outer terminal, 0 of 57 scroll redraws drew anything
+  outside a frame, and 0 7501 frames came out (3 of 3 runs); with python3 made to fail,
+  so agy ran without the relay, 0 frames and 57 of 57 redraws outside one. With the
+  relay its process (whose command line carries agy's `--csrf_token` too) sat between
+  the pane and agy; in all 4 runs Koloft's send script, with the real `ps`, found agy and
+  `SendUserCascadeMessage` reached the model (§16). 2026-11-10, agy 1.5.4 linux-arm64
+  from the manifest (sha512 checked), Docker (`agy-a-img`: Debian 12, tmux 3.3a, no
+  network, plain user), API-key route on the fake Gemini server above, the same outer
+  python pty, 160-line answer and 60 wheel notches.
 - `rsync -a -m --inplace --delete` with includes `/*/`, `/*/.system_generated/`,
   `/*/.system_generated/logs/` and `/*/.system_generated/logs/transcript.jsonl` pulls
   just the per-conversation transcripts out of `brain/`.
@@ -1650,6 +1683,23 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+- **A first prompt given with `-i` is plain text: a leading `/<name>` does not send the
+  skill.** 2026-11-08, agy 1.5.3 (build `6604829099950080`, `linux_arm64.json`), the same
+  Docker, fake Gemini server and `--gemini_dir` method, the TUI in tmux; a skill in
+  `<gd>/config/skills/<folder>/` whose frontmatter `name` differs from its folder, and one
+  in `<workspace>/.agents/skills/`, each body holding a codeword. Typed in the TUI, and as
+  `-p "/<name> say hi"` (or `-p "/<name>"`), the user turn carried `/<name> is a [Slash
+  Command]: <SKILL>The user has explicitly invoked the (<name>) skill … Here are its
+  contents: <body></SKILL>`. As `-i "/<name> say hi"` (3 runs) the turn held only
+  `<USER_REQUEST>/<name> say hi</USER_REQUEST>`, and `-i "/skills"` went to the model as
+  text too; typing `/<name> …` in that same TUI afterwards sent the body. `/<folder>`,
+  `$<name>`, `@<name>` and a `/<name>` in mid-sentence sent no body on any path; the
+  slash popup lists the frontmatter `name`. Workflow and command files —
+  `<workspace>/{.agents,.agent,_agents}/workflows/*.md`,
+  `<gd>/config/{global_workflows,workflows}/*.md`, `.gemini/commands/*.toml` in the
+  workspace, `<gd>` and the home — were not listed by `-p /skills` or `/help`, and
+  `/<name>` of each sent nothing (agy's own `migrate-workflows` skill calls them
+  deprecated).
 - **A `/<name>` line sends the skill's body when it is typed after agy is ready, and
   only as plain text when it is given with `-i`.** 2026-11-09, agy 1.5.3 linux-arm64,
   Docker (`--network none`), agy in tmux 3.3a, a fake Gemini server logging each

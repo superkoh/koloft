@@ -37,7 +37,8 @@ export function restoredWindowGeometry(): {
 
 export function trackWindowState(
   win: BrowserWindow,
-  pinnedFlags?: { maximized: boolean; fullScreen: boolean }
+  pinnedFlags?: { maximized: boolean; fullScreen: boolean },
+  hiddenFromFullScreen: () => boolean = () => false
 ): void {
   let timer: NodeJS.Timeout | null = null
 
@@ -46,7 +47,9 @@ export function trackWindowState(
     const st: SavedWindowState = {
       bounds: win.getNormalBounds(),
       maximized: pinnedFlags ? pinnedFlags.maximized : win.isMaximized(),
-      fullScreen: pinnedFlags ? pinnedFlags.fullScreen : win.isFullScreen()
+      fullScreen: pinnedFlags
+        ? pinnedFlags.fullScreen
+        : win.isFullScreen() || hiddenFromFullScreen()
     }
     try {
       fs.writeFileSync(stateFile(), JSON.stringify(st, null, 2))

@@ -142,6 +142,8 @@ export type GitTokenAddResult =
     }
   | { ok: false; error: 'machine'; message: string }
 
+export type GitAccountRemoveResult = { ok: true } | { ok: false; problem: string }
+
 export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
 
 export type GitAccountSuggestion =
@@ -718,11 +720,13 @@ export interface AttentionEvent extends AttentionSubject {
   kind: AttentionKind
   at: number
   fyi?: boolean
+  wasAsking?: boolean
 }
 
 export interface OsOutletsSeenByTests {
   notifications: { title: string; body: string }[]
   dockBadge: string
+  windowHidden: boolean
 }
 
 export const ATTENTION_REASON: Record<AttentionKind, string> = {
@@ -751,6 +755,12 @@ export type SessionStatus = 'working' | 'waiting' | 'approval' | 'idle'
 export interface LeftoverProcess {
   pid: number
   command: string
+}
+
+export interface ListeningPort {
+  port: number
+  pid: number
+  process: string
 }
 
 export interface BackgroundItem {
@@ -1172,6 +1182,7 @@ export interface KoloftApi {
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
+    ports(tabId: string): Promise<ListeningPort[] | null>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
@@ -1384,7 +1395,7 @@ export interface KoloftApi {
     loginBrowser(): void
     onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
     addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
-    remove(id: string, machine?: string): Promise<void>
+    remove(id: string, machine?: string, anyway?: boolean): Promise<GitAccountRemoveResult>
     makeDefault(id: string, machine?: string): Promise<void>
     check(): Promise<void>
     pick(wsPath: string, id: string | null): Promise<void>
@@ -1444,7 +1455,7 @@ export interface KoloftApi {
     delete(jobId: string): Promise<void>
     setEnabled(jobId: string, on: boolean): Promise<void>
     runNow(jobId: string): Promise<CronRunNowResult>
-    skills(workspacePath: string): Promise<SkillSuggestion[]>
+    skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
     // CC§9
     trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void

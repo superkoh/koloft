@@ -48,9 +48,10 @@ import type {
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
 import type { InboxSnapshot } from '@shared/inbox'
+import { TerminalDataSinks } from './terminalDataSinks'
 
-const terminalDataSinks = new Map<string, (data: string) => void>()
-ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.get(d.id)?.(d.data))
+const terminalDataSinks = new TerminalDataSinks()
+ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.deliver(d.id, d.data))
 
 const api: KoloftApi = {
   isDev: ipcRenderer.sendSync(CH.app.isDev) as boolean,
@@ -78,10 +79,7 @@ const api: KoloftApi = {
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
     resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),
-    onData: (id, cb) => {
-      terminalDataSinks.set(id, cb)
-      return () => terminalDataSinks.delete(id)
-    },
+    onData: (id, cb) => terminalDataSinks.listen(id, cb),
     onExit: (cb) => {
       const handler = (_e: unknown, e: TerminalExit): void => cb(e)
       ipcRenderer.on(CH.terminal.exit, handler)
@@ -167,6 +165,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.sessions.leftovers, handler)
     },
     stopLeftover: (sessionId, pid) => ipcRenderer.invoke(CH.sessions.stopLeftover, sessionId, pid),
+    ports: (tabId) => ipcRenderer.invoke(CH.sessions.ports, tabId),
     search: (searchId, term) => ipcRenderer.send(CH.sessions.search, searchId, term),
     onSearchHits: (cb) => {
       const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
@@ -180,7 +179,7 @@ const api: KoloftApi = {
     delete: (jobId) => ipcRenderer.invoke(CH.cron.delete, jobId),
     setEnabled: (jobId, on) => ipcRenderer.invoke(CH.cron.setEnabled, { jobId, on }),
     runNow: (jobId) => ipcRenderer.invoke(CH.cron.runNow, jobId),
-    skills: (workspacePath) => ipcRenderer.invoke(CH.cron.skills, workspacePath),
+    skills: (workspacePath, backend) => ipcRenderer.invoke(CH.cron.skills, workspacePath, backend),
     trusted: (workspacePath, backend) =>
       ipcRenderer.invoke(CH.cron.trusted, workspacePath, backend),
     onState: (cb) => {
@@ -530,7 +529,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.gitAccounts.loginProgress, handler)
     },
     addToken: (add) => ipcRenderer.invoke(CH.gitAccounts.addToken, add),
-    remove: (id, machine) => ipcRenderer.invoke(CH.gitAccounts.remove, id, machine),
+    remove: (id, machine, anyway) => ipcRenderer.invoke(CH.gitAccounts.remove, id, machine, anyway),
     makeDefault: (id, machine) => ipcRenderer.invoke(CH.gitAccounts.makeDefault, id, machine),
     check: () => ipcRenderer.invoke(CH.gitAccounts.check),
     pick: (wsPath, id) => ipcRenderer.invoke(CH.gitAccounts.pick, wsPath, id),

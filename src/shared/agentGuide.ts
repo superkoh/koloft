@@ -154,7 +154,8 @@ koloft help
 
 koloft open <file or web address>
     Show a file or a web page in this session's Workbench. In a session on another machine, localhost there means that machine (see WEB PAGES).
-    When the owner is on Discord (away from the Mac, or you are answering a Discord message) and this session has a room there, or you are the butler, Koloft also sends a copy there: a web page as pictures, a Markdown file as text with the file, any other file as itself. The reply says what was sent, or why nothing was: then say it in words. A copy still on its way when the reply comes tells the owner there itself if it cannot be sent.
+    When the owner is on Discord (away from the Mac, or you are answering a Discord message) and this session has a room there, or you are the butler or a helper in its folder, Koloft also sends a copy there: a web page as pictures, a Markdown file as text with the file, any other file as itself. The reply says what was sent, or why nothing was: then say it in words. A copy still on its way when the reply comes tells the owner there itself if it cannot be sent.
+    Shown while the owner is at the Mac, it is sent there later, just before your question, if you ask in the same turn and the question goes to Discord. So to ask about a screenshot, open it first, then ask.
     Example: koloft open docs/plan.md
 
 koloft diff <file>

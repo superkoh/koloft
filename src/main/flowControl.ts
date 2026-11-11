@@ -137,7 +137,8 @@ function takeSlice(tab: TabOutput): string {
 }
 
 export interface TerminalOutputDeps {
-  gate(id: string): FlowGate
+  pause(id: string): void
+  resume(id: string): void
   send(id: string, data: string): boolean
   rendererUp(): boolean
   now(): number
@@ -145,9 +146,28 @@ export interface TerminalOutputDeps {
 
 export class TerminalOutput {
   private readonly tabs = new Map<string, TabOutput>()
+  private readonly gates = new Map<string, FlowGate>()
   private readonly offScreen = new Set<string>()
 
   constructor(private readonly d: TerminalOutputDeps) {}
+
+  attach(id: string): void {
+    this.gate(id).attach()
+    this.wake(id)
+  }
+
+  isAttached(id: string): boolean {
+    return !!this.gates.get(id)?.isAttached()
+  }
+
+  ack(id: string, utf16Units: unknown): void {
+    if (typeof utf16Units !== 'number' || !Number.isFinite(utf16Units) || utf16Units <= 0) return
+    if (this.gates.get(id)?.onAck(utf16Units)) this.wake(id)
+  }
+
+  stats(): FlowStats[] {
+    return [...this.gates.entries()].map(([id, gate]) => gate.stats(id))
+  }
 
   push(id: string, data: string): void {
     if (!this.d.rendererUp()) return
@@ -185,7 +205,29 @@ export class TerminalOutput {
     this.restart(id, true)
   }
 
-  wake(id: string): void {
+  end(id: string, showTheRest: boolean): void {
+    this.drop(id, showTheRest)
+    this.gates.get(id)?.reset()
+    this.gates.delete(id)
+  }
+
+  clear(): void {
+    for (const tab of this.tabs.values()) if (tab.timer) clearTimeout(tab.timer)
+    this.tabs.clear()
+    for (const gate of this.gates.values()) gate.reset()
+    this.offScreen.clear()
+  }
+
+  private gate(id: string): FlowGate {
+    let gate = this.gates.get(id)
+    if (!gate) {
+      gate = new FlowGate({ onPause: () => this.d.pause(id), onResume: () => this.d.resume(id) })
+      this.gates.set(id, gate)
+    }
+    return gate
+  }
+
+  private wake(id: string): void {
     this.restart(id, false)
   }
 
@@ -198,18 +240,12 @@ export class TerminalOutput {
     else this.schedule(id, tab, 0)
   }
 
-  end(id: string, showTheRest: boolean): void {
+  private drop(id: string, showTheRest: boolean): void {
     const tab = this.tabs.get(id)
     if (!tab) return
     if (tab.timer) clearTimeout(tab.timer)
     this.tabs.delete(id)
     while (showTheRest && tab.units) this.d.send(id, takeSlice(tab))
-  }
-
-  clear(): void {
-    for (const tab of this.tabs.values()) if (tab.timer) clearTimeout(tab.timer)
-    this.tabs.clear()
-    this.offScreen.clear()
   }
 
   private schedule(id: string, tab: TabOutput, ms: number): void {
@@ -220,7 +256,7 @@ export class TerminalOutput {
   }
 
   private sendSlice(id: string, tab: TabOutput): void {
-    const gate = this.d.gate(id)
+    const gate = this.gate(id)
     if (!gate.maySend()) {
       if (gate.isAttached()) gate.onBacklog(tab.units)
       else while (tab.units > HELD_FOR_AN_UNSEEN_TAB_MAX) tab.units -= tab.chunks.shift()!.length
@@ -229,7 +265,7 @@ export class TerminalOutput {
     const slice = takeSlice(tab)
     if (!this.d.send(id, slice)) {
       gate.reset()
-      this.end(id, false)
+      this.drop(id, false)
       return
     }
     tab.lastSentAt = this.d.now()

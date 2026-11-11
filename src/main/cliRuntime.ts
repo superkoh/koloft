@@ -2,10 +2,11 @@ import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { LoginShellError, readLoginShell } from './loginShell'
+import { agentsInLoginShell, LoginShellError, type AgentCommand } from './loginShell'
 import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
+const VERSION_TIMEOUT_MS = 8000
 
 export interface CliRuntime {
   binary: string
@@ -15,7 +16,7 @@ export interface CliRuntime {
 }
 
 export interface CliSpec {
-  command: string
+  command: Exclude<AgentCommand, 'claude'>
   testCommandEnv: string
   name: string
   cliName: string
@@ -35,28 +36,32 @@ function executable(file: string): boolean {
   }
 }
 
+function fileOnPath(command: string, pathVar: string | undefined): string | undefined {
+  return (pathVar ?? '')
+    .split(':')
+    .filter(Boolean)
+    .map((dir) => path.join(dir, command))
+    .find(executable)
+}
+
 export async function resolveCliRuntime(
   spec: CliSpec,
   options: {
     env?: NodeJS.ProcessEnv
     shell?: string
-    timeoutMs?: number
   } = {}
 ): Promise<CliRuntime> {
-  const inherited = { ...(options.env ?? process.env) }
-  const timeout = options.timeoutMs ?? 8000
+  const given = options.env ?? process.env
+  const inherited = { ...given }
   let binary = inherited.KOLOFT_TEST_BACKGROUND === '1' ? inherited[spec.testCommandEnv] : undefined
   let resolved = inherited
   if (!binary) {
     try {
-      const login = await readLoginShell({
-        shell: options.shell,
-        env: inherited,
-        timeoutMs: timeout,
-        probe: `command -v ${spec.command}`
-      })
-      binary = login.probed
-      resolved = login.env
+      const login = await agentsInLoginShell(given, options.shell)
+      const printed = login.commandV[spec.command]
+      binary =
+        !printed || path.isAbsolute(printed) ? printed : fileOnPath(spec.command, login.env.PATH)
+      resolved = { ...login.env }
       const offPath = spec.installedOffPath?.(resolved)
       if (!binary && offPath && executable(offPath)) binary = offPath
     } catch (e) {
@@ -72,7 +77,12 @@ export async function resolveCliRuntime(
   let stdout: string
   try {
     stdout = (
-      await exec(binary, ['--version'], { env, timeout, maxBuffer: 64 * 1024, encoding: 'utf8' })
+      await exec(binary, ['--version'], {
+        env,
+        timeout: VERSION_TIMEOUT_MS,
+        maxBuffer: 64 * 1024,
+        encoding: 'utf8'
+      })
     ).stdout
   } catch {
     throw new Error(`Could not run ${spec.cliName} from your shell environment.`)

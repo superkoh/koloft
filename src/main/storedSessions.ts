@@ -36,6 +36,7 @@ import {
   ResumeRefused
 } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
+import { forgetAgentsInLoginShell } from './loginShell'
 import type { HoldScript } from './hooks'
 import type { LaunchedSession } from './accountPicker'
 import { isNewer } from './releaseNotes'
@@ -156,6 +157,7 @@ export interface SessionsWithStore {
   noticeRemoteExits?(host: string, sessionIds: string[]): void
   followMirrors?(host: string): void
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
+  tmuxOfTab?(tabId: string): string | undefined
 }
 
 type Place = ProjectInfo & { missing: boolean }
@@ -336,10 +338,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   forgetAvailability(): void {
     this.probed = undefined
+    forgetAgentsInLoginShell()
   }
 
   protected forgetProbe(): void {
-    this.probed = undefined
+    this.forgetAvailability()
     this.binary = undefined
     this.processEnv = undefined
   }

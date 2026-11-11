@@ -110,12 +110,14 @@ function installedSettings(): { accounts?: InstalledAccount[]; skipPermissions?:
 }
 
 async function onLoginPath(name: string): Promise<string | undefined> {
-  const { probed } = await readLoginShell({
+  const {
+    probed: [found]
+  } = await readLoginShell({
     env: { HOME: os.homedir(), USER: os.userInfo().username, PATH: '/usr/bin:/bin' },
     shell: '/bin/zsh',
-    probe: `command -v ${name}`
+    probes: [`command -v ${name}`]
   })
-  return probed ? fs.realpathSync(probed) : undefined
+  return found ? fs.realpathSync(found) : undefined
 }
 
 function codexAuthOfTheInstalledApp(): string | undefined {

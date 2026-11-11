@@ -692,6 +692,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   3 s later ran it (3 of 3, the "Session usage" panel), and so did one 2 s later (3 of
   3). `ESC` then CR in two writes
   0.3 s apart ran it at once (2 of 2). So a box can hold empty rows under the `❯` row.
+- **A question or approval open when muse is hung up does not come back on `muse
+  resume`.** Measured 2026-11-09, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker with no
+  network, a python pty (160×50) through `pyte`, a fake `/responses` model, `--trust-workspace
+  --approval-judge off`; SIGHUP 2.5 s after `blocked` (as node-pty's `kill()` sends),
+  then `muse resume <id>` in a new pty; 3 runs with a one-question `request_user_input`,
+  2 with a `require_escalated` bash. Muse dies at once with no 7501 frame; `session.jsonl`
+  ends on `user_input_prompt_requested` (or the approval's `requested`). On resume no box
+  draws, the only frame is `idle`, no model request goes out in 20 s, and the screen
+  shows `◆ <title> — unresolved` / `manual reconciliation required` / `No answer
+  recorded` / `◆ Interrupted`; muse appends `session.end {exit_reason:
+  "crash_inferred"}` and a `function_call_output` "The previous process terminated while
+  this tool call was in flight, and no result was recorded. …". The next typed line is
+  sent after that output and an assistant `[Previous turn ended without an assistant
+  reply.]`; a typed `2` is just the message "2". `approval/listPending` (§5) still lists
+  the dead question after the resume, so it cannot tell whether one is still open.
 
 ## §12 Handing muse instructions
 
@@ -840,6 +855,25 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - The model is handed only each skill's frontmatter `description`, in the first
   developer message of every session, `/clear` included; it reads the body with
   `read_skill`. A `SKILL.md` over 262 144 bytes is not loaded.
+- **1.4.11 reads more folders, and a first prompt `/<name>` sends the skill.** 2026-11-08,
+  `Muse Code 1.4.11 (1.4.11-R6667.1)` in Docker, `--network none`, a fake model server
+  that saved each request (`--base-url`, `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`),
+  every run `--trust-workspace`. `muse skills list --source all` also listed
+  `$HOME/.agents/skills/<id>` (scope user), `$HOME/.claude/skills/<id>` and
+  `$HOME/.codex/skills/<id>` (the catalog marks these `written-for="Claude Code"`, and the
+  first run prints `Including your 2 Claude Code and Codex personal skills — manage with
+  /settings.`), and `<workspace>/.claude/skills/<id>` (scope project); each expanded as
+  below. As the TUI's positional prompt (how Koloft starts a run), `/<name> say hi` —
+  `<name>` the frontmatter `name`, else the folder — sent one user message
+  `<system-reminder source="skill-body">… <skill-body id="<name>" scope="user" path=…>
+  <the whole file></skill-body></system-reminder>\n\nsay hi`, with the `/<name>` word
+  dropped; a user and a project skill alike. `/<folder>` when it differs from the name,
+  `$<name>`, a plain mention, and every spelling under `muse exec` sent the text alone,
+  and no `read_skill` call was forced. A skill with `user-invocable: false` was listed but
+  `/<name>` did not expand it. `.md` files in `muse/commands`, `muse/prompts`,
+  `muse/workflows` under the config home, `.agents/commands`, `.agents/workflows`,
+  `.claude/commands` (workspace and home) and `~/.codex/prompts` were not commands:
+  `/<file name>` went as text.
 - A skill is switched off per user with `skills.activation.user` in `settings.json`,
   keyed by its display path (`"$CONFIG_DIR/skills/<id>/SKILL.md": "off"`); the same
   map given with `-c` holds only until `/clear`, and keyed by bare id it does nothing.

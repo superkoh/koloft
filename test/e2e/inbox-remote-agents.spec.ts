@@ -15,7 +15,7 @@ import {
   machineHome,
   type OtherAgentName
 } from './helpers/remote'
-import { ASK_NO_LONGER_ON_SCREEN } from '../../src/main/koloftInbox'
+import { ASKED_BEFORE_IT_STOPPED } from '../../src/main/koloftInbox'
 
 test.setTimeout(240_000)
 test.afterEach(({ env }) => killFakeRemote(env))
@@ -204,27 +204,32 @@ for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
 
   if (asks.questionOutlivesKoloft === false)
     // ADR-0039
-    test(`a question a remote ${agent.label} session asked before a Koloft restart, whose turn the restart cuts off on the machine, stays in Needs you and then sends the owner to its tab`, async ({
+    test(`a question a remote ${agent.label} session asked before a Koloft restart, whose turn the restart cuts off on the machine, stays in Needs you, and a pick there then reaches the resumed session as a message`, async ({
       env
     }) => {
       const { app, page, card } = await askThenRestart(env, agent)
       try {
-        await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/\bst-waiting\b/, {
           timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
         })
+        const tabId = (await row.getAttribute('data-tab-id')) as string
         await openInbox(page)
-        await expect(card).toContainText(ASK_NO_LONGER_ON_SCREEN, {
+        await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, {
           timeout: A_CARD_SHOWS_WITHIN_MS
         })
-        await expect(card.locator('.ibx-choice')).toHaveCount(0)
-        await expect(card.locator('.ibx-btn')).toHaveText(['Dismiss'])
-        await expect(card.locator('.ibx-link')).toHaveText(['Open session ›'])
+        await card.locator('.ibx-choice', { hasText: asks.pick }).click()
+        await expect
+          .poll(() => asks.got(env, page, tabId), { timeout: ON_THE_MACHINE_WITHIN_MS })
+          .toContain(`«${asks.pick}»`)
+        await showDone(page)
+        await expect(card.locator('.ibx-dstat')).toContainText('Answered')
       } finally {
         await quitAndClose(app)
       }
     })
   else
-    test(`a question a remote ${agent.label} session still shows after a Koloft restart is still a card in Needs you, and picking an answer there reaches the session on the machine and moves the card to Done as Answered`, async ({
+    test(`a question a remote ${agent.label} session still shows after a Koloft restart is still one card in Needs you, and picking an answer there reaches the session on the machine and moves that one card to Done as Answered`, async ({
       env
     }) => {
       const { app, page, card } = await askThenRestart(env, agent)
@@ -242,9 +247,8 @@ for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
           .poll(() => asks.answered(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
           .toBe(true)
         await showDone(page)
-        await expect(
-          card.filter({ has: page.locator('.ibx-dstat', { hasText: 'Answered' }) })
-        ).toHaveCount(1)
+        await expect(card).toHaveCount(1)
+        await expect(card.locator('.ibx-dstat')).toContainText('Answered')
       } finally {
         await quitAndClose(app)
       }

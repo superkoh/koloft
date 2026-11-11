@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import {
   HIDDEN_BY_DEFAULT_NAMES,
+  type BackendId,
   type BaseChoice,
   type DirChangeListener,
   type DirEntry,
@@ -36,7 +37,7 @@ import {
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
-import { FINGERPRINT, remoteShCommand } from '../remote/install'
+import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
 import { TRUSTED_JS } from '../remote/claudeTrustJs'
 import {
   claudeTabSpec,
@@ -69,7 +70,7 @@ import {
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
-import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import { MACHINE_CONFIG_HOME, MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import {
   discordSaidLine,
@@ -97,7 +98,7 @@ import {
   type AgyMachinePlan,
   type RemoteAgyConfig
 } from '../remote/agyTab'
-import { listSkills, type SkillFs } from '../skillList'
+import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import { worktreeNameAround, type GitOut } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
@@ -461,16 +462,23 @@ function parseChanges(stdout: Buffer): GitChanges | null {
   }
 }
 
-const SKILL_FILES = `printf '%s\\0' "$HOME"
-for b in "$1" "$HOME"; do
-  for f in "$b"/.claude/skills/*/SKILL.md; do
-    [ -f "$f" ] && { printf '%s\\0' "$f"; cat "$f"; printf '\\0'; }
-  done
-  for f in "$b"/.claude/commands/*.md; do
-    [ -f "$f" ] && printf '%s\\0\\0' "$f"
-  done
-done
-exit 0`
+const ON_THE_MACHINE: SkillPlaces = { workspace: '$1', home: '$HOME', configHome: '$X' }
+
+function skillFilesScript(backend: BackendId): string {
+  const folders = Object.values(skillFolders(backend, ON_THE_MACHINE))
+  const skills = folders.flatMap((f) => f.skills)
+  const commands = folders.flatMap((f) => f.commands ?? [])
+  return [
+    `X="${MACHINE_CONFIG_HOME}"`,
+    `printf '%s\\0%s\\0' "$HOME" "$X"`,
+    ...skills.map(
+      (d) =>
+        `for f in "${d}"/*/SKILL.md; do [ -f "$f" ] && { printf '%s\\0' "$f"; cat "$f"; printf '\\0'; }; done`
+    ),
+    ...commands.map((d) => `for f in "${d}"/*.md; do [ -f "$f" ] && printf '%s\\0\\0' "$f"; done`),
+    'exit 0'
+  ].join('\n')
+}
 
 function skillFsOf(files: Map<string, string>): SkillFs {
   const children = (dir: string): string[] => {
@@ -704,7 +712,7 @@ export class SshHost implements Host {
   }
 
   private sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
-    return this.deps.run(remoteShCommand(script, args), opts)
+    return this.deps.run(remoteAnswerCommand(script, args), opts)
   }
 
   async listDir(dir: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]> {
@@ -1127,14 +1135,15 @@ export class SshHost implements Host {
     }
   }
 
-  async listSkills(root: string): Promise<SkillSuggestion[]> {
-    const bareRoot = this.bare(root)
-    const r = await this.sh(SKILL_FILES, [bareRoot])
+  async listSkills(root: string, backend: BackendId): Promise<SkillSuggestion[]> {
+    const workspace = this.bare(root)
+    const r = await this.sh(skillFilesScript(backend), [workspace])
     if (r.code !== 0) return []
-    const [home, ...rest] = r.stdout.toString('utf8').split('\0')
+    const [home, configHome, ...rest] = r.stdout.toString('utf8').split('\0')
     const files = new Map<string, string>()
-    for (let i = 0; i + 1 < rest.length; i += 2) files.set(rest[i], rest[i + 1])
-    return listSkills(skillFsOf(files), bareRoot, home)
+    for (let i = 0; i + 1 < rest.length; i += 2)
+      files.set(path.posix.normalize(rest[i]), rest[i + 1])
+    return listSkills(skillFsOf(files), backend, { workspace, home, configHome })
   }
 
   async readAgyConfig(account: string): Promise<RemoteAgyConfig> {

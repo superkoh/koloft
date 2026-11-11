@@ -40,6 +40,8 @@ function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
   )
 }
 
+export const NO_AGENT_ON_THIS_MAC = `Koloft runs ${productList(SESSION_BACKENDS, 'or')}, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first.`
+
 export function InstallHint({ children }: { children: string }): JSX.Element {
   return (
     <>
@@ -96,9 +98,7 @@ export function AssistSetup({
   if (setup.noTool)
     return (
       <div className="assist-setup">
-        <InstallHint>
-          {`Koloft runs ${productList(SESSION_BACKENDS, 'or')}, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first.`}
-        </InstallHint>
+        <InstallHint>{NO_AGENT_ON_THIS_MAC}</InstallHint>
       </div>
     )
 

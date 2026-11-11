@@ -1,15 +1,25 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import type { ElectronApplication, Page } from '@playwright/test'
-import { seedSettings } from './helpers/env'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse
+} from './helpers/env'
+import { startCodex } from './helpers/codex'
+import {
+  agentShell,
   centerTerm,
   clickAppMenuItem,
   focusOwner,
   gitCommitAll,
   gitInit,
   landsOnTheButler,
+  newSessionInWith,
   openSessionTerminal,
   panelTerm,
   runIn,
@@ -20,8 +30,8 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { addressField, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
-import { startEchoServer } from './helpers/fixtureServer'
+import { BROWSER, addressField, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
+import { portFreeOnTheMac, servesAFolderOn, startEchoServer } from './helpers/fixtureServer'
 import {
   answerFileDialog,
   cancelFileDialog,
@@ -372,7 +382,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await newTab(page)
     const menu = page.locator('.wb-newmenu')
     await expect(menu).toBeVisible()
-    await expect(menu.locator('.mi')).toHaveCount(3)
+    await expect(menu.locator('button.mi')).toHaveCount(3)
     await expect(menu).toContainText('New web tab')
     await expect(menu).toContainText('Open file…')
     await expect(menu).toContainText(/terminal/i)
@@ -662,6 +672,106 @@ test.describe('Workbench commands and the panel’s first mount', () => {
       await clickAppMenuItem(app, page, 'browser-new-tab')
       await expect(workbenchPanel(page)).toBeVisible({ timeout: 20_000 })
       await expect(page.locator(WORKBENCH.newMenu)).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
+
+const answers = (port: number): Promise<boolean> =>
+  fetch(`http://127.0.0.1:${port}/`).then(
+    (r) => r.ok,
+    () => false
+  )
+
+async function newTabMenuPorts(page: Page): Promise<Locator> {
+  await page.locator(BROWSER.newTab).click()
+  const menu = page.locator(WORKBENCH.newMenu)
+  await expect(menu.locator('.mi.head')).toBeVisible({ timeout: 15_000 })
+  return menu
+}
+
+async function openThePortItLists(
+  app: ElectronApplication,
+  page: Page,
+  port: number
+): Promise<void> {
+  const menu = await newTabMenuPorts(page)
+  await expect(menu.locator('.mi.head')).toHaveText('Listening ports')
+  const row = menu.locator('button.mi', { hasText: `localhost:${port}` })
+  const pid = Number(/\(pid (\d+)\)$/.exec((await row.getAttribute('title')) ?? '')?.[1])
+  expect(pid).toBeGreaterThan(0)
+  try {
+    await row.click()
+    const guest = await guestByUrl(app, `localhost:${port}/`)
+    await expect(guest.locator('body')).toContainText('Directory listing')
+  } finally {
+    process.kill(pid)
+  }
+}
+
+test.describe('Workbench + menu: the ports a session’s processes listen on', () => {
+  test('WB-T27: a Claude Code session’s + menu says no ports, then lists the server it started, by port with its process on hover, and a click opens it in a web tab', async ({
+    app,
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+    await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText('No listening ports')
+    await page.keyboard.press('Escape')
+
+    const port = await portFreeOnTheMac()
+    await agentShell(page, tabId, 30_000)(servesAFolderOn(port))
+    await expect.poll(() => answers(port)).toBe(true)
+    await openThePortItLists(app, page, port)
+  })
+
+  test('WB-T28: a Codex and a Muse session each list the server it started, though it left its shell', async ({
+    env
+  }) => {
+    installCodex(env)
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const port = await portFreeOnTheMac()
+      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(port)}`)
+      await expect.poll(() => answers(port), { timeout: 30_000 }).toBe(true)
+      await openThePortItLists(app, page, port)
+
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 30_000 })
+      const musePort = await portFreeOnTheMac()
+      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(musePort)}`)
+      await expect.poll(() => answers(musePort), { timeout: 30_000 }).toBe(true)
+      await openThePortItLists(app, page, musePort)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-T29: an Antigravity session’s + menu leaves out the ports agy itself listens on', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await runIn(page, centerTerm(page), 'warm up')
+      await expect(wsRows(page, 'ws-a').filter({ hasText: 'warm up' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
+      await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText(
+        'No listening ports'
+      )
     } finally {
       await quitAndClose(app)
     }

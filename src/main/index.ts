@@ -22,7 +22,8 @@ import { pathToFileURL } from 'url'
 import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
-import { FlowGate, TerminalOutput } from './flowControl'
+import { TerminalOutput } from './flowControl'
+import { SleepingTabs } from './sleepingTabs'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
@@ -82,6 +83,7 @@ import {
   type OpenTabs
 } from './openTabs'
 import { SessionAccounts } from './sessionAccounts'
+import { SavedUsage } from './savedUsage'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -149,6 +151,7 @@ import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
+  listenOverSsh,
   backgroundOptions,
   masterCommandOutlivingKoloft,
   runMasterCommand,
@@ -168,6 +171,7 @@ import {
   UTIL_BASH_LOGIN,
   UTIL_BASH_LOGIN_FILE,
   UTIL_SH,
+  remoteAnswerCommand,
   remoteShCommand
 } from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
@@ -201,7 +205,7 @@ import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
-import { readLoginShell, sshEnvFromLogin } from './loginShell'
+import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   AGY_STATUSLINE_JS,
@@ -239,6 +243,7 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
+import { mutedWhileHidden } from './mutedWhileHidden'
 import { loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
@@ -380,6 +385,7 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
@@ -430,6 +436,7 @@ import {
 import type {
   AccountAddResult,
   AccountKind,
+  ListeningPort,
   QuotaBucket,
   AccountMeta,
   AccountView,
@@ -503,7 +510,13 @@ import {
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
+import {
+  sendPhoneCopy,
+  sendWholeCopy,
+  shownOf,
+  tooLarge,
+  type PhoneCopyDeps
+} from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -525,14 +538,7 @@ import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import {
-  clicksTheMouse,
-  pasteFor,
-  pressesAKey,
-  typedPieces,
-  typeKeys,
-  withoutMouseAndFocusReports
-} from './typeKeys'
+import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   claudeDialog,
@@ -648,25 +654,13 @@ if (OFF_SCREEN_TEST && process.platform === 'darwin') {
 }
 
 const ptyMgr = new PtyManager()
-const flowGates = new Map<string, FlowGate>()
-function flowGateFor(id: string): FlowGate {
-  let gate = flowGates.get(id)
-  if (!gate) {
-    gate = new FlowGate({ onPause: () => ptyMgr.pause(id), onResume: () => ptyMgr.resume(id) })
-    flowGates.set(id, gate)
-  }
-  return gate
-}
 const terminalOutput = new TerminalOutput({
-  gate: flowGateFor,
+  pause: (id) => ptyMgr.pause(id),
+  resume: (id) => ptyMgr.resume(id),
   send: (id, data) => sendToRenderer(CH.terminal.data, { id, data }),
   rendererUp: () => rendererReady,
   now: () => performance.now()
 })
-function resetAllFlow(): void {
-  terminalOutput.clear()
-  for (const gate of flowGates.values()) gate.reset()
-}
 const tracker = new SessionTracker()
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
@@ -963,10 +957,11 @@ function sidebarTitle(s: SessionInfo): string | undefined {
 }
 
 const tabLifecycle = new TabLifecycle()
-const sleepers = new Map<string, OpenTab>()
-const typedWhileAsleep = new Map<string, string>()
-const wokenAs = new Map<string, string>()
-let sleeperSeq = 0
+const sleepers = new SleepingTabs({
+  write: (tabId, data) => ptyMgr.write(tabId, data),
+  ready: (tabId) => tabReady(tabId, RESUMED_TAB_READY_MS, false),
+  type: (tabId, keys) => void ptyMgr.type(tabId, keys)
+})
 let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
 let sessionAccounts: SessionAccounts | undefined
@@ -1034,29 +1029,18 @@ function syncRelayBindings(all: SessionInfo[]): void {
   }
 }
 
-function addSleeper(tabId: string, t: OpenTab): void {
-  sleepers.set(tabId, t)
-  typedWhileAsleep.set(tabId, '')
-}
-
 function sleepTab(tabId: string): void {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return killTabFromMain(tabId)
-  addSleeper(tabId, openTabOf(s))
+  sleepers.add(tabId, openTabOf(s))
   sendToRenderer(CH.tab.slept, tabId)
   void stopTabProcess(tabId)
   tabLifecycle.emit('slept')
   rememberOpenTabs()
 }
 
-function sleepingTabOf(sessionId: string): string | undefined {
-  for (const [tabId, t] of sleepers) if (t.sessionId === sessionId) return tabId
-  return undefined
-}
-
 function forgetSleeper(tabId: string): void {
-  sleepers.delete(tabId)
-  typedWhileAsleep.delete(tabId)
+  sleepers.forget(tabId)
   attention.clearKeepingExit(tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
@@ -1064,43 +1048,11 @@ function forgetSleeper(tabId: string): void {
 }
 
 function settleWokenSleepers(all: SessionInfo[]): void {
-  if (!sleepers.size) return
-  const tabOfSession = new Map<string, string>()
-  for (const s of all) if (s.alive && s.sessionId) tabOfSession.set(s.sessionId, s.tabId)
-  let woke = false
-  for (const [oldId, t] of sleepers) {
-    const newId = tabOfSession.get(t.sessionId)
-    if (!newId || newId === oldId) continue
-    sleepers.delete(oldId)
-    attention.rehome(oldId, newId)
-    wokenAs.set(oldId, newId)
-    woke = true
-    void handOverTyping(oldId, newId)
-  }
-  if (woke) tabLifecycle.emit('woken')
+  const woken = sleepers.settle(all)
+  for (const { oldId, newId } of woken) attention.rehome(oldId, newId)
+  if (woken.length) tabLifecycle.emit('woken')
 }
 
-const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
-
-// CC§12 CC§18
-async function handOverTyping(oldId: string, newId: string): Promise<void> {
-  const ready = await tabReady(newId, RESUMED_TAB_READY_MS, false)
-  const typed = typedWhileAsleep.get(oldId) ?? ''
-  typedWhileAsleep.delete(oldId)
-  if (!ready || !typed) return
-  const keys = typed
-    .split(PASTE_OR_ENTER)
-    .flatMap((part) => (PASTE_OR_ENTER.test(part) ? [part] : typedPieces(part)))
-  void ptyMgr.type(newId, keys)
-}
-
-function writeToTab(id: string, data: string): void {
-  const typed = typedWhileAsleep.get(id)
-  const woken = wokenAs.get(id)
-  if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
-  else if (woken) ptyMgr.write(woken, withoutMouseAndFocusReports(data))
-  else ptyMgr.write(id, data)
-}
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
@@ -1195,7 +1147,11 @@ function projectFolderName(event: AttentionEvent): string | undefined {
   return root ? path.basename(root) : undefined
 }
 
-const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadge: '' }
+const osOutletsSeenByTests: OsOutletsSeenByTests = {
+  notifications: [],
+  dockBadge: '',
+  windowHidden: false
+}
 ;(globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets =
   osOutletsSeenByTests
 
@@ -1206,13 +1162,56 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
+const pagesMutedWhileHidden = mutedWhileHidden<WebContents>()
+
+const isWorkbenchPage = (wc: WebContents): boolean => wc.getType() === 'webview'
+
+let hiddenByClose = false
+let hiddenFromFullScreen = false
+
+function setHiddenByClose(hidden: boolean): void {
+  hiddenByClose = hidden
+  osOutletsSeenByTests.windowHidden = hidden
+}
+
+function hideMainWindow(win: BrowserWindow): void {
+  setHiddenByClose(true)
+  pagesMutedWhileHidden.hide(webContents.getAllWebContents().filter(isWorkbenchPage))
+  if (OFF_SCREEN_TEST) return
+  // PLATFORM§5
+  if (win.isFullScreen()) {
+    hiddenFromFullScreen = true
+    win.once('leave-full-screen', () => {
+      if (hiddenByClose) return win.hide()
+      hiddenFromFullScreen = false
+      win.setFullScreen(true)
+    })
+    win.setFullScreen(false)
+  } else win.hide()
+}
+
+function showMainWindow(win: BrowserWindow): void {
+  setHiddenByClose(false)
+  for (const page of pagesMutedWhileHidden.show())
+    sendToRenderer(CH.browser.audioState, {
+      guestId: page.id,
+      audible: page.isCurrentlyAudible(),
+      muted: false
+    })
+  if (OFF_SCREEN_TEST) return
+  if (win.isMinimized()) win.restore()
+  if (win.isVisible()) return
+  win.show()
+  if (hiddenFromFullScreen) win.setFullScreen(true)
+  hiddenFromFullScreen = false
+}
+
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
     uiActiveTabId = tabId
     tracker.noteActivity(tabId)
-    if (win.isMinimized()) win.restore()
-    if (!win.isVisible()) win.show()
+    showMainWindow(win)
     win.focus()
     app.focus({ steal: true })
     sendToRenderer(CH.attention.activateTab, { tabId })
@@ -1375,7 +1374,7 @@ process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
-  return (loginEnv ??= readLoginShell({ env: process.env })
+  return (loginEnv ??= agentsInLoginShell(process.env)
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
@@ -1546,7 +1545,6 @@ function foldProbeResult(
     recordProbeOutcome(name, kind, 'ok')
     if (result.fable) recordFableCapability(name, kind, result.fable)
     usageViews.set(key, { usage: result.usage ?? usageViews.get(key)?.usage })
-    if (result.usage) picker.cacheUsage(kind, name, result.usage)
   } else {
     const status = recordProbeOutcome(name, kind, result.error === 'expired' ? '401' : 'fail')
     usageViews.set(key, { ...usageViews.get(key), probeError: result.error })
@@ -1555,20 +1553,24 @@ function foldProbeResult(
   pushAccounts()
 }
 
-const picker = new AccountPicker({
-  listAccounts,
-  fablePriority: () => loadSettings().fablePriority,
-  readSecret: (kind, name) => keychainRead(kind, name),
-  probe: (a, secret) =>
-    probeAccount(a.kind, secret, {
-      timeoutMs: PROBE_TIMEOUT_MS,
-      skipFable: shouldSkipFable(a, Date.now())
-    }),
-  onProbeOutcome: foldProbeResult,
-  launchedSessions: () => tracker.launchedSessions(),
-  recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
-  now: () => Date.now()
-})
+const savedUsage = new SavedUsage(path.join(app.getPath('userData'), 'usage-snapshots.json'))
+const picker = new AccountPicker(
+  {
+    listAccounts,
+    fablePriority: () => loadSettings().fablePriority,
+    readSecret: (kind, name) => keychainRead(kind, name),
+    probe: (a, secret) =>
+      probeAccount(a.kind, secret, {
+        timeoutMs: PROBE_TIMEOUT_MS,
+        skipFable: shouldSkipFable(a, Date.now())
+      }),
+    onProbeOutcome: foldProbeResult,
+    launchedSessions: () => tracker.launchedSessions(),
+    recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
+    now: () => Date.now()
+  },
+  savedUsage
+)
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
@@ -1821,7 +1823,7 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§11
 async function liveClaudeRegistryOn(host: string): Promise<string> {
   await loginEnvReady()
-  const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+  const r = await runSsh(host, remoteAnswerCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
     controlDir: remoteControlDir
   })
   if (r.code !== 0) throw new Error(problemOf(r))
@@ -2164,7 +2166,7 @@ const agentRequests = new AgentRequests({
       pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
       sessions: () => allSessions().filter((s) => !s.butler),
       asking: asksTheOwner,
-      asleep: (sessionId) => !!sleepingTabOf(sessionId),
+      asleep: (sessionId) => !!sleepers.tabOf(sessionId),
       workLeft: async (row, merged) => {
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
         return tree ? whatIsLeft(hostGitOut, tree, merged) : null
@@ -2462,7 +2464,7 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
   const key = viewKey(name, 'oauth')
   if (result.ok) {
     usageViews.set(key, { usage: result.usage })
-    if (result.usage) picker.cacheUsage('oauth', name, result.usage)
+    picker.probed('oauth', name, result)
   } else {
     usageViews.set(key, { probeError: result.error })
   }
@@ -2500,6 +2502,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
           model: a.model
         })
         foldProbeResult(a.name, a.kind, result)
+        picker.probed(a.kind, a.name, result)
       })
     ])
     pushAccounts()
@@ -3088,7 +3091,7 @@ function rendererTeardown(): void {
   closeAllDirWatchers()
   closeAllFileWatchers()
   remoteSync?.unwatchAll()
-  resetAllFlow()
+  terminalOutput.clear()
   overlayListenerLost()
   if (uiActiveTabId !== null) activeTabBeforeReload = uiActiveTabId
   uiActiveTabId = null
@@ -3142,13 +3145,20 @@ function createWindow(): void {
   if (!OFF_SCREEN_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
     mainWindow,
-    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
+    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined,
+    () => hiddenFromFullScreen
   )
 
   // PLATFORM§5
   mainWindow.webContents.on('did-start-navigation', (details) => {
     if (!details.isMainFrame || details.isSameDocument) return
     rendererTeardown()
+  })
+  const win = mainWindow
+  win.on('close', (e) => {
+    if (quitCommitted || win.webContents.isCrashed()) return
+    e.preventDefault()
+    hideMainWindow(win)
   })
   mainWindow.on('closed', () => {
     rendererTeardown()
@@ -3225,6 +3235,9 @@ app.whenReady().then(() => {
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
+  onEveryWebPage((contents) => {
+    if (isWorkbenchPage(contents)) pagesMutedWhileHidden.opened(contents)
+  })
   setupGuestGestures()
   setupGuestLinkReports()
   setupGuestPermissionQuery()
@@ -3299,7 +3312,7 @@ app.whenReady().then(() => {
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
       await loginEnvReady()
-      return runSsh(machine, remoteShCommand(script, args), {
+      return runSsh(machine, remoteAnswerCommand(script, args), {
         controlDir: remoteControlDir,
         timeoutMs: opts.timeoutMs,
         ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
@@ -3390,10 +3403,7 @@ app.whenReady().then(() => {
       left: left ?? undefined,
       ...(unexpected ? { unexpected } : {})
     }
-    for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
-    const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
-    for (const [id, t] of sleepers)
-      if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
+    for (const id of sleepers.exited(e.id, ptyMgr.get(e.id)?.resumeSessionId)) forgetSleeper(id)
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
@@ -3405,7 +3415,7 @@ app.whenReady().then(() => {
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
-    loginPtys.delete(e.id)
+    const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
@@ -3417,8 +3427,6 @@ app.whenReady().then(() => {
     }
     if (teardownKilledPtys.delete(e.id)) {
       terminalOutput.end(e.id, false)
-      flowGates.get(e.id)?.reset()
-      flowGates.delete(e.id)
       return
     }
     if (loginWatchers.has(e.id))
@@ -3438,9 +3446,7 @@ app.whenReady().then(() => {
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     // PLATFORM§21
-    terminalOutput.end(e.id, !sleepers.has(e.id))
-    flowGates.get(e.id)?.reset()
-    flowGates.delete(e.id)
+    terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     claudeAsks.delete(e.id)
     const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
@@ -4059,13 +4065,19 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
+    listen: (host, cmd, onLine, onEnd) =>
+      listenOverSsh(host, cmd, { controlDir: remoteControlDir }, onLine, onEnd),
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set(codexMachines)
+      const agentTabsOn = new Set<string>()
       const shellTabsOn = new Map<string, string[]>()
       for (const h of ptyMgr.list()) {
         if (!h.alive) continue
-        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.remoteHost) {
+          live.add(h.remoteHost)
+          agentTabsOn.add(h.remoteHost)
+        }
         if (h.utilMachine) {
           live.add(h.utilMachine)
           shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
@@ -4099,6 +4111,7 @@ app.whenReady().then(() => {
         ],
         paths: t.paths,
         hasTabs: live.has(t.host),
+        agentTabs: agentTabsOn.has(t.host),
         busy: busy.has(t.host),
         shellTabs: shellTabsOn.get(t.host)
       }))
@@ -4222,11 +4235,13 @@ app.whenReady().then(() => {
         return
       }
       if (keptBySignInWindow(from, action === 'close-tab' ? 'closes-it' : 'acts-on-the-app')) return
+      if (hiddenByClose) return
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
     (cmd, from) => {
       if (keptBySignInWindow(from, cmd === 'browser-close-tab' ? 'closes-it' : 'acts-on-its-page'))
         return
+      if (hiddenByClose) return
       sendToRenderer(CH.shortcut.browser, cmd)
     },
     loadSettings().keepAwake
@@ -4297,7 +4312,8 @@ app.whenReady().then(() => {
   probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
+    else createWindow()
   })
 })
 
@@ -4376,6 +4392,7 @@ app.on('before-quit', (e) => {
   flushLayout()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
+  savedUsage.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   flushInbox()
@@ -4504,7 +4521,7 @@ function keptBySignInWindow(
   if (!from || !signInWindows.has(from)) return false
   if (key === 'closes-it') from.close()
   if (key !== 'acts-on-the-app') return true
-  mainWindow?.show()
+  if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
   return false
 }
 
@@ -5514,7 +5531,7 @@ async function endAndRemove(
   info: ProjectInfo,
   tell: (text: string) => void
 ): Promise<boolean> {
-  const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
+  const tabId = target.tabId ?? sleepers.tabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
@@ -5706,8 +5723,7 @@ function restoreOpenTabs(): string | undefined {
   const plan = restorePlan(savedOpenTabs, workspaceMgr.residentIds())
   let activeAsleep: string | undefined
   for (const t of plan.asleep) {
-    const id = `asleep-${++sleeperSeq}`
-    addSleeper(id, t)
+    const id = sleepers.addRestored(t)
     if (t.sessionId === savedOpenTabs.active) activeAsleep = id
   }
   const awake = [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly]
@@ -5847,7 +5863,9 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   await loginEnvReady()
   const r = await runSsh(
     host,
-    `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`,
+    remoteAnswerCommand(
+      `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`
+    ),
     { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
   )
   return r.stdout.trim() || `nothing (${r.stderr.trim()})`
@@ -5942,31 +5960,34 @@ async function copyToPhone(
   view?: ArtifactView
 ): Promise<string | undefined> {
   const relay = discordRelay
-  const reaches = relay?.reaches(tabId) && !relay.quietTurn(tabId)
-  const channelId = reaches ? phoneChannelOf(tabId) : undefined
-  const shown = channelId && shownOf(target, machineOfTab(tabId), view)
-  if (!relay || !channelId || !shown) return undefined
+  const channelId = askChannelOfTab(tabId)
+  if (!relay || !channelId || relay.quietTurn(tabId)) return undefined
+  const shown = shownOf(target, machineOfTab(tabId), view)
+  if (!shown) return undefined
+  const copyTo = (channelId: string): PhoneCopyDeps => ({
+    shoot: (url, machine) => shootPage(url, { machine }),
+    shootHtml,
+    size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
+    readBytes: (file) =>
+      hosts
+        .of(file)
+        .readBytes(file)
+        .catch((error: unknown) => {
+          throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
+        }),
+    fileDiff: (file) => hosts.of(file).gitFileDiff(file),
+    send: (files, parts) => relay.sendParts(channelId, files, parts)
+  })
+  if (!relay.reaches(tabId)) {
+    relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
+    return undefined
+  }
   const where = butler?.channelOfTab(tabId)
     ? 'the Discord channel the owner talks to you in'
-    : "this session's room on the owner's Discord"
-  return sendPhoneCopy(
-    {
-      shoot: (url, machine) => shootPage(url, { machine }),
-      shootHtml,
-      size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
-      readBytes: (file) =>
-        hosts
-          .of(file)
-          .readBytes(file)
-          .catch((error: unknown) => {
-            throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
-          }),
-      fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-      send: (files, parts) => relay.sendParts(channelId, files, parts)
-    },
-    shown,
-    where
-  )
+    : butlerSide(tabId)
+      ? `${butlerNameNow()}'s Discord channel, where the owner sees your question cards`
+      : "this session's room on the owner's Discord"
+  return sendPhoneCopy(copyTo(channelId), shown, where)
 }
 
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000
@@ -6320,7 +6341,11 @@ const hosts = new Hosts(
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
     docsPlugin: () => claudeDocsPlugin,
-    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey)
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+    agentHomes: () => ({
+      codexHome: path.dirname(codexSharedConfig()),
+      configHome: museConfigHome(museSessions?.defaultEnv ?? process.env)
+    })
   }),
   (machine) =>
     new SshHost(machine, {
@@ -6436,7 +6461,7 @@ function registerIpc(): void {
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(id)
     if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
-    writeToTab(id, data)
+    sleepers.write(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
@@ -6446,8 +6471,7 @@ function registerIpc(): void {
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
     ownerTouchedTheScreen(id)
-    if (typedWhileAsleep.has(id))
-      return writeToTab(id, pasteFor(text, sleepers.get(id)?.kind) + (typedAfter ?? ''))
+    if (sleepers.heldPaste(id, text, typedAfter)) return
     return ptyMgr.paste(id, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
@@ -6457,28 +6481,15 @@ function registerIpc(): void {
   ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)
   })
-  ipcMain.on(CH.terminal.ack, (_e, id: string, ackedUtf16Units: number) => {
-    if (
-      typeof ackedUtf16Units === 'number' &&
-      Number.isFinite(ackedUtf16Units) &&
-      ackedUtf16Units > 0
-    ) {
-      if (flowGates.get(id)?.onAck(ackedUtf16Units)) {
-        terminalOutput.wake(id)
-      }
-    }
-  })
-  ipcMain.on(CH.terminal.attach, (_e, id: string) => {
-    flowGateFor(id).attach()
-    terminalOutput.wake(id)
-  })
+  ipcMain.on(CH.terminal.ack, (_e, id: string, ackedUtf16Units: unknown) =>
+    terminalOutput.ack(id, ackedUtf16Units)
+  )
+  ipcMain.on(CH.terminal.attach, (_e, id: string) => terminalOutput.attach(id))
   ipcMain.on(CH.terminal.onScreen, (_e, id: unknown, onScreen: unknown) => {
     if (typeof id === 'string' && typeof onScreen === 'boolean')
       terminalOutput.onScreen(id, onScreen)
   })
-  ipcMain.handle(CH.terminal.flowStats, () =>
-    [...flowGates.entries()].map(([id, gate]) => gate.stats(id))
-  )
+  ipcMain.handle(CH.terminal.flowStats, () => terminalOutput.stats())
   ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
@@ -6619,8 +6630,8 @@ function registerIpc(): void {
     CH.cron.runNow,
     (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
   )
-  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string) =>
-    hosts.of(workspacePath).listSkills(workspacePath)
+  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string, backend: BackendId) =>
+    hosts.of(workspacePath).listSkills(workspacePath, backend)
   )
   ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
@@ -6765,8 +6776,8 @@ function registerIpc(): void {
         })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown) =>
-    isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
+  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown, anyway: unknown) =>
+    isText(id) ? gitAccounts?.remove(id, machineOf(machine), anyway === true) : undefined
   )
   ipcMain.handle(CH.gitAccounts.makeDefault, (_e, id: unknown, machine: unknown) =>
     isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined
@@ -7024,6 +7035,22 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.sessions.leftovers, () => leftovers)
+  ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
+    if (typeof tabId !== 'string') return null
+    const tags = [
+      tabId,
+      ...ptyMgr
+        .list()
+        .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
+        .map((h) => h.id)
+    ]
+    const machine = machineOfTab(tabId)
+    if (!machine) return parseSessionPorts(await scanPortsHere(tags))
+    const tmuxName =
+      tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
+    await loginEnvReady()
+    return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
+  })
   ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
     const stopped = await stopLeftover(sessionId, pid)
@@ -7054,6 +7081,9 @@ function registerIpc(): void {
   ipcMain.on(CH.app.quitHeld, () => {
     clearQuitFallback()
     resetQuitGuard()
+    if (!mainWindow || mainWindow.isDestroyed() || !hiddenByClose) return
+    showMainWindow(mainWindow)
+    if (!OFF_SCREEN_TEST) app.focus({ steal: true })
   })
   ipcMain.on(CH.app.quitDeclined, () => {
     clearQuitFallback()

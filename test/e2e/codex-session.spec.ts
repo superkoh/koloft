@@ -39,12 +39,16 @@ import {
   ONE_FAILING_OF_FIVE,
   WORKBENCH,
   commentOnFirstHunk,
+  commentOnPlan,
   expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
+  expectOnePromptFromThePassage,
+  openInBrowse,
   sendFailingChecks,
   showBrowse,
   wbActiveTab,
-  wbUnreadTabs
+  wbUnreadTabs,
+  writePlan
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
@@ -1712,6 +1716,12 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
+      await expect
+        .poll(async () => {
+          const [tab] = await termIds(page)
+          return tab ? terminalText(page, tab) : ''
+        })
+        .toContain('Codex done')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(codexRows(page)).toHaveClass(/cold/)
@@ -2158,6 +2168,47 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // CODEX§11
+  test('a Codex job in a git workspace Codex trusts starts in its new worktree without Codex asking whether to trust that folder', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
+    fs.writeFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `[projects.${JSON.stringify(fs.realpathSync(env.workspaces.a))}]\ntrust_level = "trusted"\n`
+    )
+    fs.writeFileSync(path.join(env.home, 'fake-codex-asks-trust'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
+      await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
+      expect(path.basename(path.dirname(codexCalls(env)[0].cwd))).toBe('worktrees')
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 30_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Codex job left open loses its folder and branch when you close its tab, though the run left an ignored build file Codex itself would keep; its line says so, and clicking its cold row makes the folder again for the same thread', async ({
     env
   }) => {
@@ -2252,6 +2303,27 @@ test.describe('Codex sessions through the real method chooser, process transport
       const note = 'Codex keep the old name'
       const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
       await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('✎ comment on words in a rendered Markdown file lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const plan = writePlan(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await openInBrowse(page, plan)
+
+      const note = 'Codex make it 5 tries'
+      await commentOnPlan(page, note)
+      await expectOnePromptFromThePassage(() => codexPrompts(env), note)
     } finally {
       await quitAndClose(app)
     }

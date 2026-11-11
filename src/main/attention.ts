@@ -22,17 +22,32 @@ export class AttentionTracker {
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
     lastRun: SavedMark[] = []
   ) {
-    for (const { tabId, kind, at, title, sessionId, fyi } of lastRun) {
+    for (const { tabId, kind, at, title, sessionId, fyi, wasAsking } of lastRun) {
       const deadKind = kind === 'approval' ? 'turn-done' : kind
-      this.pending.set(tabId, { tabId, kind: deadKind, at, title, sessionId, fyi })
+      this.pending.set(tabId, {
+        tabId,
+        kind: deadKind,
+        at,
+        title,
+        sessionId,
+        fyi,
+        ...((kind === 'approval' || wasAsking) && { wasAsking: true })
+      })
     }
   }
 
   bound(tabId: string, sessionId: string): void {
     const carried = this.list().find((e) => e.sessionId === sessionId)
     if (!carried) return
+    const askingHere = this.pending.get(tabId)
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
-    this.pending.set(tabId, { ...carried, tabId, kind: 'turn-done' })
+    const wasAsking = carried.kind === 'approval' || carried.wasAsking
+    this.pending.set(
+      tabId,
+      askingHere?.kind === 'approval' && askingHere !== carried
+        ? { ...askingHere, sessionId, ...(wasAsking && { at: carried.at }) }
+        : { ...carried, tabId, kind: 'turn-done', ...(wasAsking && { wasAsking: true }) }
+    )
     this.onChange(this.list(), null)
   }
 
@@ -56,7 +71,7 @@ export class AttentionTracker {
     }
     const kind = edgeAttention(prev, next)
     if (!kind) return
-    this.raise(tabId, kind, subject)
+    this.raise(tabId, kind, subject, true)
   }
 
   onExited(tabId: string, subject: AttentionSubject = {}): void {
@@ -114,14 +129,21 @@ export class AttentionTracker {
     return [...this.pending.values()]
   }
 
-  private raise(tabId: string, kind: AttentionKind, subject: AttentionSubject): void {
+  private raise(
+    tabId: string,
+    kind: AttentionKind,
+    subject: AttentionSubject,
+    sameAsk = false
+  ): void {
     const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
-    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), ...(fyi && { fyi }) }
     const cur = this.pending.get(tabId)
+    const sameAskAsBefore = kind === 'approval' && sameAsk && cur?.wasAsking
+    const at = sameAskAsBefore ? cur.at : Date.now()
+    const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, event)
-    this.onChange(this.list(), cur?.kind === kind ? null : event)
+    this.onChange(this.list(), cur?.kind === kind || sameAskAsBefore ? null : event)
     if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
   }
 }

@@ -7,6 +7,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import type {
   AccountStatus,
   GitAccount,
+  GitAccountRemoveResult,
   GitAccountSuggestion,
   GitAccountView,
   GitLoginProgress,
@@ -669,7 +670,8 @@ export class GitAccountService {
     const synced = await this.changedOn(machine)
     if (synced && (!account.gcmNamespace || (await this.onMachine.helperAnswers(machine, account))))
       return
-    await this.forgetOnMachine(machine, account)
+    await this.onMachine.forget(machine, account)
+    await this.dropOnMachine(machine, account)
     throw new Error('machine setup failed')
   }
 
@@ -809,16 +811,24 @@ export class GitAccountService {
     return { ok: true, login: me.login }
   }
 
-  private async forgetOnMachine(machine: string, a: GitAccount): Promise<void> {
-    await this.onMachine.forget(machine, a)
+  private async dropOnMachine(machine: string, a: GitAccount): Promise<void> {
     removeGitAccount(a.id, machine)
     await this.changedOn(machine)
   }
 
-  async remove(id: string, machine?: string): Promise<void> {
+  async remove(id: string, machine?: string, anyway = false): Promise<GitAccountRemoveResult> {
     const a = this.account(id, machine)
-    if (!a) return
-    if (machine) return this.forgetOnMachine(machine, a)
+    if (!a) return { ok: true }
+    if (machine && anyway) {
+      removeGitAccount(a.id, machine)
+      this.changed()
+      return { ok: true }
+    }
+    if (machine) {
+      const forgot = await this.onMachine.forget(machine, a)
+      if (forgot.ok) await this.dropOnMachine(machine, a)
+      return forgot
+    }
     if (a.gcmNamespace) await this.gcm.erase(a)
     else await gitTokenDelete(a.host, a.login)
     for (const f of [this.keyPath(a.id), `${this.keyPath(a.id)}.pub`]) fs.rmSync(f, { force: true })
@@ -826,6 +836,7 @@ export class GitAccountService {
     removeGitAccount(a.id)
     this.offline.delete(a.id)
     this.changed()
+    return { ok: true }
   }
 
   makeDefault(id: string, machine?: string): void {

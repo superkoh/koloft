@@ -60,6 +60,7 @@ export const CH = {
     noAccountToResume: 'sessions:noAccountToResume',
     leftovers: 'sessions:leftovers',
     stopLeftover: 'sessions:stopLeftover',
+    ports: 'sessions:ports',
     search: 'sessions:search',
     searchHits: 'sessions:search-hits'
   },

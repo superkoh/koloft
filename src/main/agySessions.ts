@@ -50,7 +50,7 @@ import {
   listAgyConversations,
   readAgyTurns,
   saidInTranscript,
-  tokenTotals,
+  TranscriptFollower,
   type SummaryRow
 } from './agyStore'
 import {
@@ -216,6 +216,7 @@ interface AgyRun extends StoredRun {
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
+  transcript?: TranscriptFollower
 }
 
 function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): ProgramStatus[] {
@@ -645,9 +646,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
-      !opts.scheduled &&
-      !!resource?.managed &&
-      [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
+      !!resource?.managed && [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
@@ -779,9 +778,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const permission = this.permissionOf(opts)
     const workspacePath = parseRemoteKey(workspace)?.path ?? where.path
     const koloftWorktreeOfTrustedWorkspace =
-      !opts.scheduled &&
-      !!resource?.managed &&
-      trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
+      !!resource?.managed && trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
     const trusted = freshWorktree || opts.trustFolder || koloftWorktreeOfTrustedWorkspace
     const trust = [where.path, workspacePath].filter((d, i, all) => all.indexOf(d) === i)
     const m = remote.machineName()
@@ -992,6 +989,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         void this.stop(run.tabId, 1).catch((error) => this.deps.error(String(error)))
       }, REMOTE_EXIT_WAIT_MS).unref()
     }
+  }
+
+  tmuxOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.remote?.tmuxName
   }
 
   tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {
@@ -1255,10 +1256,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
-    const [turn] = await readAgyTurns(file, 1).catch(() => [] as Turn[])
+    if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file)
+    const read = await run.transcript.catchUp().catch(() => undefined)
+    if (!read) return
+    const { turn, tokens: t } = read
     if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
-    const t = await tokenTotals(file).catch(() => undefined)
-    if (!t) return
     const tokens = {
       inTok: t.input,
       outTok: t.output,

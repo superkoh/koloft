@@ -102,6 +102,7 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
         await expect(row).toHaveClass(/\bcold\b/)
         await expect(row).toHaveClass(/\bactive\b/)
         await expect(row.locator('.ws-tab-sub')).toHaveText('main · exited (code 3)')
+        await expect.poll(() => termIds(page)).toHaveLength(1)
         const [tabId] = await termIds(page)
         await expect
           .poll(() => terminalText(page, tabId))

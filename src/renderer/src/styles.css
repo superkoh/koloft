@@ -1862,6 +1862,9 @@ input.switch:focus-visible {
   gap: 10px;
   width: 100%;
 }
+.w-empty .assist-setup {
+  max-width: 620px;
+}
 .assist-setup .acct-add {
   align-self: stretch;
 }

@@ -1720,6 +1720,17 @@ function handleLine(line) {
   const ask = async (name, input, allowed, keyed, dialogKeys = (key) => key) => {
     const toolUseId = `toolu_ask_${Date.now()}`
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    const showFirst = path.join(home, 'fake-claude-open-before-ask')
+    if (fs.existsSync(showFirst)) {
+      const target = fs.readFileSync(showFirst, 'utf8').trim()
+      fs.unlinkSync(showFirst)
+      await new Promise((shown) =>
+        cp.execFile('koloft', ['open', target], { cwd, env: process.env }, (e, out, err) => {
+          process.stdout.write(`${out}${err}`.replace(/\r?\n/g, '\r\n'))
+          shown()
+        })
+      )
+    }
     append([
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {

@@ -41,11 +41,16 @@ import {
 import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
+  PLAN_REL,
   commentOnFirstHunk,
+  commentOnPlan,
   expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
+  expectOnePromptFromThePassage,
+  openInBrowse,
   sendFailingChecks,
-  showChanges
+  showChanges,
+  writePlan
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
@@ -156,6 +161,27 @@ for (const agent of AGENTS) {
       }
     })
 
+    test(`✎ comment on words in a rendered Markdown file lands in the ${agent.label} input box as a paste with the note typed after it, unsent until the person presses Enter`, async ({
+      env
+    }) => {
+      const plan = writePlan(env.workspaces.a)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgent(page, agent)
+        await openInBrowse(page, plan)
+
+        const note = `${agent.label} make it 5 tries`
+        await commentOnPlan(page, note)
+        await expectOnePromptFromThePassage(() => agent.prompts(env), note)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
     test(`an element picked in a Workbench web tab lands in the ${agent.label} input box as one paste with its picture on this Mac, unsent until the person presses Enter`, async ({
       env
     }) => {
@@ -256,6 +282,27 @@ for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
         const note = `${agent.label} on the machine say why two`
         const head = await commentOnFirstHunk(page, 'tracked.txt', note)
         await expectOnePromptFromTheComment(() => prompts(env), head, note)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test(`✎ comment on words in a remote rendered Markdown file reaches ${agent.label} on the machine as a paste with the note typed after it, unsent until the person presses Enter`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        writePlan(remoteDir(env))
+        await addRemoteWorkspace(page, env)
+        await startOnTheMachine(page, agent)
+        await openInBrowse(page, `${remoteKey(env)}/${PLAN_REL}`)
+
+        const note = `${agent.label} on the machine make it 5 tries`
+        await commentOnPlan(page, note)
+        await expectOnePromptFromThePassage(() => prompts(env), note)
       } finally {
         await quitAndClose(app)
       }

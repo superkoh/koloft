@@ -6,6 +6,7 @@ import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  addCodexAccount,
   codexMissingWhoseCheckAnswersOnlyWhenLetGo,
   installAgy,
   installCodex,
@@ -524,6 +525,50 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       expect(fs.readFileSync(path.join(env.home, 'fake-tool-installs.txt'), 'utf8')).toBe(
         'codex\ncodex\n'
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-OB-23: with no agent on this Mac, a folder’s empty panel offers the four installs in place of the grey button; one click installs in a terminal tab, and the panel comes back lit with no card flashing back', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    codexInstalledOnlyLater(env)
+    addCodexAccount(env, '{}')
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const panel = page.locator('.w-empty')
+      const cards = panel.locator('.ob-choices .choice')
+      await expect(cards).toHaveText([/^Claude/, /^Codex/, /^Muse/, /^Antigravity/], {
+        timeout: 30_000
+      })
+      await expect(panel.locator('button[data-default]')).toHaveCount(0)
+      await expect(panel).not.toContainText('Unavailable')
+      await snap(page, 'T-OB-23')
+
+      await page.evaluate(() => {
+        const seen = window as unknown as { panelLeft?: boolean; cardsCameBack?: boolean }
+        new MutationObserver(() => {
+          if (!document.querySelector('.w-empty')) seen.panelLeft = true
+          else if (seen.panelLeft && document.querySelector('.w-empty .ob-choices'))
+            seen.cardsCameBack = true
+        }).observe(document.body, { childList: true, subtree: true })
+      })
+      await cards.filter({ hasText: /^Codex/ }).click()
+      await expect(panel.locator('button[data-default]')).toBeEnabled({ timeout: 30_000 })
+      await expect(cards).toHaveCount(0)
+      expect(
+        await page.evaluate(() => {
+          const seen = window as unknown as { panelLeft?: boolean; cardsCameBack?: boolean }
+          return { panelLeft: !!seen.panelLeft, cardsCameBack: !!seen.cardsCameBack }
+        })
+      ).toEqual({ panelLeft: true, cardsCameBack: false })
+      expect(fs.readFileSync(path.join(env.home, 'fake-tool-installs.txt'), 'utf8')).toBe('codex\n')
     } finally {
       await quitAndClose(app)
     }

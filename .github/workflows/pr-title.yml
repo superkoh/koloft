@@ -11,7 +11,7 @@ permissions: {}
 
 jobs:
   title:
-    if: github.event.pull_request.user.login == github.repository_owner
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - env:

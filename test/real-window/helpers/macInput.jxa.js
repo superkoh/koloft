@@ -123,6 +123,17 @@ function dockItemCenter(appName) {
   return `${x + w / 2} ${y + h / 2}`
 }
 
+function closeButtonCenter(pid) {
+  for (const win of children($.AXUIElementCreateApplication(pid)))
+    for (const item of children(win)) {
+      if (string(item, 'AXSubrole') !== 'AXCloseButton') continue
+      const [x, y] = axNumbers(item, 'AXPosition')
+      const [w, h] = axNumbers(item, 'AXSize')
+      return `${x + w / 2} ${y + h / 2}`
+    }
+  throw new Error('no window with a close button in process ' + pid)
+}
+
 function banner(text) {
   const center = processElement(NOTIFICATION_CENTER)
   return center === null ? null : findByText(center, text, BANNER_TREE_DEPTH)
@@ -165,6 +176,7 @@ function run(argv) {
   if (command === 'drag') return drag(n[0], n[1], n[2], n[3])
   if (command === 'dock-badge') return string(dockItem(rest[0]), 'AXStatusLabel') ?? ''
   if (command === 'dock-item-center') return dockItemCenter(rest[0])
+  if (command === 'close-button-center') return closeButtonCenter(n[0])
   if (command === 'select-input-source') return selectInputSource(rest[0])
   if (command === 'notification-center-running')
     return String(processElement(NOTIFICATION_CENTER) !== null)

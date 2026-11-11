@@ -437,7 +437,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0, 0.166.0 or 0.167.0. Koloft
+0.164.0, 0.165.0, 0.166.0, 0.167.0 or 0.167.1. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -536,7 +536,29 @@ measured again, and the same e2e specs passed, the remote ones (E-SSH-23/24/25) 
 differ (§18). Not reached on 0.167.0: a Guardian review (#58368; the probe threads ran
 `never`), a keychain that cannot be read and a token refresh (#58219, #58343), and the
 terminal-detected image features (#58261, #58270; Koloft reports `Apple_Terminal`, so
-they are **inferred, not checked**, to stay off). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+they are **inferred, not checked**, to stay off). On 0.167.1 (2026-11-11, the same way
+against 0.167.0, two `gpt-6-luna` turns each, `approvalPolicy: never`, read-only
+sandbox): `codex --help` and the `--help` of `app-server`, `exec`, `resume`, `queue`,
+`doctor`, `update` and `agents` are byte-identical to 0.167.0's; `features list` adds
+only `incremental_tools_legacy under development false`; `app-server
+generate-json-schema` (plain and `--experimental`) is byte-identical; sections 1
+(`initialize` keys, `thread/start` keys, `thread/list` keys and 32 keys per thread; a
+one-word turn with no command sent 10 kinds of notification, the same 10 on both — not
+comparable with 0.167.0's 18 above, which came from a different turn), 13/14
+(`model/list` the same eight models, default `gpt-6.1-sol`; the token-usage fields and
+the rollout record types and counts of a turn) and, of 15, only the rollout's size and
+its `additional_tools` record (see there) were measured again, the same on both, and
+the same e2e specs passed, the remote ones (E-SSH-23/24/25) too. That the Linux lab
+machine ran 0.167.1 is **inferred, not checked**: Koloft passes the Mac's version to
+`ensure-codex.sh` (`codexMachine.ts`), which installs that version with npm when the
+machine's `codex --version` differs and fails the tab if it still differs
+(`install.ts`); the printed version was not watched in the run. No other section was
+probed by hand on 0.167.1: sections 3, 5, 16, 17, 18, 20–28, 30 and 34, and 15's login
+parts, stand on 0.167.0's measurements above and on those specs; 11 stands on 0.166.0's.
+Not reached on 0.167.1: compaction, whose upstream code (`compact_remote_v2_attempt.rs`)
+changed, so §21's auto-compaction, last measured on 0.162.x, is **inferred, not
+checked** for 0.167.1; and a web search tool in a turn (§15).
+Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -1393,9 +1415,7 @@ plain successes, no error. `thread/resume` from D returned the turn (1 turn, 14
 items), and from then on `thread/read` in D returned it too, also from a fresh
 app-server on D. A rollout copied into a fresh home's `sessions/` behaves the same
 (listed, 0 turns until a resume), and the home that ran the session reads its turns
-with no resume. So Koloft's read of a closed session's turns, which asks the default
-home, comes back empty for a session that ran in an account home and was never
-resumed from the default home (issue #486). Not probed: 0.159.3 (the
+with no resume. Not probed: 0.159.3 (the
 §19 read was from the home that made the session), and whether
 `codex migrate-rollouts --apply` fills the index. A `codex exec` rollout (`source: "exec"`) is not in the
 default listing, which asks for interactive sources only.
@@ -1496,6 +1516,21 @@ days; also the `rollout/compress` method, present on both). `thread/list` and
 every one of these app-server paths; the TUI's own `codex resume <id>` lookup was not
 run. A 0.164.0 rollout is larger: one short turn wrote 100 KB against 41 KB on 0.163.0,
 most of it one `additional_tools` record now that `incremental_tools` is on by default.
+
+**A turn's rollout size and its tool declarations on 0.167.0 and 0.167.1.** 2026-11-11,
+an app-server over stdio per build in throwaway `CODEX_HOME`s (copied login),
+`gpt-6-luna`: a one-word first turn wrote about 107 KB on both, 39.5 KB of it the one
+`additional_tools` record (the same size on both, so on 0.167.x that record is about a
+third of a first turn, not most of it; 0.164.0's split was not measured again); a second
+turn added about 48 KB, mostly a `world_state` record holding `host_skills` and a
+developer message. Every model in the home's `models_cache.json` has
+`use_responses_lite: true`, so the `incremental_tools` flag (`stable true` on both)
+decides whether that record is written (**inferred, not checked**: read from the
+upstream code, the flag was not turned off). That 0.167.1's new `incremental_tools_legacy` (`under development false`) turns
+tool declarations on only for an Amazon Bedrock provider, and that 0.167.1 keeps a web
+search tool in the request's top-level tools instead of the history's, are read from the
+upstream change — **inferred, not checked**: no `web_search` appeared in either build's
+rollout, even with `-c web_search="live"`.
 
 **The rate-limit reply also carries the credit balance and saved limit resets; one can be
 spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
@@ -1691,7 +1726,9 @@ makes the next one exit with "app-server control socket is already in use". A `-
 server here ended within 3 s of SIGTERM, idle or after a stand-in turn — not the signed-in
 two-turn case with a `codex-code-mode` child measured below, which was not rerun. On
 Linux, `codex --help` lacks only the Mac's `app` line, and `app-server --help` is the
-same as the Mac's.
+same as the Mac's. On 0.167.1 (2026-11-11) none of this was probed by hand; only the
+remote e2e specs ran, and passed, with the Mac on 0.167.1 (that the machine ran 0.167.1
+too is **inferred, not checked**, §7).
 
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
@@ -1880,6 +1917,23 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to
   `skills/list`.
+- **Where Codex finds skills, and how a prompt names one.** 2026-11-08, Codex CLI
+  0.166.0, no real model: a throwaway `HOME` and `CODEX_HOME` whose `config.toml` pointed
+  the model provider at a local fake Responses server that saved each request body, and a
+  made-up API key. Six skills, each folder named differently from its frontmatter `name`,
+  each body holding its own codeword. `skills/list {cwds: [<repo>]}` listed
+  `<repo>/.agents/skills/<d>/SKILL.md` and `<repo>/.codex/skills/<d>/SKILL.md` with scope
+  `repo`, `$CODEX_HOME/skills/<d>/SKILL.md` and `$HOME/.agents/skills/<d>/SKILL.md` with
+  scope `user`, and the four `skills/.system/*` with scope `system`; it did not list
+  `<repo>/.claude/skills`. Then one `turn/start` per text on a new thread, and the same
+  texts as the last argument of a real TUI (`codex --no-daemon -C <repo> "<text>"` in a
+  python pty), as Koloft starts a scheduled run (section 14):
+  - `$<name>` (the frontmatter name) sent, after the user's text, one more user message
+    `<skill>\n<name>…</name>\n<path>…/SKILL.md</path>\n<the whole file>\n</skill>`; the
+    same for a repo skill. Both paths.
+  - `/<name>`, `use the <name> skill …`, and `$<folder>` sent the text alone.
+  - `/prompts:<n>` with `$CODEX_HOME/prompts/<n>.md` sent the text alone, both paths.
+  - What a `SKILL.md` without a `name` line is called is inferred, not checked.
 - **`skills/extraRoots/set {extraRoots: [<folder>]}` adds a skills folder for that one
   app-server, and the model gets it.** 2026-10-27, Codex CLI 0.162.0 (model turns, a
   throwaway `CODEX_HOME` holding a copy of this Mac's login, deleted afterwards) and
@@ -2482,9 +2536,18 @@ message" (3 runs).
   from Koloft to a Codex session (`koloft session send`, a Discord line) goes through
   `thread/queue/add` (§17), not the composer. Three things are pasted into the composer:
   a picked element (starts `Element picked in the Workbench browser`, `elementPick.ts`),
-  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk comment, which starts
-  with the file's path (`hunkPrompt`, `changesModel.ts`), so a comment on a file whose
-  name starts with `!` would run as a shell command; nothing guards that case.
+  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk or passage comment,
+  which starts with two LFs and then the file's path (`hunkPrompt`, `passagePrompt`,
+  `changesModel.ts`); whether those LFs keep a file whose name starts with `!` out of
+  Shell mode was not probed.
+- **A second paste lands right after whatever the composer holds, with nothing between.**
+  2026-11-10, Codex CLI 0.166.0 on this Mac, Koloft's ✎ comment on a rendered Markdown
+  file done twice before any Enter (`agent-tools-real-smoke.spec.ts` › "a real Codex
+  holds two passage comments …"): both waited unsent and the CR sent them as one
+  `UserMessage`, but with each paste starting at its path the first note ran straight
+  into the second path (`… make it 5 tries.docs/plan.md:7`, 2 of 2 runs). With two LFs
+  at the start of each paste the note and the next path sat on lines of their own
+  (1 run).
 - Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
   ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
   sends the app-server on the machine does.
@@ -2619,8 +2682,7 @@ the one before, the screen read back through `pyte`.
   binary), the same with or without `TERM_PROGRAM`, and under `--remote`. The strings
   also name `blocked` (not seen) and an iTerm2 `OSC 21337;status=…` (not seen).
   Unlike Claude Code's (CC§12: query-gated, with `id` and `kind`), it carries only
-  `state` and `app`. 0.162.1 writes none of it. Koloft's terminal does not handle 7501
-  for either CLI (issue #487). The startup and exit sequences are otherwise the same on
+  `state` and `app`. 0.162.1 writes none of it. The startup and exit sequences are otherwise the same on
   both versions and both env shapes (on 0.166.0, 2026-10-30, Koloft's env shape, too,
   except that the `?u` and DA1 queries now come before `6n`): `?2004h`, `>7u`,
   `?1004h`, the `6n`, OSC 10/11 and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
@@ -3284,6 +3346,22 @@ trusted. One run of each.
   (no relay in between), the app-server sent SIGKILL: both drew "Reconnecting to
   server… ⌃c quit" and were still running 45 s later. The 0.166.0 notes' "Improve TUI
   reconnect recovery" was not told apart from 0.165.0 by this.
+- **A question or command approval open when the app-server stops does not come back on
+  `thread/resume`.** 2026-11-09, codex-cli 0.166.0, a stdio `app-server` with
+  `-c features.default_mode_request_user_input=true` in a throwaway `CODEX_HOME`, a local
+  fake Responses provider; stopped the way Koloft stops it (stdin closed, then SIGTERM to
+  its process group; it exited 0 within 30 ms) or by SIGKILL; 13 runs across a question,
+  a Plan-mode question (`isBlocking: true`), a command approval and the real TUI on
+  `--remote`. Before the stop the rollout's last line is the `function_call` holding the
+  whole question. Koloft's stop appends `function_call_output` `"aborted by user after
+  <N>s"` (`"Wall time: … aborted by user"` for a command), a user message
+  `<turn_aborted>` "The user interrupted the previous turn on purpose…" and
+  `turn_aborted {reason: "interrupted"}`; SIGKILL appends nothing. A fresh app-server's
+  `thread/resume` answers the thread `idle` and the turn `interrupted`, re-sends no
+  server request for 20 s and calls no model; the TUI draws "Conversation interrupted"
+  and no question. A `turn/start` after it sends the model the old call, an "aborted"
+  output in its place, then the new text, so after a restart the owner's answer can
+  reach the model only as a message. The command never ran.
 
 ## 35. Links in a reply
 
