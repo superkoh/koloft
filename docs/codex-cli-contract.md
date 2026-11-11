@@ -437,7 +437,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0, 0.166.0 or 0.167.0. Koloft
+0.164.0, 0.165.0, 0.166.0, 0.167.0 or 0.167.1. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -536,7 +536,19 @@ measured again, and the same e2e specs passed, the remote ones (E-SSH-23/24/25) 
 differ (§18). Not reached on 0.167.0: a Guardian review (#58368; the probe threads ran
 `never`), a keychain that cannot be read and a token refresh (#58219, #58343), and the
 terminal-detected image features (#58261, #58270; Koloft reports `Apple_Terminal`, so
-they are **inferred, not checked**, to stay off). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+they are **inferred, not checked**, to stay off). On 0.167.1 (2026-11-11, the same way
+against 0.167.0, two `gpt-6-luna` turns each, `approvalPolicy: never`, read-only
+sandbox): `codex --help` and the `--help` of `app-server`, `exec`, `resume`, `queue`,
+`doctor`, `update` and `agents` are byte-identical to 0.167.0's; `features list` adds
+only `incremental_tools_legacy under development false`; `app-server
+generate-json-schema` (plain and `--experimental`) is byte-identical; sections 1
+(`initialize` keys, `thread/start` keys, the notifications of a one-word turn,
+`thread/list` keys and 32 keys per thread), 13/14 (`model/list` the same eight models,
+default `gpt-6.1-sol`; the token-usage fields and the rollout record types and counts
+of a turn) and 15 (the rollout's size and its `additional_tools` record, see there)
+were measured again, the same on both, and the same e2e specs passed, the remote ones
+(E-SSH-23/24/25) too. Not reached on 0.167.1: compaction (`compact_remote_v2_attempt.rs`
+changed) and a web search tool in a turn (below, §15). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -1494,6 +1506,16 @@ days; also the `rollout/compress` method, present on both). `thread/list` and
 every one of these app-server paths; the TUI's own `codex resume <id>` lookup was not
 run. A 0.164.0 rollout is larger: one short turn wrote 100 KB against 41 KB on 0.163.0,
 most of it one `additional_tools` record now that `incremental_tools` is on by default.
+On 0.167.0 and 0.167.1 (2026-11-11, throwaway homes, copied login, `gpt-6-luna`) a
+one-word first turn wrote about 107 KB on both, 39.5 KB of it the one `additional_tools`
+record (the same size on both); a second turn added about 48 KB, mostly a `world_state`
+record holding `host_skills` and a developer message. Every model in the home's
+`models_cache.json` has `use_responses_lite: true`, so the `incremental_tools` flag
+(`stable true` on both) decides; 0.167.1's new `incremental_tools_legacy` (`under
+development false`) turns tool declarations on only for an Amazon Bedrock provider (read
+from the upstream change, not run). 0.167.1 also keeps a web search tool in the request's
+top-level tools instead of the history's; no `web_search` appeared in either build's
+rollout, even with `-c web_search="live"`, so that change was not reached.
 
 **The rate-limit reply also carries the credit balance and saved limit resets; one can be
 spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
