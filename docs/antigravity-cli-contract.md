@@ -1734,9 +1734,12 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   all three. A `SKILL.md` with a `description` and no `name` was listed as `SKILL`, and
   `/<its folder>` sent no body; one with no frontmatter was not listed, and `/<its
   folder>` sent no body. `user-invocable: false` changed nothing: the skill was listed
-  and `/<name>` sent its body. With one `name` in all three folders `/skills` listed it
-  once, from `.agent/skills/`. Not probed: `/SKILL`, and these two folders typed into
-  the TUI.
+  and `/<name>` sent its body. Typed into the TUI in tmux 3.3a (onboarding seeded) and
+  Enter, `/<name> say hi` put the body in the user turn for a skill in each of the three
+  folders too. One `name` in more than one folder is listed once and `/<name>` sends
+  that copy's body: `.agent/skills/` beat the other two and `.agents/skills/` beat
+  `_agents/skills/`, whichever copy's own folder name sorted first. Not probed:
+  `/SKILL`.
 
 ## §32 The folder's AGENTS.md as a memory
 

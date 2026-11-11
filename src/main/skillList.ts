@@ -131,15 +131,12 @@ export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source,
     case 'agy':
       return {
         project: {
-          skills: [ws('.agents', 'skills'), ws('_agents', 'skills'), ws('.agent', 'skills')]
+          skills: [ws('.agent', 'skills'), ws('.agents', 'skills'), ws('_agents', 'skills')]
         },
         home: { skills: [] }
       }
   }
 }
-
-// AGY§31
-const NAMED_ONLY_IN_ITS_SKILL_FILE: ReadonlySet<BackendId> = new Set(['agy'])
 
 function byName(a: SkillSuggestion, b: SkillSuggestion): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
@@ -150,7 +147,7 @@ function skillsIn(
   roots: string[],
   prefix: string,
   source: Source,
-  folderNames: boolean
+  asAgyReadsThem: boolean
 ): SkillSuggestion[] {
   const out: SkillSuggestion[] = []
   for (const root of roots) {
@@ -161,9 +158,9 @@ function skillsIn(
       if (!isFileSafe(fs, file)) continue
       const text = readFileSafe(fs, file)
       const fm = text === null ? {} : frontMatter(text)
-      if (fm['user-invocable'] === 'false') continue
-      const name = fm.name ?? (folderNames ? dir : undefined)
-      if (name === undefined) continue
+      // AGY§31
+      if (asAgyReadsThem ? fm.name === undefined : fm['user-invocable'] === 'false') continue
+      const name = fm.name ?? dir
       out.push({
         name: prefix + name,
         ...(fm.description ? { description: cut120(fm.description) } : {}),
@@ -198,13 +195,12 @@ export function listSkills(
 ): SkillSuggestion[] {
   const prefix = SKILL_PREFIX[backend]
   const folders = skillFolders(backend, places)
-  const folderNames = !NAMED_ONLY_IN_ITS_SKILL_FILE.has(backend)
   const out: SkillSuggestion[] = []
   const seen = new Set<string>()
   for (const source of ['project', 'home'] as const) {
     const { skills, commands = [] } = folders[source]
     for (const s of [
-      ...skillsIn(fs, skills, prefix, source, folderNames),
+      ...skillsIn(fs, skills, prefix, source, backend === 'agy'),
       ...commandsIn(fs, commands, prefix, source)
     ]) {
       if (seen.has(s.name)) continue
