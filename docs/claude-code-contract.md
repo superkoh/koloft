@@ -3884,6 +3884,6 @@ screen` while the call ran.
 
 - With a `description`, the running call's line is `⏺ <description>`, the command on the
   line under it (`⎿  $ <command>`). Without one it is `⏺ Running <command>`.
-- Once done, calls fold into `Ran N shell command(s)`.
+- Once done, the one call seen folded into `Ran 1 shell command`.
 
 Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/main/hooks.ts`.
