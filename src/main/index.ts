@@ -170,6 +170,7 @@ import {
   UTIL_BASH_LOGIN,
   UTIL_BASH_LOGIN_FILE,
   UTIL_SH,
+  remoteAnswerCommand,
   remoteShCommand
 } from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
@@ -1764,7 +1765,7 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§11
 async function liveClaudeRegistryOn(host: string): Promise<string> {
   await loginEnvReady()
-  const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+  const r = await runSsh(host, remoteAnswerCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
     controlDir: remoteControlDir
   })
   if (r.code !== 0) throw new Error(problemOf(r))
@@ -3242,7 +3243,7 @@ app.whenReady().then(() => {
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
       await loginEnvReady()
-      return runSsh(machine, remoteShCommand(script, args), {
+      return runSsh(machine, remoteAnswerCommand(script, args), {
         controlDir: remoteControlDir,
         timeoutMs: opts.timeoutMs,
         ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
@@ -5788,7 +5789,9 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   await loginEnvReady()
   const r = await runSsh(
     host,
-    `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`,
+    remoteAnswerCommand(
+      `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`
+    ),
     { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
   )
   return r.stdout.trim() || `nothing (${r.stderr.trim()})`

@@ -1797,6 +1797,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   fail** with `Cannot execute command-line and remote command.` (exit 255);
   `-o RemoteCommand=none` placed first wins over the config and the command runs.
   (2026-09-29, OpenSSH_10.3p1 on macOS 27 to Ubuntu 24.04.)
+- **What the user's shell prints as it starts lands on `ssh host cmd`'s stdout, in front
+  of the command's own output.** A `sh -c '…'` command run with `ssh -n -o
+  RequestTTY=no`: an `echo` on line 1 of a bash user's `~/.bashrc` (above Debian's "not
+  interactive, do nothing" guard) and an `echo` in a fish user's
+  `~/.config/fish/config.fish` both came back as the first stdout line; an `echo` at the
+  end of `~/.bashrc` (below that guard) and one in `~/.profile` did not. So a script
+  whose output is read prints a mark of its own first, and only what follows the mark is
+  its answer. (2026-11-08, OpenSSH_10.3p1 on macOS 27 to Debian 12 with bash 5.2.15 and
+  fish 3.6.0, the e2e Docker ssh lab image, a scratch node script.)
 - **`RequestTTY force` in the config gives even `ssh -n host cmd` a terminal**, and the
   terminal turns each `\n` of the output into `\r\n` (`printf "a\nb"` came back as
   `a \r \n b`), and a `tar | ssh host 'tar xf -'` push through it fails; `-o

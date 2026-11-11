@@ -5,16 +5,16 @@ import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AGY_LIST_JS, historyEntries, type SummaryRow } from '../../src/main/agyStore'
 import { AGY_BRAIN_FLAGS, AGY_LIST_FILE, listAgyCmd } from '../../src/main/remote/agyTab'
+import { answerOf } from '../../src/main/remote/ssh'
 import { writeSummaries } from './helpers/agyStore'
 
 let home: string
 
 function onMachine(cmd: string): { code: number | null; stdout: string } {
   const r = spawnSync('/bin/sh', ['-c', cmd], {
-    encoding: 'utf8',
     env: { HOME: home, PATH: '/usr/bin:/bin' }
   })
-  return { code: r.status, stdout: r.stdout }
+  return { code: r.status, stdout: answerOf(cmd, r.stdout).toString('utf8') }
 }
 
 beforeEach(() => {

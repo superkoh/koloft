@@ -4,7 +4,12 @@ import type { ChildProcessWithoutNullStreams } from 'child_process'
 import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
-import { CODEX_FIRST_ON_PATH, REMOTE_ENV_LINES, remoteShCommand } from './install'
+import {
+  CODEX_FIRST_ON_PATH,
+  REMOTE_ENV_LINES,
+  remoteAnswerCommand,
+  remoteShCommand
+} from './install'
 import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -221,7 +226,7 @@ export const HAS_CODEX_HOME_CMD = remoteShCommand(`test -d "${REMOTE_CODEX_HOME}
 
 // CODEX§11
 export function realDirAndConfigCmd(dir: string): string {
-  return remoteShCommand(
+  return remoteAnswerCommand(
     `cd "$1" 2>/dev/null && pwd -P || exit 1\ncat "${REMOTE_CODEX_HOME}/config.toml" 2>/dev/null\nexit 0`,
     [dir]
   )

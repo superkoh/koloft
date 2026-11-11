@@ -88,6 +88,14 @@ export function problemOf(r: { code: number | null; stderr: string }): string {
     : said
 }
 
+export const ANSWER_STARTS = 'koloft-answer-starts-here'
+
+// PLATFORM§33
+export function answerOf(remoteCmd: string, stdout: Buffer): Buffer {
+  const at = remoteCmd.includes(ANSWER_STARTS) ? stdout.indexOf(`${ANSWER_STARTS}\n`) : -1
+  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
+}
+
 export interface RunResult {
   // PLATFORM§33
   code: number | null
@@ -183,7 +191,7 @@ export function runSshBytes(
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, r))
+  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(remoteCmd, r.stdout) }))
 }
 
 const STDERR_TAIL_KEPT = 4096
