@@ -83,7 +83,6 @@ import {
   WebPageState,
   guestHistory,
   guestId,
-  guestLoading,
   guestUrl,
   type GuestEvents,
   type TabRuntime
@@ -473,33 +472,22 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   // PLATFORM§8
   const droppedForMemory = useRef(new Set<string>())
-  const panelNow = useRef({
-    visible,
-    ownerTab,
-    activeId: set.activeId,
-    sessionCold,
-    staged,
-    dialog
-  })
-  panelNow.current = { visible, ownerTab, activeId: set.activeId, sessionCold, staged, dialog }
+  const panelNow = useRef({ visible, ownerTab, activeId: set.activeId, sessionCold, staged })
+  panelNow.current = { visible, ownerTab, activeId: set.activeId, sessionCold, staged }
   useEffect(() => {
     return window.api.browser.onMemoryCritical((inUse) => {
       const now = panelNow.current
       const used = { guestIds: new Set(inUse.guestIds), owners: new Set(inUse.owners) }
-      const dialogGuest = (now.dialog as { guestId?: number } | null)?.guestId
       const going = new Set(
         [...els.current].flatMap(([id, el]) => {
           const owner = webIndexRef.current.get(id)?.owner
-          const gid = guestId(el)
           const goes = mayDropForMemory(
             {
               owner,
               onScreen:
                 now.visible && owner === now.ownerTab && id === now.activeId && !now.sessionCold,
               heldForAnAgent: pinnedRef.current.has(id) || now.staged.has(id) || mounting(id),
-              loading: guestLoading(el),
-              hasADialogUp: !!gid && gid === dialogGuest,
-              guestId: gid
+              guestId: guestId(el)
             },
             used
           )
@@ -507,17 +495,21 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         })
       )
       if (!going.size) return
-      for (const id of going) droppedForMemory.current.add(id)
+      for (const id of going) {
+        droppedForMemory.current.add(id)
+        patchRuntime(id, { loading: false, canBack: false, canForward: false, zoom: 1 })
+      }
       setLive((prev) => prev.filter((id) => !going.has(id)))
     })
-  }, [mounting])
+  }, [mounting, patchRuntime])
 
   const activeWebUrl = activeTab?.kind === 'web' ? activeTab.url : undefined
   useLayoutEffect(() => {
+    const dropped = droppedForMemory.current
+    for (const id of dropped) if (live.includes(id) || !webIndex.has(id)) dropped.delete(id)
     if (!visible || sessionCold || !activeTab || !activeWebUrl) return
-    if (!droppedForMemory.current.delete(activeTab.id)) return
-    if (!live.includes(activeTab.id)) applyLive(activeTab.id, activeWebUrl)
-  }, [visible, sessionCold, activeTab?.id, activeWebUrl, live, applyLive])
+    if (dropped.delete(activeTab.id)) applyLive(activeTab.id, activeWebUrl)
+  }, [visible, sessionCold, activeTab?.id, activeWebUrl, live, webIndex, applyLive])
 
   const enterEdit = useCallback(
     (tabId: string, path: string, created?: EditFingerprint): void => {

@@ -19,17 +19,17 @@ afterEach(() => {
   fs.rmSync(regDir, { recursive: true, force: true })
 })
 
-let turnedCritical: number
+let saidCritical: number
 
 const room = (): MachineRoom => {
-  turnedCritical = 0
+  saidCritical = 0
   return new MachineRoom({
     regDir,
     cores: CORES,
     read: async () => ({ pressure: 1, load1: 0 }),
     now: () => now,
     log: (l) => lines.push(l),
-    memoryTurnedCritical: () => turnedCritical++
+    memoryStaysCritical: () => saidCritical++
   })
 }
 
@@ -110,14 +110,14 @@ describe('when the machine counts as busy, and when roomy again', () => {
 })
 
 describe('when memory counts as critical', () => {
-  it('says so once, at the second critical reading in a row', () => {
+  it('says so from the second critical reading in a row, and at every reading while it lasts', () => {
     const r = room()
     r.observe({ pressure: 4, load1: 1 })
-    expect(turnedCritical).toBe(0)
+    expect(saidCritical).toBe(0)
     r.observe({ pressure: 4, load1: 1 })
-    expect(turnedCritical).toBe(1)
-    feed(r, 60, { pressure: 4, load1: 1 })
-    expect(turnedCritical).toBe(1)
+    expect(saidCritical).toBe(1)
+    feed(r, 15, { pressure: 4, load1: 1 })
+    expect(saidCritical).toBe(4)
   })
 
   it('a single critical reading between calmer ones says nothing', () => {
@@ -125,21 +125,13 @@ describe('when memory counts as critical', () => {
     r.observe({ pressure: 4, load1: 1 })
     r.observe({ pressure: 2, load1: 1 })
     r.observe({ pressure: 4, load1: 1 })
-    expect(turnedCritical).toBe(0)
+    expect(saidCritical).toBe(0)
   })
 
   it('memory at warning says nothing, however long it lasts', () => {
     const r = room()
     feed(r, 600, { pressure: 2, load1: 1 })
-    expect(turnedCritical).toBe(0)
-  })
-
-  it('says so again once memory left critical and came back', () => {
-    const r = room()
-    feed(r, 10, { pressure: 4, load1: 1 })
-    r.observe({ pressure: 1, load1: 1 })
-    feed(r, 10, { pressure: 4, load1: 1 })
-    expect(turnedCritical).toBe(2)
+    expect(saidCritical).toBe(0)
   })
 })
 

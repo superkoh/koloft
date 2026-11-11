@@ -3340,7 +3340,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     now: Date.now,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
-    memoryTurnedCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
+    memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
     heldDirs: () => remoteHookMirrors(),
     freeOnMachine: freeOnMachine,
     isRemote: (tabId) => !!machineOfTab(tabId),
@@ -4502,6 +4502,7 @@ function setupBrowserAuth(): void {
     if (!prompt) return
     event.preventDefault()
     const id = crypto.randomUUID()
+    pageOfTheModalUp = contents.id
     pendingAuth.set(id, callback)
     const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
     sendToRenderer(CH.browser.authChallenge, payload)
@@ -4509,6 +4510,8 @@ function setupBrowserAuth(): void {
 }
 
 const pendingJsDialogs = new Map<string, (answer: BrowserDialogAnswer) => void>()
+let pageOfTheModalUp = 0
+const pagesGrantedAPermission = new Set<number>()
 
 function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
@@ -4821,8 +4824,10 @@ function isOverlayGuest(contents: WebContents): boolean {
 function pagesInUse(): BrowserPagesInUse {
   const guestIds = new Set<number>([
     ...pagesDownloading.values(),
+    ...pagesGrantedAPermission,
     ...[...pendingPermissions.values()].map((p) => p.guestId)
   ])
+  if (modalSlotTaken()) guestIds.add(pageOfTheModalUp)
   const owners = new Set<string>()
   const keepOwnerOf = (page: WebContents): void => {
     guestIds.add(page.id)
@@ -4840,6 +4845,7 @@ function pagesInUse(): BrowserPagesInUse {
     const owner = guestOwners.get(page)
     if (owner && relayAttached(owner)) owners.add(owner)
     if (
+      page.isLoading() ||
       page.debugger.isAttached() ||
       page.isDevToolsOpened() ||
       page.isCurrentlyAudible() ||
@@ -5210,12 +5216,16 @@ function setupBrowserPartition(): void {
       return
     }
     if (decision.kind === 'ask') {
+      const answer = (granted: boolean): void => {
+        if (granted) pagesGrantedAPermission.add(_wc.id)
+        callback(granted)
+      }
       const remembered = rememberedPermission(decision.origin, decision.permission)
       if (remembered !== undefined) {
-        callback(remembered)
+        answer(remembered)
         return
       }
-      askUserForPermission(_wc.id, decision.origin, decision.permission, callback)
+      askUserForPermission(_wc.id, decision.origin, decision.permission, answer)
       return
     }
     // PLATFORM§11
@@ -7327,6 +7337,7 @@ function registerIpc(): void {
       const gone = (): void => {
         pendingJsDialogs.delete(id)
       }
+      pageOfTheModalUp = e.sender.id
       pendingJsDialogs.set(id, (answer) => {
         e.sender.removeListener('destroyed', gone)
         e.returnValue = answer

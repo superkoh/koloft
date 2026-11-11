@@ -245,22 +245,15 @@ describe('a cold session answers only ownerless dialogs', () => {
 })
 
 describe('which hidden web pages may go when memory is critical', () => {
-  const hidden = {
-    owner: 'tab-A',
-    onScreen: false,
-    heldForAnAgent: false,
-    loading: false,
-    hasADialogUp: false,
-    guestId: 7
-  }
+  const hidden = { owner: 'tab-A', onScreen: false, heldForAnAgent: false, guestId: 7 }
   const nothingInUse = { guestIds: new Set<number>(), owners: new Set<string>() }
 
   it('a hidden page nobody is using goes', () => {
     expect(mayDropForMemory(hidden, nothingInUse)).toBe(true)
   })
 
-  it('the page on screen, a page held for an agent, a loading page and one with a dialog up stay', () => {
-    for (const fact of ['onScreen', 'heldForAnAgent', 'loading', 'hasADialogUp'] as const)
+  it('the page on screen and a page held for an agent stay', () => {
+    for (const fact of ['onScreen', 'heldForAnAgent'] as const)
       expect(mayDropForMemory({ ...hidden, [fact]: true }, nothingInUse)).toBe(false)
   })
 

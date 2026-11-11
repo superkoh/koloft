@@ -119,8 +119,6 @@ export interface HiddenPageFacts {
   owner: string | undefined
   onScreen: boolean
   heldForAnAgent: boolean
-  loading: boolean
-  hasADialogUp: boolean
   guestId: number
 }
 
@@ -129,7 +127,7 @@ export function mayDropForMemory(
   inUse: { guestIds: ReadonlySet<number>; owners: ReadonlySet<string> }
 ): boolean {
   if (!page.owner || !page.guestId) return false
-  if (page.onScreen || page.heldForAnAgent || page.loading || page.hasADialogUp) return false
+  if (page.onScreen || page.heldForAnAgent) return false
   return !inUse.guestIds.has(page.guestId) && !inUse.owners.has(page.owner)
 }
 

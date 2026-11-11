@@ -16,7 +16,6 @@ const LOAD_STAYS_HIGH_MS_BEFORE_BUSY = 30_000
 const CALM_MS_BEFORE_ROOMY = 60_000
 // PLATFORM§59
 export const MEMORY_PRESSURE_WARNING = 2
-// PLATFORM§59
 export const MEMORY_PRESSURE_CRITICAL = 4
 const CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING = 2
 export const GAP_AFTER_A_COMMAND_MS = 30_000
@@ -31,7 +30,7 @@ export interface MachineRoomDeps {
   read(): Promise<MachineReading>
   now(): number
   log(line: string): void
-  memoryTurnedCritical?(): void
+  memoryStaysCritical?(): void
 }
 
 export class MachineRoom {
@@ -71,8 +70,8 @@ export class MachineRoom {
     const memoryTight = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_WARNING
     const memoryCritical = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_CRITICAL
     this.criticalReadingsInARow = memoryCritical ? this.criticalReadingsInARow + 1 : 0
-    if (this.criticalReadingsInARow === CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING)
-      this.d.memoryTurnedCritical?.()
+    if (this.criticalReadingsInARow >= CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING)
+      this.d.memoryStaysCritical?.()
     const loadHigh = r.load1 >= BUSY_AT_LOAD_PER_CORE * this.d.cores
     const loadCalm = r.load1 < ROOMY_BELOW_LOAD_PER_CORE * this.d.cores
     this.loadHighSince = loadHigh ? (this.loadHighSince ?? now) : undefined

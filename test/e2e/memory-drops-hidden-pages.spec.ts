@@ -43,7 +43,7 @@ async function pagesAlive(app: ElectronApplication): Promise<string[]> {
 }
 
 test.describe('when memory turns critical, Koloft lets go of the Workbench web pages nobody can see', () => {
-  test('at warning nothing goes; at critical every hidden page goes — another tab of the shown session, another session’s — the one on screen stays, and each comes back by itself when the owner returns to it', async ({
+  test('at warning nothing goes; at critical every hidden page goes — another tab of the shown session, another session’s — the one on screen stays, each comes back by itself when the owner returns to it, and a page hidden later, while memory is still critical, goes too', async ({
     app,
     page,
     env
@@ -78,6 +78,9 @@ test.describe('when memory turns critical, Koloft lets go of the Workbench web p
     await wbTabByTitle(page, 'hidden-tab').click()
     await expect.poll(() => server.count('/hidden-tab'), { timeout: 30_000 }).toBe(2)
     await expect((await guestByUrl(app, '/hidden-tab')).locator('p')).toHaveText('hidden-tab')
+    await expect
+      .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
+      .toEqual(['hidden-tab'])
 
     await switchToRow(page, wsRows(page, 'ws-a').first())
     await expect.poll(() => server.count('/other-session'), { timeout: 30_000 }).toBe(2)
