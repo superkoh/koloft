@@ -1600,9 +1600,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       },
       pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Argon$/ }).click(),
       launched: (env) => machineAgyCalls(env)[0],
-      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions', '-i', REMOTE_TASK],
-      // AGY§8 AGY§16
-      named: 'no name, its row taking agy’s own title',
+      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions'],
+      // AGY§8 AGY§16 AGY§31
+      named:
+        'no name, its /task typed in once agy is ready rather than given with -i, its row taking agy’s own title',
       rowTitle: REMOTE_TASK
     }
   ]
