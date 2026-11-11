@@ -454,12 +454,31 @@ describe('CodexSessions', () => {
     expect(shown()).toEqual([])
     await sessions.refreshMachineHistory('box', true)
     expect(homeChecks).toBe(1)
+    expect(mocks.rpcOptions).toHaveLength(1)
     expect(shown()).toEqual([])
     homeThere = false
     mocks.request.mockImplementation(async () => ({ data: [] }))
     await sessions.refreshMachineHistory('box', true)
     expect(homeChecks).toBe(2)
     expect(shown()).toEqual([remembered])
+  })
+
+  // CODEX§16
+  it("a remote machine's open Codex line that fails a listing is closed, and the listing is asked again on a new line once the machine's Codex home is seen there", async () => {
+    let homeChecks = 0
+    deps.machine = fakeMachine({
+      run: async (_machine, command) => {
+        if (command === HAS_CODEX_HOME_CMD) homeChecks++
+        return { code: 0, stdout: '', stderr: '' }
+      }
+    })
+    mocks.request.mockImplementation(async () => ({ data: [{ id: A, cwd: '/srv/repo' }] }))
+    await sessions.refreshMachineHistory('box', true)
+    mocks.request.mockRejectedValueOnce(new Error('line stalled'))
+    await sessions.refreshMachineHistory('box', true)
+    expect(homeChecks).toBe(2)
+    expect(mocks.close).toHaveBeenCalledTimes(1)
+    expect(mocks.rpcOptions).toHaveLength(2)
   })
 
   it('offers the welcome one folder use per thread on this Mac, leaving out archived threads and a remote machine’s', async () => {

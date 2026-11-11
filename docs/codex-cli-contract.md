@@ -1759,9 +1759,8 @@ path does not exist`) and did not create the folder. Started on an empty folder,
 answered `initialize`, `thread/start` and `thread/list` (`data: []`, the thread had no
 turn); with the folder then removed (`rm -rf`) while it ran, the next two `thread/list`
 calls each answered `data: []` with no error, the folder was not created again and the
-process stayed up. So Koloft asks an already open side line for `thread/list` first, and
-runs its own `test -d` on the home only when that answer is empty or an error. A home that
-held listed threads before it was removed, and all of this on Linux: not probed.
+process stayed up. A home that held listed threads before it was removed, and all of this
+on Linux: not probed.
 
 **A `--listen` app-server shrugs off SIGTERM.** Measured 2026-10-17, `@openai/codex@0.162.0`
 installed by npm on Debian 12 (Docker, arm64), signed in with `chatgptAuthTokens`, idle

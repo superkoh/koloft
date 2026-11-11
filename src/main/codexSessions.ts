@@ -653,13 +653,16 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const list = (): Promise<ListedThread[]> =>
       this.withMachineRpc(machine, (rpc) => listThreads(rpc))
     // CODEX§16
-    let threads = this.machineSideServers.isOpen(machine) ? await list().catch(() => []) : []
+    const onOpenLine = this.machineSideServers.isOpen(machine)
+      ? await list().catch(() => this.machineSideServers.forget(machine).then(() => undefined))
+      : undefined
+    let threads = onOpenLine ?? []
     let homeThere = threads.length > 0
     if (!homeThere) {
       const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
       if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
       homeThere = home.code === 0
-      threads = homeThere ? await list() : []
+      threads = homeThere ? (onOpenLine ?? (await list())) : []
     }
     if (this.shuttingDown) return
     const others = (key: string): boolean => hostOfKey(key) !== machine
