@@ -17,6 +17,7 @@ import {
   paletteWorkspaces,
   namedWorkspaces,
   pinnedWorkspace,
+  SESSION_ROWS_PER_BATCH,
   type PaletteAction
 } from '../../src/renderer/src/palette'
 
@@ -159,6 +160,20 @@ describe('command palette: workspace rows and groups', () => {
     expect(groups('restart')).toEqual(['Sessions:1', 'Workspaces:1', 'Actions:1'])
     expect(groups('settings')).toEqual(['Actions:1'])
     expect(groups('zzq')).toEqual([])
+  })
+
+  it('lists only the first batch of a long run of matching sessions and counts the ones still to come, so the first key in a big history does not build every row', () => {
+    const many = Array.from({ length: SESSION_ROWS_PER_BATCH + 7 }, (_, i) =>
+      row(`s${i}`, { title: `needle ${i}` })
+    )
+    const rows = [ws(`${HOME}/koloft`, many)]
+    const sessions = paletteSessions(rows, [], [], [])
+    const first = paletteGroups(sessions, [], [], 'needle')[0]
+    expect(first.items).toHaveLength(SESSION_ROWS_PER_BATCH)
+    expect(first.hidden).toBe(7)
+    const grown = paletteGroups(sessions, [], [], 'needle', [], 2 * SESSION_ROWS_PER_BATCH)[0]
+    expect(grown.items).toHaveLength(SESSION_ROWS_PER_BATCH + 7)
+    expect(grown.hidden).toBe(0)
   })
 
   it('finds a feature by any of its keywords, also when the keyword sits inside a longer sentence, whatever the language', () => {
