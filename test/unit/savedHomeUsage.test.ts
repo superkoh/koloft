@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AccountView, CodexLimits, QuotaBucket, SignInFolderKind } from '@shared/types'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { HomeAccountPicker } from '../../src/main/codexAccounts'
 import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
 import { saveHomeUsage, type HomeUsage } from '../../src/main/savedHomeUsage'
@@ -16,7 +17,8 @@ function snapshotFile(): string {
   return path.join(dir, 'home-usage-snapshots.json')
 }
 
-afterEach(() => {
+afterEach(async () => {
+  await BackgroundFile.whenAllWritten()
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
 })
 
