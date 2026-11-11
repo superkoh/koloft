@@ -73,6 +73,8 @@ const takesYesOrNo = (label: string): string => `a ${label} approval takes yes o
 const NOT_ANSWERED_FROM_HERE = ''
 export const STARTED_IN_THE_TERMINAL =
   'You already started on this question in the terminal, so Koloft leaves it to you there.'
+export const PICKS_MAY_STILL_BE_TICKED =
+  'Koloft already pressed picks into this question and the session did not take them, so some may still be ticked. Koloft leaves it to you in the terminal.'
 
 const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
   backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
@@ -199,6 +201,7 @@ export class DiscordRelay {
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
   private codexTyped = new Map<string, KeysTyped>()
+  private ticksPressed = new Map<string, string>()
   private quietReplies = new Set<string>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
@@ -731,13 +734,6 @@ export class DiscordRelay {
     return typed.at === undefined || Date.now() - typed.at < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
   }
 
-  // MUSE§11 AGY§14
-  private ticksOfOursMayStillBeSet(tab: string, question: CodexQuestion): boolean {
-    return (
-      this.codexTyped.get(tab)?.at !== undefined && question.questions.some((q) => q.multiSelect)
-    )
-  }
-
   private async pressOnce(tab: string, press: () => Promise<boolean>): Promise<boolean> {
     const typed: KeysTyped = {}
     this.codexTyped.set(tab, typed)
@@ -812,9 +808,16 @@ export class DiscordRelay {
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
       // CODEX§20 MUSE§11 AGY§14
-      if (this.d.touchedSinceAsked(tab) || this.ticksOfOursMayStillBeSet(tab, question))
-        return { error: STARTED_IN_THE_TERMINAL }
+      if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
       if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
+      // MUSE§11 AGY§14
+      const ticks = question.questions.some((q) => q.multiSelect)
+        ? JSON.stringify(question.questions)
+        : undefined
+      if (ticks !== undefined) {
+        if (this.ticksPressed.get(tab) === ticks) return { error: PICKS_MAY_STILL_BE_TICKED }
+        this.ticksPressed.set(tab, ticks)
+      }
       this.d.answered(tab, reply)
       const keys = answerKeys(answerKeysFor, question, answers)
       if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
@@ -876,6 +879,7 @@ export class DiscordRelay {
   dialogGone(tab: string, closed: boolean): void {
     for (const settle of this.awaitingTaken.get(tab) ?? []) settle(true)
     this.codexTyped.delete(tab)
+    this.ticksPressed.delete(tab)
     const ask = this.asks.get(tab)
     if (ask && !ask.hook && (closed || ask.typedAt !== undefined)) this.asks.delete(tab)
   }
@@ -919,6 +923,7 @@ export class DiscordRelay {
     this.answer(tab, {})
     this.codexAsks.delete(tab)
     this.codexTyped.delete(tab)
+    this.ticksPressed.delete(tab)
     this.askHooks.delete(tab)
     this.answering.delete(tab)
     this.held.delete(tab)

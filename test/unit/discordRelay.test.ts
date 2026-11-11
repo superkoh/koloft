@@ -22,6 +22,7 @@ import {
   butlerAsks,
   DiscordRelay,
   OFFLINE_REPLY,
+  PICKS_MAY_STILL_BE_TICKED,
   SHOWS_NO_DIALOG,
   ANSWER_ON_ITS_WAY,
   unreadableInRoom,
@@ -1056,37 +1057,49 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
 
   // MUSE§11 AGY§14
   for (const backend of ['muse', 'agy'] as const)
-    it(`a ${backend} question that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them; the next dialog is answered as usual`, async () => {
-      const fruits: CodexQuestion = {
-        id: 'hook:1',
+    it(`a ${backend} question that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual`, async () => {
+      const several = (question: string, id: string): CodexQuestion => ({
+        id,
         questions: [
           {
-            question: 'Which fruits?',
+            question,
             options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
             multiSelect: true
           }
         ]
-      }
+      })
+      let asked = several('Which fruits?', 'hook:1')
       const { relay, writes, session } = codexAsking({
         backendOf: () => backend,
-        pendingQuestion: () => fruits
+        pendingQuestion: () => asked
       })
       const first = relay.answerSession(TAB, '1, 3')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(await relay.answerSession(TAB, '2')).toBe(ANSWER_ON_ITS_WAY)
       await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
       expect(await first).toBe(ANSWER_NOT_TAKEN)
       const pressedOnce = writes.length
       expect(pressedOnce).toBeGreaterThan(0)
 
-      expect(await relay.answerSession(TAB, '1, 3')).toBe(STARTED_IN_THE_TERMINAL)
-      expect(await relay.answerSession(TAB, '2')).toBe(STARTED_IN_THE_TERMINAL)
+      asked = several('Which fruits?', 'traj:4')
+      expect(await relay.answerSession(TAB, '1, 3')).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(await relay.answerSession(TAB, '2')).toBe(PICKS_MAY_STILL_BE_TICKED)
       expect(writes).toHaveLength(pressedOnce)
 
-      relay.dialogGone(TAB, false)
       session.takesKeys = true
-      const next = relay.answerSession(TAB, '2')
-      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-      expect(await next).toBeUndefined()
-      expect(writes.length).toBeGreaterThan(pressedOnce)
+      const taken = async (): Promise<string | undefined> => {
+        const answered = relay.answerSession(TAB, '2')
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+        return answered
+      }
+      asked = several('Which pies?', 'hook:2')
+      expect(await taken()).toBeUndefined()
+      const pressedTwice = writes.length
+      expect(pressedTwice).toBeGreaterThan(pressedOnce)
+
+      asked = several('Which fruits?', 'hook:3')
+      expect(await taken()).toBeUndefined()
+      expect(writes.length).toBeGreaterThan(pressedTwice)
     })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
