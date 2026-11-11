@@ -3198,7 +3198,9 @@ server unless a line says so.
   the main thread of `/usr/sbin/taskpolicy -a /bin/sh -c '/bin/sleep 3 & /bin/sleep 3 &
   wait'` at priority 46 and both `sleep` children at 31; without `-a` all three were at
   31. `taskpolicy` replaces itself with the program: the pid it was started with is the
-  program's, and `ps -o comm=` names the program. It ran without sudo.
+  program's, and `ps -o comm=` names the program. It ran without sudo. Only the main
+  thread moves: of the 11 threads of a `node` started that way 1 read 46 and 10 read
+  31, and of the 33 of `codex app-server --stdio` 2 read 46 and 31 read 31.
 - **`-a` works only at launch.** `taskpolicy -a -p <pid>` on a running `/bin/sleep`
   exited 0 and left it at 31. A program started with `-a` went 46 → 4 under `taskpolicy
   -b -p <pid>` and back to 46 under `-B -p`; nothing moved it to 31.
@@ -3208,7 +3210,10 @@ server unless a line says so.
   the zsh of its Bash tool and the python that zsh ran read 31, and a `claude -p` that
   python started read 31. Codex 0.166.0's TUI started the same way read 46.
 - All three measured 2026-11-11 on the same Mac (macOS 27.0, Darwin 27.0.0), by python
-  scripts run from a Koloft Claude Code tab, one run each. Not probed: whether macOS
+  scripts run from a Koloft Claude Code tab, one run each. Inferred, not checked: an
+  agent whose command is a launcher that starts the real program as a child — the npm
+  `codex` before 0.166.0 (CODEX§5) — has only the launcher lifted. Not run: the real
+  `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
   lowers a `-a` program while its app is not frontmost or the screen is locked.
 
 Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent

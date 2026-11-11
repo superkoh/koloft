@@ -229,11 +229,6 @@ async function boundTab(): Promise<string> {
 }
 
 describe('MuseSessions launch', () => {
-  it('asks for muse on this Mac to start above its tools', async () => {
-    await launch()
-    expect(pty.create).toHaveBeenCalledWith(expect.objectContaining({ aboveItsTools: true }))
-  })
-
   it('starts muse with the model and thinking level it was given, "never ask" as the unrestricted profile, and passes them again with resume', async () => {
     await launch({ model: 'm1', effort: 'high', permission: 'bypass', firstPrompt: 'hello' })
     expect(created[0].argv).toEqual([

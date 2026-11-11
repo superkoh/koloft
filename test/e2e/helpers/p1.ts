@@ -340,10 +340,10 @@ export function withMember(members: unknown, id: string): string[] {
 
 // PLATFORM§59
 export function mainThreadPriority(pid: number): number {
-  const [head, mainThread] = execFileSync('ps', ['-M', '-p', String(pid)], {
-    encoding: 'utf8'
-  }).split('\n')
-  return parseInt(mainThread.slice(head.indexOf(' PRI')), 10)
+  const [head, mainThread] = execFileSync('ps', ['-M', '-p', String(pid)], { encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+  return parseInt(mainThread[head.indexOf('PRI')], 10)
 }
 
 // CC§11
