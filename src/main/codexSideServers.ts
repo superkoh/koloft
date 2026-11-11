@@ -18,6 +18,11 @@ export class CodexSideServers<Key = string | undefined> {
     return this.open.size > 0
   }
 
+  isOpen(key: Key): boolean {
+    const side = this.open.get(key)
+    return !!side && !side.rpc.isClosed
+  }
+
   async ask<T>(key: Key, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
     let side = this.open.get(key)
     if (!side || side.rpc.isClosed) {
