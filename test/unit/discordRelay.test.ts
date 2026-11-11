@@ -1497,6 +1497,8 @@ describe('DiscordRelay: a session’s room', () => {
 })
 
 describe('DiscordRelay: what a session showed at the Mac goes with its next question card', () => {
+  const A_CARD_FOLLOWS_ITS_PICTURES_WITHIN_MS = 20
+  let codexOpen: CodexQuestion | undefined
   const asks: [string, (relay: DiscordRelay, n: number) => void][] = [
     [
       'a Claude question',
@@ -1509,10 +1511,13 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
     [
       'a Codex question',
       (relay, n) =>
-        relay.codexAsked(TAB, {
-          id: `q${n}`,
-          questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }]
-        })
+        relay.codexAsked(
+          TAB,
+          (codexOpen = {
+            id: `q${n}`,
+            questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }]
+          })
+        )
     ],
     [
       'a question Koloft cannot read',
@@ -1522,17 +1527,24 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       }
     ]
   ]
+  const shownTo =
+    (posts: { text: string }[]) =>
+    (name: string) =>
+    (channelId: string): Promise<void> =>
+      new Promise((sent) =>
+        setTimeout(() => sent(void posts.push({ text: `${name} in ${channelId}` })), 5)
+      )
+
   for (const [kind, ask] of asks)
-    it(`${kind}: its card follows what was shown since the session was last prompted, each sent whole before it and only once`, async () => {
-      const { relay, posts } = setup({}, [], { inRoom: () => true })
-      const shown =
-        (name: string) =>
-        (channelId: string): Promise<void> =>
-          new Promise((sent) =>
-            setTimeout(() => sent(void posts.push({ text: `${name} in ${channelId}` })), 5)
-          )
+    it(`${kind}: its card follows what was shown in its turn, each sent whole before it and only once`, async () => {
+      codexOpen = undefined
+      const { relay, posts } = setup({}, [], {
+        inRoom: () => true,
+        pendingQuestion: () => codexOpen
+      })
+      const shown = shownTo(posts)
       relay.sendWithNextAsk(TAB, shown('before.png'))
-      relay.prompted(TAB)
+      relay.turnEnded(TAB, turn(''))
       relay.sendWithNextAsk(TAB, shown('shot.png'))
       relay.sendWithNextAsk(TAB, shown('plan.md'))
       ask(relay, 1)
@@ -1546,6 +1558,34 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
         butlerAsks('Assist')
       ])
     })
+
+  it('a card that comes while the pictures are still being sent waits behind them, and one whose question is gone by then is not posted', async () => {
+    let open: CodexQuestion | undefined
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    const shown = shownTo(posts)
+    const asked = (n: number): CodexQuestion => ({
+      id: `q${n}`,
+      questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }]
+    })
+    relay.sendWithNextAsk(TAB, shown('shot.png'))
+    open = asked(1)
+    relay.codexAsked(TAB, open)
+    open = asked(2)
+    relay.codexAsked(TAB, open)
+    await vi.waitFor(() => expect(posts).toHaveLength(3))
+    expect(posts.map((p) => p.text.split('\n').slice(0, 2).join(' '))).toEqual([
+      `shot.png in ${CHANNEL}`,
+      `${butlerAsks('Assist')} Which 1?`,
+      `${butlerAsks('Assist')} Which 2?`
+    ])
+
+    relay.sendWithNextAsk(TAB, shown('later.png'))
+    relay.codexAsked(TAB, asked(3))
+    open = undefined
+    await vi.waitFor(() => expect(posts).toHaveLength(4))
+    await new Promise((r) => setTimeout(r, A_CARD_FOLLOWS_ITS_PICTURES_WITHIN_MS))
+    expect(posts.at(-1)!.text).toBe(`later.png in ${CHANNEL}`)
+  })
 })
 
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {

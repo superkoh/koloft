@@ -696,7 +696,6 @@ const sessionBackends = new SessionBackends({
   },
   prompted: (tabId) => {
     claudeAsks.delete(tabId)
-    discordRelay?.prompted(tabId)
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
     awayDigest?.prompted(tabId)
@@ -5909,9 +5908,9 @@ async function copyToPhone(
     fileDiff: (file) => hosts.of(file).gitFileDiff(file),
     send: (files, parts) => relay.sendParts(channelId, files, parts)
   })
-  const reaches = relay.reaches(tabId) && !relay.quietTurn(tabId)
-  const channelId = reaches ? askChannelOfTab(tabId) : undefined
-  if (!channelId) {
+  const channelId = askChannelOfTab(tabId)
+  if (!channelId || relay.quietTurn(tabId)) return undefined
+  if (!relay.reaches(tabId)) {
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
     return undefined
   }

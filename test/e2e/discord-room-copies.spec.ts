@@ -200,6 +200,9 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
     const { app, page } = await connected(env, fake)
     try {
       const { room, session } = await roomOfANewSession(page, fake, 'ws-a')
+      const said = (): Promise<string> => terminalText(page, session.tabId)
+      fake.say(OWNER, '/later /ask Ship it?|Yes|No', { channelId: room.id })
+      await expect.poll(said, { timeout: STARTS_AND_ANSWERS_MS }).toContain('armed /ask')
       fake.say(OWNER, 'hello there', { channelId: room.id })
       await expect
         .poll(
@@ -214,14 +217,12 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
         path.join(env.home, 'fake-claude-open-before-ask'),
         path.join(dir, 'plan.html')
       )
-      await page.evaluate(
-        (id) => window.api.terminal.write(id, '/ask Ship it?|Yes|No\r'),
-        session.tabId
-      )
+      fs.writeFileSync(path.join(env.home, 'go-later'), '')
       await expect
-        .poll(() => terminalText(page, session.tabId), { timeout: STARTS_AND_ANSWERS_MS })
+        .poll(said, { timeout: STARTS_AND_ANSWERS_MS })
         .toContain('asking: AskUserQuestion')
-      expect(await terminalText(page, session.tabId)).not.toContain('Sent')
+      expect(unwrapped(await said())).toContain(unwrapped("in this session's Workbench."))
+      expect(await said()).not.toContain('Sent')
 
       fs.writeFileSync(presence, 'idle')
       const inRoom = (): FakePost[] => fake.posted.filter((p) => p.channelId === room.id)

@@ -215,9 +215,12 @@ export const stillSending = (where: string): string =>
 export const couldNotSendInRoom = (name: string, error: string): string =>
   `⚠ Koloft could not send ${name} here: ${error}`
 
+const sayCouldNotSend = (d: PhoneCopyDeps, shown: Shown, error: string): Promise<void> =>
+  d.send([], [couldNotSendInRoom(nameOf(shown), error)]).catch(() => undefined)
+
 export async function sendWholeCopy(d: PhoneCopyDeps, shown: Shown): Promise<void> {
-  await copy(d, shown, '').catch((error: unknown) =>
-    d.send([], [couldNotSendInRoom(nameOf(shown), errorText(error))]).catch(() => undefined)
+  await copy(d, shown, 'Discord').catch((error: unknown) =>
+    sayCouldNotSend(d, shown, errorText(error))
   )
 }
 
@@ -239,8 +242,7 @@ export async function sendPhoneCopy(
   clearTimeout(timer)
   if (first) return 'said' in first ? first.said : couldNot(where, first.error)
   void sending.then((r) => {
-    if ('error' in r)
-      void d.send([], [couldNotSendInRoom(nameOf(shown), r.error)]).catch(() => undefined)
+    if ('error' in r) void sayCouldNotSend(d, shown, r.error)
   })
   return stillSending(where)
 }

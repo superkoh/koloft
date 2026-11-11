@@ -206,6 +206,7 @@ export class DiscordRelay {
   private held = new Set<string>()
   private unreadable = new Set<string>()
   private shownNotSent = new Map<string, SendTo[]>()
+  private sending = new Map<string, Promise<void>>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
 
   constructor(private d: RelayDeps) {}
@@ -533,6 +534,7 @@ export class DiscordRelay {
 
   turnEnded(tabId: string, turn: Turn): void {
     this.quietTurns.delete(tabId)
+    this.shownNotSent.delete(tabId)
     const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
     const reaches = answers || this.reaches(tabId)
     if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
@@ -597,7 +599,12 @@ export class DiscordRelay {
       header: butlerAsks(this.askerName(tab)),
       body: unreadableInRoom(this.d.butlerName(), this.d.lobbyLink())
     }
-    this.afterShownNotSent(tab, channelId, () => void this.card(channelId, card))
+    this.afterShownNotSent(
+      tab,
+      channelId,
+      () => void this.card(channelId, card),
+      () => this.unreadable.has(tab)
+    )
   }
 
   stoppedAsking(tab: string): void {
@@ -608,32 +615,43 @@ export class DiscordRelay {
     this.shownNotSent.set(tab, [...(this.shownNotSent.get(tab) ?? []), send])
   }
 
-  prompted(tab: string): void {
+  private afterShownNotSent(
+    tab: string,
+    channelId: string,
+    post: () => void,
+    stillAsked: () => boolean
+  ): void {
+    const sends = this.shownNotSent.get(tab) ?? []
+    const before = this.sending.get(tab)
+    if (!before && !sends.length) return post()
     this.shownNotSent.delete(tab)
-  }
-
-  private afterShownNotSent(tab: string, channelId: string, post: () => void): void {
-    const sends = this.shownNotSent.get(tab)
-    if (!sends) return post()
-    this.shownNotSent.delete(tab)
-    void sends
-      .reduce((sent, send) => sent.then(() => send(channelId)), Promise.resolve())
-      .then(post, post)
+    const done = sends
+      .reduce((sent, send) => sent.then(() => send(channelId)), before ?? Promise.resolve())
+      .then(() => {
+        if (this.sending.get(tab) === done) this.sending.delete(tab)
+        if (stillAsked()) post()
+      })
+    this.sending.set(tab, done)
   }
 
   private postAsk(tab: string, channelId: string, card: Card): void {
-    this.afterShownNotSent(tab, channelId, () => {
-      void this.d.link
-        .card(channelId, card)
-        .then(
-          (ids) => ids.at(-1),
-          () => undefined
-        )
-        .then((messageId) => {
-          if (card.buttons?.length)
-            this.d.askPlaced(card, messageId ? { channelId, messageId } : undefined)
-        })
-    })
+    this.afterShownNotSent(
+      tab,
+      channelId,
+      () => {
+        void this.d.link
+          .card(channelId, card)
+          .then(
+            (ids) => ids.at(-1),
+            () => undefined
+          )
+          .then((messageId) => {
+            if (card.buttons?.length)
+              this.d.askPlaced(card, messageId ? { channelId, messageId } : undefined)
+          })
+      },
+      () => this.dialogOpen(tab)
+    )
   }
 
   onAsk(tab: string, payload: AskPayload, hook?: string): void {
