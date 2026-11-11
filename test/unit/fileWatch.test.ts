@@ -271,6 +271,21 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(reports[0]).toBeUndefined()
   })
 
+  it('tells a returning viewer about a change that was still waiting to be reported when the last viewer left', async () => {
+    const reports: (DirChanges | undefined)[] = []
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+    fs.appendFileSync(file, 'two\n')
+    await sleep(120)
+    unwatchDir(dir)
+    await sleep(500)
+    expect(reports).toEqual([])
+
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await until(() => reports.length > 0)).toBe(true)
+  })
+
   it('opens a new watcher for a folder deleted and made again while nobody viewed it', () => {
     const folder = path.join(dir, 'worktree')
     fs.mkdirSync(folder)

@@ -71,6 +71,16 @@ describe('BackgroundFile', () => {
     expect(halfWrittenFilesLeft()).toEqual([])
   })
 
+  it('still saves after its folder of half-written files was deleted from outside', async () => {
+    const out = new BackgroundFile(() => file)
+    out.write('v1')
+    await BackgroundFile.whenAllWritten()
+    fs.rmSync(path.join(dir, FOLDER_OF_HALF_WRITTEN_FILES), { recursive: true })
+    out.write('v2')
+    await BackgroundFile.whenAllWritten()
+    expect(fs.readFileSync(file, 'utf8')).toBe('v2')
+  })
+
   it('a flush at quit wins over an earlier save still being moved into place', async () => {
     let release!: () => void
     const held = new Promise<void>((r) => (release = r))
