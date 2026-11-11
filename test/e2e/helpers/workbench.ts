@@ -311,8 +311,8 @@ export type { GitSpawn, GitSpawnFilter } from './gitSpawnLog'
 
 export { setGuestLimit } from './env'
 
-export async function showBrowse(page: Page): Promise<void> {
-  await waitPanelAttached(page)
+export async function showBrowse(page: Page, onWelcomePage = false): Promise<void> {
+  if (!onWelcomePage) await waitPanelAttached(page)
   const panel = page.locator(WORKBENCH.panel)
   if (!(await panel.isVisible())) {
     await workbenchIcon(page).click()
@@ -330,8 +330,12 @@ export async function showBrowse(page: Page): Promise<void> {
   })
 }
 
-export async function openInBrowse(page: Page, absPath: string): Promise<void> {
-  await showBrowse(page)
+export async function openInBrowse(
+  page: Page,
+  absPath: string,
+  onWelcomePage = false
+): Promise<void> {
+  await showBrowse(page, onWelcomePage)
   const rootRow = page.locator(`${WORKBENCH.browseRows}.ft-root`)
   await expect(rootRow).toBeVisible({ timeout: 30_000 })
   const root = (await rootRow.getAttribute('data-path')) ?? ''
@@ -347,7 +351,7 @@ export async function openInBrowse(page: Page, absPath: string): Promise<void> {
     }
   }
   await page
-    .locator(`${WORKBENCH.browseRows}.ft-file[data-path="${absPath}"]`)
+    .locator(`${WORKBENCH.browseRows}.ft-file[data-row-id="tree:${absPath}"]`)
     .click({ timeout: 30_000 })
 }
 
@@ -390,6 +394,97 @@ export async function expectOnePromptFromTheComment(
   const [prompt] = fromNote()
   expect(prompt.startsWith(head)).toBe(true)
   expect(prompt.endsWith('\n```\n\n' + note + TYPED_AFTER_THE_PASTE)).toBe(true)
+}
+
+export const PLAN_REL = 'docs/plan.md'
+export const PLAN_WORDS = 'Give up after 3 tries'
+const PLAN_LINE = '- Give up after 3 tries and post a note in the log.'
+const PLAN = [
+  '# Retry plan',
+  '',
+  'The sync job fails about once a day.',
+  '',
+  '- Wait 30 s before the second try.',
+  PLAN_LINE,
+  '- Keep the old token while waiting.',
+  ''
+].join('\n')
+
+export function writePlan(dir: string, linesAbove = ''): string {
+  const full = path.join(dir, PLAN_REL)
+  fs.mkdirSync(path.dirname(full), { recursive: true })
+  fs.writeFileSync(full, linesAbove + PLAN)
+  return full
+}
+
+export function planPassagePaste(line = 6): string {
+  return `${PLAN_REL}:${line}\n\`\`\`markdown\n${PLAN_LINE}\n\`\`\`\nSelected: “${PLAN_WORDS}”\n\n`
+}
+
+export async function selectWords(page: Page, words: string): Promise<void> {
+  const body = artifactBody(page).locator('.md-body')
+  await expect(body).toContainText(words, { timeout: 30_000 })
+  const at = await body.evaluate((el, w) => {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    while (walk.nextNode()) {
+      const n = walk.currentNode as Text
+      const i = n.data.indexOf(w)
+      if (i < 0) continue
+      n.parentElement?.scrollIntoView({ block: 'center' })
+      const r = document.createRange()
+      r.setStart(n, i)
+      r.setEnd(n, i + w.length)
+      const box = r.getBoundingClientRect()
+      return { left: box.left, right: box.right, y: box.top + box.height / 2 }
+    }
+    return null
+  }, words)
+  if (!at) throw new Error(`"${words}" is not in one piece of the rendered text`)
+  await page.mouse.move(at.left + 1, at.y)
+  await page.mouse.down()
+  await page.mouse.move(at.right - 1, at.y, { steps: 6 })
+  await page.mouse.up()
+}
+
+export function passageCommentButton(page: Page): Locator {
+  return artifactBody(page).locator('.md-cmt')
+}
+
+export async function putPassageCommentInSession(
+  page: Page,
+  words: string,
+  note: string
+): Promise<string> {
+  await selectWords(page, words)
+  const button = passageCommentButton(page)
+  await expect(button).toBeEnabled({ timeout: 60_000 })
+  await button.click()
+  const form = artifactBody(page).locator('.cv-comment')
+  const head = (await form.locator('.cv-hunk-hd').textContent()) ?? ''
+  const box = form.locator('textarea')
+  await box.fill(note)
+  await box.press('Enter')
+  await expect(form).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
+    .toBe(true)
+  return head
+}
+
+export async function commentOnPlan(page: Page, note: string): Promise<void> {
+  await putPassageCommentInSession(page, PLAN_WORDS, note)
+  await page.keyboard.type(TYPED_AFTER_THE_PASTE)
+  await page.keyboard.press('Enter')
+}
+
+export async function expectOnePromptFromThePassage(
+  prompts: () => string[],
+  note: string,
+  paste = planPassagePaste()
+): Promise<void> {
+  const fromNote = (): string[] => prompts().filter((p) => p.includes(note))
+  await expect.poll(fromNote, { timeout: 30_000 }).toHaveLength(1)
+  expect(fromNote()[0]).toBe(paste + note + TYPED_AFTER_THE_PASTE)
 }
 
 // CC§18

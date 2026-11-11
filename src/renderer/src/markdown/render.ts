@@ -10,10 +10,12 @@ import { assets } from './assets'
 import { fileRefs } from './fileRefs'
 import { frontMatter } from './frontMatter'
 import { tasks } from './tasks'
+import { LINES_IN_BLOCK_ATTR, type SourceLines } from './lines'
 import { escapeHtml as esc } from '@shared/escapeHtml'
 
 export interface RenderedDoc {
   blocks: string[]
+  lines: (SourceLines | null)[]
   headings: { id: string; text: string; level: number }[]
 }
 
@@ -109,8 +111,10 @@ function renderFence(token: Token, env: RenderEnv): string {
   }
 
   const highlighted = env.koloftHighlight?.get(cacheKey(label, code)) ?? plainCode(code)
+  const lines = token.attrGet(LINES_IN_BLOCK_ATTR)
+  const mark = lines ? ` ${LINES_IN_BLOCK_ATTR}="${lines}"` : ''
   return (
-    `<div class="md-code"><span class="md-code-lang">${esc(label)}</span>` +
+    `<div class="md-code"${mark}><span class="md-code-lang">${esc(label)}</span>` +
     `<button class="md-code-copy" type="button" data-k="${env.koloftToken}" ` +
     `data-code="${payload(code)}">Copy</button>` +
     `${markBidi(highlighted)}</div>\n`
@@ -267,8 +271,24 @@ export async function renderBlocks(
   if (text.includes('$')) await loadKatex().catch(() => {})
   const tokens = md.parse(text, env)
   await warmHighlight(tokens, env)
-  const blocks = topLevelBlocks(tokens).map(([from, to]) =>
+  const ranges = topLevelBlocks(tokens)
+  const lines = ranges.map(([from, to]) => markLinesInBlock(tokens.slice(from, to)))
+  const blocks = ranges.map(([from, to]) =>
     keepErrorSource(md.renderer.render(tokens.slice(from, to), md.options, env))
   )
-  return { blocks, headings: outline(tokens) }
+  return { blocks, lines, headings: outline(tokens) }
+}
+
+function markLinesInBlock(block: Token[]): SourceLines | null {
+  const mapped = block.filter((t) => t.map && t.nesting >= 0 && t.type !== 'inline')
+  if (!mapped.length) return null
+  let from = Infinity
+  let to = 0
+  for (const t of mapped) {
+    from = Math.min(from, t.map![0])
+    to = Math.max(to, t.map![1])
+  }
+  for (const t of mapped)
+    if (t !== block[0]) t.attrSet(LINES_IN_BLOCK_ATTR, `${t.map![0] - from},${t.map![1] - from}`)
+  return [from, to]
 }

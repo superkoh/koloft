@@ -47,6 +47,9 @@ export interface FileTabHostProps {
   onOutlineClose: (tabId: string) => void
   onClose: (tabId: string) => void
   onUnmount: (tabId: string, scrollTop: number) => void
+  pasteTab: string | null
+  commentBlocked: string | null
+  onReturnFocus: () => void
 }
 
 export const FileTabHost = memo(function FileTabHost({
@@ -75,7 +78,10 @@ export const FileTabHost = memo(function FileTabHost({
   onCloseZoom,
   onOutlineClose,
   onClose,
-  onUnmount
+  onUnmount,
+  pasteTab,
+  commentBlocked,
+  onReturnFocus
 }: FileTabHostProps): JSX.Element {
   return (
     <div className="wb-host" style={{ visibility: shown ? undefined : 'hidden' }}>
@@ -104,6 +110,9 @@ export const FileTabHost = memo(function FileTabHost({
           onUnmount={onUnmount}
           editText={editText}
           editUnsaved={editUnsaved}
+          pasteTab={pasteTab}
+          commentBlocked={commentBlocked}
+          onReturnFocus={onReturnFocus}
         />
       )}
     </div>

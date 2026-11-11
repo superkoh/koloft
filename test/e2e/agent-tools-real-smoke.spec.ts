@@ -43,9 +43,14 @@ import {
   claudePromptsIn,
   claudeRepliesIn,
   claudeToolResultsIn,
+  PLAN_REL,
+  PLAN_WORDS,
+  openInBrowse,
   outsideThePaste,
   putCommentOnFirstHunkInSession,
-  showBrowse
+  putPassageCommentInSession,
+  showBrowse,
+  writePlan
 } from './helpers/workbench'
 
 function claudeTokenFromKeychain(): string {
@@ -459,6 +464,48 @@ function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
   })
 }
 
+const SECOND_PLAN_WORDS = 'Keep the old token'
+const FIRST_NOTE = 'First note: make it 5 tries.'
+const SECOND_NOTE = `Second note. Reply with only the word ${REPLY_WORD}.`
+
+function twoPassageCommentsWaitForOneEnter(
+  env: E2EEnv,
+  backend: 'default' | 'other',
+  useReal: (env: E2EEnv, trusted: string[]) => void,
+  transcript: RealTranscript
+): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(env, backend, useReal, [], async ({ page, rows, tree }) => {
+    const plan = writePlan(tree)
+    const tabId = (await rows.getAttribute('data-tab-id'))!
+    const sessionId = (await boundSessionId(page, tabId)) ?? ''
+    expect(sessionId).not.toBe('')
+    await openInBrowse(page, plan)
+    const promptsBefore = transcript.prompts(env, sessionId).length
+
+    await putPassageCommentInSession(page, PLAN_WORDS, FIRST_NOTE)
+    await putPassageCommentInSession(page, SECOND_PLAN_WORDS, SECOND_NOTE)
+    await page.waitForTimeout(A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS)
+    await test.info().attach('screen-before-enter', { body: await screen(page) })
+    expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore)
+    await expect(rows).not.toHaveClass(/\bst-working\b/)
+
+    await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+    await expect
+      .poll(() => transcript.prompts(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
+      .toBe(promptsBefore + 1)
+    const sent = transcript.prompts(env, sessionId).at(-1)!
+    await test.info().attach('the-one-message', { body: sent })
+    expect(sent).toContain(`${PLAN_REL}:6`)
+    expect(sent).toContain(`${PLAN_REL}:7`)
+    expect(sent.indexOf(FIRST_NOTE)).toBeLessThan(sent.indexOf(`${PLAN_REL}:7`))
+    expect(sent).toMatch(new RegExp(`${FIRST_NOTE.replace(/[.]/g, '\\.')}\\s*\\n`))
+    expect(sent).toContain(SECOND_NOTE)
+    await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+    expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
+  })
+}
+
 const ASK_FOR_THE_NPM_ERROR_CODE = 'Reply with only the npm error code.'
 const PR_3_NPM_ERROR_CODE = 'ERESOLVE'
 const TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS = 1_000
@@ -856,6 +903,28 @@ test.describe('✎ comment on a Changes hunk with the REAL claude and codex: opt
       useRealCodex,
       CODEX_TRANSCRIPT
     )
+  })
+})
+
+test.describe('two ✎ comments on a rendered Markdown file with the REAL claude and codex: opt-in cases proving several pastes wait for one Enter; they spend real money', () => {
+  test('a real Claude Code holds two passage comments and their notes in its input box unsent, and the next Enter sends them all as one message', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    await twoPassageCommentsWaitForOneEnter(env, 'default', useRealClaude, CLAUDE_TRANSCRIPT)
+  })
+
+  test('a real Codex holds two passage comments and their notes in its composer unsent, and the next Enter sends them all as one message', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await twoPassageCommentsWaitForOneEnter(env, 'other', useRealCodex, CODEX_TRANSCRIPT)
   })
 })
 

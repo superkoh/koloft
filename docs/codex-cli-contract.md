@@ -2499,9 +2499,18 @@ message" (3 runs).
   from Koloft to a Codex session (`koloft session send`, a Discord line) goes through
   `thread/queue/add` (§17), not the composer. Three things are pasted into the composer:
   a picked element (starts `Element picked in the Workbench browser`, `elementPick.ts`),
-  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk comment, which starts
-  with the file's path (`hunkPrompt`, `changesModel.ts`), so a comment on a file whose
-  name starts with `!` would run as a shell command; nothing guards that case.
+  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk or passage comment,
+  which starts with two LFs and then the file's path (`hunkPrompt`, `passagePrompt`,
+  `changesModel.ts`); whether those LFs keep a file whose name starts with `!` out of
+  Shell mode was not probed.
+- **A second paste lands right after whatever the composer holds, with nothing between.**
+  2026-11-10, Codex CLI 0.166.0 on this Mac, Koloft's ✎ comment on a rendered Markdown
+  file done twice before any Enter (`agent-tools-real-smoke.spec.ts` › "a real Codex
+  holds two passage comments …"): both waited unsent and the CR sent them as one
+  `UserMessage`, but with each paste starting at its path the first note ran straight
+  into the second path (`… make it 5 tries.docs/plan.md:7`, 2 of 2 runs). With two LFs
+  at the start of each paste the note and the next path sat on lines of their own
+  (1 run).
 - Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
   ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
   sends the app-server on the machine does.

@@ -1,5 +1,6 @@
 import type { GitFileStatus, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { isDocPath, relOf, splitPath, type ChangeFilters } from './filesModel'
+import type { SourceLines } from '../markdown/lines'
 
 export type ChangeKind = 'text' | 'renamed' | 'binary' | 'deleted' | 'conflict'
 
@@ -156,11 +157,54 @@ export interface HunkPrompt {
   typed: string
 }
 
-// CC§18
+const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
+
+// CC§18 CODEX§23
 export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
   const diff = hunk.replace(/\n+$/, '')
   const fence = fenceFor(diff)
-  return { pasted: [rel, fence + 'diff', diff, fence].join('\n') + '\n\n', typed: note.trim() }
+  return {
+    pasted:
+      APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + [rel, fence + 'diff', diff, fence].join('\n') + '\n\n',
+    typed: note.trim()
+  }
+}
+
+export interface Passage {
+  place: string
+  source: string | null
+  selected: string
+}
+
+const MARKDOWN_IT_NEWLINE = /\r\n?|\n/
+
+export function passageAt(
+  rel: string,
+  text: string,
+  lines: SourceLines | null,
+  selected: string
+): Passage {
+  const words = selected.replace(/\s+/g, ' ').trim()
+  if (!lines) return { place: rel, source: null, selected: words }
+  const all = text.split(MARKDOWN_IT_NEWLINE)
+  const from = lines[0]
+  let to = Math.min(lines[1], all.length)
+  while (to > from + 1 && !all[to - 1].trim()) to--
+  const place = to > from + 1 ? `${rel}:${from + 1}-${to}` : `${rel}:${from + 1}`
+  return { place, source: all.slice(from, to).join('\n'), selected: words }
+}
+
+// CC§18 CODEX§23
+export function passagePrompt(p: Passage, note: string): HunkPrompt {
+  const fence = p.source === null ? '' : fenceFor(p.source)
+  const quote = p.source === null ? [] : [fence + 'markdown', p.source, fence]
+  return {
+    pasted:
+      APART_FROM_WHAT_THE_INPUT_BOX_HOLDS +
+      [p.place, ...quote, `Selected: “${p.selected}”`].join('\n') +
+      '\n\n',
+    typed: note.trim()
+  }
 }
 
 export function commentBlocked(session: SessionInfo | null): string | null {
@@ -345,6 +389,7 @@ export const CHANGES_MSG = {
   fileCutOff: 'This file’s diff was truncated — showing what fits.',
   noDiff: 'No diff available.',
   comment: 'Comment on this hunk and put it in the session’s input box',
+  commentPassage: 'Comment on this passage and put it in the session’s input box',
   commentNoSession: 'No running session to put it in',
   commentApproval: 'The session is waiting for an approval — answer it in the session first',
   totals: (t: ChangeTotals): string => {
