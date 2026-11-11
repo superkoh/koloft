@@ -184,6 +184,7 @@ interface AgyAsk {
   question?: CodexQuestion
   pending?: PendingInteraction
   plan?: string
+  noKey?: string
 }
 
 interface AgyCommand {
@@ -249,8 +250,27 @@ const COMPACTION_SHOWS_AFTER_MS = 500
 const CONTEXT_SUMMARY = 'context_summary'
 // AGY§8
 const LISTED_TITLE_AFTER_PROMPT_MS = 1000
-// AGY§14
-const KEYS = { yes: '1', noCommand: '4', noFile: '2' } as const
+// AGY§14 AGY§26
+const KEYS = { yes: '1', noCommand: '4', noEdit: '2', noCreateOrRead: '\x1b' } as const
+const NO_KEY_OF_THE_TOOL_ASKING: Record<string, string> = {
+  EditFile: KEYS.noEdit,
+  ReplaceFileContent: KEYS.noEdit,
+  WriteFile: KEYS.noCreateOrRead,
+  WriteToFile: KEYS.noCreateOrRead,
+  ReadFile: KEYS.noCreateOrRead,
+  ViewFile: KEYS.noCreateOrRead
+}
+const TOOL_IN_BLOCKED_MESSAGE_RE = /^Approve (\w+):/
+const asTheBlockedMessageNamesIt = (tool: string): string =>
+  tool.replace(/(?:^|_)(\w)/g, (_, first: string) => first.toUpperCase())
+
+// AGY§26 AGY§29
+function noKeyFor(blockedMessage: string | undefined, toolFromHook: string | undefined): string {
+  const asking =
+    TOOL_IN_BLOCKED_MESSAGE_RE.exec(blockedMessage ?? '')?.[1] ??
+    asTheBlockedMessageNamesIt(toolFromHook ?? '')
+  return NO_KEY_OF_THE_TOOL_ASKING[asking] ?? KEYS.noCommand
+}
 // AGY§9 AGY§24
 const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
@@ -1359,13 +1379,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const questions = pending.questions ?? []
     run.waiting = {
       pending,
+      noKey: fromHook.noKey,
       ...(pending.kind !== 'question'
         ? {
             approval: {
               id: askId,
               command: pending.target,
-              reason: pending.kind === 'file' ? 'Write this file' : undefined,
-              ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {})
+              reason: pending.kind === 'file' && !pending.read ? 'Write this file' : undefined,
+              ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {}),
+              ...(pending.read && { read: true as const })
             }
           }
         : questions.length
@@ -1412,6 +1434,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? (argOf(tool.args, 'TargetFile') ?? argOf(tool.args, 'Path'))
         : undefined
     return {
+      noKey: noKeyFor(status.msg, tool?.name),
       approval: {
         id,
         command: commandLine ?? file ?? status.msg,
@@ -1488,8 +1511,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         )
       : false
     if (viaApi) return {}
-    const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
-    this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
+    this.deps.pty.write(tabId, yes ? KEYS.yes : (ask.noKey ?? KEYS.noCommand))
     return { watch: true }
   }
 

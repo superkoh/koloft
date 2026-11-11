@@ -112,6 +112,10 @@ describe('AgyApi (the local Connect API agy serves, AGY§16)', () => {
     })
     trajectory = waiting({ permission: { resource: { action: 'write_file', target: '/w/a.md' } } })
     expect(await api().pending('c1')).toMatchObject({ kind: 'file', target: '/w/a.md' })
+    expect((await api().pending('c1'))?.read).toBeUndefined()
+    // AGY§26
+    trajectory = waiting({ permission: { resource: { action: 'read_file', target: '/o/b.md' } } })
+    expect(await api().pending('c1')).toMatchObject({ kind: 'file', target: '/o/b.md', read: true })
     trajectory = waiting({
       askQuestion: {
         questions: [
