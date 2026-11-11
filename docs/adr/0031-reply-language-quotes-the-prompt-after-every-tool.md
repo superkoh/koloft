@@ -106,9 +106,12 @@ Measured 2026-10-16 with fresh sessions, an English task and the shipped hook: O
 its notes, its reply and the result it sent back alike; Codex 0.162 (`codex exec`, the
 preamble as developer instructions) 0 / 2 and 2 / 2, notes and reply alike. The parent's side — a sentence in
 Koloft's prompt and Assist's role asking for tasks and messages in the owner's language —
-is not measured where it matters: fresh Opus 5.5 parents given a Chinese request wrote
-their child's task in Chinese 4 / 4 with and without it, and a drifted long session was
-not reproduced.
+shows little: fresh Opus 5.5 parents given a Chinese request wrote their child's task in
+Chinese 4 / 4 with and without it. On the drifted copy below (2026-11-10, the Koloft
+prompt swapped in the transcript's prompt snapshot, which a resume sends, CC§23), a new
+session's task asked for in Chinese was Chinese 3 / 3 without it; a Chinese "let the
+session on that PR handle it" became a Chinese `koloft session send` 8 / 8 with it and
+6 / 8 without (the other two English, the owner's words quoted inside).
 Far from the owner's words a turn still drifts under the quote, and more so when those
 words are short. In the transcripts of 2026-10-11 to 10-16, notes under a Chinese quote
 of a normal sentence were English 9% within 20 tool calls of it, 17% at 21–60 and 29%
@@ -155,6 +158,17 @@ came. A Codex tab runs
 the same check on its rollout; in a real Codex 0.162 tab, asked in Chinese to copy an
 English sentence as a note, it wrote that note in Chinese twice out of twice under "The
 user writes Chinese" — how far Codex drifts in a long session was still not measured.
+A Claude tab's reminder names "the description of each Bash command" beside the notes:
+Claude Code shows that description as the command's title (CC§25), and "everything the
+user reads" alone left it English while the notes followed. Measured 2026-11-10 on the
+same drifted copy and review report, Opus 5.5, up to 31 tool calls, 8 runs each, the
+shipped script against the same script naming the description (in the line about the
+last note too): Bash descriptions in Chinese 0 / 32 against 28 / 28; notes English
+11 / 36 against 13 / 34. The notes got no better and, at 0–75% and 0–67% English per
+run, no measurably worse either: judge the next wording change on both numbers. The other
+tabs keep the plain words: Muse's `bash` tool has a `description` (MUSE§8) and
+Antigravity's tools a `toolSummary` (AGY§13), but whether their screens show them, and
+whether they drift, is not probed; whether a Codex command has a title at all is not probed.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language alone ("Reply in Chinese") — 13 / 16 above, no better than
 the quote; it is used only with the check of the last note, and only where the
