@@ -21,7 +21,7 @@ import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
 import { keepCaretInSessionTerminal } from '../keys'
-import { CommentBox, useCommentTarget } from './CommentBox'
+import { CommentBox, type CommentTarget } from './CommentBox'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
@@ -67,7 +67,7 @@ export interface ChangesViewProps {
   onSplit: (path: string, view: ArtifactView, scrollTop: number) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   onScrollRequest: (rel: string) => void
-  onReturnFocus: () => void
+  commentTo: CommentTarget
   streamRef: RefObject<HTMLDivElement | null>
 }
 
@@ -118,7 +118,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     onSplit,
     onContextMenu,
     onScrollRequest,
-    onReturnFocus,
+    commentTo,
     streamRef
   } = props
 
@@ -454,7 +454,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [onScrollRequest]
   )
 
-  const { blocked, put: putInSession } = useCommentTarget(session, onReturnFocus)
+  const { blocked, put: putInSession } = commentTo
 
   const listEl = useRef<HTMLDivElement>(null)
   useEffect(() => {

@@ -29,7 +29,7 @@ import { useEditProbe } from './EditPane'
 import { FullWidthButton } from './WorkbenchBars'
 import { keepCaretInSessionTerminal } from '../keys'
 import { ChangesView } from './ChangesView'
-import { useCommentTarget, type CommentTarget } from './CommentBox'
+import type { CommentTarget } from './CommentBox'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
 import {
@@ -478,7 +478,7 @@ export interface FilesBodyProps {
   onZoomImage: (src: string) => void
   zoom: string | null
   onCloseZoom: () => void
-  onReturnFocus: () => void
+  commentTo: CommentTarget
 }
 
 export const FilesBody = memo(function FilesBody({
@@ -499,14 +499,13 @@ export const FilesBody = memo(function FilesBody({
   onZoomImage,
   zoom,
   onCloseZoom,
-  onReturnFocus
+  commentTo
 }: FilesBodyProps): JSX.Element {
   const contentRef = useRef<HTMLDivElement>(null)
   const [newFileDir, setNewFileDir] = useState<string | null>(null)
   const openFile = useActiveOpenFile()
   const activeTabId = useStore((s) => s.activeTabId)
   const setOpenFile = useStore((s) => s.setOpenFile)
-  const commentTo = useCommentTarget(session, onReturnFocus)
 
   const fvRef = useRef<HTMLDivElement>(null)
   const [sideWidth, setSideWidth] = useState(readSideWidth)
@@ -606,7 +605,7 @@ export const FilesBody = memo(function FilesBody({
           onSplit={onSplit}
           onContextMenu={openContextMenu}
           onScrollRequest={c.scrollToFile}
-          onReturnFocus={onReturnFocus}
+          commentTo={commentTo}
           streamRef={contentRef}
         />
       ) : (

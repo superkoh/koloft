@@ -271,11 +271,13 @@ export async function renderBlocks(
   if (text.includes('$')) await loadKatex().catch(() => {})
   const tokens = md.parse(text, env)
   await warmHighlight(tokens, env)
-  const ranges = topLevelBlocks(tokens)
-  const lines = ranges.map(([from, to]) => markLinesInBlock(tokens.slice(from, to)))
-  const blocks = ranges.map(([from, to]) =>
-    keepErrorSource(md.renderer.render(tokens.slice(from, to), md.options, env))
-  )
+  const blocks: string[] = []
+  const lines: (SourceLines | null)[] = []
+  for (const [from, to] of topLevelBlocks(tokens)) {
+    const block = tokens.slice(from, to)
+    lines.push(markLinesInBlock(block))
+    blocks.push(keepErrorSource(md.renderer.render(block, md.options, env)))
+  }
   return { blocks, lines, headings: outline(tokens) }
 }
 

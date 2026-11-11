@@ -1583,7 +1583,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             onZoomImage={setZoom}
             zoom={activeKind === 'files' ? zoom : null}
             onCloseZoom={closeZoom}
-            onReturnFocus={onReturnFocus}
+            commentTo={commentTo}
           />
         </div>
 

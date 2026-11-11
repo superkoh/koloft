@@ -159,15 +159,21 @@ export interface HunkPrompt {
 
 const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
 
+function fenced(lang: string, text: string): string[] {
+  const fence = fenceFor(text)
+  return [fence + lang, text, fence]
+}
+
 // CC§18 CODEX§23
-export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
-  const diff = hunk.replace(/\n+$/, '')
-  const fence = fenceFor(diff)
+function commentPrompt(pastedLines: string[], note: string): HunkPrompt {
   return {
-    pasted:
-      APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + [rel, fence + 'diff', diff, fence].join('\n') + '\n\n',
+    pasted: APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + pastedLines.join('\n') + '\n\n',
     typed: note.trim()
   }
+}
+
+export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
+  return commentPrompt([rel, ...fenced('diff', hunk.replace(/\n+$/, ''))], note)
 }
 
 export interface Passage {
@@ -197,17 +203,9 @@ export function passageAt(
   return { place, source: all.slice(from, to).join('\n'), selected: words }
 }
 
-// CC§18 CODEX§23
 export function passagePrompt(p: Passage, note: string): HunkPrompt {
-  const fence = p.source === null ? '' : fenceFor(p.source)
-  const quote = p.source === null ? [] : [fence + 'markdown', p.source, fence]
-  return {
-    pasted:
-      APART_FROM_WHAT_THE_INPUT_BOX_HOLDS +
-      [p.place, ...quote, `Selected: “${p.selected}”`].join('\n') +
-      '\n\n',
-    typed: note.trim()
-  }
+  const quote = p.source === null ? [] : fenced('markdown', p.source)
+  return commentPrompt([p.place, ...quote, `Selected: “${p.selected}”`], note)
 }
 
 export function commentBlocked(session: SessionInfo | null): string | null {

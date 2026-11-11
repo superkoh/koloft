@@ -7,7 +7,7 @@ import type { SourceLines } from '../markdown/lines'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
 import { CommentBox, type CommentTarget } from './CommentBox'
 import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
-import { findInBlocks, linesOfRange, selectedRangeIn, swapMark } from './mdPassage'
+import { findInBlocks, linesOfRange, selectedRangeIn, swapMark, type DrawnBlock } from './mdPassage'
 import '../previewViewer.css'
 
 export interface MdHeading {
@@ -16,7 +16,7 @@ export interface MdHeading {
   level: number
 }
 
-export type PassageComment = CommentTarget & { rel: string }
+type PassageComment = CommentTarget & { rel: string }
 
 const DIAGRAM_RENDER_AHEAD_PX = 150
 const PAINT_SLICE_MS = 8
@@ -36,10 +36,8 @@ const UNREADABLE: DrawnDoc = {
 
 let mermaidTempIdSeq = 0
 
-interface Shown {
+interface Shown extends DrawnBlock {
   html: string
-  el: HTMLDivElement
-  lines: SourceLines | null
 }
 
 interface OpenComment {
@@ -425,26 +423,30 @@ export function PreviewViewer({
     const body = bodyRef.current
     if (!commentable || !wrap || !body) return
     let raf = 0
+    let showing = false
+    const hide = (): void => {
+      showing = false
+      setPick(null)
+    }
     const place = (): void => {
       raf = 0
       const rects = selectedRangeIn(body)?.getClientRects()
       const end = rects?.[rects.length - 1]
-      if (!end) {
-        setPick(null)
-        return
-      }
+      if (!end) return hide()
       const view = body.getBoundingClientRect()
-      if (end.bottom < view.top || end.top > view.bottom) {
-        setPick(null)
-        return
-      }
+      if (end.bottom < view.top || end.top > view.bottom) return hide()
       const box = wrap.getBoundingClientRect()
-      setPick({
-        x: Math.max(0, Math.min(end.right - box.left, box.width - COMMENT_BUTTON_ROOM_PX)),
-        y: Math.min(end.bottom - box.top + COMMENT_BUTTON_GAP_PX, box.height - COMMENT_BUTTON_H_PX)
-      })
+      const x = Math.max(0, Math.min(end.right - box.left, box.width - COMMENT_BUTTON_ROOM_PX))
+      const y = Math.min(
+        end.bottom - box.top + COMMENT_BUTTON_GAP_PX,
+        box.height - COMMENT_BUTTON_H_PX
+      )
+      showing = true
+      setPick((p) => (p?.x === x && p.y === y ? p : { x, y }))
     }
     const soon = (): void => {
+      const at = document.getSelection()?.anchorNode
+      if (!showing && !(at && body.contains(at))) return
       if (!raf) raf = requestAnimationFrame(place)
     }
     document.addEventListener('selectionchange', soon)

@@ -1,4 +1,5 @@
 import { LINES_IN_BLOCK_ATTR, type SourceLines } from '../markdown/lines'
+import { computeMatchRanges } from '../useDomFind'
 
 export interface DrawnBlock {
   el: HTMLElement
@@ -63,29 +64,6 @@ export function linesOfRange(
   return [Math.min(first[0], last[0]), Math.max(first[1], last[1])]
 }
 
-function rangeOfText(el: HTMLElement, text: string): Range | null {
-  const nodes: Text[] = []
-  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  while (walk.nextNode()) nodes.push(walk.currentNode as Text)
-  const at = nodes
-    .map((n) => n.data)
-    .join('')
-    .indexOf(text)
-  if (at < 0) return null
-  const r = document.createRange()
-  let seen = 0
-  for (const n of nodes) {
-    const end = seen + n.data.length
-    if (at >= seen && at <= end) r.setStart(n, at - seen)
-    if (at + text.length >= seen && at + text.length <= end) {
-      r.setEnd(n, at + text.length - seen)
-      return r
-    }
-    seen = end
-  }
-  return null
-}
-
 export function findInBlocks(
   drawn: DrawnBlock[],
   lines: SourceLines | null,
@@ -94,7 +72,7 @@ export function findInBlocks(
   const near = (b: DrawnBlock): boolean =>
     !!lines && !!b.lines && b.lines[1] > lines[0] && b.lines[0] < lines[1]
   for (const b of [...drawn.filter(near), ...drawn.filter((b) => !near(b))]) {
-    const r = rangeOfText(b.el, text)
+    const [r] = computeMatchRanges(b.el, text)
     if (r) return r
   }
   return null
