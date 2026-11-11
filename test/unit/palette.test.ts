@@ -162,7 +162,7 @@ describe('command palette: workspace rows and groups', () => {
     expect(groups('zzq')).toEqual([])
   })
 
-  it('lists only the first batch of a long run of matching sessions and counts the ones still to come, so the first key in a big history does not build every row', () => {
+  it('lists only the first batch of a long run of matching sessions and counts the ones still to come, so the first key in a big history does not build every row; a session not yet listed still shows when its conversation matches', () => {
     const many = Array.from({ length: SESSION_ROWS_PER_BATCH + 7 }, (_, i) =>
       row(`s${i}`, { title: `needle ${i}` })
     )
@@ -174,6 +174,18 @@ describe('command palette: workspace rows and groups', () => {
     const grown = paletteGroups(sessions, [], [], 'needle', [], 2 * SESSION_ROWS_PER_BATCH)[0]
     expect(grown.items).toHaveLength(SESSION_ROWS_PER_BATCH + 7)
     expect(grown.hidden).toBe(0)
+
+    const beyond = `s${SESSION_ROWS_PER_BATCH + 3}`
+    const hits: SessionSearchHit[] = [
+      {
+        row: row(beyond),
+        workspacePath: `${HOME}/koloft`,
+        snippet: { before: '', match: 'needle', after: '' }
+      }
+    ]
+    const inConversations = paletteGroups(sessions, [], [], 'needle', hits)[1]
+    expect(inConversations.title).toBe('In conversations')
+    expect(inConversations.items.map((i) => i.key)).toEqual([`h:${beyond}`])
   })
 
   it('finds a feature by any of its keywords, also when the keyword sits inside a longer sentence, whatever the language', () => {

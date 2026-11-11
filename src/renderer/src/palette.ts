@@ -237,13 +237,10 @@ export function paletteGroups(
 ): PaletteGroup[] {
   if (!query.trim()) return []
   const matched = sessions.filter((s) => matchesQuery(s.text, query))
-  const shown = new Set(matched.map((s) => s.row.id))
+  const listed = matched.slice(0, sessionRows)
+  const shown = new Set(listed.map((s) => s.row.id))
   const groups: PaletteGroup[] = [
-    {
-      title: 'Sessions',
-      items: matched.slice(0, sessionRows),
-      hidden: Math.max(0, matched.length - sessionRows)
-    },
+    { title: 'Sessions', items: listed, hidden: matched.length - listed.length },
     { title: 'In conversations', items: conversationItems(hits, shown) },
     { title: 'Workspaces', items: workspaces.filter((w) => matchesQuery(w.note, query)) },
     { title: 'Actions', items: actions.filter((a) => matchesAction(a, query)) }

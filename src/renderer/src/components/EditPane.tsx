@@ -60,29 +60,22 @@ export function editRefusal(failure: string): string {
 }
 
 const readsInFlight = new Map<string, Promise<EditOpenResult>>()
-let lastRead: { path: string; result: EditOpenResult } | null = null
 
-export function readForEdit(path: string): Promise<EditOpenResult> {
+export function joinOrStartEditRead(path: string): Promise<EditOpenResult> {
   const going = readsInFlight.get(path)
   if (going) return going
   const read = window.api.edit.open(path).then(
     (result) => {
       readsInFlight.delete(path)
-      lastRead = { path, result }
       return result
     },
     (err: unknown) => {
       readsInFlight.delete(path)
-      if (lastRead?.path === path) lastRead = null
       throw err
     }
   )
   readsInFlight.set(path, read)
   return read
-}
-
-export function lastReadForEdit(path: string): EditOpenResult | null {
-  return lastRead?.path === path ? lastRead.result : null
 }
 
 export interface EditProbe {
@@ -100,7 +93,7 @@ export function useEditProbe(path: string | null): EditProbe {
     }
     let cancelled = false
     setProbe({ ready: false, can: false, title: '' })
-    readForEdit(path)
+    joinOrStartEditRead(path)
       .then((r) => {
         if (cancelled) return
         setProbe({
@@ -273,7 +266,8 @@ export function EditPane({
     if (!path) return
     window.api.fs.watchFile(path)
     const readDisk = (): void => {
-      readForEdit(path)
+      window.api.edit
+        .open(path)
         .then((r) =>
           reconcileDisk(ownerTab, tabId, {
             text: r.text,

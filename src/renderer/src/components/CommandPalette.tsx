@@ -158,11 +158,15 @@ export function CommandPalette({
   const groups: PaletteGroup[] = mention
     ? [{ title: 'Workspaces', items: suggestions }]
     : paletteGroups(sessionItems, workspaceItems, actions, typed, scan ? hits : [], sessionRows)
-  const sessionsHidden = groups[0]?.hidden ?? 0
+  const sessionGroup = groups.find((g) => g.title === 'Sessions')
+  const sessionsHidden = sessionGroup?.hidden ?? 0
   const showMoreSessions = (): void => {
-    if (sessionsHidden > 0) setGrown({ typed, rows: sessionRows + SESSION_ROWS_PER_BATCH })
+    if (sessionsHidden === 0) return
+    const rows = sessionRows + SESSION_ROWS_PER_BATCH
+    setGrown((had) => (had.typed === typed && had.rows >= rows ? had : { typed, rows }))
   }
   const visible = groups.flatMap((g) => g.items)
+  const lastListedSessionAt = sessionGroup ? visible.indexOf(sessionGroup.items.at(-1)!) : -1
   const keys = mode === 'search' ? hits.map((h) => h.row.id) : visible.map((i) => i.key)
   const count = keys.length
   const keyAt = keys.indexOf(hotKey ?? '')
@@ -282,7 +286,7 @@ export function CommandPalette({
       e.preventDefault()
       if (e.key === 'ArrowDown') {
         const next = at === null ? 0 : Math.min(at + 1, count - 1)
-        if (mode === 'ask' && next >= sessionRows - 1) showMoreSessions()
+        if (mode === 'ask' && next === lastListedSessionAt) showMoreSessions()
         pick(next)
       } else pick(at ? at - 1 : null)
       return
