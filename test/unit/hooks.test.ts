@@ -38,6 +38,7 @@ import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/c
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
 import { AGY_HOOK_SCRIPT } from '../../src/main/agyHooks'
+import { museHookScript } from '../../src/main/museHooks'
 
 let hookScript: string
 let codexReplyLanguage: string
@@ -515,14 +516,18 @@ describe('injected hook script', () => {
     })
 
     // ADR-0031
-    it('a Claude tab’s reminder asks for the description of each Bash command in the owner’s language, quoted or named', () => {
-      const named = `Write everything the user reads — the short notes between tool calls, the description of each Bash command, and your final reply — in `
-      expect(
-        reminder(prompt('tabLangTitles', 'look at the failing test'), 'UserPromptSubmit')
-      ).toContain(`${named}the language of that message`)
-      expect(reminder(prompt('tabLangTitles', '先别改代码'), 'UserPromptSubmit')).toContain(
-        `${named}Chinese`
-      )
+    it('only a Claude tab’s reminder asks for each Bash command’s description in the owner’s language, quoted or named, at the prompt and after every tool; Codex, Muse and Antigravity tabs are not told of it', () => {
+      const titles = 'the description of each Bash command'
+      for (const said of ['look at the failing test', '先别改代码']) {
+        expect(reminder(prompt('tabLangTitles', said), 'UserPromptSubmit')).toContain(titles)
+        expect(reminder(tool('tabLangTitles'), 'PostToolUse')).toContain(titles)
+      }
+      for (const script of [
+        fs.readFileSync(codexReplyLanguage, 'utf8'),
+        AGY_HOOK_SCRIPT,
+        museHookScript('', '')
+      ])
+        expect(script).not.toContain('Bash command')
     })
 
     // ADR-0031

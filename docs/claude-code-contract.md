@@ -3886,4 +3886,4 @@ screen` while the call ran.
   line under it (`⎿  $ <command>`). Without one it is `⏺ Running <command>`.
 - Once done, calls fold into `Ran N shell command(s)`.
 
-Koloft dependents: `CLAUDE_COMMAND_TITLES` in `src/main/hooks.ts`.
+Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/main/hooks.ts`.
