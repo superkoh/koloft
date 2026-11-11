@@ -106,6 +106,22 @@ describe('usage of Codex, Muse and Antigravity accounts kept across a restart', 
     expect(picker.pick([aReadEmpty, account('b', 'codex-home')])?.name).toBe('a')
   })
 
+  it.each([
+    [0.9, 'a'],
+    [0.96, 'b']
+  ])(
+    'a session resumed on an account saved at %f of its week runs on %s on the first pick after a reopen',
+    (used, runsOn) => {
+      const nowMs = Date.now()
+      const store = new SavedUsage<HomeUsage>(snapshotFile(), nowMs)
+      saveHomeUsage(store, 'a', { limits: weekLimits(used, nowMs) }, nowMs)
+      saveHomeUsage(store, 'b', { limits: weekLimits(0.1, nowMs) }, nowMs)
+
+      const nothingReadYet = [account('a', 'codex-home'), account('b', 'codex-home')]
+      expect(pickerOver('codex-home', store).pick(nothingReadYet, 'a')?.name).toBe(runsOn)
+    }
+  )
+
   it('an account that turns out to run on an API key drops its saved usage', () => {
     const file = snapshotFile()
     const nowMs = Date.now()
