@@ -170,6 +170,8 @@ interface Inbound {
 
 type DiscordAnswer = 'message' | 'turn'
 
+type SendTo = (channelId: string) => Promise<void>
+
 interface KeysTyped {
   at?: number
 }
@@ -203,6 +205,7 @@ export class DiscordRelay {
   private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
   private held = new Set<string>()
   private unreadable = new Set<string>()
+  private shownNotSent = new Map<string, SendTo[]>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
 
   constructor(private d: RelayDeps) {}
@@ -589,29 +592,48 @@ export class DiscordRelay {
       return
     if (this.holds(tab)) return
     this.unreadable.add(tab)
-    const lobby = this.d.lobbyLink()
-    void this.card(channelId, {
+    const card: Card = {
       accent: CONDUCTOR_ACCENT,
       header: butlerAsks(this.askerName(tab)),
-      body: unreadableInRoom(this.d.butlerName(), lobby)
-    })
+      body: unreadableInRoom(this.d.butlerName(), this.d.lobbyLink())
+    }
+    this.afterShownNotSent(tab, channelId, () => void this.card(channelId, card))
   }
 
   stoppedAsking(tab: string): void {
     this.unreadable.delete(tab)
   }
 
+  sendWithNextAsk(tab: string, send: SendTo): void {
+    this.shownNotSent.set(tab, [...(this.shownNotSent.get(tab) ?? []), send])
+  }
+
+  prompted(tab: string): void {
+    this.shownNotSent.delete(tab)
+  }
+
+  private afterShownNotSent(tab: string, channelId: string, post: () => void): void {
+    const sends = this.shownNotSent.get(tab)
+    if (!sends) return post()
+    this.shownNotSent.delete(tab)
+    void sends
+      .reduce((sent, send) => sent.then(() => send(channelId)), Promise.resolve())
+      .then(post, post)
+  }
+
   private postAsk(tab: string, channelId: string, card: Card): void {
-    void this.d.link
-      .card(channelId, card)
-      .then(
-        (ids) => ids.at(-1),
-        () => undefined
-      )
-      .then((messageId) => {
-        if (card.buttons?.length)
-          this.d.askPlaced(card, messageId ? { channelId, messageId } : undefined)
-      })
+    this.afterShownNotSent(tab, channelId, () => {
+      void this.d.link
+        .card(channelId, card)
+        .then(
+          (ids) => ids.at(-1),
+          () => undefined
+        )
+        .then((messageId) => {
+          if (card.buttons?.length)
+            this.d.askPlaced(card, messageId ? { channelId, messageId } : undefined)
+        })
+    })
   }
 
   onAsk(tab: string, payload: AskPayload, hook?: string): void {
@@ -862,6 +884,7 @@ export class DiscordRelay {
     this.held.delete(tab)
     this.unreadable.delete(tab)
     this.quietTurns.delete(tab)
+    this.shownNotSent.delete(tab)
   }
 
   // PLATFORM§39

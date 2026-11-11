@@ -95,7 +95,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     5 s when absent), `-remove-ms` (how long removing a worktree at `/exit` takes; a
     SIGHUP meanwhile leaves it unremoved), `-remove-fails` (that removal prints CC's
     failure line and leaves the worktree), `-drop-key` (a dialog drops the next key it
-    gets, then deletes the file).
+    gets, then deletes the file), `-open-before-ask` (holds a path: the next `/ask` runs
+    `koloft open` on it inside its turn, before the question, then deletes the file).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
@@ -362,8 +363,9 @@ The owner's step goes through AskUserQuestion, one case at a time: the steps ins
 the question, the outcomes as options. Only the questions of the butler and of the
 helpers in its folder reach the owner's Discord as cards in its channel
 (discord-flow), and those of a session with a room of its own as cards in that room
-(discord-real-smoke); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
-butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
+(discord-real-smoke); any other session's question shows only at the Mac. To show the
+owner a picture with the question, `koloft open <shot>` before asking, in the same turn:
+it reaches their Discord just before the card (discord-room-copies). After the
 owner answers, check their step in a log or file yourself.
 
 ## Real-window layer (test/real-window/)

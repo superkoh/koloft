@@ -1496,6 +1496,58 @@ describe('DiscordRelay: a session’s room', () => {
   })
 })
 
+describe('DiscordRelay: what a session showed at the Mac goes with its next question card', () => {
+  const asks: [string, (relay: DiscordRelay, n: number) => void][] = [
+    [
+      'a Claude question',
+      (relay, n) =>
+        relay.onAsk(TAB, {
+          tool_name: 'AskUserQuestion',
+          tool_input: { questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }] }
+        })
+    ],
+    [
+      'a Codex question',
+      (relay, n) =>
+        relay.codexAsked(TAB, {
+          id: `q${n}`,
+          questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }]
+        })
+    ],
+    [
+      'a question Koloft cannot read',
+      (relay) => {
+        relay.stoppedAsking(TAB)
+        relay.asksUnreadably(TAB)
+      }
+    ]
+  ]
+  for (const [kind, ask] of asks)
+    it(`${kind}: its card follows what was shown since the session was last prompted, each sent whole before it and only once`, async () => {
+      const { relay, posts } = setup({}, [], { inRoom: () => true })
+      const shown =
+        (name: string) =>
+        (channelId: string): Promise<void> =>
+          new Promise((sent) =>
+            setTimeout(() => sent(void posts.push({ text: `${name} in ${channelId}` })), 5)
+          )
+      relay.sendWithNextAsk(TAB, shown('before.png'))
+      relay.prompted(TAB)
+      relay.sendWithNextAsk(TAB, shown('shot.png'))
+      relay.sendWithNextAsk(TAB, shown('plan.md'))
+      ask(relay, 1)
+      await vi.waitFor(() => expect(posts).toHaveLength(3))
+      ask(relay, 2)
+      await vi.waitFor(() => expect(posts).toHaveLength(4))
+      expect(posts.map((p) => p.text.split('\n')[0])).toEqual([
+        `shot.png in ${CHANNEL}`,
+        `plan.md in ${CHANNEL}`,
+        butlerAsks('Assist'),
+        butlerAsks('Assist')
+      ])
+    })
+})
+
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {
   it('Koloft’s own notices end with where the owner is right now; the owner’s Discord words stay exactly as written, so its hook quotes only them, and a slash command gets nothing', async () => {
     const { relay, bodies, commands, conductor } = setup(

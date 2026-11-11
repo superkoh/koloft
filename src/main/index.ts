@@ -508,7 +508,13 @@ import {
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
+import {
+  sendPhoneCopy,
+  sendWholeCopy,
+  shownOf,
+  tooLarge,
+  type PhoneCopyDeps
+} from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -690,6 +696,7 @@ const sessionBackends = new SessionBackends({
   },
   prompted: (tabId) => {
     claudeAsks.delete(tabId)
+    discordRelay?.prompted(tabId)
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
     awayDigest?.prompted(tabId)
@@ -5886,31 +5893,34 @@ async function copyToPhone(
   view?: ArtifactView
 ): Promise<string | undefined> {
   const relay = discordRelay
-  const reaches = relay?.reaches(tabId) && !relay.quietTurn(tabId)
-  const channelId = reaches ? phoneChannelOf(tabId) : undefined
-  const shown = channelId && shownOf(target, machineOfTab(tabId), view)
-  if (!relay || !channelId || !shown) return undefined
+  const shown = relay && shownOf(target, machineOfTab(tabId), view)
+  if (!relay || !shown) return undefined
+  const copyTo = (channelId: string): PhoneCopyDeps => ({
+    shoot: (url, machine) => shootPage(url, { machine }),
+    shootHtml,
+    size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
+    readBytes: (file) =>
+      hosts
+        .of(file)
+        .readBytes(file)
+        .catch((error: unknown) => {
+          throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
+        }),
+    fileDiff: (file) => hosts.of(file).gitFileDiff(file),
+    send: (files, parts) => relay.sendParts(channelId, files, parts)
+  })
+  const reaches = relay.reaches(tabId) && !relay.quietTurn(tabId)
+  const channelId = reaches ? askChannelOfTab(tabId) : undefined
+  if (!channelId) {
+    relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
+    return undefined
+  }
   const where = butler?.channelOfTab(tabId)
     ? 'the Discord channel the owner talks to you in'
-    : "this session's room on the owner's Discord"
-  return sendPhoneCopy(
-    {
-      shoot: (url, machine) => shootPage(url, { machine }),
-      shootHtml,
-      size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
-      readBytes: (file) =>
-        hosts
-          .of(file)
-          .readBytes(file)
-          .catch((error: unknown) => {
-            throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
-          }),
-      fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-      send: (files, parts) => relay.sendParts(channelId, files, parts)
-    },
-    shown,
-    where
-  )
+    : butlerSide(tabId)
+      ? `${butlerNameNow()}'s Discord channel, where the owner sees your question cards`
+      : "this session's room on the owner's Discord"
+  return sendPhoneCopy(copyTo(channelId), shown, where)
 }
 
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000

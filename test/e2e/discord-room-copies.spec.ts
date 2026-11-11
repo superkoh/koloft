@@ -188,6 +188,55 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
     }
   })
 
+  test('a picture a session shows while the owner is at the Mac, in the turn that asks them, reaches its room once, just before the question card that goes out after the owner left', async ({
+    env
+  }) => {
+    seedButler(env)
+    const presence = path.join(env.home, 'presence.txt')
+    env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
+    const dir = path.join(env.home, 'shown')
+    fixtureFiles(dir)
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const { room, session } = await roomOfANewSession(page, fake, 'ws-a')
+      fake.say(OWNER, 'hello there', { channelId: room.id })
+      await expect
+        .poll(
+          () =>
+            fake.posted.some((p) => p.channelId === room.id && p.content.includes('hello there')),
+          { timeout: STARTS_AND_ANSWERS_MS }
+        )
+        .toBe(true)
+
+      fs.writeFileSync(presence, 'active')
+      fs.writeFileSync(
+        path.join(env.home, 'fake-claude-open-before-ask'),
+        path.join(dir, 'plan.html')
+      )
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/ask Ship it?|Yes|No\r'),
+        session.tabId
+      )
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain('asking: AskUserQuestion')
+      expect(await terminalText(page, session.tabId)).not.toContain('Sent')
+
+      fs.writeFileSync(presence, 'idle')
+      const inRoom = (): FakePost[] => fake.posted.filter((p) => p.channelId === room.id)
+      const cardAt = (): number => inRoom().findIndex((p) => /is waiting for you/.test(p.content))
+      await expect.poll(cardAt, { timeout: STARTS_AND_ANSWERS_MS }).toBeGreaterThan(-1)
+      const uploads = inRoom().filter((p) => p.files.length)
+      expect(uploads).toHaveLength(1)
+      expect(isPng(uploads[0].files[0].data)).toBe(true)
+      expect(inRoom().indexOf(uploads[0])).toBeLessThan(cardAt())
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('in the room of a session on another machine, its files are pulled from there and sent, and an HTML file there goes as a picture of the whole page, as from a session on this Mac', async ({
     env
   }) => {

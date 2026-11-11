@@ -215,6 +215,12 @@ export const stillSending = (where: string): string =>
 export const couldNotSendInRoom = (name: string, error: string): string =>
   `⚠ Koloft could not send ${name} here: ${error}`
 
+export async function sendWholeCopy(d: PhoneCopyDeps, shown: Shown): Promise<void> {
+  await copy(d, shown, '').catch((error: unknown) =>
+    d.send([], [couldNotSendInRoom(nameOf(shown), errorText(error))]).catch(() => undefined)
+  )
+}
+
 export async function sendPhoneCopy(
   d: PhoneCopyDeps,
   shown: Shown,
