@@ -1012,6 +1012,41 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  // AGY§5
+  test('an Antigravity job in a git workspace agy trusts starts in its new worktree without agy asking whether to trust that folder', async ({
+    env
+  }) => {
+    installAgy(env)
+    gitInit(env.workspaces.a)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(1)
+      expect(path.basename(path.dirname(sessionCalls(env)[0].cwd))).toBe('worktrees')
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 30_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§6
   test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, Paste Gemini API key clicked at the bottom edge of the pane scrolls its whole form into view, and a pasted Gemini API key adds an account kept in the Keychain and opens agy on it at once; once its colour and Terms screens are answered the row is ready, marked API KEY and metered', async ({
     env

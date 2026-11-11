@@ -1250,7 +1250,7 @@ describe('CodexSessions', () => {
     expect(sessions.list()[0].cwd).toBe(newPath)
   })
 
-  it('a person’s new worktree launch trusts the workspace folder and the worktree itself in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
+  it('a person’s new worktree launch trusts the workspace folder and the worktree itself in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts its worktree only once Codex trusts the workspace folder', async () => {
     const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
     fs.mkdirSync(worktree, { recursive: true })
     vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
@@ -1258,7 +1258,8 @@ describe('CodexSessions', () => {
       originalCwd: repo,
       worktreePath: worktree,
       worktreeName: 'w1',
-      worktreeBranch: 'worktree-w1'
+      worktreeBranch: 'worktree-w1',
+      managed: true
     } as WorktreeResource)
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
@@ -1271,6 +1272,19 @@ describe('CodexSessions', () => {
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
     expect(deps.trustFolder).toHaveBeenCalledTimes(2)
+
+    fs.mkdirSync(path.join(directory, '.codex'))
+    fs.writeFileSync(
+      path.join(directory, '.codex', 'config.toml'),
+      `[projects.${JSON.stringify(repo)}]\ntrust_level = "trusted"\n`
+    )
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
+    expect(
+      vi
+        .mocked(deps.trustFolder)
+        .mock.calls.slice(2)
+        .map(([dir]) => dir)
+    ).toEqual([worktree])
   })
 
   it("a worktree launch's app-server gets that worktree's port offset, and a launch in the main checkout gets none", async () => {

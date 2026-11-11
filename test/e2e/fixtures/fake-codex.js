@@ -827,6 +827,14 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
   void startTui()
 }
 
+function trustedInConfig(dir) {
+  const header = `[projects.${JSON.stringify(fs.realpathSync(dir))}]`
+  const config = path.join(codexHome, 'config.toml')
+  const lines = fs.existsSync(config) ? fs.readFileSync(config, 'utf8').split('\n') : []
+  const at = lines.findIndex((line) => line.trim() === header)
+  return at >= 0 && lines[at + 1]?.trim() === 'trust_level = "trusted"'
+}
+
 async function startTui() {
   if (flag('fake-codex-exit')) {
     console.error('Codex fixture startup failure')
@@ -853,6 +861,12 @@ async function startTui() {
   }
   const url = value('--remote')
   const cwd = value('-C') || process.cwd()
+  // CODEX§11
+  if (flag('fake-codex-asks-trust') && !trustedInConfig(cwd)) {
+    process.stdout.write(`Trust this folder?\r\n${cwd}\r\n› 1. Trust and continue\r\n`)
+    process.stdin.resume()
+    return
+  }
   // CODEX§14
   let firstPrompt = argv.find(
     (arg, i) => !arg.startsWith('-') && !FLAGS_FOLLOWED_BY_A_VALUE.includes(argv[i - 1])
