@@ -1,3 +1,4 @@
+import type { ElectronApplication } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings } from './helpers/env'
 import {
@@ -17,6 +18,15 @@ const ROOM_FOR_A_WRONG_FORCE_CLOSE_MODAL_MS = 1500
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const ROOM_FOR_A_WRONG_RESTART_MS = 2000
+
+// PLATFORM§18
+function inRenderer<T>(app: ElectronApplication, expr: string): Promise<T> {
+  return app.evaluate(
+    ({ BrowserWindow }, js) =>
+      BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(js) as Promise<T>,
+    expr
+  )
+}
 
 test.describe("a renderer reload re-adopts main's live ptys instead of orphaning them, proven on process boundaries rather than DOM", () => {
   test('T-REL-01: a reload re-adopts the session — same pty, one claude, repaint, typing works', async ({
@@ -84,14 +94,6 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     env
   }) => {
     test.setTimeout(180_000)
-    // PLATFORM§18
-    const inRenderer = <T>(expr: string): Promise<T> =>
-      app.evaluate(
-        ({ BrowserWindow }, js) =>
-          BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(js) as Promise<T>,
-        expr
-      )
-
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
     const [launch] = await waitForCalls(env, 1)
@@ -108,23 +110,26 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
       .poll(
         () =>
           inRenderer<boolean>(
+            app,
             '!!(window.__koloftShortcutsReady && window.__koloftRowsReady)'
           ).catch(() => false),
         { timeout: 30_000 }
       )
       .toBe(true)
     await expect
-      .poll(() => inRenderer<string[]>('Object.keys(window.__koloftTerms ?? {})'), {
+      .poll(() => inRenderer<string[]>(app, 'Object.keys(window.__koloftTerms ?? {})'), {
         timeout: 30_000
       })
       .toEqual(idsBefore)
     await inRenderer<void>(
+      app,
       `window.api.terminal.write(${JSON.stringify(idsBefore[0])}, 'after-crash-marker\\r')`
     )
     await expect
       .poll(
         () =>
           inRenderer<string>(
+            app,
             `(() => { const t = (window.__koloftTerms ?? {})[${JSON.stringify(idsBefore[0])}];
              if (!t) return '';
              const b = t.buffer.active; const out = [];
@@ -138,7 +143,7 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     expect(processAlive(launch.pid)).toBe(true)
   })
 
-  test('T-REL-05: closing the window and opening it again (macOS keeps the app alive) brings back the tab the user was on, though that path runs the renderer teardown twice', async ({
+  test('T-REL-05: a renderer that crashed past its reload limit is closed for real by the red button, and the Dock opens a new window that brings back the tab the user was on, though that path runs the renderer teardown twice', async ({
     app,
     page,
     env
@@ -154,15 +159,38 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     await expect(rowA).toHaveClass(/\bactive\b/)
     const ids = await termIds(page)
     expect(ids).toHaveLength(2)
+    const crash = (): Promise<void> =>
+      app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer()
+      })
+    const crashed = (): Promise<boolean> =>
+      app.evaluate(
+        ({ BrowserWindow }) => !!BrowserWindow.getAllWindows()[0]?.webContents.isCrashed()
+      )
+    for (const reloads of [true, true, false]) {
+      await crash()
+      await expect.poll(crashed).toBe(true)
+      if (!reloads) continue
+      await expect
+        .poll(
+          () =>
+            inRenderer<boolean>(
+              app,
+              '!!(window.__koloftShortcutsReady && window.__koloftRowsReady)'
+            ).catch(() => false),
+          { timeout: 30_000 }
+        )
+        .toBe(true)
+    }
 
-    const closed = page.waitForEvent('close')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
-    await closed
+    await expect
+      .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
+      .toBe(0)
     const opened = app.waitForEvent('window')
     await app.evaluate(({ app }) => app.emit('activate'))
     const reopened = await opened
     await waitBooted(reopened)
-
     await expect.poll(() => termIds(reopened), { timeout: 30_000 }).toEqual(ids)
     await expect(wsRows(reopened, 'ws-a').first()).toHaveClass(/\bactive\b/, { timeout: 30_000 })
     await expect(wsRows(reopened, 'ws-b').first()).not.toHaveClass(/\bactive\b/)

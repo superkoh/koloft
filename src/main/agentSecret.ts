@@ -10,7 +10,7 @@ export const OWNER_DECLINED = 'koloft: the owner turned this down; nothing was p
 export const OWNER_ASLEEP =
   'koloft: the owner is asleep and cannot give a password or a code now. Skip this step, go on with the rest, and say in your report that it waits for the owner.'
 export const NO_SUCH_FIELD =
-  "koloft: no single field matches that selector in this session's Workbench pages (the Koloft window has to be open). Give a selector that matches exactly one input box."
+  "koloft: no single field matches that selector in this session's Workbench pages. Give a selector that matches exactly one input box."
 export const PAGE_CHANGED =
   'koloft: the page moved to another site, or the field went, while the owner answered; Koloft filled nothing.'
 export const NOT_LOOPBACK =
