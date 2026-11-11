@@ -683,7 +683,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(true)
     await app.evaluate(({ app: electronApp }) => electronApp.quit())
     await expect(modal(page)).toBeVisible({ timeout: 20_000 })
-    expect((await osOutlets(app)).windowHidden).toBe(false)
+    await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(false)
 
     await modal(page).getByRole('button', { name: 'Cancel' }).click()
     await closeDiscardingEdits(app)

@@ -1157,40 +1157,39 @@ function updateDockBadge(pending: AttentionEvent[]): void {
 
 const pagesMutedWhileHidden = mutedWhileHidden()
 
-const browserPages = (): WebContents[] =>
-  webContents
-    .getAllWebContents()
-    .filter((wc) => !wc.isDestroyed() && wc.session === session.fromPartition(BROWSER_PARTITION))
+const isWorkbenchPage = (wc: WebContents): boolean => wc.getType() === 'webview'
 
 let hiddenByClose = false
 let hiddenFromFullScreen = false
 
+function setHiddenByClose(hidden: boolean): void {
+  hiddenByClose = hidden
+  osOutletsSeenByTests.windowHidden = hidden
+}
+
 function hideMainWindow(win: BrowserWindow): void {
-  hiddenByClose = true
-  pagesMutedWhileHidden.hide(browserPages())
-  if (OFF_SCREEN_TEST) {
-    osOutletsSeenByTests.windowHidden = true
-    return
-  }
+  setHiddenByClose(true)
+  pagesMutedWhileHidden.hide(webContents.getAllWebContents().filter(isWorkbenchPage))
+  if (OFF_SCREEN_TEST) return
   // PLATFORM§5
   if (win.isFullScreen()) {
     hiddenFromFullScreen = true
     win.once('leave-full-screen', () => {
-      if (hiddenByClose) win.hide()
+      if (hiddenByClose) return win.hide()
+      hiddenFromFullScreen = false
+      win.setFullScreen(true)
     })
     win.setFullScreen(false)
   } else win.hide()
 }
 
 function showMainWindow(win: BrowserWindow): void {
-  hiddenByClose = false
+  setHiddenByClose(false)
   pagesMutedWhileHidden.show()
-  if (OFF_SCREEN_TEST) {
-    osOutletsSeenByTests.windowHidden = false
-    return
-  }
+  if (OFF_SCREEN_TEST) return
   if (win.isMinimized()) win.restore()
-  if (!win.isVisible()) win.show()
+  if (win.isVisible()) return
+  win.show()
   if (hiddenFromFullScreen) win.setFullScreen(true)
   hiddenFromFullScreen = false
 }
@@ -3130,7 +3129,8 @@ function createWindow(): void {
   if (!OFF_SCREEN_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
     mainWindow,
-    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
+    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined,
+    () => hiddenFromFullScreen
   )
 
   // PLATFORM§5
@@ -3140,7 +3140,7 @@ function createWindow(): void {
   })
   const win = mainWindow
   win.on('close', (e) => {
-    if (quitCommitted) return
+    if (quitCommitted || win.webContents.isCrashed()) return
     e.preventDefault()
     hideMainWindow(win)
   })
@@ -3219,7 +3219,9 @@ app.whenReady().then(() => {
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
-  onEveryWebPage(pagesMutedWhileHidden.opened)
+  onEveryWebPage((contents) => {
+    if (isWorkbenchPage(contents)) pagesMutedWhileHidden.opened(contents)
+  })
   setupGuestGestures()
   setupGuestLinkReports()
   setupGuestPermissionQuery()
@@ -7052,7 +7054,9 @@ function registerIpc(): void {
   ipcMain.on(CH.app.quitHeld, () => {
     clearQuitFallback()
     resetQuitGuard()
-    if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
+    if (!mainWindow || mainWindow.isDestroyed() || !hiddenByClose) return
+    showMainWindow(mainWindow)
+    if (!OFF_SCREEN_TEST) app.focus({ steal: true })
   })
   ipcMain.on(CH.app.quitDeclined, () => {
     clearQuitFallback()
