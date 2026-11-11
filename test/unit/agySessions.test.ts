@@ -1500,7 +1500,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(JSON.stringify(hooks.koloft)).toContain('$HOME/.koloft/m-test/agy-hook.sh')
     expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
     expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
-    expect(spec.program.run).toMatch(/'-i' 'hi'\n$/)
+    expect(spec.program.run).toMatch(/set -- agy .*'-i' 'hi'\n/)
   })
 
   it('a first prompt that starts with / is typed into the tab once the mirrored title says agy is idle, not given with -i', async () => {

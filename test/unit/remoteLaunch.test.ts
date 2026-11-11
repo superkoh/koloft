@@ -602,21 +602,48 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(res.stdout).toContain('koloft: bravo')
   })
 
-  // CC§12
-  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0)(
-    "claude runs on a terminal of the status relay's, and where python3 cannot run (macOS's stub without the developer tools) it starts on its own instead",
-    () => {
-      const relayed = box(spec())
+  // CC§12 AGY§29 PLATFORM§35
+  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0).each([
+    { agent: 'claude', boxed: (): Box => box(spec()), arg: [0, '--settings'] as const },
+    {
+      agent: 'agy',
+      boxed: (): Box => {
+        const b = box(
+          spec({
+            program: agyTab({
+              tabId: 'T',
+              account: 'a',
+              args: ['--csrf_token=x'],
+              settings: '{}',
+              hooks: '{}',
+              koloftSkill: false
+            })
+          })
+        )
+        fs.writeFileSync(
+          path.join(b.home, '.local', 'bin', 'agy'),
+          `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n[ -t 0 ] && : > ${JSON.stringify(path.join(b.logs, 'tty'))}\nexit 0\n`,
+          { mode: 0o755 }
+        )
+        return b
+      },
+      arg: [1, '--csrf_token=x'] as const
+    }
+  ])(
+    "$agent runs on a terminal of the status relay's, and where python3 cannot run (macOS's stub without the developer tools) it starts on its own instead",
+    ({ boxed, arg: [at, expected] }) => {
+      const relayed = boxed()
       expect(relayed.run().status).toBe(0)
       expect(relayed.onATerminal()).toBe(true)
+      expect(relayed.argv()[at]).toBe(expected)
 
-      const stub = box(spec())
+      const stub = boxed()
       fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
         mode: 0o755
       })
       expect(stub.run().status).toBe(0)
       expect(stub.onATerminal()).toBe(false)
-      expect(stub.argv()[0]).toBe('--settings')
+      expect(stub.argv()[at]).toBe(expected)
     }
   )
 
@@ -787,7 +814,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(said(false)).not.toContain(MUSE_SANDBOX_CANNOT_START)
   })
 
-  it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
+  it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, with its status frames off since no one on the Mac reads them, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
     const tabFiles = {
       'T.settings.json': '{"koloft":1}',
       'T.hooks.json': '{"hooks":{}}',
@@ -818,6 +845,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.argv()).toEqual([`--gemini_dir=${account}`, '--csrf_token=x', 'say hi'])
     expect(b.env().GEMINI_API_KEY).toBe('koloft-key')
     expect(b.env()[AGY_KEY_FROM_KOLOFT]).toBeUndefined()
+    expect(b.env().AGY_CLI_OSC7501).toBe('off')
     expect(b.env().KOLOFT_AGY_LOG).toBe(`${b.home}/.koloft/hook-sessions/T.agy.jsonl`)
     const app = path.join(account, 'antigravity-cli')
     expect(fs.readFileSync(path.join(app, 'settings.json'), 'utf8')).toBe('{"koloft":1}')

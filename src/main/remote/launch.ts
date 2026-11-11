@@ -192,9 +192,14 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
   set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
-  ${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
-  exec "$@"\n`
+  ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
+
+// PLATFORM§35
+export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
+  `${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"`,
+  'exec "$@"'
+]
 
 // CC§9 ADR-0026
 const trustTheLaunchFolder = (cwd: string): string =>
