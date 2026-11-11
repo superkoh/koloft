@@ -114,9 +114,13 @@ function whereOf(machine: string | undefined): string {
   return machine ?? 'this Mac'
 }
 
+type Removal = { id: string; busy?: boolean; problem?: string }
+
+const unlessBusy = (cur: Removal | null): Removal | null => (cur?.busy ? cur : null)
+
 export function GitAccountsSection(): JSX.Element {
   const [all, setAccounts] = useState<GitAccountView[]>([])
-  const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [removal, setRemoval] = useState<Removal | null>(null)
   const [adding, setAdding] = useState<AddMode | null>(null)
   const focus = useStore((s) => s.settingsFocus)
   const setFocus = useStore((s) => s.setSettingsFocus)
@@ -157,18 +161,26 @@ export function GitAccountsSection(): JSX.Element {
     }
   }, [])
 
+  const removing = removal !== null
   useEscConsumer(
-    confirmDel !== null,
-    useCallback(() => setConfirmDel(null), [])
+    removing,
+    useCallback(() => setRemoval(unlessBusy), [])
   )
   useEffect(() => {
-    if (confirmDel === null) return
+    if (!removing) return
     const onDown = (e: MouseEvent): void => {
-      if (!(e.target as HTMLElement).closest('.acct-row.confirming')) setConfirmDel(null)
+      if (!(e.target as HTMLElement).closest('.acct-row.confirming')) setRemoval(unlessBusy)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [confirmDel])
+  }, [removing])
+
+  const remove = async (id: string, anyway: boolean): Promise<void> => {
+    setRemoval({ id, busy: true })
+    const r = await window.api.gitAccounts.remove(id, machine, anyway).catch(() => null)
+    if (r === null) setRemoval({ id })
+    else setRemoval(r?.ok === false ? { id, problem: r.problem } : null)
+  }
 
   const signingIn = adding?.step === 'login'
   useEffect(() => {
@@ -234,10 +246,11 @@ export function GitAccountsSection(): JSX.Element {
                 key={m ?? ''}
                 className={m === machine ? 'on' : undefined}
                 aria-pressed={m === machine}
+                disabled={removal?.busy}
                 onClick={() => {
                   setMachine(m)
                   setAdding(null)
-                  setConfirmDel(null)
+                  setRemoval(null)
                 }}
               >
                 {m ?? 'This Mac'}
@@ -258,13 +271,10 @@ export function GitAccountsSection(): JSX.Element {
                 key={a.id}
                 account={a}
                 where={where}
-                confirming={confirmDel === a.id}
-                onAskRemove={() => setConfirmDel(a.id)}
-                onCancelRemove={() => setConfirmDel(null)}
-                onRemove={() => {
-                  setConfirmDel(null)
-                  void window.api.gitAccounts.remove(a.id, machine)
-                }}
+                removal={removal?.id === a.id ? removal : null}
+                onAskRemove={() => setRemoval((cur) => unlessBusy(cur) ?? { id: a.id })}
+                onCancelRemove={() => setRemoval(null)}
+                onRemove={(anyway) => void remove(a.id, anyway)}
                 onRelogin={() => void begin(a.platform, a.url, a.login)}
                 onMakeDefault={() => void window.api.gitAccounts.makeDefault(a.id, machine)}
               />
@@ -387,7 +397,7 @@ function GitHostBox({
 function GitAccountRow({
   account: a,
   where,
-  confirming,
+  removal,
   onAskRemove,
   onCancelRemove,
   onRemove,
@@ -396,16 +406,16 @@ function GitAccountRow({
 }: {
   account: GitAccountView
   where: string
-  confirming: boolean
+  removal: Removal | null
   onAskRemove(): void
   onCancelRemove(): void
-  onRemove(): void
+  onRemove(anyway: boolean): void
   onRelogin(): void
   onMakeDefault(): void
 }): JSX.Element {
   const used = a.usedBy.map((p) => basename(p))
   return (
-    <div className={'acct-row' + (confirming ? ' confirming' : '')}>
+    <div className={'acct-row' + (removal ? ' confirming' : '')}>
       <div className="acct-main">
         <span className="acct-name">{a.login}</span>
         <span className="acct-note">{gitHostLabel(a)}</span>
@@ -436,17 +446,42 @@ function GitAccountRow({
           <IconClose size={12} />
         </button>
       </div>
-      {confirming && (
+      {removal?.problem && (
         <div className="acct-confirm">
           <span>
-            Remove <b>{a.login}</b> ({a.host}) from {where}?
-            {used.length > 0 &&
-              ` ${workspacesLabel(used.length)} — ${used.join(', ')} — go back to your own git setup.`}
+            Koloft could not reach {where} ({removal.problem}), so <b>{a.login}</b> is still there.
+            Try again when {where} is back. If {where} is gone for good, remove it from this list
+            only — it keeps working on {where} until Koloft next updates {where}, and its token file
+            stays there.
           </span>
-          <button className="mini danger" onClick={onRemove}>
-            Remove
+          <button className="mini" onClick={() => onRemove(false)}>
+            Try again
+          </button>
+          <button className="mini danger" onClick={() => onRemove(true)}>
+            Remove from list anyway
           </button>
           <button className="mini" onClick={onCancelRemove}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {removal && !removal.problem && (
+        <div className="acct-confirm">
+          {removal.busy ? (
+            <span>
+              Removing <b>{a.login}</b> from {where}…
+            </span>
+          ) : (
+            <span>
+              Remove <b>{a.login}</b> ({a.host}) from {where}?
+              {used.length > 0 &&
+                ` ${workspacesLabel(used.length)} — ${used.join(', ')} — go back to your own git setup.`}
+            </span>
+          )}
+          <button className="mini danger" disabled={removal.busy} onClick={() => onRemove(false)}>
+            {removal.busy ? 'Removing…' : 'Remove'}
+          </button>
+          <button className="mini" disabled={removal.busy} onClick={onCancelRemove}>
             Cancel
           </button>
         </div>

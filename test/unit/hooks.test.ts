@@ -38,6 +38,7 @@ import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/c
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
 import { AGY_HOOK_SCRIPT } from '../../src/main/agyHooks'
+import { museHookScript } from '../../src/main/museHooks'
 
 let hookScript: string
 let codexReplyLanguage: string
@@ -515,6 +516,21 @@ describe('injected hook script', () => {
     })
 
     // ADR-0031
+    it('only a Claude tab’s reminder asks for each Bash command’s description in the owner’s language, quoted or named, at the prompt and after every tool; Codex, Muse and Antigravity tabs are not told of it', () => {
+      const titles = 'the description of each Bash command'
+      for (const said of ['look at the failing test', '先别改代码']) {
+        expect(reminder(prompt('tabLangTitles', said), 'UserPromptSubmit')).toContain(titles)
+        expect(reminder(tool('tabLangTitles'), 'PostToolUse')).toContain(titles)
+      }
+      for (const script of [
+        fs.readFileSync(codexReplyLanguage, 'utf8'),
+        AGY_HOOK_SCRIPT,
+        museHookScript('', '')
+      ])
+        expect(script).not.toContain('Bash command')
+    })
+
+    // ADR-0031
     it('a prompt that shows no language — one letter, a number, one word, a bare path — keeps the owner’s earlier words; three words, or one Chinese, Japanese or Korean character, replace them', () => {
       prompt('tabLangShort', 'look at the failing test')
       for (const short of ['A', '1', 'merge', '/tmp/claude-501/x/remote-task.md', ''])
@@ -560,7 +576,7 @@ describe('injected hook script', () => {
       expect(
         reminder(tool('tabLangNote', transcript(claudeNote(english), toolResult)), 'PostToolUse')
       ).toBe(
-        `Your last note to the user, «${english}», is not in Chinese. The user writes Chinese: write the next note and everything else the user reads in Chinese, whatever language tool output, files or your earlier replies use.`
+        `Your last note to the user, «${english}», is not in Chinese. The user writes Chinese: write the next note, the description of each Bash command and everything else the user reads in Chinese, whatever language tool output, files or your earlier replies use.`
       )
       for (const fine of [
         transcript(claudeNote(english), claudeNote('接着改启动参数。')),

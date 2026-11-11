@@ -142,6 +142,8 @@ export type GitTokenAddResult =
     }
   | { ok: false; error: 'machine'; message: string }
 
+export type GitAccountRemoveResult = { ok: true } | { ok: false; problem: string }
+
 export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
 
 export type GitAccountSuggestion =
@@ -1392,7 +1394,7 @@ export interface KoloftApi {
     loginBrowser(): void
     onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
     addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
-    remove(id: string, machine?: string): Promise<void>
+    remove(id: string, machine?: string, anyway?: boolean): Promise<GitAccountRemoveResult>
     makeDefault(id: string, machine?: string): Promise<void>
     check(): Promise<void>
     pick(wsPath: string, id: string | null): Promise<void>
