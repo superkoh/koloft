@@ -156,7 +156,8 @@ it("hands on the claude tool calls in flight the machine's heartbeat lists, and 
     rsync: () => Promise.resolve(rsyncAnswer),
     targets: () => [target],
     onChange: () => {},
-    onToolShells: (_host, outputs) => said.push(outputs)
+    onToolShells: (_host, outputs) => said.push(outputs),
+    listen: () => () => {}
   })
   const output = '/tmp/claude-1000/-home-koh-api/sid/tasks/bfg.output'
   answers.push(() => Promise.resolve(ok(`k-aaa\ntoolshell ${output}\n`)))
