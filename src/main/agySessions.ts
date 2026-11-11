@@ -50,7 +50,7 @@ import {
   listAgyConversations,
   readAgyTurns,
   saidInTranscript,
-  tokenTotals,
+  TranscriptFollower,
   type SummaryRow
 } from './agyStore'
 import {
@@ -216,6 +216,7 @@ interface AgyRun extends StoredRun {
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
+  transcript?: TranscriptFollower
 }
 
 function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): ProgramStatus[] {
@@ -1255,10 +1256,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
-    const [turn] = await readAgyTurns(file, 1).catch(() => [] as Turn[])
+    if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file)
+    const read = await run.transcript.catchUp().catch(() => undefined)
+    if (!read) return
+    const { turn, tokens: t } = read
     if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
-    const t = await tokenTotals(file).catch(() => undefined)
-    if (!t) return
     const tokens = {
       inTok: t.input,
       outTok: t.output,

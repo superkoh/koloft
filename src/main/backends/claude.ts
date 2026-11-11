@@ -63,10 +63,10 @@ import { sharedProcessTable } from '../processTable'
 import {
   findTranscript,
   PROJECTS_ROOT,
-  readAppendedLines,
   sessionEventFromHook,
   transcriptTurns
 } from '../sessionTracker'
+import { readAppendedLines, type AppendCursor } from '../appendedLines'
 import {
   continuedInOf,
   conversationMovedTo,
@@ -192,7 +192,7 @@ async function remoteExitOnDisk(
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   private hookRegDir = ''
-  private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
+  private statusLogCursors = new Map<string, AppendCursor>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = new Map<string, () => void>()
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
@@ -565,12 +565,12 @@ export class ClaudeBackend implements SessionBackend {
         }
         let cur = this.statusLogCursors.get(full)
         if (!cur) {
-          cur = { offset: 0, tail: Buffer.alloc(0) }
+          cur = { offset: 0, tail: [] }
           this.statusLogCursors.set(full, cur)
         }
         if (size < cur.offset) {
           cur.offset = 0
-          cur.tail = Buffer.alloc(0)
+          cur.tail = []
         }
         if (size <= cur.offset) return
         const lines = await readAppendedLines(full, size, cur)
