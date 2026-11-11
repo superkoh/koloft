@@ -3201,6 +3201,9 @@ server unless a line says so.
   program's, and `ps -o comm=` names the program. It ran without sudo. Only the main
   thread moves: of the 11 threads of a `node` started that way 1 read 46 and 10 read
   31, and of the 33 of `codex app-server --stdio` 2 read 46 and 31 read 31.
+- **A program it cannot find ends it with exit code 66**: `taskpolicy -a
+  no-such-program` printed `taskpolicy: posix_spawn: No such file or directory`, where a
+  shell's own `exec` of a missing command ends with 127.
 - **`-a` works only at launch.** `taskpolicy -a -p <pid>` on a running `/bin/sleep`
   exited 0 and left it at 31. A program started with `-a` went 46 → 4 under `taskpolicy
   -b -p <pid>` and back to 46 under `-B -p`; nothing moved it to 31.
