@@ -143,7 +143,7 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     expect(processAlive(launch.pid)).toBe(true)
   })
 
-  test('a renderer that crashed past its reload limit is closed for real by the red button, and the Dock opens a new window that brings the sessions back', async ({
+  test('T-REL-05: a renderer that crashed past its reload limit is closed for real by the red button, and the Dock opens a new window that brings back the tab the user was on, though that path runs the renderer teardown twice', async ({
     app,
     page,
     env
@@ -152,7 +152,13 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
     await waitForCalls(env, 1)
+    await startSessionIn(page, 'ws-b')
+    await waitForCalls(env, 2)
+    const rowA = wsRows(page, 'ws-a').first()
+    await rowA.click()
+    await expect(rowA).toHaveClass(/\bactive\b/)
     const ids = await termIds(page)
+    expect(ids).toHaveLength(2)
     const crash = (): Promise<void> =>
       app.evaluate(({ BrowserWindow }) => {
         BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer()
@@ -186,7 +192,9 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     const reopened = await opened
     await waitBooted(reopened)
     await expect.poll(() => termIds(reopened), { timeout: 30_000 }).toEqual(ids)
-    expect(readCalls(env)).toHaveLength(1)
+    await expect(wsRows(reopened, 'ws-a').first()).toHaveClass(/\bactive\b/, { timeout: 30_000 })
+    await expect(wsRows(reopened, 'ws-b').first()).not.toHaveClass(/\bactive\b/)
+    expect(readCalls(env)).toHaveLength(2)
   })
 
   test('T-REL-06: a reload keeps a sleeping tab asleep — its row stays running, nothing restarts, and clicking it wakes the same session', async ({

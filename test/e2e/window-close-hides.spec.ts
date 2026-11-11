@@ -2,8 +2,10 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, osOutlets, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
+  clickAppMenuItem,
   startSessionIn,
   terminalText,
+  termIds,
   waitBooted,
   waitConductorStarted,
   waitForCalls
@@ -62,7 +64,7 @@ async function enter(fake: FakeDiscord, typed: string): Promise<void> {
 }
 
 test.describe('the red button only hides the Koloft window: what runs in it goes on, and the Dock brings the same window back', () => {
-  test('with the window closed, another session reads a session’s whole screen, koloft secret page fills a page the owner half filled in before closing, and a click on the Dock shows that same window again, nothing rebuilt', async ({
+  test('with the window closed, ⌘W closes no tab unseen, another session reads a session’s whole screen, koloft secret page fills a page the owner half filled in before closing, and a click on the Dock shows that same window again, nothing rebuilt', async ({
     env
   }) => {
     seedBinding(env)
@@ -94,6 +96,7 @@ test.describe('the red button only hides the Koloft window: what runs in it goes
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
       await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(true)
       expect(await theWindow(app)).toEqual(before)
+      await clickAppMenuItem(app, page, 'close-tab')
 
       await type(page, b, `/koloft session screen ${aSession}`)
       await expect.poll(() => terminalText(page, b)).toContain('koloft exit=0')
@@ -106,6 +109,7 @@ test.describe('the red button only hides the Koloft window: what runs in it goes
       await app.evaluate(({ app }) => app.emit('activate'))
       await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(false)
       expect(await theWindow(app)).toEqual(before)
+      expect(await termIds(page)).toEqual(expect.arrayContaining([a, b]))
     } finally {
       await quitAndClose(app)
       await fake.close()

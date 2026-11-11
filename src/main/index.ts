@@ -1155,7 +1155,7 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
-const pagesMutedWhileHidden = mutedWhileHidden()
+const pagesMutedWhileHidden = mutedWhileHidden<WebContents>()
 
 const isWorkbenchPage = (wc: WebContents): boolean => wc.getType() === 'webview'
 
@@ -1185,7 +1185,12 @@ function hideMainWindow(win: BrowserWindow): void {
 
 function showMainWindow(win: BrowserWindow): void {
   setHiddenByClose(false)
-  pagesMutedWhileHidden.show()
+  for (const page of pagesMutedWhileHidden.show())
+    sendToRenderer(CH.browser.audioState, {
+      guestId: page.id,
+      audible: page.isCurrentlyAudible(),
+      muted: false
+    })
   if (OFF_SCREEN_TEST) return
   if (win.isMinimized()) win.restore()
   if (win.isVisible()) return
@@ -4219,11 +4224,13 @@ app.whenReady().then(() => {
         return
       }
       if (keptBySignInWindow(from, action === 'close-tab' ? 'closes-it' : 'acts-on-the-app')) return
+      if (hiddenByClose) return
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
     (cmd, from) => {
       if (keptBySignInWindow(from, cmd === 'browser-close-tab' ? 'closes-it' : 'acts-on-its-page'))
         return
+      if (hiddenByClose) return
       sendToRenderer(CH.shortcut.browser, cmd)
     },
     loadSettings().keepAwake

@@ -4,14 +4,15 @@ export interface SoundingPage {
   setAudioMuted(muted: boolean): void
 }
 
-export function mutedWhileHidden(): {
-  hide(pages: SoundingPage[]): void
-  opened(page: SoundingPage): void
-  show(): void
+export function mutedWhileHidden<P extends SoundingPage>(): {
+  hide(pages: P[]): void
+  opened(page: P): void
+  show(): P[]
 } {
   let hidden = false
-  const mutedByHiding = new Set<SoundingPage>()
-  const mute = (page: SoundingPage): void => {
+  const mutedByHiding = new Set<P>()
+  const mute = (page: P): void => {
+    for (const gone of mutedByHiding) if (gone.isDestroyed()) mutedByHiding.delete(gone)
     if (page.isDestroyed() || page.isAudioMuted()) return
     page.setAudioMuted(true)
     mutedByHiding.add(page)
@@ -26,8 +27,10 @@ export function mutedWhileHidden(): {
     },
     show() {
       hidden = false
-      for (const page of mutedByHiding) if (!page.isDestroyed()) page.setAudioMuted(false)
+      const unmuted = [...mutedByHiding].filter((page) => !page.isDestroyed())
+      for (const page of unmuted) page.setAudioMuted(false)
       mutedByHiding.clear()
+      return unmuted
     }
   }
 }

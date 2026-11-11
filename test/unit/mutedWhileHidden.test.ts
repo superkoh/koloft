@@ -18,13 +18,13 @@ function page(muted = false): SoundingPage & { muted: boolean; destroyed: boolea
 }
 
 describe('web pages while the Koloft window is hidden', () => {
-  it('hiding the window mutes every page, and showing it again gives sound back to the pages that had it', () => {
+  it('hiding the window mutes every page, and showing it again gives sound back to the pages that had it and names them', () => {
     const playing = page()
     const mutedByOwner = page(true)
-    const sound = mutedWhileHidden()
+    const sound = mutedWhileHidden<ReturnType<typeof page>>()
     sound.hide([playing, mutedByOwner])
     expect([playing.muted, mutedByOwner.muted]).toEqual([true, true])
-    sound.show()
+    expect(sound.show()).toEqual([playing])
     expect([playing.muted, mutedByOwner.muted]).toEqual([false, true])
   })
 
