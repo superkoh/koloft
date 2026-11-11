@@ -30,71 +30,71 @@ afterEach(() => {
 })
 
 describe('openForEdit', () => {
-  it('returns the text with a fingerprint, LF, and no read-only reason', () => {
-    const r = openForEdit(file)
+  it('returns the text with a fingerprint, LF, and no read-only reason', async () => {
+    const r = await openForEdit(file)
     expect(r.text).toBe('KEY=one\n')
     expect(r.eol).toBe('lf')
     expect(r.readOnly).toBe(null)
     expect(r).toMatchObject(fingerprint(file))
   })
 
-  it('reports crlf for an all-CRLF file', () => {
+  it('reports crlf for an all-CRLF file', async () => {
     fs.writeFileSync(file, 'a\r\nb\r\n')
-    expect(openForEdit(file)).toMatchObject({ eol: 'crlf', readOnly: null })
+    expect(await openForEdit(file)).toMatchObject({ eol: 'crlf', readOnly: null })
   })
 
-  it('reads a file with no line breaks at all as lf', () => {
+  it('reads a file with no line breaks at all as lf', async () => {
     fs.writeFileSync(file, 'no newline here')
-    expect(openForEdit(file)).toMatchObject({ eol: 'lf', readOnly: null })
+    expect(await openForEdit(file)).toMatchObject({ eol: 'lf', readOnly: null })
   })
 
-  it('refuses mixed line endings, and a bare CR, as read-only', () => {
+  it('refuses mixed line endings, and a bare CR, as read-only', async () => {
     fs.writeFileSync(file, 'a\r\nb\nc\n')
-    expect(openForEdit(file).readOnly).toBe('mixedEol')
+    expect((await openForEdit(file)).readOnly).toBe('mixedEol')
     fs.writeFileSync(file, 'a\rb\n')
-    expect(openForEdit(file).readOnly).toBe('mixedEol')
+    expect((await openForEdit(file)).readOnly).toBe('mixedEol')
   })
 
-  it('refuses a non-UTF-8 file, but NOT a valid UTF-8 file that contains U+FFFD', () => {
+  it('refuses a non-UTF-8 file, but NOT a valid UTF-8 file that contains U+FFFD', async () => {
     fs.writeFileSync(file, Buffer.from([0x61, 0xe9, 0x0a]))
-    expect(openForEdit(file).readOnly).toBe('notUtf8')
+    expect((await openForEdit(file)).readOnly).toBe('notUtf8')
     fs.writeFileSync(file, 'a � b\n', 'utf8')
-    expect(openForEdit(file).readOnly).toBe(null)
+    expect((await openForEdit(file)).readOnly).toBe(null)
   })
 
-  it('keeps a BOM in the text it returns', () => {
+  it('keeps a BOM in the text it returns', async () => {
     fs.writeFileSync(file, '\uFEFFKEY=one\n', 'utf8')
-    const r = openForEdit(file)
+    const r = await openForEdit(file)
     expect(r.text.charCodeAt(0)).toBe(0xfeff)
     expect(r.readOnly).toBe(null)
   })
 
-  it('reports noPerm for a file the user cannot write', () => {
+  it('reports noPerm for a file the user cannot write', async () => {
     fs.chmodSync(file, 0o444)
-    expect(openForEdit(file).readOnly).toBe('noPerm')
+    expect((await openForEdit(file)).readOnly).toBe('noPerm')
   })
 
-  it('reports dirNotWritable when the file is writable but its directory is not', () => {
+  it('reports dirNotWritable when the file is writable but its directory is not', async () => {
     const sub = path.join(dir, 'locked')
     fs.mkdirSync(sub)
     const inner = path.join(sub, 'a.txt')
     fs.writeFileSync(inner, 'x\n')
     fs.chmodSync(sub, 0o555)
     try {
-      expect(openForEdit(inner).readOnly).toBe('dirNotWritable')
+      expect((await openForEdit(inner)).readOnly).toBe('dirNotWritable')
     } finally {
       fs.chmodSync(sub, 0o755)
     }
   })
 
-  it('measures the size cap in BYTES, not characters', () => {
+  it('measures the size cap in BYTES, not characters', async () => {
     fs.writeFileSync(file, '密钥密钥密钥密钥密钥密钥密钥密钥密钥密钥')
     expect(fs.statSync(file).size).toBe(60)
-    expect(() => openForEdit(file, 50)).toThrow('KOLOFT_TOO_LARGE')
-    expect(() => openForEdit(file, 60)).not.toThrow()
+    await expect(openForEdit(file, 50)).rejects.toThrow('KOLOFT_TOO_LARGE')
+    await expect(openForEdit(file, 60)).resolves.toBeDefined()
   })
 
-  it('caps opening at 512 KB, well under the 1 MB write cap, and names each cap in whole units', () => {
+  it('caps opening at 512 KB, well under the 1 MB write cap, and names each cap in whole units', async () => {
     expect(EDIT_OPEN_MAX_BYTES).toBe(512 * 1024)
     expect(EDIT_WRITE_MAX_BYTES).toBe(1024 * 1024)
     expect(EDIT_WRITE_MAX_BYTES).toBeGreaterThan(EDIT_OPEN_MAX_BYTES)
@@ -102,74 +102,95 @@ describe('openForEdit', () => {
     expect(sizeLabel(EDIT_WRITE_MAX_BYTES)).toBe('1 MB')
   })
 
-  it('throws KOLOFT_GONE / KOLOFT_NOT_FILE / KOLOFT_BINARY for what it cannot open', () => {
-    expect(() => openForEdit(path.join(dir, 'missing'))).toThrow('KOLOFT_GONE')
-    expect(() => openForEdit(dir)).toThrow('KOLOFT_NOT_FILE')
+  it('throws KOLOFT_GONE / KOLOFT_NOT_FILE / KOLOFT_BINARY for what it cannot open', async () => {
+    await expect(openForEdit(path.join(dir, 'missing'))).rejects.toThrow('KOLOFT_GONE')
+    await expect(openForEdit(dir)).rejects.toThrow('KOLOFT_NOT_FILE')
     fs.writeFileSync(path.join(dir, 'bin'), Buffer.from([0x41, 0x00, 0x42]))
-    expect(() => openForEdit(path.join(dir, 'bin'))).toThrow('KOLOFT_BINARY')
+    await expect(openForEdit(path.join(dir, 'bin'))).rejects.toThrow('KOLOFT_BINARY')
   })
 
-  it('a file changed while it is being read makes the next save refused as stale, never a silent overwrite', () => {
-    const realRead = fs.readFileSync
+  it('a file changed while it is being read makes the next save refused as stale, never a silent overwrite', async () => {
+    const realRead = fs.promises.readFile
     let changed = false
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, ...rest) => {
-      const out = (realRead as (...a: unknown[]) => unknown)(p, ...rest)
+    vi.spyOn(fs.promises, 'readFile').mockImplementation((async (
+      p: unknown,
+      ...rest: unknown[]
+    ) => {
+      const out = await (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest)
       if (p === file && !changed) {
         changed = true
         fs.writeFileSync(file, 'KEY=theirs, written mid-read\n')
       }
       return out
-    }) as typeof fs.readFileSync)
-    const opened = openForEdit(file)
+    }) as typeof fs.promises.readFile)
+    const opened = await openForEdit(file)
     vi.restoreAllMocks()
 
-    const r = writeText(file, 'KEY=mine\n', { mtimeMs: opened.mtimeMs, size: opened.size })
+    const r = await writeText(file, 'KEY=mine\n', { mtimeMs: opened.mtimeMs, size: opened.size })
     expect(r).toMatchObject({ ok: false, code: 'stale' })
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=theirs, written mid-read\n')
   })
 })
 
+describe('a slow disk', () => {
+  it('is never waited for on the main thread, neither to open a file nor to save one', async () => {
+    const waitsOnTheMainThread = [
+      vi.spyOn(fs, 'realpathSync'),
+      vi.spyOn(fs, 'statSync'),
+      vi.spyOn(fs, 'accessSync'),
+      vi.spyOn(fs, 'readFileSync'),
+      vi.spyOn(fs, 'openSync'),
+      vi.spyOn(fs, 'fsyncSync'),
+      vi.spyOn(fs, 'renameSync')
+    ]
+    const opened = await openForEdit(file)
+    const saved = await writeText(file, 'KEY=two\n', opened)
+    expect(saved.ok).toBe(true)
+    for (const call of waitsOnTheMainThread) expect(call).not.toHaveBeenCalled()
+  })
+})
+
 describe('writeText', () => {
-  it('replaces the content and hands back the NEW fingerprint, leaving no temp file', () => {
+  it('replaces the content and hands back the NEW fingerprint, leaving no temp file', async () => {
     const before = fingerprint(file)
-    const r = writeText(file, 'KEY=two\n', before)
+    const r = await writeText(file, 'KEY=two\n', before)
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=two\n')
     if (r.ok) expect(r).toMatchObject(fingerprint(file))
     expect(leftoverTmps()).toEqual([])
   })
 
-  it('a stale fingerprint writes NOTHING and returns the content on disk', () => {
+  it('a stale fingerprint writes NOTHING and returns the content on disk', async () => {
     const stale = { mtimeMs: 1, size: 999 }
-    const r = writeText(file, 'KEY=mine\n', stale)
+    const r = await writeText(file, 'KEY=mine\n', stale)
     expect(r).toMatchObject({ ok: false, code: 'stale', text: 'KEY=one\n' })
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
     expect(leftoverTmps()).toEqual([])
   })
 
-  it('catches a write that lands AFTER the first fingerprint check (§05 step 8)', () => {
+  it('catches a write that lands AFTER the first fingerprint check (§05 step 8)', async () => {
     const expect0 = fingerprint(file)
-    const real = fs.openSync
-    vi.spyOn(fs, 'openSync').mockImplementation(((p: string, ...rest: unknown[]) => {
+    const real = fs.promises.open
+    vi.spyOn(fs.promises, 'open').mockImplementation(((p: string, ...rest: unknown[]) => {
       if (String(p).includes('.koloft-tmp-')) fs.writeFileSync(file, 'KEY=claude-was-here\n')
-      return (real as (...a: unknown[]) => number)(p, ...rest)
-    }) as typeof fs.openSync)
+      return (real as (...a: unknown[]) => unknown)(p, ...rest)
+    }) as typeof fs.promises.open)
 
-    const r = writeText(file, 'KEY=mine\n', expect0)
+    const r = await writeText(file, 'KEY=mine\n', expect0)
     expect(r).toMatchObject({ ok: false, code: 'stale' })
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=claude-was-here\n')
     vi.restoreAllMocks()
     expect(leftoverTmps()).toEqual([])
   })
 
-  it('returns the fingerprint of what IT wrote, even if the file changes right after', () => {
-    const realRename = fs.renameSync
-    vi.spyOn(fs, 'renameSync').mockImplementation(((from: string, to: string) => {
-      ;(realRename as (a: string, b: string) => void)(from, to)
+  it('returns the fingerprint of what IT wrote, even if the file changes right after', async () => {
+    const realRename = fs.promises.rename
+    vi.spyOn(fs.promises, 'rename').mockImplementation((async (from: string, to: string) => {
+      await (realRename as (a: string, b: string) => Promise<void>)(from, to)
       fs.writeFileSync(file, 'KEY=claude-came-back-with-more\n')
-    }) as typeof fs.renameSync)
+    }) as typeof fs.promises.rename)
 
-    const r = writeText(file, 'KEY=two\n', fingerprint(file))
+    const r = await writeText(file, 'KEY=two\n', fingerprint(file))
     vi.restoreAllMocks()
     expect(r.ok).toBe(true)
     if (r.ok) {
@@ -178,52 +199,56 @@ describe('writeText', () => {
     }
   })
 
-  it('a stale answer hands back null rather than a huge or binary file', () => {
+  it('a stale answer hands back null rather than a huge or binary file', async () => {
     const stale = { mtimeMs: 1, size: 999 }
     fs.writeFileSync(file, 'x'.repeat(600 * 1024))
-    expect(writeText(file, 'mine\n', stale)).toMatchObject({
+    expect(await writeText(file, 'mine\n', stale)).toMatchObject({
       ok: false,
       code: 'stale',
       text: null
     })
     fs.writeFileSync(file, Buffer.from([0x41, 0x00, 0x42]))
-    expect(writeText(file, 'mine\n', stale)).toMatchObject({ text: null })
+    expect(await writeText(file, 'mine\n', stale)).toMatchObject({ text: null })
     fs.writeFileSync(file, 'KEY=one\n')
-    expect(writeText(file, 'mine\n', stale)).toMatchObject({ text: 'KEY=one\n' })
+    expect(await writeText(file, 'mine\n', stale)).toMatchObject({ text: 'KEY=one\n' })
   })
 
-  it('never deletes a file that already occupies the temp name', () => {
+  it('never deletes a file that already occupies the temp name', async () => {
     vi.spyOn(crypto, 'randomBytes').mockImplementation((() =>
       Buffer.from([0xde, 0xad, 0xbe, 0xef])) as unknown as typeof crypto.randomBytes)
     const squatter = path.join(dir, `.config.env.koloft-tmp-${process.pid}-deadbeef`)
     fs.writeFileSync(squatter, 'someone else was here\n')
 
-    expect(() => writeText(file, 'KEY=two\n', fingerprint(file))).toThrow()
+    await expect(writeText(file, 'KEY=two\n', fingerprint(file))).rejects.toThrow()
     vi.restoreAllMocks()
     expect(fs.readFileSync(squatter, 'utf8')).toBe('someone else was here\n')
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
   })
 
-  it('says the FOLDER is gone when the parent directory went away, not the file', () => {
+  it('says the FOLDER is gone when the parent directory went away, not the file', async () => {
     const sub = path.join(dir, 'doomed')
     fs.mkdirSync(sub)
     const inner = path.join(sub, 'a.txt')
     fs.writeFileSync(inner, 'x\n')
     const fp = fingerprint(inner)
     fs.rmSync(sub, { recursive: true })
-    expect(() => writeText(inner, 'y\n', fp)).toThrow('KOLOFT_DIR_GONE')
-    expect(() => writeText(path.join(dir, 'missing'), 'y\n', fp)).toThrow(/KOLOFT_GONE$/)
+    await expect(writeText(inner, 'y\n', fp)).rejects.toThrow('KOLOFT_DIR_GONE')
+    await expect(writeText(path.join(dir, 'missing'), 'y\n', fp)).rejects.toThrow(/KOLOFT_GONE$/)
   })
 
-  it('creates the temp file as 0600 at BIRTH, not by a later chmod', () => {
+  it('creates the temp file as 0600 at BIRTH, not by a later chmod', async () => {
     const seen: Array<{ p: string; flags: unknown; mode: unknown }> = []
-    const real = fs.openSync
-    vi.spyOn(fs, 'openSync').mockImplementation(((p: string, flags: unknown, mode: unknown) => {
+    const real = fs.promises.open
+    vi.spyOn(fs.promises, 'open').mockImplementation(((
+      p: string,
+      flags: unknown,
+      mode: unknown
+    ) => {
       seen.push({ p: String(p), flags, mode })
-      return (real as (...a: unknown[]) => number)(p, flags, mode)
-    }) as typeof fs.openSync)
+      return (real as (...a: unknown[]) => unknown)(p, flags, mode)
+    }) as typeof fs.promises.open)
 
-    writeText(file, 'KEY=two\n', fingerprint(file))
+    await writeText(file, 'KEY=two\n', fingerprint(file))
     const tmpOpen = seen.find((c) => c.p.includes('.koloft-tmp-'))
     expect(tmpOpen).toBeDefined()
     expect(tmpOpen?.flags).toBe('wx')
@@ -231,91 +256,87 @@ describe('writeText', () => {
     expect(path.basename(String(tmpOpen?.p)).startsWith('.')).toBe(true)
   })
 
-  it('keeps the original permissions: 0600 stays 0600, 0644 stays 0644', () => {
+  it('keeps the original permissions: 0600 stays 0600, 0644 stays 0644', async () => {
     fs.chmodSync(file, 0o600)
-    writeText(file, 'a\n', fingerprint(file))
+    await writeText(file, 'a\n', fingerprint(file))
     expect(fs.statSync(file).mode & 0o777).toBe(0o600)
 
     fs.chmodSync(file, 0o644)
-    writeText(file, 'b\n', fingerprint(file))
+    await writeText(file, 'b\n', fingerprint(file))
     expect(fs.statSync(file).mode & 0o777).toBe(0o644)
   })
 
-  it('writes through a symlink to the real file, and the link survives', () => {
+  it('writes through a symlink to the real file, and the link survives', async () => {
     const link = path.join(dir, 'link.env')
     fs.symlinkSync(file, link)
-    const r = writeText(link, 'KEY=via-link\n', fingerprint(link))
+    const r = await writeText(link, 'KEY=via-link\n', fingerprint(link))
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=via-link\n')
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(true)
   })
 
   // PLATFORM§24
-  it('CRLF in, CRLF out — and a file with no trailing newline keeps none', () => {
+  it('CRLF in, CRLF out — and a file with no trailing newline keeps none', async () => {
     fs.writeFileSync(file, 'a\r\nb')
-    const opened = openForEdit(file)
+    const opened = await openForEdit(file)
     expect(opened.eol).toBe('crlf')
     expect(opened.text).toBe('a\r\nb')
-    const r = writeText(file, 'a\nb\nc', opened, { eol: 'crlf' })
+    const r = await writeText(file, 'a\nb\nc', opened, { eol: 'crlf' })
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(file, 'utf8')).toBe('a\r\nb\r\nc')
   })
 
-  it('round-trips a BOM unchanged', () => {
+  it('round-trips a BOM unchanged', async () => {
     fs.writeFileSync(file, '\uFEFFa\n', 'utf8')
-    const opened = openForEdit(file)
-    writeText(file, opened.text, opened)
+    const opened = await openForEdit(file)
+    await writeText(file, opened.text, opened)
     expect(fs.readFileSync(file)).toEqual(Buffer.from('\uFEFFa\n', 'utf8'))
   })
 
-  it('honours force only as the literal true', () => {
+  it('honours force only as the literal true', async () => {
     const stale = { mtimeMs: 1, size: 999 }
     for (const force of ['true', 1, {}, 'yes'] as unknown[]) {
-      const r = writeText(file, 'nope\n', stale, { force } as { force?: boolean })
+      const r = await writeText(file, 'nope\n', stale, { force } as { force?: boolean })
       expect(r).toMatchObject({ ok: false, code: 'stale' })
     }
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
-    const r = writeText(file, 'KEY=forced\n', stale, { force: true })
+    const r = await writeText(file, 'KEY=forced\n', stale, { force: true })
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=forced\n')
   })
 
-  it('treats a missing or malformed expect as stale, never as a silent overwrite', () => {
+  it('treats a missing or malformed expect as stale, never as a silent overwrite', async () => {
     for (const bad of [undefined, null, {}, { mtimeMs: 1 }, { mtimeMs: '1', size: 8 }, 'x']) {
-      const r = writeText(file, 'nope\n', bad as never)
+      const r = await writeText(file, 'nope\n', bad as never)
       expect(r).toMatchObject({ ok: false, code: 'stale' })
     }
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
   })
 
-  it('throws KOLOFT_GONE / KOLOFT_NOT_FILE / KOLOFT_TOO_LARGE for what it cannot write', () => {
-    expect(() => writeText(path.join(dir, 'missing'), 'x', { mtimeMs: 1, size: 1 })).toThrow(
-      'KOLOFT_GONE'
-    )
-    expect(() => writeText(dir, 'x', fingerprint(dir))).toThrow('KOLOFT_NOT_FILE')
-    expect(() => writeText(file, '密钥密钥', fingerprint(file), undefined, 5)).toThrow(
+  it('throws KOLOFT_GONE / KOLOFT_NOT_FILE / KOLOFT_TOO_LARGE for what it cannot write', async () => {
+    await expect(
+      writeText(path.join(dir, 'missing'), 'x', { mtimeMs: 1, size: 1 })
+    ).rejects.toThrow('KOLOFT_GONE')
+    await expect(writeText(dir, 'x', fingerprint(dir))).rejects.toThrow('KOLOFT_NOT_FILE')
+    await expect(writeText(file, '密钥密钥', fingerprint(file), undefined, 5)).rejects.toThrow(
       'KOLOFT_TOO_LARGE'
     )
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
   })
 
-  it('cleans the temp file up and leaves the original intact when the rename fails', () => {
+  it('cleans the temp file up and leaves the original intact when the rename fails', async () => {
     const boom = Object.assign(new Error('nope'), { code: 'EACCES' })
-    vi.spyOn(fs, 'renameSync').mockImplementation(() => {
-      throw boom
-    })
-    expect(() => writeText(file, 'KEY=two\n', fingerprint(file))).toThrow('KOLOFT_NO_PERM')
+    vi.spyOn(fs.promises, 'rename').mockRejectedValue(boom)
+    await expect(writeText(file, 'KEY=two\n', fingerprint(file))).rejects.toThrow('KOLOFT_NO_PERM')
     vi.restoreAllMocks()
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
     expect(leftoverTmps()).toEqual([])
   })
 
-  it('reads a read-only volume (EROFS) as "not allowed to write", not as a generic failure', () => {
+  it('reads a read-only volume (EROFS) as "not allowed to write", not as a generic failure', async () => {
     const boom = Object.assign(new Error('read-only'), { code: 'EROFS' })
-    vi.spyOn(fs, 'openSync').mockImplementation(() => {
-      throw boom
-    })
-    expect(() => writeText(file, 'KEY=two\n', fingerprint(file))).toThrow('KOLOFT_NO_PERM')
+    vi.spyOn(fs.promises, 'open').mockRejectedValue(boom)
+    await expect(writeText(file, 'KEY=two\n', fingerprint(file))).rejects.toThrow('KOLOFT_NO_PERM')
     vi.restoreAllMocks()
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
   })

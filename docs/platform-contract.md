@@ -3379,3 +3379,44 @@ paragraph; one range from the first paragraph into the second, added to the sele
 Koloft dependents: the ✎ comment on a rendered Markdown file (`PreviewViewer.tsx`) quotes
 the selection's own text, and the rendered code block's chrome is `user-select: none`
 (`previewViewer.css`); `md-comment.spec.ts` checks it in the app's Electron.
+
+## §69 macOS: a file being created holds up every lookup through its folder while the disk is busy
+
+Measured 2026-11-11 on macOS 27.0 (Darwin 27.0.0, APFS), Apple silicon, 10 cores, memory
+pressure level 1, load average 2–4. "Busy disk" below is two node processes that each, in
+a loop, write 64 MB, `fsync`, read it back and delete it; no CPU load is added.
+
+In a Node 24.13.0 script, timing a synchronous `fs.realpathSync` of a file three folders
+below a folder D, once every 5 ms:
+
+| what else the same process does | calls | longest | calls over 50 ms |
+|---|---|---|---|
+| nothing, idle disk | 447–461 | 0.14–0.25 ms | 0 |
+| nothing, busy disk | 1225 | 36 ms | 0 |
+| busy disk, and every 20 ms `fs.promises.writeFile` of a new file in D, then a rename onto a file in D (two runs) | 507, 508 | 338 ms, 366 ms | 9, 10 |
+| busy disk, and the same write, but the new file is created in a sibling folder of D and renamed into D (one run) | 1239 | 1.7 ms | 0 |
+
+- **So a create that waits for the disk blocks every path lookup through the folder it
+  creates in, on any thread**; the write itself running on the libuv pool does not help
+  the main thread, whose next synchronous call through that folder waits with it. A
+  rename into the folder does not hold it that long.
+- **In Koloft** (Electron 43.8.6, built app, hidden window, six tabs: two Claude, Codex,
+  Muse, Antigravity and one remote Claude over the fake ssh; a click on the next session
+  row and four keys about every 400 ms; every `fs.*Sync`, `fs.watch`, `FSWatcher.close`
+  and `child_process` call in the main process timed, three rounds of 10 s idle then
+  10 s busy disk), with the temp file of each background save next to its target in
+  `userData`: 0 event-loop stalls of 50 ms or more with an idle disk, 36 with a busy one
+  (20 of them 150 ms or more, the longest 303 ms). Each of the 36 held a slow synchronous
+  call: 53 `fs.realpathSync` calls of 20 ms or more on the workspace note under `userData`
+  (longest 309 ms) and 2 `fs.renameSync` (longest 57 ms). With the temp files in a folder
+  of their own: 1 stall (75 ms, no slow file call inside it), `fs.realpathSync` at most
+  0.1 ms, `fs.renameSync` at most 9.5 ms.
+- **What the busy disk did not slow in those same runs**, before or after:
+  `fs.watch(dir, { recursive: true })` (at most 0.3 ms to open), `FSWatcher.close` (at
+  most 16–25 ms, the same with an idle disk), `fs.writeFileSync` over a file already
+  there (at most 0.7 ms), `fs.statSync` and `fs.existsSync` (at most 0.2 ms), starting a
+  child with `execFile` (at most 2.7 ms), and a one-byte asynchronous `fs.write` to
+  `/dev/null` through the libuv pool (at most 7.9 ms).
+
+Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-written file
+in a `.koloft-writes` folder inside the target's folder, never in the target's folder itself.

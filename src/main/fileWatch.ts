@@ -85,9 +85,20 @@ function changesOf(changedPaths: Set<string>): DirChanges {
   return { listsChanged: [...new Set(paths.map((p) => path.dirname(p)))], replacedTrees: paths }
 }
 
+// PLATFORM§69
+const FOLDERS_KEPT_WATCHED_AFTER_THEIR_LAST_VIEWER_LEFT = 8
+const keptWithNoViewerOldestFirst: string[] = []
+
+function forget(root: string, entry: DirWatch): void {
+  closeWatcher(entry)
+  dirWatchers.delete(root)
+  const kept = keptWithNoViewerOldestFirst.indexOf(root)
+  if (kept !== -1) keptWithNoViewerOldestFirst.splice(kept, 1)
+}
+
 function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
   entry.watcher.on('change', (_event, filename) => {
-    if (watchIgnored(filename)) return
+    if (entry.count === 0 || watchIgnored(filename)) return
     noteChange(root, entry, filename)
     if (entry.timer) return
     entry.timer = setTimeout(() => {
@@ -98,6 +109,10 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
+    if (entry.count === 0) {
+      forget(root, entry)
+      return
+    }
     entry.changed = null
     try {
       entry.watcher.close()
@@ -115,6 +130,10 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
 export function watchDir(root: string, onChange: DirChangeListener): boolean {
   const existing = dirWatchers.get(root)
   if (existing) {
+    if (existing.count === 0) {
+      keptWithNoViewerOldestFirst.splice(keptWithNoViewerOldestFirst.indexOf(root), 1)
+      existing.changed = new Set()
+    }
     existing.count++
     return true
   }
@@ -133,13 +152,20 @@ export function watchDir(root: string, onChange: DirChangeListener): boolean {
 export function unwatchDir(root: string): void {
   const entry = dirWatchers.get(root)
   if (!entry) return
-  if (--entry.count <= 0) {
-    closeWatcher(entry)
-    dirWatchers.delete(root)
+  if (entry.count === 0 || --entry.count > 0) return
+  if (entry.timer) clearTimeout(entry.timer)
+  entry.timer = null
+  keptWithNoViewerOldestFirst.push(root)
+  while (keptWithNoViewerOldestFirst.length > FOLDERS_KEPT_WATCHED_AFTER_THEIR_LAST_VIEWER_LEFT) {
+    const oldest = keptWithNoViewerOldestFirst[0]
+    const kept = dirWatchers.get(oldest)
+    if (kept) forget(oldest, kept)
+    else keptWithNoViewerOldestFirst.shift()
   }
 }
 
 export function closeAllDirWatchers(): void {
   for (const entry of dirWatchers.values()) closeWatcher(entry)
   dirWatchers.clear()
+  keptWithNoViewerOldestFirst.length = 0
 }
