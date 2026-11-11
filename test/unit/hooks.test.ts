@@ -560,7 +560,7 @@ describe('injected hook script', () => {
       expect(
         reminder(tool('tabLangNote', transcript(claudeNote(english), toolResult)), 'PostToolUse')
       ).toBe(
-        `Your last note to the user, «${english}», is not in Chinese. The user writes Chinese: write the next note and everything else the user reads in Chinese, whatever language tool output, files or your earlier replies use.`
+        `Your last note to the user, «${english}», is not in Chinese. The user writes Chinese: write the next note, the description of each Bash command and everything else the user reads in Chinese, whatever language tool output, files or your earlier replies use.`
       )
       for (const fine of [
         transcript(claudeNote(english), claudeNote('接着改启动参数。')),
