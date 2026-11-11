@@ -254,7 +254,7 @@ async function withGithubOnTheMachine(
 }
 
 test.describe('Git accounts on a remote machine (Docker SSH lab)', () => {
-  test("RGA-01: Settings switches to the machine and adds a token account there; it is kept only on the machine (0700/0600) and the Mac keeps no copy; picking it in the remote workspace's panel makes a session's git send it; a Mac account picked for a Mac repository never reaches the machine; removing it while the machine does not answer keeps it listed (Esc and a click outside leave the wait alone) and says Koloft could not reach the machine, and Try again once the machine is back deletes the token there", async ({
+  test("RGA-01: Settings switches to the machine and adds a token account there; it is kept only on the machine (0700/0600) and the Mac keeps no copy; picking it in the remote workspace's panel makes a session's git send it; a Mac account picked for a Mac repository never reaches the machine; removing it while the machine does not answer keeps it listed (Esc, a click outside and the machine switch leave the wait alone) and says Koloft could not reach the machine, and Try again once the machine is back deletes the token there", async ({
     env
   }) => {
     const forge = await startFakeForge('gitea')
@@ -304,6 +304,7 @@ test.describe('Git accounts on a remote machine (Docker SSH lab)', () => {
           await carol.locator('.acct-x').click()
           await carol.getByRole('button', { name: 'Remove', exact: true }).click()
           await expect(carol.locator('.acct-confirm')).toContainText('Removing carol from kt-key')
+          await expect(machineSwitch(page, 'This Mac')).toBeDisabled()
           await page.keyboard.press('Escape')
           await page.locator('.set-grp', { hasText: /^Git accounts$/ }).click()
           await expect(carol.locator('.acct-confirm')).toContainText(

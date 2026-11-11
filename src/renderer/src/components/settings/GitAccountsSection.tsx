@@ -114,7 +114,7 @@ function whereOf(machine: string | undefined): string {
   return machine ?? 'this Mac'
 }
 
-type Removal = { id: string; machine: string | undefined; busy?: boolean; problem?: string }
+type Removal = { id: string; busy?: boolean; problem?: string }
 
 const unlessBusy = (cur: Removal | null): Removal | null => (cur?.busy ? cur : null)
 
@@ -176,11 +176,10 @@ export function GitAccountsSection(): JSX.Element {
   }, [removing])
 
   const remove = async (id: string, anyway: boolean): Promise<void> => {
-    const m = machine
-    setRemoval({ id, machine: m, busy: true })
-    const r = await window.api.gitAccounts.remove(id, m, anyway).catch(() => undefined)
-    const after: Removal | null = r?.ok === false ? { id, machine: m, problem: r.problem } : null
-    setRemoval((cur) => (cur?.busy && cur.id === id && cur.machine === m ? after : cur))
+    setRemoval({ id, busy: true })
+    const r = await window.api.gitAccounts.remove(id, machine, anyway).catch(() => null)
+    if (r === null) setRemoval({ id })
+    else setRemoval(r?.ok === false ? { id, problem: r.problem } : null)
   }
 
   const signingIn = adding?.step === 'login'
@@ -247,6 +246,7 @@ export function GitAccountsSection(): JSX.Element {
                 key={m ?? ''}
                 className={m === machine ? 'on' : undefined}
                 aria-pressed={m === machine}
+                disabled={removal?.busy}
                 onClick={() => {
                   setMachine(m)
                   setAdding(null)
@@ -271,8 +271,8 @@ export function GitAccountsSection(): JSX.Element {
                 key={a.id}
                 account={a}
                 where={where}
-                removal={removal?.id === a.id && removal.machine === machine ? removal : null}
-                onAskRemove={() => setRemoval({ id: a.id, machine })}
+                removal={removal?.id === a.id ? removal : null}
+                onAskRemove={() => setRemoval((cur) => unlessBusy(cur) ?? { id: a.id })}
                 onCancelRemove={() => setRemoval(null)}
                 onRemove={(anyway) => void remove(a.id, anyway)}
                 onRelogin={() => void begin(a.platform, a.url, a.login)}
