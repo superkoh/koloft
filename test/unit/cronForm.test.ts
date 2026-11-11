@@ -261,23 +261,29 @@ describe('suggest', () => {
   ]
 
   it('lists nothing until the text starts with a slash', () => {
-    expect(suggest('', skills)).toEqual([])
-    expect(suggest('write the report', skills)).toEqual([])
-    expect(suggest('ze', skills)).toEqual([])
+    expect(suggest('', skills, '/')).toEqual([])
+    expect(suggest('write the report', skills, '/')).toEqual([])
+    expect(suggest('ze', skills, '/')).toEqual([])
+  })
+
+  it("opens on the agent's own sign: $ for a Codex task, and not on /", () => {
+    const codex: SkillSuggestion[] = [{ name: '$tidy', source: 'home' }]
+    expect(suggest('$', codex, '$').map((s) => s.name)).toEqual(['$tidy'])
+    expect(suggest('/', codex, '$')).toEqual([])
   })
 
   it('keeps the order it was given — project skills first, not alphabetical', () => {
-    expect(suggest('/', skills).map((s) => s.name)).toEqual(['/zeta', '/beta', '/Zebra'])
+    expect(suggest('/', skills, '/').map((s) => s.name)).toEqual(['/zeta', '/beta', '/Zebra'])
   })
 
   it('matches the prefix without caring about case', () => {
-    expect(suggest('/ze', skills).map((s) => s.name)).toEqual(['/zeta', '/Zebra'])
-    expect(suggest('/ZE', skills).map((s) => s.name)).toEqual(['/zeta', '/Zebra'])
-    expect(suggest('/zeta', skills).map((s) => s.name)).toEqual(['/zeta'])
+    expect(suggest('/ze', skills, '/').map((s) => s.name)).toEqual(['/zeta', '/Zebra'])
+    expect(suggest('/ZE', skills, '/').map((s) => s.name)).toEqual(['/zeta', '/Zebra'])
+    expect(suggest('/zeta', skills, '/').map((s) => s.name)).toEqual(['/zeta'])
   })
 
   it('closes itself once a picked name leaves its trailing space behind', () => {
-    expect(suggest('/zeta ', skills)).toEqual([])
+    expect(suggest('/zeta ', skills, '/')).toEqual([])
   })
 
   it('lists at most eight', () => {
@@ -285,7 +291,7 @@ describe('suggest', () => {
       name: `/s${i}`,
       source: 'home' as const
     }))
-    expect(suggest('/s', many).map((s) => s.name)).toEqual([
+    expect(suggest('/s', many, '/').map((s) => s.name)).toEqual([
       '/s0',
       '/s1',
       '/s2',

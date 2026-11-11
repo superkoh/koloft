@@ -1,4 +1,5 @@
 import type {
+  BackendId,
   BaseChoice,
   ContentHit,
   CronEffort,
@@ -120,7 +121,7 @@ export interface Host {
   shell(cwd: string): ShellLaunch
   launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
   trustsFolder(dir: string): Promise<boolean>
-  listSkills(root: string): Promise<SkillSuggestion[]>
+  listSkills(root: string, backend: BackendId): Promise<SkillSuggestion[]>
   keyed(p: string): string
   gitOut: GitOut
   gitRun(root: string, args: string[], network?: boolean): Promise<GitRunResult>

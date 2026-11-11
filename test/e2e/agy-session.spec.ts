@@ -62,6 +62,7 @@ test.setTimeout(120_000)
 
 const FAKE_AGY = path.join(__dirname, 'fixtures', 'fake-agy.js')
 const TURN_LONG_ENOUGH_TO_SEE_WORKING_MS = '1500'
+const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 const COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS = '3000'
 const NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS = '1500'
 const OWNER = { id: '555', username: 'letian' }
@@ -420,6 +421,47 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     } finally {
       await quitAndClose(app)
       await fake.close()
+    }
+  })
+
+  // AGY§10
+  test('Esc on a command ask in an Antigravity tab takes its row off waiting for approval at once, and Esc in the middle of a turn, which ends it with no done and no Stop, takes it off working at once', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true, skipPermissions: false })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'first turn')
+      const { tabId } = await agyConversationOnceFirstTurnEnded(page)
+      const row = agyRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      const type = (keys: string): Promise<void> =>
+        page.evaluate(([t, k]) => window.api.terminal.write(t, k), [tabId, keys])
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId)).split('Interrupted · What should Antigravity').length - 1
+
+      await type('/bash echo declined\r')
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await type('\x1b')
+      await expect.poll(interruptions).toBe(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-delay'),
+        MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS
+      )
+      await type('a long turn\r')
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+      await type('\x1b')
+      await expect.poll(interruptions).toBe(2)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
     }
   })
 
@@ -913,7 +955,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks', async ({
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks; its task, which starts with /, is typed once agy is ready instead of given with -i, and the run finishes', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -957,16 +999,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         'gemini-4-argon',
         '--effort',
         'medium',
-        '--dangerously-skip-permissions',
-        '-i',
-        TASK
+        '--dangerously-skip-permissions'
       ])
       await expect
         .poll(
           () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
           { timeout: 30_000 }
         )
-        .toEqual([expect.stringMatching(/^(running|done)$/)])
+        .toEqual(['done'])
     } finally {
       await quitAndClose(app)
     }

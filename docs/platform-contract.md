@@ -124,6 +124,12 @@ method. A recheck adds its date, version and command to the bullet.
   the program as a byte. (2026-11-01, Python `pty` probe,
   macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
   instead threw the queued keys away.)
+- **zsh and bash turn bracketed paste off as they take each typed line.** Two lines
+  written together at the signal (`export …; clear` CR, `exec <agent>` CR) came back as
+  `?2004l`, the shell's next prompt with `?2004h`, `?2004l`, and then the agent's own
+  `?2004h` (2026-11-08, a python `pty`: macOS 27.0 `/bin/zsh` 5.9 with Claude Code
+  2.1.319 and Codex 0.166.0 as the agent; Debian's bash 5 in Docker with Muse Code
+  1.4.11).
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -1743,6 +1749,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
   `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
   takes `--`.
+- **`gh issue create` and `gh pr create` are also `gh issue new` and `gh pr new`** (ALIASES
+  in their `--help`), and `-R`/`--repo` may come before the subcommand:
+  `gh issue -R acme/app new --help` prints the create help. Their title and body come from
+  `-t`/`--title`, `-b`/`--body` and `-F`/`--body-file` (`-` is standard input).
+  (2026-11-09, gh 2.89.0, by hand.)
 
 ## §33 ssh
 
@@ -2087,6 +2098,10 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   Ubuntu 24.04's 3.4, Debian 13's 3.5a, 3.8 built from its release tarball; the client
   started with `TERM=xterm-256color` from a python pty answering like xterm.js; the
   same script printed the links outside tmux and all 160 arrived on each.)
+- **tmux 3.3a passes on only the pane's own bracketed-paste switch.** Started in a pty
+  as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
+  `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
+  tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
 
 ## §36 ccstatusline
 

@@ -308,11 +308,6 @@ function pushMachine(s: MachineTarget): string {
   )
 }
 
-function machineReady(s: MachineTarget): string {
-  const probe = `ssh -n ${s.sshOptions.join(' ')} ${shq(s.host)} 'test -d "$HOME/.koloft/${s.machine.name}" && echo ok'`
-  return `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine(s)}; }`
-}
-
 const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
 
 const TAB_IN = 'koloft-tab-in'
@@ -355,12 +350,18 @@ export interface UtilShellLineSpec {
   dir: string
 }
 
+const NO_MACHINE_PACKAGE_EXIT = 97
+
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
-  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)} ${s.tabId}`
+  const m = `"$HOME/.koloft/${s.machine.name}"`
+  const run = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
+  const ssh = `${s.sshOptions.join(' ')} ${shq(s.host)}`
+  const shell = `ssh -t ${ssh} ${shq(run)}" $COLUMNS $LINES"`
+  const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
-    `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
-    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}" $COLUMNS $LINES"; exit`
+    `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
+    `${pushMachine(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; clear; ${shell}; exit`
   )
 }
 

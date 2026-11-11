@@ -94,6 +94,7 @@ export interface LocalClaudeDeps {
   agentPlugin(): string | undefined
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  agentHomes(): { codexHome: string; configHome: string }
 }
 
 async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
@@ -214,7 +215,8 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     },
     launch: (spec) => launchClaude(claude, spec),
     trustsFolder: async (dir) => claudeTrustsFolder(claudeJsonPath(), dir),
-    listSkills: async (root) => listSkills(skillFs, root, os.homedir()),
+    listSkills: async (root, backend) =>
+      listSkills(skillFs, backend, { workspace: root, home: os.homedir(), ...claude.agentHomes() }),
     keyed: (p) => p,
     gitOut: localGitOut,
     gitRun: localGitRun,

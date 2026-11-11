@@ -1880,6 +1880,23 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to
   `skills/list`.
+- **Where Codex finds skills, and how a prompt names one.** 2026-11-08, Codex CLI
+  0.166.0, no real model: a throwaway `HOME` and `CODEX_HOME` whose `config.toml` pointed
+  the model provider at a local fake Responses server that saved each request body, and a
+  made-up API key. Six skills, each folder named differently from its frontmatter `name`,
+  each body holding its own codeword. `skills/list {cwds: [<repo>]}` listed
+  `<repo>/.agents/skills/<d>/SKILL.md` and `<repo>/.codex/skills/<d>/SKILL.md` with scope
+  `repo`, `$CODEX_HOME/skills/<d>/SKILL.md` and `$HOME/.agents/skills/<d>/SKILL.md` with
+  scope `user`, and the four `skills/.system/*` with scope `system`; it did not list
+  `<repo>/.claude/skills`. Then one `turn/start` per text on a new thread, and the same
+  texts as the last argument of a real TUI (`codex --no-daemon -C <repo> "<text>"` in a
+  python pty), as Koloft starts a scheduled run (section 14):
+  - `$<name>` (the frontmatter name) sent, after the user's text, one more user message
+    `<skill>\n<name>…</name>\n<path>…/SKILL.md</path>\n<the whole file>\n</skill>`; the
+    same for a repo skill. Both paths.
+  - `/<name>`, `use the <name> skill …`, and `$<folder>` sent the text alone.
+  - `/prompts:<n>` with `$CODEX_HOME/prompts/<n>.md` sent the text alone, both paths.
+  - What a `SKILL.md` without a `name` line is called is inferred, not checked.
 - **`skills/extraRoots/set {extraRoots: [<folder>]}` adds a skills folder for that one
   app-server, and the model gets it.** 2026-10-27, Codex CLI 0.162.0 (model turns, a
   throwaway `CODEX_HOME` holding a copy of this Mac's login, deleted afterwards) and
@@ -2630,6 +2647,15 @@ the one before, the screen read back through `pyte`.
   `TERM_SESSION_ID` from the terminal-detection env list (`ITERM_SESSION_ID` stays);
   `TERM_PROGRAM` and `Apple_Terminal` are still named, and nothing the TUI wrote differed
   with `TERM_PROGRAM` set.
+- **A line typed before the TUI starts lands in the composer unsent** (2026-11-08,
+  0.166.0, `codex --no-daemon` started from `zsh -i` in a python pty at 120×40, a scratch
+  `HOME` and `CODEX_HOME` with an API-key `auth.json` and a fake Responses server on
+  localhost, the screen read through `pyte`, 1 run each): the launch line and `hello` CR
+  in one write at zsh's `ESC[?2004h`, or `hello` CR written 0.3 s after the launch line,
+  left `› hello` in the composer and no request reached the server in 15 s. `hello` in
+  the launch line's write and a lone CR 3 s later sent it; so did `hello` written when
+  the TUI turned on bracketed paste (its `?2004h`, 0.08 s after zsh's) and CR 0.3 s
+  after that (2 runs).
 - **Ctrl+X (0x18), the leader key 0.163.0 adds, shows nothing at the idle composer in
   3 s**; a following Esc shows "esc again to edit previous message". One Ctrl+C at an
   empty composer quits at once (both versions). What Ctrl+X followed by another key does
