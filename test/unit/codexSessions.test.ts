@@ -106,7 +106,8 @@ const REPLY_LANGUAGE_ENV = {
   KOLOFT_CODEX_SAID: expect.stringMatching(/\/said$/)
 }
 
-const RESERVED_TAB_PLAYWRIGHT_ENV = {
+const RESERVED_TAB_ENV = {
+  KOLOFT_TAB_ID: 'pty-reserved',
   PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
   PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
 }
@@ -1359,7 +1360,7 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      ...RESERVED_TAB_PLAYWRIGHT_ENV
+      ...RESERVED_TAB_ENV
     })
   })
 
@@ -1379,7 +1380,7 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
-      ...RESERVED_TAB_PLAYWRIGHT_ENV,
+      ...RESERVED_TAB_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(on.configOverrides).toContain(
@@ -1397,7 +1398,7 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
-      ...RESERVED_TAB_PLAYWRIGHT_ENV,
+      ...RESERVED_TAB_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(conductor.configOverrides).toEqual(expect.arrayContaining([...on.configOverrides!]))
@@ -1410,7 +1411,7 @@ describe('CodexSessions', () => {
     ).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      ...RESERVED_TAB_PLAYWRIGHT_ENV
+      ...RESERVED_TAB_ENV
     })
   })
 

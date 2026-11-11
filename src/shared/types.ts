@@ -753,6 +753,12 @@ export interface LeftoverProcess {
   command: string
 }
 
+export interface ListeningPort {
+  port: number
+  pid: number
+  process: string
+}
+
 export interface BackgroundItem {
   id: string
   kind: 'agent' | 'command' | 'server' | 'monitor' | 'teammate'
@@ -1171,6 +1177,7 @@ export interface KoloftApi {
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
+    ports(tabId: string): Promise<ListeningPort[] | null>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }

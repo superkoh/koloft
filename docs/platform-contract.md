@@ -3290,3 +3290,44 @@ Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the b
 Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
 `TerminalView` waits on before it builds a terminal and before it hands one a new font,
 and which `mermaidRender` waits on before its first diagram.
+
+## §67 Which ports a tab's processes listen on, on macOS and Linux
+
+- **`lsof` needs `-a` to AND its selectors.** `lsof -p <pids> -iTCP -sTCP:LISTEN`
+  without `-a` ORs them and lists every listening socket of the user; with `-a` it lists
+  only those of the given pids. `-nP` keeps addresses and ports as numbers.
+- **A process's environment shows who started it, even after it leaves its parent.** On
+  macOS, `ps -A -E -ww -o pid= -o command=` appends each process's start-time environment
+  (§59). On Linux, `/proc/<pid>/environ` holds it NUL-separated, and
+  `grep -a -o -s -E 'KOLOFT_TAB_ID=[^[:cntrl:]]+' /proc/[0-9]*/environ` reads every one
+  the user may read in one call. A server started with `nohup … &` (macOS) or
+  `setsid nohup … &` (Linux), whose parent becomes pid 1, still carries the variable.
+- **Linux without `lsof`.** The e2e sshd image (Debian) has no `lsof`. There, the socket
+  inodes of a process are the `socket:[N]` links under `/proc/<pid>/fd`, and
+  `/proc/net/tcp` and `/proc/net/tcp6` list each socket's inode (column 10), state
+  (column 4, `0A` is listening) and local address (column 2, the port in hex after the
+  last `:`).
+- **macOS `awk` (the one-true-awk) refuses a `-v` value with a newline** (`newline in
+  string`), so a list goes to awk on standard input.
+- **Antigravity's `agy` itself listens on two 127.0.0.1 ports** (its own service), so
+  a list of a session's servers leaves out the agent programs' own sockets.
+- Measured 2026-11-06 on macOS 27.0 (Darwin 27.0.0) and in `koloft-e2e-sshd` (Debian,
+  as root, with and without `lsof` on `PATH`): three `python3 -m http.server` listeners
+  started with two different `KOLOFT_TAB_ID` values, one through `nohup` (macOS) or
+  `setsid nohup` (Linux); each tab's scan listed exactly its own ports (about 0.25 s on
+  this Mac), a tab id no process carried listed none. The `agy` point is from
+  `lsof -nP -iTCP -sTCP:LISTEN` on this Mac with a real `agy` tab open. The `-a` point
+  was measured 2026-10-11 on this Mac (a shell's grandchild listener found, every
+  listening socket of the user listed without `-a`); on 2026-11-06 only the `-a` form ran.
+- **A tmux pane keeps the tab id its session started with.** A remote tab that a
+  restarted Koloft attaches to an older tmux session has a new tab id, while every
+  program in that session, and every server it started, still carries the first one.
+  `tmux -L koloft list-panes -s -t '=<name>:' -F '#{pane_pid}'` prints the pane's pid;
+  the `KOLOFT_TAB_ID` its descendants carry is that first id. Measured 2026-11-10 in
+  `koloft-e2e-sshd` (Debian, tmux 3.3a, no `lsof`): a pane whose shell exported
+  `KOLOFT_TAB_ID=pty-old-1`, one server still in the pane and one through
+  `setsid nohup`; a scan for `pty-new-1` with the tmux name listed both, without it
+  none, and a third server with another tab's id was never listed.
+
+Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
+menu's listening ports).

@@ -1,6 +1,7 @@
 import http from 'http'
 import https from 'https'
 import fs from 'fs'
+import net from 'net'
 import os from 'os'
 import path from 'path'
 import { execFileSync } from 'child_process'
@@ -624,3 +625,15 @@ export async function startFakeIdp(opts: { finalUrl?: string } = {}): Promise<Fa
   })
   return idp
 }
+
+export function portFreeOnTheMac(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as AddressInfo
+      s.close(() => resolve(port))
+    })
+  })
+}
+
+export const servesAFolderOn = (port: number): string =>
+  `nohup python3 -m http.server ${port} --bind 127.0.0.1 >/dev/null 2>&1 &`

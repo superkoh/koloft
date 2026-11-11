@@ -2,7 +2,6 @@ import { execFileSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
 import http from 'http'
-import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -42,12 +41,18 @@ import { startFakeDiscord, type FakePost, type FakeThread } from './helpers/fake
 import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
-import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
+import {
+  hostResolverSwitch,
+  portFreeOnTheMac,
+  servesAFolderOn,
+  startEchoServer
+} from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import {
   addWorkspace,
   agentShell,
+  listeningPortsOf,
   centerTerm,
   chooseBackend,
   closeMenu,
@@ -277,15 +282,6 @@ function publishOnOrigin(lab: SshLab, from: number, to: number): void {
     'kuser',
     `set -e; cd pub; for n in $(seq ${from} ${to}); do echo $n > up$n.txt; git add -A; ${LAB_GIT} commit -qm up$n; done; git push -q origin main`
   )
-}
-
-function portFreeOnTheMac(): Promise<number> {
-  return new Promise((resolve) => {
-    const s = net.createServer().listen(0, '127.0.0.1', () => {
-      const { port } = s.address() as net.AddressInfo
-      s.close(() => resolve(port))
-    })
-  })
 }
 
 function serveOnTheMac(port: number, body: string): Promise<http.Server> {
@@ -1969,6 +1965,57 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await typeInAddressBar(page, `localhost:${port}`)
         const guest = await guestByUrl(app, `localhost:${port}/`)
         await expect(guest.locator('body')).toHaveText('a page Codex serves on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // PLATFORM§67
+  test('E-SSH-47: the Workbench + menu of a Codex and of a Claude Code session on a machine behind the jump host lists the server each started there, though it left its shell, and not the other’s; a click opens the machine’s page', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installCodexSignedInForTheLab(env)
+    const [codexPort, claudePort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    await withLab(
+      env,
+      async ({ app, page }) => {
+        const codexTab = await codexTabOnKtKey(page)
+        await page.evaluate(
+          ([id, typed]) => window.api.terminal.write(id, typed),
+          [codexTab, `/sh ${servesAFolderOn(codexPort)}\r`]
+        )
+        await expect
+          .poll(() => listeningPortsOf(page, codexTab), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toEqual([codexPort])
+
+        await startSessionIn(page, 'kt-key', { remote: true, method: 'Claude' })
+        const tabs = await wsRows(page, 'kt-key').evaluateAll((rows) =>
+          rows.map((r) => r.getAttribute('data-tab-id'))
+        )
+        const claudeTab = tabs.find((t) => t && t !== codexTab)!
+        await agentShell(
+          page,
+          claudeTab,
+          KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        )(servesAFolderOn(claudePort))
+        await expect.poll(() => listeningPortsOf(page, claudeTab)).toEqual([claudePort])
+        await switchToRow(page, page.locator(`[data-tab-id="${claudeTab}"]`))
+
+        await page.locator(BROWSER.newTab).click()
+        const menu = page.locator(WORKBENCH.newMenu)
+        await expect(menu.locator('.mi.head')).toHaveText('Listening ports', { timeout: 15_000 })
+        await expect(menu.locator('button.mi', { hasText: /^localhost:/ })).toHaveText([
+          `localhost:${claudePort}`
+        ])
+        await menu.locator('button.mi', { hasText: `localhost:${claudePort}` }).click()
+        const guest = await guestByUrl(app, `localhost:${claudePort}/`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(guest.locator('body')).toContainText('Directory listing')
         await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
       },
       (lab) => installFakeCodexOnTarget(lab)
