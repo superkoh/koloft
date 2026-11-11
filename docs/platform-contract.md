@@ -1041,6 +1041,30 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **About 16 live WebGL contexts per renderer process**, shared by every tab in it.
   Past that Chromium kills the oldest ("Too many active WebGL contexts. The oldest
   context will be lost."), which scrambles that terminal's glyphs.
+- **A WebGL terminal canvas costs the GPU process several times its own pixels, and
+  disposing the addon does not give that back.** Read with `footprint <GPU process
+  pid>` on a hidden e2e window, devicePixelRatio 2 (2026-11-11, Electron 43, addon
+  0.20.0-beta.298, macOS 27.0). At a 1080×1632-pixel canvas (7 MB a buffer) four WebGL
+  terminals cost 87 MB more than four DOM-drawn ones and eight cost 114 MB more than
+  four: 22–28 MB each. At 2100×2720 pixels (23 MB a buffer) three cost about 370 MB:
+  about 124 MB each. Most of it is `IOSurface` (the drawing buffers). The glyph atlas is
+  uploaded into every context too (`GlyphRenderer` keeps one texture per atlas page per
+  canvas), but it is the smaller part: seven 512-pixel pages of CJK added about 50 MB
+  across four canvases. After `WebglAddon.dispose()` on three of four such terminals the
+  footprint was unchanged at 1 s and down 89 MB at 15 s (the canvases wait for garbage
+  collection); with `WEBGL_lose_context.loseContext()` called right after the dispose it
+  was down 155 MB at 1 s and 248 MB at 15 s, back at the empty app's level. Every figure
+  here was resident ("Dirty"); `footprint` printed no swapped column in any run, so
+  this says nothing about memory the system had already compressed. `dispose()` removes the addon's
+  `webglcontextlost` listener first, so a `loseContext()` after it fires no
+  `onContextLoss`.
+- **Giving a hidden terminal a new WebGL context is cheap when the shared atlas is left
+  alone.** Switching to a session tab whose context had been lost and disposed, the
+  first render came 17–37 ms after the click and the longest frame was 24 ms, with a
+  screen of coloured CJK, at both canvas sizes above (15 and 12 switches); a tab that
+  kept its context took 13–24 ms. Clearing the shared atlas 50 ms after each such
+  hand-back (what a leaving terminal used to trigger) made the same switch block for
+  50–60 ms and draw the screen twice (same day and versions).
 - **GPU memory can be lost with no event.** Wake from sleep, screen unlock, and adding,
   removing or changing displays (these come in bursts) can wipe texture memory; a
   minimized or fully covered window can lose its WebGL drawing buffers. No

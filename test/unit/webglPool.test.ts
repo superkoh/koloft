@@ -43,49 +43,66 @@ describe('webglPool', () => {
     expect(events).toEqual(['attach t5'])
   })
 
-  it('keeps at most 12 live contexts: a 13th shown terminal detaches the hidden holder least recently on screen, and showing an evicted one re-attaches it', () => {
-    for (let i = 1; i <= 13; i++) enroll(`t${i}`)
-    for (let i = 1; i <= 12; i++) glance(`t${i}`)
-    expect(live.size).toBe(12)
+  it('only the two hidden terminals looked at last keep a context: leaving a third hands the oldest one back, and showing that one again re-attaches it', () => {
+    for (let i = 1; i <= 4; i++) enroll(`t${i}`)
     glance('t1')
+    glance('t2')
+    expect(live.size).toBe(2)
 
     events.length = 0
-    showWebgl('t13')
-    expect(events).toEqual(['detach t2', 'attach t13'])
+    glance('t3')
+    expect(events).toEqual(['attach t3', 'detach t1'])
 
     events.length = 0
-    showWebgl('t2')
-    expect(events).toEqual(['detach t3', 'attach t2'])
-    expect(live.size).toBe(12)
-    expect(peak).toBe(12)
+    glance('t1')
+    expect(events).toEqual(['attach t1', 'detach t2'])
+    expect(peak).toBe(3)
   })
 
-  it('a full pool evicts a hidden holder before a terminal still on screen, however long ago that one was shown', () => {
-    for (let i = 1; i <= 13; i++) enroll(`t${i}`)
-    showWebgl('t1')
-    for (let i = 2; i <= 12; i++) glance(`t${i}`)
+  it('terminals on screen together all keep their context, and a hidden one is handed back only when a third joins the hidden ones', () => {
+    for (let i = 1; i <= 6; i++) enroll(`t${i}`)
+    for (let i = 1; i <= 6; i++) showWebgl(`t${i}`)
+    expect(live.size).toBe(6)
 
     events.length = 0
-    showWebgl('t13')
-    expect(events).toEqual(['detach t2', 'attach t13'])
+    hideWebgl('t1')
+    hideWebgl('t2')
+    expect(events).toEqual([])
+    hideWebgl('t3')
+    expect(events).toEqual(['detach t1'])
+  })
+
+  it('the terminal the user just left keeps its context, even if it was first shown long ago', () => {
+    for (let i = 1; i <= 3; i++) enroll(`t${i}`)
+    showWebgl('t1')
+    glance('t2')
+    glance('t3')
+
+    events.length = 0
+    hideWebgl('t1')
+    expect(events).toEqual(['detach t2'])
     expect(live.has('t1')).toBe(true)
   })
 
-  it('the terminal the user just left is the last hidden one to lose its context, even if it was first shown long ago', () => {
-    for (let i = 1; i <= 13; i++) enroll(`t${i}`)
-    showWebgl('t1')
-    for (let i = 2; i <= 12; i++) glance(`t${i}`)
-    hideWebgl('t1')
+  it('keeps at most 12 live contexts: a 13th terminal on screen takes the context of a hidden holder before that of one still on screen', () => {
+    for (let i = 1; i <= 14; i++) enroll(`t${i}`)
+    for (let i = 1; i <= 11; i++) showWebgl(`t${i}`)
+    glance('t12')
 
     events.length = 0
     showWebgl('t13')
-    expect(events).toEqual(['detach t2', 'attach t13'])
+    expect(events).toEqual(['detach t12', 'attach t13'])
+
+    events.length = 0
+    showWebgl('t14')
+    expect(events).toEqual(['detach t1', 'attach t14'])
+    expect(peak).toBe(12)
   })
 
   it('a terminal whose WebGL fails to attach and releases itself does not keep a slot', () => {
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= 11; i++) {
       enroll(`t${i}`)
-      glance(`t${i}`)
+      showWebgl(`t${i}`)
     }
     enrollWebgl(
       'broken',
