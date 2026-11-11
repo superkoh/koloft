@@ -362,7 +362,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       }
       const screen = await terminalText(page, tabId)
       expect(screen).not.toContain('Wrote ../outside-notes.txt')
-      expect(screen).toContain('User declined the tool call')
+      expect(screen.split('Interrupted').length - 1).toBe(2)
       expect(machineAgyApiCalls(env).map((c) => c.method)).not.toContain(
         'HandleCascadeUserInteraction'
       )
