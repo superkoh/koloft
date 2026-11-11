@@ -866,7 +866,7 @@ export class SshHost implements Host {
 
   async openForEdit(file: string) {
     const got = await this.readWithHeader(file, EDIT_OPEN_MAX_BYTES)
-    return editOpenResult(got.body, got.fp, { file: () => got.file, dir: () => got.dir })
+    return editOpenResult(got.body, got.fp, { file: got.file, dir: got.dir })
   }
 
   private async staleResult(file: string, fp: EditFingerprint): Promise<EditWriteResult> {

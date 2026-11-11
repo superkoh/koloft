@@ -3441,4 +3441,5 @@ below a folder D, once every 5 ms:
 Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-written file
 in a `.koloft-writes` folder inside the target's folder and moves it into place off the
 main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
-`fileEdit.ts` opens and saves a file through `fs.promises` only.
+`fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
+save's last check and its rename together on the main thread.

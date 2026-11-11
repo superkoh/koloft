@@ -12,7 +12,11 @@ function halfWrittenFileOf(target: string, suffix = ''): string {
   )
 }
 
-const SAME_FILE_SO_THE_MOVE_IN_FLIGHT_CARRIES_THE_NEWEST_TEXT = ''
+function dropTheOlderSaveStillOnItsWayIn(target: string): void {
+  try {
+    fs.unlinkSync(halfWrittenFileOf(target))
+  } catch {}
+}
 
 export class BackgroundFile {
   private static readonly draining = new Set<Promise<void>>()
@@ -25,7 +29,7 @@ export class BackgroundFile {
   private latestGen = 0
   private savedGen = 0
   private writing = false
-  private movingIntoPlace = false
+  private folderMadeFor: string | undefined
 
   constructor(
     private readonly file: () => string,
@@ -44,13 +48,11 @@ export class BackgroundFile {
   flushSync(): void {
     if (this.savedGen >= this.latestGen) return
     const target = this.file()
-    const tmp = halfWrittenFileOf(
-      target,
-      this.movingIntoPlace ? SAME_FILE_SO_THE_MOVE_IN_FLIGHT_CARRIES_THE_NEWEST_TEXT : '-now'
-    )
+    const tmp = halfWrittenFileOf(target, '-now')
     try {
       fs.mkdirSync(path.dirname(tmp), { recursive: true })
       fs.writeFileSync(tmp, this.latest, { mode: this.mode })
+      dropTheOlderSaveStillOnItsWayIn(target)
       fs.renameSync(tmp, target)
     } catch {}
     this.savedGen = this.latestGen
@@ -63,14 +65,16 @@ export class BackgroundFile {
       const target = this.file()
       const tmp = halfWrittenFileOf(target)
       try {
-        await fs.promises.mkdir(path.dirname(tmp), { recursive: true })
+        if (this.folderMadeFor !== target) {
+          await fs.promises.mkdir(path.dirname(tmp), { recursive: true })
+          this.folderMadeFor = target
+        }
         await fs.promises.writeFile(tmp, this.latest, { mode: this.mode })
-        if (gen > this.savedGen) {
-          this.movingIntoPlace = true
-          await fs.promises.rename(tmp, target)
-        } else await fs.promises.rm(tmp, { force: true })
-      } catch {}
-      this.movingIntoPlace = false
+        if (gen > this.savedGen) await fs.promises.rename(tmp, target)
+        else await fs.promises.rm(tmp, { force: true })
+      } catch {
+        this.folderMadeFor = undefined
+      }
       this.savedGen = Math.max(this.savedGen, gen)
     }
     this.writing = false

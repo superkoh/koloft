@@ -80,13 +80,13 @@ export async function openForEdit(
     throw new Error('KOLOFT_READ_FAILED')
   })
   const [file, dir] = await Promise.all([canWrite(real), canWrite(path.dirname(real))])
-  return editOpenResult(buf, statBeforeRead, { file: () => file, dir: () => dir })
+  return editOpenResult(buf, statBeforeRead, { file, dir })
 }
 
 export function editOpenResult(
   buf: Buffer,
   fp: EditFingerprint,
-  writable: { file: () => boolean; dir: () => boolean }
+  writable: { file: boolean; dir: boolean }
 ): EditOpenResult {
   if (looksBinary(buf)) throw new Error('KOLOFT_BINARY')
 
@@ -98,9 +98,9 @@ export function editOpenResult(
     ? 'notUtf8'
     : mixed
       ? 'mixedEol'
-      : !writable.file()
+      : !writable.file
         ? 'noPerm'
-        : !writable.dir()
+        : !writable.dir
           ? 'dirNotWritable'
           : null
 
@@ -191,11 +191,10 @@ export async function writeText(
     }
 
     if (!force) {
-      const now = await fs.promises.stat(real)
+      const now = fs.statSync(real)
       if (!matches(now)) return await staleResult(real, now)
     }
-
-    await fs.promises.rename(tmp, real)
+    fs.renameSync(tmp, real)
     done = true
     try {
       const folder = await fs.promises.open(dir, 'r')

@@ -133,20 +133,29 @@ describe('openForEdit', () => {
 })
 
 describe('a slow disk', () => {
-  it('is never waited for on the main thread, neither to open a file nor to save one', async () => {
+  it('is not waited for on the main thread to find, read, create or flush a file', async () => {
     const waitsOnTheMainThread = [
       vi.spyOn(fs, 'realpathSync'),
-      vi.spyOn(fs, 'statSync'),
       vi.spyOn(fs, 'accessSync'),
       vi.spyOn(fs, 'readFileSync'),
       vi.spyOn(fs, 'openSync'),
-      vi.spyOn(fs, 'fsyncSync'),
-      vi.spyOn(fs, 'renameSync')
+      vi.spyOn(fs, 'fsyncSync')
     ]
     const opened = await openForEdit(file)
     const saved = await writeText(file, 'KEY=two\n', opened)
     expect(saved.ok).toBe(true)
     for (const call of waitsOnTheMainThread) expect(call).not.toHaveBeenCalled()
+  })
+
+  it('never lets two saves of one file both land: the second to finish is refused as stale', async () => {
+    const opened = await openForEdit(file)
+    const both = await Promise.all([
+      writeText(file, 'KEY=first editor\n', opened),
+      writeText(file, 'KEY=second editor\n', opened)
+    ])
+    expect(both.filter((r) => r.ok)).toHaveLength(1)
+    expect(both.filter((r) => !r.ok)).toMatchObject([{ code: 'stale' }])
+    expect(leftoverTmps()).toEqual([])
   })
 })
 
@@ -184,11 +193,11 @@ describe('writeText', () => {
   })
 
   it('returns the fingerprint of what IT wrote, even if the file changes right after', async () => {
-    const realRename = fs.promises.rename
-    vi.spyOn(fs.promises, 'rename').mockImplementation((async (from: string, to: string) => {
-      await (realRename as (a: string, b: string) => Promise<void>)(from, to)
+    const realRename = fs.renameSync
+    vi.spyOn(fs, 'renameSync').mockImplementation(((from: string, to: string) => {
+      ;(realRename as (a: string, b: string) => void)(from, to)
       fs.writeFileSync(file, 'KEY=claude-came-back-with-more\n')
-    }) as typeof fs.promises.rename)
+    }) as typeof fs.renameSync)
 
     const r = await writeText(file, 'KEY=two\n', fingerprint(file))
     vi.restoreAllMocks()
@@ -326,7 +335,9 @@ describe('writeText', () => {
 
   it('cleans the temp file up and leaves the original intact when the rename fails', async () => {
     const boom = Object.assign(new Error('nope'), { code: 'EACCES' })
-    vi.spyOn(fs.promises, 'rename').mockRejectedValue(boom)
+    vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw boom
+    })
     await expect(writeText(file, 'KEY=two\n', fingerprint(file))).rejects.toThrow('KOLOFT_NO_PERM')
     vi.restoreAllMocks()
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')

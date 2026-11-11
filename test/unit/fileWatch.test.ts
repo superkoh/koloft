@@ -256,6 +256,38 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(roots).toEqual([])
   })
 
+  it('tells a returning viewer that the folder changed while nobody viewed it', async () => {
+    const reports: (DirChanges | undefined)[] = []
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    unwatchDir(dir)
+    reports.length = 0
+    fs.appendFileSync(file, 'two\n')
+    await sleep(700)
+    expect(reports).toEqual([])
+
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await until(() => reports.length > 0)).toBe(true)
+    expect(reports[0]).toBeUndefined()
+  })
+
+  it('opens a new watcher for a folder deleted and made again while nobody viewed it', () => {
+    const folder = path.join(dir, 'worktree')
+    fs.mkdirSync(folder)
+    const spy = vi.spyOn(fs, 'watch')
+    expect(watchDir(folder, () => {})).toBe(true)
+    unwatchDir(folder)
+    fs.rmSync(folder, { recursive: true })
+    fs.mkdirSync(path.join(dir, 'takes-the-freed-inode-number'))
+    fs.mkdirSync(folder)
+
+    expect(watchDir(folder, () => {})).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(2)
+    unwatchDir(folder)
+    fs.rmSync(folder, { recursive: true })
+    expect(watchDir(folder, () => {})).toBe(false)
+  })
+
   it('keeps the watchers of only the 8 folders left most recently, so a ninth closes the one left longest ago', () => {
     const folders = Array.from({ length: 9 }, (_, i) => {
       const folder = path.join(dir, `ws-${i}`)
