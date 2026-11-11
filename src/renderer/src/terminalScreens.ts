@@ -7,6 +7,8 @@ interface Shown {
 
 const shown = new Map<string, Shown>()
 const awaitingAScreen = new Map<string, ((term: Terminal) => void)[]>()
+const LONGEST_WAIT_FOR_OUTPUT_ALREADY_SENT_MS = 1000
+const ATTRIBUTE_RESET_THAT_MARKS_WHAT_IS_WRITTEN = '\x1b[0m'
 let answering = false
 
 function screenOnceShown(id: string): Promise<Terminal> {
@@ -32,11 +34,20 @@ function answerScreenRequests(): void {
   answering = true
   window.api.terminal.onScreenRequest(({ requestId, tabId }) => {
     const s = shown.get(tabId)
-    window.api.terminal.answerScreen({
-      requestId,
-      lines: s ? screenLines(s.term) : null,
-      sizedToPane: s?.sizedToPane ?? false
-    })
+    if (!s) return window.api.terminal.answerScreen({ requestId, lines: null, sizedToPane: false })
+    let answered = false
+    const answer = (): void => {
+      if (answered) return
+      answered = true
+      window.api.terminal.answerScreen({
+        requestId,
+        lines: screenLines(s.term),
+        sizedToPane: s.sizedToPane
+      })
+    }
+    // PLATFORM§21
+    s.term.write(ATTRIBUTE_RESET_THAT_MARKS_WHAT_IS_WRITTEN, answer)
+    setTimeout(answer, LONGEST_WAIT_FOR_OUTPUT_ALREADY_SENT_MS)
   })
 }
 
@@ -59,8 +70,6 @@ function lastWrittenLines(term: Terminal, count: number): string[] {
   for (let y = Math.max(0, end - count); y < end; y++) lines.push(text(y))
   return lines
 }
-
-const ATTRIBUTE_RESET_THAT_MARKS_WHAT_IS_WRITTEN = '\x1b[0m'
 
 // PLATFORM§21
 export async function lastLinesOnceWritten(id: string, count: number): Promise<string[]> {

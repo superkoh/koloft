@@ -7,6 +7,7 @@ export const CH = {
     copy: 'terminal:copy',
     ack: 'terminal:ack',
     attach: 'terminal:attach',
+    onScreen: 'terminal:on-screen',
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
     kill: 'terminal:kill',

@@ -274,6 +274,35 @@ describe('store: a sessions push changes only what it changed', () => {
   })
 })
 
+describe('store: a workspace rows push changes only what it changed', () => {
+  const ws = (path: string, title = 'one'): WorkspaceRows => ({
+    workspace: { path, missing: false, isGit: true, hasHistory: true },
+    rows: [{ id: path + '-r', title } as WorkspaceRows['rows'][number]]
+  })
+
+  it('a push that changes nothing leaves the rows as they were and notifies nobody', () => {
+    const s = useStore.getState()
+    s.setWorkspaceRows([ws('/w/p1'), ws('/w/p2')])
+    const before = useStore.getState().workspaceRows
+    const heard = vi.fn()
+    const off = useStore.subscribe(heard)
+    s.setWorkspaceRows([ws('/w/p1'), ws('/w/p2')])
+    off()
+    expect(useStore.getState().workspaceRows).toBe(before)
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('a push keeps the object of every workspace it did not change', () => {
+    const s = useStore.getState()
+    s.setWorkspaceRows([ws('/w/p3'), ws('/w/p4')])
+    const [p3] = useStore.getState().workspaceRows
+    s.setWorkspaceRows([ws('/w/p3'), ws('/w/p4', 'two')])
+    const after = useStore.getState().workspaceRows
+    expect(after[0]).toBe(p3)
+    expect(after[1].rows[0].title).toBe('two')
+  })
+})
+
 describe('store: intercepted file open routing — the open always surfaces, tagged so it stays out of Recent', () => {
   it('opens the file in the viewer pane (tagged as an intercept) when the owning tab is active', () => {
     const s = useStore.getState()

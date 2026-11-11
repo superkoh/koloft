@@ -5,6 +5,7 @@ export const FLOW_QUEUE_PAUSE = 8 * 1024 * 1024
 export const FLOW_QUEUE_RESUME = 2 * 1024 * 1024
 export const FLOW_SLICE_UTF16_UNITS = 128 * 1024
 export const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
+export const PTY_OUTPUT_COALESCE_OFF_SCREEN_MS = 200
 
 import type { FlowStats } from '@shared/types'
 import { endsMidPair } from '@shared/utf16'
@@ -101,11 +102,22 @@ export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): stri
   return data.slice(0, endsMidPair(data, maxUnits) ? maxUnits - 1 : maxUnits)
 }
 
+// PLATFORM§21
+const QUESTION_FOR_THE_TERMINAL =
+  /\x1b\[(?:[?>=]?[\d;]*[cn]|\??[\d;]*\$p|>[\d;]*q|\?u|(?:1[1-9]|2[01])(?:;[\d;]*)?t)|\x1b\]\d+;(?:[^\x07\x1b]*;)?\?(?:\x07|\x1b\\)|\x1bP[$+]q/
+
+const QUESTION_START_KEPT_FROM_THE_LAST_READ = 12
+
+export function asksTheTerminal(data: string): boolean {
+  return QUESTION_FOR_THE_TERMINAL.test(data)
+}
+
 interface TabOutput {
   chunks: string[]
   units: number
   lastSentAt: number
   timer: ReturnType<typeof setTimeout> | null
+  readTail: string
 }
 
 function takeSlice(tab: TabOutput): string {
@@ -135,6 +147,7 @@ export interface TerminalOutputDeps {
 export class TerminalOutput {
   private readonly tabs = new Map<string, TabOutput>()
   private readonly gates = new Map<string, FlowGate>()
+  private readonly offScreen = new Set<string>()
 
   constructor(private readonly d: TerminalOutputDeps) {}
 
@@ -160,15 +173,36 @@ export class TerminalOutput {
     if (!this.d.rendererUp()) return
     let tab = this.tabs.get(id)
     if (!tab) {
-      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null }
+      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null, readTail: '' }
       this.tabs.set(id, tab)
     }
     tab.chunks.push(data)
     tab.units += data.length
+    const offScreen = this.offScreen.has(id)
+    if (offScreen) {
+      const kept = QUESTION_START_KEPT_FROM_THE_LAST_READ
+      const asks = asksTheTerminal(tab.readTail + data.slice(0, kept)) || asksTheTerminal(data)
+      tab.readTail = asks
+        ? ''
+        : data.length >= kept
+          ? data.slice(-kept)
+          : (tab.readTail + data).slice(-kept)
+      if (asks || tab.units >= FLOW_SLICE_UTF16_UNITS) return this.restart(id, true)
+    }
     if (tab.timer) return
+    const every = offScreen ? PTY_OUTPUT_COALESCE_OFF_SCREEN_MS : PTY_OUTPUT_COALESCE_ONE_FRAME_MS
     const sinceSent = this.d.now() - tab.lastSentAt
-    if (sinceSent >= PTY_OUTPUT_COALESCE_ONE_FRAME_MS) this.sendSlice(id, tab)
-    else this.schedule(id, tab, PTY_OUTPUT_COALESCE_ONE_FRAME_MS - sinceSent)
+    if (sinceSent >= every) this.sendSlice(id, tab)
+    else this.schedule(id, tab, every - sinceSent)
+  }
+
+  onScreen(id: string, shown: boolean): void {
+    if (!shown) return void this.offScreen.add(id)
+    if (this.offScreen.delete(id)) this.flush(id)
+  }
+
+  flush(id: string): void {
+    this.restart(id, true)
   }
 
   end(id: string, showTheRest: boolean): void {
@@ -181,6 +215,7 @@ export class TerminalOutput {
     for (const tab of this.tabs.values()) if (tab.timer) clearTimeout(tab.timer)
     this.tabs.clear()
     for (const gate of this.gates.values()) gate.reset()
+    this.offScreen.clear()
   }
 
   private gate(id: string): FlowGate {
@@ -193,11 +228,16 @@ export class TerminalOutput {
   }
 
   private wake(id: string): void {
+    this.restart(id, false)
+  }
+
+  private restart(id: string, now: boolean): void {
     const tab = this.tabs.get(id)
     if (!tab?.units) return
     if (tab.timer) clearTimeout(tab.timer)
     tab.timer = null
-    this.schedule(id, tab, 0)
+    if (now) this.sendSlice(id, tab)
+    else this.schedule(id, tab, 0)
   }
 
   private drop(id: string, showTheRest: boolean): void {

@@ -9,7 +9,9 @@ import {
   FLOW_QUEUE_RESUME,
   FLOW_SLICE_UTF16_UNITS,
   HELD_FOR_AN_UNSEEN_TAB_MAX,
-  PTY_OUTPUT_COALESCE_ONE_FRAME_MS
+  PTY_OUTPUT_COALESCE_ONE_FRAME_MS,
+  PTY_OUTPUT_COALESCE_OFF_SCREEN_MS,
+  asksTheTerminal
 } from '../../src/main/flowControl'
 
 function makeGate(
@@ -409,5 +411,123 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     out.push('t', 'hello')
     drainAcking()
     expect(out.stats()).toMatchObject([{ tabId: 't', sentUnits: 5, ackedUnits: 5, attached: true }])
+  })
+})
+
+describe('TerminalOutput — a tab off screen gets its output in fewer, larger batches', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const offScreenTab = (): ReturnType<typeof makeOutput> => {
+    const o = makeOutput()
+    o.out.attach('t')
+    o.out.onScreen('t', false)
+    return o
+  }
+
+  it('output streaming into a tab off screen goes out once per off-screen batch, whole and in order', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    for (let ms = 10; ms < PTY_OUTPUT_COALESCE_OFF_SCREEN_MS; ms += 10) {
+      vi.advanceTimersByTime(10)
+      out.push('t', 'b')
+    }
+    expect(sent.map((s) => s.data)).toEqual(['a'])
+    vi.advanceTimersByTime(10)
+    expect(sent.map((s) => s.data)).toEqual(['a', 'b'.repeat(19)])
+  })
+
+  it('a tab coming back on screen gets what was held at once', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'held')
+    out.onScreen('t', true)
+    expect(sent.map((s) => s.data)).toEqual(['a', 'held'])
+    vi.advanceTimersByTime(1)
+    out.push('t', 'x')
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    expect(sent.map((s) => s.data)).toEqual(['a', 'held', 'x'])
+  })
+
+  it('a flush hands over everything held before a screen read', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'last line')
+    out.flush('t')
+    expect(sent.map((s) => s.data)).toEqual(['a', 'last line'])
+  })
+
+  it('a program asking the terminal a question off screen is not kept waiting for the batch', () => {
+    for (const question of [
+      '\x1b[6n',
+      '\x1b[c',
+      '\x1b[>q',
+      '\x1b[?2026$p',
+      '\x1b]11;?\x07',
+      '\x1b[14;2t'
+    ]) {
+      const { out, sent } = offScreenTab()
+      out.push('t', 'a')
+      vi.advanceTimersByTime(1)
+      out.push('t', 'b' + question)
+      expect(sent.map((s) => s.data)).toEqual(['a', 'b' + question])
+      vi.useRealTimers()
+    }
+  })
+
+  it('a question split across several reads is still not kept waiting', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b\x1b]')
+    out.push('t', '11;')
+    out.push('t', '?\x07')
+    expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b]11;?\x07'])
+  })
+
+  it('output after a question that went out waits for the batch again', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b\x1b[6n')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'c')
+    expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b[6n'])
+  })
+
+  it('an off-screen tab the view stops acking still pauses its pty past the watermark', () => {
+    const { out, calls } = makeOutput()
+    out.attach('t')
+    out.onScreen('t', false)
+    for (let i = 0; i < 2 * (FLOW_QUEUE_PAUSE / FLOW_SLICE_UTF16_UNITS); i++)
+      out.push('t', 'x'.repeat(FLOW_SLICE_UTF16_UNITS))
+    expect(calls).toEqual(['pause t'])
+  })
+
+  it('a tab that restarts while off screen keeps getting its output in batches', () => {
+    const { out, sent } = offScreenTab()
+    out.end('t', true)
+    out.attach('t')
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b')
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    expect(sent.map((s) => s.data)).toEqual(['a'])
+  })
+
+  it('a link or a cursor move is not a question', () => {
+    expect(asksTheTerminal('\x1b]8;;https://x.test/?q=1\x07link\x1b]8;;\x07')).toBe(false)
+    expect(asksTheTerminal('\x1b[u\x1b[2 q\x1b[22;0t')).toBe(false)
+  })
+
+  it('a large backlog off screen does not wait for the batch', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'x'.repeat(FLOW_SLICE_UTF16_UNITS))
+    expect(sent.map((s) => s.data.length)).toEqual([1, FLOW_SLICE_UTF16_UNITS])
   })
 })

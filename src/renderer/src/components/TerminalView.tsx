@@ -455,6 +455,7 @@ function LiveTerminal({
     const vis = new IntersectionObserver(
       (entries) => {
         const visible = entries[entries.length - 1].isIntersecting
+        window.api.terminal.onScreen(id, visible)
         if (!visible) {
           wasHidden = true
           repaintedRef.current = false

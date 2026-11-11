@@ -511,6 +511,25 @@ function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): Sess
   return next.length === prev.length && next.every((x, i) => x === prev[i]) ? prev : next
 }
 
+const keptRowsJson = new WeakMap<WorkspaceRows, string>()
+
+function keepIfSame(old: WorkspaceRows | undefined, pushed: WorkspaceRows): WorkspaceRows {
+  const json = JSON.stringify(pushed)
+  if (old) {
+    let oldJson = keptRowsJson.get(old)
+    if (oldJson === undefined) keptRowsJson.set(old, (oldJson = JSON.stringify(old)))
+    if (json === oldJson) return old
+  }
+  keptRowsJson.set(pushed, json)
+  return pushed
+}
+
+function keepUnchangedWorkspaces(prev: WorkspaceRows[], pushed: WorkspaceRows[]): WorkspaceRows[] {
+  const before = new Map(prev.map((w) => [w.workspace.path, w]))
+  const next = pushed.map((w) => keepIfSame(before.get(w.workspace.path), w))
+  return next.length === prev.length && next.every((w, i) => w === prev[i]) ? prev : next
+}
+
 function tabIsWoken(s: Pick<AppState, 'sessions'>, tabId: string): boolean {
   return s.sessions.some((x) => x.tabId === tabId && !!x.sessionId && x.status !== undefined)
 }
@@ -1109,14 +1128,27 @@ export const useStore = create<AppState>((set, get) => ({
       workbenchParked.delete(k)
     }
     set((s) => {
-      const workspaceRows = all.filter((w) => !w.workspace.butler)
+      const workspaceRows = keepUnchangedWorkspaces(
+        s.workspaceRows,
+        all.filter((w) => !w.workspace.butler)
+      )
+      const butler = all.find((w) => w.workspace.butler)
+      const butlerWorkspace = butler ? keepIfSame(s.butlerWorkspace ?? undefined, butler) : null
+      const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
+        ? s.selectedWs
+        : null
+      if (
+        gone.length === 0 &&
+        workspaceRows === s.workspaceRows &&
+        butlerWorkspace === s.butlerWorkspace &&
+        selectedWs === s.selectedWs
+      )
+        return s
       return {
         ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
-        butlerWorkspace: all.find((w) => w.workspace.butler) ?? null,
-        selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs)
-          ? s.selectedWs
-          : null
+        butlerWorkspace,
+        selectedWs
       }
     })
   },

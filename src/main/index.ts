@@ -4880,6 +4880,7 @@ async function screenOf(tabId: string): Promise<SessionScreen> {
       resolve(a)
     })
     const request: ScreenRequest = { requestId, tabId }
+    terminalOutput.flush(tabId)
     sendToRenderer(CH.terminal.screen, request)
   })
   if (!answer?.lines) return { error: 'the Koloft window did not show its screen.' }
@@ -6484,6 +6485,10 @@ function registerIpc(): void {
     terminalOutput.ack(id, ackedUtf16Units)
   )
   ipcMain.on(CH.terminal.attach, (_e, id: string) => terminalOutput.attach(id))
+  ipcMain.on(CH.terminal.onScreen, (_e, id: unknown, onScreen: unknown) => {
+    if (typeof id === 'string' && typeof onScreen === 'boolean')
+      terminalOutput.onScreen(id, onScreen)
+  })
   ipcMain.handle(CH.terminal.flowStats, () => terminalOutput.stats())
   ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
