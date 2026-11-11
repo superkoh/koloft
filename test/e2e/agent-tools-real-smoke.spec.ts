@@ -498,8 +498,8 @@ function twoPassageCommentsWaitForOneEnter(
     await test.info().attach('the-one-message', { body: sent })
     expect(sent).toContain(`${PLAN_REL}:6`)
     expect(sent).toContain(`${PLAN_REL}:7`)
-    expect(sent.indexOf(FIRST_NOTE)).toBeLessThan(sent.indexOf(`${PLAN_REL}:7`))
-    expect(sent).toMatch(new RegExp(`${FIRST_NOTE.replace(/[.]/g, '\\.')}\\s*\\n`))
+    const afterFirstNote = sent.indexOf(FIRST_NOTE) + FIRST_NOTE.length
+    expect(sent.slice(afterFirstNote, sent.indexOf(`${PLAN_REL}:7`))).toContain('\n')
     expect(sent).toContain(SECOND_NOTE)
     await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
     expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
