@@ -1752,8 +1752,8 @@ not a network.
 
 **An app-server will not start on a missing `CODEX_HOME`, and one already running answers
 an empty `thread/list` once its home is removed.** Measured 2026-11-11, `codex-cli 0.166.0`
-on the Mac and, by npm, on Debian 12 (`node:22-bookworm-slim` in Docker, arm64, a non-root
-user), the same on both: `app-server --stdio -c check_for_update_on_startup=false`, a
+on the Mac and, by npm, 0.166.0 and 0.167.1 on Debian 12 (`node:22-bookworm-slim` in
+Docker, arm64, a non-root user), the same on all three: `app-server --stdio -c check_for_update_on_startup=false`, a
 temp `CODEX_HOME`, no login. Started with `CODEX_HOME` set to a folder that does not
 exist, the process exited 1 before answering `initialize` (`Error: CODEX_HOME points to
 "<path>", but that path does not exist`) and did not create the folder. Started on a home
