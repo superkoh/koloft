@@ -3277,10 +3277,20 @@ call twice on one home, the second time over the link the first one made.
   that way differs from its own echo on the typed line.
 - Measured 2026-10-28 in the `debian:bookworm` Docker image: fish 3.6.0, zsh 5.9, the
   image's bash, `fakecli` a `/bin/sh` script printing `$A`.
+- **zsh's `exec name` runs a function or a `hash` entry called `name`; a program that
+  starts `name` itself never does.** With `claude() { …; command claude --from-function
+  "$@"; }` in `.zshrc`, `zsh -i -c 'exec claude --resume x'` ran the function, and `exec
+  /usr/sbin/taskpolicy -a claude --resume x` ran the `claude` on `PATH` with `--resume x`
+  alone; with `hash claude=/bin/echo` the first ran `/bin/echo`, the second the `claude`
+  on `PATH`. An alias `claude="claude --from-alias"` was used by neither. bash ran the
+  `claude` on `PATH` in all six. Measured 2026-11-11, this Mac's `/bin/zsh` and
+  `/bin/bash`, a scratch `ZDOTDIR`; fish not run.
 
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
-Antigravity sign-in into the user's login shell with an account's environment, and
-`MARK_OUTPUT_START` in `src/main/signInOutput.ts`.
+Antigravity sign-in into the user's login shell with an account's environment,
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaude` in
+`src/main/host/localHost.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
+no longer runs a zsh function or `hash` entry named `claude`.
 
 ## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
 
