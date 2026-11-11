@@ -164,7 +164,7 @@ test('a question answered in its own tab closes its Inbox card as handled there,
   await expect(await doneStatus(page, 'asks a question')).toContainText('Handled in its tab')
 })
 
-test('a card a session posts with koloft inbox shows in the Inbox; its button sends the owner’s words to that session, and the session moves the card to Done', async ({
+test('a card a session posts with koloft inbox shows in the Inbox; its button sends the owner’s words to that session, and the session moves the card to Done; with Reduce motion on, a card that leaves the list does not fly off and the card below does not slide up', async ({
   page,
   env
 }, testInfo) => {
@@ -196,17 +196,40 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
     .toContain('Added card pr-8.')
   await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
   await expect(page.locator('.ibx-entry .ws-tab-sub')).toHaveText('1 needs you · 1 high')
+  await runIn(
+    page,
+    centerTerm(page),
+    `/koloft inbox add below -- '{"title":"The card below","level":"low"}'`
+  )
+  await expect
+    .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+    .toContain('Added card below.')
   await openInbox(page)
   const shown = inboxCard(page, 'Pull request 8 is ready to merge')
   await expect(shown.locator('.ibx-lvp')).toHaveText('High')
+  await expect(inboxCard(page, 'The card below')).toBeVisible()
   await shown.locator('.ibx-input').fill('squash please')
   await page.screenshot({ path: testInfo.outputPath('inbox-page.png') })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.evaluate(() => {
+    const moves = window as unknown as { cardMoves: number }
+    moves.cardMoves = 0
+    const animate = Element.prototype.animate
+    Element.prototype.animate = function (...args) {
+      moves.cardMoves++
+      return animate.apply(this, args)
+    }
+  })
   await shown.locator('.ibx-btn', { hasText: 'Merge it' }).click()
   await expect
     .poll(() => peerMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
     .toMatch(
       /From Inbox: the owner pressed “Merge it” on card pr-8[\s\S]*Merge it\. «squash please»/
     )
+  await expect(shown).toHaveCount(0)
+  await expect(inboxCard(page, 'The card below')).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { cardMoves: number }).cardMoves)).toBe(0)
+  await page.emulateMedia({ reducedMotion: null })
   await page.locator('.ibx-seg button[data-tab="in-progress"]').click()
   await expect(inboxCard(page, 'Pull request 8')).toBeVisible()
 
