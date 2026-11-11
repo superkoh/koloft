@@ -125,8 +125,20 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
       ])
     })
 
-    it('Antigravity: nothing, as agy started with -i sends a /name as plain text (#1618)', () => {
-      expect(names('agy')).toEqual([])
+    it('Antigravity: .agents, _agents and .agent skills in the project, as /name — none from the home, whose skills its account folder does not hold', () => {
+      expect(names('agy')).toEqual(['/agent-project', '/agents-project', '/underscore-project'])
+    })
+
+    it('Antigravity: a skill whose file gives no name is left out, as agy does not run it by its folder name', () => {
+      const fs = fakeFs({
+        [`${WS}/.agents/skills`]: ['named-dir', 'nameless-dir'],
+        [`${WS}/.agents/skills/named-dir`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/named-dir/SKILL.md`]: '---\nname: ship\n---',
+        [`${WS}/.agents/skills/nameless-dir`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/nameless-dir/SKILL.md`]: '---\ndescription: No name\n---'
+      })
+      expect(listSkills(fs, 'agy', AT).map((s) => s.name)).toEqual(['/ship'])
+      expect(listSkills(fs, 'codex', AT).map((s) => s.name)).toEqual(['$nameless-dir', '$ship'])
     })
   })
 
