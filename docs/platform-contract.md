@@ -1827,7 +1827,8 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   | fish, `config.fish` | not run | exit 0 |
   | tcsh, `~/.login` | not run | exit 1, the tab still starts |
 
-  Running the `-lic` shell inside the script, under the tab's own `ssh -tt` line where it
+  So the script keeps its own `bash -lc` only for when the handed PATH is empty (tcsh, or
+  a machine the ask could not reach). Running the `-lic` shell inside the script, under the tab's own `ssh -tt` line where it
   has a terminal, gave the same four results and bound in 1.4 s; it is not used, since an
   rc file that reads `/dev/tty` there (a passphrase or `compinit` question) could wait
   for ever with its question sent to `/dev/null` (read from how those tools ask, not

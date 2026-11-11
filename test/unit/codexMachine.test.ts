@@ -101,7 +101,7 @@ describe('the tab script of a Codex session on a machine', () => {
     })
 
   // PLATFORM§33
-  it("puts the folders of the user's own login shell there after the script's own PATH, whatever characters they hold, and adds nothing when none were found", () => {
+  it("puts the folders of the user's own login shell there after the script's own PATH, whatever characters they hold, and asks bash's login shell itself only when none were found", () => {
     const pathLines = (loginPath: string): string =>
       tabScript(false, loginPath)
         .split('\n')
@@ -116,7 +116,8 @@ describe('the tab script of a Codex session on a machine', () => {
       }
     )
     expect(printed.stdout).toBe("/usr/bin:/bin:/opt/it's here/bin:/b\n")
-    expect(pathLines('')).toBe('')
+    expect(tabScript(false, '/b')).not.toContain('bash -lc')
+    expect(tabScript(false)).toContain('login_path=$(bash -lc ')
   })
 
   it("copies the koloft-docs skill from the machine package into the tab's Codex home every time, and the koloft skill only with agent tools on", () => {
