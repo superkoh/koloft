@@ -138,6 +138,31 @@ async function resumedInTreeTakingFirstLineAsPrompt(
   )
 }
 
+async function remoteAgyTabClearedThenPrompted(
+  page: Page,
+  env: E2EEnv
+): Promise<{ row: ReturnType<typeof wsRows>; cleared: { tabId: string; id: string } }> {
+  await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+  await agyReady(page)
+  const row = wsRows(page, REMOTE_WS_NAME)
+  await runIn(page, centerTerm(page), 'before clear')
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  const before = await boundRemoteSession(page, 'agy')
+  expect(liveTmuxSessions(env)).toEqual([`k-${before.id}`])
+
+  const sessionBeforeClear = await sessionInRow(page, row)
+  await runIn(page, centerTerm(page), '/clear')
+  await untilTheRowHoldsANewSession(page, row, sessionBeforeClear, 60_000)
+  await runIn(page, centerTerm(page), 'after clear')
+  await expect(row).toContainText('after clear', { timeout: 60_000 })
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  const cleared = await boundRemoteSession(page, 'agy')
+  expect(cleared.id).not.toBe(before.id)
+  expect(cleared.tabId).toBe(before.tabId)
+  await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([`k-${cleared.id}`])
+  return { row, cleared }
+}
+
 test.describe('Antigravity sessions in a remote workspace, over the fake ssh with tmux and only the CLI faked', () => {
   test.setTimeout(240_000)
 
@@ -486,7 +511,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   })
 
   // AGY§8 AGY§9
-  test('after /clear in a remote Antigravity tab its tmux session on the machine takes the name of the new conversation, ⇧⌘R resumes that conversation there in place of the agy it ends, and closing the tab then ends its tmux session there', async ({
+  test('after /clear in a remote Antigravity tab its tmux session on the machine takes the name of the new conversation, and closing the tab ends that tmux session there; the row stays, cold', async ({
     env
   }) => {
     setUp(env)
@@ -494,26 +519,27 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
-      await agyReady(page)
-      const row = wsRows(page, REMOTE_WS_NAME)
-      await runIn(page, centerTerm(page), 'before clear')
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const before = await boundRemoteSession(page, 'agy')
-      expect(liveTmuxSessions(env)).toEqual([`k-${before.id}`])
+      const { row } = await remoteAgyTabClearedThenPrompted(page, env)
 
-      const sessionBeforeClear = await sessionInRow(page, row)
-      await runIn(page, centerTerm(page), '/clear')
-      await untilTheRowHoldsANewSession(page, row, sessionBeforeClear, 60_000)
-      await runIn(page, centerTerm(page), 'after clear')
-      await expect(row).toContainText('after clear', { timeout: 60_000 })
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const cleared = await boundRemoteSession(page, 'agy')
-      expect(cleared.id).not.toBe(before.id)
-      expect(cleared.tabId).toBe(before.tabId)
-      await expect
-        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
-        .toEqual([`k-${cleared.id}`])
+      await closeActiveTab(app, page)
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row).toContainText('after clear')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§8 AGY§9
+  test('⇧⌘R on a remote Antigravity tab after /clear ends the agy running on the machine and resumes the new conversation there, in a tmux session of the same name', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { row, cleared } = await remoteAgyTabClearedThenPrompted(page, env)
 
       await centerTerm(page).click()
       await sendShortcut(app, 'shortcut:restart-session')
@@ -527,10 +553,6 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
         .toEqual([`k-${cleared.id}`])
       expect((await boundRemoteSession(page, 'agy')).id).toBe(cleared.id)
       await expect(row).toHaveCount(1)
-
-      await closeActiveTab(app, page)
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
-      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }
