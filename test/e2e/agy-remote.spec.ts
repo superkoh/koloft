@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
@@ -141,25 +141,34 @@ async function resumedInTreeTakingFirstLineAsPrompt(
 async function remoteAgyTabClearedThenPrompted(
   page: Page,
   env: E2EEnv
-): Promise<{ row: ReturnType<typeof wsRows>; cleared: { tabId: string; id: string } }> {
+): Promise<{ row: Locator; cleared: { tabId: string; id: string } }> {
   await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
   await agyReady(page)
-  const row = wsRows(page, REMOTE_WS_NAME)
+  const rows = wsRows(page, REMOTE_WS_NAME)
   await runIn(page, centerTerm(page), 'before clear')
-  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  await expect(rows.filter({ hasText: 'before clear' })).toHaveClass(/\bst-waiting\b/, {
+    timeout: 60_000
+  })
   const before = await boundRemoteSession(page, 'agy')
-  expect(liveTmuxSessions(env)).toEqual([`k-${before.id}`])
+  await expect
+    .poll(() => machineTranscriptOf(env, before.id), { timeout: 60_000 })
+    .toContain('Answer to: before clear')
+  await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([`k-${before.id}`])
 
-  const sessionBeforeClear = await sessionInRow(page, row)
+  const sessionBeforeClear = await sessionInRow(page, rows)
   await runIn(page, centerTerm(page), '/clear')
-  await untilTheRowHoldsANewSession(page, row, sessionBeforeClear, 60_000)
+  await untilTheRowHoldsANewSession(page, rows, sessionBeforeClear, 60_000)
   await runIn(page, centerTerm(page), 'after clear')
-  await expect(row).toContainText('after clear', { timeout: 60_000 })
+  const row = rows.filter({ hasText: 'after clear' })
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
   const cleared = await boundRemoteSession(page, 'agy')
   expect(cleared.id).not.toBe(before.id)
   expect(cleared.tabId).toBe(before.tabId)
+  await expect
+    .poll(() => machineTranscriptOf(env, cleared.id), { timeout: 60_000 })
+    .toContain('Answer to: after clear')
   await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([`k-${cleared.id}`])
+  expect(machineAgyCalls(env)).toHaveLength(1)
   return { row, cleared }
 }
 
@@ -511,7 +520,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   })
 
   // AGY§8 AGY§9
-  test('after /clear in a remote Antigravity tab its tmux session on the machine takes the name of the new conversation, and closing the tab ends that tmux session there; the row stays, cold', async ({
+  test('after /clear in a remote Antigravity tab its tmux session on the machine takes the name of the new conversation, and closing the tab ends that tmux session there; the row stays, cold, and clicking it resumes the new conversation on the machine', async ({
     env
   }) => {
     setUp(env)
@@ -519,12 +528,14 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const { row } = await remoteAgyTabClearedThenPrompted(page, env)
+      const { row, cleared } = await remoteAgyTabClearedThenPrompted(page, env)
 
       await closeActiveTab(app, page)
       await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-      await expect(row).toContainText('after clear')
+      await row.click()
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
+      expect(machineAgyCalls(env)[1].argv).toContain(`--conversation=${cleared.id}`)
     } finally {
       await quitAndClose(app)
     }
@@ -551,8 +562,14 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect
         .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
         .toEqual([`k-${cleared.id}`])
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'after restart')
+      await expect
+        .poll(() => machineTranscriptOf(env, cleared.id), { timeout: 60_000 })
+        .toContain('Answer to: after restart')
       expect((await boundRemoteSession(page, 'agy')).id).toBe(cleared.id)
       await expect(row).toHaveCount(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
     } finally {
       await quitAndClose(app)
     }
