@@ -61,21 +61,23 @@ export function editRefusal(failure: string): string {
 
 const readsInFlight = new Map<string, Promise<EditOpenResult>>()
 
-export function joinOrStartEditRead(path: string): Promise<EditOpenResult> {
-  const going = readsInFlight.get(path)
-  if (going) return going
-  const read = window.api.edit.open(path).then(
+export function startEditRead(path: string): Promise<EditOpenResult> {
+  const read: Promise<EditOpenResult> = window.api.edit.open(path).then(
     (result) => {
-      readsInFlight.delete(path)
+      if (readsInFlight.get(path) === read) readsInFlight.delete(path)
       return result
     },
     (err: unknown) => {
-      readsInFlight.delete(path)
+      if (readsInFlight.get(path) === read) readsInFlight.delete(path)
       throw err
     }
   )
   readsInFlight.set(path, read)
   return read
+}
+
+function joinOrStartEditRead(path: string): Promise<EditOpenResult> {
+  return readsInFlight.get(path) ?? startEditRead(path)
 }
 
 export interface EditProbe {

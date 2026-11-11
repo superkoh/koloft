@@ -33,7 +33,7 @@ import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { relOf } from './filesModel'
 import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
-import { editRefusal, joinOrStartEditRead, useEditProbe } from './EditPane'
+import { editRefusal, startEditRead, useEditProbe } from './EditPane'
 import {
   allEditTabs,
   beginEdit,
@@ -187,6 +187,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const [outlineOpen, setOutlineOpen] = useState<Record<string, boolean>>({})
   const [reloadNonce, setReloadNonce] = useState<Record<string, number>>({})
   const [editing, setEditing] = useState<Record<string, boolean>>({})
+  const [readingForEdit, setReadingForEdit] = useState<Record<string, string>>({})
   const [editFocus, setEditFocus] = useState<Record<string, number>>({})
   const [editTick, bumpEdit] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bumpEdit), [])
@@ -477,8 +478,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         setEditing((prev) => ({ ...prev, [tabId]: true }))
         setEditFocus((prev) => ({ ...prev, [tabId]: (prev[tabId] ?? 0) + 1 }))
       }
-      const disarm = (): void => {
-        if (tabIsNew) setEditing((prev) => ({ ...prev, [tabId]: false }))
+      const readDone = (): void => {
+        if (!tabIsNew) return
+        setReadingForEdit((prev) => {
+          if (prev[tabId] !== path) return prev
+          const next = { ...prev }
+          delete next[tabId]
+          return next
+        })
       }
       if (created) {
         beginEdit(sid, tabId, { path, text: '', eol: 'lf', stamp: created, readOnly: null })
@@ -490,14 +497,12 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         arm()
         return
       }
-      if (tabIsNew) setEditing((prev) => ({ ...prev, [tabId]: true }))
-      void joinOrStartEditRead(path)
+      if (tabIsNew) setReadingForEdit((prev) => ({ ...prev, [tabId]: path }))
+      void startEditRead(path)
         .then((r) => {
+          readDone()
           const now = statesRef.current[sid]?.tabs.find((t) => t.id === tabId)
-          if (!now || now.path !== path) {
-            disarm()
-            return
-          }
+          if (!now || now.path !== path) return
           if (isTabDirty(sid, tabId)) {
             arm()
             return
@@ -512,7 +517,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           arm()
         })
         .catch((err: unknown) => {
-          disarm()
+          readDone()
           useStore.getState().showToast(editRefusal(String((err as Error)?.message ?? '')))
         })
     },
@@ -1545,7 +1550,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
                 scrollTop={t.scrollTop}
                 shown={t.id === set.activeId}
                 editing={editingHere}
-                readingForEdit={!!editing[t.id] && !editingHere}
+                readingForEdit={!editingHere && !!t.path && readingForEdit[t.id] === t.path}
                 editFocus={editFocus[t.id] ?? 0}
                 editText={unsaved && !editingHere ? getEntry(ownerTab, t.id)?.text : undefined}
                 editUnsaved={unsaved}

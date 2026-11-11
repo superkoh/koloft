@@ -285,6 +285,10 @@ export function CommandPalette({
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0 && listTakesArrows) {
       e.preventDefault()
       if (e.key === 'ArrowDown') {
+        if (mode === 'ask' && at === lastListedSessionAt && sessionsHidden > 0) {
+          showMoreSessions()
+          return
+        }
         const next = at === null ? 0 : Math.min(at + 1, count - 1)
         if (mode === 'ask' && next === lastListedSessionAt) showMoreSessions()
         pick(next)

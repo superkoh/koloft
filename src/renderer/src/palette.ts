@@ -238,7 +238,7 @@ export function paletteGroups(
   if (!query.trim()) return []
   const matched = sessions.filter((s) => matchesQuery(s.text, query))
   const listed = matched.slice(0, sessionRows)
-  const shown = new Set(listed.map((s) => s.row.id))
+  const shown = new Set(matched.map((s) => s.row.id))
   const groups: PaletteGroup[] = [
     { title: 'Sessions', items: listed, hidden: matched.length - listed.length },
     { title: 'In conversations', items: conversationItems(hits, shown) },
