@@ -1037,6 +1037,11 @@ export interface BrowserCdpAttached {
   targetIds: string[]
 }
 
+export interface BrowserPagesInUse {
+  guestIds: number[]
+  owners: string[]
+}
+
 export interface BrowserOverlayOpen {
   url: string
   presentation: 'now' | 'background'
@@ -1248,6 +1253,7 @@ export interface KoloftApi {
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
     onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void
+    onMemoryCritical(cb: (inUse: BrowserPagesInUse) => void): () => void
     certProceed(url: string): Promise<void>
     clearData(): Promise<void>
     openExternal(url: string): void

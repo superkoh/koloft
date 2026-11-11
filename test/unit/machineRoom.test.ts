@@ -19,14 +19,19 @@ afterEach(() => {
   fs.rmSync(regDir, { recursive: true, force: true })
 })
 
-const room = (): MachineRoom =>
-  new MachineRoom({
+let turnedCritical: number
+
+const room = (): MachineRoom => {
+  turnedCritical = 0
+  return new MachineRoom({
     regDir,
     cores: CORES,
     read: async () => ({ pressure: 1, load1: 0 }),
     now: () => now,
-    log: (l) => lines.push(l)
+    log: (l) => lines.push(l),
+    memoryTurnedCritical: () => turnedCritical++
   })
+}
 
 function feed(r: MachineRoom, seconds: number, reading: { pressure: number; load1: number }): void {
   for (let s = 0; s < seconds; s += 5) {
@@ -101,6 +106,40 @@ describe('when the machine counts as busy, and when roomy again', () => {
     r.observe({ pressure: 2, load1: 1 })
     expect(lines.length).toBe(3)
     expect(lines[2]).toMatch(/busy · memory pressure 2 · load 1\.0 on 10 cores/)
+  })
+})
+
+describe('when memory counts as critical', () => {
+  it('says so once, at the second critical reading in a row', () => {
+    const r = room()
+    r.observe({ pressure: 4, load1: 1 })
+    expect(turnedCritical).toBe(0)
+    r.observe({ pressure: 4, load1: 1 })
+    expect(turnedCritical).toBe(1)
+    feed(r, 60, { pressure: 4, load1: 1 })
+    expect(turnedCritical).toBe(1)
+  })
+
+  it('a single critical reading between calmer ones says nothing', () => {
+    const r = room()
+    r.observe({ pressure: 4, load1: 1 })
+    r.observe({ pressure: 2, load1: 1 })
+    r.observe({ pressure: 4, load1: 1 })
+    expect(turnedCritical).toBe(0)
+  })
+
+  it('memory at warning says nothing, however long it lasts', () => {
+    const r = room()
+    feed(r, 600, { pressure: 2, load1: 1 })
+    expect(turnedCritical).toBe(0)
+  })
+
+  it('says so again once memory left critical and came back', () => {
+    const r = room()
+    feed(r, 10, { pressure: 4, load1: 1 })
+    r.observe({ pressure: 1, load1: 1 })
+    feed(r, 10, { pressure: 4, load1: 1 })
+    expect(turnedCritical).toBe(2)
   })
 })
 

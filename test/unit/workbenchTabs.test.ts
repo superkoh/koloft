@@ -10,6 +10,7 @@ import {
   emptyTabSet,
   fileLabels,
   liveWebTabs,
+  mayDropForMemory,
   moveTab,
   navigateTab,
   openTab,
@@ -240,6 +241,37 @@ describe('a cold session answers only ownerless dialogs', () => {
   it('a guest no tab can name, and an auth challenge with no guest, are ownerless too', () => {
     expect(dialogHasLiveOwner({ guestId: 42 }, ownerOf, live)).toBe(false)
     expect(dialogHasLiveOwner({}, ownerOf, live)).toBe(false)
+  })
+})
+
+describe('which hidden web pages may go when memory is critical', () => {
+  const hidden = {
+    owner: 'tab-A',
+    onScreen: false,
+    heldForAnAgent: false,
+    loading: false,
+    hasADialogUp: false,
+    guestId: 7
+  }
+  const nothingInUse = { guestIds: new Set<number>(), owners: new Set<string>() }
+
+  it('a hidden page nobody is using goes', () => {
+    expect(mayDropForMemory(hidden, nothingInUse)).toBe(true)
+  })
+
+  it('the page on screen, a page held for an agent, a loading page and one with a dialog up stay', () => {
+    for (const fact of ['onScreen', 'heldForAnAgent', 'loading', 'hasADialogUp'] as const)
+      expect(mayDropForMemory({ ...hidden, [fact]: true }, nothingInUse)).toBe(false)
+  })
+
+  it('a page the main process says is in use stays, and so does every page of an owner it names', () => {
+    expect(mayDropForMemory(hidden, { ...nothingInUse, guestIds: new Set([7]) })).toBe(false)
+    expect(mayDropForMemory(hidden, { ...nothingInUse, owners: new Set(['tab-A']) })).toBe(false)
+  })
+
+  it('a page that cannot be told apart yet — no guest id, no owner — stays', () => {
+    expect(mayDropForMemory({ ...hidden, guestId: 0 }, nothingInUse)).toBe(false)
+    expect(mayDropForMemory({ ...hidden, owner: undefined }, nothingInUse)).toBe(false)
   })
 })
 

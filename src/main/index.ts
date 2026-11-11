@@ -451,6 +451,7 @@ import type {
   BrowserDownload,
   BrowserJsDialog,
   BrowserCdpAttached,
+  BrowserPagesInUse,
   BrowserCdpOp,
   BrowserCdpOpResult,
   ScreenAnswer,
@@ -3339,6 +3340,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     now: Date.now,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    memoryTurnedCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
     heldDirs: () => remoteHookMirrors(),
     freeOnMachine: freeOnMachine,
     isRemote: (tabId) => !!machineOfTab(tabId),
@@ -4513,6 +4515,7 @@ function modalSlotTaken(): boolean {
 }
 
 const signInWindows = new WeakSet<BaseWindow>()
+const pagesWithASignInWindow = new Map<BaseWindow, WebContents>()
 
 function keptBySignInWindow(
   from: BaseWindow | undefined,
@@ -4538,6 +4541,7 @@ function onEveryWebPage(watch: (contents: WebContents) => void): void {
 
 function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
   signInWindows.add(win)
+  pagesWithASignInWindow.set(win, opener)
   popup.on('input-event', handsOnKoloft)
   const host = mainWindow
   const close = (): void => {
@@ -4546,6 +4550,7 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
   opener.once('destroyed', close)
   host?.once('closed', close)
   win.once('closed', () => {
+    pagesWithASignInWindow.delete(win)
     opener.removeListener('destroyed', close)
     host?.removeListener('closed', close)
   })
@@ -4813,6 +4818,38 @@ function isOverlayGuest(contents: WebContents): boolean {
   return overlayGuests.has(contents.id)
 }
 
+function pagesInUse(): BrowserPagesInUse {
+  const guestIds = new Set<number>([
+    ...pagesDownloading.values(),
+    ...[...pendingPermissions.values()].map((p) => p.guestId)
+  ])
+  const owners = new Set<string>()
+  const keepOwnerOf = (page: WebContents): void => {
+    guestIds.add(page.id)
+    const owner = guestOwners.get(page)
+    if (owner) owners.add(owner)
+  }
+  for (const opener of pagesWithASignInWindow.values()) keepOwnerOf(opener)
+  for (const ask of secretAsks?.views() ?? []) {
+    if (ask.kind === 'sudo') continue
+    owners.add(ask.tabId)
+    if (ask.kind === 'page') guestIds.add(ask.guestId)
+  }
+  for (const page of webContents.getAllWebContents()) {
+    if (page.isDestroyed() || !isWorkbenchPage(page)) continue
+    const owner = guestOwners.get(page)
+    if (owner && relayAttached(owner)) owners.add(owner)
+    if (
+      page.debugger.isAttached() ||
+      page.isDevToolsOpened() ||
+      page.isCurrentlyAudible() ||
+      guestDrivenFromAnotherMachine(page.id)
+    )
+      guestIds.add(page.id)
+  }
+  return { guestIds: [...guestIds], owners: [...owners] }
+}
+
 // PLATFORM§6
 const pendingOverlayOpens: BrowserOverlayOpen[] = []
 let overlayListening = false
@@ -5037,6 +5074,7 @@ async function isDirectory(target: string): Promise<boolean> {
 const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
+const pagesDownloading = new Map<string, number>()
 
 const downloadSources = new Map<string, string>()
 
@@ -5261,7 +5299,7 @@ function setupBrowserPartition(): void {
     if (!headers || !isAttachmentResponse(headers)) return callback({})
     callback({ responseHeaders: { ...headers, 'x-content-type-options': ['nosniff'] } })
   })
-  ses.on('will-download', (_e, item) => {
+  ses.on('will-download', (_e, item, contents) => {
     const dir = process.env.KOLOFT_DOWNLOAD_DIR || app.getPath('downloads')
     try {
       fs.mkdirSync(dir, { recursive: true })
@@ -5281,6 +5319,7 @@ function setupBrowserPartition(): void {
     const id = retryId ?? crypto.randomUUID()
     if (retryId) downloadSources.delete(retryId)
     liveDownloads.set(id, item)
+    if (contents) pagesDownloading.set(id, contents.id)
     sendToRenderer(CH.browser.downloadEvent, {
       id,
       kind: 'started',
@@ -5297,6 +5336,7 @@ function setupBrowserPartition(): void {
     })
     item.once('done', (_ev, state) => {
       liveDownloads.delete(id)
+      pagesDownloading.delete(id)
       if (state === 'completed') downloadSources.set(id, url)
       sendToRenderer(CH.browser.downloadEvent, {
         id,
