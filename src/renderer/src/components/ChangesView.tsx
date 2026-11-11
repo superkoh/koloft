@@ -20,7 +20,8 @@ import { highlightCodeOffThread } from '../offThread'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
-import { isComposing, keepCaretInSessionTerminal } from '../keys'
+import { keepCaretInSessionTerminal } from '../keys'
+import { CommentBox, type CommentTarget } from './CommentBox'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
@@ -28,7 +29,6 @@ import {
   baseUnresolved,
   blocksPastBudget,
   buildEntries,
-  commentBlocked,
   emptyStreamMessage,
   groupByDir,
   hunkPrompt,
@@ -67,7 +67,7 @@ export interface ChangesViewProps {
   onSplit: (path: string, view: ArtifactView, scrollTop: number) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   onScrollRequest: (rel: string) => void
-  onReturnFocus: () => void
+  commentTo: CommentTarget
   streamRef: RefObject<HTMLDivElement | null>
 }
 
@@ -118,7 +118,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     onSplit,
     onContextMenu,
     onScrollRequest,
-    onReturnFocus,
+    commentTo,
     streamRef
   } = props
 
@@ -454,16 +454,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [onScrollRequest]
   )
 
-  const pasteTab = session?.tabId ?? null
-  const blocked = commentBlocked(session)
-  const putInSession = useCallback(
-    async ({ pasted, typed }: HunkPrompt): Promise<void> => {
-      if (!pasteTab) return
-      await window.api.terminal.paste(pasteTab, pasted, typed)
-      onReturnFocus()
-    },
-    [pasteTab, onReturnFocus]
-  )
+  const { blocked, put: putInSession } = commentTo
 
   const listEl = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -612,7 +603,7 @@ interface BlockProps {
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
-  onComment: (prompt: HunkPrompt) => Promise<void>
+  onComment: (prompt: HunkPrompt) => void
 }
 
 const ChangeBlock = memo(function ChangeBlock({
@@ -798,7 +789,7 @@ function Hunks({
   expanded: boolean
   blocked: string | null
   onToggleExpand: (path: string) => void
-  onComment: (prompt: HunkPrompt) => Promise<void>
+  onComment: (prompt: HunkPrompt) => void
 }): JSX.Element {
   const [commentedHunk, setCommentedHunk] = useState<string | null>(null)
   const commenting = hunks.findIndex((h) => h.text === commentedHunk)
@@ -835,13 +826,14 @@ function Hunks({
           </div>
           {commenting === i && (
             <CommentBox
+              on="hunk"
               blocked={blocked}
               note={note}
               setNote={setNote}
               onClose={() => openComment(null)}
               onPut={() => {
                 openComment(null)
-                void onComment(hunkPrompt(entry.rel, h.text, note))
+                onComment(hunkPrompt(entry.rel, h.text, note))
               }}
             />
           )}
@@ -849,61 +841,6 @@ function Hunks({
         </Fragment>
       ))}
     </>
-  )
-}
-
-function CommentBox({
-  blocked,
-  note,
-  setNote,
-  onClose,
-  onPut
-}: {
-  blocked: string | null
-  note: string
-  setNote: (note: string) => void
-  onClose: () => void
-  onPut: () => void
-}): JSX.Element {
-  const put = (): void => {
-    if (!blocked) onPut()
-  }
-  return (
-    <form
-      className="cv-comment"
-      aria-label="Comment on this hunk"
-      onSubmit={(e) => {
-        e.preventDefault()
-        put()
-      }}
-    >
-      <textarea
-        className="ed-area"
-        rows={3}
-        autoFocus
-        placeholder="Your note on this hunk…"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose()
-          if (e.key !== 'Enter' || e.shiftKey || isComposing(e)) return
-          e.preventDefault()
-          put()
-        }}
-      />
-      <div className="cv-comment-row">
-        <span className="cv-comment-hint">
-          {blocked ??
-            'Lands in the session’s input box with the hunk — you press ⏎ there to send it. ⏎ here · ⇧⏎ new line · Esc closes'}
-        </span>
-        <button type="button" className="cv-retry" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="submit" className="btn-primary" disabled={!!blocked}>
-          Put in session
-        </button>
-      </div>
-    </form>
   )
 }
 

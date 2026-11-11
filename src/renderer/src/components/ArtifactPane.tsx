@@ -12,11 +12,13 @@ import { IconClose } from '../icons'
 import type { ArtifactView } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
 import { basename, previewKindForPath, stateAfterReadError } from '@shared/preview'
-import { resolveOnHost } from '@shared/remoteKey'
+import { barePath, resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
+import { relOf } from './filesModel'
+import type { CommentTarget } from './CommentBox'
 import { parseUnifiedDiff } from '@shared/unifiedDiff'
 import { langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
 import { highlightCodeOffThread } from '../offThread'
@@ -218,6 +220,7 @@ export interface ArtifactPaneProps {
   onUnmount?: (tabId: string, scrollTop: number) => void
   editText?: string
   editUnsaved?: boolean
+  commentTo: CommentTarget
 }
 
 export function ArtifactPane({
@@ -241,7 +244,8 @@ export function ArtifactPane({
   onClose,
   onUnmount,
   editText,
-  editUnsaved
+  editUnsaved,
+  commentTo
 }: ArtifactPaneProps): JSX.Element {
   const kind = previewKindForPath(path)
   const isBinaryKind = kind === 'image' || kind === 'pdf'
@@ -589,6 +593,7 @@ export function ArtifactPane({
           item={{ kind: 'markdown', src: path, label: basename(path) }}
           tick={reloadTick}
           onHeadings={setMdHeadings}
+          comment={{ ...commentTo, rel: barePath(relOf(path, wsRoot)) }}
         />
       )
     }

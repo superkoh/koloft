@@ -86,13 +86,17 @@ import {
 import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
+  PLAN_REL,
   WORKBENCH,
   artifactBody,
   browseRow,
   claudePrompts,
   commentOnFirstHunk,
+  commentOnPlan,
   expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
+  expectOnePromptFromThePassage,
+  writePlan,
   sendFailingChecks,
   openInBrowse,
   pickChip,
@@ -731,6 +735,35 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
       await expect(expand).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-28b: ✎ comment on words in a remote rendered Markdown file reaches claude on the machine as a paste naming the path inside the workspace and the line of the machine’s file, the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      writePlan(dir)
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      await openInBrowse(page, `${remoteKey(env)}/${PLAN_REL}`)
+
+      const note = 'E-RW-28b make it 5 tries'
+      await commentOnPlan(page, note)
+      await expectOnePromptFromThePassage(() => claudePrompts(transcript), note)
     } finally {
       await quitAndClose(app)
     }

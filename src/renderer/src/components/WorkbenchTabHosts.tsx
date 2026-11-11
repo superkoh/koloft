@@ -1,6 +1,7 @@
 import { memo, type JSX } from 'react'
 import type { ArtifactView } from '@shared/types'
 import { ArtifactPane, type ArtifactCaps } from './ArtifactPane'
+import type { CommentTarget } from './CommentBox'
 import { EditPane } from './EditPane'
 import { TerminalView } from './TerminalView'
 
@@ -47,6 +48,7 @@ export interface FileTabHostProps {
   onOutlineClose: (tabId: string) => void
   onClose: (tabId: string) => void
   onUnmount: (tabId: string, scrollTop: number) => void
+  commentTo: CommentTarget
 }
 
 export const FileTabHost = memo(function FileTabHost({
@@ -75,7 +77,8 @@ export const FileTabHost = memo(function FileTabHost({
   onCloseZoom,
   onOutlineClose,
   onClose,
-  onUnmount
+  onUnmount,
+  commentTo
 }: FileTabHostProps): JSX.Element {
   return (
     <div className="wb-host" style={{ visibility: shown ? undefined : 'hidden' }}>
@@ -104,6 +107,7 @@ export const FileTabHost = memo(function FileTabHost({
           onUnmount={onUnmount}
           editText={editText}
           editUnsaved={editUnsaved}
+          commentTo={commentTo}
         />
       )}
     </div>

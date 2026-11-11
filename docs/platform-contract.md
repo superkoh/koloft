@@ -3364,3 +3364,18 @@ and which `mermaidRender` waits on before its first diagram.
 
 Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
 menu's listening ports).
+
+## §68 The text of a selection: `Selection.toString()` against `Range.toString()`
+
+Measured 2026-11-10 in headless Chrome 157 (Playwright, a page with a paragraph, a code
+block whose language label and Copy button carry `user-select: none`, and a second
+paragraph; one range from the first paragraph into the second, added to the selection):
+
+- **`Range.toString()` joins every text node in the range, unselectable ones included,
+  with nothing between blocks**: `wordstsCopyconst x = 1after`.
+- **`Selection.toString()` of that same range leaves out the `user-select: none` text and
+  puts line breaks between blocks**: `words\n\nconst x = 1\nafter`.
+
+Koloft dependents: the ✎ comment on a rendered Markdown file (`PreviewViewer.tsx`) quotes
+the selection's own text, and the rendered code block's chrome is `user-select: none`
+(`previewViewer.css`); `md-comment.spec.ts` checks it in the app's Electron.

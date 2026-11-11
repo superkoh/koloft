@@ -29,6 +29,7 @@ import { useEditProbe } from './EditPane'
 import { FullWidthButton } from './WorkbenchBars'
 import { keepCaretInSessionTerminal } from '../keys'
 import { ChangesView } from './ChangesView'
+import type { CommentTarget } from './CommentBox'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
 import {
@@ -477,7 +478,7 @@ export interface FilesBodyProps {
   onZoomImage: (src: string) => void
   zoom: string | null
   onCloseZoom: () => void
-  onReturnFocus: () => void
+  commentTo: CommentTarget
 }
 
 export const FilesBody = memo(function FilesBody({
@@ -498,7 +499,7 @@ export const FilesBody = memo(function FilesBody({
   onZoomImage,
   zoom,
   onCloseZoom,
-  onReturnFocus
+  commentTo
 }: FilesBodyProps): JSX.Element {
   const contentRef = useRef<HTMLDivElement>(null)
   const [newFileDir, setNewFileDir] = useState<string | null>(null)
@@ -604,7 +605,7 @@ export const FilesBody = memo(function FilesBody({
           onSplit={onSplit}
           onContextMenu={openContextMenu}
           onScrollRequest={c.scrollToFile}
-          onReturnFocus={onReturnFocus}
+          commentTo={commentTo}
           streamRef={contentRef}
         />
       ) : (
@@ -648,6 +649,7 @@ export const FilesBody = memo(function FilesBody({
                 onEdit={onEdit}
                 onPathMenu={openContextMenu}
                 onClose={() => setOpenFile(null)}
+                commentTo={commentTo}
               />
             ) : (
               <div className="fv-empty">
@@ -696,7 +698,8 @@ function ReadingArea({
   onNavigate,
   onEdit,
   onPathMenu,
-  onClose
+  onClose,
+  commentTo
 }: {
   c: FilesController
   file: OpenFile
@@ -711,6 +714,7 @@ function ReadingArea({
   onEdit: (path: string) => void
   onPathMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   onClose: () => void
+  commentTo: CommentTarget
 }): JSX.Element {
   const { dir, name } = splitPath(file.src, root)
   const status = git[file.src]
@@ -795,6 +799,7 @@ function ReadingArea({
           onCloseZoom={onCloseZoom}
           onOutlineClose={() => c.setOutlineOpen(false)}
           onClose={onClose}
+          commentTo={commentTo}
         />
       </div>
     </>

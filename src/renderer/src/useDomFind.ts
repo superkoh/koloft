@@ -32,7 +32,7 @@ function foldCaseKeepingLength(s: string): string {
   return out
 }
 
-function computeMatchRanges(root: HTMLElement, query: string): Range[] {
+export function computeMatchRanges(root: HTMLElement, query: string): Range[] {
   if (!query) return []
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {

@@ -3,7 +3,11 @@ import { previewFileUrl } from '@shared/browserRoute'
 import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
+import type { SourceLines } from '../markdown/lines'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import { CommentBox, type CommentTarget } from './CommentBox'
+import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
+import { findInBlocks, linesOfRange, selectedRangeIn, swapMark, type DrawnBlock } from './mdPassage'
 import '../previewViewer.css'
 
 export interface MdHeading {
@@ -12,17 +16,34 @@ export interface MdHeading {
   level: number
 }
 
+type PassageComment = CommentTarget & { rel: string }
+
 const DIAGRAM_RENDER_AHEAD_PX = 150
 const PAINT_SLICE_MS = 8
 const TOKEN = crypto.randomUUID()
+const COMMENT_BUTTON_ROOM_PX = 90
+const COMMENT_BUTTON_H_PX = 26
+const COMMENT_BUTTON_GAP_PX = 4
 
-const UNREADABLE: RenderedDoc = { blocks: ['<p>Failed to read file.</p>'], headings: [] }
+type DrawnDoc = RenderedDoc & { text: string }
+
+const UNREADABLE: DrawnDoc = {
+  blocks: ['<p>Failed to read file.</p>'],
+  lines: [null],
+  headings: [],
+  text: ''
+}
 
 let mermaidTempIdSeq = 0
 
-interface Shown {
+interface Shown extends DrawnBlock {
   html: string
-  el: HTMLDivElement
+}
+
+interface OpenComment {
+  passage: Passage
+  lines: SourceLines | null
+  marked: string
 }
 
 interface Diagrams {
@@ -140,16 +161,26 @@ function flashCopied(btn: HTMLElement): void {
 export function PreviewViewer({
   item,
   tick = 0,
-  onHeadings
+  onHeadings,
+  comment
 }: {
   item: PreviewItem
   tick?: number
   onHeadings?: (h: MdHeading[]) => void
+  comment?: PassageComment
 }): JSX.Element {
-  const [doc, setDoc] = useState<RenderedDoc | null>(null)
+  const [doc, setDoc] = useState<DrawnDoc | null>(null)
   const [zoom, setZoom] = useState<{ code: string; svg: string } | null>(null)
+  const [pick, setPick] = useState<{ x: number; y: number } | null>(null)
+  const [open, setOpen] = useState<OpenComment | null>(null)
+  const [note, setNote] = useState('')
+  const wrapRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const shown = useRef<Shown[]>([])
+  const drawnText = useRef('')
+  const mark = useRef<Range | null>(null)
+  const openRef = useRef(open)
+  openRef.current = open
   const diagrams = useRef<Diagrams>({ watch: () => {}, forgetRemoved: () => {} })
   const zoomFrom = useRef<HTMLElement | null>(null)
   const pipeline = useRef({ busy: false, again: false, read: () => {} })
@@ -167,11 +198,22 @@ export function PreviewViewer({
       p.busy = true
       window.api.preview
         .readText(item.src)
-        .then((text) => renderMarkdown({ text, srcPath: item.src, token: TOKEN }))
+        .then((text) =>
+          renderMarkdown({ text, srcPath: item.src, token: TOKEN }).then((d) => ({ ...d, text }))
+        )
         .then(setDoc, () => setDoc((d) => (d ? { ...d } : UNREADABLE)))
     }
     p.read()
   }, [item.src, item.kind, tick])
+
+  const markAgainIfRedrawn = (): void => {
+    const was = mark.current
+    const o = openRef.current
+    if (!was || !o || was.toString() === o.marked) return
+    const again = findInBlocks(shown.current, o.lines, o.marked)
+    swapMark(again, was)
+    mark.current = again
+  }
 
   useEffect(() => {
     const body = bodyRef.current
@@ -187,7 +229,10 @@ export function PreviewViewer({
     }
     const now: Shown[] = []
     const fresh: Shown[] = []
-    if (firstPaint) shown.current = now
+    if (firstPaint) {
+      shown.current = now
+      drawnText.current = doc.text
+    }
 
     const watch = (b: Shown): void => {
       for (const el of b.el.querySelectorAll<HTMLElement>('.mmd'))
@@ -196,6 +241,7 @@ export function PreviewViewer({
 
     const painted = (): void => {
       tellHeadings.current?.(doc.headings)
+      markAgainIfRedrawn()
       const p = pipeline.current
       p.busy = false
       if (!p.again) return
@@ -208,9 +254,11 @@ export function PreviewViewer({
     const step = (): void => {
       const until = performance.now() + PAINT_SLICE_MS
       while (i < doc.blocks.length) {
-        const html = doc.blocks[i++]
+        const at = i++
+        const html = doc.blocks[at]
+        const lines = doc.lines[at] ?? null
         const kept = reusable.get(html)?.shift()
-        const b = kept ?? { html, el: blockElement(html) }
+        const b = kept ? { ...kept, lines } : { html, el: blockElement(html), lines }
         now.push(b)
         if (firstPaint) {
           body.append(b.el)
@@ -230,6 +278,7 @@ export function PreviewViewer({
         diagrams.current.forgetRemoved()
         for (const b of fresh) watch(b)
         shown.current = now
+        drawnText.current = doc.text
       }
       painted()
     }
@@ -368,14 +417,114 @@ export function PreviewViewer({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [zoom])
 
+  const commentable = item.kind === 'markdown' && !!comment
+  useEffect(() => {
+    const wrap = wrapRef.current
+    const body = bodyRef.current
+    if (!commentable || !wrap || !body) return
+    let raf = 0
+    let showing = false
+    const hide = (): void => {
+      showing = false
+      setPick(null)
+    }
+    const place = (): void => {
+      raf = 0
+      const rects = selectedRangeIn(body)?.getClientRects()
+      const end = rects?.[rects.length - 1]
+      if (!end) return hide()
+      const view = body.getBoundingClientRect()
+      if (end.bottom < view.top || end.top > view.bottom) return hide()
+      const box = wrap.getBoundingClientRect()
+      const x = Math.max(0, Math.min(end.right - box.left, box.width - COMMENT_BUTTON_ROOM_PX))
+      const y = Math.min(
+        end.bottom - box.top + COMMENT_BUTTON_GAP_PX,
+        box.height - COMMENT_BUTTON_H_PX
+      )
+      showing = true
+      setPick((p) => (p?.x === x && p.y === y ? p : { x, y }))
+    }
+    const soon = (): void => {
+      const at = document.getSelection()?.anchorNode
+      if (!showing && !(at && body.contains(at))) return
+      if (!raf) raf = requestAnimationFrame(place)
+    }
+    document.addEventListener('selectionchange', soon)
+    body.addEventListener('scroll', soon)
+    return () => {
+      document.removeEventListener('selectionchange', soon)
+      body.removeEventListener('scroll', soon)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [commentable])
+
+  useEffect(
+    () => () => {
+      swapMark(null, mark.current)
+      mark.current = null
+    },
+    []
+  )
+
+  const openComment = (): void => {
+    const body = bodyRef.current
+    const range = body && selectedRangeIn(body)
+    if (!body || !range || !comment) return
+    const lines = linesOfRange(range, body, shown.current)
+    // PLATFORM§68
+    const said = document.getSelection()?.toString() ?? ''
+    setOpen({
+      passage: passageAt(comment.rel, drawnText.current, lines, said),
+      lines,
+      marked: range.toString()
+    })
+    setNote('')
+    setPick(null)
+    swapMark(range, mark.current)
+    mark.current = range
+  }
+
+  const closeComment = (): void => {
+    setOpen(null)
+    swapMark(null, mark.current)
+    mark.current = null
+  }
+
   // PLATFORM§25
   const zoomHtml = useMemo(() => ({ __html: zoom?.svg ?? '' }), [zoom])
 
   switch (item.kind) {
     case 'markdown':
       return (
-        <div className="md-wrap">
+        <div className={'md-wrap' + (open ? ' commenting' : '')} ref={wrapRef}>
           <div className="md-body" ref={bodyRef} />
+          {comment && pick && !open && (
+            <button
+              type="button"
+              className="md-cmt"
+              style={{ left: pick.x, top: pick.y }}
+              disabled={!!comment.blocked}
+              title={comment.blocked ?? CHANGES_MSG.commentPassage}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openComment}
+            >
+              ✎ comment
+            </button>
+          )}
+          {comment && open && (
+            <CommentBox
+              on="passage"
+              head={`${open.passage.place} · “${open.passage.selected}”`}
+              blocked={comment.blocked}
+              note={note}
+              setNote={setNote}
+              onClose={closeComment}
+              onPut={() => {
+                closeComment()
+                comment.put(passagePrompt(open.passage, note))
+              }}
+            />
+          )}
           {zoom && (
             <div
               className="mmd-zoom"

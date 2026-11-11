@@ -1,5 +1,6 @@
 import type { GitFileStatus, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { isDocPath, relOf, splitPath, type ChangeFilters } from './filesModel'
+import type { SourceLines } from '../markdown/lines'
 
 export type ChangeKind = 'text' | 'renamed' | 'binary' | 'deleted' | 'conflict'
 
@@ -156,11 +157,57 @@ export interface HunkPrompt {
   typed: string
 }
 
-// CC§18
+const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
+
+function fenced(lang: string, text: string): string[] {
+  const fence = fenceFor(text)
+  return [fence + lang, text, fence]
+}
+
+// CC§18 CODEX§23
+function commentPrompt(pastedLines: string[], note: string): HunkPrompt {
+  return {
+    pasted: APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + pastedLines.join('\n') + '\n\n',
+    typed: note.trim()
+  }
+}
+
 export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
-  const diff = hunk.replace(/\n+$/, '')
-  const fence = fenceFor(diff)
-  return { pasted: [rel, fence + 'diff', diff, fence].join('\n') + '\n\n', typed: note.trim() }
+  return commentPrompt([rel, ...fenced('diff', hunk.replace(/\n+$/, ''))], note)
+}
+
+export interface Passage {
+  place: string
+  source: string | null
+  selected: string
+}
+
+const MARKDOWN_IT_NEWLINE = /\r\n?|\n/
+const SELECTED_CHARS_KEPT = 300
+
+export function passageAt(
+  rel: string,
+  text: string,
+  lines: SourceLines | null,
+  selected: string
+): Passage {
+  const chars = [...selected.replace(/\s+/g, ' ').trim()]
+  const words =
+    chars.length > SELECTED_CHARS_KEPT
+      ? chars.slice(0, SELECTED_CHARS_KEPT).join('') + '…'
+      : chars.join('')
+  if (!lines) return { place: rel, source: null, selected: words }
+  const all = text.split(MARKDOWN_IT_NEWLINE)
+  const from = lines[0]
+  let to = Math.min(lines[1], all.length)
+  while (to > from + 1 && !all[to - 1].trim()) to--
+  const place = to > from + 1 ? `${rel}:${from + 1}-${to}` : `${rel}:${from + 1}`
+  return { place, source: all.slice(from, to).join('\n'), selected: words }
+}
+
+export function passagePrompt(p: Passage, note: string): HunkPrompt {
+  const quote = p.source === null ? [] : fenced('markdown', p.source)
+  return commentPrompt([p.place, ...quote, `Selected: “${p.selected}”`], note)
 }
 
 export function commentBlocked(session: SessionInfo | null): string | null {
@@ -345,6 +392,8 @@ export const CHANGES_MSG = {
   fileCutOff: 'This file’s diff was truncated — showing what fits.',
   noDiff: 'No diff available.',
   comment: 'Comment on this hunk and put it in the session’s input box',
+  commentPassage: 'Comment on this passage and put it in the session’s input box',
+  commentNotPasted: 'The comment could not be put in the session.',
   commentNoSession: 'No running session to put it in',
   commentApproval: 'The session is waiting for an approval — answer it in the session first',
   totals: (t: ChangeTotals): string => {

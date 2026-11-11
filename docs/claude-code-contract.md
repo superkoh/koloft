@@ -3620,6 +3620,13 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
   stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
   linux-arm64); the same held in 3 of 3 runs of the local real case.
+- **Two pastes with a note typed after each wait for one CR and go as one message.**
+  2026-11-10, CC 2.1.322 on this Mac, Koloft's ✎ comment on a rendered Markdown file
+  done twice before any Enter (`agent-tools-real-smoke.spec.ts` › "a real Claude Code
+  holds two passage comments …", 3 runs): the input box showed `[Pasted text #1 +N
+  lines]first note[Pasted text #2 +N lines]second note`, the transcript held no user
+  message 5 s later, and the CR sent one `user` record with each paste in its own
+  `<pasted_content>` tags and each note outside them, in the order typed.
 - **A picture path inside the paste is opened when the question needs it.** Measured
   2026-10-28 on this Mac's signed-in claude, a python `pty` probe: a paste in Koloft's
   element-pick shape whose `Picture:` line names a PNG of a canvas with the word ZEBRA

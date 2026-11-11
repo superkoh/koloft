@@ -39,12 +39,16 @@ import {
   ONE_FAILING_OF_FIVE,
   WORKBENCH,
   commentOnFirstHunk,
+  commentOnPlan,
   expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
+  expectOnePromptFromThePassage,
+  openInBrowse,
   sendFailingChecks,
   showBrowse,
   wbActiveTab,
-  wbUnreadTabs
+  wbUnreadTabs,
+  writePlan
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
@@ -2299,6 +2303,27 @@ test.describe('Codex sessions through the real method chooser, process transport
       const note = 'Codex keep the old name'
       const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
       await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('✎ comment on words in a rendered Markdown file lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const plan = writePlan(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await openInBrowse(page, plan)
+
+      const note = 'Codex make it 5 tries'
+      await commentOnPlan(page, note)
+      await expectOnePromptFromThePassage(() => codexPrompts(env), note)
     } finally {
       await quitAndClose(app)
     }

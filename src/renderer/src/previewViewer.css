@@ -57,6 +57,28 @@
   position: absolute;
   inset: 0;
 }
+.md-wrap.commenting {
+  display: flex;
+  flex-direction: column;
+}
+.md-wrap.commenting > .md-body {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  min-height: 0;
+}
+.md-wrap .md-cmt {
+  position: absolute;
+  z-index: 2;
+  white-space: nowrap;
+}
+.md-wrap .md-cmt:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+::highlight(md-cmt) {
+  background-color: rgba(236, 150, 112, 0.3);
+}
 
 .md-body .md-frontmatter {
   display: grid;
@@ -176,9 +198,11 @@
   letter-spacing: 0.04em;
   color: #8c867c;
   pointer-events: none;
+  user-select: none;
 }
 .md-wrap .md-code-copy,
-.md-wrap .mmd-copy {
+.md-wrap .mmd-copy,
+.md-wrap .md-cmt {
   padding: 2px 9px;
   border: 1px solid #e0dad1;
   border-radius: 5px;
@@ -190,7 +214,8 @@
   cursor: pointer;
 }
 .md-wrap .md-code-copy:hover,
-.md-wrap .mmd-copy:hover {
+.md-wrap .mmd-copy:hover,
+.md-wrap .md-cmt:not(:disabled):hover {
   border-color: #c7bfb2;
   color: #2b2b29;
 }
@@ -203,6 +228,7 @@
   position: absolute;
   top: 4px;
   right: 6px;
+  user-select: none;
 }
 .md-body .md-bidi {
   padding: 0 2px;
