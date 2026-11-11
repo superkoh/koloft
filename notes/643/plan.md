@@ -49,8 +49,8 @@ koloft page tap <css selector> -- "<one line that tells the owner what to do>"
   `<iframe>`). It must match exactly one element in one of the session's Workbench
   pages, which is also how the page is picked (the rule `koloft secret page` has).
 - Koloft scrolls that element into view, then shows it. After a tap the picture also
-  takes in any frame that has appeared since the ask began (the picture question a
-  tick opens is such a frame).
+  takes in any frame that has come into view since the ask began (the picture question
+  a tick opens is such a frame: on hCaptcha it sat off-screen until the tick).
 - Reply to the session: the owner said it passed / gave up / did not answer in
   time. The session then looks at the page itself.
 
@@ -133,12 +133,13 @@ load passed with no click, so that try proves nothing.
 ## Every kind of session tab
 
 The command runs in Koloft's main process and finds the page among the tab's own
-Workbench pages, without the browser-control relay, so it is the same for all eight.
+Workbench pages, so the command itself does not depend on the kind of tab. What
+differs is whether the session can see the check and name its element.
 
 | | This Mac | Another machine (SSH) |
 | --- | --- | --- |
 | Claude Code | as above | the same (see "Not probed yet" 4) |
-| Codex, Muse Code, Antigravity | as above | the same command and card. One difference: these sessions cannot read a Workbench page themselves (no browser control there), so afterwards they know only what the owner pressed |
+| Codex, Muse Code, Antigravity | as above | left out in practice: these sessions have no browser control of the Workbench (`src/shared/agentGuide.ts`, WEB PAGES), so they cannot see that a check came up or name its element. Inferred from the code, not run. The command would work for them the day they get browser control |
 
 ## The one choice for the owner: who clicks the check
 
@@ -170,12 +171,11 @@ Nothing they have changes. It is one new command in the text sessions read
 ## Tests
 
 - Unit: grid size and "square name → point" for the sizes in the mockup; the box of
-  "named element plus frames that appeared".
+  "named element plus frames that came into view".
 - e2e, fake Discord (the `discord-secret` pattern): a local page with an iframe from
   another origin that counts trusted clicks, at a known place. Owner away: the room
   gets a picture (two pixels checked, so a misplaced iframe fails) and the card; the
   box is filled with a square; the iframe's counter is 1 and its click was
   `isTrusted`; "It passed" ends the command. Owner at the Mac and not answering
   Discord: the ask shows in the tab and nothing is posted.
-- The same case from a Claude Code session and from a Codex session on the lab
-  machine.
+- The same case from a Claude Code session on the lab machine.
