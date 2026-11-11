@@ -731,6 +731,13 @@ export class DiscordRelay {
     return typed.at === undefined || Date.now() - typed.at < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
   }
 
+  // MUSE§11 AGY§14
+  private ticksOfOursMayStillBeSet(tab: string, question: CodexQuestion): boolean {
+    return (
+      this.codexTyped.get(tab)?.at !== undefined && question.questions.some((q) => q.multiSelect)
+    )
+  }
+
   private async pressOnce(tab: string, press: () => Promise<boolean>): Promise<boolean> {
     const typed: KeysTyped = {}
     this.codexTyped.set(tab, typed)
@@ -805,7 +812,8 @@ export class DiscordRelay {
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
       // CODEX§20 MUSE§11 AGY§14
-      if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
+      if (this.d.touchedSinceAsked(tab) || this.ticksOfOursMayStillBeSet(tab, question))
+        return { error: STARTED_IN_THE_TERMINAL }
       if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
       this.d.answered(tab, reply)
       const keys = answerKeys(answerKeysFor, question, answers)
