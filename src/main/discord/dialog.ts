@@ -58,7 +58,7 @@ export function questionsOf(p: AskPayload): Question[] {
   })
 }
 
-export function questionText(q: Question): string {
+function questionText(q: Question): string {
   const options = q.options.map(
     (o, i) => `${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`
   )

@@ -718,6 +718,7 @@ export interface AttentionEvent extends AttentionSubject {
   kind: AttentionKind
   at: number
   fyi?: boolean
+  wasAsking?: boolean
 }
 
 export interface OsOutletsSeenByTests {
