@@ -33,6 +33,7 @@ function switchAsReactDoes(from: string, to: string): void {
 }
 
 const LONGER_THAN_THE_HAND_BACK_DELAY_MS = 2000
+const SHORTER_THAN_THE_HAND_BACK_DELAY_MS = 600
 
 function letTheSwitchSettle(): void {
   vi.advanceTimersByTime(LONGER_THAN_THE_HAND_BACK_DELAY_MS)
@@ -47,6 +48,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.runOnlyPendingTimers()
   vi.useRealTimers()
 })
 
@@ -103,6 +105,16 @@ describe('webglPool', () => {
     switchAsReactDoes('t3', 't3')
     letTheSwitchSettle()
     expect(events).toEqual([])
+  })
+
+  it('switching again and again without a pause still hands the older hidden terminals back', () => {
+    for (let i = 1; i <= 8; i++) enroll(`t${i}`)
+    showWebgl('t1')
+    for (let i = 1; i < 8; i++) {
+      switchAsReactDoes(`t${i}`, `t${i + 1}`)
+      vi.advanceTimersByTime(SHORTER_THAN_THE_HAND_BACK_DELAY_MS)
+    }
+    expect(peak).toBeLessThanOrEqual(5)
   })
 
   it('terminals on screen together all keep their context, and a hidden one is handed back only when a third joins the hidden ones', () => {

@@ -1063,7 +1063,7 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   first render came 17–37 ms after the click and the longest frame was 24 ms, with a
   screen of coloured CJK, at both canvas sizes above (15 and 12 switches); a tab that
   kept its context took 13–24 ms. Clearing the shared atlas 50 ms after each such
-  hand-back (what a leaving terminal used to trigger) made the same switch block for
+  hand-back made the same switch block for
   50–60 ms and draw the screen twice (same day and versions).
 - **GPU memory can be lost with no event.** Wake from sleep, screen unlock, and adding,
   removing or changing displays (these come in bursts) can wipe texture memory; a
@@ -1232,6 +1232,13 @@ inferred, not checked.
   tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **A renderer disposed while another terminal still owns its atlas leaves that atlas
+  untouched.** `WebglRenderer`'s dispose ends in `removeTerminalFromCache`, which only
+  takes the terminal off the atlas entry's `ownedBy` list; the atlas is disposed only
+  when the leaving terminal was its last owner, and then nothing draws from it (read
+  2026-11-11 in `@xterm/addon-webgl` 0.20.0-beta.298, `CharAtlasCache.ts`). A shown
+  session terminal kept its picture while a hidden one sharing its atlas was disposed
+  and its context lost, with no atlas clear (`webgl-terminal.spec.ts`, same day).
 - **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
   `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
   meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a

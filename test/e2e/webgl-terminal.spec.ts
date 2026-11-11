@@ -229,7 +229,7 @@ test.describe('the WebGL terminal users run (the suite otherwise draws with the 
     }
   })
 
-  test('a session terminal left behind three newer ones gives its WebGL context back to the GPU at once, and shown again draws the same picture through WebGL', async ({
+  test('a session terminal left behind three newer ones loses its WebGL context instead of waiting for garbage collection, and shown again draws the same picture through WebGL', async ({
     env
   }) => {
     test.setTimeout(240_000)

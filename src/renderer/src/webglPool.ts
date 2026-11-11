@@ -2,7 +2,7 @@
 const MAX_CONTEXTS_BELOW_CHROMIUM_CAP = 12
 // PLATFORM§20
 const HIDDEN_CONTEXTS_KEPT_FOR_A_QUICK_RETURN = 2
-const HAND_BACK_ONCE_THE_SWITCH_HAS_SETTLED_MS = 1000
+const HAND_BACK_AFTER_THE_SWITCH_HAS_PAINTED_MS = 1000
 
 type Member = {
   attach: () => void
@@ -63,8 +63,10 @@ export function hideWebgl(id: string): void {
   m.shown = false
   if (!holdersLeastRecentFirst.has(id)) return
   bump(id)
-  clearTimeout(handBackTimer)
-  handBackTimer = setTimeout(handBackHiddenBeyondTheKept, HAND_BACK_ONCE_THE_SWITCH_HAS_SETTLED_MS)
+  handBackTimer ??= setTimeout(() => {
+    handBackTimer = undefined
+    handBackHiddenBeyondTheKept()
+  }, HAND_BACK_AFTER_THE_SWITCH_HAS_PAINTED_MS)
 }
 
 export function releaseWebgl(id: string): void {
