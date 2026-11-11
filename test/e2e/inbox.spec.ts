@@ -164,7 +164,7 @@ test('a question answered in its own tab closes its Inbox card as handled there,
   await expect(await doneStatus(page, 'asks a question')).toContainText('Handled in its tab')
 })
 
-test('a card a session posts with koloft inbox shows in the Inbox; its button sends the owner’s words to that session, and the session moves the card to Done; with Reduce motion on, a card that leaves the list does not fly off and the card below does not slide up', async ({
+test('a card a session posts with koloft inbox shows in the Inbox; its button sends the owner’s words to that session, and the session moves the card to Done; with Reduce motion on, a card that leaves the list does not fly off and the card below does not slide up, and with it off again the next card to leave does fly', async ({
   page,
   env
 }, testInfo) => {
@@ -212,12 +212,15 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await page.screenshot({ path: testInfo.outputPath('inbox-page.png') })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.evaluate(() => {
-    const moves = window as unknown as { cardMoves: number }
+    const moves = window as unknown as { cardMoves: number; stopCounting: () => void }
     moves.cardMoves = 0
     const animate = Element.prototype.animate
     Element.prototype.animate = function (...args) {
-      moves.cardMoves++
+      if (this.hasAttribute('data-cid')) moves.cardMoves++
       return animate.apply(this, args)
+    }
+    moves.stopCounting = () => {
+      Element.prototype.animate = animate
     }
   })
   await shown.locator('.ibx-btn', { hasText: 'Merge it' }).click()
@@ -228,12 +231,17 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
     )
   await expect(shown).toHaveCount(0)
   await expect(inboxCard(page, 'The card below')).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as { cardMoves: number }).cardMoves)).toBe(0)
+  const cardMoves = (): Promise<number> =>
+    page.evaluate(() => (window as unknown as { cardMoves: number }).cardMoves)
+  expect(await cardMoves()).toBe(0)
   await page.emulateMedia({ reducedMotion: null })
   await page.locator('.ibx-seg button[data-tab="in-progress"]').click()
   await expect(inboxCard(page, 'Pull request 8')).toBeVisible()
 
   await typeInto(page, tabId, `/koloft inbox move pr-8 closed -- "Merged"`)
+  await expect(inboxCard(page, 'Pull request 8')).toHaveCount(0)
+  expect(await cardMoves()).toBeGreaterThan(0)
+  await page.evaluate(() => (window as unknown as { stopCounting: () => void }).stopCounting())
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
