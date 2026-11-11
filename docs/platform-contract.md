@@ -2217,6 +2217,20 @@ command by hand:
   `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
   locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
   `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **How long a hook line written on the machine takes to turn a remote tab's row in
+  Koloft.** With only the 2-second sync round: a turn's first hook line (the prompt) to
+  the row reading working took 1574, 1867, 2105 and 2055 ms, and the Stop line to the
+  row reading waiting 663, 707, 1004 and 911 ms (a turn kept the 2-second round going
+  the whole time). With a sh loop on the machine that looks at `~/.koloft/hook-sessions`
+  every 0.2 s (`find … -exec stat` piped into `cksum`) and says so over one long-lived
+  `ssh -n`, each line starting a round (at least 0.3 s after the last one ended): 393,
+  814, 804, 423, 373, 437, 529 and 414 ms to working, and 380, 357, 403, 763, 275, 309,
+  378 and 613 ms to waiting; over those runs 20 short turns (a Read, then Stop) each
+  ended on waiting and stayed there. The loop's `sleep 0.2`, `find`, `stat` and `cksum`
+  ran in dash on Debian and in macOS 27's sh. (2026-11-08: the e2e Docker ssh lab, the
+  `kt-key` machine behind the jump host, fake claude's `/busy` turn, four turns without
+  the loop and eight with it, the machine's log and the row each read every 0.1–0.3 s,
+  so each figure is good to about that much.)
 - **`tar xzf -` works even on bare container images.** `gzip` is there in `alpine:3`
   (BusyBox v1.37.0, whose `tar` lists `-z`), `debian:bookworm-slim` (gzip 1.12),
   `ubuntu:24.04` (1.12), `fedora:42` (1.13) and `rockylinux:9` (1.12), with nothing

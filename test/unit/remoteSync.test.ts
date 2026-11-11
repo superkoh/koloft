@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { launchMode, RemoteSync, type RemoteTarget } from '../../src/main/remote/sync'
+import { HOOKS_CHANGED } from '../../src/main/remote/install'
 import type { RunResult } from '../../src/main/remote/ssh'
 
 let runs: string[]
@@ -17,6 +18,13 @@ let answerWhenQueueEmpty: (() => Promise<RunResult>) | undefined
 let rsyncAnswer: RunResult
 let target: RemoteTarget
 let sync: RemoteSync
+interface Bell {
+  ring: () => void
+  end: () => void
+  stopped: boolean
+}
+let bells: Bell[]
+const liveBells = (): Bell[] => bells.filter((b) => !b.stopped)
 
 const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: '' })
 
@@ -35,6 +43,20 @@ function make(): RemoteSync {
       rsyncs.push(`${host} ${remoteDir}`)
       rsyncFlags.push(extra)
       return Promise.resolve(rsyncAnswer)
+    },
+    listen: (_host, _cmd, onLine, onEnd) => {
+      const bell: Bell = {
+        ring: () => onLine(HOOKS_CHANGED),
+        end: () => {
+          bell.stopped = true
+          onEnd()
+        },
+        stopped: false
+      }
+      bells.push(bell)
+      return () => {
+        bell.stopped = true
+      }
     },
     targets: () => [target],
     onChange: (host) => changes.push(host),
@@ -57,12 +79,14 @@ beforeEach(() => {
   rsyncAnswer = ok('')
   changes = []
   lefts = []
+  bells = []
   target = {
     host: 'devbox',
     mirrorProjectsRoot: '/ud/remote/devbox/projects',
     mirrorHookDir: '/ud/remote/devbox/hook-sessions',
     paths: ['/home/koh/api'],
     hasTabs: true,
+    agentTabs: true,
     busy: true
   }
   sync = make()
@@ -250,6 +274,7 @@ it('a machine that answers but whose sessions fail to copy says so, with the dot
     rsync: () =>
       Promise.resolve({ code: 1, stdout: '', stderr: 'rsync(1): error: unexpected tag 103\n' }),
     targets: () => [target],
+    listen: () => () => {},
     onChange: (host) => changes.push(host)
   })
   sync.start()
@@ -352,6 +377,58 @@ it('asks an idle machine at once when the person types into one of its tabs, the
   expect(runs.length - after).toBe(1)
 })
 
+it('while a session on the machine works or was just typed into, a hook landing there starts a round at once (rounds kept 0.3 s apart), through one bell per machine that goes once the machine falls quiet, drops off or has no agent tab; a ring alone never keeps it going', async () => {
+  answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
+  sync.start()
+  await tick(1)
+  expect(liveBells()).toHaveLength(1)
+  await tick(1000)
+
+  const before = runs.length
+  liveBells()[0].ring()
+  await tick(1)
+  expect(runs.length).toBe(before + 1)
+  expect(rsyncs.slice(-2)).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
+  liveBells()[0].ring()
+  await tick(1)
+  expect(runs.length).toBe(before + 1)
+  await tick(500)
+  expect(runs.length).toBe(before + 2)
+
+  liveBells()[0].end()
+  await tick(2000)
+  expect(liveBells()).toHaveLength(0)
+  await tick(60_000)
+  expect(liveBells()).toHaveLength(1)
+
+  answerWhenQueueEmpty = () => Promise.resolve({ code: 255, stdout: '', stderr: 'down' })
+  await tick(2000)
+  expect(liveBells()).toHaveLength(0)
+  answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
+  sync.pokeNow('devbox')
+  await tick(1)
+  expect(liveBells()).toHaveLength(1)
+
+  target = { ...target, busy: false }
+  await tick(20_000)
+  liveBells()[0].ring()
+  await tick(12_000)
+  expect(liveBells()).toHaveLength(0)
+  sync.typedInto('devbox')
+  await tick(5000)
+  expect(liveBells()).toHaveLength(1)
+
+  target = { ...target, agentTabs: false }
+  await tick(2000)
+  expect(liveBells()).toHaveLength(0)
+  const roundsBefore = runs.length
+  while (runs.length === roundsBefore) await tick(10)
+  const afterSilenced = runs.length
+  bells[bells.length - 1].ring()
+  await tick(500)
+  expect(runs.length).toBe(afterSilenced)
+})
+
 it('pulls a folder only when the heartbeat shows its files changed, and again after a failed pull or a poke', async () => {
   let transcripts = '1 10'
   let hooks = '7 70'
@@ -403,6 +480,7 @@ it('a quiet extra folder (usage history) that fails to copy, as a big first copy
       Promise.resolve(
         failing.has(remoteDir) ? { code: null, stdout: '', stderr: 'timed out' } : ok('')
       ),
+    listen: () => () => {},
     targets: () => [target],
     onChange: (host) => changes.push(host)
   })
@@ -466,6 +544,7 @@ it('stops polling a machine that is no longer pinned', async () => {
       return Promise.resolve(ok('k-aaa\n'))
     },
     rsync: () => Promise.resolve(ok('')),
+    listen: () => () => {},
     targets: () => pinned,
     onChange: () => {}
   })
