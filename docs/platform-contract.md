@@ -1046,7 +1046,8 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   pid>` on a hidden e2e window, devicePixelRatio 2 (2026-11-11, Electron 43, addon
   0.20.0-beta.298, macOS 27.0). At a 1080×1632-pixel canvas (7 MB a buffer) four WebGL
   terminals cost 87 MB more than four DOM-drawn ones and eight cost 114 MB more than
-  four: 22–28 MB each. At 2100×2720 pixels (23 MB a buffer) three cost about 370 MB:
+  four: 22–28 MB each (one run a case; the empty app's own reading moved between 171 and
+  256 MB). At 2100×2720 pixels (23 MB a buffer) three cost about 370 MB:
   about 124 MB each. Most of it is `IOSurface` (the drawing buffers). The glyph atlas is
   uploaded into every context too (`GlyphRenderer` keeps one texture per atlas page per
   canvas), but it is the smaller part: seven 512-pixel pages of CJK added about 50 MB
@@ -1226,19 +1227,23 @@ inferred, not checked.
   fires only from a page merge, once per deleted page, to every addon sharing the atlas.
   After a merge the renderer heals on the NEXT frame, so output that stops on the merge
   frame leaves the screen garbled until something asks for a refresh.
-- **A terminal joining or leaving churns the shared atlas**: pages are added when an
-  xterm mounts and dropped or merged when one is disposed, and a merge that lands on a
-  frame no remaining terminal redraws leaves them garbled (seen: closing a Workbench
-  tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
+- **A terminal joining can churn the shared atlas, and one leaving has been seen to
+  garble the others**: pages are added when an xterm mounts, and a merge that lands on a
+  frame no remaining terminal redraws leaves them garbled (seen, addon version not
+  recorded: closing a Workbench tab scrambled the Claude TUI). The dispose itself
+  changes no page of an atlas that still has an owner (next bullet). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
 - **A renderer disposed while another terminal still owns its atlas leaves that atlas
   untouched.** `WebglRenderer`'s dispose ends in `removeTerminalFromCache`, which only
   takes the terminal off the atlas entry's `ownedBy` list; the atlas is disposed only
-  when the leaving terminal was its last owner, and then nothing draws from it (read
-  2026-11-11 in `@xterm/addon-webgl` 0.20.0-beta.298, `CharAtlasCache.ts`). A shown
-  session terminal kept its picture while a hidden one sharing its atlas was disposed
-  and its context lost, with no atlas clear (`webgl-terminal.spec.ts`, same day).
+  when the leaving terminal was its last owner, and then nothing draws from it. The
+  rest of the dispose deletes that canvas's own program, buffers and textures (read
+  2026-11-11 in `@xterm/addon-webgl` 0.20.0-beta.298: `CharAtlasCache.ts`,
+  `WebglRenderer.ts`, `GlyphRenderer.ts`). In the hidden e2e window, which §20 says has
+  not been seen to show such damage, a shown session terminal kept its picture while a
+  hidden one sharing its atlas was disposed and its context lost, with no atlas clear
+  (`webgl-terminal.spec.ts`, same day).
 - **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
   `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
   meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
