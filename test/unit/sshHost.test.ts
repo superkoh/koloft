@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
-import { killSessionCmd } from '../../src/main/remote/launch'
+import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
@@ -918,6 +918,52 @@ describe('ending a session that runs on the machine', () => {
     expect(await host.endTmuxSession(tmux)).toBeUndefined()
     await host.launch({ root: keyed('/w'), resumeSessionId: live })
     expect(pickAccount).toHaveBeenCalled()
+  })
+
+  // ADR-0044
+  describe('while the rename that follows a moved conversation is still on its way to the machine', () => {
+    const moved = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const renamed = `k-${moved}`
+    const renameOnItsWay = () => {
+      const kills: string[] = []
+      let renameComesBack = (_code: number): void => {}
+      const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+      const host = machine(
+        (cmd, opts) => {
+          if (cmd === renameSessionCmd('pty-1', tmux, renamed))
+            return new Promise((done) => {
+              renameComesBack = (code) => done({ code, stdout: Buffer.alloc(0), stderr: '' })
+            })
+          if (cmd !== killSessionCmd(tmux) && cmd !== killSessionCmd(renamed))
+            return runOnMachine(cmd, opts)
+          kills.push(cmd)
+          return Promise.resolve({ code: 0, stdout: Buffer.alloc(0), stderr: '' })
+        },
+        { alive: () => new Set([moved]), pickAccount }
+      )
+      void host.renameTmuxSession('pty-1', tmux, renamed)
+      return { host, kills, pickAccount, renameComesBack: (code: number) => renameComesBack(code) }
+    }
+
+    it('a kill under the old name waits for the rename, ends the session under its new name, and the next launch of the moved conversation starts afresh', async () => {
+      const { host, kills, pickAccount, renameComesBack } = renameOnItsWay()
+      const ending = host.endTmuxSession(tmux)
+      const relaunching = host.launch({ root: keyed('/w'), resumeSessionId: moved })
+      expect(kills).toEqual([])
+      renameComesBack(0)
+      expect(await ending).toBeUndefined()
+      expect(kills).toEqual([killSessionCmd(renamed)])
+      await relaunching
+      expect(pickAccount).toHaveBeenCalled()
+    })
+
+    it('a kill under the old name ends the session under that name when the rename did not take', async () => {
+      const { host, kills, renameComesBack } = renameOnItsWay()
+      const ending = host.endTmuxSession(tmux)
+      renameComesBack(1)
+      await ending
+      expect(kills).toEqual([killSessionCmd(tmux)])
+    })
   })
 })
 

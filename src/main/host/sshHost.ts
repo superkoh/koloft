@@ -599,6 +599,7 @@ export class SshHost implements Host {
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
+  private renames = new Map<string, { to: string; took: Promise<boolean> }>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
   private wholeReads = 0
@@ -945,15 +946,23 @@ export class SshHost implements Host {
 
   osOpen(): void {}
 
-  endTmuxSession(tmuxName: string): Promise<string | undefined> {
-    const killedId = sessionIdOfTmux(tmuxName)
-    const kill = this.deps.run(killSessionCmd(tmuxName)).then((r) => {
-      if (this.kills.get(tmuxName) === kill) this.kills.delete(tmuxName)
+  // ADR-0044
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined> {
+    const renaming = this.renames.get(tmuxName)
+    const nameOnceRenamed = renaming?.to ?? tmuxName
+    const killedId = sessionIdOfTmux(nameOnceRenamed)
+    const killed = renaming
+      ? renaming.took.then((took) =>
+          this.deps.run(killSessionCmd(took ? nameOnceRenamed : tmuxName, tabId))
+        )
+      : this.deps.run(killSessionCmd(tmuxName, tabId))
+    const kill = killed.then((r) => {
+      if (this.kills.get(nameOnceRenamed) === kill) this.kills.delete(nameOnceRenamed)
       if (!sshLinkBroke(r)) return undefined
       if (killedId) this.killedSessions.delete(killedId)
       return problemOf(r)
     })
-    this.kills.set(tmuxName, kill)
+    this.kills.set(nameOnceRenamed, kill)
     if (killedId) this.killedSessions.add(killedId)
     return kill
   }
@@ -964,7 +973,14 @@ export class SshHost implements Host {
   }
 
   async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
-    return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
+    const took = this.deps.run(renameSessionCmd(tabId, from, to)).then((r) => r.code === 0)
+    const renaming = { to, took }
+    this.renames.set(from, renaming)
+    try {
+      return await took
+    } finally {
+      if (this.renames.get(from) === renaming) this.renames.delete(from)
+    }
   }
 
   async answerAgent(requestId: string, reply: string | null): Promise<void> {
