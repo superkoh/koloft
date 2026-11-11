@@ -603,7 +603,7 @@ export class DiscordRelay {
       tab,
       channelId,
       () => void this.card(channelId, card),
-      () => this.unreadable.has(tab)
+      () => this.unreadable.has(tab) && !this.dialogOpen(tab)
     )
   }
 
@@ -626,7 +626,10 @@ export class DiscordRelay {
     if (!before && !sends.length) return post()
     this.shownNotSent.delete(tab)
     const done = sends
-      .reduce((sent, send) => sent.then(() => send(channelId)), before ?? Promise.resolve())
+      .reduce(
+        (sent, send) => sent.then(() => send(channelId)).catch(() => undefined),
+        before ?? Promise.resolve()
+      )
       .then(() => {
         if (this.sending.get(tab) === done) this.sending.delete(tab)
         if (stillAsked()) post()
@@ -634,7 +637,7 @@ export class DiscordRelay {
     this.sending.set(tab, done)
   }
 
-  private postAsk(tab: string, channelId: string, card: Card): void {
+  private postAsk(tab: string, channelId: string, card: Card, stillAsked: () => boolean): void {
     this.afterShownNotSent(
       tab,
       channelId,
@@ -650,7 +653,7 @@ export class DiscordRelay {
               this.d.askPlaced(card, messageId ? { channelId, messageId } : undefined)
           })
       },
-      () => this.dialogOpen(tab)
+      stillAsked
     )
   }
 
@@ -668,8 +671,14 @@ export class DiscordRelay {
 
   private postClaudeAsk(tab: string, payload: AskPayload): void {
     const channelId = this.d.askChannelOf(tab)
+    const ask = this.asks.get(tab)
     if (channelId && !this.holds(tab))
-      this.postAsk(tab, channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
+      this.postAsk(
+        tab,
+        channelId,
+        this.askCard(tab, claudeDialog(payload), askHow(payload)),
+        () => !!ask && this.openAsk(tab) === ask
+      )
   }
 
   dialog(tab: string): DialogView | undefined {
@@ -873,7 +882,12 @@ export class DiscordRelay {
     const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
     const shown =
       question || a.plan ? view.text : `${label} asks to run: ${view.text || 'a command'}`
-    this.postAsk(tab, channelId, this.askCard(tab, view, how, shown))
+    this.postAsk(
+      tab,
+      channelId,
+      this.askCard(tab, view, how, shown),
+      () => (this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab))?.id === a.id
+    )
   }
 
   private answerDialog(tab: string, m: DiscordMessage): Promise<string | undefined> | undefined {
@@ -903,6 +917,7 @@ export class DiscordRelay {
     this.unreadable.delete(tab)
     this.quietTurns.delete(tab)
     this.shownNotSent.delete(tab)
+    this.sending.delete(tab)
   }
 
   // PLATFORM§39

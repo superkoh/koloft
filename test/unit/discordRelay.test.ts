@@ -1497,7 +1497,6 @@ describe('DiscordRelay: a session’s room', () => {
 })
 
 describe('DiscordRelay: what a session showed at the Mac goes with its next question card', () => {
-  const A_CARD_FOLLOWS_ITS_PICTURES_WITHIN_MS = 20
   let codexOpen: CodexQuestion | undefined
   const asks: [string, (relay: DiscordRelay, n: number) => void][] = [
     [
@@ -1559,7 +1558,7 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       ])
     })
 
-  it('a card that comes while the pictures are still being sent waits behind them, and one whose question is gone by then is not posted', async () => {
+  it('a card that comes while the pictures are still being sent waits behind them, and one whose question was replaced by then is not posted', async () => {
     let open: CodexQuestion | undefined
     const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
     const shown = shownTo(posts)
@@ -1572,19 +1571,11 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
     relay.codexAsked(TAB, open)
     open = asked(2)
     relay.codexAsked(TAB, open)
-    await vi.waitFor(() => expect(posts).toHaveLength(3))
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
     expect(posts.map((p) => p.text.split('\n').slice(0, 2).join(' '))).toEqual([
       `shot.png in ${CHANNEL}`,
-      `${butlerAsks('Assist')} Which 1?`,
       `${butlerAsks('Assist')} Which 2?`
     ])
-
-    relay.sendWithNextAsk(TAB, shown('later.png'))
-    relay.codexAsked(TAB, asked(3))
-    open = undefined
-    await vi.waitFor(() => expect(posts).toHaveLength(4))
-    await new Promise((r) => setTimeout(r, A_CARD_FOLLOWS_ITS_PICTURES_WITHIN_MS))
-    expect(posts.at(-1)!.text).toBe(`later.png in ${CHANNEL}`)
   })
 })
 

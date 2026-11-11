@@ -5892,8 +5892,10 @@ async function copyToPhone(
   view?: ArtifactView
 ): Promise<string | undefined> {
   const relay = discordRelay
-  const shown = relay && shownOf(target, machineOfTab(tabId), view)
-  if (!relay || !shown) return undefined
+  const channelId = askChannelOfTab(tabId)
+  if (!relay || !channelId || relay.quietTurn(tabId)) return undefined
+  const shown = shownOf(target, machineOfTab(tabId), view)
+  if (!shown) return undefined
   const copyTo = (channelId: string): PhoneCopyDeps => ({
     shoot: (url, machine) => shootPage(url, { machine }),
     shootHtml,
@@ -5908,8 +5910,6 @@ async function copyToPhone(
     fileDiff: (file) => hosts.of(file).gitFileDiff(file),
     send: (files, parts) => relay.sendParts(channelId, files, parts)
   })
-  const channelId = askChannelOfTab(tabId)
-  if (!channelId || relay.quietTurn(tabId)) return undefined
   if (!relay.reaches(tabId)) {
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
     return undefined
