@@ -7,6 +7,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import type {
   AccountStatus,
   GitAccount,
+  GitAccountRemoveResult,
   GitAccountSuggestion,
   GitAccountView,
   GitLoginProgress,
@@ -815,10 +816,19 @@ export class GitAccountService {
     await this.changedOn(machine)
   }
 
-  async remove(id: string, machine?: string): Promise<void> {
+  async remove(id: string, machine?: string, anyway = false): Promise<GitAccountRemoveResult> {
     const a = this.account(id, machine)
-    if (!a) return
-    if (machine) return this.forgetOnMachine(machine, a)
+    if (!a) return { ok: true }
+    if (machine) {
+      if (!anyway) {
+        const forgot = await this.onMachine.forget(machine, a)
+        if (!forgot.ok) return forgot
+      }
+      removeGitAccount(a.id, machine)
+      if (anyway) this.changed()
+      else await this.changedOn(machine)
+      return { ok: true }
+    }
     if (a.gcmNamespace) await this.gcm.erase(a)
     else await gitTokenDelete(a.host, a.login)
     for (const f of [this.keyPath(a.id), `${this.keyPath(a.id)}.pub`]) fs.rmSync(f, { force: true })
@@ -826,6 +836,7 @@ export class GitAccountService {
     removeGitAccount(a.id)
     this.offline.delete(a.id)
     this.changed()
+    return { ok: true }
   }
 
   makeDefault(id: string, machine?: string): void {
