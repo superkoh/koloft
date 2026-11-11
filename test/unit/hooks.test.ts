@@ -515,6 +515,17 @@ describe('injected hook script', () => {
     })
 
     // ADR-0031
+    it('a Claude tab’s reminder asks for the description of each Bash command in the owner’s language, quoted or named', () => {
+      const named = `Write everything the user reads — the short notes between tool calls, the description of each Bash command, and your final reply — in `
+      expect(
+        reminder(prompt('tabLangTitles', 'look at the failing test'), 'UserPromptSubmit')
+      ).toContain(`${named}the language of that message`)
+      expect(reminder(prompt('tabLangTitles', '先别改代码'), 'UserPromptSubmit')).toContain(
+        `${named}Chinese`
+      )
+    })
+
+    // ADR-0031
     it('a prompt that shows no language — one letter, a number, one word, a bare path — keeps the owner’s earlier words; three words, or one Chinese, Japanese or Korean character, replace them', () => {
       prompt('tabLangShort', 'look at the failing test')
       for (const short of ['A', '1', 'merge', '/tmp/claude-501/x/remote-task.md', ''])

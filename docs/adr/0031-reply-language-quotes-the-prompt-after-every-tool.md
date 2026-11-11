@@ -158,16 +158,17 @@ came. A Codex tab runs
 the same check on its rollout; in a real Codex 0.162 tab, asked in Chinese to copy an
 English sentence as a note, it wrote that note in Chinese twice out of twice under "The
 user writes Chinese" — how far Codex drifts in a long session was still not measured.
-The reminder names "the description of each Bash command" beside the notes: Claude Code
-shows that description as the command's title in the tab, and "everything the user
-reads" alone left it English while the notes followed. Measured 2026-11-10 on the same
-drifted copy and review report, Opus 5.5, up to 31 tool calls, 8 runs each, the shipped
-script against the same script naming the description (in the line about the last note
-too): Bash descriptions in Chinese 0 / 32 against 28 / 28; notes English 11 / 36 against
-13 / 34 (0–75% and 0–67% per run). The words are the same for every kind of tab, since
-they share one script: Muse's `bash` tool has a `description` too (MUSE§8), unmeasured;
-Antigravity's tools carry a `toolSummary` instead (AGY§13), which the words do not name;
-Codex's commands not probed.
+A Claude tab's reminder names "the description of each Bash command" beside the notes:
+Claude Code shows that description as the command's title (CC§25), and "everything the
+user reads" alone left it English while the notes followed. Measured 2026-11-10 on the
+same drifted copy and review report, Opus 5.5, up to 31 tool calls, 8 runs each, the
+shipped script against the same script naming the description (in the line about the
+last note too): Bash descriptions in Chinese 0 / 32 against 28 / 28; notes English
+11 / 36 against 13 / 34. The notes got no better and, at 0–75% and 0–67% English per
+run, no measurably worse either: judge the next wording change on both numbers. The other
+tabs keep the plain words: Muse's `bash` tool has a `description` (MUSE§8) and
+Antigravity's tools a `toolSummary` (AGY§13), but whether their screens show them, and
+whether they drift, is not probed; whether a Codex command has a title at all is not probed.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language alone ("Reply in Chinese") — 13 / 16 above, no better than
 the quote; it is used only with the check of the last note, and only where the

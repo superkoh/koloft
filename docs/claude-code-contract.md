@@ -3876,3 +3876,14 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
 
 Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
 `writeTabHookSettings` in `src/main/hooks.ts`.
+
+## §25 A Bash call's `description` is its title on screen
+
+2026-11-10, CC 2.1.322, a Koloft tab in the full-screen TUI, read with `koloft session
+screen` while the call ran.
+
+- With a `description`, the running call's line is `⏺ <description>`, the command on the
+  line under it (`⎿  $ <command>`). Without one it is `⏺ Running <command>`.
+- Once done, calls fold into `Ran N shell command(s)`.
+
+Koloft dependents: `CLAUDE_COMMAND_TITLES` in `src/main/hooks.ts`.

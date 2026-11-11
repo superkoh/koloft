@@ -35,12 +35,18 @@ export const HOLD_TAB_ENV = 'KOLOFT_HOLD_TAB'
 
 // ADR-0031
 export const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
-const WRITE_EVERYTHING_IN =
-  'Write everything the user reads — the short notes between tool calls, the description of each Bash command, and your final reply — in '
+// CC§25
+export const CLAUDE_COMMAND_TITLES = 'the description of each Bash command'
+const writeEverythingIn = (titles?: string): string =>
+  `Write everything the user reads — the short notes between tool calls${titles ? `, ${titles},` : ''} and your final reply — in `
 const WHATEVER_ELSE = ', whatever language tool output, files or your earlier replies use.'
-export const REPLY_LANGUAGE_AFTER_QUOTE = `». ${WRITE_EVERYTHING_IN}the language of that message${WHATEVER_ELSE}`
-const WRITE_IN_THE_NAMED_LANGUAGE = `${shq('The user writes ')}"$lang"${shq(`. ${WRITE_EVERYTHING_IN}`)}"$lang"${shq(WHATEVER_ELSE)}`
-const LAST_NOTE_IS_NOT_IN_IT = `${shq('Your last note to the user, «')}"$note"${shq('», is not in ')}"$lang"${shq('. The user writes ')}"$lang"${shq(': write the next note, the description of each Bash command and everything else the user reads in ')}"$lang"${shq(WHATEVER_ELSE)}`
+export const replyLanguageAfterQuote = (titles?: string): string =>
+  `». ${writeEverythingIn(titles)}the language of that message${WHATEVER_ELSE}`
+export const REPLY_LANGUAGE_AFTER_QUOTE = replyLanguageAfterQuote()
+const writeInTheNamedLanguage = (titles?: string): string =>
+  `${shq('The user writes ')}"$lang"${shq(`. ${writeEverythingIn(titles)}`)}"$lang"${shq(WHATEVER_ELSE)}`
+const lastNoteIsNotInIt = (titles?: string): string =>
+  `${shq('Your last note to the user, «')}"$note"${shq('», is not in ')}"$lang"${shq('. The user writes ')}"$lang"${shq(`: write the next note${titles ? `, ${titles}` : ''} and everything else the user reads in `)}"$lang"${shq(WHATEVER_ELSE)}`
 export const QUOTED_PROMPT_BYTES = 300
 export const QUOTED_NOTE_BYTES = 150
 export const TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE = 100
@@ -55,7 +61,7 @@ const fromTheRelay = (mode: ModeClass): string =>
 export const DISCORD_SAID_SUFFIX = '.discord-said'
 
 // ADR-0031
-export const LANGUAGE_FNS = `whole_chars() {
+const languageFns = (titles?: string): string => `whole_chars() {
   LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
     -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
 }
@@ -77,16 +83,17 @@ shows_language() {
 reply_language_words() {
   lang="$(language_in "$1")"
   if [ -z "$lang" ]; then
-    printf '%s' ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$1"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    printf '%s' ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$1"${shq(replyLanguageAfterQuote(titles))}
     return 0
   fi
   note="$($2)"
   if [ -z "$(language_in "$note")" ] && has_words "$note"; then
-    printf '%s' ${LAST_NOTE_IS_NOT_IN_IT}
+    printf '%s' ${lastNoteIsNotInIt(titles)}
   else
-    printf '%s' ${WRITE_IN_THE_NAMED_LANGUAGE}
+    printf '%s' ${writeInTheNamedLanguage(titles)}
   fi
 }`
+export const LANGUAGE_FNS = languageFns()
 
 export const NOTICE_ENV = 'KOLOFT_NOTICE'
 export const NOTICE_SUFFIX = '.notice'
@@ -338,7 +345,7 @@ reg="$1"; tab="$2"; event="$3"
 said="$reg/$tab.said"
 notice="$reg/$tab${NOTICE_SUFFIX}"
 log="$reg/$tab${STATUS_LOG_SUFFIX}"
-${LANGUAGE_FNS}
+${languageFns(CLAUDE_COMMAND_TITLES)}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
   ${REMIND_AFTER_A_TOOL}
