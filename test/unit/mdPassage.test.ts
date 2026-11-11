@@ -77,6 +77,29 @@ describe('which lines of the file a selection in the rendered Markdown names', (
     expect(linesOfRange(select([t, 0], [ul, after]), body, drawn)).toEqual([5, 6])
   })
 
+  it('names the one line of a code block the words sit on, not the whole code block', async () => {
+    const { body, drawn } = await draw(
+      'intro\n\n```js\nconst a = 1\nconst b = 2\nconst c = 3\n```\n'
+    )
+    const code = body.querySelector('.md-code pre')!
+    const r = document.createRange()
+    r.selectNodeContents(code)
+    const at = r.toString().indexOf('b = 2')
+    const t = document.createTreeWalker(code, NodeFilter.SHOW_TEXT)
+    let seen = 0
+    while (t.nextNode()) {
+      const n = t.currentNode as Text
+      if (seen + n.data.length > at) {
+        expect(linesOfRange(select([n, at - seen], [n, at - seen + 1]), body, drawn)).toEqual([
+          4, 5
+        ])
+        return
+      }
+      seen += n.data.length
+    }
+    throw new Error('no text b = 2')
+  })
+
   it('takes the block’s own lines when the file’s raw HTML carries a line mark of its own', async () => {
     const { body, drawn } = await draw('intro\n\n<div data-ln="x,y">\nraw words\n</div>\n')
     const t = textNode(body, 'raw words')

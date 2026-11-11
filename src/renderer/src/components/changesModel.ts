@@ -191,9 +191,11 @@ export function passageAt(
   lines: SourceLines | null,
   selected: string
 ): Passage {
-  const whole = selected.replace(/\s+/g, ' ').trim()
+  const chars = [...selected.replace(/\s+/g, ' ').trim()]
   const words =
-    whole.length > SELECTED_CHARS_KEPT ? whole.slice(0, SELECTED_CHARS_KEPT) + '…' : whole
+    chars.length > SELECTED_CHARS_KEPT
+      ? chars.slice(0, SELECTED_CHARS_KEPT).join('') + '…'
+      : chars.join('')
   if (!lines) return { place: rel, source: null, selected: words }
   const all = text.split(MARKDOWN_IT_NEWLINE)
   const from = lines[0]

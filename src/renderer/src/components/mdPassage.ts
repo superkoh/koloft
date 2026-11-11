@@ -37,10 +37,7 @@ function nodeAt(container: Node, offset: number, side: 'start' | 'end'): Node {
   return container.childNodes[side === 'start' ? offset : offset - 1] ?? container
 }
 
-function linesAt(node: Node, body: HTMLElement, drawn: DrawnBlock[]): SourceLines | null {
-  const block = blockOf(node, body)
-  const base = block && drawn.find((b) => b.el === block)?.lines
-  if (!block || !base) return null
+function markedLines(node: Node, block: HTMLElement, base: SourceLines): SourceLines {
   const el = (node instanceof Element ? node : node.parentElement)?.closest(
     `[${LINES_IN_BLOCK_ATTR}]`
   )
@@ -53,13 +50,43 @@ function linesAt(node: Node, body: HTMLElement, drawn: DrawnBlock[]): SourceLine
   return inBlock && inBlock[1] <= base[1] ? inBlock : base
 }
 
+function lineInCode(
+  container: Node,
+  offset: number,
+  node: Node,
+  fence: SourceLines
+): SourceLines | null {
+  const pre = (node instanceof Element ? node : node.parentElement)?.closest('.md-code pre')
+  if (!pre) return null
+  const before = document.createRange()
+  before.setStart(pre, 0)
+  before.setEnd(container, offset)
+  const line = fence[0] + before.toString().split('\n').length
+  return line < fence[1] - 1 ? ([line, line + 1] as SourceLines) : null
+}
+
+function linesAt(
+  container: Node,
+  offset: number,
+  side: 'start' | 'end',
+  body: HTMLElement,
+  drawn: DrawnBlock[]
+): SourceLines | null {
+  const node = nodeAt(container, offset, side)
+  const block = blockOf(node, body)
+  const base = block && drawn.find((b) => b.el === block)?.lines
+  if (!block || !base) return null
+  const own = markedLines(node, block, base)
+  return lineInCode(container, offset, node, own) ?? own
+}
+
 export function linesOfRange(
   range: Range,
   body: HTMLElement,
   drawn: DrawnBlock[]
 ): SourceLines | null {
-  const first = linesAt(nodeAt(range.startContainer, range.startOffset, 'start'), body, drawn)
-  const last = linesAt(nodeAt(range.endContainer, range.endOffset, 'end'), body, drawn)
+  const first = linesAt(range.startContainer, range.startOffset, 'start', body, drawn)
+  const last = linesAt(range.endContainer, range.endOffset, 'end', body, drawn)
   if (!first || !last) return first ?? last
   return [Math.min(first[0], last[0]), Math.max(first[1], last[1])]
 }
@@ -69,9 +96,9 @@ export function findInBlocks(
   lines: SourceLines | null,
   text: string
 ): Range | null {
-  const near = (b: DrawnBlock): boolean =>
-    !!lines && !!b.lines && b.lines[1] > lines[0] && b.lines[0] < lines[1]
-  for (const b of [...drawn.filter(near), ...drawn.filter((b) => !near(b))]) {
+  if (!lines) return null
+  for (const b of drawn) {
+    if (!b.lines || b.lines[1] <= lines[0] || b.lines[0] >= lines[1]) continue
     const [r] = computeMatchRanges(b.el, text)
     if (r) return r
   }
