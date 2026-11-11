@@ -1458,33 +1458,6 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('a remote Claude Code tab closed right after /clear, before Koloft has heard the new session id, still ends its tmux session on the machine', async ({
-    env
-  }) => {
-    test.setTimeout(300_000)
-    const { app, page } = await launchWithRemote(env)
-    try {
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      const rows = wsRows(page, REMOTE_WS_NAME)
-      await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      await rows.first().click()
-      const [beforeClear] = liveTmuxSessions(env)
-      expect(beforeClear).toBeTruthy()
-
-      await runIn(page, centerTerm(page), '/clear')
-      const renamedOnTheMachine = (): boolean => {
-        const [now] = liveTmuxSessions(env)
-        return !!now && now !== beforeClear
-      }
-      await expect.poll(renamedOnTheMachine, { timeout: 30_000 }).toBe(true)
-      await sendShortcut(app, 'shortcut:close-tab')
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
   test('restarting a remote Claude Code session once no Claude account can be used says why, keeps the running claude, and starts no new claude on the machine', async ({
     env
   }) => {

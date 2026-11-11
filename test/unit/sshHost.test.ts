@@ -939,7 +939,7 @@ describe('ending a session that runs on the machine', () => {
           kills.push(cmd)
           return Promise.resolve({ code: 0, stdout: Buffer.alloc(0), stderr: '' })
         },
-        { alive: () => new Set([moved]), pickAccount }
+        { alive: () => new Set([live, moved]), pickAccount }
       )
       void host.renameTmuxSession('pty-1', tmux, renamed)
       return { host, kills, pickAccount, renameComesBack: (code: number) => renameComesBack(code) }
@@ -957,12 +957,15 @@ describe('ending a session that runs on the machine', () => {
       expect(pickAccount).toHaveBeenCalled()
     })
 
-    it('a kill under the old name ends the session under that name when the rename did not take', async () => {
-      const { host, kills, renameComesBack } = renameOnItsWay()
+    it('a kill under the old name ends the session under that name when the rename did not take, and the next launch of that conversation starts afresh', async () => {
+      const { host, kills, pickAccount, renameComesBack } = renameOnItsWay()
       const ending = host.endTmuxSession(tmux)
+      const relaunching = host.launch({ root: keyed('/w'), resumeSessionId: live })
       renameComesBack(1)
       await ending
       expect(kills).toEqual([killSessionCmd(tmux)])
+      await relaunching
+      expect(pickAccount).toHaveBeenCalled()
     })
   })
 })

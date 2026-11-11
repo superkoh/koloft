@@ -947,23 +947,21 @@ export class SshHost implements Host {
   osOpen(): void {}
 
   // ADR-0044
-  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined> {
+  endTmuxSession(tmuxName: string): Promise<string | undefined> {
     const renaming = this.renames.get(tmuxName)
-    const nameOnceRenamed = renaming?.to ?? tmuxName
-    const killedId = sessionIdOfTmux(nameOnceRenamed)
+    const namesItMayHave = renaming ? [tmuxName, renaming.to] : [tmuxName]
+    const killedIds = namesItMayHave.flatMap((name) => sessionIdOfTmux(name) ?? [])
     const killed = renaming
-      ? renaming.took.then((took) =>
-          this.deps.run(killSessionCmd(took ? nameOnceRenamed : tmuxName, tabId))
-        )
-      : this.deps.run(killSessionCmd(tmuxName, tabId))
+      ? renaming.took.then((took) => this.deps.run(killSessionCmd(took ? renaming.to : tmuxName)))
+      : this.deps.run(killSessionCmd(tmuxName))
     const kill = killed.then((r) => {
-      if (this.kills.get(nameOnceRenamed) === kill) this.kills.delete(nameOnceRenamed)
+      for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
       if (!sshLinkBroke(r)) return undefined
-      if (killedId) this.killedSessions.delete(killedId)
+      for (const id of killedIds) this.killedSessions.delete(id)
       return problemOf(r)
     })
-    this.kills.set(nameOnceRenamed, kill)
-    if (killedId) this.killedSessions.add(killedId)
+    for (const name of namesItMayHave) this.kills.set(name, kill)
+    for (const id of killedIds) this.killedSessions.add(id)
     return kill
   }
 

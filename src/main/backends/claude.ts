@@ -310,19 +310,19 @@ export class ClaudeBackend implements SessionBackend {
   stop(tabId: string): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (remote) {
-      this.endRemoteTmux(remote.host, remote.tmuxName, tabId)
+      this.endRemoteTmux(remote.host, remote.tmuxName)
       fs.rmSync(tabPackageDir(this.d.userData(), tabId), { recursive: true, force: true })
     }
     this.d.pty.kill(tabId)
     this.d.tracker.untrack(tabId)
   }
 
-  endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {
+  endRemoteTmux(machine: string, tmuxName: string): void {
     const id = sessionIdOfTmux(tmuxName)
     const title = id && this.d.workspaces()?.findRow(id)?.title
     void this.d.hosts
       .machine(machine)
-      .endTmuxSession(tmuxName, tabId)
+      .endTmuxSession(tmuxName)
       .then((problem) => {
         if (problem) {
           const which = title ? `“${title}”` : 'a session'
