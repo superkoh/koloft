@@ -235,22 +235,35 @@
 }
 
 .ft-pulse {
+  --ft-pulse-dot-px: 7;
+  --ft-pulse-halo-px: 5;
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+  width: calc(var(--ft-pulse-dot-px) * 1px);
+  height: calc(var(--ft-pulse-dot-px) * 1px);
   border-radius: 50%;
   background: var(--accent);
+  position: relative;
+}
+.ft-pulse::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
   animation: ft-pls 1.4s var(--ease) infinite;
 }
 @keyframes ft-pls {
   0% {
-    box-shadow: 0 0 0 0 rgba(236, 150, 112, 0.5);
+    opacity: 0.5;
   }
   70% {
-    box-shadow: 0 0 0 5px rgba(236, 150, 112, 0);
+    transform: scale(
+      calc((var(--ft-pulse-dot-px) + 2 * var(--ft-pulse-halo-px)) / var(--ft-pulse-dot-px))
+    );
+    opacity: 0;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(236, 150, 112, 0);
+    opacity: 0;
   }
 }
 .ft-node.live {

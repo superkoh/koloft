@@ -915,6 +915,7 @@ function Card({
 
   return (
     <div className="ibx-item focus" data-cid={card.id}>
+      <span className="ibx-focus-edge" aria-hidden />
       <Note card={card} ready={ready} />
       <Head card={card} menu={menu} setMenu={setMenu} />
       <div className="ibx-what">{card.title}</div>
