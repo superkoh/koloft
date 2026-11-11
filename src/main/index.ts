@@ -84,6 +84,7 @@ import {
 } from './openTabs'
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
+import { saveHomeUsage, withSavedHomeUsage, type HomeUsage } from './savedHomeUsage'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -1572,6 +1573,19 @@ const picker = new AccountPicker(
   savedUsage
 )
 
+const savedHomeUsage = new SavedUsage<HomeUsage>(
+  path.join(app.getPath('userData'), 'home-usage-snapshots.json')
+)
+
+function homePickViews(views = accountViews()): AccountView[] {
+  return withSavedHomeUsage(views, savedHomeUsage)
+}
+
+function pushHomeAccount(name: string, kind: SignInFolderKind): void {
+  saveHomeUsage(savedHomeUsage, { name, kind }, usageViews.get(viewKey(name, kind)), Date.now())
+  pushAccounts()
+}
+
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
     pickDir,
@@ -1765,7 +1779,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
     return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
   },
   muse: async () => {
-    const picked = musePicker.pick(accountViews())
+    const picked = musePicker.pick(homePickViews())
     return picked ? ((await museServeFor(picked.name)) ?? null) : null
   },
   agy: () => agyOneShotTarget()
@@ -2583,7 +2597,7 @@ function pickCodexHome(
 ): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(
-    views,
+    homePickViews(views),
     sessionAccounts?.of('codex', resumeSessionId),
     codexSessions?.launchedSessions()
   )
@@ -2619,7 +2633,7 @@ async function probeCodexAccount(name: string): Promise<void> {
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'codex-home')
 }
 
 async function codexUseReset(name: string): Promise<CodexResetOutcome> {
@@ -2661,6 +2675,7 @@ function setSignInFailure(f: SignInFailure | null): void {
 function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
+  savedHomeUsage.delete(viewKey(name, kind))
   picker.forget(kind, name)
   pushAccounts()
 }
@@ -2780,7 +2795,7 @@ function museHomeFor(name: string): string {
 function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
   const picked = musePicker.pick(
-    views,
+    homePickViews(views),
     sessionAccounts?.of('muse', resumeSessionId),
     museSessions?.launchedSessions()
   )
@@ -2827,7 +2842,7 @@ async function probeMuseAccount(name: string): Promise<void> {
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'muse-home')
 }
 
 let museProbeRound: Promise<void> | null = null
@@ -2868,9 +2883,9 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
   const views = accountViews()
   const picked = onlyAsking
-    ? agyPicker.peek(views)
+    ? agyPicker.peek(homePickViews(views))
     : agyPicker.pick(
-        views,
+        homePickViews(views),
         sessionAccounts?.of('agy', resumeSessionId),
         agySessions?.launchedSessions()
       )
@@ -2903,7 +2918,7 @@ async function probeAgyAccount(name: string): Promise<void> {
     const quota = await agyUsage(home)
     usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'agy-home')
 }
 
 async function agyBinary(): Promise<string | undefined> {
@@ -2974,7 +2989,7 @@ async function addHomeKey(
 
 // AGY§6 AGY§20
 async function agyOneShotTarget(): Promise<AssistTarget | null> {
-  const picked = agyPicker.pick(accountViews())
+  const picked = agyPicker.pick(homePickViews())
   const binary = await agyBinary()
   if (!picked || !binary) return null
   const apiKey = await agyApiKeyOf(picked.name)
@@ -4393,6 +4408,7 @@ app.on('before-quit', (e) => {
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
+  savedHomeUsage.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   flushInbox()

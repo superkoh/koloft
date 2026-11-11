@@ -2072,6 +2072,39 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('after Koloft is reopened, the first Codex session started before any limit read has answered runs in the account that had room when Koloft was last open, not the full one listed first', async ({
+    env
+  }) => {
+    installCodex(env)
+    const homeOf = (name: string) => path.join(env.userData, 'codex-homes', name)
+    fs.writeFileSync(path.join(homeOf('e2e-codex'), 'auth.json'), '{"usedPercent":100}')
+    fs.mkdirSync(homeOf('roomy'), { recursive: true })
+    fs.writeFileSync(path.join(homeOf('roomy'), 'auth.json'), '{"usedPercent":10}')
+    const accounts = settingsOnDisk(env).accounts as Record<string, unknown>[]
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [...accounts, seededAccount('roomy', 'codex-home')]
+    })
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    fs.writeFileSync(path.join(env.home, 'fake-codex-account-read-fails'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect((await startCodex(page, env)).codexHome).toBe(homeOf('roomy'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§14
   test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, starting on "Same as my other sessions", which with Skip permission prompts on never asks, and counts as running once Codex binds', async ({
     env
