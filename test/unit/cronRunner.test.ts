@@ -1353,6 +1353,19 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     expect(h.jobs[0].history[0]).toMatchObject({ state: 'closed', removed: true })
   })
 
+  it('a bound run’s folder is the run’s own to tidy, while it runs and once its line is written, so the tab’s own close leaves it alone; a run that never bound is not claimed', async () => {
+    const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
+    await h.runner.runNow('j1')
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(false)
+    h.runner.onBound('tab-1', 'sess-1')
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(true)
+    h.tidied.set(RUN, REMOVED)
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(true)
+    await flush()
+    expect(h.runner.tidiesFolder(folderOf(OLD))).toBe(false)
+  })
+
   it('a folder that would lose work stays and its line says why; once a later sweep removes it, the reason goes', async () => {
     const h = makeHarness([makeJob()])
     await h.runner.runNow('j1')

@@ -5658,7 +5658,7 @@ async function removeUntouchedWorktree(
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.holdsFolder(tree)) return
+  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>

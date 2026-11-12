@@ -872,8 +872,23 @@ export class CronRunner {
     }
   }
 
-  holdsFolder(folder: string): boolean {
+  private holdsFolder(folder: string): boolean {
     return [...this.kept.values()].some((k) => runFolder(k.root, k.worktree) === folder)
+  }
+
+  tidiesFolder(folder: string): boolean {
+    const live = [...this.live.values()]
+    return (
+      this.holdsFolder(folder) ||
+      this.jobs.some((job) =>
+        [...job.history, ...live.filter((r) => r.jobId === job.id)].some(
+          (run) =>
+            !!run.worktree &&
+            !!run.sessionId &&
+            runFolder(job.workspacePath, run.worktree) === folder
+        )
+      )
+    )
   }
 
   tabMoved(oldTabId: string, newTabId: string): void {

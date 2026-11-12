@@ -250,6 +250,7 @@ const COMPACTION_SHOWS_AFTER_MS = 500
 const CONTEXT_SUMMARY = 'context_summary'
 // AGY§8
 const LISTED_TITLE_AFTER_PROMPT_MS = 1000
+const LISTED_TITLE_READS_AFTER_A_TURN = 10
 // AGY§14 AGY§26
 const KEYS = { yes: '1', noCommand: '4', noEdit: '2', noCreateOrRead: '\x1b' } as const
 const TOOL_IN_BLOCKED_MESSAGE_RE = /^Approve (\w+):/
@@ -1268,7 +1269,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    void this.takeListedTitle(run, id, true)
+    void this.takeListedTitle(run, id, LISTED_TITLE_READS_AFTER_A_TURN)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
     if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file)
@@ -1309,7 +1310,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8 AGY§11
-  private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
+  private async takeListedTitle(run: AgyRun, id: string, readsLeft = 0): Promise<void> {
     const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
@@ -1318,8 +1319,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           .then((rows) => historyEntries(rows))
       : listAgyConversations(this.gemini)
     const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
-    if (!name && again) this.takeListedTitleSoon(run, id)
-    if (!name || run.info?.nativeSessionId !== id) return
+    if (run.info?.nativeSessionId !== id) return
+    if (!name) {
+      if (readsLeft > 0 && this.runs.get(run.tabId) === run)
+        this.takeListedTitleSoon(run, id, readsLeft - 1)
+      return
+    }
     if (!given) {
       if (name !== run.info.title) this.retitle(run.info, name)
       return
@@ -1330,8 +1335,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8
-  private takeListedTitleSoon(run: AgyRun, id: string): void {
-    setTimeout(() => void this.takeListedTitle(run, id), LISTED_TITLE_AFTER_PROMPT_MS).unref?.()
+  private takeListedTitleSoon(run: AgyRun, id: string, readsLeft = 0): void {
+    setTimeout(
+      () => void this.takeListedTitle(run, id, readsLeft),
+      LISTED_TITLE_AFTER_PROMPT_MS
+    ).unref?.()
   }
 
   // AGY§17
