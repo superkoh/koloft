@@ -4,7 +4,10 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
+import { once } from 'events'
+import { PassThrough } from 'stream'
 import {
+  answerStreamOf,
   defaultControlDir,
   ensureControlDir,
   problemOf,
@@ -199,5 +202,31 @@ describe('a machine whose shell prints a greeting and a title escape as it start
   it('a command Koloft did not mark keeps all it printed, even a line that reads like the mark', async () => {
     const r = await runSsh('host', remoteShCommand(`printf '${ANSWER}'`), { controlDir: tmp })
     expect(r.stdout).toBe(`Welcome to the box\n\x1b]0;box\x07${ANSWER}`)
+  })
+
+  it('a live stream Koloft reads loses the greeting even when the mark comes split across reads, and keeps what follows byte for byte', async () => {
+    const stdout = new PassThrough()
+    const read = answerStreamOf(remoteAnswerCommand('true'), stdout)
+    const got: Buffer[] = []
+    read.on('data', (b: Buffer) => got.push(b))
+    for (const piece of [
+      'Welcome to the box\nkoloft-answer-st',
+      'arts-here',
+      '\n{"id":1}\n',
+      '\0\xff'
+    ])
+      stdout.write(Buffer.from(piece, 'latin1'))
+    stdout.end()
+    await once(read, 'end')
+    expect(Buffer.concat(got)).toEqual(Buffer.from('{"id":1}\n\0\xff', 'latin1'))
+  })
+
+  it('an error on the ssh stdout of a live stream reaches the stream Koloft reads, so it never goes unheard in the main process', async () => {
+    const stdout = new PassThrough()
+    const read = answerStreamOf(remoteAnswerCommand('true'), stdout)
+    const heard = once(read, 'error')
+    stdout.destroy(new Error('read ECONNRESET'))
+    const [error] = (await heard) as [Error]
+    expect(error.message).toBe('read ECONNRESET')
   })
 })
