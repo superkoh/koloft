@@ -3394,12 +3394,8 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   hook still sees `Monitor`. A deny stops it, reported as `PreToolUse:Monitor hook
   error: <reason>`; an allow under `--permission-mode default` is ignored (the call
   still needed approval); an 8 s sleep started the monitor 8 s late, then it ran.
-  `PostToolUse` on `Bash` still does not fire for Monitor. Koloft's hold hook matches
-  `"tool_name":"Bash"` and reads `tool_input.command`, so on a busy machine it should
-  now hold a background tab's Monitor start the way it holds a Bash call, and list its
-  command as held (inferred from these runs and the hook's text; the hold hook itself
-  was not run). `stale_pr_status` never sees a Monitor. Not run: the interactive TUI, a
-  subagent's Monitor.
+  `PostToolUse` on `Bash` still does not fire for Monitor. `stale_pr_status` never sees
+  a Monitor. Not run: the interactive TUI, a subagent's Monitor.
 - **The transcript record of a call a `PreToolUse` hook denied is unchanged on
   2.1.314**: a `tool_result` `{type, content: "PreToolUse:<tool> hook error: <reason>",
   is_error: true, tool_use_id}` with `toolDenialKind: "permission-rule"` beside it, the

@@ -3288,8 +3288,28 @@ server unless a line says so.
   `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
   lowers a `-a` program while its app is not frontmost or the screen is locked.
 
+- **`-b -p` moves only that process; what it starts afterwards starts lowered, and
+  lifting it does not lift them.** `/bin/sh -c 'sleep A & sleep 3; sleep B & wait'`,
+  priorities read with `ps -M`: after `taskpolicy -b -p <sh>` the shell read 4 and the
+  already running `sleep A` stayed at 31; `sleep B`, started 3 s later, read 4. After
+  `taskpolicy -B -p <sh>` the shell read 31 and `sleep B` still 4; `-B -p` on `sleep B`
+  itself put it at 31.
+- **A lowered shell that then `exec`s a program through `taskpolicy -a` leaves the
+  program lowered.** `/bin/sh -c 'sleep 2; exec /usr/sbin/taskpolicy -a sleep N'`,
+  lowered with `-b -p` during the first two seconds: after the `exec` the same pid ran
+  `sleep N` at priority 4, not 46; `-B -p` then put it at 46.
+- Both measured 2026-11-12 on the same Mac (macOS 27.0, Darwin 27.0.0), one run each, by
+  a node script from a Koloft Claude Code tab; nothing but `sleep` was lowered.
+- Inferred, not checked: that macOS takes the memory of a `-b` process first when memory
+  is short. Three short runs on 2026-11-11 saw its pages on the background queue twice
+  and compressed no sooner than an unlowered process's once; no run was made under real
+  memory pressure.
+
 Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
-program on this Mac through `taskpolicy -a` (ADR-0042).
+program on this Mac through `taskpolicy -a`; `ResourceGuard` in
+`src/main/resourceGuard.ts`, which while memory pressure stays at 4 lowers the tools of
+the agent tabs nobody looks at with `-b -p`, never a process Koloft itself started, and
+lifts by reading the process table again (ADR-0042).
 
 ## §60 Electron: is someone at the Mac
 

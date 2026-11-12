@@ -74,7 +74,6 @@ import { MACHINE_CONFIG_HOME, MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } fr
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import {
   discordSaidLine,
-  HOLD_FILE,
   NOTICE_THIS_TURN,
   noticeLine,
   OWNER_ASLEEP_FILE,
@@ -135,7 +134,6 @@ export interface MuseMachineLaunch {
   koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
-  holdWhileBusy?: boolean
 }
 
 export interface MuseMachinePlan {
@@ -1047,12 +1045,7 @@ export class SshHost implements Host {
         const tabDir = tabPackageDir(d.userData, tabId)
         const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(
-            hookScript,
-            tabId,
-            contextFile,
-            spec.holdWhileBusy ? `${remoteMachineDir(pkg.name)}/${HOLD_FILE}` : undefined
-          )
+          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
