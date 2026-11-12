@@ -346,7 +346,7 @@ const TOOL_SHELLS_IN_FLIGHT =
   `if [ -d /proc ]; then find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%h %l\\n' 2>/dev/null | ` +
   `while read -r td tl; do grep -qs shell-snapshots "\${td%/fd}/cmdline" && echo "${TOOL_SHELL_LINE}$tl"; done; ` +
   `else ts="$(ps -axww -o pid= -o command= | awk '/shell-snap[s]hots/ { printf "%s%s", c, $1; c = "," }')"; ` +
-  `[ -n "$ts" ] && lsof -a -p "$ts" -d 1 -Fn 2>/dev/null | sed -n 's|^n\\(.*/tasks/[^/]*\\.output\\)$|${TOOL_SHELL_LINE}\\1|p'; fi`
+  `[ -n "$ts" ] && lsof -n -P -a -p "$ts" -d 1 -Fn 2>/dev/null | sed -n 's|^n\\(.*/tasks/.*\\.output\\)$|${TOOL_SHELL_LINE}\\1|p'; fi`
 // PLATFORM§37
 const EACH_SHELLS_FOREGROUND_AND_FOLDER =
   `k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "${remoteShellPidFile('$1')}"; ` +

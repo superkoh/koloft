@@ -1627,14 +1627,10 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   plain non-interactive `sh` over SSH, `ps -axww -o pid= -o command=` showed that whole
   command line and `lsof -a -p <pid> -d 1 -Fn` gave
   `/private/tmp/claude-501/<cwd slug>/<session id>/tasks/b<…>.output` for the shell and
-  its `perl`. Koloft's whole machine heartbeat, picking pids by `shell-snapshots` in the
-  `ps` line and then running `lsof` on them, listed exactly the tool shells: not their
-  `perl`, not a stray `perl … > …/tasks/bstray.output &`, not a `sh -c '…; :
-  shell-snapshots'` writing to `/dev/null`. It took 39–62 ms against 21–26 ms without
-  that part, with about 490–540 processes in the VM; on the dev Mac (about 750
-  processes) 55–63 ms against 23–31 ms, of which `ps` was about 25 ms and `lsof` on one
-  pid about 15 ms. On the dev Mac `pgrep -f shell-snapshots` printed nothing while such
-  a shell ran, so the heartbeat reads the command lines with `ps`.
+  its `perl`. The `perl` child's `ps` line lacks `shell-snapshots`, as on Linux. Koloft's
+  whole machine heartbeat took 39–62 ms with that scan against 21–26 ms without it, with
+  about 490–540 processes in the VM; on the dev Mac (about 750 processes) 55–63 ms
+  against 23–31 ms: `ps -axww` about 25 ms, `lsof` on one pid about 15 ms.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
