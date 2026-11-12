@@ -1439,7 +1439,9 @@ inferred, not checked.
   elsewhere, and a swimlane is laid out anew in the same colours; no setting found
   that undoes these. A document that asks for `layout: elk` itself now gets ELK, where
   11 fell back to dagre. In Koloft's build ELK is a 3.4 MB chunk of its own, loaded
-  only when a diagram asks for that layout.
+  the first time a diagram is laid out with it: one that asks for it, or one of the
+  kinds new in 12 (`usecase`, `agentflow`), which read the root `layout` (read from
+  `dist`, not drawn).
 - **KaTeX**: when it refuses a formula, the `.katex-error` element's text is a
   ParseError message with combining marks stitched through the source; the untouched
   source is in its `title` attribute. Its default `maxSize` is Infinity, so an untrusted

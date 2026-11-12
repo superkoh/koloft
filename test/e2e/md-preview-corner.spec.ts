@@ -877,7 +877,8 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
       ].join('\n')
     const flowSrc =
       'flowchart TD\n  C39a[C39 a label long enough that it has to wrap onto a second line] --> C39b[b]'
-    const stateSrc = 'stateDiagram-v2\n  C39idle --> C39busy: go'
+    const stateSrc =
+      'stateDiagram-v2\n  state "C39 a state label long enough that it has to wrap onto a second line" as C39idle\n  C39idle --> C39busy: go'
     write(
       ws,
       'c39.md',
@@ -906,6 +907,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
         return `${svg.getAttribute('viewBox')} ${box ? getComputedStyle(box).fill : 'no box'}`
       })
     )
+    expect(drawn.join('|')).not.toContain('no box')
     expect(drawn[0], 'flowchart').toBe(drawn[1])
     expect(drawn[2], 'state diagram').toBe(drawn[3])
   })
