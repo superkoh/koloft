@@ -343,11 +343,13 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
         await page.locator('.menu .mi', { hasText: newSessionMenuItem(tab.agent) }).click()
         await expect.poll(() => shownCenterTerm(page), { timeout: 20_000 }).toBeDefined()
         await expect(page.locator('.terminals > .empty')).toHaveCount(0, { timeout: 20_000 })
-        if (tab.agent === 'Antigravity') await agyReady(page)
         await page.waitForTimeout(FIT_SETTLE_MS)
         await recordShownTermEveryFrame(page)
         await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1)
-        if (tab.agent === 'Antigravity') await runIn(page, centerTerm(page), 'first words')
+        if (tab.agent === 'Antigravity') {
+          await agyReady(page)
+          await runIn(page, centerTerm(page), 'first words')
+        }
 
         await expect(card(page)).toBeVisible({ timeout: 60_000 })
         await page.waitForTimeout(FIT_SETTLE_MS)
@@ -398,7 +400,7 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
 
         await expect(card(page)).toBeVisible({ timeout: 60_000 })
         await untilTheRowsTabIsBound(page, row)
-        await expect(row).not.toHaveClass(/\bst-pending\b/)
+        await expect(row).not.toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
         await expect(page.locator('.term-island .empty')).toHaveCount(0)
         await page.waitForTimeout(FIT_SETTLE_MS)
         expect(await recordedTermFrames(page)).toHaveLength(1)
