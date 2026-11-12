@@ -50,7 +50,6 @@ interface DirWatch {
   timer: ReturnType<typeof setTimeout> | null
   changed: Set<string> | null
   folderId: string
-  changedWithNoViewer: boolean
 }
 const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
@@ -124,10 +123,7 @@ function reportSoon(root: string, entry: DirWatch, onChange: DirChangeListener):
 function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
   entry.watcher.on('change', (_event, filename) => {
     if (watchIgnored(filename)) return
-    if (entry.count === 0) {
-      entry.changedWithNoViewer = true
-      return
-    }
+    if (entry.count === 0) return
     noteChange(root, entry, filename)
     reportSoon(root, entry, onChange)
   })
@@ -159,9 +155,7 @@ export function watchDir(root: string, onChange: DirChangeListener): boolean {
   else if (existing) {
     if (existing.count === 0) {
       noLongerKept(root)
-      existing.changed = existing.changedWithNoViewer ? null : new Set()
-      if (existing.changedWithNoViewer) reportSoon(root, existing, onChange)
-      existing.changedWithNoViewer = false
+      existing.changed = new Set()
     }
     existing.count++
     return true
@@ -179,8 +173,7 @@ export function watchDir(root: string, onChange: DirChangeListener): boolean {
     count: 1,
     timer: null,
     changed: new Set(),
-    folderId,
-    changedWithNoViewer: false
+    folderId
   }
   attachWatcher(root, entry, onChange)
   dirWatchers.set(root, entry)
@@ -191,10 +184,7 @@ export function unwatchDir(root: string): void {
   const entry = dirWatchers.get(root)
   if (!entry) return
   if (entry.count === 0 || --entry.count > 0) return
-  if (entry.timer) {
-    clearTimeout(entry.timer)
-    entry.changedWithNoViewer = true
-  }
+  if (entry.timer) clearTimeout(entry.timer)
   entry.timer = null
   keptWithNoViewerOldestFirst.push(root)
   while (keptWithNoViewerOldestFirst.length > FOLDERS_KEPT_WATCHED_AFTER_THEIR_LAST_VIEWER_LEFT) {

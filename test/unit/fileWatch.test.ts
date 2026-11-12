@@ -256,22 +256,7 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(roots).toEqual([])
   })
 
-  it('tells a returning viewer that the folder changed while nobody viewed it', async () => {
-    const reports: (DirChanges | undefined)[] = []
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
-    await sleep(700)
-    unwatchDir(dir)
-    reports.length = 0
-    fs.appendFileSync(file, 'two\n')
-    await sleep(700)
-    expect(reports).toEqual([])
-
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
-    expect(await until(() => reports.length > 0)).toBe(true)
-    expect(reports[0]).toBeUndefined()
-  })
-
-  it('tells a returning viewer about a change that was still waiting to be reported when the last viewer left', async () => {
+  it('tells a returning viewer nothing about changes made while nobody viewed it, or one still waiting when the last viewer left, since every viewer reads the folder itself as it starts watching and a report would make it read twice', async () => {
     const reports: (DirChanges | undefined)[] = []
     expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
@@ -279,10 +264,14 @@ describe('watchDir (recursive dir watcher)', () => {
     fs.appendFileSync(file, 'two\n')
     await sleep(120)
     unwatchDir(dir)
-    await sleep(500)
-    expect(reports).toEqual([])
+    fs.appendFileSync(file, 'three\n')
+    await sleep(700)
 
     expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    expect(reports).toEqual([])
+
+    fs.appendFileSync(file, 'four\n')
     expect(await until(() => reports.length > 0)).toBe(true)
   })
 
