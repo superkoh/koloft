@@ -33,7 +33,6 @@ import {
   killFakeRemote,
   launchWithRemote,
   machineAgyApiCalls,
-  machineCodexLog,
   machineHome,
   type OtherAgentName
 } from './helpers/remote'
@@ -91,15 +90,27 @@ function peerMessages(env: E2EEnv, home = env.home): string {
     : ''
 }
 
-function codexAnswers(env: E2EEnv): unknown[] {
-  const file = path.join(env.home, 'fake-codex-wire.jsonl')
+interface CodexClientFrame {
+  direction: string
+  frame: {
+    result?: { decision?: string; answers?: Record<string, { answers: string[] }> }
+  }
+}
+
+function codexClientFrames(home: string): CodexClientFrame[] {
+  const file = path.join(home, 'fake-codex-wire.jsonl')
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
-    .trim()
     .split('\n')
-    .map((l) => JSON.parse(l) as { direction: string; frame: { result?: { decision?: string } } })
-    .filter((w) => w.direction === 'client' && w.frame.result?.decision)
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as CodexClientFrame)
+    .filter((w) => w.direction === 'client')
+}
+
+function codexAnswers(env: E2EEnv): unknown[] {
+  return codexClientFrames(env.home)
+    .filter((w) => w.frame.result?.decision)
     .map((w) => w.frame.result)
 }
 
@@ -652,7 +663,13 @@ for (const remote of [false, true]) {
 
 const ASSIST_OFFERS_REPLIES = 'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
 
-async function pickNotYet(page: Page, quoted: RegExp, showsWithinMs = 30_000): Promise<void> {
+const A_CARD_SHOWS_WITHIN_MS = 30_000
+
+async function pickNotYet(
+  page: Page,
+  quoted: RegExp,
+  showsWithinMs = A_CARD_SHOWS_WITHIN_MS
+): Promise<void> {
   await openInbox(page)
   const card = cardQuoting(page, quoted)
   await expect(card.locator('.ibx-q')).toContainText('Merge PR #12?', { timeout: showsWithinMs })
@@ -940,17 +957,12 @@ type AgentOnTheMachine = (typeof OTHER_AGENTS_ON_THE_MACHINE)[number]
 const A_REMOTE_AGENT_CASE_TAKES_MS = 240_000
 const ON_THE_MACHINE_WITHIN_MS = 60_000
 const A_RESTARTED_TAB_ATTACHES_WITHIN_MS = 90_000
-const A_CARD_SHOWS_WITHIN_MS = 30_000
 
-interface CodexClientFrame {
-  direction: string
-  frame: { result?: { answers?: Record<string, { answers: string[] }> } }
-}
+const machineCodexClientFrames = (env: E2EEnv): CodexClientFrame[] =>
+  codexClientFrames(machineHome(env))
 
-const codexClientFrames = (env: E2EEnv): CodexClientFrame[] =>
-  machineCodexLog<CodexClientFrame>(env, 'fake-codex-wire.jsonl').filter(
-    (w) => w.direction === 'client'
-  )
+const saidBy = (agent: AgentOnTheMachine): RegExp =>
+  OTHER_AGENTS.find((a) => a.name === agent.label)!.said
 
 const pickedInItsTerminal =
   (pick: string) =>
@@ -963,7 +975,6 @@ const ASKS: Record<
     askLine: string
     pick: string
     answered: (env: E2EEnv, page: Page, tabId: string) => Promise<boolean>
-    said: RegExp
     got: (env: E2EEnv, page: Page, tabId: string) => Promise<string>
     turnHold?: string
     questionOutlivesKoloft?: false
@@ -973,16 +984,16 @@ const ASKS: Record<
     askLine: 'ask me a colour',
     pick: 'Green',
     answered: async (env) =>
-      codexClientFrames(env).some((w) => w.frame.result?.answers?.colour?.answers[0] === 'Green'),
-    said: /Codex fixture answered: Shall I merge PR #12\?/,
-    got: async (env) => JSON.stringify(codexClientFrames(env)),
+      machineCodexClientFrames(env).some(
+        (w) => w.frame.result?.answers?.colour?.answers[0] === 'Green'
+      ),
+    got: async (env) => JSON.stringify(machineCodexClientFrames(env)),
     questionOutlivesKoloft: false
   },
   Muse: {
     askLine: '/ask',
     pick: 'Blue',
     answered: pickedInItsTerminal('Blue'),
-    said: /echo: Shall I merge PR #12\?/,
     got: async (_env, page, tabId) => terminalText(page, tabId),
     turnHold: 'fake-muse-delay'
   },
@@ -990,7 +1001,6 @@ const ASKS: Record<
     askLine: '/ask Which colour?|Red|Green',
     pick: 'Green',
     answered: pickedInItsTerminal('Green'),
-    said: /Answer to: Shall I merge PR #12\?/,
     got: async (env) => JSON.stringify(machineAgyApiCalls(env)),
     turnHold: 'fake-agy-delay'
   }
@@ -1036,6 +1046,7 @@ async function askThenRestart(env: E2EEnv, agent: AgentOnTheMachine) {
 }
 
 test.describe(() => {
+  test.describe.configure({ mode: 'parallel' })
   test.setTimeout(A_REMOTE_AGENT_CASE_TAKES_MS)
   test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -1074,7 +1085,7 @@ test.describe(() => {
             A_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS
           )
         await typeInto(page, tabId, 'Shall I merge PR #12?')
-        await pickNotYet(page, asks.said, ON_THE_MACHINE_WITHIN_MS)
+        await pickNotYet(page, saidBy(agent), ON_THE_MACHINE_WITHIN_MS)
         await expect
           .poll(() => asks.got(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
           .toContain('Merge PR #12? «Not yet»')
