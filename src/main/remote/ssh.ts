@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'child_process'
 import fs from 'fs'
 import readline from 'readline'
+import { Transform, type Readable, type TransformCallback } from 'stream'
 
 // PLATFORM§3
 export function defaultControlDir(): string {
@@ -94,6 +95,23 @@ export const ANSWER_STARTS = 'koloft-answer-starts-here'
 export function answerOf(remoteCmd: string, stdout: Buffer): Buffer {
   const at = remoteCmd.includes(ANSWER_STARTS) ? stdout.indexOf(`${ANSWER_STARTS}\n`) : -1
   return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
+}
+
+// PLATFORM§33
+export function answerStreamOf(remoteCmd: string, stdout: Readable): Readable {
+  if (!remoteCmd.includes(ANSWER_STARTS)) return stdout
+  const mark = Buffer.from(`${ANSWER_STARTS}\n`)
+  let before: Buffer | null = Buffer.alloc(0)
+  const transform = (chunk: Buffer, _: unknown, done: TransformCallback): void => {
+    if (!before) return done(null, chunk)
+    before = Buffer.concat([before, chunk])
+    const at = before.indexOf(mark)
+    if (at < 0) return done()
+    const answer = before.subarray(at + mark.length)
+    before = null
+    done(null, answer.length ? answer : undefined)
+  }
+  return stdout.pipe(new Transform({ transform }))
 }
 
 export interface RunResult {

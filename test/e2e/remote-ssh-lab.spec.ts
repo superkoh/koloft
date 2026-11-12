@@ -2423,4 +2423,20 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       )
     })
   })
+
+  test('E-SSH-52: a Codex session on a machine whose shell prints a greeting at login starts there and reads waiting: neither its proxy nor the side server takes the greeting for something Codex said', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installCodexSignedInForTheLab(env)
+    await withLab(
+      env,
+      async ({ page }) => {
+        await addMachine(page, 'kt-noisy', 'nuser')
+        await newSessionInWith(page, 'kt-noisy', 'Codex')
+        await expect(wsRows(page, 'kt-noisy')).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
 })
