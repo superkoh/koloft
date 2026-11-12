@@ -162,7 +162,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       const heard = unwrapped(await terminalText(page, tab))
       expect(heard).not.toContain(SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN)
       expect(heard).not.toContain('/auth/callback')
-      expect(heard).not.toContain(`:${cli.port}/`)
+      expect(heard).not.toMatch(new RegExp(`:${cli.port}(?!\\d)`))
     } finally {
       await quitAndClose(app)
       await server.close()
