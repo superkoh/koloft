@@ -522,6 +522,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .prog {
+    width: 100%;
+    opacity: 0.55;
     animation: none;
   }
 }

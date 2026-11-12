@@ -1,5 +1,5 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, fillsItsTrack, launchApp } from './helpers/app'
 import { startSessionIn, waitBooted } from './helpers/p1'
 import { higher, release, withFixtureEnv, writeFixture } from './helpers/updateFixture'
 import { openSettings } from './helpers/extensions'
@@ -119,7 +119,7 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<v
 }
 
 test.describe('the update modal: what can and cannot close it, and what can stack on it', () => {
-  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte', async ({
+  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte; a download of unknown size slides its bar, and with Reduce motion on the bar stands still across the whole track', async ({
     env
   }) => {
     const fixture = withFixtureEnv(env)
@@ -137,6 +137,18 @@ test.describe('the update modal: what can and cannot close it, and what can stac
       await expect(modal.locator('.modal-close')).toHaveCount(0)
       await tryToDismiss(page)
       await expect(modal).toContainText('Downloading update…')
+
+      await sendDownloadProgress(app, -1)
+      const unknownSize = modal.locator('.update-progress-fill.indet')
+      await expect(unknownSize).toBeVisible()
+      const moving = (): Promise<number> => unknownSize.evaluate((el) => el.getAnimations().length)
+      await expect.poll(moving).toBe(1)
+      expect(await fillsItsTrack(unknownSize)).toBe(false)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(moving).toBe(0)
+      await expect(unknownSize).toBeVisible()
+      expect(await fillsItsTrack(unknownSize)).toBe(true)
+      await page.emulateMedia({ reducedMotion: null })
 
       await sendDownloadProgress(app, 100)
       await expect(modal).toContainText('Installing & restarting…')
