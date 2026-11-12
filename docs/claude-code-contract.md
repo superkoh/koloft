@@ -2324,7 +2324,12 @@ never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab
 onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing. Locally, `src/main/toolInstall.ts` runs the script
 in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
-Claude sign-in stops an install that prints nothing for 20 minutes (`src/main/index.ts`), and
+Claude sign-in stops an install that prints nothing for 30 minutes (`src/main/index.ts`:
+while the installer runs, the timer starts over at every byte it prints, so it has to
+outlast only the longer of the two silent downloads above — 338.4 MB on darwin-x64 by
+the manifest, about 22.6 minutes at 2 Mbit/s; that x64 fetches that file in the second
+step is inferred, not checked, the measured arm64 one is 323.7 MB, about 21.6 minutes),
+and
 `launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
 warm-up, per the 2.1.296 bullet above).
 
