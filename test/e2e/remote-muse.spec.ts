@@ -36,7 +36,9 @@ import {
   runIn,
   sendShortcut,
   sendTwoLinesJoinedByShiftEnter,
+  startSessionIn,
   switchToRow,
+  termIds,
   terminalText,
   TWO_LINE_PROMPT,
   waitBooted,
@@ -61,6 +63,8 @@ const MUSE_KEEPS_ITS_SANDBOX_AND_PROMPTS = [
   'enabled'
 ]
 const noSpace = (s: string): string => s.replace(/\s/g, '')
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 const SANDBOX_LINE = noSpace(MUSE_SANDBOX_CANNOT_START)
 const ACCOUNT_LINE = noSpace(`koloft: → ${E2E_MUSE_ACCOUNT}`)
 
@@ -397,6 +401,76 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await runIn(page, centerTerm(page), 'after restart')
       await expect(remoteRows(page)).toHaveClass(/\bst-working\b/)
       await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RM-15: an idle remote Muse session goes to sleep — its tmux session on the machine is killed while its row and tab stay — and clicking it resumes the same session there with muse resume, where a line typed in the woken tab and a paste still sent to its old tab both reach it', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const first = await startRemoteMuse(page, env)
+      const tmux = `k-${first.sessionId}`
+      const row = remoteRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await runIn(page, centerTerm(page), 'before sleep')
+      await expect(row).toContainText('before sleep', { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      const asleepTab = (await row.getAttribute('data-tab-id')) ?? ''
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const localRow = wsRows(page, 'ws-a').first()
+      await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      await localRow.click()
+
+      await expect
+        .poll(() => sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmux}`)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toHaveLength(1)
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(tmux)
+      await expect(row).toHaveClass(/\bst-idle\b/)
+      await expect(row).not.toHaveClass(/\bcold\b/)
+      expect(await termIds(page)).toContain(asleepTab)
+      expect(machineMuseCalls(env)).toHaveLength(1)
+
+      await row.click()
+      await expect
+        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(2)
+      expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', first.sessionId])
+      await expect(row).not.toHaveAttribute('data-tab-id', asleepTab, { timeout: 30_000 })
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([tmux])
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      const wokenTab = (await row.getAttribute('data-tab-id')) ?? ''
+
+      await page.evaluate((id) => window.api.terminal.write(id, 'after waking\r'), wokenTab)
+      await expect
+        .poll(() => museSaid(env, first.sessionId, machineHome(env)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toContain('echo: after waking')
+      await expect
+        .poll(() => terminalText(page, wokenTab), { timeout: 30_000 })
+        .toContain('echo: after waking')
+      await page.evaluate(
+        (id) => window.api.terminal.paste(id, 'pasted into the old tab', '\r'),
+        asleepTab
+      )
+      await expect
+        .poll(() => museSaid(env, first.sessionId, machineHome(env)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toContain('echo: pasted into the old tab')
+      await expect
+        .poll(() => terminalText(page, wokenTab), { timeout: 30_000 })
+        .toContain('echo: pasted into the old tab')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      expect(machineMuseCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
