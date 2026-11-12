@@ -232,7 +232,7 @@ function useRealDiscord(env: E2EEnv, file: string): void {
   env.launchEnv.KOLOFT_DISCORD_API_URL = DISCORD_API_URL
   addKeychainEntry(env, DEV_BOT_KEYCHAIN, 'bot', keychainSecret(DEV_BOT_KEYCHAIN, 'bot'))
   seedSettings(env, {
-    assist: { on: true, backend: 'claude' },
+    assist: { backend: 'claude' },
     discord: {
       userId: bot.userId,
       userName: bot.userName,

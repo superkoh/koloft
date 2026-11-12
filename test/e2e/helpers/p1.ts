@@ -338,6 +338,14 @@ export function withMember(members: unknown, id: string): string[] {
   return list.includes(id) ? list : [...list, id]
 }
 
+// PLATFORM§59
+export function mainThreadPriority(pid: number): number {
+  const [head, mainThread] = execFileSync('ps', ['-M', '-p', String(pid)], { encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+  return parseInt(mainThread[head.indexOf('PRI')], 10)
+}
+
 // CC§11
 export function runClaudeElsewhere(env: E2EEnv, sessionId: string): () => void {
   const other = spawn('sleep', ['600'], { stdio: 'ignore' })

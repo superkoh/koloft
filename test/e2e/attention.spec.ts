@@ -175,7 +175,7 @@ test.describe('attention markers come from real session-status transitions (shim
   test('with Assist on, a finished turn the Assist reads as a report is only news: looking at it clears the dot', async ({
     env
   }) => {
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), 'NEWS')
     const app = await launchApp(env)
     try {

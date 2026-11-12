@@ -599,6 +599,7 @@ export class SshHost implements Host {
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
+  private renamesOnTheWire = new Map<string, string>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
   private wholeReads = 0
@@ -866,7 +867,7 @@ export class SshHost implements Host {
 
   async openForEdit(file: string) {
     const got = await this.readWithHeader(file, EDIT_OPEN_MAX_BYTES)
-    return editOpenResult(got.body, got.fp, { file: () => got.file, dir: () => got.dir })
+    return editOpenResult(got.body, got.fp, { file: got.file, dir: got.dir })
   }
 
   private async staleResult(file: string, fp: EditFingerprint): Promise<EditWriteResult> {
@@ -945,16 +946,19 @@ export class SshHost implements Host {
 
   osOpen(): void {}
 
+  // ADR-0044
   endTmuxSession(tmuxName: string): Promise<string | undefined> {
-    const killedId = sessionIdOfTmux(tmuxName)
-    const kill = this.deps.run(killSessionCmd(tmuxName)).then((r) => {
-      if (this.kills.get(tmuxName) === kill) this.kills.delete(tmuxName)
+    const renamingTo = this.renamesOnTheWire.get(tmuxName)
+    const namesItMayHave = renamingTo ? [tmuxName, renamingTo] : [tmuxName]
+    const killedIds = namesItMayHave.flatMap((name) => sessionIdOfTmux(name) ?? [])
+    const kill = this.deps.run(killSessionCmd(tmuxName, renamingTo)).then((r) => {
+      for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
       if (!sshLinkBroke(r)) return undefined
-      if (killedId) this.killedSessions.delete(killedId)
+      for (const id of killedIds) this.killedSessions.delete(id)
       return problemOf(r)
     })
-    this.kills.set(tmuxName, kill)
-    if (killedId) this.killedSessions.add(killedId)
+    for (const name of namesItMayHave) this.kills.set(name, kill)
+    for (const id of killedIds) this.killedSessions.add(id)
     return kill
   }
 
@@ -964,7 +968,12 @@ export class SshHost implements Host {
   }
 
   async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
-    return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
+    this.renamesOnTheWire.set(from, to)
+    try {
+      return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
+    } finally {
+      if (this.renamesOnTheWire.get(from) === to) this.renamesOnTheWire.delete(from)
+    }
   }
 
   async answerAgent(requestId: string, reply: string | null): Promise<void> {

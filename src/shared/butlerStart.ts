@@ -1,6 +1,6 @@
 import type { AccountMeta, BackendAvailability, BackendId, SessionMethods } from './types'
 import { hasUsableAccount, noUsableAccountLead } from './accountUsage'
-import { BACKEND_LABEL, backendAvailable, backendsFrom, turnedOffLead } from './sessionBackend'
+import { BACKEND_LABEL, backendAvailable, turnedOffLead } from './sessionBackend'
 import { settingsPaneName, type SettingsPaneId } from './paletteFeatures'
 
 interface CannotRun {
@@ -33,11 +33,11 @@ export type ButlerStart =
   { backend: BackendId; because?: string } | { error: string; inFull: string; preferred: CannotRun }
 
 export function butlerStart(
-  preferred: BackendId,
+  order: readonly BackendId[],
   inputs: Parameters<typeof whyButlerCannotRunOn>[1],
   name: string
 ): ButlerStart {
-  const [first, ...others] = backendsFrom(preferred)
+  const [first, ...others] = order
   const why = whyButlerCannotRunOn(first, inputs)
   if (!why) return { backend: first }
   const whys = [why]

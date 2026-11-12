@@ -92,7 +92,7 @@ function seedConductor(
 ): void {
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend },
+    assist: { backend },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
@@ -432,7 +432,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       env.launchEnv.KOLOFT_AWAY_DIGEST_MS = String(AWAY_DIGEST_GATHERS_MS)
       seedSettings(env, {
         hintsOff: true,
-        assist: { on: true, backend: conductor },
+        assist: { backend: conductor },
         discord: {
           userId: OWNER.id,
           userName: OWNER.username,
@@ -531,7 +531,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
     seedSettings(env, {
       hintsOff: true,
-      assist: { on: true, backend: 'agy' },
+      assist: { backend: 'agy' },
       discord: {
         userId: OWNER.id,
         userName: OWNER.username,

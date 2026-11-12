@@ -996,6 +996,18 @@ only downloaded the public release.
   `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
   API-key route against a fake Gemini server, a python pty answering the TUI's queries,
   2026-11-08; 1 run each.)
+- A bracketed paste keeps the line feeds it starts with, and lands right after whatever
+  the box holds. `NOTE typed first.` typed, then one write of a paste: with no line
+  feed first the box showed `NOTE typed first.PASTED one`; with `\n\n` as the paste's
+  first characters it showed the note, an empty line, then the pasted lines; `\n\n`
+  typed as plain keys in the same write just before the paste's start mark showed the
+  same. Into an empty box both forms showed two empty lines above the pasted text.
+  1.3.6 drops a paste's trailing line feeds as 1.5.3 does: a paste starting and ending
+  with `\n\n`, then ` TYPED-AFTER` typed, showed the typed text on the last pasted
+  line, while `\n\n` typed after the paste's end mark kept it two lines lower.
+  What the box showed, not what a send carried. (agy 1.3.6, Linux arm64, Docker
+  `--network none`, inside tmux 3.3a, each write sent with `tmux send-keys -H` and the
+  box read with `capture-pane`, 2026-11-11; 1 run each. Not run on 1.5.3.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
@@ -1230,6 +1242,25 @@ only downloaded the public release.
   gives `no model configuration is available for this account`, and the real shape
   is not probed.
 - `/model`, Down, Esc leaves the model unchanged.
+
+- **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
+  macOS, the token file of one signed-in account copied into a throwaway `--gemini_dir`,
+  `WSL_INTEROP` set, `--output-format json`). Every `-p` reads about 8.7K input tokens
+  before the prompt. A short naming prompt, one at a time, three runs each (seconds): no
+  `--model` 10.1 / 11.2 / 11.8 (178–243 thinking tokens), `gemini-3.8-flash` `low` 4.1 /
+  4.5 / 5.8 (0), `gemini-4-argon` `low` 6.7 / 7.5 / 13.0 (0). On the owner's 86
+  hand-labelled end-of-turn replies (`src/main/turnNews.ts` as shipped, three runs each,
+  four at a time, 60 s allowed): no `--model` 82 / 83 / 84 right, no reply that asks the
+  owner read as news, mean 18.8 s, 25–29 of 65 calls over 15 s and 6–7 more over 60 s;
+  `gemini-4-argon` `medium` 84 / 83 / 83 right, 2–3 asks read as news (two of them in
+  every run), mean 10.3 s, 2–8 calls over 15 s; `gemini-3.8-flash` `medium` 81 / 80 / 81
+  right, 1–2 asks read as news, mean 9.4 s, 5–7 over 15 s. So within Assist's 15 s the
+  default model answers about half the time; the turn judgement runs on
+  `gemini-4-argon` at `medium` and the other jobs on `gemini-3.8-flash` at `low`.
+- `-p --conversation <id> --model gemini-3.8-flash --effort low` continued a
+  conversation a default-model `-p` had started in the same folder: `num_turns` 2, and
+  the answer named the earlier turn's word (same day and build). Which model the second
+  turn ran on is not in the JSON; it took 3.9 s against the first turn's 9.7 s.
 
 ## §22 Errors and retries
 

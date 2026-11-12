@@ -235,7 +235,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `<home>/external-opens.txt`. Never click "Download & Restart".
 - A hint card closes on any mousedown outside it, so while one is up change the UI
   through `clickAppMenuItem`. A second session in one workspace raises the "worktree"
-  hint over the rows: dismiss it before clicking a row.
+  hint beside the rows: dismiss it first, or the next click is the one that closes it.
 
 ### Waiting
 

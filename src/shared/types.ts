@@ -368,7 +368,20 @@ export interface Settings {
   todoNotes: Record<string, string>
 }
 
-export type AssistSetting = { on: boolean; backend: BackendId } | null
+export const ASSIST_JOBS = ['title', 'handover', 'turn', 'docs', 'route'] as const
+export type AssistJobId = (typeof ASSIST_JOBS)[number]
+export type AssistRowId = AssistJobId | 'butler'
+
+export interface AssistPick {
+  backend: BackendId
+  model?: string
+  effort?: CronEffort
+}
+
+export interface AssistSetting {
+  backend?: BackendId
+  rows?: Partial<Record<AssistRowId, AssistPick>>
+}
 
 export interface ButlerSetting {
   name: string
@@ -381,6 +394,8 @@ export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
   knowsTodo?: string[]
+  // CC§3 CODEX§11
+  carried?: { model?: string; effort?: CronEffort }
 }
 
 export interface DiscordChannel {
@@ -487,7 +502,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
-  assist: null,
+  assist: {},
   butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
@@ -1785,6 +1800,8 @@ export interface SessionResumeRequest {
   conductor?: boolean
   permission?: LaunchPermission
   trustFolder?: boolean
+  model?: string
+  effort?: CronEffort
 }
 
 export type ResumeFailure = 'cwd-missing' | 'invalid-args' | 'rebuild-failed'

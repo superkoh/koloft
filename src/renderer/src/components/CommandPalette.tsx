@@ -25,6 +25,7 @@ import {
   paletteSessions,
   paletteWorkspaces,
   pinnedWorkspace,
+  SESSION_ROWS_PER_BATCH,
   type MentionTyping,
   type PaletteAction,
   type PaletteGroup,
@@ -56,10 +57,10 @@ function countLine(n: number): string {
   return n === 1 ? '1 conversation' : `${n} conversations`
 }
 
-function startLabel(assistOn: boolean, backend: string | undefined): string {
-  const verb = assistOn ? 'Ask AI' : 'Start'
+function startLabel(asksAssist: boolean, backend: string | undefined): string {
+  const verb = asksAssist ? 'Ask AI' : 'Start'
   if (backend) return `${verb} · ${backend}`
-  return assistOn ? verb : 'Start a session'
+  return asksAssist ? verb : 'Start a session'
 }
 
 const SNIPPET_LEAD_CHARS = 24
@@ -120,7 +121,6 @@ export function CommandPalette({
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
-  const assistOn = useStore((s) => !!s.settings.assist?.on)
   const [query, setQuery] = useState('')
   const [caret, setCaret] = useState(0)
   const [dismissedAt, setDismissedAt] = useState<number | null>(null)
@@ -130,6 +130,7 @@ export function CommandPalette({
   const [hits, setHits] = useState<SessionSearchHit[]>([])
   const [searchDone, setSearchDone] = useState(false)
   const [listOpen, setListOpen] = useState(false)
+  const [grown, setGrown] = useState({ typed: '', rows: SESSION_ROWS_PER_BATCH })
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const asking = useRef<ReturnType<typeof askRoute> | null>(null)
@@ -144,7 +145,7 @@ export function CommandPalette({
   const pin = pinnedWorkspace(query, named)
   const choice = choices[pin ? hostOf(pin.wsPath) : 'local']
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
-  const asksAssist = assistOn && !pin
+  const asksAssist = !pin
   const typed = (pin ? pin.prompt : query).trim()
   const startable = !!typed && !twoNamed
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
@@ -152,10 +153,19 @@ export function CommandPalette({
   const suggestions = offered ? mentionCandidates(workspaceItems, offered, named) : []
   const mention = suggestions.length > 0 ? offered : null
   const scan = mode === 'search' || (!composing && !mention && worthScanningWhileTyping(typed))
+  const sessionRows = grown.typed === typed ? grown.rows : SESSION_ROWS_PER_BATCH
   const groups: PaletteGroup[] = mention
     ? [{ title: 'Workspaces', items: suggestions }]
-    : paletteGroups(sessionItems, workspaceItems, actions, typed, scan ? hits : [])
+    : paletteGroups(sessionItems, workspaceItems, actions, typed, scan ? hits : [], sessionRows)
+  const sessionGroup = groups.find((g) => g.title === 'Sessions')
+  const sessionsHidden = sessionGroup?.hidden ?? 0
+  const showMoreSessions = (): void => {
+    if (sessionsHidden === 0) return
+    const rows = sessionRows + SESSION_ROWS_PER_BATCH
+    setGrown((had) => (had.typed === typed && had.rows >= rows ? had : { typed, rows }))
+  }
   const visible = groups.flatMap((g) => g.items)
+  const lastListedSessionAt = sessionGroup ? visible.indexOf(sessionGroup.items.at(-1)!) : -1
   const keys = mode === 'search' ? hits.map((h) => h.row.id) : visible.map((i) => i.key)
   const count = keys.length
   const keyAt = keys.indexOf(hotKey ?? '')
@@ -273,8 +283,15 @@ export function CommandPalette({
     const listTakesArrows = !!mention || !query.includes('\n')
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0 && listTakesArrows) {
       e.preventDefault()
-      if (e.key === 'ArrowDown') pick(at === null ? 0 : Math.min(at + 1, count - 1))
-      else pick(at ? at - 1 : null)
+      if (e.key === 'ArrowDown') {
+        if (mode === 'ask' && at === lastListedSessionAt && sessionsHidden > 0) {
+          showMoreSessions()
+          return
+        }
+        const next = at === null ? 0 : Math.min(at + 1, count - 1)
+        if (mode === 'ask' && next === lastListedSessionAt) showMoreSessions()
+        pick(next)
+      } else pick(at ? at - 1 : null)
       return
     }
     if (mention && e.key === 'Tab') {
@@ -401,7 +418,16 @@ export function CommandPalette({
       )
     if (visible.length === 0) return null
     return (
-      <div className="pal-results" role="listbox" aria-label="Results" ref={listRef}>
+      <div
+        className="pal-results"
+        role="listbox"
+        aria-label="Results"
+        ref={listRef}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          if (el.scrollTop + 2 * el.clientHeight >= el.scrollHeight) showMoreSessions()
+        }}
+      >
         {groups.map((g) => (
           <div key={g.title} role="group" aria-label={g.title}>
             <div className="cb-hd">{g.title}</div>
@@ -432,11 +458,7 @@ export function CommandPalette({
             rows={1}
             spellCheck={false}
             autoComplete="off"
-            placeholder={
-              assistOn
-                ? 'Ask or tell Koloft anything, or find a session to jump to…'
-                : 'What should a new session do? Or find one to jump to…'
-            }
+            placeholder="Ask or tell Koloft anything, or find a session to jump to…"
             aria-label="Ask or jump"
             readOnly={mode === 'thinking'}
             value={query}

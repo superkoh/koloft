@@ -47,6 +47,7 @@ import {
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { mixesBackends } from '../sessionRows'
+import { ModelAndThinking } from './ModelAndThinking'
 import { Switch } from './settings/Switch'
 import '../cronJobs.css'
 
@@ -70,26 +71,6 @@ const WHEN_CHIPS: { kind: WhenKind; label: string }[] = [
 
 const AFTER_HINT =
   'The wait starts when a run\'s tab is gone. With "Leave it open", that is when you close it.'
-
-const MODEL_CHIPS_OF = Object.fromEntries(
-  SESSION_BACKENDS.map((b) => [
-    b,
-    [
-      { value: '', label: 'Default' },
-      ...NAMED_MODELS[b].map((m) => ({ value: m.id, label: m.label })),
-      { value: 'other', label: 'Other…' }
-    ]
-  ])
-) as Record<BackendId, { value: string; label: string }[]>
-
-const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
-  { value: '', label: 'Same as usual' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'Extra high' },
-  { value: 'max', label: 'Max' }
-]
 
 const PERMISSION_CHIPS: { value: CronPermission; label: string }[] = [
   { value: 'same', label: 'Same as my other sessions' },
@@ -420,9 +401,6 @@ export function CronJobsDialog({
   const stepKind = isStepKind(fields.whenKind)
 
   const label = BACKEND_LABEL[fields.backend]
-  const efforts = effortsFor(fields.backend, modelValue(fields))
-  const effortChips = EFFORT_CHIPS.filter((c) => c.value === '' || efforts.includes(c.value))
-  const effort = effortOf(fields)
 
   const permissionHint =
     (settings.skipPermissions
@@ -641,51 +619,22 @@ export function CronJobsDialog({
         {err('n') && <p className="field-hint bad">{err('n')}</p>}
       </div>
 
-      <span className="flabel">Model</span>
-      <div className="fcol">
-        <div className="chips">
-          {MODEL_CHIPS_OF[fields.backend].map((c) => (
-            <button
-              key={c.label}
-              className={'chip' + (fields.model === c.value ? ' on' : '')}
-              onClick={() => patch({ model: c.value })}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        {fields.model === 'other' && (
-          <div className={inputCls('modelOther')}>
-            <input
-              className="cb-field"
-              aria-label="Model name"
-              spellCheck={false}
-              autoComplete="off"
-              value={fields.modelOther}
-              onChange={(e) => patch({ modelOther: e.target.value })}
-              {...focusProps('modelOther')}
-            />
-          </div>
-        )}
-        <p className="field-hint">{MODEL_HINT}</p>
-        {err('modelOther') && <p className="field-hint bad">{err('modelOther')}</p>}
-      </div>
-
-      <span className="flabel">Thinking</span>
-      <div className="fcol">
-        <div className="chips">
-          {effortChips.map((c) => (
-            <button
-              key={c.label}
-              className={'chip' + (effort === c.value ? ' on' : '')}
-              onClick={() => patch({ effort: c.value })}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <p className="field-hint">{effortHint(label)}</p>
-      </div>
+      <ModelAndThinking
+        models={NAMED_MODELS[fields.backend]}
+        model={fields.model}
+        modelOther={fields.modelOther}
+        unsetModel="Default"
+        onModel={(model) => patch({ model })}
+        onModelOther={(modelOther) => patch({ modelOther })}
+        otherInput={{ className: inputCls('modelOther'), ...focusProps('modelOther') }}
+        modelHint={MODEL_HINT}
+        modelError={err('modelOther')}
+        efforts={effortsFor(fields.backend, modelValue(fields))}
+        effort={effortOf(fields)}
+        unsetEffort="Same as usual"
+        onEffort={(effort) => patch({ effort })}
+        effortHint={effortHint(label)}
+      />
 
       <span className="flabel">Permissions</span>
       <div className="fcol">

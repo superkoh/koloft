@@ -41,7 +41,7 @@ const unwrapped = (s: string): string => s.replace(/\s/g, '')
 function seedButler(env: E2EEnv): void {
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend: 'claude' },
+    assist: { backend: 'claude' },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,

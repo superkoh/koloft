@@ -987,7 +987,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         role: req.role,
         conductor: req.conductor,
         permission: req.permission ?? m?.permission,
-        trustFolder: req.trustFolder
+        trustFolder: req.trustFolder,
+        model: req.model,
+        effort: req.effort
       },
       resource
     )

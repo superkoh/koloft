@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import type { GithubFixture } from '../../../src/main/github'
+import type { AgentName } from './p1'
 
 export interface E2EEnv {
   home: string
@@ -99,7 +100,7 @@ export function setupE2EEnv(): E2EEnv {
     JSON.stringify({
       onboardingSeen: true,
       accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
-      assist: { on: true, backend: 'claude' },
+      assist: { backend: 'claude' },
       skipPermissionsAgreed: true
     })
   )
@@ -423,6 +424,18 @@ export function trustInMuse(env: E2EEnv, dir: string): void {
       projects: { [fs.realpathSync(dir)]: { decision: 'trusted' } }
     })
   )
+}
+
+export function installAgentFor(env: E2EEnv, agent: AgentName, ws: string): void {
+  if (agent === 'Codex') installCodex(env)
+  if (agent === 'Muse') {
+    installMuse(env)
+    trustInMuse(env, ws)
+  }
+  if (agent === 'Antigravity') {
+    installAgy(env)
+    trustInAgy(env, ws)
+  }
 }
 
 export function addCodexAccount(env: E2EEnv, authJson: string): void {

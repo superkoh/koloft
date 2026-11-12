@@ -79,13 +79,13 @@ describe('SleepingTabs — typing into a tab that is asleep', () => {
     expect(typed).toEqual([])
   })
 
-  it('a paste into a sleeping tab waits with the typing as one bracketed paste, followed by what was typed after it', async () => {
+  it('a paste into a sleeping tab waits with the typing as one bracketed paste that starts on its own lines, followed by what was typed after it', async () => {
     const { sleepers, typed, becomeReady } = makeSleepers()
     sleepers.add('old', tab('s1'))
     expect(sleepers.heldPaste('old', 'pasted\rtext', '\r')).toBe(true)
     sleepers.settle([live('new', 's1')])
     await becomeReady('new')
-    expect(typed).toEqual([{ tabId: 'new', keys: [PASTE, '\r'] }])
+    expect(typed).toEqual([{ tabId: 'new', keys: ['\x1b[200~\n\npasted\rtext\x1b[201~', '\r'] }])
   })
 
   it('a paste into a tab that is not asleep is left for the tab itself', () => {

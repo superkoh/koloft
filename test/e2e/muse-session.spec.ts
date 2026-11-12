@@ -197,7 +197,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     env
   }) => {
     installMuse(env)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()

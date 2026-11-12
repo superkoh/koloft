@@ -1106,7 +1106,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      assist: { on: true, backend: 'claude' },
+      assist: { backend: 'claude' },
       discord: {
         userId: DISCORD_OWNER.id,
         userName: DISCORD_OWNER.username,

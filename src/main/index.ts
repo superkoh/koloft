@@ -92,12 +92,12 @@ import {
   identityOf,
   messagingOf,
   reachedBySendMessage,
-  preferredAssistBackend,
   effectiveBackend,
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
+import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -1772,7 +1772,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
   agy: () => agyOneShotTarget()
 }
 const assist = koloftAssist({
-  setting: () => loadSettings().assist,
+  picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
@@ -1792,16 +1792,19 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  const preferred = preferredAssistBackend(settings)
+  const order = assistBackendsFor('butler', settings)
+  const preferred = order[0]
   const inputs = {
     enabled: settings.sessionMethods.enabled,
     installed: await installedBackends(),
     accounts: listAccounts()
   }
-  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const choice = butlerStart(order, inputs, butlerNameNow())
   const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
-  return choice
+  if ('error' in choice) return choice
+  const { model, effort } = assistLaunchOn('butler', choice.backend, settings)
+  return { ...choice, ...(model && { model }), ...(effort && { effort }) }
 }
 
 function logWhyButlerIsNotOn(
@@ -2314,8 +2317,8 @@ const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
 const LOGIN_TIMED_OUT = 'Sign-in timed out'
 // CC§10
-const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
-const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
+const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -2423,7 +2426,10 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
     giveUp: installFirst
       ? giveUpLoginAfter(
           handle.id,
-          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          cronTestMs(
+            'KOLOFT_INSTALL_SILENCE_MS',
+            INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS
+          ),
           INSTALL_STALLED
         )
       : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
@@ -3788,7 +3794,9 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
+          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title,
+          model: l.model,
+          effort: l.effort
         },
         l.title
       ),
@@ -3800,7 +3808,9 @@ app.whenReady().then(() => {
         role: l.role,
         conductor: true,
         permission: ownersPermission(),
-        trustFolder: true
+        trustFolder: true,
+        model: l.model,
+        effort: l.effort
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
       const spawned: SpawnedTab = {
@@ -6292,7 +6302,7 @@ function butlerTarget(ref: string): Target | undefined {
     key: 'butler',
     name: butlerNameNow(),
     backend:
-      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
+      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || assistRowBackend('butler', loadSettings()),
     remote: false,
     tabId,
     butler: true,

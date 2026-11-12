@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bracketedPaste, clicksTheMouse, pressesAKey } from '../../src/main/typeKeys'
+import { bracketedPaste, clicksTheMouse, pasteFor, pressesAKey } from '../../src/main/typeKeys'
 
 describe('what the owner sends a terminal', () => {
   it('counts as a key press for arrows, Shift+Tab, Esc and text, and not for mouse, focus or the terminal’s own replies', () => {
@@ -32,5 +32,18 @@ describe('a bracketed paste', () => {
 
   it('keeps line breaks and tabs', () => {
     expect(bracketedPaste('a\n\tb\r\nc')).toBe('\x1b[200~a\n\tb\r\nc\x1b[201~')
+  })
+})
+
+describe('a paste from the Workbench into a session', () => {
+  // CC§18 CODEX§23 MUSE§7
+  it('starts with two line feeds, so a picked element or failing checks put in before Enter do not run on from the note typed after a comment', () => {
+    for (const kind of ['claude', 'codex', 'muse'] as const)
+      expect(pasteFor('checks\n\n', kind)).toBe('\x1b[200~\n\nchecks\n\n\x1b[201~')
+  })
+
+  // AGY§15
+  it('starts an Antigravity paste the same way, and types its last line feeds after it, since agy drops only those at a paste’s end', () => {
+    expect(pasteFor('checks\n\n', 'agy')).toBe('\x1b[200~\n\nchecks\x1b[201~\n\n')
   })
 })

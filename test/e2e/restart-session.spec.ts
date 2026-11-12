@@ -45,7 +45,8 @@ const UNBOUND_WINDOW_OUTLASTS_ASSERTIONS_MS = 20_000
 const SHIM_REGISTRATION_SETTLE_MS = 2000
 const OLD_PTY_REVERT_CAN_TRAIL_RELAUNCH_MS = 5000
 const TITLE_SAMPLE_INTERVAL_MS = 150
-const SHELL_COMMAND_NOT_FOUND_TOAST = 'exit code 127'
+// PLATFORM§59
+const TASKPOLICY_FOUND_NO_PROGRAM_TOAST = 'exit code 66'
 const RESTART_COOLDOWN_OUTLASTED_MS = 1500
 
 function hasMalformedResume(calls: ClaudeCall[]): boolean {
@@ -700,7 +701,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         fs.rmSync(path.join(env.fakeBin, wrapper), { force: true })
         await triggerRestart(app)
 
-        await expect(page.locator('.toast-msg')).toContainText(SHELL_COMMAND_NOT_FOUND_TOAST, {
+        await expect(page.locator('.toast-msg')).toContainText(TASKPOLICY_FOUND_NO_PROGRAM_TOAST, {
           timeout: 30_000
         })
         expect(readCalls(env)).toHaveLength(1)

@@ -203,13 +203,13 @@ describe('loading settings written before the butler', () => {
     expect(twice.discord).toEqual(once.discord)
   })
 
-  it('the Assist setting is kept as it was, so the owner is not asked to agree to skipping permissions again', () => {
+  it('the tool Assist ran on is kept, so the owner is not asked to agree to skipping permissions again', () => {
     const s = sanitizeLoadedSettings({
       ...v038,
       assist: { on: false, backend: 'codex' },
       skipPermissions: true
     })
-    expect(s.assist).toEqual({ on: false, backend: 'codex' })
+    expect(s.assist).toEqual({ backend: 'codex' })
     expect(s.skipPermissionsAgreed).toBe(true)
   })
 

@@ -145,6 +145,12 @@
             that were running run again, with the one you were on selected; the ones that were
             asleep stay asleep until you click them; the closed ones stay closed.
           </li>
+          <li>
+            Click the window's red button (or File ▸ Close Window, <kbd>⇧⌘W</kbd>) and the window
+            only hides. Your sessions, terminals, web pages and scheduled jobs keep running; web
+            pages in the Workbench make no sound while it is hidden. Click Koloft in the Dock and
+            the window comes back as you left it. To stop Koloft, quit it (<kbd>⌘Q</kbd>).
+          </li>
           <li id="quit">
             If the agent quits on its own with an error (it crashes, is killed, or fails to start),
             its tab stays open with its last screen. The branch line under the row's title ends with
@@ -344,18 +350,31 @@
           </li>
           <li>A card that waits on you stays after you quit and reopen Koloft.</li>
           <li>
-            When Koloft or a session's tab restarts while the session asks, the question or the OK
-            goes away with the stopped session. Its card still shows what it asked (a question under
-            <code>It asked</code>, a command under <code>Command</code>, a plan under
-            <code>Plan</code>), but has no answer buttons, only <code>Dismiss</code> and
-            <code>Open session</code>. It says
+            If you quit Koloft while a session on your Mac asks, the question leaves its tab, but
+            the card keeps its buttons: the options with a box for your own words, or
+            <code>Allow</code> and <code>Deny</code>. It says
             <code
-              >Its session stopped after asking, so this no longer shows there and cannot be
-              answered here. Open the session and reply to it.</code
+              >Its session stopped after asking, so its tab no longer shows this. Your answer
+              reaches it as a message.</code
             >
-            A Claude session on a <a href="../remote/">remote folder</a> keeps running while Koloft
-            is closed: once its tab is back, a new card you can answer takes the old one's place,
-            and the old one moves to <code>Done</code>.
+            Answer there, and Koloft sends your answer, waking the session first if it
+            <a href="#sleep">sleeps</a>.
+          </li>
+          <li>
+            A plan left waiting like that gets a card that says
+            <code
+              >Its session stopped after asking, so its tab no longer shows the plan. “Show it
+              again” asks it for the plan once more.</code
+            >
+            and has <code>Show it again</code> in place of <code>Approve</code>, next to
+            <code>Reject</code>. Once the session's tab is running again, Koloft presses
+            <code>Show it again</code> for you (you have 5 seconds to <code>Undo</code>).
+          </li>
+          <li>
+            On a <a href="../remote/">remote folder</a>, Claude, Muse and Antigravity keep running
+            while Koloft is closed and still show their question, so once the tab is back, the card
+            answers it there as before. A remote Codex session stops with Koloft: once its tab is
+            back, its card answers it with a message, as on your Mac.
           </li>
           <li>
             No card for: a turn that only reports (its dot says "just letting you know"), a turn in
@@ -380,8 +399,8 @@
         </ul>
         <p>
           The Inbox works for Claude, Codex, Muse and Antigravity, on your Mac and on a
-          <a href="../remote/">remote folder</a>. The one difference: a remote session's card has no
-          <code>Close it for good</code>.
+          <a href="../remote/">remote folder</a>. Besides what happens after Koloft is closed
+          (above), one difference: a remote session's card has no <code>Close it for good</code>.
         </p>
 
         <h2 id="keep-running">Keep running</h2>
@@ -652,6 +671,11 @@
           <a href="../accounts/#butler">butler</a>, <code>Alfred · Butler</code>, above every
           folder. When the session tab you are looking at goes away, Koloft shows the butler, unless
           that session ended before it ever started.
+        </p>
+        <p>
+          Scroll the list: the Inbox row stays put at the top, your butler's row scrolls away with
+          the list, and a folder's name stays at the top while its sessions slide under it, until
+          the next folder's name pushes it away.
         </p>
         <p>
           When the Mac is busy (macOS says memory is tight, or the processors have been very busy

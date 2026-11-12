@@ -3,12 +3,12 @@ import {
   HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
-  type AssistSetting,
   type ButlerSetting,
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
-import { assistOnAMethodThatIsOn, backendIdOf, normalizeSessionMethods } from './sessionBackend'
+import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
+import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
 
@@ -95,7 +95,8 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
   merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
-  merged.assist = assistOnAMethodThatIsOn(sanitizeAssist(merged.assist), merged.sessionMethods)
+  const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
+  merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
   merged.todoNotes = sanitizeTextMap(merged.todoNotes)
@@ -113,7 +114,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.skipPermissionsAgreed =
     'skipPermissionsAgreed' in doc
       ? merged.skipPermissionsAgreed === true
-      : merged.assist !== null && merged.skipPermissions === true
+      : pickedAssistBefore !== undefined && merged.skipPermissions === true
   const upgrade = !('onboardingSeen' in doc) && Object.keys(doc).length > 0
   if (upgrade) merged.onboardingSeen = true
   merged.hintsSeen = upgrade
@@ -122,14 +123,6 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
       ? merged.hintsSeen
       : []
   return merged
-}
-
-function sanitizeAssist(raw: unknown): AssistSetting {
-  if (!raw || typeof raw !== 'object') return null
-  const { on, backend } = raw as Record<string, unknown>
-  const assistOn = backendIdOf(backend)
-  if (typeof on !== 'boolean' || !assistOn) return null
-  return { on, backend: assistOn }
 }
 
 function sanitizeButler(raw: unknown): ButlerSetting {

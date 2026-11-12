@@ -882,7 +882,9 @@ turns, each turn's settings read from the rollout's `turn_context` (its keys as 
   on a bare resume. `-m gpt-6-sol -c model_reasoning_effort="low"` on that TUI line was
   taken with no error, ran `gpt-6-sol` / `low`, and the thread remembered it. `-c
   model=… -c model_reasoning_effort=…` on the app-server was ignored on a resume. Koloft
-  passes `-m` and an effort only on a scheduled job's start, never on a resume.
+  passes `-m` and an effort on a scheduled job's start, and on the butler's start and
+  resume when its row in Settings ▸ Assist names them; because the thread remembers
+  them, the butler starts a new conversation when that row goes back to Codex's own.
 - **On 0.164.0 a `-c` given at two levels of one command line keeps both** (2026-10-23:
   `codex -c model=… exec -c model_reasoning_effort="low" …` ran with both on 0.164.0;
   0.163.0 dropped the top-level `model`). Koloft writes every `-c` at one level.
@@ -1590,6 +1592,34 @@ afterwards) and kept app-server A running while it asked:
   right after `initialize`, and again after `thread/list`, `thread/search`, `config/read`
   and `account/read`, it had `git` and `git-remote-https` children fetching over https
   (no login, a `config.toml` naming one MCP server, which was not started).
+
+**Assist's one-shot with a model and a thinking level.** 2026-11-11, codex-cli 0.166.0,
+real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-user-config
+--ignore-rules -s read-only -m <model> -c model_reasoning_effort="<level>" -C <tmp> -`),
+`--json` added to read `turn.completed.usage`.
+
+- The level lands under `--ignore-user-config`: one prompt on `gpt-6.1-sol` gave 12 and
+  13 `reasoning_output_tokens` at `low`, 30 and 52 at `high`, 124 at `max`.
+- A 9.5 KB prompt, three runs each (seconds): `gpt-6-luna` no level 4.5–8.2,
+  `gpt-6-luna` `max` 9.5 / 10.9 / 53.7, `gpt-6-astra` `max` 9.6–11.4, `gpt-6.1-sol`
+  `high` 6.5–8.1, `gpt-6.1-sol` `max` 8.2–11.5. `gpt-6-luna` at `low` against no level,
+  two rounds of one run each: 3.5 against 6.7 s, then 6.0 against 5.6 s — no steady gain.
+- Every one-shot reads 17–19K input tokens, 11.5–12.3K of them cached, whatever the
+  prompt. One 4.1 KB turn judgement at list price: `gpt-6-luna` about $0.0008,
+  `gpt-6.1-sol` at `medium` about $0.016.
+- On the owner's 86 hand-labelled end-of-turn replies (`src/main/turnNews.ts` as
+  shipped, three runs each, four at a time): `gpt-6-luna` no level 78 / 76 / 76 right,
+  1–2 replies that ask the owner read as news each run, 8 / 1 / 2 calls over 15 s
+  (longest 34 s); `gpt-6.1-sol` at `medium` 80 / 81 / 80 right, none read as news, no
+  call over 14.5 s, but one-tap answers on 26 of 36 asks against 32–34 of 35. So the turn
+  judgement runs on `gpt-6.1-sol` at `medium`.
+- A model the account does not have: `-m gpt-no-such-model` exited 1 after 4.3 s with
+  nothing on stdout and, on stderr, ``warning: Model metadata for `gpt-no-such-model`
+  not found…`` then `ERROR: The 'gpt-no-such-model' model is not supported when using
+  Codex with a ChatGPT account.` (twice). Assist reads "model is not supported" as that
+  refusal and, when the model came from Koloft's own table, runs once more on
+  `gpt-6-luna` inside the same wait. That a plan without `gpt-6.1-sol` words its
+  refusal the same way is **not probed yet** (section 14).
 
 ## 16. Codex on a remote machine
 
@@ -2535,11 +2565,11 @@ message" (3 runs).
   `! echo BANGDEL` in Shell mode. Koloft never deletes a character it typed. A message
   from Koloft to a Codex session (`koloft session send`, a Discord line) goes through
   `thread/queue/add` (§17), not the composer. Three things are pasted into the composer:
-  a picked element (starts `Element picked in the Workbench browser`, `elementPick.ts`),
-  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk or passage comment,
-  which starts with two LFs and then the file's path (`hunkPrompt`, `passagePrompt`,
-  `changesModel.ts`); whether those LFs keep a file whose name starts with `!` out of
-  Shell mode was not probed.
+  a picked element (`Element picked in the Workbench browser`, `elementPick.ts`),
+  failing checks (`CI check "…"`, `prChecks.ts`) and a hunk or passage comment (the
+  file's path, `hunkPrompt`, `passagePrompt`, `changesModel.ts`). Each is pasted with
+  two LFs before it; whether those LFs keep a comment on a file whose name starts with
+  `!` out of Shell mode was not probed.
 - **A second paste lands right after whatever the composer holds, with nothing between.**
   2026-11-10, Codex CLI 0.166.0 on this Mac, Koloft's ✎ comment on a rendered Markdown
   file done twice before any Enter (`agent-tools-real-smoke.spec.ts` › "a real Codex
@@ -2547,7 +2577,12 @@ message" (3 runs).
   `UserMessage`, but with each paste starting at its path the first note ran straight
   into the second path (`… make it 5 tries.docs/plan.md:7`, 2 of 2 runs). With two LFs
   at the start of each paste the note and the next path sat on lines of their own
-  (1 run).
+  (1 run). A long second paste keeps its two leading LFs too: 2026-11-11, Codex CLI
+  0.166.0 on this Mac, a ✎ comment on a rendered Markdown file and then Send failing
+  checks for superkoh/koloft PR #3 before any Enter (`agent-tools-real-smoke.spec.ts` ›
+  "a real Codex puts the failing checks of PR #3 on lines of their own …"): the checks
+  showed as `[Pasted Content N chars]`, nothing was sent for 5 s, and the CR sent one
+  `UserMessage` reading `… make it 5 tries.\n\nCI check "check" …` (2 of 2 runs).
 - Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
   ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
   sends the app-server on the machine does.
@@ -3392,4 +3427,55 @@ A remote tab's TUI runs on the Mac with the same env (§16, ADR-0039), not behin
 the machine. That a click on `doc 1` then opens the link in a Koloft Codex tab is
 inferred, not checked: the click in a built Koloft was not driven for Codex; it goes
 through the one terminal link handler every tab shares, which AGY§27 drove.
+
+## 36. The TUI holds fast keys back to tell a paste from typing (`disable_paste_burst`)
+
+How established: 2026-11-11, codex-cli 0.166.0 (this Mac's standalone install) and
+0.161.0 (the `@openai/codex@0.161.0-darwin-arm64` npm package), the launch Koloft's tabs
+use (`codex --remote unix://<sock> -C <dir>`) in a python pty at 120×40 with Koloft's
+`TERM`, `COLORTERM` and `TERM_PROGRAM`, on a Node WebSocket relay in front of `codex
+app-server --stdio` that logged every frame the TUI sent; a throwaway `HOME` and
+`CODEX_HOME` holding a fake API key and a `config.toml` that points the model at a fake
+Responses server on localhost; the screen read through `pyte`. Each case ran once without
+and once with `-c disable_paste_burst=true` on the TUI's command line, in a fresh TUI.
+
+- **The key is in both binaries** (`strings`: 18 hits in 0.161.0, 20 in 0.166.0), so
+  Koloft's minimum version takes it. A key the TUI does not know, `-c
+  koloft_made_up_key=true`, stopped nothing on 0.166.0: the TUI started and ran
+  `/status`.
+- **With it on, what Koloft and its terminal write is taken exactly as before.** The
+  same `turn/start` text, to the character, went out in every one of these, on both
+  versions unless a case names one:
+  - a slash command, `/status` then CR 0.3 s later, and `/status`, Esc, CR (0.166.0
+    only) — it ran, nothing was sent to the model;
+  - 300 characters typed as 128-character writes 0.3 s apart, then CR;
+  - three lines in one unmarked write (LF between them), then CR (0.166.0 only);
+  - 1,148 characters in one unmarked write, then CR (0.166.0 only);
+  - a bracketed paste of 8 lines: still unsent 5 s later, sent whole by the next CR;
+  - a bracketed paste of 1,817 characters: the composer still showed `[Pasted Content
+    1817 chars]`, and text typed after it went with it as one message;
+  - a bracketed paste followed by two raw LFs and a typed note (Koloft's ✎ comment);
+  - Chinese text in two unmarked writes, as an input method commits it, then CR;
+  - a lone LF between two typed words (Koloft's Shift+Enter) — a new line, not a send;
+  - Left, Left and Backspace in typed text (0.166.0 only);
+  - `@docs/plan.md ` and then a typed request (the Files tab's "mention", 0.166.0 only).
+- **Two writes are taken differently, and neither is one Koloft makes.** `first`, CR,
+  `second` in one unmarked write: without the key the CR became a line break and nothing
+  was sent; with it `first` was sent at once and `second` stayed in the composer. Text
+  and its CR in one write (`hello there` CR): without the key it stayed in the composer
+  unsent (§25's "a line typed before the TUI starts"); with it, it was sent. Koloft
+  always writes a text and its CR 0.3 s apart (`typeKeys`), its terminal wraps a paste in
+  the bracketed-paste marks, and Shift+Enter is an LF.
+
+- **A typed key shows about 22 ms sooner with it.** 0.166.0, 60 letters 100 ms apart,
+  the time from the write to the letter in the composer, median / 99th percentile in ms,
+  two rounds: 25.3 / 27.6 and 25.8 / 38.2 without the key, 3.1 / 4.6 and 2.9 / 10.5
+  with it. With 12 busy python processes started beside the TUI: 50.1 / 108.0 and 31.2 /
+  92.8 without, 19.6 / 79.9 and 10.7 / 73.0 with, and 4.4 / 72.7 and 4.4 / 13.8 with the
+  key and the TUI started through `taskpolicy -a` (PLATFORM§59); `taskpolicy -a` alone
+  gave 26.8 / 66.0 and 26.0 / 52.8. Other work ran on the same Mac meanwhile (load
+  average 4–8 before the 12 processes), one run per cell.
+
+Koloft dependents: `EVERY_KEY_SHOWS_AT_ONCE` in `src/main/codexLaunchConfig.ts`, passed
+to the TUI of every Codex tab; a remote tab's TUI runs on the Mac too (§16).
 
