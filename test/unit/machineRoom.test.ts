@@ -157,13 +157,12 @@ describe('the signal log the thresholds are tuned from', () => {
         { timeout: 10_000 }
       )
     }
-    const text = fs.readFileSync(file, 'utf8').replace(/.* (one|two|three)\n/g, '')
-    expect(text).not.toContain('first')
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    expect(lines.some((l) => l.endsWith(' first'))).toBe(false)
     expect(
-      text
-        .split('\n')
-        .filter(Boolean)
-        .every((l) => l.endsWith(line))
+      lines.every(
+        (l) => l.endsWith(line) || ['one', 'two', 'three'].some((b) => l.endsWith(` ${b}`))
+      )
     ).toBe(true)
   })
 })
