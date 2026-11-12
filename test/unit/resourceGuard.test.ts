@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { MachineState } from '../../src/shared/types'
 import { ownerTyped, ResourceGuard } from '../../src/main/resourceGuard'
 import type { TaggedProcess } from '../../src/main/machineTrees'
@@ -31,11 +31,12 @@ const TWO_TABS_EACH_RUNNING_A_TOOL = (): TaggedProcess[] => [
 function setup(rows: TaggedProcess[], tabs = ['away', 'watched']) {
   const world = { pressure: 1, rows, tabs, lookedAt: 'watched' as string | null }
   const ways: string[] = []
+  const lines: string[] = []
   const states: MachineState[] = []
   const guard = new ResourceGuard({
     koloftPid: KOLOFT,
     read: async () => ({ pressure: world.pressure }),
-    log: () => {},
+    log: (line) => lines.push(line),
     agentTabsOnThisMac: () => world.tabs,
     lookedAt: () => world.lookedAt,
     changed: (s) => states.push(s),
@@ -49,7 +50,7 @@ function setup(rows: TaggedProcess[], tabs = ['away', 'watched']) {
     await guard.tick()
     await guard.tick()
   }
-  return { guard, ways, world, states, critical }
+  return { guard, ways, lines, world, states, critical }
 }
 
 describe('giving way while memory stays critical', () => {
@@ -188,6 +189,53 @@ describe('getting a slowed tab back to full speed', () => {
     expect(ways).toEqual(['-B 11'])
   })
 
+  it('lifts a claude -p that a slowed tool started, which was born slowed though Koloft never slowed it itself', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(16, 11, undefined, { agent: true })]
+    await guard.tick()
+    expect(ways).toEqual(['-b 11'])
+    ways.length = 0
+    await guard.free('away')
+    expect(ways.sort()).toEqual(['-B 11', '-B 16'])
+  })
+
+  it('leaves alone a tool of the tab that it never slowed: one the agent started after the last look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(17, 10, undefined)]
+    ways.length = 0
+    await guard.free('away')
+    expect(ways).toEqual(['-B 11'])
+  })
+
+  it('a slowed tab that comes on screen is lifted at once, without waiting for the next look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.lookedAt = 'away'
+    ways.length = 0
+    guard.lookedAtChanged()
+    await vi.waitFor(() => expect(ways).toContain('-B 11'))
+  })
+
+  it('a process table that cannot be read is logged, and the next look goes on as usual', async () => {
+    const { guard, ways, world, lines } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    world.pressure = 4
+    await guard.tick()
+    const rows = world.rows
+    Object.defineProperty(world, 'rows', {
+      configurable: true,
+      get: () => {
+        throw new Error('ps failed')
+      }
+    })
+    await guard.tick()
+    expect(lines.join('\n')).toContain('could not look at the machine: Error: ps failed')
+    Object.defineProperty(world, 'rows', { configurable: true, value: rows })
+    await guard.tick()
+    expect(ways).toEqual(['-b 11'])
+  })
+
   it('opening a row does nothing while memory is not critical', async () => {
     const { guard, ways } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
     expect(await guard.free('away')).toBe(false)
@@ -206,12 +254,17 @@ describe('getting a slowed tab back to full speed', () => {
     expect(guard.state().slowed).toEqual([])
   })
 
-  it('quitting lifts every tool it slowed', async () => {
-    const { guard, ways, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+  it('quitting lifts every tool it slowed and what those started since, and slows nothing afterwards', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
     await critical()
+    world.rows = [...world.rows, proc(18, 11, undefined)]
     ways.length = 0
     guard.liftAllBeforeQuitting()
     expect(ways).toEqual(['-B 11'])
+    await vi.waitFor(() => expect(ways).toContain('-B 18'))
+    world.rows = [...world.rows, proc(19, 10, undefined)]
+    await guard.tick()
+    expect(ways.filter((w) => w.startsWith('-b'))).toEqual([])
   })
 })
 

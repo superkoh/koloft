@@ -66,6 +66,24 @@ export function toolsOf(members: TaggedProcess[], koloftPid: number): TaggedProc
   return members.filter((p) => !p.agent && p.ppid !== koloftPid)
 }
 
+export function withDescendants(rows: TaggedProcess[], roots: Set<number>): number[] {
+  const kids = new Map<number, number[]>()
+  for (const r of rows) {
+    const list = kids.get(r.ppid)
+    if (list) list.push(r.pid)
+    else kids.set(r.ppid, [r.pid])
+  }
+  const out = new Set<number>()
+  const stack = [...roots]
+  while (stack.length) {
+    const pid = stack.pop() as number
+    if (out.has(pid)) continue
+    out.add(pid)
+    stack.push(...(kids.get(pid) ?? []))
+  }
+  return [...out]
+}
+
 export function readTaggedTable(): Promise<TaggedProcess[]> {
   return new Promise((resolve) => {
     execFile(

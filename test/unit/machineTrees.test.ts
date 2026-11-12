@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTaggedTable, toolsOf, treesByTab } from '../../src/main/machineTrees'
+import { parseTaggedTable, toolsOf, treesByTab, withDescendants } from '../../src/main/machineTrees'
 
 const AT = 'Thu Nov 12 00:51:03 2026    '
 const KOLOFT = 100
@@ -45,6 +45,13 @@ describe('which processes belong to which session tab', () => {
     expect(chrome.rssBytes).toBe(900000 * 1024)
     expect(chrome.started).toBe('Thu Nov 12 00:51:03 2026')
     expect(rows.find((r) => r.pid === 400)!.started).toBe('Mon Nov 9 04:15:47 2026')
+  })
+})
+
+describe('what a slowed process started since', () => {
+  it('is everything under it at any depth, and nothing beside it', () => {
+    const under = withDescendants(parseTaggedTable(PS), new Set([201])).sort((a, b) => a - b)
+    expect(under).toEqual([201, 202, 600])
   })
 })
 

@@ -1166,8 +1166,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       openRow: (id) => {
         floating.current?.dismissMenu()
         const { row, wsPath } = rowTarget(id)
-        const { sessions, tabs, machine } = useStore.getState()
-        const tabId = machine?.critical ? liveTabOf(row.id, sessions, tabs) : undefined
+        const { sessions, tabs } = useStore.getState()
+        const tabId = liveTabOf(row.id, sessions, tabs)
         if (tabId) void window.api.machine.free(tabId)
         openSessionRow(row, wsPath)
       },

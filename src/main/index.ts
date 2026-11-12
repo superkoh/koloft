@@ -302,7 +302,7 @@ import {
   type RunLeftovers
 } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
-import { readTheMachine, signalLog } from './machineRoom'
+import { readTheMachine, signalLog, signalLogOffTheMainThread } from './machineRoom'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -3352,11 +3352,13 @@ app.whenReady().then(() => {
   guard = new ResourceGuard({
     koloftPid: process.pid,
     read: readTheMachine,
-    log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    log: signalLogOffTheMainThread(path.join(app.getPath('userData'), 'machine.log')),
     memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
     agentTabsOnThisMac: () =>
-      allSessions().flatMap((s) => (s.sessionId && !machineOfTab(s.tabId) ? [s.tabId] : [])),
-    lookedAt: () => lastTabTheOwnerLookedAt,
+      allSessions()
+        .map((s) => s.tabId)
+        .filter((tabId) => !machineOfTab(tabId)),
+    lookedAt: () => lastTabTheOwnerLookedAt && sleepers.liveTabOf(lastTabTheOwnerLookedAt),
     changed: (state) => sendToRenderer(CH.machine.state, state),
     readTrees: readTaggedTable,
     giveWay: process.platform === 'darwin' ? giveWay : async () => {}
@@ -6499,7 +6501,10 @@ function registerIpc(): void {
     if (touchesADialog(id, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
-  ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
+  ipcMain.handle(
+    CH.machine.free,
+    (_e, tabId: string) => guard?.free(sleepers.liveTabOf(tabId)) ?? false
+  )
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     const live = sleepers.liveTabOf(id)
@@ -6645,6 +6650,7 @@ function registerIpc(): void {
   ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     uiActiveTabId = typeof id === 'string' && id ? id : null
     lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
+    guard?.lookedAtChanged()
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
     if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()

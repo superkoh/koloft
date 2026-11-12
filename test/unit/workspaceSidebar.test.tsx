@@ -142,7 +142,7 @@ describe('WorkspaceSidebar (C2): sessions whose tools give way while memory is c
     expect(slowedMark(container, 'pty-claude')).toBeUndefined()
   })
 
-  it('clicking a session’s row while memory is critical asks for that session at full speed; at other times it asks nothing', () => {
+  it('clicking a live session’s row tells Koloft the owner wants that session at full speed', () => {
     const free = vi.fn(async () => true)
     Object.assign(window, { api: { ...window.api, machine: { free } } })
     useStore.setState({
@@ -153,15 +153,8 @@ describe('WorkspaceSidebar (C2): sessions whose tools give way while memory is c
       machine: roomy
     })
     const container = renderSidebar()
-    const sessionRow = container.querySelector('[data-tab-id="pty-claude"]')!
 
-    fireEvent.click(sessionRow)
-    expect(free).not.toHaveBeenCalled()
-
-    act(() =>
-      useStore.setState({ machine: { critical: true, slowed: ['pty-claude'], memory: {} } })
-    )
-    fireEvent.click(sessionRow)
+    fireEvent.click(container.querySelector('[data-tab-id="pty-claude"]')!)
     expect(free).toHaveBeenCalledWith('pty-claude')
   })
 

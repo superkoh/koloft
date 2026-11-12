@@ -44,8 +44,20 @@ export class MachineRoom {
 const SIGNAL_LOG_MAX_BYTES = 2 * 2 ** 20
 const SIGNAL_LOG_KEEPS_BYTES = 2 ** 20
 
+export function signalLog(file: string): (line: string) => void {
+  return (line) => {
+    try {
+      fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`)
+      if (fs.statSync(file).size <= SIGNAL_LOG_MAX_BYTES) return
+      const text = fs.readFileSync(file, 'utf8')
+      const tail = text.slice(-SIGNAL_LOG_KEEPS_BYTES)
+      fs.writeFileSync(file, tail.slice(tail.indexOf('\n') + 1))
+    } catch {}
+  }
+}
+
 // PLATFORM§69
-export function signalLog(file: string): (line: string) => Promise<void> {
+export function signalLogOffTheMainThread(file: string): (line: string) => Promise<void> {
   let written = Promise.resolve()
   return (line) => {
     written = written

@@ -20,10 +20,12 @@ critical twice in a row does Koloft lower anything: in each agent tab on this Ma
 not the one last on screen, the processes under the agent — its builds, test runners,
 browsers. It never lowers a process whose parent is Koloft (the tab's own terminal
 process and the Codex server, whatever their command line says at that moment), nor one
-named like an agent. A tab the owner clicks or types into is lifted at once and stays
-lifted until memory leaves critical, when everything is lifted; a lift reads the process
-table again, since a lowered tool's later children are lowered with it and lifting the
-parent does not reach them.
+named like an agent. A tab that comes on screen is lifted at once; one whose sidebar row
+the owner clicks, or that the owner types into, stays lifted after they leave it, until
+memory leaves critical, when everything is lifted. A lift reads the process table again
+and lifts what Koloft lowered and everything under those, since a lowered tool's later
+children are lowered with it and lifting the parent does not reach them; a tool Koloft
+never lowered is left as it is.
 **Rejected**: lowering at "warning", or on high load — it would fire most nights and slow
 unattended work five- to sixfold with nobody to lift it, which is how the queue of #846
 came to hold nearly every session (#862 turned it off). Holding a background tab's shell

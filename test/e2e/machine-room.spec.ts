@@ -8,6 +8,8 @@ import {
   installAgy,
   installCodex,
   installMuse,
+  koloftReadMemoryPressure,
+  memoryPressure,
   museCalls,
   seedSettings,
   trustInAgy,
@@ -43,16 +45,6 @@ const ABOVE_ITS_TOOLS = 46
 const WHAT_ANY_OTHER_PROGRAM_GETS = 31
 const TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS = 40_000
 const ONE_READING_PLUS_ROOM_MS = 20_000
-
-function memoryPressure(env: E2EEnv, pressure: 1 | 2 | 4): void {
-  fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure }))
-}
-
-const pressureRead = (env: E2EEnv, pressure: number): boolean =>
-  fs.existsSync(path.join(env.userData, 'machine.log')) &&
-  fs
-    .readFileSync(path.join(env.userData, 'machine.log'), 'utf8')
-    .includes(`memory pressure ${pressure}`)
 
 let nextSleep = 0
 const sleepsOfThisRun: number[] = []
@@ -138,7 +130,9 @@ test('at warning nothing is slowed; once memory stays critical the tools of the 
     expect(agents.map(mainThreadPriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
 
     memoryPressure(env, 2)
-    await expect.poll(() => pressureRead(env, 2), { timeout: ONE_READING_PLUS_ROOM_MS }).toBe(true)
+    await expect
+      .poll(() => koloftReadMemoryPressure(env, 2), { timeout: ONE_READING_PLUS_ROOM_MS })
+      .toBe(true)
     expect(priorityOfSleep(awayTool.first)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
     await expect(slowedMark(rowOf(page, away))).toHaveCount(0)
 
