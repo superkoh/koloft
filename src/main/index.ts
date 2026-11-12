@@ -5005,6 +5005,7 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
+    anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
     sessionForTab: (tabId) =>
       claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {

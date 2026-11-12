@@ -18,6 +18,7 @@ export interface RelayDeps {
   stage(sessionId: string, targetId: string): Promise<void>
   setAttached(sessionId: string, targetIds: string[]): void
   cameThroughAForward(guestId: number, url: string): boolean
+  anotherLiveKoloftOwns(tabId: string): boolean
 }
 
 // PLATFORM§9
@@ -214,7 +215,9 @@ export function writeRelayEnv(openTabIds: string[]): void {
     if (!relayEnvFolderSwept) {
       fs.mkdirSync(dir, { recursive: true })
       for (const name of fs.readdirSync(dir)) {
-        if (!openTabIds.includes(name)) fs.rmSync(path.join(dir, name), { force: true })
+        // ADR-0004
+        const leftBehind = !openTabIds.includes(name) && !deps?.anotherLiveKoloftOwns(name)
+        if (leftBehind) fs.rmSync(path.join(dir, name), { force: true })
       }
       relayEnvFolderSwept = true
     }
