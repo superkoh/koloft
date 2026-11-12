@@ -2,7 +2,7 @@ import { urlOrNull } from '@shared/browserRoute'
 import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
 import type { SecretAnswer, SecretAsk, TapRounds } from './discord/secretAsks'
 import type { DiscordFile } from './discord/link'
-import type { PartOnPage } from './guestTap'
+import type { FrameOnPage, PartOnPage } from './guestTap'
 import {
   boxAround,
   clipTo,
@@ -60,7 +60,9 @@ function rounds(
   selector: string,
   first: Required<PartOnPage>
 ): TapRounds {
-  const seenAtStart = new Set(first.frames.map((f) => f.src))
+  const keyOf = (f: FrameOnPage): string =>
+    f.src || [f.box.x, f.box.y, f.box.width, f.box.height].map(Math.round).join(',')
+  const seenAtStart = new Set(first.frames.map(keyOf))
   let { box: part, view, ratio } = first
   let grid: Grid | undefined
   let shownBefore = false
@@ -72,24 +74,29 @@ function rounds(
       if (now.count === 1 && now.box) part = now.box
       view = now.view ?? view
       ratio = now.ratio ?? ratio
-      const cameIntoView = (now.frames ?? []).filter((f) => !seenAtStart.has(f.src))
+      const cameIntoView = (now.frames ?? []).filter((f) => !seenAtStart.has(keyOf(f)))
       const shown = clipTo(boxAround([part, ...cameIntoView.map((f) => f.box)]), view)
       if (!shown) throw new Error(OUT_OF_VIEW)
-      grid = gridOver(shown)
-      return d.draw(await page.picture(shown, ratio), grid)
+      const drawn = gridOver(shown)
+      return {
+        file: await d.draw(await page.picture(shown, ratio), drawn),
+        seen: () => void (grid = drawn)
+      }
     },
     tap: async (text, going) => {
       if (!grid) return 'Koloft has no picture to tap on yet: press New picture.'
       const read = readSquares(grid, text)
       if ('unknown' in read)
         return `Koloft tapped nothing: ${read.unknown.length ? read.unknown.join(', ') : 'no square'} is not a square on the picture.`
+      const tapped: string[] = []
       for (const [i, point] of read.points.entries()) {
         if (i) await d.sleep(BETWEEN_TAPS_MS)
         if (!going()) break
         await page.tap(point)
+        tapped.push(read.names[i])
       }
       await d.sleep(A_TAPPED_PAGE_SETTLES_MS)
-      return `Tapped ${read.names.join(', ')}.`
+      return `Tapped ${tapped.join(', ')}.`
     }
   }
 }
@@ -106,9 +113,8 @@ async function tapAsk(
     pages.map((p) => p.find(selector, false).catch(() => NOTHING_FOUND))
   )
   if (found.reduce((n, f) => n + f.count, 0) !== 1) return refused(NO_SUCH_PART)
-  const page = pages[found.findIndex((f) => f.count === 1)]
-  const first = await page.find(selector, true).catch(() => NOTHING_FOUND)
-  if (first.count !== 1) return refused(NO_SUCH_PART)
+  const i = found.findIndex((f) => f.count === 1)
+  const page = pages[i]
   const url = page.url()
   const site = urlOrNull(url)?.host || url
   const a = await d.ask({
@@ -117,7 +123,7 @@ async function tapAsk(
     header: (name) => `👆 **${name}** asks you to tap a web page`,
     body: `Page: ${site}\n${what}\nSay which squares to tap.`,
     label: SQUARES_LABEL,
-    taps: rounds(d, page, selector, first as Required<PartOnPage>)
+    taps: rounds(d, page, selector, found[i] as Required<PartOnPage>)
   })
   if ('ended' in a) return refused(a.ended === 'declined' ? OWNER_GAVE_UP : TAPS_NOT_IN_TIME)
   return answered('passed' in a ? TAPS_PASSED : DONE_AT_THE_MAC)

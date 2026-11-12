@@ -3972,7 +3972,7 @@ app.whenReady().then(() => {
       if (!channelId) return undefined
       const [name] = await Promise.all([
         secretAskerName(tabId),
-        files?.length ? link.upload(channelId, files, '').catch(() => undefined) : undefined
+        files?.length ? link.upload(channelId, files, '') : undefined
       ])
       const messageId = (await link.card(channelId, card(name))).at(-1)
       return messageId ? { channelId, messageId, name } : undefined

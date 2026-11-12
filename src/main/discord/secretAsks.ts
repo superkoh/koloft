@@ -33,9 +33,11 @@ export const PASSED = '✅ The owner said it passed.'
 const SQUARES_EXAMPLE = 'B5 H4 F8'
 
 export interface TapRounds {
-  picture(): Promise<DiscordFile>
+  picture(): Promise<{ file: DiscordFile; seen(): void }>
   tap(squares: string, going: () => boolean): Promise<string>
 }
+
+const NO_PICTURE_POSTED = "\n-# Discord did not take the page's picture: press New picture."
 
 export interface SecretAsk {
   tabId: string
@@ -180,9 +182,10 @@ export class SecretAsks {
 
   private async placeTapCard(id: string, pending: Pending, footer: string): Promise<boolean> {
     const picture = await pending.ask.taps!.picture().then(
-      (file) => ({ files: [file], note: '' }),
+      ({ file, seen }) => ({ files: [file], seen, note: '' }),
       (error: unknown) => ({
         files: [],
+        seen: undefined,
         note: `\n-# Koloft could not take the page's picture: ${errorText(error)}.`
       })
     )
@@ -198,11 +201,20 @@ export class SecretAsks {
       button('It passed', 'success', 'passed'),
       button('Give up', 'secondary', 'give-up')
     ]
-    return this.put(
-      pending,
-      (name) => cardOf(pending.ask, name, `${footer}${picture.note}`, buttons),
-      picture.files
-    )
+    const card =
+      (note: string) =>
+      (name: string): Card =>
+        cardOf(pending.ask, name, `${footer}${note}`, buttons)
+    if (await this.put(pending, card(picture.note), picture.files)) {
+      picture.seen?.()
+      return true
+    }
+    return picture.files.length > 0 && this.put(pending, card(NO_PICTURE_POSTED))
+  }
+
+  private startRound(id: string, pending: Pending, act: () => Promise<string>): void {
+    pending.tapping = true
+    void this.tapRound(id, pending, act)
   }
 
   private async tapRound(id: string, pending: Pending, act: () => Promise<string>): Promise<void> {
@@ -213,7 +225,7 @@ export class SecretAsks {
       if (!this.pending.has(id)) return
       const before = pending.placed
       const placed = await this.placeTapCard(id, pending, `-# ${note} This is the page now.`)
-      if (placed && before)
+      if (placed && before && this.pending.has(id))
         void this.d
           .edit(before, cardOf(pending.ask, before.name, `-# ${note}`))
           .catch(() => undefined)
@@ -240,21 +252,20 @@ export class SecretAsks {
     const found = await this.pendingFor(i)
     if (!found) return
     const [id, pending, action] = found
-    if (action === 'passed' || action === 'give-up') {
+    if (pending.ask.taps && (action === 'passed' || action === 'give-up')) {
       const [answer, note]: [SecretAnswer, string] =
         action === 'passed' ? [{ passed: true }, PASSED] : [{ ended: 'declined' }, GAVE_UP]
       this.end(id, answer, note)
       await this.d.respond(i, privately(note))
       return
     }
-    if (pending.ask.taps && pending.tapping) {
+    if (pending.tapping) {
       await this.d.respond(i, privately(STILL_TAPPING))
       return
     }
-    if (action === 'picture') {
-      pending.tapping = true
+    if (pending.ask.taps && action === 'picture') {
+      this.startRound(id, pending, async () => 'New picture.')
       await this.d.respond(i, privately('Koloft sends a new picture.'))
-      void this.tapRound(id, pending, async () => 'New picture.')
       return
     }
     await this.d.respond(i, {
@@ -297,9 +308,8 @@ export class SecretAsks {
         await this.d.respond(i, privately(STILL_TAPPING))
         return
       }
-      pending.tapping = true
+      this.startRound(id, pending, () => taps.tap(value, () => this.pending.has(id)))
       await this.d.respond(i, privately(TAPPING))
-      void this.tapRound(id, pending, () => taps.tap(value, () => this.pending.has(id)))
       return
     }
     this.end(id, { typed: value }, '✅ Passed on.')

@@ -719,17 +719,16 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const tappedGuests = useStore(
     useShallow((s) => s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [a.guestId] : [])))
   )
+  const heldForTaps = useRef<string[]>([])
   useEffect(() => {
-    const all = Object.values(statesRef.current)
-    const held = tappedGuests
-      .flatMap((guest) => webTabOfGuest(all, guest) ?? [])
-      .filter((id) => !panelNow.current.staged.has(id))
+    const all = Object.values(states)
+    const held = tappedGuests.flatMap((guest) => webTabOfGuest(all, guest) ?? [])
+    for (const id of heldForTaps.current)
+      if (!held.includes(id) && !pinnedRef.current.has(id)) unstage(id)
+    heldForTaps.current = held
     // PLATFORM§9
-    for (const id of held) stage(id)
-    return () => {
-      for (const id of held) if (!pinnedRef.current.has(id)) unstage(id)
-    }
-  }, [tappedGuests])
+    for (const id of held) if (!staged.has(id)) stage(id)
+  }, [tappedGuests, staged, states])
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined

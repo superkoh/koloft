@@ -231,7 +231,7 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
 })
 
 describe('asking the owner to tap a page from Discord, in rounds', () => {
-  const PICTURE = { name: 'page.png', data: Buffer.from('png') }
+  const PICTURE = { file: { name: 'page.png', data: Buffer.from('png') }, seen: () => undefined }
   const tapAsk = (taps: TapRounds): SecretAsk => ({
     tabId: 'tab-1',
     from: 'tab-1',
@@ -273,7 +273,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     expect(tapped).toEqual(['A1'])
   })
 
-  it('when the next card cannot be posted, the card before keeps its buttons', async () => {
+  it('when the next card cannot be posted at all, the card before keeps its buttons', async () => {
     let placed = 0
     const { asks, cards, edits, interaction, posted } = setup({
       place: async (_tab, card): Promise<PlacedCard> => {
@@ -287,8 +287,34 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     await asks.submit(interaction(5, { fields: { value: 'A1' } }))
     await settle()
     await settle()
-    expect(placed).toBe(2)
+    expect(placed).toBe(3)
     expect(edits).toEqual([])
+  })
+
+  it('when Discord does not take the new picture, the card still comes, says so, and the squares named next are read on the picture the owner last saw', async () => {
+    let shownPictures = 0
+    let placed = 0
+    const { asks, cards, interaction, posted } = setup({
+      place: async (_tab, card, files): Promise<PlacedCard> => {
+        if (placed++ && files?.length) throw new Error('Discord answered 413')
+        cards.push(card('fix-login'))
+        return PLACED
+      }
+    })
+    void asks.ask(
+      tapAsk({
+        picture: async () => ({ ...PICTURE, seen: () => void shownPictures++ }),
+        tap: async () => 'Tapped A1.'
+      }),
+      LONG
+    )
+    await posted()
+    await asks.submit(interaction(5, { fields: { value: 'A1' } }))
+    await settle()
+    await settle()
+    expect(cards).toHaveLength(2)
+    expect(cards[1].footer).toMatch(/Discord did not take the page's picture/)
+    expect(shownPictures).toBe(1)
   })
 
   it('two presses of New picture close together take one new picture, and the second is told to wait', async () => {
