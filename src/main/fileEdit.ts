@@ -213,26 +213,26 @@ export async function writeText(
   return { ok: true, mtimeMs: after.mtimeMs, size: after.size }
 }
 
-export function createFile(dirPath: string, name: string): EditCreateResult {
+// PLATFORM§69
+export async function createFile(dirPath: string, name: string): Promise<EditCreateResult> {
   checkNewFileName(name)
   if (typeof dirPath !== 'string' || !dirPath) throw new Error('KOLOFT_GONE')
 
   let realDir: string
   try {
-    realDir = fs.realpathSync(dirPath)
+    realDir = await fs.promises.realpath(dirPath)
   } catch {
     throw new Error('KOLOFT_DIR_GONE')
   }
   const target = path.join(realDir, name)
 
-  let fd: number
+  let file: fs.promises.FileHandle
   try {
-    fd = fs.openSync(target, 'wx', 0o644)
+    file = await fs.promises.open(target, 'wx', 0o644)
   } catch (e) {
     if ((e as NodeJS.ErrnoException | null)?.code === 'EEXIST') throw new Error('KOLOFT_EXISTS')
     throw writeError(e)
   }
-  fs.closeSync(fd)
-  const st = fs.statSync(target)
+  const st = await file.stat().finally(() => file.close())
   return { path: target, mtimeMs: st.mtimeMs, size: st.size }
 }

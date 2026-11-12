@@ -3551,4 +3551,7 @@ Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-writ
 in a `.koloft-writes` folder inside the target's folder and moves it into place off the
 main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
-save's last check and its rename together on the main thread.
+save's last check and its rename together on the main thread; `saveSettings` writes
+`settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and git-freshness
+sweeps' "is the workspace folder still there" and Muse's registry sweep stat folders
+through `fs.promises`.

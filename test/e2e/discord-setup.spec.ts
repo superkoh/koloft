@@ -122,18 +122,22 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await expect(pane.locator('.set-row', { hasText: 'Your Discord account' })).toContainText(
         `You are ${OWNER.username}`
       )
-      expect(discordOnDisk(env)).toMatchObject({ userId: OWNER.id, userName: OWNER.username })
+      await expect
+        .poll(() => discordOnDisk(env))
+        .toMatchObject({ userId: OWNER.id, userName: OWNER.username })
 
       await pane.getByRole('button', { name: 'Bind a channel…' }).click()
       const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).channel).toEqual({
-        guildId: '111',
-        channelId: '222',
-        name: 'koloft-all'
-      })
+      await expect
+        .poll(() => discordOnDisk(env)?.channel)
+        .toEqual({
+          guildId: '111',
+          channelId: '222',
+          name: 'koloft-all'
+        })
     } finally {
       await close()
     }
@@ -160,7 +164,9 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       expect(fake.appFlags & MESSAGE_CONTENT_LIMITED).toBeTruthy()
       const account = pane.locator('.set-row', { hasText: 'Your Discord account' })
       await expect(account).toContainText(`You are ${OWNER.username} · owner of the bot’s app`)
-      expect(discordOnDisk(env)).toMatchObject({ userId: OWNER.id, userName: OWNER.username })
+      await expect
+        .poll(() => discordOnDisk(env))
+        .toMatchObject({ userId: OWNER.id, userName: OWNER.username })
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -246,10 +252,12 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
         parent_id: category?.id,
         topic: 'Koloft · your butler, for all workspaces'
       })
-      expect(discordOnDisk(env)).toMatchObject({
-        channel: { channelId: global?.id, name: 'global' },
-        category: { channelId: category?.id }
-      })
+      await expect
+        .poll(() => discordOnDisk(env))
+        .toMatchObject({
+          channel: { channelId: global?.id, name: 'global' },
+          category: { channelId: category?.id }
+        })
       await expect(pane.locator('.acct-row', { hasText: 'Alfred · Butler' })).toContainText(
         '#global'
       )
@@ -264,11 +272,13 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await change.locator('.modal-foot .btn-primary').click()
       await expect(change).toHaveCount(0)
       expect(fake.made.filter((c) => c.type === CATEGORY)).toHaveLength(1)
-      expect(discordOnDisk(env).channel).toEqual({
-        guildId: '111',
-        channelId: '222',
-        name: 'koloft-all'
-      })
+      await expect
+        .poll(() => discordOnDisk(env)?.channel)
+        .toEqual({
+          guildId: '111',
+          channelId: '222',
+          name: 'koloft-all'
+        })
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -302,11 +312,13 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).channel).toEqual({
-        guildId: '111',
-        channelId: '222',
-        name: 'koloft-all'
-      })
+      await expect
+        .poll(() => discordOnDisk(env)?.channel)
+        .toEqual({
+          guildId: '111',
+          channelId: '222',
+          name: 'koloft-all'
+        })
       expect(fake.made).toEqual([])
     } finally {
       await quitAndClose(app)

@@ -102,13 +102,26 @@ function forget(root: string, entry: DirWatch): void {
   noLongerKept(root)
 }
 
-function folderIdOf(root: string): string | undefined {
+// PLATFORM§69
+async function folderIdOf(root: string): Promise<string | undefined> {
   try {
-    const st = fs.statSync(root)
+    const st = await fs.promises.stat(root)
     return `${st.dev}:${st.ino}`
   } catch {
     return undefined
   }
+}
+
+const stepsOfAFolder = new Map<string, Promise<unknown>>()
+
+function inOrderFor<T>(root: string, step: () => T | Promise<T>): Promise<T> {
+  const run = (stepsOfAFolder.get(root) ?? Promise.resolve()).then(step)
+  const settled = run.catch(() => undefined)
+  stepsOfAFolder.set(root, settled)
+  void settled.then(() => {
+    if (stepsOfAFolder.get(root) === settled) stepsOfAFolder.delete(root)
+  })
+  return run
 }
 
 function reportSoon(root: string, entry: DirWatch, onChange: DirChangeListener): void {
@@ -142,7 +155,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     } catch {}
     try {
       entry.watcher = fs.watch(root, { recursive: true })
-      entry.folderId = folderIdOf(root) ?? entry.folderId
+      void folderIdOf(root).then((id) => (entry.folderId = id ?? entry.folderId))
       attachWatcher(root, entry, onChange)
     } catch {
       if (entry.timer) clearTimeout(entry.timer)
@@ -151,22 +164,27 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
   })
 }
 
-export function watchDir(root: string, onChange: DirChangeListener): boolean {
-  const existing = dirWatchers.get(root)
-  const keptForAFolderSinceReplaced =
-    existing?.count === 0 && folderIdOf(root) !== existing.folderId
-  if (existing && keptForAFolderSinceReplaced) forget(root, existing)
-  else if (existing) {
-    if (existing.count === 0) {
-      noLongerKept(root)
-      existing.changed = existing.changedWithNoViewer ? null : new Set()
-      if (existing.changedWithNoViewer) reportSoon(root, existing, onChange)
-      existing.changedWithNoViewer = false
-    }
-    existing.count++
+export function watchDir(root: string, onChange: DirChangeListener): Promise<boolean> {
+  return inOrderFor(root, () => watchDirNow(root, onChange))
+}
+
+async function watchDirNow(root: string, onChange: DirChangeListener): Promise<boolean> {
+  const watched = dirWatchers.get(root)
+  if (watched && watched.count > 0) {
+    watched.count++
     return true
   }
-  const folderId = folderIdOf(root)
+  const folderId = await folderIdOf(root)
+  const kept = dirWatchers.get(root)
+  if (kept && folderId !== kept.folderId) forget(root, kept)
+  else if (kept) {
+    noLongerKept(root)
+    kept.changed = kept.changedWithNoViewer ? null : new Set()
+    if (kept.changedWithNoViewer) reportSoon(root, kept, onChange)
+    kept.changedWithNoViewer = false
+    kept.count++
+    return true
+  }
   if (folderId === undefined) return false
   let watcher: fs.FSWatcher
   try {
@@ -188,6 +206,10 @@ export function watchDir(root: string, onChange: DirChangeListener): boolean {
 }
 
 export function unwatchDir(root: string): void {
+  void inOrderFor(root, () => unwatchDirNow(root))
+}
+
+function unwatchDirNow(root: string): void {
   const entry = dirWatchers.get(root)
   if (!entry) return
   if (entry.count === 0 || --entry.count > 0) return

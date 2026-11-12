@@ -245,7 +245,7 @@ import {
   setQuitAsk
 } from './quitGuard'
 import { mutedWhileHidden } from './mutedWhileHidden'
-import { loadSettings, saveSettings } from './settings'
+import { flushSettings, loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
   keychainRead,
@@ -4177,8 +4177,10 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
+  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
+    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
-    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
@@ -4192,7 +4194,7 @@ app.whenReady().then(() => {
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
-    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    workspaces: pinnedPathsChecked,
     openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
     onChange: () => workspaceMgr?.restampLive()
   })
@@ -4421,6 +4423,7 @@ app.on('before-quit', (e) => {
   butler?.flush()
   workspaceMgr?.dispose()
   flushLayout()
+  flushSettings()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
   savedUsage.flushSync()

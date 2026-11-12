@@ -318,7 +318,7 @@ function sameFreshness(a: WorkspaceFreshness, b: WorkspaceFreshness): boolean {
 }
 
 export interface FreshnessDeps {
-  workspaces(): { path: string; missing: boolean }[]
+  workspaces(): Promise<{ path: string; missing: boolean }[]>
   autoFetch(): boolean
   autoPull?(): boolean
   busy?(wsPath: string): boolean
@@ -394,11 +394,10 @@ export class GitFreshnessEngine {
     return this.refresh(paths.filter((p) => !isRemoteKey(p)))
   }
 
-  machineUp(host: string): Promise<void> {
+  async machineUp(host: string): Promise<void> {
     if (this.deps.autoFetch()) return this.sweep({ host })
     return this.refresh(
-      this.deps
-        .workspaces()
+      (await this.deps.workspaces())
         .map((w) => w.path)
         .filter((p) => parseRemoteKey(p)?.host === host)
     )
@@ -415,10 +414,7 @@ export class GitFreshnessEngine {
   private async refresh(paths: string[]): Promise<void> {
     if (this.gitUnavailable) return
     const missing = new Set(
-      this.deps
-        .workspaces()
-        .filter((w) => w.missing)
-        .map((w) => w.path)
+      (await this.deps.workspaces()).filter((w) => w.missing).map((w) => w.path)
     )
     for (const p of paths) {
       if (missing.has(p)) continue
@@ -439,8 +435,7 @@ export class GitFreshnessEngine {
     if (this.sweeping && !oneMachine) return
     if (!oneMachine) this.sweeping = true
     try {
-      const due = this.deps
-        .workspaces()
+      const due = (await this.deps.workspaces())
         .filter(
           (ws) =>
             !ws.missing &&

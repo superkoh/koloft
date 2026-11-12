@@ -443,6 +443,16 @@ export class WorkspaceManager {
     }))
   }
 
+  // PLATFORM§69
+  pinnedPathsCheckedOffTheMainThread(): Promise<{ path: string; missing: boolean }[]> {
+    return Promise.all(
+      this.layout.workspaces.map(async (ws) => ({
+        path: ws.path,
+        missing: !isRemoteKey(ws.path) && !(await dirExists(ws.path))
+      }))
+    )
+  }
+
   async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
     const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
