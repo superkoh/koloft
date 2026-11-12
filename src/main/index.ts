@@ -84,6 +84,7 @@ import {
 } from './openTabs'
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
+import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -1572,6 +1573,21 @@ const picker = new AccountPicker(
   savedUsage
 )
 
+const savedHomeUsage = new SavedUsage<HomeUsage>(
+  path.join(app.getPath('userData'), 'home-usage-snapshots.json')
+)
+
+function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
+  return savedHomeUsage.get(viewKey(a.name, a.kind))
+}
+
+function pushHomeAccount(name: string, kind: SignInFolderKind): void {
+  const key = viewKey(name, kind)
+  if (findAccount(name, kind)?.status === 'ok')
+    saveHomeUsage(savedHomeUsage, key, usageViews.get(key), Date.now())
+  pushAccounts()
+}
+
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
     pickDir,
@@ -2567,6 +2583,7 @@ async function addAccount(
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  if (!signedIn) savedHomeUsage.delete(viewKey(name, kind))
   const acct = findAccount(name, kind)
   if (!acct) return
   const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
@@ -2575,7 +2592,7 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
   if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
 }
 
-const codexPicker = new HomeAccountPicker('codex-home')
+const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
 const MUSE_QUOTA_FOLDER = 'muse-quota'
 const museProbedAt = new Map<string, number>()
 
@@ -2625,7 +2642,7 @@ async function probeCodexAccount(name: string): Promise<void> {
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'codex-home')
 }
 
 async function codexUseReset(name: string): Promise<CodexResetOutcome> {
@@ -2667,6 +2684,7 @@ function setSignInFailure(f: SignInFailure | null): void {
 function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
+  savedHomeUsage.delete(viewKey(name, kind))
   picker.forget(kind, name)
   pushAccounts()
 }
@@ -2769,7 +2787,7 @@ async function signInToHome(
   return { ok: true, ...tab }
 }
 
-const musePicker = new HomeAccountPicker('muse-home')
+const musePicker = new HomeAccountPicker('muse-home', savedHomeUsageOf)
 const preparedMuseHomes = new Set<string>()
 
 // MUSE§2 MUSE§13
@@ -2833,7 +2851,7 @@ async function probeMuseAccount(name: string): Promise<void> {
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'muse-home')
 }
 
 let museProbeRound: Promise<void> | null = null
@@ -2849,7 +2867,7 @@ function probeMuseAccounts(): Promise<void> {
   return museProbeRound
 }
 
-const agyPicker = new HomeAccountPicker('agy-home')
+const agyPicker = new HomeAccountPicker('agy-home', savedHomeUsageOf)
 const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
@@ -2909,7 +2927,7 @@ async function probeAgyAccount(name: string): Promise<void> {
     const quota = await agyUsage(home)
     usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'agy-home')
 }
 
 async function agyBinary(): Promise<string | undefined> {
@@ -4404,6 +4422,7 @@ app.on('before-quit', (e) => {
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
+  savedHomeUsage.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   flushInbox()
