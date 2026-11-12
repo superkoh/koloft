@@ -528,6 +528,7 @@ describe('koloft session new: the starter picks the model and effort', () => {
     const { verb, launched } = harness([session('me', 'muse', { nativeSessionId: MUSE_ID })])
     const unpicked = await verb(['new', '--', 'go'], from('me'))
     expect(unpicked.text).toContain('needs --effort:')
+    expect(unpicked.text).toContain('with --model only for a model name it knows')
     expect((await verb(['new', '--effort', 'low', '--', 'go'], from('me'))).exit).toBe(0)
     expect(launched[0]).toMatchObject({ kind: 'muse', effort: 'low' })
   })

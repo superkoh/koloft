@@ -12,9 +12,9 @@ import {
   type WorktreeInfo
 } from '@shared/types'
 import {
-  NAMED_MODELS,
   effortsFor,
   modelAndEffortChoices,
+  namedModel,
   needsModel,
   takenEffort
 } from '@shared/cronModels'
@@ -521,9 +521,7 @@ function modelAndEffortRefusal(backend: BackendId, args: NewSessionArgs): string
   const modelNeeded = needsModel(backend)
   if ((modelNeeded && !args.model) || !args.effort)
     return `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}: ${modelAndEffortChoices(backend)}. Pick ${PICK_FOR_THE_TASK}.`
-  const owner = SESSION_BACKENDS.find(
-    (b) => b !== backend && NAMED_MODELS[b].some((m) => m.id === args.model)
-  )
+  const owner = SESSION_BACKENDS.find((b) => b !== backend && namedModel(b, args.model))
   if (owner)
     return `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models; ${aSessionOf(backend)} takes ${modelAndEffortChoices(backend)}.`
   if (takenEffort(backend, args.model, args.effort)) return null
