@@ -619,11 +619,9 @@ export class DiscordRelay {
   }
 
   cardsWaitFor(tab: string, step: Promise<unknown>): void {
-    const done: Promise<void> = Promise.all([this.sending.get(tab), step])
-      .catch(() => undefined)
-      .then(() => {
-        if (this.sending.get(tab) === done) this.sending.delete(tab)
-      })
+    const done: Promise<void> = Promise.allSettled([this.sending.get(tab), step]).then(() => {
+      if (this.sending.get(tab) === done) this.sending.delete(tab)
+    })
     this.sending.set(tab, done)
   }
 

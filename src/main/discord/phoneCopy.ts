@@ -243,11 +243,14 @@ export async function sendPhoneCopy(
   )
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<undefined>(
-    (resolve) => (timer = setTimeout(() => resolve(undefined), reportedWithinMs))
+    (resolve) =>
+      (timer = setTimeout(() => {
+        toldStillSending = true
+        resolve(undefined)
+      }, reportedWithinMs))
   )
   const first = await Promise.race([sending, late])
   clearTimeout(timer)
   if (first) return 'said' in first ? first.said : couldNot(where, first.error)
-  toldStillSending = true
   return stillSending(where)
 }

@@ -1626,7 +1626,7 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
     ])
   })
 
-  it('a card asked while a copy koloft open reported as still sending is on its way waits until that copy is sent', async () => {
+  it('a card asked while a copy koloft open reported as still sending is on its way waits until that copy is sent, even when a later copy fails first', async () => {
     const open: CodexQuestion = {
       id: 'q1',
       questions: [{ question: 'Which 1?', options: [{ label: 'A' }] }]
@@ -1637,6 +1637,7 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       TAB,
       new Promise<void>((done) => (sent = done)).then(() => void posts.push({ text: 'page.png' }))
     )
+    relay.cardsWaitFor(TAB, Promise.reject(new Error('the upload broke')))
     relay.codexAsked(TAB, open)
     const A_CARD_NOT_HELD_POSTS_WITHIN_MS = 20
     await new Promise((settle) => setTimeout(settle, A_CARD_NOT_HELD_POSTS_WITHIN_MS))
