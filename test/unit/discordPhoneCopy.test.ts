@@ -49,6 +49,7 @@ function deps(
     send: async (files, parts) => {
       sent.push({ files, parts })
     },
+    sendsLater: () => undefined,
     ...over
   }
 }
@@ -171,21 +172,25 @@ describe('sendPhoneCopy', () => {
     )
   })
 
-  it('a copy slower than the reply can wait for: the reply says it is still on its way, and a failure later is told in the room', async () => {
+  it('a copy slower than the reply can wait for: the reply says it is still on its way, and a failure later is told in the room before what waits for the copy goes on', async () => {
     let fail!: (e: Error) => void
-    const d = deps({ shoot: () => new Promise((_, reject) => (fail = reject)) })
+    const later: Promise<void>[] = []
+    const d = deps({
+      shoot: () => new Promise((_, reject) => (fail = reject)),
+      sendsLater: (rest) => void later.push(rest)
+    })
     expect(await sendPhoneCopy(d, { page: 'http://localhost:1' }, WHERE, 0)).toBe(
       stillSending(WHERE)
     )
+    expect(later).toHaveLength(1)
     fail(new Error('it did not load in time.'))
-    await expect
-      .poll(() => d.sent)
-      .toEqual([
-        {
-          files: [],
-          parts: [couldNotSendInRoom('http://localhost:1', 'it did not load in time.')]
-        }
-      ])
+    await Promise.all(later)
+    expect(d.sent).toEqual([
+      {
+        files: [],
+        parts: [couldNotSendInRoom('http://localhost:1', 'it did not load in time.')]
+      }
+    ])
   })
 
   it('Markdown goes as phone-readable text with the original file, a diagram as a line saying to look on the Mac', async () => {

@@ -6061,7 +6061,8 @@ async function copyToPhone(
           throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
         }),
     fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-    send: (files, parts) => relay.sendParts(channelId, files, parts)
+    send: (files, parts) => relay.sendParts(channelId, files, parts),
+    sendsLater: (rest) => relay.cardsWaitFor(tabId, rest)
   })
   if (!relay.reaches(tabId)) {
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))

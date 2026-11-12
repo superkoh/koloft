@@ -27,6 +27,7 @@ export interface PhoneCopyDeps {
   readBytes(file: string): Promise<Buffer>
   fileDiff(file: string): Promise<FileDiff>
   send(files: DiscordFile[], parts: string[]): Promise<void>
+  sendsLater(rest: Promise<void>): void
 }
 
 const MOST_MESSAGES = 10
@@ -241,8 +242,6 @@ export async function sendPhoneCopy(
   const first = await Promise.race([sending, late])
   clearTimeout(timer)
   if (first) return 'said' in first ? first.said : couldNot(where, first.error)
-  void sending.then((r) => {
-    if ('error' in r) void sayCouldNotSend(d, shown, r.error)
-  })
+  d.sendsLater(sending.then((r) => ('error' in r ? sayCouldNotSend(d, shown, r.error) : undefined)))
   return stillSending(where)
 }

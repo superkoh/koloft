@@ -1625,6 +1625,29 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       `${butlerAsks('Assist')} Which 2?`
     ])
   })
+
+  it('a card asked while a copy koloft open reported as still sending is on its way waits until that copy is sent', async () => {
+    const open: CodexQuestion = {
+      id: 'q1',
+      questions: [{ question: 'Which 1?', options: [{ label: 'A' }] }]
+    }
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    let sent!: () => void
+    relay.cardsWaitFor(
+      TAB,
+      new Promise<void>((done) => (sent = done)).then(() => void posts.push({ text: 'page.png' }))
+    )
+    relay.codexAsked(TAB, open)
+    const A_CARD_NOT_HELD_POSTS_WITHIN_MS = 20
+    await new Promise((settle) => setTimeout(settle, A_CARD_NOT_HELD_POSTS_WITHIN_MS))
+    expect(posts).toEqual([])
+    sent()
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts.map((p) => p.text.split('\n').slice(0, 2).join(' '))).toEqual([
+      'page.png',
+      `${butlerAsks('Assist')} Which 1?`
+    ])
+  })
 })
 
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {

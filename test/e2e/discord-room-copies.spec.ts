@@ -19,6 +19,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { runGit } from './helpers/gitFixture'
+import { startEchoServer } from './helpers/fixtureServer'
 import type { SessionInfo } from '../../src/shared/types'
 
 test.setTimeout(240_000)
@@ -30,6 +31,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 
 const PNG_HEIGHT_AT = 20
 const PLAN_PAGE_HEIGHT_PX = 2000
+const PAGE_LOADS_LONGER_THAN_KOLOFT_OPEN_WAITS_MS = 12_000
 
 const isPng = (data: Buffer): boolean =>
   data.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)
@@ -235,6 +237,39 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
     } finally {
       await quitAndClose(app)
       await fake.close()
+    }
+  })
+
+  test('a page whose picture takes longer than koloft open waits, shown in the turn that asks the owner away, reaches its room before the question card', async ({
+    env
+  }) => {
+    seedButler(env)
+    const site = await startEchoServer()
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const { room, session } = await roomOfANewSession(page, fake, 'ws-a')
+      const said = (): Promise<string> => terminalText(page, session.tabId)
+      fs.writeFileSync(
+        path.join(env.home, 'fake-claude-open-before-ask'),
+        site.url(`/slow?ms=${PAGE_LOADS_LONGER_THAN_KOLOFT_OPEN_WAITS_MS}`)
+      )
+      fake.say(OWNER, '/ask Ship it?|Yes|No', { channelId: room.id })
+      await expect
+        .poll(async () => unwrapped(await said()), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain(unwrapped("Koloft is still sending a copy to this session's room"))
+
+      const inRoom = (): FakePost[] => fake.posted.filter((p) => p.channelId === room.id)
+      const cardAt = (): number => inRoom().findIndex((p) => /is waiting for you/.test(p.content))
+      await expect.poll(cardAt, { timeout: STARTS_AND_ANSWERS_MS }).toBeGreaterThan(-1)
+      const uploads = inRoom().filter((p) => p.files.length)
+      expect(uploads).toHaveLength(1)
+      expect(isPng(uploads[0].files[0].data)).toBe(true)
+      expect(inRoom().indexOf(uploads[0])).toBeLessThan(cardAt())
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+      await site.close()
     }
   })
 

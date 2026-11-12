@@ -618,6 +618,13 @@ export class DiscordRelay {
     this.shownNotSent.set(tab, [...(this.shownNotSent.get(tab) ?? []), send])
   }
 
+  cardsWaitFor(tab: string, copy: Promise<void>): void {
+    const done = Promise.all([this.sending.get(tab), copy]).then(() => {
+      if (this.sending.get(tab) === done) this.sending.delete(tab)
+    })
+    this.sending.set(tab, done)
+  }
+
   private afterShownNotSent(
     tab: string,
     channelId: string,
