@@ -1417,7 +1417,7 @@ inferred, not checked.
   `dist`, 2026-11-12.)
 - **mermaid 12 changed how diagrams look by default** (12.3.0 against 11.17.0,
   2026-11-12: both default configs dumped from `mermaidAPI.defaultConfig` and diffed,
-  then 31 samples drawn in the built app on each). The root `layout` went from `dagre`
+  then 34 samples drawn in the built app on each). The root `layout` went from `dagre`
   to `elk`; the sections `flowchart`, `class`, `state`, `er`, `requirement`,
   `sequence`, `venn` and `swimlane`, and the new kinds `usecase` and `agentflow`, each
   got a `look: 'neo'` and a `theme: 'redux-color'` of their own (the root `theme` and
