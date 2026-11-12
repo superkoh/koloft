@@ -385,21 +385,23 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ])
     })
 
-    it("offers a Codex or Muse task the machine's own folders for that agent, read on the machine (#675)", async () => {
-      const put = (file: string): void => {
+    it("offers a Codex, Muse or Antigravity task the machine's own folders for that agent, read on the machine (#675)", async () => {
+      const put = (file: string, text = '---\ndescription: d\n---'): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })
-        fs.writeFileSync(file, '---\ndescription: d\n---')
+        fs.writeFileSync(file, text)
       }
+      put(path.join(repo, '_agents', 'skills', 'agy-dir', 'SKILL.md'), '---\nname: agy-only\n---')
       put(path.join(repo, '.agents', 'skills', 'shared', 'SKILL.md'))
       put(path.join(repo, '.codex', 'skills', 'codex-only', 'SKILL.md'))
       put(path.join(repo, '.claude', 'skills', 'claude-only', 'SKILL.md'))
       put(path.join(home, '.agents', 'skills', 'mine', 'SKILL.md'))
       put(path.join(home, '.config', 'muse', 'skills', 'muse-mine', 'SKILL.md'))
 
-      const names = async (backend: 'codex' | 'muse'): Promise<string[]> =>
+      const names = async (backend: 'codex' | 'muse' | 'agy'): Promise<string[]> =>
         (await machine().listSkills(keyed(repo), backend)).map((s) => s.name)
       expect(await names('codex')).toEqual(['$codex-only', '$shared', '$mine'])
       expect(await names('muse')).toEqual(['/claude-only', '/shared', '/mine', '/muse-mine'])
+      expect(await names('agy')).toEqual(['/agy-only'])
     })
 
     it("finds a Muse task's skills under the machine's XDG_CONFIG_HOME even when it ends in a slash", async () => {

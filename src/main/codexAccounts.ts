@@ -10,6 +10,7 @@ import {
   type LaunchedSession
 } from './accountPicker'
 import { leximaxFinalists, weekUse } from './usageProbe'
+import { withSavedHomeUsage, type SavedHomeUsageOf } from './savedHomeUsage'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -160,14 +161,17 @@ function bindingWeek(room: HomeRoom, nowSec: number): { use: number; resetsAt: n
 export class HomeAccountPicker {
   private turn = 0
 
-  constructor(private kind: SignInFolderKind) {}
+  constructor(
+    private kind: SignInFolderKind,
+    private savedUsageOf: SavedHomeUsageOf = () => undefined
+  ) {}
 
   pick(
     accounts: AccountView[],
     resumedOn?: string,
     launched: LaunchedSession[] = []
   ): AccountView | undefined {
-    const usable = usableAccounts(accounts, [this.kind])
+    const usable = withSavedHomeUsage(usableAccounts(accounts, [this.kind]), this.savedUsageOf)
     if (usable.length === 0) return undefined
     const nowSec = Math.floor(Date.now() / 1000)
     const all = usable.map((a) => ({ a, room: homeRoom(a, nowSec) }))

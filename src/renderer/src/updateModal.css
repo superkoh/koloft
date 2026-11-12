@@ -16,6 +16,11 @@
   border-radius: 50%;
   animation: updateSpin 0.7s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .update-spinner {
+    animation: none;
+  }
+}
 @keyframes updateSpin {
   to {
     transform: rotate(360deg);

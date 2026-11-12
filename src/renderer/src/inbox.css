@@ -776,6 +776,11 @@
   border-top-color: var(--fg-dim);
   animation: lspin 0.9s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .ibx-spin {
+    animation: none;
+  }
+}
 
 .ibx-confirm {
   display: flex;

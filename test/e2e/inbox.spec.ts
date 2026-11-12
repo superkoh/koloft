@@ -353,14 +353,23 @@ for (const remote of [false, true]) {
   })
 
   // CC§12
-  test(`an Allow pressed on a card that the ${where}Claude Code session ignores stays in Needs you and sends the owner to the session`, async ({
+  test(`an Allow pressed on a card that the ${where}Claude Code session ignores stays in Needs you and sends the owner to the session; while the answer is on its way, with Reduce motion on the card's spinner stays but stands still`, async ({
     env
   }) => {
     const claudeHome = programStatusClaudeOn(env, remote)
     fs.writeFileSync(path.join(claudeHome, 'fake-claude-drop-key'), '')
     const app = await launchApp(env)
     try {
-      const { card } = await allowFromItsCard(await app.firstWindow(), env, remote, 'make test')
+      const page = await app.firstWindow()
+      const { card } = await allowFromItsCard(page, env, remote, 'make test')
+      const spinner = card.locator('.ibx-spin')
+      const turning = (): Promise<number> => spinner.evaluate((el) => el.getAnimations().length)
+      await expect(spinner).toBeVisible({ timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      expect(await turning()).toBe(1)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(turning).toBe(0)
+      await expect(spinner).toBeVisible()
+      await page.emulateMedia({ reducedMotion: null })
       await expect(card).toContainText(ANSWER_NOT_TAKEN_ON_A_CARD, {
         timeout: ANSWER_WAITS_FOR_THE_UNDO_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
       })

@@ -1787,6 +1787,24 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   plain text, with no error; `/zebra-skill` alone, with a second skill `zebra-skill-pro`
   installed, sent `zebra-skill`'s body and not the other's; a three-line paste whose
   first line was `/zebra-skill do X` sent all three lines and the body.
+- **Each of the three project folders runs a skill by `/<name>`, and only by the `name`
+  in its file.** 2026-11-11, agy 1.5.5 (build `6740358537805824`, `linux_arm64.json`),
+  Docker (`--network none`), a fake Gemini server logging each request, each skill's body
+  holding its own codeword, 1 run each; the `-p` runs for one `name` in several folders
+  were in folders not in `trustedWorkspaces`, the rest in a trusted one. `-p /skills --output-format json` listed one skill from each of
+  `<workspace>/.agents/skills/`, `<workspace>/_agents/skills/` and
+  `<workspace>/.agent/skills/` under its frontmatter `name`, and `-p "/<name> say hi"`
+  put that skill's body in the user turn (`/<name> is a [Slash Command]: <SKILL>…`) for
+  all three. A `SKILL.md` with a `description` and no `name` was listed as `SKILL`, and
+  `/<its folder>` sent no body; one with no frontmatter was not listed, and `/<its
+  folder>` sent no body. `user-invocable: false` changed nothing: the skill was listed
+  and `/<name>` sent its body. Typed into the TUI in tmux 3.3a (onboarding seeded) and
+  Enter, `/<name> say hi` (sent key by key) put the body in the user turn for a skill in each of the three
+  folders too. One `name` in more than one folder is listed once and `/<name>` sends
+  that copy's body: `.agent/skills/` beat the other two and `.agents/skills/` beat
+  `_agents/skills/`, no matter which copy's own folder name sorted first. Not probed:
+  `/SKILL`, an empty `name`, a `name` with a space or one agy's own command has, two
+  copies of a `name` inside one folder, and the TUI in a workspace agy does not trust.
 
 ## §32 The folder's AGENTS.md as a memory
 
