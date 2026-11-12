@@ -216,6 +216,7 @@ test('the tools of a Codex, a Muse and an Antigravity session nobody looks at gi
 
     await newSessionInWith(page, 'ws-a', 'Antigravity')
     await expect.poll(() => agySessionCalls(env).length).toBe(1)
+    await runIn(page, centerTerm(page), 'hello')
     await expect(page.locator('.ws-tab.active')).toHaveClass(/st-waiting/, { timeout: 30_000 })
     const agyTab = await tabIdOfTheRowOnScreen(page)
     const agyTool = aSleepNoOtherTestRuns()
@@ -226,7 +227,7 @@ test('the tools of a Codex, a Muse and an Antigravity session nobody looks at gi
       .poll(() => tools.map(priorityOfSleep))
       .toEqual(tools.map(() => WHAT_ANY_OTHER_PROGRAM_GETS))
 
-    await startSessionIn(page, 'ws-b')
+    await startSessionIn(page, 'ws-b', { method: 'Claude' })
     memoryPressure(env, 4)
     for (const tab of [codexTab, museTab, agyTab])
       await expect(slowedMark(rowOf(page, tab))).toBeVisible({
