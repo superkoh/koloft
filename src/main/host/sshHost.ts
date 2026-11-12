@@ -1098,7 +1098,8 @@ export class SshHost implements Host {
   // PLATFORM§35 ADR-0044
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
     await this.deps.claude.firstHeartbeatDone()
-    await Promise.all(this.kills.values())
+    while (this.kills.size && this.deps.claude.alive().has(sid))
+      await Promise.all(this.kills.values())
     const mode = launchMode({
       alive: this.deps.claude.alive(),
       killed: this.killedSessions,

@@ -931,7 +931,7 @@ describe('ending a session that runs on the machine', () => {
       `#!/bin/sh
 [ "$3" = kill-session ] || exit 0
 [ "$5" = ${name} ] || [ -z "$5" ] || { echo "can't find session: $5" >&2; exit 1; }
-printf '%s\\n' ${name} >> ${JSON.stringify(killed)}
+printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
 `,
       { mode: 0o755 }
     )

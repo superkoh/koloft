@@ -22,8 +22,10 @@ back failed (the link drops, the name file cannot be written).
 A `/clear`'s rename is the hook's, on the machine, and reaches the tracker only one mirror
 pull later, so a tab's kill then tries, last, the name in the tab's `tabs/<tab>.tmux`, never
 an empty one (tmux would pick a session itself: another tab's), and prints the name it
-ended. Koloft books that session as ended by it, and a launch on the machine waits for
-every kill still on the wire before choosing between attach and start. Reading the file
+ended. Koloft books that session as ended by it, and a launch of a conversation the
+machine still lists waits for every kill on the wire there (any one of them may be ending it
+under its new name) before choosing between attach and start. A tab's start deletes the
+file, so a name left by an earlier run of that tab id never reaches a kill. Reading the file
 in a separate ssh call first (as Muse and Antigravity tabs do) costs one more round trip
 and leaves the books naming the old session while the kill runs.
 **Rejected**: renaming in the hook script on any report whose session id differs from the

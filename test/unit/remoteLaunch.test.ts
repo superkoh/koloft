@@ -922,18 +922,23 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
   })
 
-  it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {
+  it("clears the tab's leftover hook reports and tmux name before starting, since tab ids are reused across Koloft runs and a close ends the session that name file names, but not on a reconnect", () => {
     const b = box(spec())
     const hooks = path.join(b.home, '.koloft', 'hook-sessions')
     fs.mkdirSync(hooks, { recursive: true })
-    const stale = [path.join(hooks, 'T.json'), path.join(hooks, 'T.status.jsonl')]
+    fs.mkdirSync(path.join(b.home, '.koloft', 'tabs'), { recursive: true })
+    const stale = [
+      path.join(hooks, 'T.json'),
+      path.join(hooks, 'T.status.jsonl'),
+      path.join(b.home, '.koloft', 'tabs', 'T.tmux')
+    ]
     for (const f of stale) fs.writeFileSync(f, '{"event":"end"}\n')
     expect(b.run().status).toBe(0)
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false, false])
 
     for (const f of stale) fs.writeFileSync(f, '{"event":"start"}\n')
     b.run('attach')
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true, true])
   })
 
   // CC§10
