@@ -455,7 +455,7 @@ const api: KoloftApi = {
     removeConfirmed: (p) => ipcRenderer.invoke(CH.workspace.removeConfirmed, p),
     move: (p, before) => ipcRenderer.invoke(CH.workspace.move, p, before),
     worktrees: (p) => ipcRenderer.invoke(CH.workspace.worktrees, p),
-    historyRows: (p) => ipcRenderer.invoke(CH.workspace.historyRows, p),
+    historyRows: (p, opts) => ipcRenderer.invoke(CH.workspace.historyRows, p, opts),
     rows: () => ipcRenderer.invoke(CH.workspace.rows),
     onRows: (cb) => {
       const handler = (_e: unknown, rows: WorkspaceRows[]): void => cb(rows)

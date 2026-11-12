@@ -126,6 +126,7 @@ import { BindConductorDialog } from './components/BindConductorDialog'
 import { butlerSetUp, everyWorkspaceRows, isButlerTab, someAccountCanRunAssist } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
+import { PastSessions } from './components/PastSessions'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf, isRemoteKey } from '@shared/remoteKey'
@@ -1160,6 +1161,9 @@ export default function App(): JSX.Element {
   const resumeRecent = useCallback((row: SessionRow): void => {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
+  const restoreRow = useCallback((row: SessionRow): void => {
+    void resumeSession({ id: row.id, backendId: row.backendId, title: row.title, restore: true })
+  }, [])
 
   const paletteRouted: PaletteRouted = (prompt, backend, route) => {
     setPaletteOpen(false)
@@ -1835,6 +1839,14 @@ export default function App(): JSX.Element {
                           ))}
                         </div>
                       )}
+                      {!welcomeWs.rows.length && welcomeWs.workspace.hasHistory && (
+                        <PastSessions
+                          key={welcomeWs.workspace.path}
+                          wsPath={welcomeWs.workspace.path}
+                          onRestore={restoreRow}
+                          onShowAll={() => setRestoreWs(welcomeWs.workspace.path)}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="w-empty">
@@ -2013,12 +2025,7 @@ export default function App(): JSX.Element {
               onClose={() => setRestoreWs(null)}
               onRestore={(row) => {
                 setRestoreWs(null)
-                void resumeSession({
-                  id: row.id,
-                  backendId: row.backendId,
-                  title: row.title,
-                  restore: true
-                })
+                restoreRow(row)
               }}
             />
           )}

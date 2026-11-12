@@ -1359,7 +1359,7 @@ export interface KoloftApi {
     removeConfirmed(path: string): Promise<void>
     move(path: string, before: string | null): Promise<void>
     worktrees(path: string): Promise<WorktreeInfo[]>
-    historyRows(path: string): Promise<SessionRow[]>
+    historyRows(path: string, opts?: { quiet: boolean }): Promise<SessionRow[]>
     rows(): Promise<WorkspaceRows[]>
     onRows(cb: (rows: WorkspaceRows[]) => void): () => void
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
