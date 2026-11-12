@@ -32,7 +32,9 @@ import {
   newSessionInWith,
   openMenu,
   openWorktreeSession,
+  processAlive,
   runIn,
+  sendShortcut,
   sendTwoLinesJoinedByShiftEnter,
   switchToRow,
   terminalText,
@@ -92,6 +94,43 @@ async function startRemoteMuse(page: Page, env: E2EEnv): Promise<MachineMuseCall
     .poll(() => liveTmuxSessions(env), { timeout: ON_THE_MACHINE_WITHIN_MS })
     .toContain(`k-${call.sessionId}`)
   return call
+}
+
+async function remoteMuseTabClearedThenPrompted(
+  page: Page,
+  env: E2EEnv
+): Promise<{ cleared: MachineMuseCall; row: Locator }> {
+  const first = await startRemoteMuse(page, env)
+  await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+    timeout: ON_THE_MACHINE_WITHIN_MS
+  })
+  await runIn(page, centerTerm(page), 'before clear')
+  await expect
+    .poll(() => museSaid(env, first.sessionId, machineHome(env)), {
+      timeout: ON_THE_MACHINE_WITHIN_MS
+    })
+    .toContain('echo: before clear')
+  await expect(remoteRows(page).filter({ hasText: 'before clear' })).toHaveClass(/\bst-waiting\b/, {
+    timeout: ON_THE_MACHINE_WITHIN_MS
+  })
+  await runIn(page, centerTerm(page), '/clear')
+  await expect
+    .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+    .toBe(2)
+  const cleared = machineMuseCalls(env)[1]
+  expect(cleared.pid).toBe(first.pid)
+  await expect
+    .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+    .toEqual([`k-${cleared.sessionId}`])
+  await runIn(page, centerTerm(page), 'after clear')
+  await expect
+    .poll(() => museSaid(env, cleared.sessionId, machineHome(env)), {
+      timeout: ON_THE_MACHINE_WITHIN_MS
+    })
+    .toContain('echo: after clear')
+  const row = remoteRows(page).filter({ hasText: 'after clear' })
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+  return { cleared, row }
 }
 
 const worktreeAddsOnTheMachine = (env: E2EEnv): number =>
@@ -248,25 +287,10 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     const { app, page } = await launchWithMuseThere(env)
     try {
       await addRemoteWorkspace(page, env)
-      const first = await startRemoteMuse(page, env)
-      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
-        timeout: ON_THE_MACHINE_WITHIN_MS
-      })
-      await runIn(page, centerTerm(page), 'keep me')
-      await expect(remoteRows(page)).toContainText('keep me')
-      await runIn(page, centerTerm(page), '/clear')
-      await expect.poll(() => machineMuseCalls(env).length).toBe(2)
-      const cleared = machineMuseCalls(env)[1]
-      expect(cleared.pid).toBe(first.pid)
-      await expect
-        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
-        .toEqual([`k-${cleared.sessionId}`])
-      await runIn(page, centerTerm(page), 'second')
-      await expect(remoteRows(page).filter({ hasText: 'second' })).toHaveCount(1)
+      const { cleared, row: cold } = await remoteMuseTabClearedThenPrompted(page, env)
 
       await closeActiveTab(app, page)
       await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
-      const cold = remoteRows(page).filter({ hasText: 'second' })
       await expect(cold).toHaveClass(/cold/, { timeout: 30_000 })
       await cold.click()
       await expect
@@ -610,6 +634,40 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(liveTmuxSessions(env)).toContain(`k-${first.sessionId}`)
       expect(machineMuseCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RM-14: after /clear, ⇧⌘R on a remote Muse tab ends the muse running on the machine and brings the new session back there with muse resume, in a tmux session of the same name', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const { cleared, row } = await remoteMuseTabClearedThenPrompted(page, env)
+
+      await centerTerm(page).click()
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect
+        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(3)
+      const relaunch = machineMuseCalls(env)[2]
+      expect(relaunch.argv.slice(-2)).toEqual(['resume', cleared.sessionId])
+      expect(fs.realpathSync(relaunch.cwd)).toBe(fs.realpathSync(remoteDir(env)))
+      expect(relaunch.pid).not.toBe(cleared.pid)
+      await expect.poll(() => processAlive(cleared.pid), { timeout: 30_000 }).toBe(false)
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .toEqual([`k-${cleared.sessionId}`])
+      await runIn(page, centerTerm(page), 'after restart')
+      await expect
+        .poll(() => museSaid(env, cleared.sessionId, machineHome(env)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toContain('echo: after restart')
+      await expect(row).toHaveCount(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
     } finally {
       await quitAndClose(app)
     }
