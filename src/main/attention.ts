@@ -27,7 +27,7 @@ export class AttentionTracker {
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
     lastRun: SavedMark[] = []
   ) {
-    for (const { tabId, kind, at, title, sessionId, fyi, wasAsking } of lastRun) {
+    for (const { tabId, kind, at, title, sessionId, fyi, wasAsking, stoppedByRestart } of lastRun) {
       const deadKind = kind === 'approval' ? 'turn-done' : kind
       this.pending.set(tabId, {
         tabId,
@@ -36,7 +36,8 @@ export class AttentionTracker {
         title,
         sessionId,
         fyi,
-        ...((kind === 'approval' || wasAsking) && { wasAsking: true })
+        ...((kind === 'approval' || wasAsking) && { wasAsking: true }),
+        ...(stoppedByRestart && { stoppedByRestart })
       })
     }
   }
@@ -47,10 +48,11 @@ export class AttentionTracker {
     const askingHere = this.pending.get(tabId)
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
     const wasAsking = carried.kind === 'approval' || carried.wasAsking
+    const sameAsk = wasAsking && !carried.stoppedByRestart
     this.pending.set(
       tabId,
       askingHere?.kind === 'approval' && askingHere !== carried
-        ? { ...askingHere, sessionId, ...(wasAsking && { at: carried.at }) }
+        ? { ...askingHere, sessionId, ...(sameAsk && { at: carried.at }) }
         : { ...carried, tabId, kind: 'turn-done', ...(wasAsking && { wasAsking: true }) }
     )
     this.onChange(this.list(), null)
@@ -120,20 +122,19 @@ export class AttentionTracker {
   }
 
   private drop(tabId: string): void {
-    this.askKeptThroughWorking.delete(tabId)
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
   clearKeepingExit(tabId: string): void {
-    this.drop(tabId + PARKED_WHILE_ITS_TAB_RESTARTS)
     if (this.pending.get(tabId)?.kind !== 'exited') this.clear(tabId)
   }
 
   tabStopping(tabId: string, restarting: boolean): void {
     const cur = this.pending.get(tabId)
     const asking = cur?.kind === 'approval' || cur?.wasAsking
-    if (!restarting || !asking || !cur.sessionId) return this.clearKeepingExit(tabId)
     const parked = tabId + PARKED_WHILE_ITS_TAB_RESTARTS
+    if (!restarting) this.drop(parked)
+    if (!restarting || !asking || !cur.sessionId) return this.clearKeepingExit(tabId)
     this.pending.delete(tabId)
     this.pending.set(parked, { ...cur, ...STOPPED_BY_A_RESTART, tabId: parked })
     this.onChange(this.list(), null)

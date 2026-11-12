@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AttentionTracker, type SavedMark } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
 
@@ -284,13 +284,32 @@ describe('attention — a session starting again keeps its mark', () => {
     asked.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
     expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'approval' })
     expect(asked.list()[0].stoppedByRestart).toBeUndefined()
+
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1)
+    const { t: early } = makeTracker()
+    early.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    early.tabStopping('tab-old', true)
+    now.mockReturnValue(2)
+    early.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
+    early.bound('tab-new', 'sid-1')
+    now.mockRestore()
+    expect(early.list()).toEqual([expect.objectContaining({ tabId: 'tab-new', at: 2 })])
   })
 
-  it('a restart that never comes back leaves its ask until its tab is closed', () => {
+  it('an ask stopped by a restart stays one after a Koloft restart', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    t.tabStopping('tab-old', true)
+    const saved = t.list() as SavedMark[]
+    expect(makeTracker(saved).t.list()[0].stoppedByRestart).toBe(true)
+  })
+
+  it('a restart that never comes back leaves its ask, through another restart, until its tab is closed', () => {
     const { t } = makeTracker()
     t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
     t.tabStopping('tab-old', true)
     t.clear('tab-old')
+    t.tabStopping('tab-old', true)
     expect(t.list()).toHaveLength(1)
     t.tabStopping('tab-old', false)
     expect(t.list()).toEqual([])
