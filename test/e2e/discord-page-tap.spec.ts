@@ -4,12 +4,23 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
+  newSessionInWith,
+  openSessionTerminal,
+  panelTerm,
+  runIn,
   startSessionIn,
   terminalText,
   waitBooted,
   waitConductorStarted,
   waitForCalls
 } from './helpers/p1'
+import {
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 import {
   OPEN_A_FORM,
   startFakeDiscord,
@@ -26,7 +37,7 @@ test.setTimeout(150_000)
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_MS = 60_000
-const CARD_HEADER = /^👆 \*\*.+ · ws-a\*\* asks you to tap a web page/
+const CARD_HEADER = /^👆 \*\*.+\*\* asks you to tap a web page/
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
 const PAGE_ZOOM = 1.5
 
@@ -45,7 +56,10 @@ function seedBinding(env: E2EEnv): void {
   })
 }
 
-function servePageWithAFrameFromAnotherSite(server: FixtureServer): string {
+function servePageWithAFrameFromAnotherSite(
+  server: FixtureServer,
+  frameUrl = server.localhostUrl('/frame')
+): string {
   server.page(
     '/frame',
     '<!doctype html><style>html,body{margin:0;height:100%;background:rgb(0,90,255)}</style>' +
@@ -56,7 +70,7 @@ function servePageWithAFrameFromAnotherSite(server: FixtureServer): string {
     '<!doctype html><title>check</title><style>body{margin:0;background:#fff}' +
       `#holder{position:absolute;left:10px;top:10px;width:${HOLDER.width}px;height:${HOLDER.height}px;background:#fff}` +
       `#holder iframe{position:absolute;left:${FRAME.x}px;top:${FRAME.y}px;width:${FRAME.width}px;height:${FRAME.height}px;border:0}</style>` +
-      `<div id="holder"><iframe src="${server.localhostUrl('/frame')}"></iframe></div>` +
+      `<div id="holder"><iframe src="${frameUrl}"></iframe></div>` +
       '<script>addEventListener("message",function(e){document.title="taps:"+e.data.n+":"+e.data.trusted})</script>'
   )
 }
@@ -112,6 +126,37 @@ function pictures(fake: FakeDiscord): FakePost[] {
 
 const bare = (s: string): string => s.replace(/\s+/g, '')
 
+const editsOf = (fake: FakeDiscord, card: FakePost): string =>
+  fake.edits
+    .filter((e) => e.id === card.id)
+    .map((e) => e.content)
+    .join('\n')
+
+async function tapsOneSquareInTheFrameThenSaysItPassed(
+  fake: FakeDiscord,
+  guest: Page
+): Promise<void> {
+  await expect.poll(() => cards(fake).length, { timeout: 30_000 }).toBe(1)
+  const card = cards(fake)[0]
+  fake.press(OWNER, card.buttons![0], card.channelId)
+  await expect
+    .poll(() => fake.callbacks.find((c) => c.type === OPEN_A_FORM)?.data.custom_id)
+    .toBe(card.buttons![0].id)
+  fake.submit(OWNER, card.buttons![0].id, 'a1 G4', card.channelId)
+  await expect.poll(() => fake.callbacks.map((c) => c.data.content)).toContain(TAPPING)
+  await expect.poll(() => guest.title(), { timeout: 20_000 }).toBe('taps:1:true')
+
+  await expect.poll(() => cards(fake).length, { timeout: 30_000 }).toBe(2)
+  expect(pictures(fake)).toHaveLength(2)
+  const next = cards(fake)[1]
+  expect(next.content).toContain('Tapped A1, G4.')
+  await expect.poll(() => editsOf(fake, card)).toContain('Tapped A1, G4.')
+
+  const passed = next.buttons!.find((b) => b.label === 'It passed')!
+  fake.press(OWNER, passed, next.channelId)
+  await expect.poll(() => editsOf(fake, next)).toContain(PASSED)
+}
+
 test.describe('koloft page tap: the owner taps a part of a web page from Discord, through a picture with a grid, and Koloft clicks there for real', () => {
   test('away from the Mac, a part of a zoomed page whose session is not on screen goes to the butler’s channel as a picture that shows the frame from another site in its place, then a card; squares typed in its box become real clicks inside that frame, a new picture and card follow, and "It passed" ends the command', async ({
     env
@@ -136,6 +181,7 @@ test.describe('koloft page tap: the owner taps a part of a web page from Discord
 
       await expect.poll(() => cards(fake).length, { timeout: 30_000 }).toBe(1)
       const card = cards(fake)[0]
+      expect(card.content).toMatch(/^👆 \*\*.+ · ws-a\*\*/)
       expect(card.content).toContain('Tick the box.')
       const first = pictures(fake)
       expect(first).toHaveLength(1)
@@ -147,40 +193,10 @@ test.describe('koloft page tap: the owner taps a part of a web page from Discord
       const besideFrame = await colorAt(app, png, { x: 40, y: 130 })
       expect(Math.min(...besideFrame)).toBeGreaterThan(200)
 
-      fake.press(OWNER, card.buttons![0], card.channelId)
-      await expect
-        .poll(() => fake.callbacks.find((c) => c.type === OPEN_A_FORM)?.data.custom_id)
-        .toBe(card.buttons![0].id)
-      fake.submit(OWNER, card.buttons![0].id, 'a1 G4', card.channelId)
-      await expect.poll(() => fake.callbacks.map((c) => c.data.content)).toContain(TAPPING)
-      await expect.poll(() => guest.title(), { timeout: 20_000 }).toBe('taps:1:true')
-
-      await expect.poll(() => cards(fake).length, { timeout: 30_000 }).toBe(2)
-      expect(pictures(fake)).toHaveLength(2)
-      const next = cards(fake)[1]
-      expect(next.content).toContain('Tapped A1, G4.')
-      await expect
-        .poll(() =>
-          fake.edits
-            .filter((e) => e.id === card.id)
-            .map((e) => e.content)
-            .join('\n')
-        )
-        .toContain('Tapped A1, G4.')
-
-      const passed = next.buttons!.find((b) => b.label === 'It passed')!
-      fake.press(OWNER, passed, next.channelId)
+      await tapsOneSquareInTheFrameThenSaysItPassed(fake, guest)
       await expect
         .poll(async () => bare(await terminalText(page, tab)), { timeout: 20_000 })
         .toContain(bare(TAPS_PASSED))
-      await expect
-        .poll(() =>
-          fake.edits
-            .filter((e) => e.id === next.id)
-            .map((e) => e.content)
-            .join('\n')
-        )
-        .toContain(PASSED)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -221,6 +237,54 @@ test.describe('koloft page tap: the owner taps a part of a web page from Discord
       await quitAndClose(app)
       await fake.close()
       await server.close()
+    }
+  })
+
+  test.describe('on another machine', () => {
+    test.afterEach(({ env }) => killFakeRemote(env))
+    const PAGE_SITE = 'check-page.test'
+    const FRAME_SITE = 'check-frame.test'
+
+    for (const agent of [{ label: 'Claude' as const }, ...OTHER_AGENTS_ON_THE_MACHINE]) {
+      test(`run in a ${agent.label} session on another machine, it finds the page in that session’s Workbench and the owner taps it from Discord`, async ({
+        env
+      }) => {
+        test.setTimeout(240_000)
+        const other = 'install' in agent ? agent : undefined
+        seedBinding(env)
+        other?.install(env)
+        env.extraArgs.push(
+          `--host-resolver-rules=MAP ${PAGE_SITE} 127.0.0.1,MAP ${FRAME_SITE} 127.0.0.1`
+        )
+        const fake = await startFakeDiscord(env)
+        const server = await startEchoServer()
+        const { app, page } = await launchWithRemote(env)
+        try {
+          servePageWithAFrameFromAnotherSite(server, server.hostUrl(FRAME_SITE, '/frame'))
+          const url = server.hostUrl(PAGE_SITE, '/check')
+          await expect.poll(() => fake.identifies).toBe(1)
+          await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+          await addRemoteWorkspace(page, env)
+          if (other) {
+            await newSessionInWith(page, REMOTE_WS_NAME, other.label)
+            await other.bound?.(page)
+          } else await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+          await openSessionTerminal(app, page)
+          const shell = (await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty'))!
+          await runIn(page, panelTerm(page), `koloft open ${url}`)
+          const guest = await guestByUrl(app, '/check', { timeout: 30_000 })
+          await expect(guest.locator('#holder iframe')).toBeVisible()
+          await type(page, shell, 'koloft page tap "#holder" -- "Tick the box."')
+          await tapsOneSquareInTheFrameThenSaysItPassed(fake, guest)
+          await expect
+            .poll(async () => bare(await terminalText(page, shell)), { timeout: 30_000 })
+            .toContain(bare(TAPS_PASSED))
+        } finally {
+          await quitAndClose(app)
+          await fake.close()
+          await server.close()
+        }
+      })
     }
   })
 })
