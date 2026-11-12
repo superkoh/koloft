@@ -138,9 +138,8 @@ function writeAgyWeeklyUsage(env: E2EEnv, remaining: number): string {
 }
 
 async function agyQuotaUsed(page: Page): Promise<number | undefined> {
-  return (await page.evaluate(() => window.api.accounts.probe())).find(
-    (a) => a.kind === 'agy-home'
-  )?.quota?.[0]?.used
+  return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
+    ?.quota?.[0]?.used
 }
 
 async function boundAgy(page: Page): Promise<{ tabId: string; id: string }> {

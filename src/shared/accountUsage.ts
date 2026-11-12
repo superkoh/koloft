@@ -558,7 +558,9 @@ export function accountLine(
   return [
     `koloft: → ${name}`,
     ...parts.map((p) => `${p.label} ${Math.round(p.used * 100)}%`),
-    ...(read && read.nowMs - read.at > STALE_MS ? [ageLabel(read.at, read.nowMs)] : [])
+    ...(read && parts.length > 0 && read.nowMs - read.at > STALE_MS
+      ? [ageLabel(read.at, read.nowMs)]
+      : [])
   ].join(' · ')
 }
 

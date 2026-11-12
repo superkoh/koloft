@@ -337,6 +337,13 @@ describe('launchLine — the account line a Muse or Antigravity tab prints befor
     )
   })
 
+  it('gives no age to a reading that holds no numbers', () => {
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(view({ name: 'g', kind: 'agy-home', quota: [], quotaAt: old }), NOW_MS)).toBe(
+      'koloft: → g'
+    )
+  })
+
   it('flags an Antigravity quota read longer ago than STALE_MS, and keeps it when the last probe failed to refresh it, as a Codex or Muse limit is kept', () => {
     const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
     const agy = (p: Partial<AccountView>) => view({ name: 'g', kind: 'agy-home', quota, ...p })
