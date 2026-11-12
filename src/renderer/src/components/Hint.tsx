@@ -13,6 +13,7 @@ const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268
 const GAP = 10
 const STILL_FRAMES = 10
+const HINT_THAT_NEVER_DIMS_THE_WINDOW: HintId = 'workbench'
 
 function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Element {
   return (
@@ -290,7 +291,7 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
   // ADR-0013
   return createPortal(
     <>
-      {box && (
+      {box && id !== HINT_THAT_NEVER_DIMS_THE_WINDOW && (
         <div
           className="hint-backdrop"
           style={{
