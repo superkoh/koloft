@@ -371,6 +371,46 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§26
+  test('Deny on the Inbox card of a remote Antigravity session that wants to create a file outside its workspace declines it — the file is not made — though the second choice of that ask there is “always allow”; and Deny on an edit ask leaves the file as it was', async ({
+    env
+  }) => {
+    setUp(env)
+    seedSettings(env, { skipPermissions: false })
+    const outside = path.join(remoteDir(env), '..', 'outside-notes.txt')
+    const inside = path.join(remoteDir(env), 'README.md')
+    const before = fs.existsSync(inside) ? fs.readFileSync(inside, 'utf8') : null
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.locator('.ibx-entry').click()
+      const deny = page.locator('.inbox-page .ibx-item .ibx-btn', { hasText: 'Deny' })
+      for (const line of ['/write ../outside-notes.txt', '/edit README.md']) {
+        await page.evaluate(([t, l]) => window.api.terminal.write(t, `${l}\r`), [tabId, line])
+        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+        await deny.first().click()
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      }
+      const screen = await terminalText(page, tabId)
+      expect(screen).not.toContain('Wrote ../outside-notes.txt')
+      expect(screen.split('Interrupted').length - 1).toBe(2)
+      expect(machineAgyApiCalls(env).map((c) => c.method)).not.toContain(
+        'HandleCascadeUserInteraction'
+      )
+      expect(fs.existsSync(outside)).toBe(false)
+      expect(fs.existsSync(inside) ? fs.readFileSync(inside, 'utf8') : null).toBe(before)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§29
   test('Esc in the middle of a turn in a remote Antigravity tab, which ends the turn with no Stop, takes its row off working at once, before any next turn', async ({
     env
