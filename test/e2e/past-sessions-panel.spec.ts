@@ -209,6 +209,8 @@ test.describe('past sessions in a folder’s empty panel', () => {
         const id = await boundSession(page, backend, kind.remote)
         const row = wsRows(page, ws)
         await expect(row).toHaveClass(/st-waiting/, { timeout: AN_AGENT_BINDS_WITHIN_MS })
+        if (kind.label === 'Antigravity' && !kind.remote)
+          await expect(row).toContainText('first words', { timeout: AN_AGENT_BINDS_WITHIN_MS })
 
         await closeActiveTab(app, page)
         await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
