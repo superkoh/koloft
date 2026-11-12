@@ -732,4 +732,29 @@ describe('the heartbeat question', () => {
     expect(parsed.toolShells).toEqual([output])
     expect(parsed.alive).toEqual(['k-aaa'])
   })
+
+  // CC§8
+  it('lists a claude tool shell whose output is a tasks file, never its child, a stray process holding such a file, nor a shell-snapshots process writing elsewhere', async () => {
+    const tasks = path.join(fs.realpathSync(dir), 'sess-1', 'tasks')
+    fs.mkdirSync(tasks, { recursive: true })
+    const shellOut = path.join(tasks, 'bshell.output')
+    const strayOut = path.join(tasks, 'bstray.output')
+    const started: ChildProcess[] = []
+    const holding = (file: string | null, script: string): void => {
+      const fd = file ? fs.openSync(file, 'a') : 'ignore'
+      started.push(spawn('/bin/sh', ['-c', script], { stdio: ['ignore', fd, 'ignore'] }))
+      if (typeof fd === 'number') fs.closeSync(fd)
+    }
+    try {
+      holding(shellOut, 'snap=shell-snapshots; perl -e "sleep 60"; :')
+      holding(strayOut, 'perl -e "sleep 60"; :')
+      holding(null, 'snap=shell-snapshots; perl -e "sleep 60"; :')
+      await new Promise((r) => setTimeout(r, 300))
+      const mine = ask([]).toolShells.filter((o) => o.startsWith(tasks))
+      expect(mine).toEqual([shellOut])
+    } finally {
+      for (const p of started) spawnSync('pkill', ['-P', String(p.pid)])
+      for (const p of started) p.kill()
+    }
+  })
 })
