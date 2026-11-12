@@ -2,7 +2,7 @@ import os from 'os'
 import path from 'path'
 import type { DocVerdict, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { barePath, formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
 import type { Assist } from './assist'
 import { PrivateRecordFile } from './privateFile'
@@ -86,7 +86,9 @@ export class ReaderDocs {
     if (!s?.sessionId) return
     const since = turn.said[0]?.at ?? this.lastTurnEnd.get(tabId) ?? 0
     this.lastTurnEnd.set(tabId, turn.at)
-    const host = s.remote?.host
+    // ADR-0025
+    const host = s.remote?.host ?? parseRemoteKey(s.cwd)?.host
+    const cwd = barePath(s.cwd)
     const files = s.files ?? []
     const wrote = files.filter((f) => f.access === 'wrote')
     const written = wrote
@@ -96,23 +98,19 @@ export class ReaderDocs {
       .map((f) => f.src)
     const known = new Set([...wrote.map((f) => f.src), ...Object.keys(this.of(s.sessionId) ?? {})])
     const namesANewDoc = turn.reply.split(BETWEEN_PATHS_IN_PROSE).some((word) => {
-      const src = docIn(word, s.cwd, host)
+      const src = docIn(word, cwd, host)
       return src !== null && !known.has(src)
     })
     if (!written.length && !namesANewDoc) return
     const reply = await this.deps.assist({
       row: 'docs',
       system: SYSTEM,
-      prompt: promptFor(
-        turn,
-        s.cwd,
-        written.map((src) => parseRemoteKey(src)?.path ?? src)
-      )
+      prompt: promptFor(turn, cwd, written.map(barePath))
     })
     if (reply === null) return
     const found = await Promise.all(
       reply.split('\n').map(async (line) => {
-        const src = docIn(line, s.cwd, host)
+        const src = docIn(line, cwd, host)
         if (!src || written.includes(src)) return src
         if (host)
           return (await this.deps.remoteFileExists(host, src).catch(() => false)) ? src : null
@@ -122,7 +120,7 @@ export class ReaderDocs {
     )
     const home = `${os.homedir()}/`
     const replyGivesFullPath = (src: string): boolean => {
-      const p = parseRemoteKey(src)?.path ?? src
+      const p = barePath(src)
       return turn.reply.includes(p) || (!host && turn.reply.includes(p.replace(home, '~/')))
     }
     if (this.archived.has(s.sessionId)) return
