@@ -303,10 +303,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_AGY_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`, and `KOLOFT_TEST_MACHINE_FILE` (JSON
-  `{pressure, load1, backgroundWork}` read in place of the Mac's own numbers) pointing at a
-  roomy `<home>/machine-reading.json`, so the developer Mac's own load never reaches a
-  test; a spec wanting a busy Mac points it at a file of its own (machine-room). The
-  hand-test sandbox drops it and reads the real Mac.
+  `{pressure}`, the memory pressure level 1, 2 or 4, read in place of the Mac's own) pointing
+  at a roomy `<home>/machine-reading.json`, so the developer Mac's own memory never reaches a
+  test; a spec wanting memory at warning or critical rewrites that file (machine-room,
+  memory-drops-hidden-pages). The hand-test sandbox drops it and reads the real Mac.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,

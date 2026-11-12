@@ -102,9 +102,14 @@ test.describe('when memory turns critical, Koloft lets go of the Workbench web p
 
     memoryPressure(env, 2)
     await expect
-      .poll(() => page.evaluate(() => window.api.machine.now().then((s) => s?.busy)), {
-        timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS
-      })
+      .poll(
+        () =>
+          fs.existsSync(path.join(env.userData, 'machine.log')) &&
+          fs
+            .readFileSync(path.join(env.userData, 'machine.log'), 'utf8')
+            .includes('memory pressure 2'),
+        { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS }
+      )
       .toBe(true)
     expect(await pagesAlive(app)).toEqual(everyPage)
 

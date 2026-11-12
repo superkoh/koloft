@@ -79,7 +79,7 @@ export function descendants(table: ProcessTable, root: number): number[] {
 }
 
 // PLATFORM§3
-function psEnvironment(): NodeJS.ProcessEnv {
+export function psEnvironment(): NodeJS.ProcessEnv {
   const { LC_ALL, ...env } = process.env
   return { ...env, LC_CTYPE: LC_ALL ?? env.LC_CTYPE, LC_TIME: 'C', TZ: 'UTC' }
 }

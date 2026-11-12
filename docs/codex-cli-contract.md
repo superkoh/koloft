@@ -3081,8 +3081,8 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   is the command's own folder**: a command the model ran in `work/sub` gave `…/work/sub`
   there, where 0.165.0 gave the thread's `…/work`; the keys and the order of the four
   events were the same on both (2026-10-30, one `gpt-6-luna` turn per build, throwaway
-  homes). The reply-language and hold hooks read no `cwd`; the look at the folder
-  around a shell command reads it.
+  homes). The reply-language hook reads no `cwd`; the look at the folder around a shell
+  command reads it.
 - **Two hooks for one event go in one `-c`, as two groups.** 2026-10-30, codex-cli
   0.166.0, `codex app-server` in a throwaway `CODEX_HOME`, no turn, `hooks/list` only:
   `-c hooks.PreToolUse=[{matcher="Bash",hooks=[…]},{matcher="Bash",hooks=[…]}]` listed
