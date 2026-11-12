@@ -60,7 +60,7 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   const [loadedFamily, setLoadedFamily] = useState(() =>
     monoFontsLoaded(fontFamily) ? fontFamily : null
   )
-  const [builtAfterFontsLoad] = useState(loadedFamily === null)
+  const [focusWhenAsked] = useState(() => document.activeElement)
   useEffect(() => {
     let live = true
     void loadMonoFonts(fontFamily).then(() => {
@@ -73,13 +73,13 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   return loadedFamily === null ? (
     <div className="term" />
   ) : (
-    <LiveTerminal {...props} fontFamily={loadedFamily} builtAfterFontsLoad={builtAfterFontsLoad} />
+    <LiveTerminal {...props} fontFamily={loadedFamily} focusWhenAsked={focusWhenAsked} />
   )
 }
 
 function LiveTerminal({
   fontFamily,
-  builtAfterFontsLoad,
+  focusWhenAsked,
   id,
   active,
   onUserInput,
@@ -90,7 +90,7 @@ function LiveTerminal({
   onOutput,
   maxCols,
   copiesToClipboard = false
-}: TerminalViewProps & { fontFamily: string; builtAfterFontsLoad: boolean }): JSX.Element {
+}: TerminalViewProps & { fontFamily: string; focusWhenAsked: Element | null }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -99,7 +99,7 @@ function LiveTerminal({
   const onOutputRef = useRef(onOutput)
   onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
-  const firstShowAfterFontsLoad = useRef(builtAfterFontsLoad)
+  const firstShow = useRef(true)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const repaintedRef = useRef(false)
@@ -515,8 +515,7 @@ function LiveTerminal({
 
   // PLATFORM§21
   useEffect(() => {
-    const builtJustNow = firstShowAfterFontsLoad.current
-    firstShowAfterFontsLoad.current = false
+    if (!active) firstShow.current = false
     if (active) {
       showWebgl(id)
       let inner = 0
@@ -524,10 +523,12 @@ function LiveTerminal({
         const term = termRef.current
         if (!term) return
         safeFit()
-        const keyboardMovedWhileFontsLoaded =
-          builtJustNow && document.activeElement !== document.body
+        const now = document.activeElement
+        const ownerMovedFocusMeanwhile =
+          firstShow.current && now !== document.body && now !== focusWhenAsked
+        firstShow.current = false
         try {
-          if (autoFocus && !keyboardMovedWhileFontsLoaded) term.focus()
+          if (autoFocus && !ownerMovedFocusMeanwhile) term.focus()
         } catch {}
         inner = requestAnimationFrame(() => {
           forceRepaint()
