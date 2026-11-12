@@ -377,11 +377,11 @@
         <h2 id="assist">Assist and your butler</h2>
         <p>
           <mark class="hl">Assist</mark> is Koloft's own AI. It does small jobs for Koloft, and it
-          is always on. Your butler, the AI you talk to, runs on it too. It runs on one of your
-          accounts. Until you pick an agent for it, it uses the agent (Claude, Codex, Muse or
-          Antigravity) of the first account you added that still works and whose agent is on in
-          Settings ▸ Sessions. Each Assist job costs a little of that account's plan or API balance:
-          about a cent or less.
+          is always on. Your butler, the AI you talk to, runs on it too. It runs on your accounts.
+          Until you pick an agent for it, it uses the agent (Claude, Codex, Muse or Antigravity) of
+          the first account you added that still works and whose agent is on in Settings ▸ Sessions.
+          Each Assist job costs a little of the plan or API balance of the account it runs on: about
+          a cent or less.
         </p>
         <p>The small jobs:</p>
         <ul class="dash">
@@ -389,7 +389,10 @@
             <code>Name a new session</code>: a short title for a session that an agent or your
             butler starts (see <a href="../agents/">agents</a>)
           </li>
-          <li><code>Translate a handover</code>: the note a new session gets, in your language</li>
+          <li>
+            <code>Translate a handover</code>: the note a new session gets, put into your language
+            when the session was started from your own words
+          </li>
           <li>
             <code>After each turn</code>: decides whether a reply needs you or is only news, and
             offers one-click answers (see <a href="../sessions/#inbox">Inbox</a>)
@@ -416,6 +419,10 @@
           </li>
           <li><code>Name</code>: your butler's name</li>
         </ul>
+        <p>
+          Switch an agent off in Settings ▸ Sessions and the rows that picked it go back to
+          <code>Default</code>.
+        </p>
         <p>
           What <code>Default</code> means for the small jobs: the model, then how hard it thinks
           (Low, Medium):
@@ -469,6 +476,14 @@
             thinking is slower
           </li>
           <li>
+            if its agent cannot run it (no working account, say), the job runs on another of your
+            agents
+          </li>
+          <li>
+            if the account turns down the model in the table above, the job tries once more on Haiku
+            (Claude) or GPT-6-Luna (Codex), or on the agent's own model, when there is time left
+          </li>
+          <li>
             when no answer comes, the job goes on its own way: the session is named after the first
             line of its task; the handover note stays in English; only Koloft's own rules decide
             whether a reply needs you, and no one-click answers show; the card lists every doc the
@@ -476,8 +491,10 @@
             <kbd>⌘P</kbd> your words go to a helper of your butler
           </li>
           <li>
-            when none of your accounts can run Assist (none works, or each one's agent is off in
-            Settings ▸ Sessions), <kbd>⌘P</kbd> ⏎ opens the folder picker with your words kept
+            when none of your accounts can run Assist (each is turned off or not working, or its
+            agent is off in Settings ▸ Sessions), the <kbd>⌘P</kbd> button still reads
+            <code>Ask AI</code>, but ⏎ opens the folder picker with your words kept (unless you
+            named a folder with @)
           </li>
         </ul>
 
