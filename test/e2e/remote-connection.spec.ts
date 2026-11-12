@@ -168,11 +168,14 @@ async function startOnTheMachine(
     await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
     await agent.bound?.(page)
   }
-  await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
-    timeout: 60_000
-  })
+  const row = wsRows(page, REMOTE_WS_NAME).first()
+  if (agent.label === 'Antigravity') await theFirstWordsTurnHasEndedOnTheRow(row)
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
   return boundInTheRemoteRow(page)
 }
+
+const theFirstWordsTurnHasEndedOnTheRow = (row: Locator): Promise<void> =>
+  expect(row.locator('.ws-tab-unread')).toHaveCount(1, { timeout: 60_000 })
 
 async function untilItCameBackOnTheMachine(
   env: E2EEnv,
