@@ -891,6 +891,17 @@ describe("foregroundName: node-pty's report is untrusted input whatever its typi
   })
 })
 
+it('starts a program asked to sit above its tools through taskpolicy -a, its own arguments after it, and any other program directly', () => {
+  const mgr = new PtyManager()
+  const tab = { kind: 'muse', koloftShim: false, cwd: '/repo', executable: '/bin/muse' } as const
+  mgr.create({ ...tab, argv: ['resume', 'abc'], aboveItsTools: true })
+  mgr.create({ ...tab, argv: ['resume', 'abc'] })
+  expect(mocks.spawn.mock.calls.map(([file, args]) => [file, args])).toEqual([
+    ['/usr/sbin/taskpolicy', ['-a', '/bin/muse', 'resume', 'abc']],
+    ['/bin/muse', ['resume', 'abc']]
+  ])
+})
+
 describe('Codex native terminal isolation', () => {
   it('spawns the native binary with argv and gives it no Claude Workbench or account injection', () => {
     const mgr = new PtyManager()

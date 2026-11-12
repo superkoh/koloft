@@ -235,6 +235,17 @@
             once: Keep for later, Discard or Save.
           </li>
         </ul>
+        <p>
+          In a Markdown file shown the way it looks (in Browse or in a file tab), select a few
+          words: a small <code>✎ comment</code> button shows under them. It works like a hunk's:
+          write a note, press <kbd>⏎</kbd>, and the file's path and line, the lines the words sit
+          in, the words themselves and your note land in the session's input box, not yet sent.
+          Words in one list item or one table row bring only that item or row. Every agent gets the
+          same, on your Mac and on a <a href="../remote/">remote folder</a>. The button is greyed,
+          and says why, while the session waits for your OK, while it is not running (asleep or
+          ended), and in a <a href="#folder-workbench">folder's own Workbench</a> (which has no
+          session).
+        </p>
 
         <h2 id="web-tabs">Web tabs</h2>
         <p>
@@ -246,6 +257,17 @@
           one an agent opens while driving the browser (see <a href="../agents/">agents</a>).
           Neither is loaded until you click it. Eight tabs per session; a ninth pushes out the one
           you used longest ago.
+        </p>
+        <p>
+          The <code>+</code> at the right end of the tab strip opens a menu:
+          <code>New web tab</code>, <code>Open file…</code>, and, while the session runs,
+          <code>New terminal</code> and <code>Listening ports</code>. That lists the ports the
+          session's own programs listen on, like a dev server it or you started in its terminal tab,
+          each shown as <code>localhost:5173</code>. Hover one to see the program; click it to open
+          the page in a web tab. With none, the menu says <code>No listening ports</code>, and
+          <code>Could not read listening ports</code> when Koloft cannot tell. Every agent gets the
+          same. On a <a href="../remote/#localhost">remote folder</a>, the list and the page both
+          come from that machine.
         </p>
         <p>
           A sign-in popup (what a page opens when you click "Continue with Google", say) opens as a
@@ -350,6 +372,12 @@
           <li>
             In a <a href="../remote/">remote folder</a> the shell runs on the other machine, and
             those commands use that machine's own login.
+          </li>
+          <li>
+            In any Koloft terminal, this shell or an agent's own tab, <kbd>⌘←</kbd> jumps to the
+            start of the line you are typing and <kbd>⌘→</kbd> to its end, and <kbd>⌘⌫</kbd>
+            deletes what you typed on that line before the cursor (in zsh, the whole line). While an
+            input method is still making a word, these keys are left to it.
           </li>
         </ul>
 

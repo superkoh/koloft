@@ -30,6 +30,7 @@ export interface FileTabHostProps {
   scrollTop?: number
   shown: boolean
   editing: boolean
+  readingForEdit: boolean
   editFocus: number
   editText?: string
   editUnsaved: boolean
@@ -60,6 +61,7 @@ export const FileTabHost = memo(function FileTabHost({
   scrollTop,
   shown,
   editing,
+  readingForEdit,
   editFocus,
   editText,
   editUnsaved,
@@ -84,6 +86,8 @@ export const FileTabHost = memo(function FileTabHost({
     <div className="wb-host" style={{ visibility: shown ? undefined : 'hidden' }}>
       {editing ? (
         <EditPane ownerTab={ownerTab} tabId={tabId} focusNonce={editFocus} onSaved={onSaved} />
+      ) : readingForEdit ? (
+        <div className="wb-edit-pane" />
       ) : (
         <ArtifactPane
           tabId={tabId}

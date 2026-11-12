@@ -180,12 +180,14 @@ const machineTreeIo: TreeIo = {
 async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {
   if (spec.worktree) seedRepo(repo)
   const argv: string[][] = []
+  const aboveItsTools: boolean[] = []
   const tabDirs = path.join(userData, 'tabs')
   const sessions = new CodexSessions(path.join(home, 'sessions.json'), {
     pty: {
       nextId: () => TAB,
-      create: (args: { argv: string[] }) => {
+      create: (args: { argv: string[]; aboveItsTools?: boolean }) => {
         argv.push(args.argv)
+        aboveItsTools.push(!!args.aboveItsTools)
         return { id: TAB }
       },
       kill: () => {},
@@ -232,7 +234,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     const options = codex.transports[codex.transports.length - 1]
     const said = options.sessionEnv?.KOLOFT_CODEX_SAID
     return [
-      JSON.stringify({ argv, options }),
+      JSON.stringify({ argv, aboveItsTools, options }),
       said && fs.existsSync(said) ? fs.readFileSync(said, 'utf8') : '',
       filesUnder(tabDirs),
       ownFile('codex-home/config.toml')
@@ -418,6 +420,19 @@ it('tells a Claude Code tab on this Mac to wrap every frame in synchronized outp
   const remote = await claudeTab(`ssh://${MACHINE}${repo}`, {})
   expect(remote).not.toContain('CLAUDE_CODE_FORCE_SYNC_OUTPUT')
   expect(remote).not.toContain('CLAUDE_CODE_DECSTBM')
+})
+
+it('starts the agent program above its tools wherever that program runs on this Mac — Claude Code here, and the Codex screen of a tab here or over SSH — and never the ssh that carries a tab to another machine', async () => {
+  const lift = '/usr/sbin/taskpolicy'
+  expect(await claudeTab(repo, {})).toContain(`exec ${lift} -a claude`)
+  expect(await claudeTab(`ssh://${MACHINE}${repo}`, {})).not.toContain(lift)
+  const codexHere = await codexTab(repo, {})
+  expect(codexHere).toContain('"aboveItsTools":[true]')
+  expect(codexHere).not.toContain(lift)
+  const codexThere = await codexTab(`ssh://${MACHINE}${repo}`, {})
+  expect(codexThere).toContain('"aboveItsTools":[false]')
+  expect(codexThere).toContain(`clear; exec '${lift}' '-a' '/fixture/codex'`)
+  expect(codexThere.split(lift)).toHaveLength(2)
 })
 
 it("hands a Claude Code tab on this Mac the koloft-docs plugin with agent tools on and off, and Koloft's plugin only with them on", async () => {

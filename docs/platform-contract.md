@@ -3230,6 +3230,33 @@ server unless a line says so.
 - Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
   Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
   tab.
+- **`taskpolicy -a <program>` puts the program above the ones it starts.** `ps -M` showed
+  the main thread of `/usr/sbin/taskpolicy -a /bin/sh -c '/bin/sleep 3 & /bin/sleep 3 &
+  wait'` at priority 46 and both `sleep` children at 31; without `-a` all three were at
+  31. `taskpolicy` replaces itself with the program: the pid it was started with is the
+  program's, and `ps -o comm=` names the program. It ran without sudo. Only the main
+  thread moves: of the 11 threads of a `node` started that way 1 read 46 and 10 read
+  31, and of the 33 of `codex app-server --stdio` 2 read 46 and 31 read 31.
+- **A program it cannot find ends it with exit code 66**: `taskpolicy -a
+  no-such-program` printed `taskpolicy: posix_spawn: No such file or directory`, where a
+  shell's own `exec` of a missing command ends with 127.
+- **`-a` works only at launch.** `taskpolicy -a -p <pid>` on a running `/bin/sleep`
+  exited 0 and left it at 31. A program started with `-a` went 46 → 4 under `taskpolicy
+  -b -p <pid>` and back to 46 under `-B -p`; nothing moved it to 31.
+- **A real agent started that way keeps the step, and what it starts does not get
+  it.** Claude Code 2.1.322 started as `taskpolicy -a <claude>` in a python pty (a fake
+  Messages API on localhost, a throwaway `CLAUDE_CONFIG_DIR`): its main thread read 46,
+  the zsh of its Bash tool and the python that zsh ran read 31, and a `claude -p` that
+  python started read 31. Codex 0.166.0's TUI started the same way read 46.
+- All three measured 2026-11-11 on the same Mac (macOS 27.0, Darwin 27.0.0), by python
+  scripts run from a Koloft Claude Code tab, one run each. Inferred, not checked: an
+  agent whose command is a launcher that starts the real program as a child — the npm
+  `codex` before 0.166.0 (CODEX§5) — has only the launcher lifted. Not run: the real
+  `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
+  lowers a `-a` program while its app is not frontmost or the screen is locked.
+
+Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
+program on this Mac through `taskpolicy -a` (ADR-0042).
 
 ## §60 Electron: is someone at the Mac
 
@@ -3286,10 +3313,20 @@ call twice on one home, the second time over the link the first one made.
   that way differs from its own echo on the typed line.
 - Measured 2026-10-28 in the `debian:bookworm` Docker image: fish 3.6.0, zsh 5.9, the
   image's bash, `fakecli` a `/bin/sh` script printing `$A`.
+- **zsh's `exec name` runs a function or a `hash` entry called `name`; a program that
+  starts `name` itself never does.** With `claude() { …; command claude --from-function
+  "$@"; }` in `.zshrc`, `zsh -i -c 'exec claude --resume x'` ran the function, and `exec
+  /usr/sbin/taskpolicy -a claude --resume x` ran the `claude` on `PATH` with `--resume x`
+  alone; with `hash claude=/bin/echo` the first ran `/bin/echo`, the second the `claude`
+  on `PATH`. An alias `claude="claude --from-alias"` was used by neither. bash ran the
+  `claude` on `PATH` in all six. Measured 2026-11-11, this Mac's `/bin/zsh` and
+  `/bin/bash`, a scratch `ZDOTDIR`; fish not run.
 
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
-Antigravity sign-in into the user's login shell with an account's environment, and
-`MARK_OUTPUT_START` in `src/main/signInOutput.ts`.
+Antigravity sign-in into the user's login shell with an account's environment,
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaude` in
+`src/main/host/localHost.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
+no longer runs a zsh function or `hash` entry named `claude`.
 
 ## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
 

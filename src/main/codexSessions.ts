@@ -52,6 +52,7 @@ import {
   CODEX_ASKS_AND_WAITS,
   developerInstructions,
   hookOverrides,
+  EVERY_KEY_SHOWS_AT_ONCE,
   launchChoiceArgs,
   machineTrustedFolderFlags,
   NO_UPDATE_NOTICE_AT_START,
@@ -107,6 +108,7 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
+import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
 import { browserControlEnv } from './browserControlEnv'
@@ -1004,6 +1006,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(builtInStatusLine ? ['-c', STATUS_LINE_CONFIG] : []),
         '-c',
         NO_UPDATE_NOTICE_AT_START,
+        '-c',
+        EVERY_KEY_SHOWS_AT_ONCE,
         ...(opts.resumeSessionId ? [] : launchFlags),
         ...launchChoiceArgs(opts)
       ]
@@ -1015,7 +1019,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
             executable: '/bin/sh',
             argv: [
               '-c',
-              this.machineLaunchLine(machine, tabId, [binary, ...argv], {
+              this.machineLaunchLine(machine, tabId, aboveItsTools([binary, ...argv]), {
                 version: (await this.availability()).version ?? '',
                 cwd: barePath(cwd),
                 trust: trustedOnMachine,
@@ -1027,7 +1031,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
               })
             ]
           }
-        : { cwd, executable: binary, argv }
+        : { cwd, executable: binary, argv, aboveItsTools: true }
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'codex',

@@ -3393,3 +3393,54 @@ the machine. That a click on `doc 1` then opens the link in a Koloft Codex tab i
 inferred, not checked: the click in a built Koloft was not driven for Codex; it goes
 through the one terminal link handler every tab shares, which AGY§27 drove.
 
+## 36. The TUI holds fast keys back to tell a paste from typing (`disable_paste_burst`)
+
+How established: 2026-11-11, codex-cli 0.166.0 (this Mac's standalone install) and
+0.161.0 (the `@openai/codex@0.161.0-darwin-arm64` npm package), the launch Koloft's tabs
+use (`codex --remote unix://<sock> -C <dir>`) in a python pty at 120×40 with Koloft's
+`TERM`, `COLORTERM` and `TERM_PROGRAM`, on a Node WebSocket relay in front of `codex
+app-server --stdio` that logged every frame the TUI sent; a throwaway `HOME` and
+`CODEX_HOME` holding a fake API key and a `config.toml` that points the model at a fake
+Responses server on localhost; the screen read through `pyte`. Each case ran once without
+and once with `-c disable_paste_burst=true` on the TUI's command line, in a fresh TUI.
+
+- **The key is in both binaries** (`strings`: 18 hits in 0.161.0, 20 in 0.166.0), so
+  Koloft's minimum version takes it. A key the TUI does not know, `-c
+  koloft_made_up_key=true`, stopped nothing on 0.166.0: the TUI started and ran
+  `/status`.
+- **With it on, what Koloft and its terminal write is taken exactly as before.** The
+  same `turn/start` text, to the character, went out in every one of these, on both
+  versions unless a case names one:
+  - a slash command, `/status` then CR 0.3 s later, and `/status`, Esc, CR (0.166.0
+    only) — it ran, nothing was sent to the model;
+  - 300 characters typed as 128-character writes 0.3 s apart, then CR;
+  - three lines in one unmarked write (LF between them), then CR (0.166.0 only);
+  - 1,148 characters in one unmarked write, then CR (0.166.0 only);
+  - a bracketed paste of 8 lines: still unsent 5 s later, sent whole by the next CR;
+  - a bracketed paste of 1,817 characters: the composer still showed `[Pasted Content
+    1817 chars]`, and text typed after it went with it as one message;
+  - a bracketed paste followed by two raw LFs and a typed note (Koloft's ✎ comment);
+  - Chinese text in two unmarked writes, as an input method commits it, then CR;
+  - a lone LF between two typed words (Koloft's Shift+Enter) — a new line, not a send;
+  - Left, Left and Backspace in typed text (0.166.0 only);
+  - `@docs/plan.md ` and then a typed request (the Files tab's "mention", 0.166.0 only).
+- **Two writes are taken differently, and neither is one Koloft makes.** `first`, CR,
+  `second` in one unmarked write: without the key the CR became a line break and nothing
+  was sent; with it `first` was sent at once and `second` stayed in the composer. Text
+  and its CR in one write (`hello there` CR): without the key it stayed in the composer
+  unsent (§25's "a line typed before the TUI starts"); with it, it was sent. Koloft
+  always writes a text and its CR 0.3 s apart (`typeKeys`), its terminal wraps a paste in
+  the bracketed-paste marks, and Shift+Enter is an LF.
+
+- **A typed key shows about 22 ms sooner with it.** 0.166.0, 60 letters 100 ms apart,
+  the time from the write to the letter in the composer, median / 99th percentile in ms,
+  two rounds: 25.3 / 27.6 and 25.8 / 38.2 without the key, 3.1 / 4.6 and 2.9 / 10.5
+  with it. With 12 busy python processes started beside the TUI: 50.1 / 108.0 and 31.2 /
+  92.8 without, 19.6 / 79.9 and 10.7 / 73.0 with, and 4.4 / 72.7 and 4.4 / 13.8 with the
+  key and the TUI started through `taskpolicy -a` (PLATFORM§59); `taskpolicy -a` alone
+  gave 26.8 / 66.0 and 26.0 / 52.8. Other work ran on the same Mac meanwhile (load
+  average 4–8 before the 12 processes), one run per cell.
+
+Koloft dependents: `EVERY_KEY_SHOWS_AT_ONCE` in `src/main/codexLaunchConfig.ts`, passed
+to the TUI of every Codex tab; a remote tab's TUI runs on the Mac too (§16).
+

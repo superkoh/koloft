@@ -125,6 +125,38 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
     }
   })
 
+  test('a word that matches a long history lists the first batch of sessions, and ↓ past the last one or scrolling to the end brings in the rest', async ({
+    env
+  }) => {
+    const SESSIONS = 120
+    const FIRST_BATCH = 50
+    for (let i = 0; i < SESSIONS; i++) seedJsonl(env, env.workspaces.a, { summary: `needle ${i}` })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openPalette(app, page)
+      await page.keyboard.type('needle')
+      await expect(paletteRows(page)).toHaveCount(FIRST_BATCH)
+
+      for (let i = 0; i < FIRST_BATCH + 5; i++) await page.keyboard.press('ArrowDown')
+      await expect(hotRow(page)).toContainText(/^needle \d+/)
+      await expect(paletteRows(page)).toHaveCount(2 * FIRST_BATCH)
+
+      const list = palette(page).locator('.pal-results')
+      await expect
+        .poll(async () => {
+          await list.evaluate((el) => {
+            el.scrollTop = el.scrollHeight
+          })
+          return paletteRows(page).count()
+        })
+        .toBe(SESSIONS)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Koloft feature is found by a keyword in any language, even inside a sentence, and its row opens Settings on its own page; ⏎ before ↓ still asks AI', async ({
     env
   }) => {
