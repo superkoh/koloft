@@ -745,7 +745,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await snap(page, 'T-OB-12')
       await assist.locator('button', { hasText: 'Not now' }).click()
       await expect(assist).toHaveCount(0)
-      expect(settingsOnDisk(env).assist).toEqual({})
+      expect(settingsOnDisk(env).assist).toBeNull()
     } finally {
       await quitAndClose(app)
     }

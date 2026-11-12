@@ -1267,7 +1267,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       for (const shot of oneShots) {
         expect(shot.argv[0].startsWith(`--gemini_dir=${shots}${path.sep}agy-`)).toBe(true)
         expect(shot.argv.slice(1, 2)).toEqual(['-p'])
-        expect(shot.argv.slice(3)).toEqual(['--output-format', 'json'])
+        expect(shot.argv.slice(3)).toEqual([
+          '--output-format',
+          'json',
+          '--model',
+          'gemini-3.8-flash',
+          '--effort',
+          'low'
+        ])
         expect(shot.env.GEMINI_API_KEY).toBe(true)
       }
       expect(oneShots.some((c) => c.argv[2].includes(PROMPT))).toBe(true)
