@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useEffect, useState, type JSX, type Ref } from 'react'
 import { IconChevronDown, IconChevronUp, IconCopy, IconNotes } from '../icons'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
@@ -13,6 +13,7 @@ export interface NotesIslandProps {
   focusNonce: number
   onToggleFold: () => void
   onReturnFocus: () => void
+  ref?: Ref<HTMLDivElement>
 }
 
 function emptyNoteLine(butlersNote: boolean, butler: string, agentTools: boolean): string {
@@ -27,7 +28,8 @@ export function NotesIsland({
   folded,
   focusNonce,
   onToggleFold,
-  onReturnFocus
+  onReturnFocus,
+  ref
 }: NotesIslandProps): JSX.Element | null {
   const [path, setPath] = useState<{ ws: string; file: string } | null>(null)
   const [body, setBody] = useState<{ ws: string; failure: string | null } | null>(null)
@@ -93,7 +95,7 @@ export function NotesIsland({
   const file = path && path.ws === wsPath ? path.file : null
 
   return (
-    <div className="island isl-dock isl-notes" style={folded ? undefined : { height }}>
+    <div ref={ref} className="island isl-dock isl-notes" style={folded ? undefined : { height }}>
       <div className="wb-bar">
         <span className="wb-title" title={file ?? wsPath}>
           <span className="ic">
