@@ -1937,7 +1937,7 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   const listed = readModelList(backend).catch(() => undefined)
   modelLists.set(backend, { at: Date.now(), listed })
   void listed.then((models) => {
-    if (!models?.length) modelLists.delete(backend)
+    if (!models?.length && modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
   })
   return listed
 }

@@ -31,6 +31,7 @@ import { AGENT_SHIM_WAITS_MS } from '../../src/main/agentShim'
 import type {
   BackendId,
   CreateTabOptions,
+  CronEffort,
   QueuedLaunch,
   SessionInfo,
   SessionRow,
@@ -604,6 +605,34 @@ describe('koloft session new: the starter picks the model and effort', () => {
       (await verb(['new', '--model', 'luna', '--effort', 'low', '--', 'go'], from('me'))).exit
     ).toBe(0)
     expect(launched[0]).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
+  })
+
+  it('takes an Antigravity id that names its own effort, and says the list could not be read, not that the account lacks the model, when it could not', async () => {
+    const listed = [{ id: 'gemini-4-argon', efforts: ['low', 'medium', 'high'] as CronEffort[] }]
+    const has = harness([session('me', 'agy')], {}, [], { pickFacts: { fableLeft: true, listed } })
+    await has.verb(
+      ['new', '--model', 'gemini-4-argon-high', '--effort', 'high', '--', 'go'],
+      from('me')
+    )
+    expect(has.launched[0]).toMatchObject({ model: 'gemini-4-argon', effort: 'high' })
+    const unread = harness([session('me', 'agy')], {}, [], { pickFacts: { fableLeft: true } })
+    const reply = await unread.verb(
+      ['new', '--model', 'carbon', '--effort', 'high', '--', 'go'],
+      from('me')
+    )
+    expect(reply.text).toContain("Koloft could not read this account's models")
+    expect(reply.text).not.toContain('has no carbon')
+  })
+
+  it('refuses another agent’s family name, so a Claude session cannot start Claude on astra', async () => {
+    const { verb, launched } = harness([session('me', 'claude')])
+    const reply = await verb(
+      ['new', '--model', 'astra', '--effort', 'high', '--', 'go'],
+      from('me')
+    )
+    expect(reply.exit).toBe(EXIT_USAGE)
+    expect(reply.text).toContain("astra is one of Codex's models")
+    expect(launched).toEqual([])
   })
 
   it('asks a Muse session, which has no model names to pick from, only for its effort', async () => {

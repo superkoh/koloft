@@ -202,8 +202,14 @@ export class AccountPicker {
 
   fableLeft(): boolean {
     const nowSec = Math.floor(this.deps.now() / 1000)
-    const snaps = this.eligible('oauth').flatMap((a) => this.snapshotFor(a) ?? [])
-    return snaps.length === 0 || snaps.some((s) => fableFree(s, nowSec))
+    const subs = this.eligible('oauth')
+    return (
+      subs.length === 0 ||
+      subs.some((a) => {
+        const snap = this.snapshotFor(a)
+        return !snap || fableFree(snap, nowSec)
+      })
+    )
   }
 
   private roundRobin(accounts: AccountMeta[]): AccountMeta {

@@ -39,6 +39,9 @@ const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }
 export const pickFlags = (pick: Pick): string =>
   `${pick.model ? `--model ${pick.model} ` : ''}--effort ${pick.effort}`
 
+export const tierModelOf = (backend: BackendId, model: string | undefined): boolean =>
+  TASK_TIERS.some((tier) => TIER_PICKS[backend][tier].model === model)
+
 export const tierPicksOf = (backend: BackendId): string =>
   TASK_TIERS.map((tier) => `${tier}: ${pickFlags(TIER_PICKS[backend][tier])}`).join('; ')
 
@@ -128,8 +131,13 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
         }
       : { ok: true, pick: asked }
   if (backend === 'muse' || !asked.model) return { ok: true, pick: asked }
+  const read = !!facts.listed?.length
   const listed = facts.listed?.length ? facts.listed : lastKnown(backend)
-  const wanted = asked.model
+  // AGY§21
+  const namesItsEffort = `-${asked.effort}`
+  const wanted = asked.model.endsWith(namesItsEffort)
+    ? asked.model.slice(0, -namesItsEffort.length)
+    : asked.model
   const exact = listed.find((m) => m.id === wanted)
   const found = exact ?? newestOf(wanted, listed)
   const stand = TIER_PICKS[backend].normal.model
@@ -147,6 +155,12 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
   return {
     ok: true,
     pick: { model: model.id, effort: asked.effort },
-    ...(found ? {} : { note: `This account has no ${wanted} model, so it runs on ${model.id}.` })
+    ...(found
+      ? {}
+      : {
+          note: read
+            ? `This account has no ${wanted} model, so it runs on ${model.id}.`
+            : `Koloft could not read this account's models, so it runs on ${model.id}.`
+        })
   }
 }

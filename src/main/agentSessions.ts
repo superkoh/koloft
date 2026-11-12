@@ -12,7 +12,7 @@ import {
   type WorktreeInfo
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
-import { resolvePick, tierPicksOf, type PickFacts } from '@shared/sessionPicks'
+import { resolvePick, tierModelOf, tierPicksOf, type PickFacts } from '@shared/sessionPicks'
 import {
   BUTLER_SAYS_OPENING,
   DISCORD_PREFIX,
@@ -517,7 +517,9 @@ function modelAndEffortRefusal(backend: BackendId, args: NewSessionArgs): string
   const modelNeeded = needsModel(backend)
   if ((modelNeeded && !args.model) || !args.effort)
     return `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${PICK_FOR_THE_TASK} ${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}.`
-  const owner = SESSION_BACKENDS.find((b) => b !== backend && namedModel(b, args.model))
+  const owner = SESSION_BACKENDS.find(
+    (b) => b !== backend && (namedModel(b, args.model) || tierModelOf(b, args.model))
+  )
   return owner
     ? `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models. ${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}.`
     : null
@@ -1386,20 +1388,21 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const backend = parsed.value.backend ?? caller.session.backendId
       const unpicked = modelAndEffortRefusal(backend, parsed.value)
-      if (unpicked || !parsed.value.effort) return refused(unpicked ?? '', EXIT_USAGE)
-      const resolved = resolvePick(
-        backend,
-        { model: parsed.value.model, effort: parsed.value.effort },
-        await d.pickFacts(backend)
-      )
-      if (!resolved.ok) return refused(`koloft session new: ${resolved.error}`, EXIT_USAGE)
-      const picked = { ...parsed.value, ...resolved.pick }
+      const { model, effort } = parsed.value
+      if (unpicked || !effort)
+        return refused(unpicked ?? 'koloft session new: --effort is missing.', EXIT_USAGE)
       const where = parsed.value.workspace
       const start = async (
         workspace: string,
         conductorTab?: string,
         helperRole?: string
       ): Promise<AgentReply> => {
+        const resolved = d.turnedOff(backend)
+          ? undefined
+          : resolvePick(backend, { model, effort }, await d.pickFacts(backend))
+        if (resolved && !resolved.ok)
+          return refused(`koloft session new: ${resolved.error}`, EXIT_USAGE)
+        const picked = { ...parsed.value, ...resolved?.pick }
         const ownerWords = await ownerWordsOf(caller.session)
         const reply = await startSibling(
           d,
@@ -1412,7 +1415,7 @@ export function sessionVerb(d: SessionVerbDeps): {
           (tab) => replyOwed.set(tab, { owner: caller.session.sessionId }),
           helperRole
         )
-        return resolved.note && reply.exit === 0
+        return resolved?.note && reply.exit === 0
           ? { ...reply, text: `${reply.text} ${resolved.note}` }
           : reply
       }

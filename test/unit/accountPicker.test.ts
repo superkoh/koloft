@@ -105,7 +105,7 @@ describe('U4 · selection + banner', () => {
 })
 
 describe('U4 · whether any account can still run fable', () => {
-  it('yes before any account was probed, yes while one holds allowance, no once every probed account has none or has spent it', async () => {
+  it('yes while an account is still unprobed or holds allowance, no once every account was probed and has none or has spent it', async () => {
     const h = makeHarness([meta({ name: 'burned' }), meta({ name: 'plain' })])
     expect(h.picker.fableLeft()).toBe(true)
     h.setProbe('burned', { ok: true, usage: usage({ uoi: 0.99, soi: 'allowed', hasOi: true }) })
