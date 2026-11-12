@@ -947,13 +947,17 @@ export class SshHost implements Host {
   osOpen(): void {}
 
   // ADR-0044
-  endTmuxSession(tmuxName: string): Promise<string | undefined> {
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined> {
     const renamingTo = this.renamesOnTheWire.get(tmuxName)
     const namesItMayHave = renamingTo ? [tmuxName, renamingTo] : [tmuxName]
     const killedIds = namesItMayHave.flatMap((name) => sessionIdOfTmux(name) ?? [])
-    const kill = this.deps.run(killSessionCmd(tmuxName, renamingTo)).then((r) => {
+    const kill = this.deps.run(killSessionCmd(tmuxName, renamingTo, tabId)).then((r) => {
       for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
-      if (!sshLinkBroke(r)) return undefined
+      if (!sshLinkBroke(r)) {
+        const killedOnTheMachine = sessionIdOfTmux(r.stdout.toString().trim())
+        if (killedOnTheMachine) this.killedSessions.add(killedOnTheMachine)
+        return undefined
+      }
       for (const id of killedIds) this.killedSessions.delete(id)
       return problemOf(r)
     })
@@ -1091,9 +1095,10 @@ export class SshHost implements Host {
     ensureControlDir(this.deps.claude.controlDir)
   }
 
-  // PLATFORM§35
+  // PLATFORM§35 ADR-0044
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
     await this.deps.claude.firstHeartbeatDone()
+    await Promise.all(this.kills.values())
     const mode = launchMode({
       alive: this.deps.claude.alive(),
       killed: this.killedSessions,

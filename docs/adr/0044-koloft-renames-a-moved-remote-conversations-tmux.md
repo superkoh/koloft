@@ -19,6 +19,13 @@ can find no session, which tmux reports like a session already gone, and the con
 would keep running on the machine with no tab and no error. The kill does not wait for the
 rename and pick a name from its result: a rename can take on the machine and still come
 back failed (the link drops, the name file cannot be written).
+A `/clear`'s rename is the hook's, on the machine, and reaches the tracker only one mirror
+pull later, so a tab's kill then tries, last, the name in the tab's `tabs/<tab>.tmux`, never
+an empty one (tmux would pick a session itself: another tab's), and prints the name it
+ended. Koloft books that session as ended by it, and a launch on the machine waits for
+every kill still on the wire before choosing between attach and start. Reading the file
+in a separate ssh call first (as Muse and Antigravity tabs do) costs one more round trip
+and leaves the books naming the old session while the kill runs.
 **Rejected**: renaming in the hook script on any report whose session id differs from the
 tmux name (as the Antigravity hook does). A fork's Stop would then rename the parent tab's
 tmux session to the fork's id whenever the fork's hook runs with the tab's `TMUX` (not

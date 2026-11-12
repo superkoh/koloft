@@ -922,25 +922,57 @@ describe('ending a session that runs on the machine', () => {
     expect(pickAccount).toHaveBeenCalled()
   })
 
+  const tmuxWhoseOnlySessionIs = (name: string): string => {
+    const bin = path.join(home, '.local', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    const killed = path.join(home, 'killed-sessions')
+    fs.writeFileSync(
+      path.join(bin, 'tmux'),
+      `#!/bin/sh
+[ "$3" = kill-session ] || exit 0
+[ "$5" = ${name} ] || [ -z "$5" ] || { echo "can't find session: $5" >&2; exit 1; }
+printf '%s\\n' ${name} >> ${JSON.stringify(killed)}
+`,
+      { mode: 0o755 }
+    )
+    return killed
+  }
+
+  const tabNameFile = (tabId: string, name: string): void => {
+    fs.mkdirSync(path.join(home, '.koloft', 'tabs'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.koloft', 'tabs', `${tabId}.tmux`), name)
+  }
+
+  // ADR-0044
+  describe("while a /clear's rename by the hook on the machine has not yet come back to Koloft", () => {
+    const cleared = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+
+    it("a kill under the name before the /clear ends the session under the name in the tab's name file, and a launch of the cleared conversation sent right after starts afresh", async () => {
+      const killed = tmuxWhoseOnlySessionIs(`k-${cleared}`)
+      tabNameFile('pty-1', `k-${cleared}`)
+      const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+      const host = machine(runOnMachine, { alive: () => new Set([cleared]), pickAccount })
+
+      const kill = host.endTmuxSession(tmux, 'pty-1')
+      await host.launch({ root: keyed('/w'), resumeSessionId: cleared })
+      expect(await kill).toBeUndefined()
+      expect(fs.readFileSync(killed, 'utf8')).toBe(`k-${cleared}\n`)
+      expect(pickAccount).toHaveBeenCalled()
+    })
+
+    it("an empty name file, caught mid-write, never sends tmux a kill with no name, which would end a session tmux picks: another tab's", async () => {
+      const killed = tmuxWhoseOnlySessionIs(`k-${cleared}`)
+      tabNameFile('pty-1', '')
+
+      expect(await machine().endTmuxSession(tmux, 'pty-1')).toBeUndefined()
+      expect(fs.existsSync(killed)).toBe(false)
+    })
+  })
+
   // ADR-0044
   describe('while the rename that follows a moved conversation is still on its way to the machine', () => {
     const moved = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const renamed = `k-${moved}`
-    const tmuxWhoseOnlySessionIs = (name: string): string => {
-      const bin = path.join(home, '.local', 'bin')
-      fs.mkdirSync(bin, { recursive: true })
-      const killed = path.join(home, 'killed-sessions')
-      fs.writeFileSync(
-        path.join(bin, 'tmux'),
-        `#!/bin/sh
-[ "$3" = kill-session ] || exit 0
-[ "$5" = ${name} ] || { echo "can't find session: $5" >&2; exit 1; }
-printf '%s\\n' "$5" >> ${JSON.stringify(killed)}
-`,
-        { mode: 0o755 }
-      )
-      return killed
-    }
 
     it.each([
       ['has not reached the machine yet', tmux],
