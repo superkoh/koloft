@@ -61,6 +61,15 @@ export function modelAndEffortChoices(backend: BackendId): string {
     : models.map((m) => `--model ${m.id} with --effort ${efforts(m.id)}`).join('; ')
 }
 
+export function effortNotTaken(
+  backend: BackendId,
+  model: string | undefined,
+  effort: CronEffort | undefined
+): string | null {
+  if (!effort || takenEffort(backend, model, effort)) return null
+  return `${model ?? 'the default model'} does not take --effort ${effort}; it takes ${effortsFor(backend, model).join(', ')}.`
+}
+
 export function takenEffort(
   backend: BackendId,
   model: string | undefined,

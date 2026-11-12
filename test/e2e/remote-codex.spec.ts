@@ -30,7 +30,8 @@ import {
   termIds,
   TWO_LINE_PROMPT,
   worktreeDialog,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 import {
   addRemoteWorkspace,
@@ -300,7 +301,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await runIn(
         page,
         centerTerm(page),
-        `/koloft session new --model gpt-6-luna --effort low --backend codex --workspace ${remoteKey(env)} --name kid -- hello`
+        `/koloft session new ${picksFor('codex')} --backend codex --workspace ${remoteKey(env)} --name kid -- hello`
       )
       const row = wsRows(page, REMOTE_WS_NAME)
       await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 3)', {

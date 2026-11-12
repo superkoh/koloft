@@ -11,13 +11,7 @@ import {
   type WorkspaceRows,
   type WorktreeInfo
 } from '@shared/types'
-import {
-  effortsFor,
-  modelAndEffortChoices,
-  namedModel,
-  needsModel,
-  takenEffort
-} from '@shared/cronModels'
+import { effortNotTaken, modelAndEffortChoices, namedModel, needsModel } from '@shared/cronModels'
 import {
   BUTLER_SAYS_OPENING,
   DISCORD_PREFIX,
@@ -524,8 +518,8 @@ function modelAndEffortRefusal(backend: BackendId, args: NewSessionArgs): string
   const owner = SESSION_BACKENDS.find((b) => b !== backend && namedModel(b, args.model))
   if (owner)
     return `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models; ${aSessionOf(backend)} takes ${modelAndEffortChoices(backend)}.`
-  if (takenEffort(backend, args.model, args.effort)) return null
-  return `koloft session new: ${args.model} does not take --effort ${args.effort}; it takes ${effortsFor(backend, args.model).join(', ')}.`
+  const notTaken = effortNotTaken(backend, args.model, args.effort)
+  return notTaken && `koloft session new: ${notTaken}`
 }
 
 function starterNamer(
@@ -595,8 +589,6 @@ async function startSibling(
     )
   if (!namedAtLaunch(backend, isRemoteKey(workspace)) && args.name !== undefined)
     return refused(hasNoName(backend), EXIT_USAGE)
-  const unpicked = modelAndEffortRefusal(backend, args)
-  if (unpicked) return refused(unpicked, EXIT_USAGE)
   const launched = await launchSibling(
     d,
     names,
@@ -1391,6 +1383,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
+      const unpicked = modelAndEffortRefusal(
+        parsed.value.backend ?? caller.session.backendId,
+        parsed.value
+      )
+      if (unpicked) return refused(unpicked, EXIT_USAGE)
       const where = parsed.value.workspace
       const start = async (
         workspace: string,

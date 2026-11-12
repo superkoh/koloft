@@ -1128,7 +1128,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await addMachine(page, 'kt-key', 'kuser')
         fake.say(
           DISCORD_OWNER,
-          `/koloft session new --model sonnet --effort low --workspace ${remoteKeyFor('kt-key', 'kuser')} -- warm up`
+          `/koloft session new ${picksFor('claude')} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- warm up`
         )
         const room = (): FakeThread | undefined =>
           fake.threads.find((t) => t.parent_id === DISCORD_CHANNEL)
@@ -1238,7 +1238,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await runIn(
         page,
         centerTerm(page),
-        '/koloft session new --model sonnet --effort low -w lab-child -- "/answer hi"'
+        `/koloft session new ${picksFor('claude')} -w lab-child -- "/answer hi"`
       )
       await expect(centerTerm(page)).toContainText('koloft exit=0', {
         timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
@@ -1279,7 +1279,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await runIn(
         page,
         centerTerm(page),
-        `/koloft session new --model sonnet --effort low --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+        `/koloft session new ${picksFor('claude')} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
       )
       await expect(centerTerm(page)).toContainText('koloft exit=0', { timeout: 30_000 })
       await expect(wsRows(page, 'kt-key')).toHaveCount(1, { timeout: 90_000 })

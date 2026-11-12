@@ -303,7 +303,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
         .poll(() => fake.threadMembers)
         .toContainEqual({ threadId: room.id, userId: OWNER.id })
 
-      fake.say(OWNER, '/koloft session new --model sonnet --effort low --name Tidy -- sort it')
+      fake.say(OWNER, `/koloft session new ${picksFor('claude')} --name Tidy -- sort it`)
       await expect
         .poll(
           async () =>
@@ -325,7 +325,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     env
   }) => {
     await withTheButler(env, async (page, fake) => {
-      fake.say(OWNER, '/koloft session new --model sonnet --effort low --workspace ws-a -- warm up')
+      fake.say(OWNER, `/koloft session new ${picksFor('claude')} --workspace ws-a -- warm up`)
       const room = await theRoom(fake)
       await sessionOf(page, 'claude')
       fake.say(OWNER, 'only for the butler')

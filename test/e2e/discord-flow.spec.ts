@@ -772,7 +772,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     try {
       fake.say(
         OWNER,
-        '/koloft session new --model sonnet --effort low --name Tidy -- Sort out the to-dos.'
+        `/koloft session new ${picksFor('claude')} --name Tidy -- Sort out the to-dos.`
       )
       const helper = async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
@@ -828,7 +828,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     try {
       fake.say(
         OWNER,
-        '/koloft session new --model gpt-6-luna --effort low --backend codex --name Tidy -- please ask me'
+        `/koloft session new ${picksFor('codex')} --backend codex --name Tidy -- please ask me`
       )
       const card = "❓ **Tidy (Alfred's helper)** is waiting for you.\nWhich colour do you prefer?"
       await expect

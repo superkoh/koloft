@@ -3,7 +3,7 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { terminalText, waitBooted, waitConductorStarted } from './helpers/p1'
+import { terminalText, waitBooted, waitConductorStarted, picksFor } from './helpers/p1'
 import {
   OPEN_A_FORM,
   startFakeDiscord,
@@ -67,10 +67,7 @@ async function roomOfANewSession(
   fake: FakeDiscord,
   workspace: string
 ): Promise<{ room: FakeThread; session: SessionInfo }> {
-  fake.say(
-    OWNER,
-    `/koloft session new --model sonnet --effort low --workspace ${workspace} -- warm up`
-  )
+  fake.say(OWNER, `/koloft session new ${picksFor('claude')} --workspace ${workspace} -- warm up`)
   await expect
     .poll(() => fake.threads.filter((t) => t.parent_id === CHANNEL).length, {
       timeout: STARTS_AND_ANSWERS_MS

@@ -47,7 +47,8 @@ import {
   waitForAllCalls,
   waitForCalls,
   waitStartupTurnOver,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
 import { openSettings } from './helpers/extensions'
@@ -775,7 +776,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(
         await koloftSays(
           page,
-          'session new --model sonnet --effort low --workspace ws-b -- "Check the docs."'
+          `session new ${picksFor('claude')} --workspace ws-b -- "Check the docs."`
         )
       ).toContain('Started')
       await expect(wsRows(page, 'ws-b')).toHaveCount(1, { timeout: 30_000 })
@@ -819,7 +820,7 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
 
       const started = await koloftRun(
         page,
-        'session new --model gpt-6-luna --effort low --workspace ws-b --backend codex -- "Check the docs."'
+        `session new ${picksFor('codex')} --workspace ws-b --backend codex -- "Check the docs."`
       )
       expect(started.exit).toBe(0)
       await expect
