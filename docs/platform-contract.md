@@ -483,6 +483,15 @@ method. A recheck adds its date, version and command to the bullet.
   - `disableHtmlFullscreenWindowResize` changes nothing, set on the guest or on the
     host window.
   - A hidden window that is allowed to follow the guest shows itself.
+- **Taking a `<webview>` out of the DOM ends its renderer process and gives its memory
+  back; one that is only `visibility: hidden` keeps both.** With three hidden-or-shown
+  pages on three origins (a title and about 100 KB of text each), `app.getAppMetrics()`
+  listed 7 processes, each page's own at 29 MB by `footprint <pid>`. Three seconds after
+  two of the elements were removed it listed 5, those two pids gone, and the sum of
+  every process's footprint went from 518 to 356 MB (the GPU process alone from 232 to
+  112 MB). Mounting the element again loads the address from the network (the
+  fixture server counted a second request). Measured once, 2026-11-11, Electron 43.8.6, macOS 27.0, in the e2e suite's hidden
+  window.
 
 ## §9 `<webview>`: visibility, frames and capture
 

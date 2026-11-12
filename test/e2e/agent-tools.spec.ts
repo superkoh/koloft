@@ -23,6 +23,8 @@ import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/git
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
+import { guestByUrl, guestContents, newWebTab, typeInAddressBar } from './helpers/browser'
+import { startEchoServer } from './helpers/fixtureServer'
 import {
   agyConversationOnceFirstTurnEnded,
   centerTerm,
@@ -40,6 +42,7 @@ import {
   readCalls,
   runIn,
   startSessionIn,
+  switchToRow,
   termIds,
   waitBooted,
   waitForCalls,
@@ -56,6 +59,7 @@ const ASSIST_GIVES_UP_WELL_AFTER_THE_SLOW_TITLE_MS = 40_000
 const FIRST_SIBLING_STILL_STARTING_MS = 30_000
 const A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS = 7_000
 const A_REMOVAL_STILL_DELETING_WHEN_CLOSE_ASKS_MS = 3_000
+const MEMORY_READ_TWICE_PLUS_ROOM_MS = 40_000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 
@@ -245,6 +249,40 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         ).toHaveCount(1)
       } finally {
         await quitAndClose(app)
+      }
+    })
+
+  for (const backend of SESSION_BACKENDS.filter((b) => b !== 'claude'))
+    test(`a web page in the Workbench of a ${backend} session that is not on screen goes when memory turns critical, and loads again by itself when the owner comes back to that session`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { hintsOff: true })
+      const server = await startEchoServer()
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+        await newWebTab(page)
+        await typeInAddressBar(page, server.page('/kept', '<!doctype html><title>kept</title>'))
+        await guestByUrl(app, '/kept')
+        const stillThere = async (): Promise<boolean> =>
+          (await guestContents(app)).some((g) => g.url.includes('/kept'))
+
+        await startSessionIn(page, 'ws-b', { method: 'Claude' })
+        expect(await stillThere()).toBe(true)
+        fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure: 4 }))
+        await expect.poll(stillThere, { timeout: MEMORY_READ_TWICE_PLUS_ROOM_MS }).toBe(false)
+        expect(server.count('/kept')).toBe(1)
+
+        await switchToRow(page, wsRows(page, 'ws-a').first())
+        await expect.poll(() => server.count('/kept'), { timeout: 30_000 }).toBe(2)
+        await expect.poll(stillThere).toBe(true)
+      } finally {
+        await quitAndClose(app)
+        await server.close()
       }
     })
 

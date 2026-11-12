@@ -452,6 +452,7 @@ import type {
   BrowserDownload,
   BrowserJsDialog,
   BrowserCdpAttached,
+  BrowserPagesInUse,
   BrowserCdpOp,
   BrowserCdpOpResult,
   ScreenAnswer,
@@ -3363,6 +3364,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     now: Date.now,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
     heldDirs: () => remoteHookMirrors(),
     freeOnMachine: freeOnMachine,
     isRemote: (tabId) => !!machineOfTab(tabId),
@@ -4530,6 +4532,7 @@ function setupBrowserAuth(): void {
     if (!prompt) return
     event.preventDefault()
     const id = crypto.randomUUID()
+    pageOfTheModalUp = contents.id
     pendingAuth.set(id, callback)
     const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
     sendToRenderer(CH.browser.authChallenge, payload)
@@ -4537,18 +4540,20 @@ function setupBrowserAuth(): void {
 }
 
 const pendingJsDialogs = new Map<string, (answer: BrowserDialogAnswer) => void>()
+let pageOfTheModalUp = 0
+const pagesGivenMicOrCamera = new Set<number>()
 
 function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
-const signInWindows = new WeakSet<BaseWindow>()
+const pageOfSignInWindow = new Map<BaseWindow, WebContents>()
 
 function keptBySignInWindow(
   from: BaseWindow | undefined,
   key: 'closes-it' | 'acts-on-its-page' | 'acts-on-the-app'
 ): boolean {
-  if (!from || !signInWindows.has(from)) return false
+  if (!from || !pageOfSignInWindow.has(from)) return false
   if (key === 'closes-it') from.close()
   if (key !== 'acts-on-the-app') return true
   if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
@@ -4567,7 +4572,7 @@ function onEveryWebPage(watch: (contents: WebContents) => void): void {
 }
 
 function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
-  signInWindows.add(win)
+  pageOfSignInWindow.set(win, opener)
   popup.on('input-event', handsOnKoloft)
   const host = mainWindow
   const close = (): void => {
@@ -4576,6 +4581,7 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
   opener.once('destroyed', close)
   host?.once('closed', close)
   win.once('closed', () => {
+    pageOfSignInWindow.delete(win)
     opener.removeListener('destroyed', close)
     host?.removeListener('closed', close)
   })
@@ -4843,6 +4849,41 @@ function isOverlayGuest(contents: WebContents): boolean {
   return overlayGuests.has(contents.id)
 }
 
+function pagesInUse(): BrowserPagesInUse {
+  const guestIds = new Set<number>([
+    ...pagesDownloading.values(),
+    ...pagesGivenMicOrCamera,
+    ...[...pendingPermissions.values()].map((p) => p.guestId)
+  ])
+  if (modalSlotTaken()) guestIds.add(pageOfTheModalUp)
+  const owners = new Set<string>()
+  const keepOwnerOf = (page: WebContents): void => {
+    guestIds.add(page.id)
+    const owner = guestOwners.get(page)
+    if (owner) owners.add(owner)
+  }
+  for (const opener of pageOfSignInWindow.values()) if (!opener.isDestroyed()) keepOwnerOf(opener)
+  for (const ask of secretAsks?.views() ?? []) {
+    if (ask.kind === 'sudo') continue
+    owners.add(ask.tabId)
+    if (ask.kind === 'page') guestIds.add(ask.guestId)
+  }
+  for (const page of webContents.getAllWebContents()) {
+    if (page.isDestroyed() || !isWorkbenchPage(page)) continue
+    const owner = guestOwners.get(page)
+    if (owner && relayAttached(owner)) owners.add(owner)
+    if (
+      page.isLoading() ||
+      page.debugger.isAttached() ||
+      page.isDevToolsOpened() ||
+      page.isCurrentlyAudible() ||
+      guestDrivenFromAnotherMachine(page.id)
+    )
+      guestIds.add(page.id)
+  }
+  return { guestIds: [...guestIds], owners: [...owners] }
+}
+
 // PLATFORM§6
 const pendingOverlayOpens: BrowserOverlayOpen[] = []
 let overlayListening = false
@@ -5067,6 +5108,7 @@ async function isDirectory(target: string): Promise<boolean> {
 const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
+const pagesDownloading = new Map<string, number>()
 
 const downloadSources = new Map<string, string>()
 
@@ -5202,12 +5244,22 @@ function setupBrowserPartition(): void {
       return
     }
     if (decision.kind === 'ask') {
+      const answer = (granted: boolean): void => {
+        if (granted && permission === 'media' && !pagesGivenMicOrCamera.has(_wc.id)) {
+          const id = _wc.id
+          const forget = (): void => void pagesGivenMicOrCamera.delete(id)
+          pagesGivenMicOrCamera.add(id)
+          _wc.once('destroyed', forget)
+          _wc.once('did-navigate', forget)
+        }
+        callback(granted)
+      }
       const remembered = rememberedPermission(decision.origin, decision.permission)
       if (remembered !== undefined) {
-        callback(remembered)
+        answer(remembered)
         return
       }
-      askUserForPermission(_wc.id, decision.origin, decision.permission, callback)
+      askUserForPermission(_wc.id, decision.origin, decision.permission, answer)
       return
     }
     // PLATFORM§11
@@ -5291,7 +5343,7 @@ function setupBrowserPartition(): void {
     if (!headers || !isAttachmentResponse(headers)) return callback({})
     callback({ responseHeaders: { ...headers, 'x-content-type-options': ['nosniff'] } })
   })
-  ses.on('will-download', (_e, item) => {
+  ses.on('will-download', (_e, item, contents) => {
     const dir = process.env.KOLOFT_DOWNLOAD_DIR || app.getPath('downloads')
     try {
       fs.mkdirSync(dir, { recursive: true })
@@ -5311,6 +5363,7 @@ function setupBrowserPartition(): void {
     const id = retryId ?? crypto.randomUUID()
     if (retryId) downloadSources.delete(retryId)
     liveDownloads.set(id, item)
+    if (contents) pagesDownloading.set(id, contents.id)
     sendToRenderer(CH.browser.downloadEvent, {
       id,
       kind: 'started',
@@ -5327,6 +5380,7 @@ function setupBrowserPartition(): void {
     })
     item.once('done', (_ev, state) => {
       liveDownloads.delete(id)
+      pagesDownloading.delete(id)
       if (state === 'completed') downloadSources.set(id, url)
       sendToRenderer(CH.browser.downloadEvent, {
         id,
@@ -7319,6 +7373,7 @@ function registerIpc(): void {
       const gone = (): void => {
         pendingJsDialogs.delete(id)
       }
+      pageOfTheModalUp = e.sender.id
       pendingJsDialogs.set(id, (answer) => {
         e.sender.removeListener('destroyed', gone)
         e.returnValue = answer

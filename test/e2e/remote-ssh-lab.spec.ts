@@ -40,7 +40,14 @@ import { rowsWithSub } from './helpers/blackbox'
 import { startFakeDiscord, type FakePost, type FakeThread } from './helpers/fakeDiscord'
 import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
+import {
+  BROWSER,
+  addressValue,
+  guestByUrl,
+  guestContents,
+  newWebTab,
+  typeInAddressBar
+} from './helpers/browser'
 import {
   hostResolverSwitch,
   portFreeOnTheMac,
@@ -1050,6 +1057,47 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     } finally {
       macServer.close()
     }
+  })
+
+  test('E-SSH-50: a localhost page of a session on the machine, let go of while memory was critical and that session was not on screen, loads from the machine again, through a new forward, when the owner comes back to the session', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const free = await portFreeOnTheMac()
+    await withLab(env, async ({ app, page, lab }) => {
+      servePageOnTarget(lab, free, '<title>kept</title><body>page on the machine</body>')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const remoteRow = wsRows(page, 'kt-key').first()
+      const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+      await page.evaluate(
+        ([t, l]) => window.api.terminal.write(t, l + '\r'),
+        [remoteTab, `/open http://localhost:${free}/`]
+      )
+      await expect
+        .poll(() => terminalText(page, remoteTab), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        .toContain(`opened http://localhost:${free}/`)
+      await switchToRow(page, remoteRow)
+      const shown = await guestByUrl(app, `localhost:${free}/`)
+      await expect(shown.locator('body')).toHaveText('page on the machine')
+
+      await startSessionIn(page, 'ws-a')
+      fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure: 4 }))
+      await expect
+        .poll(() => fetchOnTheMacOnAFreshConnection(free), { timeout: 60_000 })
+        .toBe('refused')
+      expect((await guestContents(app)).some((g) => g.url.includes(`localhost:${free}/`))).toBe(
+        false
+      )
+
+      await switchToRow(page, remoteRow)
+      const back = await guestByUrl(app, `localhost:${free}/`, {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(back.locator('body')).toHaveText('page on the machine')
+    })
   })
 
   // ADR-0046
