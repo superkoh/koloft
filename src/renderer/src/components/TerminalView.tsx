@@ -60,6 +60,7 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   const [loadedFamily, setLoadedFamily] = useState(() =>
     monoFontsLoaded(fontFamily) ? fontFamily : null
   )
+  const [builtAfterFontsLoad] = useState(loadedFamily === null)
   useEffect(() => {
     let live = true
     void loadMonoFonts(fontFamily).then(() => {
@@ -72,12 +73,13 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   return loadedFamily === null ? (
     <div className="term" />
   ) : (
-    <LiveTerminal {...props} fontFamily={loadedFamily} />
+    <LiveTerminal {...props} fontFamily={loadedFamily} builtAfterFontsLoad={builtAfterFontsLoad} />
   )
 }
 
 function LiveTerminal({
   fontFamily,
+  builtAfterFontsLoad,
   id,
   active,
   onUserInput,
@@ -88,7 +90,7 @@ function LiveTerminal({
   onOutput,
   maxCols,
   copiesToClipboard = false
-}: TerminalViewProps & { fontFamily: string }): JSX.Element {
+}: TerminalViewProps & { fontFamily: string; builtAfterFontsLoad: boolean }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -97,6 +99,7 @@ function LiveTerminal({
   const onOutputRef = useRef(onOutput)
   onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
+  const firstShowAfterFontsLoad = useRef(builtAfterFontsLoad)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const repaintedRef = useRef(false)
@@ -512,6 +515,8 @@ function LiveTerminal({
 
   // PLATFORM§21
   useEffect(() => {
+    const builtJustNow = firstShowAfterFontsLoad.current
+    firstShowAfterFontsLoad.current = false
     if (active) {
       showWebgl(id)
       let inner = 0
@@ -519,8 +524,10 @@ function LiveTerminal({
         const term = termRef.current
         if (!term) return
         safeFit()
+        const keyboardMovedWhileFontsLoaded =
+          builtJustNow && document.activeElement !== document.body
         try {
-          if (autoFocus) term.focus()
+          if (autoFocus && !keyboardMovedWhileFontsLoaded) term.focus()
         } catch {}
         inner = requestAnimationFrame(() => {
           forceRepaint()
