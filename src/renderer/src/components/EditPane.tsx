@@ -34,6 +34,7 @@ import {
   subscribeDirty
 } from '../editRegistry'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
+import type { EditOpenResult } from '@shared/types'
 import '../editPane.css'
 import '../artifactPane.css'
 
@@ -58,6 +59,27 @@ export function editRefusal(failure: string): string {
   return 'Cannot edit this file — ' + (reasonSentence(null, failure) || 'unknown reason')
 }
 
+const readsInFlight = new Map<string, Promise<EditOpenResult>>()
+
+export function startEditRead(path: string): Promise<EditOpenResult> {
+  const read: Promise<EditOpenResult> = window.api.edit.open(path).then(
+    (result) => {
+      if (readsInFlight.get(path) === read) readsInFlight.delete(path)
+      return result
+    },
+    (err: unknown) => {
+      if (readsInFlight.get(path) === read) readsInFlight.delete(path)
+      throw err
+    }
+  )
+  readsInFlight.set(path, read)
+  return read
+}
+
+function joinOrStartEditRead(path: string): Promise<EditOpenResult> {
+  return readsInFlight.get(path) ?? startEditRead(path)
+}
+
 export interface EditProbe {
   ready: boolean
   can: boolean
@@ -73,8 +95,7 @@ export function useEditProbe(path: string | null): EditProbe {
     }
     let cancelled = false
     setProbe({ ready: false, can: false, title: '' })
-    window.api.edit
-      .open(path)
+    joinOrStartEditRead(path)
       .then((r) => {
         if (cancelled) return
         setProbe({
