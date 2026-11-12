@@ -9,6 +9,7 @@ import {
   rowTitled,
   setNextSessionTitle,
   startSessionIn,
+  switchToRow,
   termIds,
   writeTo
 } from './helpers/p1'
@@ -24,6 +25,20 @@ async function expectDrawnByWebGL(page: Page, tabId: string): Promise<void> {
     return !!t?._core?._renderService?._renderer?.value?._charAtlas
   }, tabId)
   expect(hasGlyphAtlas, `${tabId} draws through the WebGL glyph atlas`).toBe(true)
+}
+
+async function idsDrawnByWebGL(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const terms = (window as unknown as { __koloftTerms: Record<string, unknown> }).__koloftTerms
+    return Object.keys(terms).filter(
+      (id) =>
+        !!(
+          terms[id] as {
+            _core?: { _renderService?: { _renderer?: { value?: { _charAtlas?: unknown } } } }
+          }
+        )._core?._renderService?._renderer?.value?._charAtlas
+    )
+  })
 }
 
 async function pixelsOf(page: Page, tabId: string): Promise<Buffer> {
@@ -209,6 +224,59 @@ test.describe('the WebGL terminal users run (the suite otherwise draws with the 
       expect(row).toBeGreaterThanOrEqual(0)
       const after = await settledPictureOf(page, s1)
       expect(after.rowInk[row]).toBeGreaterThan(2 * before.rowInk[row])
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('a session terminal left behind three newer ones loses its WebGL context instead of waiting for garbage collection, and shown again draws the same picture through WebGL', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithWebGL(env)
+    try {
+      setNextSessionTitle(env, 'S1')
+      await startSessionIn(page, 'ws-a')
+      const [s1] = await termIds(page)
+      await expectDrawnByWebGL(page, s1)
+      await writeTo(page, s1, '\r\nwebgl-before-handing-back 中文\r\n')
+      const before = await settledPictureOf(page, s1)
+      await page.evaluate((id) => {
+        const t = (window as unknown as { __koloftTerms: Record<string, unknown> }).__koloftTerms[
+          id
+        ] as { _core: { _renderService: { _renderer: { value: { _gl: unknown } } } } }
+        ;(window as unknown as { __firstContextOfS1: unknown }).__firstContextOfS1 =
+          t._core._renderService._renderer.value._gl
+      }, s1)
+
+      let beforeTheNewest: string[] = []
+      for (const title of ['S2', 'S3', 'S4']) {
+        beforeTheNewest = await termIds(page)
+        setNextSessionTitle(env, title)
+        await startSessionIn(page, 'ws-a')
+      }
+      const s4 = (await termIds(page)).find((id) => !beforeTheNewest.includes(id))!
+      await expect.poll(() => idsDrawnByWebGL(page)).not.toContain(s1)
+      expect(
+        await page.evaluate(() =>
+          (
+            window as unknown as { __firstContextOfS1: WebGL2RenderingContext }
+          ).__firstContextOfS1.isContextLost()
+        )
+      ).toBe(true)
+      expect(await idsDrawnByWebGL(page)).toHaveLength(3)
+      await writeTo(page, s4, '\r\nwebgl-stays-while-others-come-and-go 中文\r\n')
+      const s4Before = await settledPictureOf(page, s4)
+
+      await switchToRow(page, rowTitled(page, 'S1'))
+      await expectDrawnByWebGL(page, s1)
+      await expectSamePictureAgain(page, s1, before)
+      await expect.poll(async () => (await idsDrawnByWebGL(page)).length).toBe(3)
+      await expectSamePictureAgain(page, s1, before)
+
+      await switchToRow(page, rowTitled(page, 'S4'))
+      await expectDrawnByWebGL(page, s4)
+      await expectSamePictureAgain(page, s4, s4Before)
     } finally {
       await app.close().catch(() => {})
     }

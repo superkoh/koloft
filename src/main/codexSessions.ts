@@ -52,6 +52,7 @@ import {
   CODEX_ASKS_AND_WAITS,
   developerInstructions,
   hookOverrides,
+  EVERY_KEY_SHOWS_AT_ONCE,
   launchChoiceArgs,
   machineTrustedFolderFlags,
   NO_UPDATE_NOTICE_AT_START,
@@ -107,6 +108,7 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
+import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
 import { browserControlEnv } from './browserControlEnv'
@@ -242,6 +244,7 @@ export interface CodexMachineDeps {
   keyed(machine: string, onMachine: string): string
   mirrorDir(machine: string): string
   nextPull(machine: string): Promise<void>
+  loginPath(machine: string): Promise<string>
 }
 
 function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promise<string[]> {
@@ -650,10 +653,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   private async readMachineHistory(machine: string): Promise<void> {
     const startedAt = Date.now()
-    const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
-    if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
-    const threads =
-      home.code === 0 ? await this.withMachineRpc(machine, (rpc) => listThreads(rpc)) : []
+    const list = (): Promise<ListedThread[]> =>
+      this.withMachineRpc(machine, (rpc) => listThreads(rpc))
+    // CODEX§16
+    const onOpenLine = this.machineSideServers.isOpen(machine)
+      ? await list().catch(() => undefined)
+      : undefined
+    let threads = onOpenLine ?? []
+    let homeThere = threads.length > 0
+    if (!homeThere) {
+      const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
+      if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
+      homeThere = home.code === 0
+      threads = homeThere ? (onOpenLine ?? (await list())) : []
+    }
     if (this.shuttingDown) return
     const others = (key: string): boolean => hostOfKey(key) !== machine
     this.history = new Map([...this.history].filter(([key]) => others(key)))
@@ -662,7 +675,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.history.set(key, entry)
       if (archived) this.archivedIds.add(key)
     }
-    if (home.code === 0) this.listedAt.set(machine, startedAt)
+    if (homeThere) this.listedAt.set(machine, startedAt)
     else this.listedAt.delete(machine)
     this.changed()
   }
@@ -945,16 +958,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
-      const [hookTrust, , trustedThere, ownConfig] = machine
+      const [hookTrust, , trustedThere, ownConfig, loginPath] = machine
         ? await Promise.all([
             this.koloftHookStates(hooks),
             this.sweptOnce(machine),
             askMachineTrust &&
               (trustedOnMachine.includes(barePath(cwd)) ||
                 this.machineTrusts(parseRemoteKey(cwd)!)),
-            askMachineTrust ? this.ownConfig(home) : {}
+            askMachineTrust ? this.ownConfig(home) : {},
+            this.machineDeps()
+              .loginPath(machine)
+              .catch(() => '')
           ])
-        : [[], undefined, false, {}]
+        : [[], undefined, false, {}, '']
       // CODEX§16
       const launchFlags = trustedThere
         ? machineTrustedFolderFlags(ownConfig)
@@ -1004,6 +1020,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(builtInStatusLine ? ['-c', STATUS_LINE_CONFIG] : []),
         '-c',
         NO_UPDATE_NOTICE_AT_START,
+        '-c',
+        EVERY_KEY_SHOWS_AT_ONCE,
         ...(opts.resumeSessionId ? [] : launchFlags),
         ...launchChoiceArgs(opts)
       ]
@@ -1015,7 +1033,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
             executable: '/bin/sh',
             argv: [
               '-c',
-              this.machineLaunchLine(machine, tabId, [binary, ...argv], {
+              this.machineLaunchLine(machine, tabId, aboveItsTools([binary, ...argv]), {
                 version: (await this.availability()).version ?? '',
                 cwd: barePath(cwd),
                 trust: trustedOnMachine,
@@ -1023,11 +1041,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
                 config: serverConfig,
                 hookTrust: hookTrust.map((h) => ({ key: h.key, hash: h.currentHash })),
                 ownerWords: opts.ownerWords,
-                agentTools: !!agent
+                agentTools: !!agent,
+                loginPath
               })
             ]
           }
-        : { cwd, executable: binary, argv }
+        : { cwd, executable: binary, argv, aboveItsTools: true }
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'codex',

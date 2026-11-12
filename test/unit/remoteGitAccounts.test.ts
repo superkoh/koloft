@@ -531,6 +531,28 @@ describe("Koloft's own gh run on a machine", () => {
       vi.useRealTimers()
     }
   })
+
+  it('keeps a login PATH ask that failed for a minute only, so a machine out of reach for a moment is asked again soon', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const answers = [
+        { code: 255, stdout: '', stderr: 'ssh: connect timed out' },
+        { code: 0, stdout: '\nlogin-path /opt/tools/bin\n', stderr: '' }
+      ]
+      let asks = 0
+      const machine = new GitMachineAccounts(async () => answers[asks++])
+      expect(await machine.loginPath('box')).toBe('')
+      expect(await machine.loginPath('box')).toBe('')
+      expect(asks).toBe(1)
+      vi.setSystemTime(Date.now() + 61_000)
+      expect(await machine.loginPath('box')).toBe('/opt/tools/bin')
+      vi.setSystemTime(Date.now() + 61_000)
+      expect(await machine.loginPath('box')).toBe('/opt/tools/bin')
+      expect(asks).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('the Mac-side folder a machine sign-in passes through', () => {

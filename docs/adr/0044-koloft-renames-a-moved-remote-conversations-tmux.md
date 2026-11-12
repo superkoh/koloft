@@ -11,7 +11,14 @@ parent tab's hook settings and a new id, the same shape as a moved conversation'
 `tmux rename-session` over ssh to `k-<new id>` and writes the new name to
 `~/.koloft/tabs/<tab>.tmux`, which the tab's reconnect reads; the tab's tmux name in the
 tracker changes only once that rename came back clean, and only if no other rename (a
-`/clear`'s, from the hook) changed it meanwhile.
+`/clear`'s, from the hook) changed it meanwhile. Until then the tracker still holds the old
+name, so a kill of that name asked for while the rename is on the wire (the tab closed in
+that moment) is one command that tries the old name and, finding no session, the new one:
+the session has one of the two whenever the rename lands. Sent for the old name alone it
+can find no session, which tmux reports like a session already gone, and the conversation
+would keep running on the machine with no tab and no error. The kill does not wait for the
+rename and pick a name from its result: a rename can take on the machine and still come
+back failed (the link drops, the name file cannot be written).
 **Rejected**: renaming in the hook script on any report whose session id differs from the
 tmux name (as the Antigravity hook does). A fork's Stop would then rename the parent tab's
 tmux session to the fork's id whenever the fork's hook runs with the tab's `TMUX` (not

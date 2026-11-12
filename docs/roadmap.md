@@ -50,8 +50,7 @@ when it works. That is what "judged against" means.
 
 - **Jump to the turn behind a hunk** — from a hunk in the Changes view to the agent turn
   that produced it.
-- **Many sessions, one change** — warn when two sessions write the same file (#221); each
-  session's listening ports, opened in the Workbench browser (#224).
+- **Many sessions, one change** — warn when two sessions write the same file (#221).
 - **Branching sessions** — fork a session from the sidebar (#219).
 - **Accounts** — pick or pin a custom-endpoint account for a session (#226).
 

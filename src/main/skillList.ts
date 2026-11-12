@@ -129,7 +129,12 @@ export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source,
         }
       }
     case 'agy':
-      return { project: { skills: [] }, home: { skills: [] } }
+      return {
+        project: {
+          skills: [ws('.agent', 'skills'), ws('.agents', 'skills'), ws('_agents', 'skills')]
+        },
+        home: { skills: [] }
+      }
   }
 }
 
@@ -137,7 +142,13 @@ function byName(a: SkillSuggestion, b: SkillSuggestion): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
 }
 
-function skillsIn(fs: SkillFs, roots: string[], prefix: string, source: Source): SkillSuggestion[] {
+function skillsIn(
+  fs: SkillFs,
+  roots: string[],
+  prefix: string,
+  source: Source,
+  asAgyReadsThem: boolean
+): SkillSuggestion[] {
   const out: SkillSuggestion[] = []
   for (const root of roots) {
     for (const dir of readdirSafe(fs, root)) {
@@ -147,9 +158,11 @@ function skillsIn(fs: SkillFs, roots: string[], prefix: string, source: Source):
       if (!isFileSafe(fs, file)) continue
       const text = readFileSafe(fs, file)
       const fm = text === null ? {} : frontMatter(text)
-      if (fm['user-invocable'] === 'false') continue
+      // AGY§31
+      if (asAgyReadsThem ? fm.name === undefined : fm['user-invocable'] === 'false') continue
+      const name = fm.name ?? dir
       out.push({
-        name: prefix + (fm.name ?? dir),
+        name: prefix + name,
         ...(fm.description ? { description: cut120(fm.description) } : {}),
         source
       })
@@ -181,14 +194,13 @@ export function listSkills(
   places: SkillPlaces
 ): SkillSuggestion[] {
   const prefix = SKILL_PREFIX[backend]
-  if (prefix === null) return []
   const folders = skillFolders(backend, places)
   const out: SkillSuggestion[] = []
   const seen = new Set<string>()
   for (const source of ['project', 'home'] as const) {
     const { skills, commands = [] } = folders[source]
     for (const s of [
-      ...skillsIn(fs, skills, prefix, source),
+      ...skillsIn(fs, skills, prefix, source, backend === 'agy'),
       ...commandsIn(fs, commands, prefix, source)
     ]) {
       if (seen.has(s.name)) continue

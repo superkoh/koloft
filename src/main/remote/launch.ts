@@ -378,9 +378,13 @@ export function resizeStandInCmd(tabId: string, cols: number, rows: number): str
   )
 }
 
-export function killSessionCmd(tmuxName: string): string {
-  assertSafeNames(tmuxName)
-  return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
+// ADR-0044
+export function killSessionCmd(tmuxName: string, nameIfARenameLandedFirst?: string): string {
+  const names = nameIfARenameLandedFirst ? [tmuxName, nameIfARenameLandedFirst] : [tmuxName]
+  assertSafeNames(...names)
+  return remoteShCommand(
+    names.map((name) => `tmux -L koloft kill-session -t ${name}`).join(' 2>/dev/null || ')
+  )
 }
 
 export function renameSessionCmd(tabId: string, from: string, to: string): string {

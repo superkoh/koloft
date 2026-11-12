@@ -12,7 +12,7 @@ import {
 import { storedBackend } from '../../src/main/backends/stored'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
-import type { MachineLogin } from '../../src/main/remote/codexMachine'
+import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../src/main/remote/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import {
@@ -157,6 +157,7 @@ function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
     keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
     mirrorDir: () => directory,
     nextPull: async () => {},
+    loginPath: async () => '',
     ...overrides
   }
 }
@@ -264,6 +265,12 @@ describe('CodexSessions', () => {
     const at = argv.indexOf('check_for_update_on_startup=false')
     expect(at).toBeGreaterThan(0)
     expect(argv[at - 1]).toBe('-c')
+  })
+
+  it('starts the Codex TUI with its hold on fast keys turned off, so each typed key shows at once', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv ?? []
+    expect(argv[argv.indexOf('disable_paste_burst=true') - 1]).toBe('-c')
   })
 
   it('replaces membership on native new while keeping the former history available', async () => {
@@ -422,6 +429,68 @@ describe('CodexSessions', () => {
     homeThere = false
     await sessions.refreshMachineHistory('box', true)
     expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+  })
+
+  // CODEX§16
+  it("a later listing of a remote machine asks its open Codex line alone while that line lists sessions, and checks the machine's Codex home again once it lists none", async () => {
+    let homeChecks = 0
+    let homeThere = true
+    deps.machine = fakeMachine({
+      run: async (_machine, command) => {
+        if (command === HAS_CODEX_HOME_CMD) homeChecks++
+        return { code: homeThere ? 0 : 1, stdout: '', stderr: '' }
+      }
+    })
+    const remoteRepo = keyedOn('box', '/srv/repo')!
+    const remembered = codexSessionKey(B, 'box')
+    sessions.store.upsertMember({
+      id: B,
+      key: remembered,
+      workspacePath: remoteRepo,
+      cwd: remoteRepo,
+      title: 'Saved',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    const shown = () => sessions.rows(remoteRepo).map((row) => row.id)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [] : [{ id: A, cwd: '/srv/repo' }]
+    }))
+    await sessions.refreshMachineHistory('box', true)
+    expect(homeChecks).toBe(1)
+    expect(shown()).toEqual([])
+    await sessions.refreshMachineHistory('box', true)
+    expect(homeChecks).toBe(1)
+    expect(mocks.rpcOptions).toHaveLength(1)
+    expect(shown()).toEqual([])
+    homeThere = false
+    mocks.request.mockImplementation(async () => ({ data: [] }))
+    await sessions.refreshMachineHistory('box', true)
+    expect(homeChecks).toBe(2)
+    expect(shown()).toEqual([remembered])
+  })
+
+  // CODEX§16
+  it("a listing that fails on a remote machine's open Codex line is asked again once the machine's Codex home is seen there, and a machine out of reach is said to be so", async () => {
+    let linkUp = true
+    let homeChecks = 0
+    deps.machine = fakeMachine({
+      run: async (_machine, command) => {
+        if (command === HAS_CODEX_HOME_CMD) homeChecks++
+        return { code: linkUp ? 0 : 255, stdout: '', stderr: 'ssh: connect to host box: timed out' }
+      }
+    })
+    const threads = { data: [{ id: A, cwd: '/srv/repo' }] }
+    mocks.request.mockImplementation(async () => threads)
+    await sessions.refreshMachineHistory('box', true)
+    mocks.request.mockReset()
+    mocks.request.mockRejectedValueOnce(new Error('line stalled')).mockResolvedValue(threads)
+    await sessions.refreshMachineHistory('box', true)
+    expect(homeChecks).toBe(2)
+    expect(mocks.request).toHaveBeenCalledTimes(3)
+    linkUp = false
+    mocks.request.mockRejectedValue(new Error('line stalled'))
+    await expect(sessions.refreshMachineHistory('box', true)).rejects.toThrow('timed out')
   })
 
   it('offers the welcome one folder use per thread on this Mac, leaving out archived threads and a remote machine’s', async () => {

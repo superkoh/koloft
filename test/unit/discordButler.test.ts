@@ -324,6 +324,25 @@ describe('the butler', () => {
     expect(session.lastSessionKey).toBe(CODEX_KEY)
   })
 
+  // CC§3 CODEX§11
+  it('given a model and thinking, it resumes its conversation with them and remembers them; set back to the tool’s own, it starts a new conversation and says so, since the old one would keep what it was given', async () => {
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
+    transcripts.add(CLAUDE_KEY)
+    choice = { backend: 'claude', model: 'opus', effort: 'high' }
+    expect((await make().open()).ok).toBe(true)
+    expect(resumed).toEqual([CLAUDE_KEY])
+    expect(session.carried).toEqual({ model: 'opus', effort: 'high' })
+    expect(toasts).toEqual([])
+
+    choice = { backend: 'claude', model: 'opus' }
+    await opened(make())
+    expect(resumed).toEqual([CLAUDE_KEY])
+    expect(toasts).toEqual([
+      'Alfred goes back to Claude’s own model or thinking, so it starts a new conversation.'
+    ])
+    expect(session.carried).toEqual({ model: 'opus' })
+  })
+
   it('when the chosen backend cannot run, it starts on the other one and says why; with neither, nothing starts', async () => {
     choice = { backend: 'codex', because: 'Alfred runs on Codex this time: why.' }
     const c = make()

@@ -324,7 +324,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
     }) => {
       agent.install(env)
       seedSettings(env, {
-        assist: { on: true, backend },
+        assist: { backend },
         sessionMethods: {
           defaultBackend: 'claude',
           enabled: { claude: true, codex: true, muse: true, agy: true }

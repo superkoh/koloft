@@ -11,7 +11,12 @@ import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
 import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
-import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
+import {
+  disposeThenReturnGpuMemory,
+  forgetWebglThatLeftItsAtlasAsItWas,
+  registerWebglRepair,
+  unregisterWebglRepair
+} from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
 import { loadMonoFonts, monoFontsLoaded } from '../monoFonts'
 import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
@@ -267,9 +272,10 @@ function LiveTerminal({
         }
       }
       const detachWebgl = (): void => {
-        unregisterWebglRepair(id)
-        webglRef.current?.dispose()
+        forgetWebglThatLeftItsAtlasAsItWas(id)
+        const addon = webglRef.current
         webglRef.current = null
+        disposeThenReturnGpuMemory(addon, () => addon?.dispose())
       }
       enrollWebgl(id, attachWebgl, detachWebgl)
 
@@ -490,8 +496,9 @@ function LiveTerminal({
       dprCleanup?.()
       unregisterWebglRepair(id)
       releaseWebgl(id)
+      const addon = webglRef.current
       webglRef.current = null
-      term.dispose()
+      disposeThenReturnGpuMemory(addon, () => term.dispose())
     }
   }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
 

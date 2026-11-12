@@ -10,6 +10,7 @@ import type {
   BrowserPermissionAsk,
   BrowserPermissionRefusal,
   BrowserCdpAttached,
+  BrowserPagesInUse,
   BrowserCdpOp,
   BrowserJsDialog,
   BrowserOverlayOpen,
@@ -363,6 +364,11 @@ const api: KoloftApi = {
       const handler = (_e: unknown, a: BrowserCdpAttached): void => cb(a)
       ipcRenderer.on(CH.browser.cdpAttached, handler)
       return () => ipcRenderer.removeListener(CH.browser.cdpAttached, handler)
+    },
+    onMemoryCritical: (cb) => {
+      const handler = (_e: unknown, inUse: BrowserPagesInUse): void => cb(inUse)
+      ipcRenderer.on(CH.browser.memoryCritical, handler)
+      return () => ipcRenderer.removeListener(CH.browser.memoryCritical, handler)
     },
     certProceed: (url) => ipcRenderer.invoke(CH.browser.certProceed, url),
     clearData: () => ipcRenderer.invoke(CH.browser.clearData),

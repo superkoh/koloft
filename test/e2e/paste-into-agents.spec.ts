@@ -40,6 +40,7 @@ import {
 } from './helpers/env'
 import {
   FAILED_LOG,
+  FAILING_CHECK_PASTE_HEAD,
   ONE_FAILING_OF_FIVE,
   PLAN_REL,
   commentOnFirstHunk,
@@ -48,6 +49,7 @@ import {
   expectOnePromptFromTheComment,
   expectOnePromptFromThePassage,
   openInBrowse,
+  putCommentOnFirstHunkInSession,
   sendFailingChecks,
   showChanges,
   writePlan
@@ -229,6 +231,38 @@ for (const agent of AGENTS) {
         await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
         await sendFailingChecks(page)
         await expectOnePromptFromTheChecks(() => agent.prompts(env))
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    // MUSE§7 AGY§15
+    test(`failing checks sent while a ✎ comment and its note still wait in the ${agent.label} input box start on lines of their own, and one Enter sends both as one message`, async ({
+      env
+    }) => {
+      setupChangeFixture(env.workspaces.a).modifyTracked(1)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      installFakeGh(env, { checks: ONE_FAILING_OF_FIVE, failedLog: FAILED_LOG })
+      setGithubFixture(env, {
+        [env.workspaces.a]: { owner: 'acme', repo: 'widgets', branch: 'feature/login', pr: 265 }
+      })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgent(page, agent)
+        await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
+        await showChanges(page)
+
+        const note = `${agent.label} keep the old name.`
+        const head = await putCommentOnFirstHunkInSession(page, 'src/change-1.ts', note)
+        await sendFailingChecks(page)
+        const fromNote = (): string[] => agent.prompts(env).filter((p) => p.includes(note))
+        await expect.poll(fromNote, { timeout: 30_000 }).toHaveLength(1)
+        const [prompt] = fromNote()
+        expect(prompt.startsWith(head)).toBe(true)
+        expect(prompt).toContain(`${note}\n\n${FAILING_CHECK_PASTE_HEAD}`)
       } finally {
         await quitAndClose(app)
       }

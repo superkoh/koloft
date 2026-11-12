@@ -36,6 +36,19 @@ function sharedAtlasOf(addon: WebglAddon): SharedAtlas | undefined {
   return (addon as unknown as { _renderer?: { _charAtlas?: SharedAtlas } })._renderer?._charAtlas
 }
 
+// PLATFORM§20
+export function disposeThenReturnGpuMemory(addon: WebglAddon | null, dispose: () => void): void {
+  const gl = (addon as unknown as { _renderer?: { _gl?: WebGL2RenderingContext } } | null)
+    ?._renderer?._gl
+  try {
+    dispose()
+  } finally {
+    try {
+      gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    } catch {}
+  }
+}
+
 // PLATFORM§20 PLATFORM§23
 export function repairAllWebgl(): void {
   const clearedAtlases = new Set<SharedAtlas>()
@@ -72,10 +85,15 @@ export function registerWebglRepair(id: string, addon: WebglAddon, refresh: () =
 }
 
 // PLATFORM§23
-export function unregisterWebglRepair(id: string): void {
+export function forgetWebglThatLeftItsAtlasAsItWas(id: string): boolean {
   const e = live.get(id)
-  if (!e) return
+  if (!e) return false
   e.offMerge()
   live.delete(id)
-  scheduleWebglRepair()
+  return true
+}
+
+// PLATFORM§23
+export function unregisterWebglRepair(id: string): void {
+  if (forgetWebglThatLeftItsAtlasAsItWas(id)) scheduleWebglRepair()
 }

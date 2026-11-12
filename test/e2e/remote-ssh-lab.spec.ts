@@ -40,7 +40,14 @@ import { rowsWithSub } from './helpers/blackbox'
 import { startFakeDiscord, type FakePost, type FakeThread } from './helpers/fakeDiscord'
 import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
+import {
+  BROWSER,
+  addressValue,
+  guestByUrl,
+  guestContents,
+  newWebTab,
+  typeInAddressBar
+} from './helpers/browser'
 import {
   hostResolverSwitch,
   portFreeOnTheMac,
@@ -1052,13 +1059,54 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     }
   })
 
+  test('E-SSH-50: a localhost page of a session on the machine, let go of while memory was critical and that session was not on screen, loads from the machine again, through a new forward, when the owner comes back to the session', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const free = await portFreeOnTheMac()
+    await withLab(env, async ({ app, page, lab }) => {
+      servePageOnTarget(lab, free, '<title>kept</title><body>page on the machine</body>')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const remoteRow = wsRows(page, 'kt-key').first()
+      const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+      await page.evaluate(
+        ([t, l]) => window.api.terminal.write(t, l + '\r'),
+        [remoteTab, `/open http://localhost:${free}/`]
+      )
+      await expect
+        .poll(() => terminalText(page, remoteTab), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        .toContain(`opened http://localhost:${free}/`)
+      await switchToRow(page, remoteRow)
+      const shown = await guestByUrl(app, `localhost:${free}/`)
+      await expect(shown.locator('body')).toHaveText('page on the machine')
+
+      await startSessionIn(page, 'ws-a')
+      fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure: 4 }))
+      await expect
+        .poll(() => fetchOnTheMacOnAFreshConnection(free), { timeout: 60_000 })
+        .toBe('refused')
+      expect((await guestContents(app)).some((g) => g.url.includes(`localhost:${free}/`))).toBe(
+        false
+      )
+
+      await switchToRow(page, remoteRow)
+      const back = await guestByUrl(app, `localhost:${free}/`, {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(back.locator('body')).toHaveText('page on the machine')
+    })
+  })
+
   // ADR-0046
   test('E-SSH-46: while the owner is away, a localhost page that a session on a machine behind the jump host opens reaches that session’s Discord room as a picture of the machine’s page, not of the Mac server on the same port, through a forward on its ssh connection that goes once the picture is taken and its web tab is closed', async ({
     env
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      assist: { on: true, backend: 'claude' },
+      assist: { backend: 'claude' },
       discord: {
         userId: DISCORD_OWNER.id,
         userName: DISCORD_OWNER.username,
@@ -2116,6 +2164,39 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       (lab) => {
         installFakeCodexOnTarget(lab)
         installCurlOnTarget(lab)
+      }
+    )
+  })
+
+  // PLATFORM§33
+  test('E-SSH-51: a command a Codex session runs on a Linux machine finds a program that only the end of the user’s ~/.bashrc puts on PATH, as the user’s own terminal there does', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    await withLab(
+      env,
+      async ({ page }) => {
+        const tabId = await codexTabOnKtKey(page)
+        await ranInCodexTabAndExitedZero(
+          page,
+          tabId,
+          '/sh rc-only-tool',
+          /found through the rc file[\s\S]*sh exit=(\d+)[\s\S]*Codex done/,
+          ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
+        )
+      },
+      (lab) => {
+        installFakeCodexOnTarget(lab)
+        runOnTarget(
+          lab,
+          'kuser',
+          [
+            'mkdir rc-only-bin',
+            "printf '#!/bin/sh\\necho found through the rc file\\n' > rc-only-bin/rc-only-tool",
+            'chmod 755 rc-only-bin/rc-only-tool',
+            `printf '\\nexport PATH="$HOME/rc-only-bin:$PATH"\\n' >> .bashrc`
+          ].join(' && ')
+        )
       }
     )
   })

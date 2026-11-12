@@ -84,6 +84,7 @@ import {
 } from './openTabs'
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
+import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -92,12 +93,12 @@ import {
   identityOf,
   messagingOf,
   reachedBySendMessage,
-  preferredAssistBackend,
   effectiveBackend,
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
+import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -304,6 +305,7 @@ import {
 } from './cronRunner'
 import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
+import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -451,6 +453,7 @@ import type {
   BrowserDownload,
   BrowserJsDialog,
   BrowserCdpAttached,
+  BrowserPagesInUse,
   BrowserCdpOp,
   BrowserCdpOpResult,
   ScreenAnswer,
@@ -1572,6 +1575,21 @@ const picker = new AccountPicker(
   savedUsage
 )
 
+const savedHomeUsage = new SavedUsage<HomeUsage>(
+  path.join(app.getPath('userData'), 'home-usage-snapshots.json')
+)
+
+function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
+  return savedHomeUsage.get(viewKey(a.name, a.kind))
+}
+
+function pushHomeAccount(name: string, kind: SignInFolderKind): void {
+  const key = viewKey(name, kind)
+  if (findAccount(name, kind)?.status === 'ok')
+    saveHomeUsage(savedHomeUsage, key, usageViews.get(key), Date.now())
+  pushAccounts()
+}
+
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
     pickDir,
@@ -1771,7 +1789,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
   agy: () => agyOneShotTarget()
 }
 const assist = koloftAssist({
-  setting: () => loadSettings().assist,
+  picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
@@ -1791,16 +1809,19 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  const preferred = preferredAssistBackend(settings)
+  const order = assistBackendsFor('butler', settings)
+  const preferred = order[0]
   const inputs = {
     enabled: settings.sessionMethods.enabled,
     installed: await installedBackends(),
     accounts: listAccounts()
   }
-  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const choice = butlerStart(order, inputs, butlerNameNow())
   const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
-  return choice
+  if ('error' in choice) return choice
+  const { model, effort } = assistLaunchOn('butler', choice.backend, settings)
+  return { ...choice, ...(model && { model }), ...(effort && { effort }) }
 }
 
 function logWhyButlerIsNotOn(
@@ -2313,8 +2334,8 @@ const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
 const LOGIN_TIMED_OUT = 'Sign-in timed out'
 // CC§10
-const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
-const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
+const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -2422,7 +2443,10 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
     giveUp: installFirst
       ? giveUpLoginAfter(
           handle.id,
-          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          cronTestMs(
+            'KOLOFT_INSTALL_SILENCE_MS',
+            INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS
+          ),
           INSTALL_STALLED
         )
       : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
@@ -2561,6 +2585,7 @@ async function addAccount(
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  if (!signedIn) savedHomeUsage.delete(viewKey(name, kind))
   const acct = findAccount(name, kind)
   if (!acct) return
   const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
@@ -2569,7 +2594,7 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
   if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
 }
 
-const codexPicker = new HomeAccountPicker('codex-home')
+const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
 const MUSE_QUOTA_FOLDER = 'muse-quota'
 const museProbedAt = new Map<string, number>()
 
@@ -2619,7 +2644,7 @@ async function probeCodexAccount(name: string): Promise<void> {
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'codex-home')
 }
 
 async function codexUseReset(name: string): Promise<CodexResetOutcome> {
@@ -2661,6 +2686,7 @@ function setSignInFailure(f: SignInFailure | null): void {
 function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
+  savedHomeUsage.delete(viewKey(name, kind))
   picker.forget(kind, name)
   pushAccounts()
 }
@@ -2763,7 +2789,7 @@ async function signInToHome(
   return { ok: true, ...tab }
 }
 
-const musePicker = new HomeAccountPicker('muse-home')
+const musePicker = new HomeAccountPicker('muse-home', savedHomeUsageOf)
 const preparedMuseHomes = new Set<string>()
 
 // MUSE§2 MUSE§13
@@ -2827,7 +2853,7 @@ async function probeMuseAccount(name: string): Promise<void> {
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'muse-home')
 }
 
 let museProbeRound: Promise<void> | null = null
@@ -2843,7 +2869,7 @@ function probeMuseAccounts(): Promise<void> {
   return museProbeRound
 }
 
-const agyPicker = new HomeAccountPicker('agy-home')
+const agyPicker = new HomeAccountPicker('agy-home', savedHomeUsageOf)
 const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
@@ -2903,7 +2929,7 @@ async function probeAgyAccount(name: string): Promise<void> {
     const quota = await agyUsage(home)
     usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
   }
-  pushAccounts()
+  pushHomeAccount(name, 'agy-home')
 }
 
 async function agyBinary(): Promise<string | undefined> {
@@ -3209,6 +3235,12 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  const stalls = new StallWatchWhileFocused(
+    signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  )
+  const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
+  app.on('browser-window-focus', followFocus)
+  app.on('browser-window-blur', () => setImmediate(followFocus))
   presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
@@ -3339,6 +3371,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     now: Date.now,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
     heldDirs: () => remoteHookMirrors(),
     freeOnMachine: freeOnMachine,
     isRemote: (tabId) => !!machineOfTab(tabId),
@@ -3506,6 +3539,7 @@ app.whenReady().then(() => {
   })
 
   const userData = app.getPath('userData')
+  const droppedSessionsLog = signalLog(path.join(userData, 'dropped-sessions.log'))
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
@@ -3549,7 +3583,8 @@ app.whenReady().then(() => {
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
         keyed: pinnedKeyOn,
         mirrorDir: (host) => mirrorHookDir(userData, host),
-        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve(),
+        loginPath: (host) => gitAccounts?.machineLoginPath(host) ?? Promise.resolve('')
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
@@ -3751,14 +3786,7 @@ app.whenReady().then(() => {
           (identityOf(key).backendId !== 'claude' &&
             !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
-    memberDropped: (sessionId, why) => {
-      try {
-        fs.appendFileSync(
-          path.join(app.getPath('userData'), 'dropped-sessions.log'),
-          `${new Date().toISOString()} ${sessionId} ${why}\n`
-        )
-      } catch {}
-    }
+    memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   butler = new Butler({
     userData,
@@ -3786,7 +3814,9 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
+          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title,
+          model: l.model,
+          effort: l.effort
         },
         l.title
       ),
@@ -3798,7 +3828,9 @@ app.whenReady().then(() => {
         role: l.role,
         conductor: true,
         permission: ownersPermission(),
-        trustFolder: true
+        trustFolder: true,
+        model: l.model,
+        effort: l.effort
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
       const spawned: SpawnedTab = {
@@ -4393,6 +4425,7 @@ app.on('before-quit', (e) => {
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
+  savedHomeUsage.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   flushInbox()
@@ -4500,6 +4533,7 @@ function setupBrowserAuth(): void {
     if (!prompt) return
     event.preventDefault()
     const id = crypto.randomUUID()
+    pageOfTheModalUp = contents.id
     pendingAuth.set(id, callback)
     const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
     sendToRenderer(CH.browser.authChallenge, payload)
@@ -4507,18 +4541,20 @@ function setupBrowserAuth(): void {
 }
 
 const pendingJsDialogs = new Map<string, (answer: BrowserDialogAnswer) => void>()
+let pageOfTheModalUp = 0
+const pagesGivenMicOrCamera = new Set<number>()
 
 function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
-const signInWindows = new WeakSet<BaseWindow>()
+const pageOfSignInWindow = new Map<BaseWindow, WebContents>()
 
 function keptBySignInWindow(
   from: BaseWindow | undefined,
   key: 'closes-it' | 'acts-on-its-page' | 'acts-on-the-app'
 ): boolean {
-  if (!from || !signInWindows.has(from)) return false
+  if (!from || !pageOfSignInWindow.has(from)) return false
   if (key === 'closes-it') from.close()
   if (key !== 'acts-on-the-app') return true
   if (mainWindow && !mainWindow.isDestroyed()) showMainWindow(mainWindow)
@@ -4537,7 +4573,7 @@ function onEveryWebPage(watch: (contents: WebContents) => void): void {
 }
 
 function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
-  signInWindows.add(win)
+  pageOfSignInWindow.set(win, opener)
   popup.on('input-event', handsOnKoloft)
   const host = mainWindow
   const close = (): void => {
@@ -4546,6 +4582,7 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
   opener.once('destroyed', close)
   host?.once('closed', close)
   win.once('closed', () => {
+    pageOfSignInWindow.delete(win)
     opener.removeListener('destroyed', close)
     host?.removeListener('closed', close)
   })
@@ -4813,6 +4850,41 @@ function isOverlayGuest(contents: WebContents): boolean {
   return overlayGuests.has(contents.id)
 }
 
+function pagesInUse(): BrowserPagesInUse {
+  const guestIds = new Set<number>([
+    ...pagesDownloading.values(),
+    ...pagesGivenMicOrCamera,
+    ...[...pendingPermissions.values()].map((p) => p.guestId)
+  ])
+  if (modalSlotTaken()) guestIds.add(pageOfTheModalUp)
+  const owners = new Set<string>()
+  const keepOwnerOf = (page: WebContents): void => {
+    guestIds.add(page.id)
+    const owner = guestOwners.get(page)
+    if (owner) owners.add(owner)
+  }
+  for (const opener of pageOfSignInWindow.values()) if (!opener.isDestroyed()) keepOwnerOf(opener)
+  for (const ask of secretAsks?.views() ?? []) {
+    if (ask.kind === 'sudo') continue
+    owners.add(ask.tabId)
+    if (ask.kind === 'page') guestIds.add(ask.guestId)
+  }
+  for (const page of webContents.getAllWebContents()) {
+    if (page.isDestroyed() || !isWorkbenchPage(page)) continue
+    const owner = guestOwners.get(page)
+    if (owner && relayAttached(owner)) owners.add(owner)
+    if (
+      page.isLoading() ||
+      page.debugger.isAttached() ||
+      page.isDevToolsOpened() ||
+      page.isCurrentlyAudible() ||
+      guestDrivenFromAnotherMachine(page.id)
+    )
+      guestIds.add(page.id)
+  }
+  return { guestIds: [...guestIds], owners: [...owners] }
+}
+
 // PLATFORM§6
 const pendingOverlayOpens: BrowserOverlayOpen[] = []
 let overlayListening = false
@@ -5037,6 +5109,7 @@ async function isDirectory(target: string): Promise<boolean> {
 const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
+const pagesDownloading = new Map<string, number>()
 
 const downloadSources = new Map<string, string>()
 
@@ -5172,12 +5245,22 @@ function setupBrowserPartition(): void {
       return
     }
     if (decision.kind === 'ask') {
+      const answer = (granted: boolean): void => {
+        if (granted && permission === 'media' && !pagesGivenMicOrCamera.has(_wc.id)) {
+          const id = _wc.id
+          const forget = (): void => void pagesGivenMicOrCamera.delete(id)
+          pagesGivenMicOrCamera.add(id)
+          _wc.once('destroyed', forget)
+          _wc.once('did-navigate', forget)
+        }
+        callback(granted)
+      }
       const remembered = rememberedPermission(decision.origin, decision.permission)
       if (remembered !== undefined) {
-        callback(remembered)
+        answer(remembered)
         return
       }
-      askUserForPermission(_wc.id, decision.origin, decision.permission, callback)
+      askUserForPermission(_wc.id, decision.origin, decision.permission, answer)
       return
     }
     // PLATFORM§11
@@ -5261,7 +5344,7 @@ function setupBrowserPartition(): void {
     if (!headers || !isAttachmentResponse(headers)) return callback({})
     callback({ responseHeaders: { ...headers, 'x-content-type-options': ['nosniff'] } })
   })
-  ses.on('will-download', (_e, item) => {
+  ses.on('will-download', (_e, item, contents) => {
     const dir = process.env.KOLOFT_DOWNLOAD_DIR || app.getPath('downloads')
     try {
       fs.mkdirSync(dir, { recursive: true })
@@ -5281,6 +5364,7 @@ function setupBrowserPartition(): void {
     const id = retryId ?? crypto.randomUUID()
     if (retryId) downloadSources.delete(retryId)
     liveDownloads.set(id, item)
+    if (contents) pagesDownloading.set(id, contents.id)
     sendToRenderer(CH.browser.downloadEvent, {
       id,
       kind: 'started',
@@ -5297,6 +5381,7 @@ function setupBrowserPartition(): void {
     })
     item.once('done', (_ev, state) => {
       liveDownloads.delete(id)
+      pagesDownloading.delete(id)
       if (state === 'completed') downloadSources.set(id, url)
       sendToRenderer(CH.browser.downloadEvent, {
         id,
@@ -6238,7 +6323,7 @@ function butlerTarget(ref: string): Target | undefined {
     key: 'butler',
     name: butlerNameNow(),
     backend:
-      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
+      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || assistRowBackend('butler', loadSettings()),
     remote: false,
     tabId,
     butler: true,
@@ -6457,22 +6542,24 @@ function registerIpc(): void {
   )
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
-    if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    const live = sleepers.liveTabOf(id)
+    if (guard?.isBackground(live) && ownerTyped(data)) void guard.free(live)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
-    if (ownerTyped(data)) ownerTouched(id)
-    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
+    if (ownerTyped(data)) ownerTouched(live)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
   ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
-    if (guard?.isBackground(id)) void guard.free(id)
+    const live = sleepers.liveTabOf(id)
+    if (guard?.isBackground(live)) void guard.free(live)
     if (typedAfter?.includes('\r')) ownerCameBack()
-    ownerTouched(id)
-    ownerTouchedTheScreen(id)
+    ownerTouched(live)
+    ownerTouchedTheScreen(live)
     if (sleepers.heldPaste(id, text, typedAfter)) return
-    return ptyMgr.paste(id, text, typedAfter)
+    return ptyMgr.paste(live, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
     if (typeof text === 'string' && text) clipboard.writeText(text)
@@ -7287,6 +7374,7 @@ function registerIpc(): void {
       const gone = (): void => {
         pendingJsDialogs.delete(id)
       }
+      pageOfTheModalUp = e.sender.id
       pendingJsDialogs.set(id, (answer) => {
         e.sender.removeListener('destroyed', gone)
         e.returnValue = answer

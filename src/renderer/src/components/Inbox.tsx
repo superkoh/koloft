@@ -56,6 +56,7 @@ const SORTS: [InboxSort, string, string][] = [
 ]
 const COUNTDOWN_TICK_MS = 250
 const CLOCK_TICK_MS = 60_000
+const motionReduced = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches
 const FLY_MS = 620
 const SLIDE_MS = 380
 const MOST_BUTTONS_IN_A_ROW = 3
@@ -167,7 +168,7 @@ export function InboxRow(): JSX.Element {
   useEffect(() => {
     if (arrival <= arrivedUpTo.current) return
     arrivedUpTo.current = arrival
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (motionReduced()) return
     turn.current?.cancel()
     turn.current = entry.current?.animate(
       [{ '--ibx-a': '0deg' }, { '--ibx-a': '360deg' }],
@@ -242,20 +243,21 @@ export function InboxPage(): JSX.Element {
     if (!root) return
     const before = seen.current
     const after = new Map<string, { rect: DOMRect; el: HTMLElement; tab: InboxState }>()
+    const still = motionReduced()
     for (const el of root.querySelectorAll<HTMLElement>('[data-cid]')) {
       const id = el.dataset.cid as string
       const rect = el.getBoundingClientRect()
       after.set(id, { rect, el, tab })
       const old = before.get(id)
       const dy = old && old.tab === tab ? old.rect.top - rect.top : 0
-      if (Math.abs(dy) >= 1)
+      if (!still && Math.abs(dy) >= 1)
         el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }], {
           duration: SLIDE_MS,
           easing: 'cubic-bezier(.2,.8,.2,1)'
         })
     }
     for (const [id, old] of before) {
-      if (after.has(id) || old.tab !== tab) continue
+      if (still || after.has(id) || old.tab !== tab) continue
       const card = snapshot.cards.find((c) => c.id === id)
       const target = card && root.querySelector(`.ibx-seg [data-tab="${card.state}"]`)
       if (!card || card.state === tab || !target) continue

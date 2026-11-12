@@ -191,13 +191,31 @@ describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
 })
 
 describe('sanitizeLoadedSettings and the Assist choice', () => {
-  it('keeps a valid choice, and reads anything else — or none at all, as after an upgrade — as not chosen yet', () => {
-    expect(sanitizeLoadedSettings({ assist: { on: false, backend: 'codex' } }).assist).toEqual({
-      on: false,
-      backend: 'codex'
+  it('reads a choice an older Koloft saved, its switch on or off, as the tool it named, and anything else — or none at all — as not chosen yet', () => {
+    for (const on of [true, false])
+      expect(sanitizeLoadedSettings({ assist: { on, backend: 'codex' } }).assist).toEqual({
+        backend: 'codex'
+      })
+    for (const assist of [undefined, null, 'claude', { on: true }, { backend: 'gpt' }])
+      expect(sanitizeLoadedSettings({ fontSize: 13, assist }).assist).toEqual({})
+  })
+
+  it('keeps each job’s own pick, and drops a pick that names no tool, a model name no command line takes, and Max on a small job', () => {
+    const rows = {
+      turn: { backend: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+      route: { backend: 'claude', model: 'has space', effort: 'max' },
+      title: { backend: 'nope', model: 'haiku' },
+      docs: { model: 'haiku' },
+      butler: { backend: 'agy', effort: 'max' },
+      unknown: { backend: 'claude', model: 'haiku' }
+    }
+    expect(sanitizeLoadedSettings({ assist: { rows } }).assist).toEqual({
+      rows: {
+        turn: { backend: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+        route: { backend: 'claude' },
+        butler: { backend: 'agy', effort: 'max' }
+      }
     })
-    for (const assist of [undefined, 'claude', { on: 'yes', backend: 'claude' }, { on: true }])
-      expect(sanitizeLoadedSettings({ fontSize: 13, assist }).assist).toBeNull()
   })
 
   it('About ▸ Reset leaves the choice alone', () => {
@@ -217,7 +235,7 @@ describe('sanitizeLoadedSettings and the "skip permission prompts" answer Koloft
   })
 
   it('keeps a saved answer, and About ▸ Reset leaves it alone', () => {
-    const saved = { assist: { on: true, backend: 'claude' }, skipPermissionsAgreed: false }
+    const saved = { assist: { backend: 'claude' }, skipPermissionsAgreed: false }
     expect(sanitizeLoadedSettings(saved).skipPermissionsAgreed).toBe(false)
     expect(sanitizeLoadedSettings({ skipPermissionsAgreed: true }).skipPermissionsAgreed).toBe(true)
     expect(buildResetPatch()).not.toHaveProperty('skipPermissionsAgreed')
@@ -364,19 +382,22 @@ describe('session methods', () => {
       enabled: { claude: true, codex: false, muse: false, agy: false }
     })
   })
-  it('moves Assist off a method that is switched off, to the default method, and leaves it on one that is on', () => {
+  it('moves Assist off a method that is switched off, to the default method, takes back a job’s pick of it, and leaves the picks of methods that are on', () => {
     const off = { claude: false, codex: true, muse: true, agy: true }
     expect(
       sanitizeLoadedSettings({
-        assist: { on: true, backend: 'claude' },
+        assist: {
+          backend: 'claude',
+          rows: { turn: { backend: 'claude', model: 'opus' }, route: { backend: 'agy' } }
+        },
         sessionMethods: { defaultBackend: 'muse', enabled: off }
       }).assist
-    ).toEqual({ on: true, backend: 'muse' })
+    ).toEqual({ backend: 'muse', rows: { route: { backend: 'agy' } } })
     expect(
       sanitizeLoadedSettings({
-        assist: { on: false, backend: 'agy' },
+        assist: { backend: 'agy' },
         sessionMethods: { defaultBackend: 'muse', enabled: off }
       }).assist
-    ).toEqual({ on: false, backend: 'agy' })
+    ).toEqual({ backend: 'agy' })
   })
 })

@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BUSY_MARKER, MachineRoom, signalLog } from '../../src/main/machineRoom'
 
 const CORES = 10
@@ -19,14 +19,19 @@ afterEach(() => {
   fs.rmSync(regDir, { recursive: true, force: true })
 })
 
-const room = (): MachineRoom =>
-  new MachineRoom({
+let saidCritical: number
+
+const room = (): MachineRoom => {
+  saidCritical = 0
+  return new MachineRoom({
     regDir,
     cores: CORES,
     read: async () => ({ pressure: 1, load1: 0 }),
     now: () => now,
-    log: (l) => lines.push(l)
+    log: (l) => lines.push(l),
+    memoryStaysCritical: () => saidCritical++
   })
+}
 
 function feed(r: MachineRoom, seconds: number, reading: { pressure: number; load1: number }): void {
   for (let s = 0; s < seconds; s += 5) {
@@ -104,22 +109,60 @@ describe('when the machine counts as busy, and when roomy again', () => {
   })
 })
 
+describe('when memory counts as critical', () => {
+  it('says so from the second critical reading in a row, and at every reading while it lasts', () => {
+    const r = room()
+    r.observe({ pressure: 4, load1: 1 })
+    expect(saidCritical).toBe(0)
+    r.observe({ pressure: 4, load1: 1 })
+    expect(saidCritical).toBe(1)
+    feed(r, 15, { pressure: 4, load1: 1 })
+    expect(saidCritical).toBe(4)
+  })
+
+  it('a single critical reading between calmer ones says nothing', () => {
+    const r = room()
+    r.observe({ pressure: 4, load1: 1 })
+    r.observe({ pressure: 2, load1: 1 })
+    r.observe({ pressure: 4, load1: 1 })
+    expect(saidCritical).toBe(0)
+  })
+
+  it('memory at warning says nothing, however long it lasts', () => {
+    const r = room()
+    feed(r, 600, { pressure: 2, load1: 1 })
+    expect(saidCritical).toBe(0)
+  })
+})
+
 describe('the signal log the thresholds are tuned from', () => {
-  it('keeps whole timestamped lines, and never grows past two megabytes', () => {
+  it('keeps whole timestamped lines, and trims itself back under two megabytes', async () => {
     const file = path.join(regDir, 'machine.log')
     const log = signalLog(file)
     log('first')
-    expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/)
+    await vi.waitFor(
+      () => expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/),
+      { timeout: 10_000 }
+    )
     const line = 'x'.repeat(1000)
-    for (let i = 0; i < 2200; i++) log(line)
-    const text = fs.readFileSync(file, 'utf8')
-    expect(text.length).toBeLessThanOrEqual(2 * 2 ** 20)
-    expect(text).not.toContain('first')
+    for (const batch of ['one', 'two', 'three']) {
+      for (let i = 0; i < 800; i++) log(line)
+      log(batch)
+      await vi.waitFor(
+        () => {
+          const whole = fs.readFileSync(file, 'utf8')
+          expect(whole).toMatch(new RegExp(` ${batch}\\n$`))
+          expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
+        },
+        { timeout: 10_000 }
+      )
+    }
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    expect(lines.some((l) => l.endsWith(' first'))).toBe(false)
     expect(
-      text
-        .split('\n')
-        .filter(Boolean)
-        .every((l) => l.endsWith(line))
+      lines.every(
+        (l) => l.endsWith(line) || ['one', 'two', 'three'].some((b) => l.endsWith(` ${b}`))
+      )
     ).toBe(true)
   })
 })

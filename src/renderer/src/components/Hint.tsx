@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX } f
 import { createPortal } from 'react-dom'
 import { popoverX } from '@shared/accountUsage'
 import { HINT_IDS, type HintId } from '@shared/types'
-import type { ActiveHint } from '../hints'
+import { pointsAtASidebarRow, type ActiveHint } from '../hints'
 import { useStore } from '../store'
 import { isSessionKind } from '../agentUi'
 import { BACKEND_LABEL, capabilitiesFor } from '@shared/sessionBackend'
@@ -13,6 +13,7 @@ const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268
 const GAP = 10
 const STILL_FRAMES = 10
+const HINT_THAT_NEVER_DIMS_THE_WINDOW: HintId = 'workbench'
 
 function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Element {
   return (
@@ -185,13 +186,14 @@ const CONTENT: Record<HintId, HintWords | ((agent: AgentWords) => HintWords)> = 
   }
 }
 
-function place(r: DOMRect, cardH: number): { left: number; top: number } {
+function place(r: DOMRect, cardH: number, besideTheRows: boolean): { left: number; top: number } {
   const vh = window.innerHeight
   const below = r.bottom + GAP
-  const wanted = below + cardH <= vh - GAP ? below : r.top - GAP - cardH
+  const underOrOver = below + cardH <= vh - GAP ? below : r.top - GAP - cardH
+  const centerX = besideTheRows ? r.right + GAP + CARD_W / 2 : r.left + r.width / 2
   return {
-    left: popoverX(r.left + r.width / 2, CARD_W, window.innerWidth, GAP),
-    top: Math.min(Math.max(GAP, wanted), vh - cardH - GAP)
+    left: popoverX(centerX, CARD_W, window.innerWidth, GAP),
+    top: Math.min(Math.max(GAP, besideTheRows ? r.top : underOrOver), vh - cardH - GAP)
   }
 }
 
@@ -224,7 +226,7 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     }
     if (!cardH.current) cardH.current = cardRef.current?.offsetHeight ?? 0
     const rect = el.getBoundingClientRect()
-    const pos = place(rect, cardH.current)
+    const pos = place(rect, cardH.current, pointsAtASidebarRow(selector))
     if (boxRef.current && sameBox(boxRef.current, rect, pos)) return true
     boxRef.current = { rect, ...pos }
     setBox(boxRef.current)
@@ -290,7 +292,7 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
   // ADR-0013
   return createPortal(
     <>
-      {box && (
+      {box && id !== HINT_THAT_NEVER_DIMS_THE_WINDOW && (
         <div
           className="hint-backdrop"
           style={{

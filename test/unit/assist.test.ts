@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { koloftAssist } from '../../src/main/assist'
-import type { AssistSetting, BackendId } from '../../src/shared/types'
+import { DEFAULT_SETTINGS, type AssistSetting, type BackendId } from '../../src/shared/types'
 
 function recordingBinary(name: string, reply: string): { bin: string; log: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-'))
@@ -24,15 +24,25 @@ function recordingBinary(name: string, reply: string): { bin: string; log: strin
 const read = (file: string): string | null =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
 
-const JOB = { system: 'You write short titles.', prompt: 'Task:\nfix the login crash' }
+const JOB = {
+  row: 'title' as const,
+  system: 'You write short titles.',
+  prompt: 'Task:\nfix the login crash'
+}
+
+const picksOf = (assist: AssistSetting) => () => ({
+  assist,
+  sessionMethods: DEFAULT_SETTINGS.sessionMethods,
+  accounts: []
+})
 
 function assistWith(
-  setting: AssistSetting,
+  assist: AssistSetting,
   bins: Partial<Record<BackendId, string>>,
   off: BackendId[] = []
 ) {
   return koloftAssist({
-    setting: () => setting,
+    picks: picksOf(assist),
     enabled: (backend) => !off.includes(backend),
     target: async (backend) => {
       const binary = bins[backend]
@@ -52,32 +62,27 @@ function museStream(answer: string): string {
 }
 
 describe('Koloft Assist', () => {
-  it('runs nothing and answers nothing while it is off or not chosen yet, so every caller takes its non-AI way', async () => {
-    const claude = recordingBinary('claude', 'a title')
-    for (const setting of [null, { on: false, backend: 'claude' as const }]) {
-      expect(await assistWith(setting, { claude: claude.bin })(JOB)).toBeNull()
-    }
-    expect(read(claude.log + '.argv')).toBeNull()
+  it('runs with nothing chosen, on whichever tool has an account', async () => {
+    const codex = recordingBinary('codex', 'From Codex')
+    expect((await assistWith({}, { codex: codex.bin })(JOB))?.trim()).toBe('From Codex')
   })
 
   it('answers nothing when neither tool has a Koloft account to run on', async () => {
-    expect(await assistWith({ on: true, backend: 'codex' }, {})(JOB)).toBeNull()
+    expect(await assistWith({ backend: 'codex' }, {})(JOB)).toBeNull()
   })
 
   it('runs on the other tool when the chosen one has no usable account', async () => {
     const claude = recordingBinary('claude', 'From Claude')
-    const reply = await assistWith({ on: true, backend: 'codex' }, { claude: claude.bin })(JOB)
+    const reply = await assistWith({ backend: 'codex' }, { claude: claude.bin })(JOB)
     expect(reply?.trim()).toBe('From Claude')
   })
 
   it('never runs a tool turned off in Settings ▸ Sessions, even when it is the chosen one', async () => {
     const codex = recordingBinary('codex', 'From Codex')
     const claude = recordingBinary('claude', 'From Claude')
-    const reply = await assistWith(
-      { on: true, backend: 'codex' },
-      { codex: codex.bin, claude: claude.bin },
-      ['codex']
-    )(JOB)
+    const reply = await assistWith({ backend: 'codex' }, { codex: codex.bin, claude: claude.bin }, [
+      'codex'
+    ])(JOB)
     expect(reply?.trim()).toBe('From Claude')
     expect(read(codex.log + '.argv')).toBeNull()
   })
@@ -85,7 +90,7 @@ describe('Koloft Assist', () => {
   // CC§9
   it('on Claude, runs one Haiku print with the job’s system prompt and no tools, the prompt on stdin', async () => {
     const claude = recordingBinary('claude', 'Fix Login Crash')
-    const reply = await assistWith({ on: true, backend: 'claude' }, { claude: claude.bin })(JOB)
+    const reply = await assistWith({ backend: 'claude' }, { claude: claude.bin })(JOB)
     expect(reply?.trim()).toBe('Fix Login Crash')
     const argv = read(claude.log + '.argv')!.split('\n')
     expect(argv.slice(0, 3)).toEqual(['-p', '--model', 'haiku'])
@@ -94,9 +99,9 @@ describe('Koloft Assist', () => {
   })
 
   // CODEX§15
-  it('on Codex, runs one throwaway gpt-6-luna exec in the picked account’s home, the system text ahead of the prompt on stdin', async () => {
+  it('on Codex, runs one throwaway gpt-6-luna exec at low effort in the picked account’s home, the system text ahead of the prompt on stdin', async () => {
     const codex = recordingBinary('codex', 'Fix Login Crash')
-    const reply = await assistWith({ on: true, backend: 'codex' }, { codex: codex.bin })(JOB)
+    const reply = await assistWith({ backend: 'codex' }, { codex: codex.bin })(JOB)
     expect(reply?.trim()).toBe('Fix Login Crash')
     const argv = read(codex.log + '.argv')!
       .trim()
@@ -104,9 +109,85 @@ describe('Koloft Assist', () => {
     expect(argv[0]).toBe('exec')
     expect(argv).toContain('--ephemeral')
     expect(argv[argv.indexOf('-m') + 1]).toBe('gpt-6-luna')
+    expect(argv[argv.indexOf('-c') + 1]).toBe('model_reasoning_effort="low"')
     expect(argv[argv.length - 1]).toBe('-')
     expect(read(codex.log + '.stdin')).toBe(`${JOB.system}\n\n${JOB.prompt}`)
     expect(read(codex.log + '.home')?.trim()).toBe('/homes/work')
+  })
+
+  it('runs a job on the model and effort its row picked, and on the row’s own tool', async () => {
+    const claude = recordingBinary('claude', 'NEWS')
+    const codex = recordingBinary('codex', 'NEWS')
+    await assistWith(
+      { backend: 'codex', rows: { turn: { backend: 'claude', model: 'opus', effort: 'high' } } },
+      { claude: claude.bin, codex: codex.bin }
+    )({ ...JOB, row: 'turn' })
+    expect(
+      read(claude.log + '.argv')!
+        .split('\n')
+        .slice(0, 5)
+    ).toEqual(['-p', '--model', 'opus', '--effort', 'high'])
+    expect(read(codex.log + '.argv')).toBeNull()
+  })
+
+  describe('a model the account does not take', () => {
+    function codexWithout(model: string): { bin: string; models: () => string[] } {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-refused-'))
+      const bin = path.join(dir, 'codex')
+      const asked = path.join(dir, 'asked')
+      fs.writeFileSync(
+        bin,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' "$*" >> ${JSON.stringify(asked)}\n` +
+          `case "$*" in *${model}*) echo "ERROR: The '${model}' model is not supported when using Codex with a ChatGPT account." >&2; exit 1 ;; esac\necho ACT\n`,
+        { mode: 0o755 }
+      )
+      return {
+        bin,
+        models: () =>
+          (read(asked) ?? '')
+            .trim()
+            .split('\n')
+            .map((argv) => argv.match(/-m (\S+)/)?.[1] ?? '')
+      }
+    }
+
+    // CODEX§15
+    it('runs once more on the model every account takes, when the refused one came from Koloft’s own table', async () => {
+      const codex = codexWithout('gpt-6.1-sol')
+      const reply = await assistWith(
+        { backend: 'codex' },
+        { codex: codex.bin }
+      )({
+        ...JOB,
+        row: 'turn'
+      })
+      expect(reply?.trim()).toBe('ACT')
+      expect(codex.models()).toEqual(['gpt-6.1-sol', 'gpt-6-luna'])
+    })
+
+    it('does not run again after a failure that is not about the model', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-auth-'))
+      const bin = path.join(dir, 'codex')
+      const runs = path.join(dir, 'runs')
+      fs.writeFileSync(
+        bin,
+        `#!/bin/sh\ncat > /dev/null\necho x >> ${JSON.stringify(runs)}\necho "ERROR: not signed in" >&2\nexit 1\n`,
+        { mode: 0o755 }
+      )
+      const reply = await assistWith({ backend: 'codex' }, { codex: bin })({ ...JOB, row: 'turn' })
+      expect(reply).toBeNull()
+      expect(read(runs)?.trim().split('\n')).toHaveLength(1)
+    })
+
+    it('answers nothing, with no second run, when the owner picked that model', async () => {
+      const codex = codexWithout('gpt-6-astra')
+      const reply = await assistWith(
+        { backend: 'codex', rows: { turn: { backend: 'codex', model: 'gpt-6-astra' } } },
+        { codex: codex.bin }
+      )({ ...JOB, row: 'turn' })
+      expect(reply).toBeNull()
+      expect(codex.models()).toEqual(['gpt-6-astra'])
+    })
   })
 
   describe('a Codex one-shot that is late', () => {
@@ -133,7 +214,10 @@ describe('Koloft Assist', () => {
       try {
         const { koloftAssist: fresh } = await import('../../src/main/assist')
         return fresh({
-          setting: () => ({ on: true, backend: 'codex' }),
+          picks: picksOf({
+            backend: 'codex',
+            rows: { title: { backend: 'codex', model: 'gpt-6-luna' } }
+          }),
           enabled: () => true,
           target: async () => ({ binary: codex, env: {} })
         })
@@ -169,14 +253,14 @@ describe('Koloft Assist', () => {
 
   it('runs on the third tool when neither of the others can', async () => {
     const muse = recordingBinary('muse', museStream('From Muse'))
-    const reply = await assistWith({ on: true, backend: 'claude' }, { muse: muse.bin })(JOB)
+    const reply = await assistWith({ backend: 'claude' }, { muse: muse.bin })(JOB)
     expect(reply).toBe('From Muse')
   })
 
   // MUSE§1
   it('on Muse, runs one exec that leaves no session behind, and answers with the text of its finished record', async () => {
     const muse = recordingBinary('muse', museStream('Fix Login Crash'))
-    const reply = await assistWith({ on: true, backend: 'muse' }, { muse: muse.bin })(JOB)
+    const reply = await assistWith({ backend: 'muse' }, { muse: muse.bin })(JOB)
     expect(reply).toBe('Fix Login Crash')
     const argv = read(muse.log + '.argv')!.split('\n')
     expect(argv[0]).toBe('exec')

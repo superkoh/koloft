@@ -928,7 +928,63 @@ test.describe('two ✎ comments on a rendered Markdown file with the REAL claude
   })
 })
 
+function failingChecksSentAfterACommentStartOnLinesOfTheirOwnInCodex(env: E2EEnv): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(
+    env,
+    'other',
+    useRealCodex,
+    [],
+    async ({ page, rows, tree }) => {
+      const plan = writePlan(tree)
+      const tabId = (await rows.getAttribute('data-tab-id'))!
+      const sessionId = (await boundSessionId(page, tabId)) ?? ''
+      expect(sessionId).not.toBe('')
+      await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
+      await openInBrowse(page, plan)
+      const promptsBefore = CODEX_TRANSCRIPT.prompts(env, sessionId).length
+
+      await putPassageCommentInSession(page, PLAN_WORDS, FIRST_NOTE)
+      await page.locator('.wb-gh').click({ button: 'right' })
+      await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
+      await expect
+        .poll(() => screen(page), { timeout: 60_000 })
+        .toMatch(CHECKS_PASTE_ON_SCREEN.other)
+      await page.waitForTimeout(A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS)
+      await test.info().attach('screen-before-enter', { body: await screen(page) })
+      expect(CODEX_TRANSCRIPT.prompts(env, sessionId)).toHaveLength(promptsBefore)
+
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+      await expect
+        .poll(() => CODEX_TRANSCRIPT.prompts(env, sessionId).length, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBe(promptsBefore + 1)
+      const sent = CODEX_TRANSCRIPT.prompts(env, sessionId).at(-1)!
+      await test.info().attach('the-one-message', { body: sent })
+      console.log(`message: ${JSON.stringify(sent.slice(0, 400))}`)
+      expect(sent).toContain(`${FIRST_NOTE}\n\n${PR_3_FAILING_CHECK_PASTE_HEAD}`)
+    },
+    (repo) => {
+      seedSettings(env, { hintsOff: true })
+      installRealGhThatOnlyReads(env)
+      setGithubFixture(env, { [path.join(repo, '.claude', 'worktrees', WORKTREE)]: PR_3_OF_KOLOFT })
+    }
+  )
+}
+
 test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude and codex: opt-in cases on superkoh/koloft PR #3 proving the checks wait in the input box; they spend real money', () => {
+  test('a real Codex puts the failing checks of PR #3 on lines of their own after a passage comment and its note that still wait in its composer, and one Enter sends both as one message', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.skip(!HAVE_REAL_GH, NEEDS_REAL_GH)
+    await failingChecksSentAfterACommentStartOnLinesOfTheirOwnInCodex(env)
+  })
+
   test('a real Claude Code holds the failing checks of PR #3 in its input box unsent, and the question typed after them goes with them as one message, which the model answers from the log excerpt', async ({
     env
   }) => {

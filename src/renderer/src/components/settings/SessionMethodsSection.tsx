@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { assistOnMethodsThatAreOn } from '@shared/assistPicks'
 import {
-  assistOnAMethodThatIsOn,
   BACKEND_LABEL,
   SESSION_BACKENDS,
   lastOneOn,
@@ -39,7 +39,7 @@ export function SessionMethodsSection() {
       ...methods,
       enabled: { ...methods.enabled, [backend]: on }
     })
-    update({ sessionMethods: next, assist: assistOnAMethodThatIsOn(assist, next) })
+    update({ sessionMethods: next, assist: assistOnMethodsThatAreOn(assist, next) })
   }
   const [detected, setDetected] = useState<Detected | 'error' | null>(null)
   useEffect(() => {

@@ -16,6 +16,8 @@ const LOAD_STAYS_HIGH_MS_BEFORE_BUSY = 30_000
 const CALM_MS_BEFORE_ROOMY = 60_000
 // PLATFORM§59
 export const MEMORY_PRESSURE_WARNING = 2
+export const MEMORY_PRESSURE_CRITICAL = 4
+const CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING = 2
 export const GAP_AFTER_A_COMMAND_MS = 30_000
 const SIGNAL_LINE_EVERY_MS = 60_000
 
@@ -28,9 +30,11 @@ export interface MachineRoomDeps {
   read(): Promise<MachineReading>
   now(): number
   log(line: string): void
+  memoryStaysCritical?(): void
 }
 
 export class MachineRoom {
+  private criticalReadingsInARow = 0
   private busyNow = false
   private loadHighSince: number | undefined
   private calmSince: number | undefined
@@ -64,6 +68,8 @@ export class MachineRoom {
     this.lastReading = r
     const now = this.d.now()
     const memoryTight = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_WARNING
+    const memoryCritical = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_CRITICAL
+    this.criticalReadingsInARow = memoryCritical ? this.criticalReadingsInARow + 1 : 0
     const loadHigh = r.load1 >= BUSY_AT_LOAD_PER_CORE * this.d.cores
     const loadCalm = r.load1 < ROOMY_BELOW_LOAD_PER_CORE * this.d.cores
     this.loadHighSince = loadHigh ? (this.loadHighSince ?? now) : undefined
@@ -85,6 +91,8 @@ export class MachineRoom {
         `[koloft] machine: ${this.busyNow ? 'busy' : 'roomy'} · memory pressure ${r.pressure ?? '-'} · load ${r.load1.toFixed(1)} on ${this.d.cores} cores`
       )
     }
+    if (this.criticalReadingsInARow >= CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING)
+      this.d.memoryStaysCritical?.()
   }
 
   private syncMarker(): void {
@@ -101,16 +109,44 @@ export class MachineRoom {
 
 const SIGNAL_LOG_MAX_BYTES = 2 * 2 ** 20
 const SIGNAL_LOG_KEEPS_BYTES = 2 ** 20
+const NEWLINE = 0x0a
 
+// PLATFORM§69
 export function signalLog(file: string): (line: string) => void {
+  const waiting: string[] = []
+  let waitingLength = 0
+  let size: number | undefined
+  let writing = false
+  const write = async (): Promise<void> => {
+    writing = true
+    while (waiting.length) {
+      const text = waiting.splice(0).join('')
+      waitingLength = 0
+      try {
+        size ??= await fs.promises
+          .stat(file)
+          .then((s) => s.size)
+          .catch(() => 0)
+        await fs.promises.appendFile(file, text)
+        size += Buffer.byteLength(text)
+        if (size <= SIGNAL_LOG_MAX_BYTES) continue
+        const tail = (await fs.promises.readFile(file)).subarray(-SIGNAL_LOG_KEEPS_BYTES)
+        const kept = tail.subarray(tail.indexOf(NEWLINE) + 1)
+        await fs.promises.writeFile(file, kept)
+        size = kept.length
+      } catch {
+        size = undefined
+      }
+    }
+    writing = false
+  }
   return (line) => {
-    try {
-      fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`)
-      if (fs.statSync(file).size <= SIGNAL_LOG_MAX_BYTES) return
-      const text = fs.readFileSync(file, 'utf8')
-      const tail = text.slice(-SIGNAL_LOG_KEEPS_BYTES)
-      fs.writeFileSync(file, tail.slice(tail.indexOf('\n') + 1))
-    } catch {}
+    const entry = `${new Date().toISOString()} ${line}\n`
+    waiting.push(entry)
+    waitingLength += entry.length
+    while (waiting.length > 1 && waitingLength > SIGNAL_LOG_KEEPS_BYTES)
+      waitingLength -= waiting.shift()!.length
+    if (!writing) void write()
   }
 }
 
