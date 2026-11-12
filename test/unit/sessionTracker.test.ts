@@ -2041,12 +2041,9 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     const RCWD = '/home/koh/app'
     const ended: { turn: { said: { text: string }[]; reply: string } }[] = []
     let file = ''
-    let pullsAsked = 0
-    let pull = (): void => {}
 
     async function remoteTurnTab(sid: string): Promise<InstanceType<typeof SessionTracker>> {
       ended.length = 0
-      pullsAsked = 0
       const mirror = path.join(home, 'remote', sid, 'projects')
       file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')
       fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -2058,11 +2055,6 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       )
       const tracker = newTracker()
       tracker.on('turn-ended', (e) => ended.push(e))
-      tracker.nextMirrorPull = (host) => {
-        expect(host).toBe('devbox')
-        pullsAsked++
-        return new Promise<void>((done) => (pull = done))
-      }
       tracker.track('tabRT', RCWD, { host: 'devbox', projectsRoot: mirror, tmuxName: `k-${sid}` })
       tracker.bindSession('tabRT', file, sid, RCWD)
       await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.title === 'earlier question')
@@ -2073,12 +2065,17 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       fs.appendFileSync(file, lines.map((l) => JSON.stringify(l) + '\n').join(''))
     const replies = (): string[] => ended.map((e) => e.turn.reply)
 
-    it('a Stop that finds no turn waits for the next pull, then ends the turn that pull brought; the next turn ends on its own, and a repeated Stop ends nothing', async () => {
-      const tracker = await remoteTurnTab('88888888-8888-4888-8888-888888888888')
+    async function stopBeforeAnyLine(tracker: InstanceType<typeof SessionTracker>): Promise<void> {
+      tracker.receive('tabRT', { type: 'prompt' })
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status === 'working')
       tracker.receive('tabRT', { type: 'stop' })
-      await expect.poll(() => pullsAsked).toBe(1)
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status !== 'working')
+    }
+
+    it('a Stop that finds no turn ends the turn whose lines come after it; the next turn ends on its own, and a repeated Stop ends nothing', async () => {
+      const tracker = await remoteTurnTab('88888888-8888-4888-8888-888888888888')
+      await stopBeforeAnyLine(tracker)
       append(human('pick a colour', 30), said(text('Picked: Green'), 31))
-      pull()
       await expect
         .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
         .toEqual(['Picked: Green'])
@@ -2094,18 +2091,14 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       ])
 
       tracker.receive('tabRT', { type: 'stop' })
-      await expect.poll(() => pullsAsked).toBe(2)
-      pull()
       await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
       expect(replies()).toEqual(['Picked: Green', 'Picked: Small'])
     })
 
-    it('when one pull brings the early-stopped turn and the next turn’s prompt, the early Stop ends the first turn, not the new one', async () => {
+    it('when the early-stopped turn and the next turn’s prompt arrive together, the early Stop ends the first turn, not the new one', async () => {
       const tracker = await remoteTurnTab('99999999-9999-4999-8999-999999999999')
-      tracker.receive('tabRT', { type: 'stop' })
-      await expect.poll(() => pullsAsked).toBe(1)
+      await stopBeforeAnyLine(tracker)
       append(human('pick a colour', 30), said(text('Picked: Green'), 31), human('pick a size', 40))
-      pull()
       await expect
         .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
         .toEqual(['Picked: Green'])
@@ -2116,6 +2109,21 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
         .toEqual(['Picked: Green', 'Picked: Small'])
       expect(ended[1].turn.said.map((l) => l.text)).toEqual(['pick a size'])
+    })
+
+    it('two turns whose Stops both come before any of their lines each end on their own, in order', async () => {
+      const tracker = await remoteTurnTab('77777777-7777-4777-8777-777777777777')
+      await stopBeforeAnyLine(tracker)
+      await stopBeforeAnyLine(tracker)
+      append(
+        human('pick a colour', 30),
+        said(text('Picked: Green'), 31),
+        human('pick a size', 40),
+        said(text('Picked: Small'), 41)
+      )
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small'])
     })
   })
 

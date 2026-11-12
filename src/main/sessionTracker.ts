@@ -61,6 +61,7 @@ const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
 const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
 // CC§2
 const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
+const A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS = 60_000
 
 export { encodeCwd }
 
@@ -468,6 +469,7 @@ interface Tracked {
   turns: TurnLog
   replyDone: boolean
   endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
+  stopsBeforeTheirLines: number[]
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -497,7 +499,6 @@ export class SessionTracker extends SessionRuntime {
   dialogJustClosed?: (tabId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
-  nextMirrorPull?: (host: string) => Promise<void> | undefined
 
   private realFilesOf(tabId: string, remote: RemoteTab | undefined): RealFiles {
     const real: RealFiles = remote
@@ -567,6 +568,7 @@ export class SessionTracker extends SessionRuntime {
       rootPinAwaitingCatchup: false,
       turns: new TurnLog(),
       replyDone: false,
+      stopsBeforeTheirLines: [],
       remote
     }
     this.tracked.set(tabId, t)
@@ -699,9 +701,13 @@ export class SessionTracker extends SessionRuntime {
     if (!t) return
     await this.parse(t).catch(() => {})
     if (this.tracked.get(tabId) !== t) return
-    const turn = t.turns.open() ?? (t.remote && (await this.turnPulledLate(t, t.remote.host)))
-    if (this.tracked.get(tabId) !== t || !turn) return
-    if (t.replyDone || turn !== t.turns.open()) return this.finishTurn(t, turn)
+    const turn = t.turns.open()
+    if (turn) this.endOpenTurn(t, turn)
+    else if (t.remote) t.stopsBeforeTheirLines.push(Date.now())
+  }
+
+  private endOpenTurn(t: Tracked, turn: TalkTurn): void {
+    if (t.replyDone) return this.finishTurn(t, turn)
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = {
       turn,
@@ -709,11 +715,13 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
-  private async turnPulledLate(t: Tracked, host: string): Promise<TalkTurn | undefined> {
-    const lastEnded = t.turns.last(1)[0]
-    await this.nextMirrorPull?.(host)
-    await this.parse(t).catch(() => {})
-    return t.turns.after(lastEnded)
+  private takeStopBeforeItsLines(t: Tracked): boolean {
+    if (!t.stopsBeforeTheirLines.length) return false
+    const now = Date.now()
+    t.stopsBeforeTheirLines = t.stopsBeforeTheirLines.filter(
+      (at) => now - at < A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS
+    )
+    return t.stopsBeforeTheirLines.shift() !== undefined
   }
 
   private finishTurn(t: Tracked, turn: TalkTurn): void {
@@ -1100,6 +1108,7 @@ export class SessionTracker extends SessionRuntime {
     t.replyDone = false
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = undefined
+    t.stopsBeforeTheirLines = []
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -1351,6 +1360,8 @@ export class SessionTracker extends SessionRuntime {
       if (history && history.at < t.bindMs) t.turns.end(history)
       t.caughtUp = true
     }
+    const open = t.turns.open()
+    if (open && this.takeStopBeforeItsLines(t)) this.endOpenTurn(t, open)
     return true
   }
 
@@ -1524,7 +1535,10 @@ export class SessionTracker extends SessionRuntime {
     for (const piece of claudeTurnPieces(obj)) {
       if (piece === 'tool') t.replyDone = false
       else {
+        const before = t.turns.open()
         t.turns.add(piece.line, piece.midTurn)
+        if (before && before !== t.turns.open() && this.takeStopBeforeItsLines(t))
+          this.finishTurn(t, before)
         t.replyDone = piece.line.who === 'assistant'
       }
     }
