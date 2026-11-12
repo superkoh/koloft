@@ -1241,6 +1241,9 @@ round that left `?996n` and OSC 4 unanswered asked exactly the same.
   (save and restore the title) are not questions. Both runs the same.
 - Each run's reads, replayed in order and at their recorded times into Koloft's
   `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
+- The OSC 7501 question is answered by Koloft's main process straight from the pty
+  output (§3), not by the terminal, so the batching never delays its answer; the rest
+  are answered by the terminal and need the early send.
 
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 

@@ -3522,6 +3522,8 @@ to 100×30, `/clear`, a second prompt, Ctrl+C twice. An earlier round with `?u` 
   `TerminalOutput` for a tab off screen, sent all 3 reads holding a question at once;
   the same replay counting reads that hold `ESC[?25l` (no question) found every one of
   them held back (42–44 per run).
+- Of these only `ESC[?u` gets no answer in a Koloft tab, so nothing waits on whether it
+  goes out early.
 
 A remote tab's TUI runs on the Mac (§16), so it asks the same.
 

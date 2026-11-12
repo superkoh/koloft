@@ -1864,6 +1864,9 @@ DECRQM as known asked exactly the same.
   turn. `ESC[?5W`, `ESC[=5;1u`, `ESC[>5u` and `ESC[>4;2m` set modes and ask nothing.
 - The run's reads, replayed in order and at their recorded times into Koloft's
   `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
+- The OSC 7501 question is answered by Koloft's main process straight from the pty
+  output (§10), and `ESC[?u` gets no answer in a Koloft tab, so the batching delays
+  neither; the rest are answered by the terminal and need the early send.
 
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 

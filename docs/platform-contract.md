@@ -2198,7 +2198,9 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
 - **Under Koloft's tmux.conf, with agy or muse in the pane, tmux 3.3a asks the outer
   terminal only `ESC[>c` (DA2) and `ESC[>q` (XTVERSION), once at attach; the bare
   questions agy and muse ask in the pane never come out** (neither wraps one for
-  passthrough; with Claude Code in the pane, not run). Started as Koloft starts a remote
+  passthrough). With Claude Code in the pane it was not run; CC§12 has tmux answering
+  claude's own questions and claude wrapping only a mod's image for passthrough, so the
+  same is inferred, not checked. Started as Koloft starts a remote
   tab (`tmux -L koloft -u -f <Koloft's conf> new-session -A -D -s <name> <agent>`) from a
   python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
   reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 in
