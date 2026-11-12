@@ -996,6 +996,18 @@ only downloaded the public release.
   `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
   API-key route against a fake Gemini server, a python pty answering the TUI's queries,
   2026-11-08; 1 run each.)
+- A bracketed paste keeps the line feeds it starts with, and lands right after whatever
+  the box holds. `NOTE typed first.` typed, then one write of a paste: with no line
+  feed first the box showed `NOTE typed first.PASTED one`; with `\n\n` as the paste's
+  first characters it showed the note, an empty line, then the pasted lines; `\n\n`
+  typed as plain keys in the same write just before the paste's start mark showed the
+  same. Into an empty box both forms showed two empty lines above the pasted text.
+  1.3.6 drops a paste's trailing line feeds as 1.5.3 does: a paste starting and ending
+  with `\n\n`, then ` TYPED-AFTER` typed, showed the typed text on the last pasted
+  line, while `\n\n` typed after the paste's end mark kept it two lines lower.
+  What the box showed, not what a send carried. (agy 1.3.6, Linux arm64, Docker
+  `--network none`, inside tmux 3.3a, each write sent with `tmux send-keys -H` and the
+  box read with `capture-pane`, 2026-11-11; 1 run each. Not run on 1.5.3.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:

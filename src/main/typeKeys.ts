@@ -28,12 +28,15 @@ export function bracketedPaste(text: string): string {
 
 const LAST_LINE_FEEDS = /\n+$/
 
+const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
+
+// CC§18 CODEX§23 MUSE§7 AGY§15
 export function pasteFor(text: string, kind: TabKind | undefined): string {
   const backend = backendIdOf(kind)
-  const typed =
-    backend && !pasteKeepsItsLastLineFeeds(backend) ? LAST_LINE_FEEDS.exec(text)?.[0] : undefined
-  if (!typed) return bracketedPaste(text)
-  return bracketedPaste(text.slice(0, -typed.length)) + typed
+  const typedAfter =
+    backend && !pasteKeepsItsLastLineFeeds(backend) ? (LAST_LINE_FEEDS.exec(text)?.[0] ?? '') : ''
+  const pasted = text.slice(0, text.length - typedAfter.length)
+  return bracketedPaste(APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + pasted) + typedAfter
 }
 
 // CC§18
