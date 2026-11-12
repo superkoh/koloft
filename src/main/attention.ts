@@ -2,6 +2,8 @@ import type { AttentionEvent, AttentionKind, AttentionSubject, SessionStatus } f
 
 export type SavedMark = AttentionEvent & { sessionId: string }
 
+const PARKED_WHILE_ITS_TAB_RESTARTS = ':restarting'
+
 export function edgeAttention(
   prev: SessionStatus | undefined,
   next: SessionStatus
@@ -13,6 +15,7 @@ export function edgeAttention(
 
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
+  private askKeptThroughWorking = new Set<string>()
   asleep: (tabId: string) => boolean = () => false
   waitsOnAnother: (tabId: string) => boolean = () => false
   watching: () => string | null = () => null
@@ -40,6 +43,7 @@ export class AttentionTracker {
     const carried = this.list().find((e) => e.sessionId === sessionId)
     if (!carried) return
     const askingHere = this.pending.get(tabId)
+    this.askKeptThroughWorking.delete(tabId)
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
     const wasAsking = carried.kind === 'approval' || carried.wasAsking
     this.pending.set(
@@ -66,6 +70,10 @@ export class AttentionTracker {
     subject: AttentionSubject = {}
   ): void {
     if (next === 'working') {
+      if (this.pending.get(tabId)?.wasAsking && !this.askKeptThroughWorking.has(tabId)) {
+        this.askKeptThroughWorking.add(tabId)
+        return
+      }
       this.clear(tabId)
       return
     }
@@ -119,6 +127,21 @@ export class AttentionTracker {
     if (this.pending.get(tabId)?.kind !== 'exited') this.clear(tabId)
   }
 
+  tabRestarting(tabId: string): void {
+    const cur = this.pending.get(tabId)
+    if (cur?.kind !== 'approval' && !cur?.wasAsking) return this.clearKeepingExit(tabId)
+    const parked = tabId + PARKED_WHILE_ITS_TAB_RESTARTS
+    this.pending.delete(tabId)
+    this.pending.set(parked, {
+      ...cur,
+      tabId: parked,
+      kind: 'turn-done',
+      wasAsking: true,
+      stoppedByRestart: true
+    })
+    this.onChange(this.list(), null)
+  }
+
   clearSession(sessionId: string): void {
     const stale = this.list().filter((e) => e.sessionId === sessionId)
     for (const e of stale) this.pending.delete(e.tabId)
@@ -143,7 +166,8 @@ export class AttentionTracker {
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, event)
-    this.onChange(this.list(), cur?.kind === kind || sameAskAsBefore ? null : event)
+    const alreadySaid = cur?.kind === kind && !cur.wasAsking
+    this.onChange(this.list(), alreadySaid || sameAskAsBefore ? null : event)
     if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
   }
 }

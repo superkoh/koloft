@@ -5500,7 +5500,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  tabLifecycle.emit('stopping', tabId)
+  tabLifecycle.emit('stopping', tabId, restarting)
   boundSessions.delete(tabId)
   return stopped.then(
     () => true,

@@ -201,6 +201,31 @@ describe('attention — unread marks outlive a Koloft restart', () => {
       expect.objectContaining({ tabId: 'tab-new', kind: 'approval', at: 2 })
     ])
   })
+
+  it('a reattached tab that works once before it shows its ask again keeps that ask as the same one, silently; a second working clears it', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', undefined, 'waiting')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    t.onStatusChange('tab-new', 'working', 'approval', { sessionId: 'sid-2' })
+    expect(t.list().find((e) => e.tabId === 'tab-new')).toMatchObject({ kind: 'approval', at: 2 })
+    expect(changes.at(-1)?.event).toBeNull()
+
+    const other = makeTracker(lastRun).t
+    other.bound('tab-new', 'sid-2')
+    other.onStatusChange('tab-new', 'waiting', 'working')
+    other.onStatusChange('tab-new', 'working', 'waiting')
+    other.onStatusChange('tab-new', 'waiting', 'working')
+    expect(other.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
+  })
+
+  it('a turn a resumed session finishes after an ask it was asking is new, and notified', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    t.onStatusChange('tab-new', 'working', 'waiting', { sessionId: 'sid-2' })
+    expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'turn-done' })
+  })
 })
 
 describe('attention — a session starting again keeps its mark', () => {
@@ -211,6 +236,24 @@ describe('attention — a session starting again keeps its mark', () => {
     t.bound('tab-new', 'sid-1')
     expect(t.list()).toEqual([
       expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one', at: since })
+    ])
+    expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('a tab restarted while it asks keeps the ask, silently, as one it was asking, through anything that clears its old tab, and the restarted tab takes it with its time; any other mark of it goes', () => {
+    const { t, changes } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    const since = t.list()[0].at
+    t.onStatusChange('tab-news', 'working', 'waiting', { sessionId: 'sid-2' })
+    t.tabRestarting('tab-old')
+    t.tabRestarting('tab-news')
+    t.clear('tab-old')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done', wasAsking: true, at: since })
+    ])
+    t.bound('tab-new', 'sid-1')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: since })
     ])
     expect(changes.at(-1)?.event).toBeNull()
   })

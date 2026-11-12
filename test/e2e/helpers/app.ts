@@ -83,6 +83,16 @@ export async function osOutlets(app: ElectronApplication): Promise<OsOutletsSeen
   )
 }
 
+export async function triggerRestart(app: ElectronApplication, times = 1): Promise<void> {
+  await app.evaluate(({ Menu }, count) => {
+    for (let i = 0; i < count; i++) {
+      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
+      if (!item) throw new Error('no application-menu item with id "restart-session"')
+      item.click()
+    }
+  }, times)
+}
+
 export async function pretendWindowFocused(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows()[0].isFocused = () => true
