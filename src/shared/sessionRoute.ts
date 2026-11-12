@@ -112,35 +112,34 @@ Reply with that one JSON object and nothing else, adding to it:
   return { system: ROUTE_SYSTEM, prompt }
 }
 
-function objectStartingAt(reply: string, start: number): Record<string, unknown> | null {
+function jsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const v: unknown = JSON.parse(text)
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function topLevelObjects(reply: string): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = []
   let depth = 0
+  let start = 0
   let inString = false
-  for (let i = start; i < reply.length; i++) {
+  for (let i = 0; i < reply.length; i++) {
     const c = reply[i]
     if (inString) {
       if (c === '\\') i++
       else if (c === '"') inString = false
-    } else if (c === '"') inString = true
-    else if (c === '{') depth++
-    else if (c === '}' && --depth === 0) {
-      try {
-        const v: unknown = JSON.parse(reply.slice(start, i + 1))
-        return v && typeof v === 'object' && !Array.isArray(v)
-          ? (v as Record<string, unknown>)
-          : null
-      } catch {
-        return null
-      }
+    } else if (c === '{') {
+      if (depth++ === 0) start = i
+    } else if (depth > 0 && c === '"') inString = true
+    else if (depth > 0 && c === '}' && --depth === 0) {
+      const o = jsonObject(reply.slice(start, i + 1))
+      if (o) found.push(o)
     }
   }
-  return null
-}
-
-function* objectsFromTheEnd(reply: string): Generator<Record<string, unknown>> {
-  for (let s = reply.lastIndexOf('{'); s >= 0; s = s > 0 ? reply.lastIndexOf('{', s - 1) : -1) {
-    const o = objectStartingAt(reply, s)
-    if (o) yield o
-  }
+  return found
 }
 
 function text(v: unknown, max = TITLE_MAX_CHARS): string {
@@ -181,15 +180,8 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  if (!reply) return null
-  for (const o of objectsFromTheEnd(reply)) {
-    const route = routeOf(o, list)
-    if (route) return route
-  }
-  return null
-}
-
-function routeOf(o: Record<string, unknown>, list: RouteWorkspace[]): SessionRoute | null {
+  const o = reply ? topLevelObjects(reply).at(-1) : undefined
+  if (!o) return null
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
   if (o.hand === 'discord') return { ...said, kind: 'discord' }

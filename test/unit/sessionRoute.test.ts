@@ -174,13 +174,12 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
-  it('reads a reply that corrects itself by its last object that is a route, past a stray brace or a fragment after it', () => {
+  it('reads a reply that corrects itself by its last whole object, past a stray brace, and never falls back to an answer it took back', () => {
     const answer = reply({ hand: 'koloft', title: 'Resume', rule: 5 })
     expect(parseRoute(`${answer}(not rule 6})`, LIST)).toEqual({ kind: 'koloft', title: 'Resume' })
-    expect(parseRoute(`${answer}Its worktree would be {"new": "x"}`, LIST)).toEqual({
-      kind: 'koloft',
-      title: 'Resume'
-    })
+    expect(
+      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9' })}`, LIST)
+    ).toBeNull()
     expect(
       parseRoute(
         '{"hand": "koloft", "title": "恢复修复登录的会话", "rule": 5}\n\nWait, the title should be in the language of the message (English):\n\n{"hand": "koloft", "title": "Resume login fix session", "rule": 5}\n',
