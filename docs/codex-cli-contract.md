@@ -956,10 +956,21 @@ second `codex app-server` then answered `thread/resume` with `thread.turns` hold
 turn (`status: "completed"`, items `userMessage, agentMessage, fileChange, agentMessage`),
 its `fileChange` item the same shape as the live `item/completed` one. No
 `item/completed` frame came in the 3 s after the reply. The reply also carried
-`initialTurnsPage: null` and `turnsBackwardsCursor` / `itemsBackwardsCursor`; with one
-turn, whether a long session's reply holds only some of its turns was not seen. Koloft
+`initialTurnsPage: null` and `turnsBackwardsCursor` / `itemsBackwardsCursor`. Koloft
 takes `open` only from live frames, and seeds the file list from the reply's turns on
 every bind, without counting them as live writes.
+
+**A long session's `thread/resume` reply holds every turn, in one frame about a fifth to
+two fifths of the rollout's size.** 2026-11-12, codex-cli 0.166.0, a stdio `app-server`
+in a throwaway `CODEX_HOME` holding a copy of one real rollout and a fake API key (no
+network call is needed to resume): a 12.9 MB rollout with 9 turns answered with a 5.1 MB
+frame holding 9 turns, a 55.6 MB rollout with 39 turns with a 12.0 MB frame holding 39
+turns (turns counted as the rollout's `task_started`/`user_message` lines). `JSON.parse`
+of those frames in Node 24.13.0 took 11–13 ms and 17–24 ms (five runs each). Koloft
+parses that reply on the main thread once per bind, and a `thread/read` with
+`includeTurns: true` (`koloft session read` of a closed thread) is the same size. The
+`plugin/list` answers of about 13.5 MB at each TUI start are relayed without a parse,
+since Koloft parses only the frames its observer asks for.
 
 The same day, without a model, `codex sandbox -c 'sandbox_mode="workspace-write"'
 /usr/bin/open nosuchscheme98765://x` (a scheme no app claims, so nothing could open)
