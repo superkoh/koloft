@@ -387,14 +387,13 @@ export function killSessionCmd(
 ): string {
   const names = nameIfARenameLandedFirst ? [tmuxName, nameIfARenameLandedFirst] : [tmuxName]
   assertSafeNames(...names)
-  const tries = [
-    'end() { tmux -L koloft kill-session -t "$1" 2>/dev/null && { printf %s "$1"; exit 0; }; }',
-    ...names.map((name) => `end ${name}`)
-  ]
+  const tries = names.map(
+    (name) => `tmux -L koloft kill-session -t ${name} 2>/dev/null && { printf %s ${name}; exit 0; }`
+  )
   if (tabWhoseNameFileToTryLast)
     tries.push(
       `n="$(cat "${tabPath('$1')}.tmux" 2>/dev/null)"`,
-      'case "$n" in k-?*) end "$n" ;; esac'
+      `case "$n" in k-?*) tmux -L koloft kill-session -t "$n" 2>/dev/null && { printf %s "$n"; exit 0; } ;; esac`
     )
   return remoteAnswerCommand(
     [...tries, 'exit 1'].join('\n'),
