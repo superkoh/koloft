@@ -470,7 +470,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to a helper of the butler’s on the agent the owner picked, not on the butler’s own', async ({
+  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words, and with Reduce motion on its thinking icon stays but stands still; an answer it cannot use hands the words to a helper of the butler’s on the agent the owner picked, not on the butler’s own', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -486,6 +486,14 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(palette(page).locator('.cb-row.hot')).toHaveCount(0)
       await page.keyboard.press('Enter')
       await expect(palette(page).locator('.fresh-line.busy')).toBeVisible()
+      const thinkingIcon = palette(page).locator('.fresh-line.busy .fico-l svg')
+      const spinning = (): Promise<number> =>
+        thinkingIcon.evaluate((el) => el.getAnimations().length)
+      expect(await spinning()).toBe(1)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(spinning).toBe(0)
+      await expect(thinkingIcon).toBeVisible()
+      await page.emulateMedia({ reducedMotion: null })
       await page.keyboard.press('Escape')
       await expect(palette(page).locator('.fresh-line.busy')).toHaveCount(0)
       await expect(askBox(page)).toHaveValue('ws-b')
