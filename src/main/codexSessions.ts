@@ -320,7 +320,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
-  private resumedInDefaultHome = new Set<string>()
+  private resumedInDefaultHome = new Map<string, Promise<void>>()
   private sideServers = new CodexSideServers((home: string | undefined) => this.rpc(home))
   private machineSideServers = new CodexSideServers((machine: string) => this.machineRpc(machine))
   private machineHistory = new Map<
@@ -795,12 +795,22 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  private async indexInDefaultHome(threadId: string): Promise<void> {
-    if (this.resumedInDefaultHome.has(threadId)) return
-    this.resumedInDefaultHome.add(threadId)
+  private indexInDefaultHome(threadId: string): Promise<void> {
+    const loading =
+      this.resumedInDefaultHome.get(threadId) ??
+      this.loadInDefaultHome(threadId).catch((error) => {
+        this.resumedInDefaultHome.delete(threadId)
+        console.error(`[koloft] Codex could not load ${threadId} in the default home: ${error}`)
+      })
+    this.resumedInDefaultHome.set(threadId, loading)
+    return loading
+  }
+
+  private async loadInDefaultHome(threadId: string): Promise<void> {
+    await this.binaryOrThrow()
     const rpc = this.rpc(undefined)
     try {
-      await rpc.loadThreadIntoThisHome(threadId).catch(() => undefined)
+      await rpc.loadThreadIntoThisHome(threadId)
     } finally {
       await rpc.close().catch(() => {})
     }

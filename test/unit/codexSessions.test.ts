@@ -721,6 +721,32 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
+  it('two reads at once of a session the default home has not loaded both wait for its one resume, and a resume that failed is tried again on the next read', async () => {
+    const said = [{ completedAt: 1, items: [{ type: 'agentMessage', text: 'Hi there' }] }]
+    let loaded = false
+    let resumeFails = true
+    mocks.request.mockImplementation(async (method) => {
+      if (method === 'thread/resume' && resumeFails) throw new Error('timed out')
+      if (method === 'thread/resume') loaded = true
+      if (method === 'thread/read' || method === 'thread/resume')
+        return { thread: { id: A, cwd: repo, turns: loaded ? said : [] } }
+      return historyOrTrustedHooks(method)
+    })
+    vi.mocked(deps.homeOf).mockReturnValue(undefined)
+    const read = () => sessions.readTurns(codexSessionKey(A), 5)
+    const resumes = () => mocks.request.mock.calls.filter(([m]) => m === 'thread/resume').length
+
+    expect(await read()).toEqual([])
+    resumeFails = false
+    const [first, second] = await Promise.all([read(), read()])
+    expect([first, second].map((turns) => turns.map((t) => t.reply))).toEqual([
+      ['Hi there'],
+      ['Hi there']
+    ])
+    expect(resumes()).toBe(2)
+  })
+
+  // CODEX§15
   it('a closed session whose account home cannot be read is read from the default home instead', async () => {
     mocks.request.mockImplementation(async (method, _params, home) => {
       if (method === 'thread/read' && home === '/homes/gone') throw new Error('thread not found')
