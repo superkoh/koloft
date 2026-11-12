@@ -167,10 +167,22 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
       app.evaluate(
         ({ BrowserWindow }) => !!BrowserWindow.getAllWindows()[0]?.webContents.isCrashed()
       )
-    for (const reloads of [true, true, false]) {
+    await app.evaluate(({ BrowserWindow }) => {
+      const counted = globalThis as { rendererCrashesSeen?: number }
+      counted.rendererCrashesSeen = 0
+      BrowserWindow.getAllWindows()[0]!.webContents.on('render-process-gone', () => {
+        counted.rendererCrashesSeen! += 1
+      })
+    })
+    const crashesSeen = (): Promise<number | undefined> =>
+      app.evaluate(() => (globalThis as { rendererCrashesSeen?: number }).rendererCrashesSeen)
+    for (const [round, reloads] of [true, true, false].entries()) {
       await crash()
-      await expect.poll(crashed).toBe(true)
-      if (!reloads) continue
+      await expect.poll(crashesSeen).toBe(round + 1)
+      if (!reloads) {
+        await expect.poll(crashed).toBe(true)
+        continue
+      }
       await expect
         .poll(
           () =>
