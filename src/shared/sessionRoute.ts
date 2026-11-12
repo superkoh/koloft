@@ -112,17 +112,35 @@ Reply with that one JSON object and nothing else, adding to it:
   return { system: ROUTE_SYSTEM, prompt }
 }
 
-function lastJsonIn(reply: string): Record<string, unknown> | null {
-  const end = reply.lastIndexOf('}')
-  let start = end < 0 ? -1 : reply.lastIndexOf('{', end)
-  while (start >= 0) {
-    try {
-      return JSON.parse(reply.slice(start, end + 1)) as Record<string, unknown>
-    } catch {
-      start = start > 0 ? reply.lastIndexOf('{', start - 1) : -1
+function objectStartingAt(reply: string, start: number): Record<string, unknown> | null {
+  let depth = 0
+  let inString = false
+  for (let i = start; i < reply.length; i++) {
+    const c = reply[i]
+    if (inString) {
+      if (c === '\\') i++
+      else if (c === '"') inString = false
+    } else if (c === '"') inString = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) {
+      try {
+        const v: unknown = JSON.parse(reply.slice(start, i + 1))
+        return v && typeof v === 'object' && !Array.isArray(v)
+          ? (v as Record<string, unknown>)
+          : null
+      } catch {
+        return null
+      }
     }
   }
   return null
+}
+
+function* objectsFromTheEnd(reply: string): Generator<Record<string, unknown>> {
+  for (let s = reply.lastIndexOf('{'); s >= 0; s = s > 0 ? reply.lastIndexOf('{', s - 1) : -1) {
+    const o = objectStartingAt(reply, s)
+    if (o) yield o
+  }
 }
 
 function text(v: unknown, max = TITLE_MAX_CHARS): string {
@@ -163,8 +181,15 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  const o = reply ? lastJsonIn(reply) : null
-  if (!o) return null
+  if (!reply) return null
+  for (const o of objectsFromTheEnd(reply)) {
+    const route = routeOf(o, list)
+    if (route) return route
+  }
+  return null
+}
+
+function routeOf(o: Record<string, unknown>, list: RouteWorkspace[]): SessionRoute | null {
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
   if (o.hand === 'discord') return { ...said, kind: 'discord' }
