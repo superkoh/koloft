@@ -2039,6 +2039,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
 
   describe('a remote tab, whose Stop can come one mirror pull before its turn’s lines', () => {
     const RCWD = '/home/koh/app'
+    const A_STOP_ON_AN_UNCHANGED_FILE_IS_HANDLED_WITHIN_MS = 500
     const ended: { turn: { said: { text: string }[]; reply: string } }[] = []
     let file = ''
 
@@ -2061,8 +2062,12 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       return tracker
     }
 
-    const append = (...lines: unknown[]): void =>
+    const appendAsWritten = (...lines: unknown[]): void =>
       fs.appendFileSync(file, lines.map((l) => JSON.stringify(l) + '\n').join(''))
+    const append = (...lines: unknown[]): void =>
+      appendAsWritten(
+        ...lines.map((l) => ({ ...(l as object), timestamp: new Date().toISOString() }))
+      )
     const replies = (): string[] => ended.map((e) => e.turn.reply)
 
     async function stopBeforeAnyLine(tracker: InstanceType<typeof SessionTracker>): Promise<void> {
@@ -2072,7 +2077,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status !== 'working')
     }
 
-    it('a Stop that finds no turn ends the turn whose lines come after it; the next turn ends on its own, and a repeated Stop ends nothing', async () => {
+    it('a Stop that finds no turn ends the turn whose lines come after it; the next turn ends on its own, and a repeated Stop, which had no prompt of its own, does not end the turn after it', async () => {
       const tracker = await remoteTurnTab('88888888-8888-4888-8888-888888888888')
       await stopBeforeAnyLine(tracker)
       append(human('pick a colour', 30), said(text('Picked: Green'), 31))
@@ -2091,8 +2096,33 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       ])
 
       tracker.receive('tabRT', { type: 'stop' })
+      await new Promise((r) => setTimeout(r, A_STOP_ON_AN_UNCHANGED_FILE_IS_HANDLED_WITHIN_MS))
+      append(human('pick a shape', 50))
       await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
       expect(replies()).toEqual(['Picked: Green', 'Picked: Small'])
+
+      append(said(text('Picked: Circle'), 51))
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small', 'Picked: Circle'])
+    })
+
+    it('lines written before the bind that reach the mirror after an early Stop are history: the Stop ends the live turn after them, not one of theirs', async () => {
+      const tracker = await remoteTurnTab('66666666-6666-4666-8666-666666666666')
+      await stopBeforeAnyLine(tracker)
+      appendAsWritten(
+        human('older question', 3),
+        said(text('older answer'), 4),
+        human('another older question', 5),
+        said(text('another older answer'), 6)
+      )
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31))
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+      await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+      expect(replies()).toEqual(['Picked: Green'])
     })
 
     it('when the early-stopped turn and the next turn’s prompt arrive together, the early Stop ends the first turn, not the new one', async () => {

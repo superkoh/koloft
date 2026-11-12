@@ -470,6 +470,7 @@ interface Tracked {
   replyDone: boolean
   endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
   stopsBeforeTheirLines: number[]
+  promptSinceLastStop: boolean
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -569,6 +570,7 @@ export class SessionTracker extends SessionRuntime {
       turns: new TurnLog(),
       replyDone: false,
       stopsBeforeTheirLines: [],
+      promptSinceLastStop: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -600,7 +602,12 @@ export class SessionTracker extends SessionRuntime {
       t.compactingFrom = undefined
       t.idleCompaction = false
     }
-    if (event.type === 'stop') void this.endTurn(tabId)
+    if (event.type === 'prompt' && t) t.promptSinceLastStop = true
+    if (event.type === 'stop') {
+      const hasAPromptOfItsOwn = !!t?.promptSinceLastStop
+      if (t) t.promptSinceLastStop = false
+      void this.endTurn(tabId, hasAPromptOfItsOwn)
+    }
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
@@ -695,15 +702,15 @@ export class SessionTracker extends SessionRuntime {
     this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
-  // CC§2
-  private async endTurn(tabId: string): Promise<void> {
+  // CC§2 CC§21
+  private async endTurn(tabId: string, hasAPromptOfItsOwn: boolean): Promise<void> {
     const t = this.tracked.get(tabId)
     if (!t) return
     await this.parse(t).catch(() => {})
     if (this.tracked.get(tabId) !== t) return
     const turn = t.turns.open()
     if (turn) this.endOpenTurn(t, turn)
-    else if (t.remote) t.stopsBeforeTheirLines.push(Date.now())
+    else if (t.remote && hasAPromptOfItsOwn) t.stopsBeforeTheirLines.push(Date.now())
   }
 
   private endOpenTurn(t: Tracked, turn: TalkTurn): void {
@@ -715,13 +722,11 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
-  private takeStopBeforeItsLines(t: Tracked): boolean {
-    if (!t.stopsBeforeTheirLines.length) return false
+  private takeStopBeforeItsLines(t: Tracked, turn: TalkTurn): boolean {
+    const kept = t.stopsBeforeTheirLines
     const now = Date.now()
-    t.stopsBeforeTheirLines = t.stopsBeforeTheirLines.filter(
-      (at) => now - at < A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS
-    )
-    return t.stopsBeforeTheirLines.shift() !== undefined
+    while (kept.length && now - kept[0] >= A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS) kept.shift()
+    return turn.at >= t.bindMs && kept.shift() !== undefined
   }
 
   private finishTurn(t: Tracked, turn: TalkTurn): void {
@@ -1361,7 +1366,7 @@ export class SessionTracker extends SessionRuntime {
       t.caughtUp = true
     }
     const open = t.turns.open()
-    if (open && this.takeStopBeforeItsLines(t)) this.endOpenTurn(t, open)
+    if (open && this.takeStopBeforeItsLines(t, open)) this.endOpenTurn(t, open)
     return true
   }
 
@@ -1537,7 +1542,7 @@ export class SessionTracker extends SessionRuntime {
       else {
         const before = t.turns.open()
         t.turns.add(piece.line, piece.midTurn)
-        if (before && before !== t.turns.open() && this.takeStopBeforeItsLines(t))
+        if (before && before !== t.turns.open() && this.takeStopBeforeItsLines(t, before))
           this.finishTurn(t, before)
         t.replyDone = piece.line.who === 'assistant'
       }
