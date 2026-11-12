@@ -174,6 +174,26 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
+  it('reads a reply that corrects itself by its last answer', () => {
+    expect(
+      parseRoute(
+        '{"hand": "koloft", "title": "恢复修复登录的会话", "rule": 5}\n\nWait, the title should be in the language of the message (English):\n\n{"hand": "koloft", "title": "Resume login fix session", "rule": 5}\n',
+        LIST
+      )
+    ).toEqual({ kind: 'koloft', title: 'Resume login fix session' })
+    expect(
+      parseRoute(
+        `${reply({ workspace: 1, worktree: { new: 'deng-lu' }, title: '修登录' })}Actually:\n${reply({ workspace: 1, worktree: { new: 'safari-login' }, title: 'Fix login' })}`,
+        LIST
+      )
+    ).toEqual({
+      kind: 'workspace',
+      path: '/Users/me/code/app',
+      title: 'Fix login',
+      worktree: { kind: 'new', name: 'safari-login' }
+    })
+  })
+
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {
     expect(parseRoute(null, LIST)).toBeNull()
     expect(parseRoute('I think app.', LIST)).toBeNull()

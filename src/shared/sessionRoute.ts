@@ -112,16 +112,17 @@ Reply with that one JSON object and nothing else, adding to it:
   return { system: ROUTE_SYSTEM, prompt }
 }
 
-function jsonIn(reply: string): Record<string, unknown> | null {
-  const start = reply.indexOf('{')
+function lastJsonIn(reply: string): Record<string, unknown> | null {
   const end = reply.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
-  try {
-    const v: unknown = JSON.parse(reply.slice(start, end + 1))
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
-  } catch {
-    return null
+  let start = end < 0 ? -1 : reply.lastIndexOf('{', end)
+  while (start >= 0) {
+    try {
+      return JSON.parse(reply.slice(start, end + 1)) as Record<string, unknown>
+    } catch {
+      start = start > 0 ? reply.lastIndexOf('{', start - 1) : -1
+    }
   }
+  return null
 }
 
 function text(v: unknown, max = TITLE_MAX_CHARS): string {
@@ -162,7 +163,7 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  const o = reply ? jsonIn(reply) : null
+  const o = reply ? lastJsonIn(reply) : null
   if (!o) return null
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
