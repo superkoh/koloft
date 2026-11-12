@@ -128,7 +128,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         res.writeHead(200)
         res.end('signed in')
       })
-      const callback = `http://localhost:${cli.port}/auth/callback?code=c-8`
+      const callback = `http://localhost:${cli.port}/auth/callback?code=owner_only_zq`
       server.route('/authorize', (_q, res) => {
         res.writeHead(302, { location: '/sign-in' })
         res.end()
@@ -150,12 +150,12 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await signIn.locator('#go').click()
       await expect
         .poll(() => cli.requestsFor('/auth/callback').map((r) => r.search))
-        .toEqual(['?code=c-8'])
+        .toEqual(['?code=owner_only_zq'])
       await expect
         .poll(() => terminalText(page, tab))
         .toContain('finished the sign-in in this session')
       await expect(page.locator(SECRET_BAR)).toHaveCount(0)
-      expect(await terminalText(page, tab)).not.toContain('c-8')
+      expect(await terminalText(page, tab)).not.toContain('owner_only_zq')
     } finally {
       await quitAndClose(app)
       await server.close()
