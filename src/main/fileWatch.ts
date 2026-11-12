@@ -110,22 +110,17 @@ function folderIdOf(root: string): string | undefined {
   }
 }
 
-function reportSoon(root: string, entry: DirWatch, onChange: DirChangeListener): void {
-  if (entry.timer) return
-  entry.timer = setTimeout(() => {
-    entry.timer = null
-    const changed = entry.changed
-    entry.changed = new Set()
-    onChange(root, changed ? changesOf(changed) : undefined)
-  }, DIR_CHANGE_DEBOUNCE_MS)
-}
-
 function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
   entry.watcher.on('change', (_event, filename) => {
-    if (watchIgnored(filename)) return
-    if (entry.count === 0) return
+    if (entry.count === 0 || watchIgnored(filename)) return
     noteChange(root, entry, filename)
-    reportSoon(root, entry, onChange)
+    if (entry.timer) return
+    entry.timer = setTimeout(() => {
+      entry.timer = null
+      const changed = entry.changed
+      entry.changed = new Set()
+      onChange(root, changed ? changesOf(changed) : undefined)
+    }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
     if (entry.count === 0) {
@@ -153,10 +148,7 @@ export function watchDir(root: string, onChange: DirChangeListener): boolean {
     existing?.count === 0 && folderIdOf(root) !== existing.folderId
   if (existing && keptForAFolderSinceReplaced) forget(root, existing)
   else if (existing) {
-    if (existing.count === 0) {
-      noLongerKept(root)
-      existing.changed = new Set()
-    }
+    if (existing.count === 0) noLongerKept(root)
     existing.count++
     return true
   }
@@ -186,6 +178,7 @@ export function unwatchDir(root: string): void {
   if (entry.count === 0 || --entry.count > 0) return
   if (entry.timer) clearTimeout(entry.timer)
   entry.timer = null
+  entry.changed = new Set()
   keptWithNoViewerOldestFirst.push(root)
   while (keptWithNoViewerOldestFirst.length > FOLDERS_KEPT_WATCHED_AFTER_THEIR_LAST_VIEWER_LEFT) {
     const oldest = keptWithNoViewerOldestFirst[0]
