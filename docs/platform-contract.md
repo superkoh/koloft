@@ -3551,4 +3551,51 @@ Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-writ
 in a `.koloft-writes` folder inside the target's folder and moves it into place off the
 main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
-save's last check and its rename together on the main thread.
+save's last check and its rename together on the main thread; `signalLog`
+(`machineRoom.ts`) appends to and trims its log through `fs.promises`.
+
+## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
+
+- **While the main process's JavaScript is busy, no key press and no wheel turn reaches
+  a window**, wherever the terminal behind it lives. Electron's own docs (Performance,
+  "Blocking the main process", read 2026-11-12) say the main process "also houses the
+  UI thread" and that blocking it freezes the whole app; Chromium's
+  `render_widget_host_view_cocoa.mm` takes `keyEvent:` and `scrollWheel:` in the
+  browser process's window view before handing them to the renderer, and an input
+  method's text goes the same way. So moving node-pty out of the main process cannot
+  keep typing or scrolling going while the main thread stalls: only a main thread that
+  does not stall can.
+- **What a throwaway Electron 43.8.6 app showed** (hidden window, a `cat` in a node-pty,
+  the main process busy-waiting 1 s): node-pty loads in a `utilityProcess` — from a
+  plain folder and from an `app.asar` with node-pty in `app.asar.unpacked` — and a
+  `MessageChannelMain` port reaches the renderer's preload with context isolation on.
+  Text the page itself wrote over that port came back from the pty with p99 1–8.8 ms
+  during the stall (the same path through the main process: 980–990 ms), and the
+  renderer drew 160 frames in that second. Keys and wheel turns sent through CDP's
+  `Input.dispatchKeyEvent` / `Input.dispatchMouseEvent` reached the page only after
+  the stall (keys p99 938–942 ms over two rounds, wheel p99 946 ms with 16 of 30
+  arriving), but so did a plain `Runtime.evaluate` (896–899 ms): every CDP command
+  waits for the main thread, so these numbers agree with the source above without
+  proving it. Not measured: a real keyboard (it needs a focused window), and whether
+  the frames drawn during the stall reach the screen.
+- **The rest of that app**: the `utilityProcess`'s main thread read priority 47 under
+  `ps -M` (the main process 46, both libuv pools 31). Killing it with SIGKILL gave the
+  main process its `exit` event; a program in its pty died of the hangup, one that
+  ignored SIGHUP lived on with parent 1, and a new fork started fine. Killing the main
+  process with SIGKILL ended the `utilityProcess` too.
+- **Timing the main thread from inside costs little and tells waiting from working.**
+  In a hidden Electron 43.8.6 window (Node 24.22.1), a `setInterval` every 25 ms that
+  reads `performance.now()` and `process.threadCpuUsage()` added 52–56 ms of process
+  CPU per 10 s over three runs (every 10 ms: about 105 ms); the app alone used about
+  10 ms. A 200 ms busy loop showed as a 203–213 ms gap with 197–200 ms of main-thread CPU, a 200 ms
+  `Atomics.wait` as a 212–228 ms gap with under 1 ms of CPU, and 60 s with nothing
+  to do showed no gap over 75 ms. `perf_hooks.monitorEventLoopDelay` at a 10 ms
+  resolution, read every second, reported the wait but not the busy loop in one run.
+- Measured 2026-11-12 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, with
+  `NSApplicationActivationPolicyAccessory` and the window never shown, one or two runs
+  each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
+  app with a Dock icon whose window stays covered for long.
+
+Koloft dependents: `mainThreadStalls.ts` writes a line to `main-stalls.log` in
+`userData` whenever the main thread took no new work for 75 ms or more, with how much
+of that it spent on the CPU.

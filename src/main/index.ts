@@ -305,6 +305,7 @@ import {
 } from './cronRunner'
 import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
+import { watchMainThreadStalls } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -3234,6 +3235,7 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  watchMainThreadStalls(signalLog(path.join(app.getPath('userData'), 'main-stalls.log')))
   presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
