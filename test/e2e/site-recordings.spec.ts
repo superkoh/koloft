@@ -212,7 +212,7 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
 }) => {
   test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
   test.setTimeout(900_000)
-  const { app, page } = await launchReal(env, { assist: { on: true, backend: 'claude' } }, true)
+  const { app, page } = await launchReal(env, { assist: { backend: 'claude' } }, true)
   const palette = page.locator('.modal.palette')
   const box = palette.getByRole('textbox', { name: 'Ask or jump' })
   try {
@@ -287,7 +287,7 @@ test('assist: the butler starts a real claude session that adds GET /health and 
 }) => {
   test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
   test.setTimeout(900_000)
-  const { app, page } = await launchReal(env, { assist: { on: true, backend: 'claude' } })
+  const { app, page } = await launchReal(env, { assist: { backend: 'claude' } })
   try {
     const film = reel(page)
     film.rollInBackground(800)

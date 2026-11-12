@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BackendId } from '../../src/shared/types'
+import { DEFAULT_SETTINGS, type BackendId } from '../../src/shared/types'
 import { koloftAssist } from '../../src/main/assist'
 import {
   parseRoute,
@@ -102,7 +102,11 @@ const CASES: [string, string[]][] = [
 for (const backend of ['claude', 'codex', 'muse'] as const) {
   const binary = BINARIES[backend]
   const assist = koloftAssist({
-    setting: () => ({ on: true, backend }),
+    picks: () => ({
+      assist: { backend },
+      sessionMethods: DEFAULT_SETTINGS.sessionMethods,
+      accounts: []
+    }),
     enabled: (b) => b === backend,
     target: async () => (binary ? { binary, env: process.env } : null)
   })
@@ -112,7 +116,7 @@ for (const backend of ['claude', 'codex', 'muse'] as const) {
     () => {
       for (const [typed, allowed] of CASES) {
         it(typed, { timeout: 60_000 }, async () => {
-          const reply = await assist(routeJob(LIST, typed))
+          const reply = await assist({ row: 'route', ...routeJob(LIST, typed) })
           const route = parseRoute(reply, LIST)
           expect(allowed, `${backend} replied ${JSON.stringify(reply)}`).toContain(landing(route))
         })

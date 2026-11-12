@@ -301,7 +301,7 @@ export class Butler {
     const resumable = key !== undefined && sameAgent
     if (keepsWhatItNoLongerNames)
       this.d.toast(
-        `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model, so it starts a new conversation.`
+        `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model or thinking, so it starts a new conversation.`
       )
     else if (last !== undefined && !resumable)
       this.d.toast(

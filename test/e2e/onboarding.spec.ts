@@ -598,7 +598,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await expectStep(page, 4)
       const accounts = settingsOnDisk(env).accounts as { name: string; kind: string }[]
       expect(accounts.map((a) => [a.name, a.kind])).toEqual([['Claude', 'oauth']])
-      expect(settingsOnDisk(env).assist).toBeNull()
+      expect(settingsOnDisk(env).assist).toEqual({})
     } finally {
       await quitAndClose(app)
       await probe.close()
@@ -745,7 +745,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await snap(page, 'T-OB-12')
       await assist.locator('button', { hasText: 'Not now' }).click()
       await expect(assist).toHaveCount(0)
-      expect(settingsOnDisk(env).assist).toBeNull()
+      expect(settingsOnDisk(env).assist).toEqual({})
     } finally {
       await quitAndClose(app)
     }
@@ -755,7 +755,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     env
   }) => {
     test.setTimeout(120_000)
-    seedSettings(env, { onboardingSeen: true, assist: null })
+    seedSettings(env, { onboardingSeen: true, assist: null, skipPermissionsAgreed: false })
     const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
 
     const app = await launchApp(env)

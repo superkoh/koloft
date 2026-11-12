@@ -198,7 +198,14 @@ describe('store: closing the session you watch lands on the butler, whichever of
     }
     useStore.setState({
       butlerTab: null,
-      settings: { ...useStore.getState().settings, assist: { on: true, backend: 'claude' } }
+      accounts: null,
+      settings: {
+        ...useStore.getState().settings,
+        skipPermissionsAgreed: true,
+        accounts: [
+          { name: 'a', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
+        ]
+      }
     })
   })
 
