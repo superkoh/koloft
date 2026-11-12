@@ -1222,13 +1222,15 @@ butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.
 **Every question muse asks its terminal is one Koloft's off-screen batching lets through
 at once.** Measured 2026-11-12 on muse 1.4.15 (`1.4.15-R8339.1`, the launcher in the
 `koloft-muse-probe-1411` image updating itself to it), Linux arm64 in Docker: a python pty
-at 120×40 that answered like Koloft's terminal (DA1, DA2, cursor position, DECRQM,
-OSC 10/11/12, OSC 7501 with Koloft's reply; no XTVERSION reply), a fake `/responses`
+at 120×40 that answered as Koloft's terminal does (DA1, DA2, cursor position, DECRQM,
+OSC 4 and 10–12, `?996n` with `?997;1n`, OSC 7501 with Koloft's reply) and left
+XTVERSION and `?u` unanswered as Koloft does (CODEX§37), a fake `/responses`
 model (`--base-url`, `META_API_KEY`, `MUSE_MODEL`) whose answer ran `touch` through the
 `bash` tool, `TERM_PROGRAM=Apple_Terminal`, Koloft's launch flags (`--approval-judge off
 --sandbox-network enabled`). Two runs: one as Koloft starts it, one with
 `--approval-mode untrusted` so the run question showed. Each run: the trust question
-(`1`, Enter), one prompt, a resize to 100×30, `/clear`, Ctrl+C twice.
+(`1`, Enter), one prompt, a resize to 100×30, `/clear`, Ctrl+C twice. An earlier
+round that left `?996n` and OSC 4 unanswered asked exactly the same.
 
 - At start, in one read: `ESC]7501;?ESC\`, `ESC]10;?BEL`, `ESC]11;?BEL`, and the 16
   palette questions `ESC]4;0;?BEL` … `ESC]4;15;?BEL`; then `ESC[6n` on its own.
@@ -1238,7 +1240,7 @@ model (`--base-url`, `META_API_KEY`, `MUSE_MODEL`) whose answer ran `touch` thro
   nothing during the turn, the run question or the resize. `ESC[22;0t` and `ESC[23;0t`
   (save and restore the title) are not questions. Both runs the same.
 - Each run's reads, replayed in order and at their recorded times into Koloft's
-  `TerminalOutput` for a tab off screen, sent every read holding a question at once.
+  `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
 
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 

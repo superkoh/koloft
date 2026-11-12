@@ -1847,13 +1847,15 @@ starts, as a Codex one does (`src/main/assistMemory.ts`).
 
 **Every question agy asks its terminal is one Koloft's off-screen batching lets through
 at once.** Measured 2026-11-12 on agy 1.5.7 (Linux arm64 from the manifest, sha512
-checked) in Docker with no network: a python pty at 120×40 that answered like Koloft's
-terminal (DA1, DA2, cursor position, `?u` with `?0u`, DECRQM, OSC 10/11/12, OSC 7501
-with Koloft's reply; no XTVERSION reply), a temp `HOME` with `modelProvider` and
+checked) in Docker with no network: a python pty at 120×40 that answered as Koloft's
+terminal does (DA1, DA2, cursor position, DECRQM with 2026 known and 2027 not, OSC 4 and
+10–12, `?996n`, OSC 7501 with Koloft's reply) and left XTVERSION and `?u` unanswered as
+Koloft does (CODEX§37), a temp `HOME` with `modelProvider` and
 `onboarding.json` seeded (§5), a made-up `GEMINI_API_KEY` and the fake Gemini server
 answering a `run_command` (`touch`) and then text, `TERM_PROGRAM` unset as in a Koloft
 tab (§27). One run: the trust question (Enter), one prompt, Enter on the run, a resize
-to 100×30, `/clear`, Ctrl+C twice.
+to 100×30, `/clear`, Ctrl+C twice. An earlier run that answered `?u` (`?0u`) and every
+DECRQM as known asked exactly the same.
 
 - At start: `ESC[>q`, `ESC[c`, `ESC[?2026$p`, `ESC[?2027$p`, `ESC]7501;?BEL`,
   `ESC]11;?BEL`, `ESC[?u`.
@@ -1861,7 +1863,7 @@ to 100×30, `/clear`, Ctrl+C twice.
 - Nothing else: no OSC 10 or OSC 4, no DCS or APC question, and nothing new during the
   turn. `ESC[?5W`, `ESC[=5;1u`, `ESC[>5u` and `ESC[>4;2m` set modes and ask nothing.
 - The run's reads, replayed in order and at their recorded times into Koloft's
-  `TerminalOutput` for a tab off screen, sent every read holding a question at once.
+  `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
 
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 
