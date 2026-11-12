@@ -800,7 +800,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     this.resumedInDefaultHome.add(threadId)
     const rpc = this.rpc(undefined)
     try {
-      await rpc.request('thread/resume', { threadId }).catch(() => undefined)
+      await rpc.loadThreadIntoThisHome(threadId).catch(() => undefined)
     } finally {
       await rpc.close().catch(() => {})
     }

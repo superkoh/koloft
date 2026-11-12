@@ -52,19 +52,25 @@ vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))
-vi.mock('../../src/main/codexTransport', () => ({
-  createCodexTransport: mocks.create,
-  CodexRpc: class {
-    private home?: string
-    constructor(options: CodexProcessOptions) {
-      this.home = options.env?.CODEX_HOME
-      mocks.rpcHomes.push(this.home)
-      mocks.rpcOptions.push(options)
+vi.mock('../../src/main/codexTransport', async (importOriginal) => {
+  const real = (await importOriginal<typeof import('../../src/main/codexTransport')>()).CodexRpc
+  return {
+    createCodexTransport: mocks.create,
+    CodexRpc: class {
+      private home?: string
+      private initialized = Promise.resolve()
+      constructor(options: CodexProcessOptions) {
+        this.home = options.env?.CODEX_HOME
+        mocks.rpcHomes.push(this.home)
+        mocks.rpcOptions.push(options)
+      }
+      private send = (method: string, params: unknown) => mocks.request(method, params, this.home)
+      request = real.prototype.request
+      loadThreadIntoThisHome = real.prototype.loadThreadIntoThisHome
+      close = mocks.close
     }
-    request = (method: string, params: unknown) => mocks.request(method, params, this.home)
-    close = mocks.close
   }
-}))
+})
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
