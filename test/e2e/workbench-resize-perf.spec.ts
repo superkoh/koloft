@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
-import { notesIsland, startSessionIn, waitBooted } from './helpers/p1'
+import { notesGutter, notesIsland, startSessionIn, waitBooted } from './helpers/p1'
 import { NOTES_HEIGHT_FLOOR } from '../../src/shared/settingsOps'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH, workbenchIcon, workbenchPanel } from './helpers/workbench'
@@ -91,7 +91,7 @@ test.describe('Sidebar edge and Notes divider drags write the size, not the stor
     expect(start - NOTES_DRAG_PX, 'the drag stays above the smallest note').toBeGreaterThan(
       NOTES_HEIGHT_FLOOR
     )
-    const divider = (await page.locator('.gutter-h:has(+ .isl-notes)').boundingBox())!
+    const divider = (await notesGutter(page).boundingBox())!
     const x = divider.x + divider.width / 2
     const y = divider.y + divider.height / 2
     await resetCommits(page)
