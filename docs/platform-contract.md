@@ -1407,13 +1407,33 @@ inferred, not checked.
   `startOnLoad`, `maxTextSize`, `suppressErrorRendering` and `maxEdges` but not
   `htmlLabels` or `themeCSS`, so a document's own `%%{init}%%` can set those two. With
   `htmlLabels` on, labels go in `<foreignObject>`, which DOMPurify strips; in mermaid 11
-  the root key wins, but the flowchart renderer still reads `flowchart.htmlLabels`
-  directly in two places. A document's `%%{init}%%` is applied to the process-wide
-  config at the start of `render()`, so two renders at once can leak settings. Labels
-  are measured with `getBBox`, which needs a laid-out node; with no container argument
-  mermaid adds its own scratch `<div>` to `<body>`. `fontFamily` lands in SVG
-  presentation attributes while widths are measured, and a CSS `var()` there is not
-  reliably honoured.
+  and 12 the root key wins, but the flowchart renderer still reads
+  `flowchart.htmlLabels` directly in two places. A document's `%%{init}%%` is applied
+  to the process-wide config at the start of `render()`, so two renders at once can
+  leak settings. Labels are measured with `getBBox`, which needs a laid-out node; with
+  no container argument mermaid adds its own scratch `<div>` to `<body>`. `fontFamily`
+  lands in SVG presentation attributes while widths are measured, and a CSS `var()`
+  there is not reliably honoured. (All of the above re-read in mermaid 12.3.0's
+  `dist`, 2026-11-12.)
+- **mermaid 12 changed how diagrams look by default** (12.3.0 against 11.17.0,
+  2026-11-12: both default configs dumped from `mermaidAPI.defaultConfig` and diffed,
+  then 31 samples drawn in the built app on each). The root `layout` went from `dagre`
+  to `elk`; `flowchart`, `class`, `state`, `er`, `requirement`, `sequence` and `venn`
+  each gained their own `look: 'neo'` and `theme: 'redux-color'` (the root `theme` and
+  `look` stayed `default` and `classic`); `flowchart.wrappingWidth` went from 200 to
+  120, and `flowchart` and `state` gained `minNodeWidth: 120` (state labels wrapped at
+  `flowchart.wrappingWidth` in 11, at `state.wrappingWidth` in 12). `theme`, `look` and
+  `layout` are resolved per diagram (`resolveAppearance` in `config.ts`): the
+  document's own directives first, then what `initialize` was given, then the
+  defaults, and inside each of those the diagram's own section beats the root key. So
+  the 11 look comes back only by setting these keys in each diagram's section. A root
+  `layout` passed to `initialize` also reaches mindmaps, which otherwise draw with
+  `cose-bilkent`: it turns a radial mindmap into a top-down tree. With the sections
+  set, a state diagram whose edges carry labels is still drawn wider than in 11 (the
+  labels sit beside the edges, not on them), flowchart circles and cylinders are about
+  3 px larger, and a mindmap's branches land a few px elsewhere; no setting found
+  that undoes these. ELK is a 3.4 MB chunk of its own, loaded only when a diagram asks
+  for that layout.
 - **KaTeX**: when it refuses a formula, the `.katex-error` element's text is a
   ParseError message with combining marks stitched through the source; the untouched
   source is in its `title` attribute. Its default `maxSize` is Infinity, so an untrusted

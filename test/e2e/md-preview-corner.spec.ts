@@ -857,6 +857,42 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page).locator('.md-alert .mmd svg')).toHaveCount(1)
   })
 
+  test('BB-C39 a flowchart, a state diagram and a sequence diagram are drawn with pale purple boxes, the look they had before mermaid 12', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const PALE_PURPLE = 'rgb(236, 236, 255)'
+    const ws = env.workspaces.a
+    write(
+      ws,
+      'c39.md',
+      [
+        '# C39',
+        '',
+        fence('mermaid', flow('C39f')),
+        '',
+        fence('mermaid', 'stateDiagram-v2\n  C39idle --> C39busy'),
+        '',
+        fence('mermaid', 'sequenceDiagram\n  C39a->>C39b: hello'),
+        ''
+      ].join('\n')
+    )
+
+    await putSessionOnScreen(page)
+    await openDoc(page, env, 'c39.md')
+    await scrollToBottom(page)
+
+    await expect(diagrams(page)).toHaveCount(3, { timeout: 120_000 })
+    const fills = await diagrams(page).evaluateAll((svgs) =>
+      svgs.map((svg) => {
+        const box = svg.querySelector('.node rect, rect.actor')
+        return box ? getComputedStyle(box).fill : 'no box'
+      })
+    )
+    expect(fills).toEqual([PALE_PURPLE, PALE_PURPLE, PALE_PURPLE])
+  })
+
   test('BB-C18 all diagrams show even when their count exceeds the cache size', async ({
     app,
     page,
