@@ -119,7 +119,7 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<v
 }
 
 test.describe('the update modal: what can and cannot close it, and what can stack on it', () => {
-  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte; a download of unknown size slides its bar, and with Reduce motion on the bar stands still across the whole track', async ({
+  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte; a download of unknown size slides its bar, and with Reduce motion on the bar stands still across the whole track at once, with no slide to get there', async ({
     env
   }) => {
     const fixture = withFixtureEnv(env)
@@ -145,8 +145,7 @@ test.describe('the update modal: what can and cannot close it, and what can stac
       await expect.poll(moving).toBe(1)
       expect(await fillsItsTrack(unknownSize)).toBe(false)
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await expect.poll(moving).toBe(0)
-      await expect(unknownSize).toBeVisible()
+      expect(await moving()).toBe(0)
       expect(await fillsItsTrack(unknownSize)).toBe(true)
       await page.emulateMedia({ reducedMotion: null })
 

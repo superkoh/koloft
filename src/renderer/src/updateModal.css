@@ -177,9 +177,9 @@
 @media (prefers-reduced-motion: reduce) {
   .update-progress-fill.indet {
     width: 100%;
-    margin-left: 0;
-    opacity: 0.55;
+    opacity: var(--unknown-length-bar-at-rest-opacity);
     animation: none;
+    transition: none;
   }
 }
 @keyframes updateIndet {

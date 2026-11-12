@@ -80,10 +80,9 @@ export async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<voi
 }
 
 export async function fillsItsTrack(bar: Locator): Promise<boolean> {
-  return bar.evaluate((el) => {
-    const track = el.parentElement
-    return !!track && Math.abs(el.getBoundingClientRect().width - track.clientWidth) < 1
-  })
+  return bar.evaluate(
+    (el) => Math.abs(el.getBoundingClientRect().width - el.parentElement!.clientWidth) < 1
+  )
 }
 
 export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {
