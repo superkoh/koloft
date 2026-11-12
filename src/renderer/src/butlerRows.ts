@@ -1,4 +1,6 @@
-import type { AssistSetting, DiscordChannel, SessionInfo, WorkspaceRows } from '@shared/types'
+import type { AccountMeta, SessionInfo, Settings, WorkspaceRows } from '@shared/types'
+import { hasUsableAccount } from '@shared/accountUsage'
+import { SESSION_BACKENDS } from '@shared/sessionBackend'
 
 export function everyWorkspaceRows(s: {
   workspaceRows: WorkspaceRows[]
@@ -8,10 +10,14 @@ export function everyWorkspaceRows(s: {
 }
 
 export function butlerSetUp(s: {
-  assist: AssistSetting
-  channel: DiscordChannel | undefined
+  accounts: readonly AccountMeta[] | null
+  settings: Pick<Settings, 'accounts' | 'skipPermissions' | 'skipPermissionsAgreed' | 'discord'>
 }): boolean {
-  return s.assist !== null || !!s.channel
+  if (s.settings.discord.channel) return true
+  const accounts = s.accounts ?? s.settings.accounts
+  const answeredSkippingPermissions =
+    !s.settings.skipPermissions || s.settings.skipPermissionsAgreed
+  return answeredSkippingPermissions && SESSION_BACKENDS.some((b) => hasUsableAccount(accounts, b))
 }
 
 type TabState = { id: string; alive: boolean; asleep?: true }

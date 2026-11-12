@@ -123,7 +123,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { everyWorkspaceRows, isButlerTab } from './butlerRows'
+import { butlerSetUp, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -1191,13 +1191,6 @@ export default function App(): JSX.Element {
       })
       return
     }
-    if (!route && !useStore.getState().settings.assist?.on) {
-      showToast(
-        'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
-      )
-      pickWorkspaceForTyped({ prompt, title: '' }, backend)
-      return
-    }
     const toButler = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
       const request = {
@@ -1290,7 +1283,7 @@ export default function App(): JSX.Element {
     activeTab ? s.sessions.find((x) => x.tabId === activeTab.id)?.title : undefined
   )
   const signInTabId = useStore((s) => s.signIn?.tabId)
-  const assistAsked = useStore((s) => s.assistAsked && !s.settings.assist?.on)
+  const assistAsked = useStore((s) => s.assistAsked && !butlerSetUp(s))
   const setAssistAsked = useStore((s) => s.setAssistAsked)
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landed = useStore(

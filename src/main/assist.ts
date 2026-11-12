@@ -1,11 +1,17 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import type { AssistSetting, BackendId } from '@shared/types'
-import { backendsFrom } from '@shared/sessionBackend'
+import type { AssistJobId, BackendId } from '@shared/types'
+import {
+  assistBackendsFor,
+  assistLaunchOn,
+  type AssistLaunch,
+  type ModelAndEffort
+} from '@shared/assistPicks'
 import { lastCompletedText } from './museSessionLog'
 import { envMs } from './sessionRuntime'
 
 export interface AssistJob {
+  row: AssistJobId
   system: string
   prompt: string
   signal?: AbortSignal
@@ -16,11 +22,19 @@ export type Assist = (job: AssistJob) => Promise<string | null>
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
 
+// CC§9 CODEX§15
+const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {
+  claude: { model: 'haiku' },
+  codex: { model: 'gpt-6-luna' },
+  muse: {},
+  agy: {}
+}
+
 // CC§9
-const CLAUDE_ONE_SHOT = (system: string): string[] => [
+const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
   '-p',
-  '--model',
-  'haiku',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--effort', launch.effort] : []),
   '--no-session-persistence',
   '--setting-sources',
   '',
@@ -34,7 +48,7 @@ const CLAUDE_ONE_SHOT = (system: string): string[] => [
 ]
 
 // CODEX§15
-const CODEX_ONE_SHOT = [
+const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [
   'exec',
   '--skip-git-repo-check',
   '--ephemeral',
@@ -42,24 +56,33 @@ const CODEX_ONE_SHOT = [
   '--ignore-rules',
   '-s',
   'read-only',
-  '-m',
-  'gpt-6-luna',
+  ...(launch.model ? ['-m', launch.model] : []),
+  ...(launch.effort ? ['-c', `model_reasoning_effort="${launch.effort}"`] : []),
   '-C',
   os.tmpdir(),
   '-'
 ]
 
 // MUSE§1
-const MUSE_ONE_SHOT = (task: string): string[] => [
+const MUSE_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
   'exec',
   '--json',
   '--no-session-log',
   '--disable-reminders',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--reasoning-effort', launch.effort] : []),
   task
 ]
 
-// AGY§20
-const AGY_ONE_SHOT = (task: string): string[] => ['-p', task, '--output-format', 'json']
+// AGY§20 AGY§21
+const AGY_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
+  '-p',
+  task,
+  '--output-format',
+  'json',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--effort', launch.effort] : [])
+]
 
 // AGY§20
 function agyResponse(out: string): string | null {
@@ -78,31 +101,31 @@ const withSystemFirst = (job: AssistJob): string => `${job.system}\n\n${job.prom
 const ONE_SHOT: Record<
   BackendId,
   {
-    argv(job: AssistJob): string[]
+    argv(job: AssistJob, launch: ModelAndEffort): string[]
     stdin(job: AssistJob): string
     answer(out: string): string | null
     secondTryWhenLate?: true
   }
 > = {
   claude: {
-    argv: (job) => CLAUDE_ONE_SHOT(job.system),
+    argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
     stdin: (job) => job.prompt,
     answer: (out) => out
   },
   // CODEX§15
   codex: {
-    argv: () => CODEX_ONE_SHOT,
+    argv: (_job, launch) => CODEX_ONE_SHOT(launch),
     stdin: withSystemFirst,
     answer: (out) => out,
     secondTryWhenLate: true
   },
   muse: {
-    argv: (job) => MUSE_ONE_SHOT(withSystemFirst(job)),
+    argv: (job, launch) => MUSE_ONE_SHOT(withSystemFirst(job), launch),
     stdin: () => '',
     answer: lastCompletedText
   },
   agy: {
-    argv: (job) => AGY_ONE_SHOT(withSystemFirst(job)),
+    argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
     stdin: () => '',
     answer: agyResponse
   }
@@ -116,7 +139,7 @@ export interface AssistTarget {
 }
 
 export interface AssistDeps {
-  setting(): AssistSetting
+  picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
   target(backend: BackendId): Promise<AssistTarget | null>
 }
@@ -128,7 +151,8 @@ function runOnce(
   argv: string[],
   input: string,
   signal: AbortSignal | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  quitByItself?: () => void
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const child = execFile(
@@ -144,6 +168,7 @@ function runOnce(
             stderr.slice(-2000)
           )
         }
+        if (err && !err.killed && typeof err.code === 'number') quitByItself?.()
         resolve(err ? null : stdout)
       }
     )
@@ -182,24 +207,51 @@ async function withASecondTryWhenLate(
   }
 }
 
+const WORTH_ANOTHER_RUN_MS = 2_000
+
+function takenByEveryAccount(backend: BackendId, launch: AssistLaunch): boolean {
+  const safe = EVERY_ACCOUNT_TAKES[backend]
+  return launch.model === safe.model && launch.effort === safe.effort
+}
+
 export function koloftAssist(deps: AssistDeps): Assist {
   return async (job) => {
-    const setting = deps.setting()
-    if (!setting?.on) return null
-    for (const backend of backendsFrom(setting.backend)) {
+    const picks = deps.picks()
+    for (const backend of assistBackendsFor(job.row, picks)) {
       if (!deps.enabled(backend)) continue
       const target = await deps.target(backend)
       if (job.signal?.aborted) return null
       if (!target) continue
       const shot = ONE_SHOT[backend]
-      const argv = [...(target.args ?? []), ...shot.argv(job)]
-      const run: OneRun = (signal, timeoutMs) =>
-        runOnce(target, argv, shot.stdin(job), signal, timeoutMs)
-      const out = await (
-        shot.secondTryWhenLate
-          ? withASecondTryWhenLate(run, job.signal)
-          : run(job.signal, ASSIST_TIMEOUT_MS)
-      ).finally(() => target.done?.())
+      const launch = assistLaunchOn(job.row, backend, picks)
+      const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
+      const started = Date.now()
+      let refused = false
+      const runWith =
+        (with_: ModelAndEffort): OneRun =>
+        (signal, timeoutMs) =>
+          runOnce(
+            target,
+            [...(target.args ?? []), ...shot.argv(job, with_)],
+            shot.stdin(job),
+            signal,
+            timeoutMs,
+            () => (refused = true)
+          )
+      const answered = async (): Promise<string | null> => {
+        const first = await (shot.secondTryWhenLate
+          ? withASecondTryWhenLate(runWith(launch), job.signal)
+          : runWith(launch)(job.signal, ASSIST_TIMEOUT_MS))
+        const leftMs = limitMs - (Date.now() - started)
+        const tableModelRefused =
+          first === null &&
+          refused &&
+          launch.modelFromTheTable &&
+          !takenByEveryAccount(backend, launch)
+        if (!tableModelRefused || leftMs < WORTH_ANOTHER_RUN_MS || job.signal?.aborted) return first
+        return runWith(EVERY_ACCOUNT_TAKES[backend])(job.signal, leftMs)
+      }
+      const out = await answered().finally(() => target.done?.())
       return out === null ? null : shot.answer(out)
     }
     return null

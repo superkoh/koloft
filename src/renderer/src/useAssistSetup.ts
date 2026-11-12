@@ -11,12 +11,10 @@ export interface AssistSetupState {
   usable: Record<BackendId, boolean>
   askBypass: boolean
   loaded: boolean
-  done: boolean
 }
 
 // ADR-0030
 export function useAssistSetup(): AssistSetupState {
-  const assist = useStore((s) => s.settings.assist)
   const skipPermissions = useStore((s) => s.settings.skipPermissions)
   const agreed = useStore((s) => s.settings.skipPermissionsAgreed)
   const accountsLoaded = useStore((s) => s.accounts !== null)
@@ -34,7 +32,6 @@ export function useAssistSetup(): AssistSetupState {
     noTool: tools.length === 0,
     usable: { claude, codex, muse, agy },
     askBypass,
-    loaded: accountsLoaded,
-    done: (claude || codex || muse || agy) && assist !== null && !askBypass
+    loaded: accountsLoaded
   }
 }

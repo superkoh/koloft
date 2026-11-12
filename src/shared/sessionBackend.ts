@@ -77,24 +77,8 @@ export function normalizeSessionMethods(raw: unknown): SessionMethods {
   }
 }
 
-export function assistOnAMethodThatIsOn<A extends { backend: BackendId }>(
-  assist: A | null,
-  methods: SessionMethods
-): A | null {
-  return assist && !methods.enabled[assist.backend]
-    ? { ...assist, backend: methods.defaultBackend }
-    : assist
-}
-
 export function lastOneOn(methods: SessionMethods, backend: BackendId): boolean {
   return SESSION_BACKENDS.every((b) => b === backend || !methods.enabled[b])
-}
-
-export function preferredAssistBackend(settings: {
-  assist: { backend: BackendId } | null
-  sessionMethods: SessionMethods
-}): BackendId {
-  return settings.assist?.backend ?? settings.sessionMethods.defaultBackend
 }
 
 export function backendAvailable(list: BackendAvailability[], id: BackendId): boolean {

@@ -3,10 +3,9 @@ import { createPortal } from 'react-dom'
 import { IconAssist, IconClose } from '../icons'
 import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
 import { attentionReason } from '@shared/types'
-import { preferredAssistBackend } from '@shared/sessionBackend'
+import { assistBackendsFor, assistRowBackend } from '@shared/assistPicks'
 import { butlerStart } from '@shared/butlerStart'
 import { settingsPaneName } from '@shared/paletteFeatures'
-import type { BackendId } from '@shared/types'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { useStore } from '../store'
 import { rowStateClass, statusWithSecrets } from '../sessionRows'
@@ -32,11 +31,11 @@ export async function setUpDiscordWithButler(ownerWords?: string): Promise<strin
 }
 
 export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
-  const assist = useStore((s) => s.settings.assist)
+  const setUp = useStore(butlerSetUp)
+  const backend = useStore((s) => assistRowBackend('butler', s.settings))
   const name = useStore((s) => s.settings.butler.name)
   const channel = useStore((s) => s.settings.discord.channel)
   const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
-  const sessionMethods = useStore((s) => s.settings.sessionMethods)
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
@@ -49,7 +48,6 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   useDismissOnOutside(!!menu, setMenu)
 
-  const backend = preferredAssistBackend({ assist, sessionMethods })
   const tabId = butlerTabOf(sessions, opened, tabs)
   const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
   const calling = attention.find(
@@ -110,7 +108,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
 
   return (
     <div className="ws-tabs isl-butler">
-      {!butlerSetUp({ assist, channel }) ? (
+      {!setUp ? (
         <div className="ws-tab cold" onClick={() => setAssistAsked(true)}>
           <div className="ws-tab-main">{title}</div>
           <div className="ws-tab-sub">
@@ -132,7 +130,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
             <SessionBackendIcon backend={sess?.backendId ?? backend} />
             <span>{channel ? channelLabel(channel) : NOT_ON_DISCORD}</span>
           </div>
-          {!tabId && <WhyButlerCannotStart backend={backend} />}
+          {!tabId && <WhyButlerCannotStart />}
         </div>
       )}
       {!!children?.length && <div className="ws-subtabs">{children}</div>}
@@ -149,14 +147,18 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   )
 }
 
-function WhyButlerCannotStart({ backend }: { backend: BackendId }): JSX.Element | null {
+function WhyButlerCannotStart(): JSX.Element | null {
   const name = useStore((s) => s.settings.butler.name)
-  const enabled = useStore((s) => s.settings.sessionMethods.enabled)
+  const settings = useStore((s) => s.settings)
   const accounts = useStore((s) => s.accounts)
   const openSettingsPane = useStore((s) => s.openSettingsPane)
   const { installed } = useInstalledBackends()
   if (!accounts || !installed) return null
-  const start = butlerStart(backend, { enabled, installed, accounts }, name)
+  const start = butlerStart(
+    assistBackendsFor('butler', settings),
+    { enabled: settings.sessionMethods.enabled, installed, accounts },
+    name
+  )
   if (!('error' in start)) return null
   const { lead, fixedIn } = start.preferred
   return (

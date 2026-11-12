@@ -60,6 +60,7 @@ export async function handoverInOwnersLanguage(
   if (!caller.ownerWords) return handoverPreamble(caller)
   const english = englishProse(caller)
   const reply = await assist({
+    row: 'handover',
     system: TRANSLATOR,
     prompt: translateInstructions(caller.ownerWords) + english
   })
