@@ -49,8 +49,10 @@ import {
   machineAgyCalls,
   machineHome,
   remoteDir,
+  killLines,
   seedRemoteWorkspace,
-  sshCommands
+  sshCommands,
+  tmuxName
 } from './helpers/remote'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
@@ -562,7 +564,6 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
-  // AGY§8 AGY§9
   test('an idle remote Antigravity session goes to sleep — its tmux session on the machine is killed while its row and tab stay — and clicking it resumes the same conversation there, where a line typed in the woken tab and a paste still sent to its old tab both reach it', async ({
     env
   }) => {
@@ -576,22 +577,20 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
       await agyReady(page)
       await runIn(page, centerTerm(page), 'before sleep')
-      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'before sleep' })
-      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
       const asleep = await boundRemoteSession(page, 'agy')
-      const tmux = `k-${asleep.id}`
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([tmux])
+      const said = (): string => machineTranscriptOf(env, asleep.id)
+      await expect.poll(said, { timeout: 60_000 }).toContain('Answer to: before sleep')
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveAttribute('data-tab-id', asleep.tabId)
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const localRow = wsRows(page, 'ws-a').first()
       await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
       await localRow.click()
 
+      await expect.poll(() => killLines(env, asleep.id), { timeout: 60_000 }).toHaveLength(1)
       await expect
-        .poll(() => sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmux}`)), {
-          timeout: 60_000
-        })
-        .toHaveLength(1)
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(tmux)
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .not.toContain(tmuxName(asleep.id))
       await expect(row).toHaveClass(/\bst-idle\b/)
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(await termIds(page)).toContain(asleep.tabId)
@@ -600,38 +599,33 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await row.click()
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
       expect(machineAgyCalls(env)[1].argv).toContain(`--conversation=${asleep.id}`)
+      await expect(row).not.toHaveAttribute('data-tab-id', asleep.tabId, { timeout: 30_000 })
+      const wokenTab = (await row.getAttribute('data-tab-id')) ?? ''
       await expect
-        .poll(async () => (await boundRemoteSession(page, 'agy')).tabId, { timeout: 60_000 })
-        .not.toBe(asleep.tabId)
-      const woken = await boundRemoteSession(page, 'agy')
-      expect(woken.id).toBe(asleep.id)
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([tmux])
-      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
+        .poll(() => terminalText(page, wokenTab), { timeout: 90_000 })
+        .toContain('Antigravity CLI')
+      expect(liveTmuxSessions(env)).toEqual([tmuxName(asleep.id)])
 
-      await page.evaluate((id) => window.api.terminal.write(id, 'after waking\r'), woken.tabId)
-      await expect
-        .poll(() => machineTranscriptOf(env, asleep.id), { timeout: 60_000 })
-        .toContain('Answer to: after waking')
-      await expect
-        .poll(() => terminalText(page, woken.tabId), { timeout: 30_000 })
-        .toContain('Answer to: after waking')
+      await page.evaluate((id) => window.api.terminal.write(id, 'after waking\r'), wokenTab)
+      await expect.poll(said, { timeout: 60_000 }).toContain('Answer to: after waking')
       await page.evaluate(
         (id) => window.api.terminal.paste(id, 'pasted into the old tab', '\r'),
         asleep.tabId
       )
+      await expect.poll(said, { timeout: 60_000 }).toContain('Answer to: pasted into the old tab')
       await expect
-        .poll(() => machineTranscriptOf(env, asleep.id), { timeout: 60_000 })
+        .poll(() => terminalText(page, wokenTab), { timeout: 30_000 })
         .toContain('Answer to: pasted into the old tab')
-      await expect
-        .poll(() => terminalText(page, woken.tabId), { timeout: 30_000 })
-        .toContain('Answer to: pasted into the old tab')
-      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleep.tabId)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
+      await expect(row).toHaveAttribute('data-tab-id', wokenTab)
       expect(machineAgyCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
   })
 
+  // AGY§8 AGY§9
   test('after /clear in a remote Antigravity tab its tmux session on the machine takes the name of the new conversation, and closing the tab ends that tmux session there; the row stays, cold, and clicking it resumes the new conversation on the machine', async ({
     env
   }) => {

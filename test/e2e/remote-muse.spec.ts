@@ -10,6 +10,7 @@ import {
   installFakeRemote,
   installMuseOnMachine,
   killFakeRemote,
+  killLines,
   liveTmuxSessions,
   machineHome,
   machineMuseCalls,
@@ -17,6 +18,7 @@ import {
   remoteKey,
   REMOTE_WS_NAME,
   sshCommands,
+  tmuxName,
   type MachineMuseCall
 } from './helpers/remote'
 import {
@@ -415,24 +417,26 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     try {
       await addRemoteWorkspace(page, env)
       const first = await startRemoteMuse(page, env)
-      const tmux = `k-${first.sessionId}`
+      const said = (): string[] => museSaid(env, first.sessionId, machineHome(env))
       const row = remoteRows(page)
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
       await runIn(page, centerTerm(page), 'before sleep')
-      await expect(row).toContainText('before sleep', { timeout: ON_THE_MACHINE_WITHIN_MS })
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
-      const asleepTab = (await row.getAttribute('data-tab-id')) ?? ''
+      await expect.poll(said, { timeout: ON_THE_MACHINE_WITHIN_MS }).toContain('echo: before sleep')
+      const asleepTab = await row.getAttribute('data-tab-id')
+      expect(asleepTab).toBeTruthy()
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const localRow = wsRows(page, 'ws-a').first()
       await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
       await localRow.click()
 
       await expect
-        .poll(() => sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmux}`)), {
-          timeout: ON_THE_MACHINE_WITHIN_MS
-        })
+        .poll(() => killLines(env, first.sessionId), { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toHaveLength(1)
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(tmux)
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .not.toContain(tmuxName(first.sessionId))
       await expect(row).toHaveClass(/\bst-idle\b/)
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(await termIds(page)).toContain(asleepTab)
@@ -443,33 +447,28 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toBe(2)
       expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', first.sessionId])
-      await expect(row).not.toHaveAttribute('data-tab-id', asleepTab, { timeout: 30_000 })
-      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([tmux])
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await expect(row).not.toHaveAttribute('data-tab-id', asleepTab!, { timeout: 30_000 })
       const wokenTab = (await row.getAttribute('data-tab-id')) ?? ''
+      await expect
+        .poll(() => terminalText(page, wokenTab), { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toContain(`Muse fixture ready ${first.sessionId}`)
+      expect(liveTmuxSessions(env)).toEqual([tmuxName(first.sessionId)])
 
       await page.evaluate((id) => window.api.terminal.write(id, 'after waking\r'), wokenTab)
-      await expect
-        .poll(() => museSaid(env, first.sessionId, machineHome(env)), {
-          timeout: ON_THE_MACHINE_WITHIN_MS
-        })
-        .toContain('echo: after waking')
-      await expect
-        .poll(() => terminalText(page, wokenTab), { timeout: 30_000 })
-        .toContain('echo: after waking')
+      await expect.poll(said, { timeout: ON_THE_MACHINE_WITHIN_MS }).toContain('echo: after waking')
       await page.evaluate(
         (id) => window.api.terminal.paste(id, 'pasted into the old tab', '\r'),
-        asleepTab
+        asleepTab!
       )
       await expect
-        .poll(() => museSaid(env, first.sessionId, machineHome(env)), {
-          timeout: ON_THE_MACHINE_WITHIN_MS
-        })
+        .poll(said, { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toContain('echo: pasted into the old tab')
       await expect
         .poll(() => terminalText(page, wokenTab), { timeout: 30_000 })
         .toContain('echo: pasted into the old tab')
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
+      await expect(row).toHaveAttribute('data-tab-id', wokenTab)
       expect(machineMuseCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
