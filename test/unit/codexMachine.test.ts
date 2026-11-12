@@ -85,26 +85,48 @@ describe('a Codex session that another session starts on a machine', () => {
 })
 
 describe('the tab script of a Codex session on a machine', () => {
+  const tabScript = (agentTools: boolean, loginPath = ''): string =>
+    codexTabScript({
+      tabId: 'T',
+      instance: 'i',
+      machineName: 'm-1',
+      version: '1.0.0',
+      cwd: '/w',
+      trust: [],
+      env: {},
+      config: [],
+      hookTrust: [],
+      agentTools,
+      loginPath
+    })
+
+  // PLATFORM§33
+  it("puts the folders of the user's own login shell there after the script's own PATH, whatever characters they hold, and asks bash's login shell itself only when none were found", () => {
+    const pathLines = (loginPath: string): string =>
+      tabScript(false, loginPath)
+        .split('\n')
+        .filter((line) => line.startsWith('PATH="$PATH"'))
+        .join('\n')
+    const printed = spawnSync(
+      '/bin/sh',
+      ['-c', `${pathLines("/opt/it's here/bin:/b")}\necho "$PATH"`],
+      {
+        env: { PATH: '/usr/bin:/bin' },
+        encoding: 'utf8'
+      }
+    )
+    expect(printed.stdout).toBe("/usr/bin:/bin:/opt/it's here/bin:/b\n")
+    expect(tabScript(false, '/b')).not.toContain('bash -lc')
+    expect(tabScript(false)).toContain('login_path=$(bash -lc ')
+  })
+
   it("copies the koloft-docs skill from the machine package into the tab's Codex home every time, and the koloft skill only with agent tools on", () => {
-    const script = (agentTools: boolean): string =>
-      codexTabScript({
-        tabId: 'T',
-        instance: 'i',
-        machineName: 'm-1',
-        version: '1.0.0',
-        cwd: '/w',
-        trust: [],
-        env: {},
-        config: [],
-        hookTrust: [],
-        agentTools
-      })
     const docs = 'cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$"'
     const koloft = 'cp -R "$M/agent-plugin/skills/koloft" "$H/skills/koloft.new-$$"'
-    expect(script(true)).toContain(docs)
-    expect(script(true)).toContain(koloft)
-    expect(script(false)).toContain(docs)
-    expect(script(false)).not.toContain(koloft)
+    expect(tabScript(true)).toContain(docs)
+    expect(tabScript(true)).toContain(koloft)
+    expect(tabScript(false)).toContain(docs)
+    expect(tabScript(false)).not.toContain(koloft)
   })
 })
 

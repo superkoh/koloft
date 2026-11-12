@@ -2168,6 +2168,39 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  // PLATFORM§33
+  test('E-SSH-51: a command a Codex session runs on a Linux machine finds a program that only the end of the user’s ~/.bashrc puts on PATH, as the user’s own terminal there does', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    await withLab(
+      env,
+      async ({ page }) => {
+        const tabId = await codexTabOnKtKey(page)
+        await ranInCodexTabAndExitedZero(
+          page,
+          tabId,
+          '/sh rc-only-tool',
+          /found through the rc file[\s\S]*sh exit=(\d+)[\s\S]*Codex done/,
+          ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
+        )
+      },
+      (lab) => {
+        installFakeCodexOnTarget(lab)
+        runOnTarget(
+          lab,
+          'kuser',
+          [
+            'mkdir rc-only-bin',
+            "printf '#!/bin/sh\\necho found through the rc file\\n' > rc-only-bin/rc-only-tool",
+            'chmod 755 rc-only-bin/rc-only-tool',
+            `printf '\\nexport PATH="$HOME/rc-only-bin:$PATH"\\n' >> .bashrc`
+          ].join(' && ')
+        )
+      }
+    )
+  })
+
   // ADR-0039 CODEX§16
   test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
     env

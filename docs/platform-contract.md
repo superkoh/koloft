@@ -1861,6 +1861,30 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
   macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
   5.9, reached directly, a scratch node script.)
+- **A remote Codex tab's app-server finds such a program only when its start script is
+  handed that `"$SHELL" -lic` PATH.** A tool only in `/opt/ztools/bin`, and `command -v
+  ztool` run by the fake Codex in a remote Codex tab of a built Koloft:
+
+  | login shell, where its PATH line is | script runs `bash -lc` itself | script is handed the `"$SHELL" -lic` PATH asked over a plain `ssh host cmd` |
+  |---|---|---|
+  | bash, end of `~/.bashrc` | exit 1 | exit 0 |
+  | zsh, `~/.zshrc` (plus an `echo` and a `sleep 25 &`) | exit 1 | exit 0, row bound 1.9 s after the click |
+  | fish, `config.fish` | not run | exit 0 |
+  | tcsh, `~/.login` | not run | exit 1, the tab still starts |
+
+  So the script keeps its own `bash -lc` only for when the handed PATH is empty (tcsh, or
+  a machine the ask could not reach). Running the `-lic` shell inside the script, under the tab's own `ssh -tt` line where it
+  has a terminal, gave the same four results and bound in 1.4 s; it is not used, since an
+  rc file that reads `/dev/tty` there (a passphrase or `compinit` question) could wait
+  for ever with its question sent to `/dev/null` (read from how those tools ask, not
+  run). The fake Codex runs its command with `sh -c` (zsh's `-c` where `/bin/zsh`
+  exists), so this measures the PATH Koloft hands the app-server, not what a real Codex
+  adds. On the bash and zsh machines a fake Claude Code tab's `command -v ztool` did not
+  find the tool: the tab script of Claude Code, Muse Code and Antigravity tabs adds
+  fixed folders only and asks no login shell (Muse Code and Antigravity share that
+  script; not run). What each real agent's own shell tool adds on top was not measured.
+  (2026-11-11, OpenSSH_10.3p1 on macOS 27 to the e2e Docker ssh lab image, Debian
+  bookworm, plus zsh 5.9; a scratch Playwright spec driving a built Koloft.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);

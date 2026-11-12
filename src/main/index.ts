@@ -3557,7 +3557,8 @@ app.whenReady().then(() => {
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
         keyed: pinnedKeyOn,
         mirrorDir: (host) => mirrorHookDir(userData, host),
-        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve(),
+        loginPath: (host) => gitAccounts?.machineLoginPath(host) ?? Promise.resolve('')
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
