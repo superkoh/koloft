@@ -77,6 +77,8 @@ export function assistEfforts(
   return row === 'butler' ? taken : taken.filter((e) => e !== EFFORT_A_SMALL_JOB_OUTLASTS)
 }
 
+export type AssistInputs = Resolved
+
 type Resolved = {
   assist: AssistSetting
   sessionMethods: SessionMethods
@@ -87,9 +89,20 @@ function backendOfAccount(a: Pick<AccountMeta, 'kind'>): BackendId {
   return SESSION_BACKENDS.find((b) => ACCOUNT_KINDS_OF[b].includes(a.kind))!
 }
 
+let lastByAge:
+  { accounts: Resolved['accounts']; methods: SessionMethods; order: BackendId[] } | undefined
+
 export function backendsByAccountAge(
   s: Pick<Resolved, 'accounts' | 'sessionMethods'>
 ): BackendId[] {
+  if (lastByAge?.accounts === s.accounts && lastByAge.methods === s.sessionMethods)
+    return lastByAge.order
+  const order = sortedByAccountAge(s)
+  lastByAge = { accounts: s.accounts, methods: s.sessionMethods, order }
+  return order
+}
+
+function sortedByAccountAge(s: Pick<Resolved, 'accounts' | 'sessionMethods'>): BackendId[] {
   const usable = usableAccounts(
     s.accounts,
     SESSION_BACKENDS.flatMap((b) => ACCOUNT_KINDS_OF[b])

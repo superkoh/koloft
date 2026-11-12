@@ -123,7 +123,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { butlerSetUp, everyWorkspaceRows, isButlerTab } from './butlerRows'
+import { butlerSetUp, everyWorkspaceRows, isButlerTab, someAccountCanRunAssist } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -1222,6 +1222,10 @@ export default function App(): JSX.Element {
     }
     if (route?.kind === 'assist') {
       toButler(route.title, route.path)
+      return
+    }
+    if (!route && !someAccountCanRunAssist(useStore.getState())) {
+      pickWorkspaceForTyped({ prompt, title: '' }, backend)
       return
     }
     const ws =

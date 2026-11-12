@@ -13,6 +13,7 @@ import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { ASSIST_JOBS, type AssistPick, type AssistRowId, type BackendId } from '@shared/types'
 import { IconChevronDown, IconChevronUp } from '../../icons'
+import { assistInputs } from '../../butlerRows'
 import { useStore } from '../../store'
 import { useAssistSetup, type AssistSetupState } from '../../useAssistSetup'
 import { ASSIST_COST_LINE } from '../AssistSetup'
@@ -94,7 +95,7 @@ function AssistRow({
   setup: AssistSetupState
 }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
-  const runsOn = useStore((s) => assistRunsOn(s.settings))
+  const runsOn = useStore((s) => assistRunsOn(assistInputs(s)))
   const update = useSettingsUpdate()
   const choice = useAgentChoice(setup)
   const [open, setOpen] = useState(false)
@@ -123,7 +124,10 @@ function AssistRow({
   const commitTypedModel = (): void => {
     if (otherDraft === null || typedModelError) return
     withModel(otherDraft.trim() || undefined)
+    setOtherDraft(null)
   }
+  const modelShown =
+    otherDraft !== null && !typedModelError ? otherDraft.trim() || undefined : pick?.model
 
   const summary = pick
     ? [
@@ -155,7 +159,7 @@ function AssistRow({
       </div>
       {open && (
         <div className="set-row child">
-          <div className="fgrid assist-pick">
+          <div className="fgrid">
             <span className="flabel">Runs on</span>
             <div className="fcol">
               <div>
@@ -195,7 +199,7 @@ function AssistRow({
               effort={pick?.effort ?? ''}
               unsetEffort="Default"
               onEffort={(effort) =>
-                save({ ...(pick?.model && { model: pick.model }), ...(effort && { effort }) })
+                save({ ...(modelShown && { model: modelShown }), ...(effort && { effort }) })
               }
               effortHint={
                 row === 'butler'
@@ -214,7 +218,7 @@ export function AssistSection(): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
   const butler = useStore((s) => s.settings.butler)
   const name = butler.name
-  const runsOn = useStore((s) => assistRunsOn(s.settings))
+  const runsOn = useStore((s) => assistRunsOn(assistInputs(s)))
   const methods = useStore((s) => s.settings.sessionMethods)
   const update = useSettingsUpdate()
   const setup = useAssistSetup()

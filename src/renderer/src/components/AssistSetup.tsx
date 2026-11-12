@@ -4,6 +4,7 @@ import { accountToSignInAgain } from '@shared/accountUsage'
 import { assistRunsOn } from '@shared/assistPicks'
 import { settingsPaneName } from '@shared/paletteFeatures'
 import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
+import { assistInputs } from '../butlerRows'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import {
@@ -59,7 +60,7 @@ export function AssistSetup({
   offerInstall?: boolean
 }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
-  const runsOn = useStore((s) => assistRunsOn(s.settings))
+  const runsOn = useStore((s) => assistRunsOn(assistInputs(s)))
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)

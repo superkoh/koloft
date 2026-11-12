@@ -28,7 +28,7 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
     await expect(turn).toHaveAttribute('aria-expanded', 'false')
     await turn.click()
     await expect(turn).toHaveAttribute('aria-expanded', 'true')
-    const pick = page.locator('.assist-pick')
+    const pick = page.locator('.set-row.child .fgrid')
     await expect(pick).toContainText('Default: Haiku.')
     await expect(pick.getByRole('button', { name: 'Max', exact: true })).toHaveCount(0)
     await pick.getByRole('button', { name: 'Opus', exact: true }).click()

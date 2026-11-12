@@ -7,6 +7,7 @@ import {
   EVERY_ACCOUNT_TAKES,
   type ModelAndEffort
 } from '@shared/assistPicks'
+import { takenEffort } from '@shared/cronModels'
 import { lastCompletedText } from './museSessionLog'
 import { envMs } from './sessionRuntime'
 
@@ -230,7 +231,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
             shot.stdin(job),
             signal,
             timeoutMs,
-            (said) => (modelRefused = !!shot.saysItHasNoSuchModel?.test(said))
+            (said) => (modelRefused ||= !!shot.saysItHasNoSuchModel?.test(said))
           )
       const answered = async (): Promise<string | null> => {
         const first = await (shot.secondTryWhenLate
@@ -240,7 +241,9 @@ export function koloftAssist(deps: AssistDeps): Assist {
         const tableModelRefused =
           first === null && modelRefused && launch.modelFromTheTable && launch.model !== safe.model
         if (!tableModelRefused || leftMs < WORTH_ANOTHER_RUN_MS || job.signal?.aborted) return first
-        const effort = launch.effortFromTheTable ? safe.effort : launch.effort
+        const effort = launch.effortFromTheTable
+          ? safe.effort
+          : takenEffort(backend, safe.model, launch.effort)
         return runWith({ ...safe, ...(effort && { effort }) })(job.signal, leftMs)
       }
       const out = await answered().finally(() => target.done?.())

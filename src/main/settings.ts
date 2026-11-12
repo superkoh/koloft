@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/types'
 import { sanitizeLoadedSettings } from '@shared/settingsOps'
-import { assistOnMethodsThatAreOn } from '@shared/assistPicks'
+import { assistOnMethodsThatAreOn, sanitizeAssist } from '@shared/assistPicks'
 import { normalizeSessionMethods } from '@shared/sessionBackend'
 
 function settingsFile(): string {
@@ -38,7 +38,7 @@ export function rereadSettingsOnNextLoad(): void {
 export function saveSettings(patch: Partial<Settings>): Settings {
   const merged: Settings = { ...loadSettings(), ...patch }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
-  merged.assist = assistOnMethodsThatAreOn(merged.assist, merged.sessionMethods)
+  merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   const text = JSON.stringify(merged, null, 2)
   try {
     writeAtomically(settingsFile(), text)

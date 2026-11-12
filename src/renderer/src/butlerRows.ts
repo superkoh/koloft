@@ -1,10 +1,26 @@
 import type { AccountMeta, SessionInfo, Settings, WorkspaceRows } from '@shared/types'
+import { backendsByAccountAge, type AssistInputs } from '@shared/assistPicks'
 
 export function everyWorkspaceRows(s: {
   workspaceRows: WorkspaceRows[]
   butlerWorkspace: WorkspaceRows | null
 }): WorkspaceRows[] {
   return s.butlerWorkspace ? [...s.workspaceRows, s.butlerWorkspace] : s.workspaceRows
+}
+
+export function assistInputs(s: {
+  accounts: readonly AccountMeta[] | null
+  settings: Pick<Settings, 'accounts' | 'assist' | 'sessionMethods'>
+}): AssistInputs {
+  return {
+    assist: s.settings.assist,
+    sessionMethods: s.settings.sessionMethods,
+    accounts: s.accounts ?? s.settings.accounts
+  }
+}
+
+export function someAccountCanRunAssist(s: Parameters<typeof assistInputs>[0]): boolean {
+  return backendsByAccountAge(assistInputs(s)).length > 0
 }
 
 export function butlerSetUp(s: {

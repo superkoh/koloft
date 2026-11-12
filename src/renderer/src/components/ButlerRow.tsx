@@ -9,7 +9,7 @@ import { settingsPaneName } from '@shared/paletteFeatures'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { useStore } from '../store'
 import { rowStateClass, statusWithSecrets } from '../sessionRows'
-import { butlerSetUp, butlerTabOf } from '../butlerRows'
+import { assistInputs, butlerSetUp, butlerTabOf } from '../butlerRows'
 import { visitTab } from '../sessionClick'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { updateSettings } from './settings/useSettingsUpdate'
@@ -32,7 +32,7 @@ export async function setUpDiscordWithButler(ownerWords?: string): Promise<strin
 
 export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
   const setUp = useStore(butlerSetUp)
-  const backend = useStore((s) => assistRowBackend('butler', s.settings))
+  const backend = useStore((s) => assistRowBackend('butler', assistInputs(s)))
   const name = useStore((s) => s.settings.butler.name)
   const channel = useStore((s) => s.settings.discord.channel)
   const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
