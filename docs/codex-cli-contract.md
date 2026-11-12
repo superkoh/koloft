@@ -1245,7 +1245,13 @@ supportedReasoningEfforts, defaultReasoningEffort, isDefault, upgrade, …}`.
 `gpt-6-astra` and `gpt-6-sol` take `low` … `max` and `ultra`; `gpt-6-luna` `low` …
 `max`; `gpt-5.5` stops at `xhigh`. A signed-in plan can get fewer or more (section 13,
 `availableAccessPrograms`); that a plan without `gpt-6-astra` refuses it at launch is
-**not probed yet**.
+**not probed yet**. Signed in (2026-11-12, the Mac's own login, `codex app-server` on
+stdio, `initialize` then `model/list {}`): eight models, `gpt-6.1-sol` (`isDefault`),
+`gpt-6-astra`, `gpt-6.1-terra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`,
+`gpt-5.6-terra`, `gpt-5.6-luna`; each `supportedReasoningEfforts` entry is
+`{reasoningEffort, …}`, the luna models without `ultra`. Ids read
+`gpt-<version>-<family>`, so Koloft turns a family name (`luna`, `sol`, `astra`) into
+the id with the highest version in this list.
 
 ## 15. One login per CODEX_HOME, and its rate limits
 

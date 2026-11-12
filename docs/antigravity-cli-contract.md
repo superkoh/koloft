@@ -1239,8 +1239,17 @@ only downloaded the public release.
   no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with
   --effort=<e>`.
 - On the Google route the list comes from `fetchAvailableModels`; an empty answer
-  gives `no model configuration is available for this account`, and the real shape
-  is not probed.
+  gives `no model configuration is available for this account`.
+- **`agy models` on a real Google account** (2026-11-12, agy on macOS, a copy of a
+  signed-in token file in a throwaway `--gemini_dir`, `WSL_INTEROP` set): exit 0, the
+  same `id\tlabel` rows, then a blank line and `Fetching available models...` on stdout.
+  16 rows: `gemini-4-carbon-{medium,high,low}`, `gemini-4-argon-{medium,high,low}`,
+  `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`,
+  `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`; no `gemini-3.1-pro`.
+  The list is the account's: Carbon was not open to every account that day. Koloft
+  reads it to turn a family name (`flash`, `argon`, `carbon`) into the newest id the
+  account has. `--model gemini-4-carbon --effort high -p "Reply with exactly: OK"` on
+  that account exited 0 with `OK` (24 thinking tokens).
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on

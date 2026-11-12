@@ -1,6 +1,7 @@
 import type { BackendId } from './types'
 import { BACKEND_LABEL, SESSION_BACKENDS, messagingOf, namedAtLaunch } from './sessionBackend'
-import { modelAndEffortChoices, needsModel } from './cronModels'
+import { needsModel } from './cronModels'
+import { tierPicksOf } from './sessionPicks'
 
 const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -53,13 +54,12 @@ const watchedSessionRule = (backend: BackendId): string =>
   `The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new ${pickedFlagsOf(backend)} -- "<task>".`
 
 export const PICK_FOR_THE_TASK =
-  'a strong model with more effort for design, review or a hard bug; a fast one with less effort for simple, mechanical work'
+  "Sort the task first. Very simple: do as told, with nothing to decide (fix a typo, change a line of copy, rename something, run a command and report, read a few files and answer). Normal: ordinary work with a clear goal (a small feature, a bug that can be reproduced, tests, a few files). Very hard: work that needs judgment or has no clear shape (a plan or a design, a review, a bug with no known cause, a change that reaches many places, anything the owner will decide on). When unsure, take the harder one. Then use that kind's model and effort; pick another only when the owner or the project's instructions name one."
 
-const sessionTakes = (backend: BackendId): string =>
-  `${BACKEND_LABEL[backend]} takes ${modelAndEffortChoices(backend)}`
+const tiersOf = (backend: BackendId): string => `${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}`
 
 const pickModelAndEffort = (backend: BackendId): string =>
-  `Every Koloft session you start gets the model and effort that fit its task: ${PICK_FOR_THE_TASK}. ${sessionTakes(backend)}; koloft help lists the other agents'.`
+  `Every Koloft session you start gets the model and effort that fit its task. ${PICK_FOR_THE_TASK} ${tiersOf(backend)}. koloft help lists the other agents'.`
 
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
@@ -253,10 +253,10 @@ koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
-    Pick the model and effort that fit the task, every time: ${PICK_FOR_THE_TASK}. ${SESSION_BACKENDS.map(sessionTakes).join('. ')}. Any other model name that agent knows works too.
+    Pick the model and effort that fit the task, every time. ${PICK_FOR_THE_TASK} ${SESSION_BACKENDS.map(tiersOf).join('. ')}. A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, Koloft starts the next best one and says so.
     Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" --backend claude --model sonnet --effort low -- "Fix the broken links in docs/."
-    Example: koloft session new --workspace koloft --backend codex --model gpt-6.1-sol --effort high -- "Find why the latest release is missing files."
+    Example: koloft session new --workspace koloft --backend codex --model astra --effort high -- "Find why the latest release is missing files."
     The butler: without --workspace the session starts in the butler's own folder, shown under the butler in the sidebar, for any task that belongs to no project; it is told the butler's goals and to report back. With --workspace it starts in that project's workspace like any other session; in a git workspace it always gets its own worktree: -w names it, and without -w Koloft picks a name.
 
 How to talk to a session you started:
@@ -469,7 +469,7 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's): ${PICK_FOR_THE_TASK}. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} Before opening a GitHub issue, first look for one already open with koloft gh issue list --repo <owner>/<name> --search "<words in English>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` : ''} ${SORT_OUT_THE_TO_DOS}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's). ${PICK_FOR_THE_TASK} ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} Before opening a GitHub issue, first look for one already open with koloft gh issue list --repo <owner>/<name> --search "<words in English>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` : ''} ${SORT_OUT_THE_TO_DOS}`
 }
 
 export function butlerHelperRole(name: string): string {

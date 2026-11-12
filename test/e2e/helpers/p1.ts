@@ -6,6 +6,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect, launchApp, pendingAttention } from './app'
 import { seedSettings, type E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
+import { TIER_PICKS, pickFlags } from '../../../src/shared/sessionPicks'
 import type {
   BackendAvailability,
   BackendId,
@@ -14,14 +15,8 @@ import type {
   SessionWorkbenchState
 } from '../../../src/shared/types'
 
-const CHEAPEST_PICK: Record<BackendId, string> = {
-  claude: '--model sonnet --effort low',
-  codex: '--model gpt-6-luna --effort low',
-  muse: '--effort low',
-  agy: '--model gemini-3.8-flash --effort low'
-}
-
-export const picksFor = (backend: BackendId): string => CHEAPEST_PICK[backend]
+export const picksFor = (backend: BackendId): string =>
+  pickFlags(TIER_PICKS[backend]['very simple'])
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 export const SCREEN_DIR = path.join(REPO_ROOT, 'test-results', 'p1-screens')

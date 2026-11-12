@@ -223,8 +223,8 @@ function refusedThenClosedForGood(
 const CHILD = 'kid'
 const CHILD_TASK = 'Reply with the single word ok.'
 const START_A_CHILD_THEN_CLOSE_IT = {
-  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} with --model and --effort set to the fastest model and the lowest effort your instructions list, then -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close followed by that name with the quotes left out, its words as separate arguments. Then say only what the last command printed. Do nothing else.`,
-  other: `Run this shell command exactly once: koloft session new -w ${CHILD} with --model and --effort set to the fastest model and the lowest effort your instructions list, then -- "${CHILD_TASK}" It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
+  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} with --model and --effort set to what your instructions give for a very simple task, then -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close followed by that name with the quotes left out, its words as separate arguments. Then say only what the last command printed. Do nothing else.`,
+  other: `Run this shell command exactly once: koloft session new -w ${CHILD} with --model and --effort set to what your instructions give for a very simple task, then -- "${CHILD_TASK}" It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
 }
 const TITLE_SAMPLE_EVERY_MS = 250
 // CODEX§17
@@ -1667,7 +1667,7 @@ test.describe('closing a REAL Codex worktree session: opt-in cases; the ones wit
 
 const SECRET = 'SECRET-PAPAYA-58'
 const CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S = 40
-const START_A_CHILD_THAT_REPORTS_BACK = `Run this shell command exactly once: koloft session new, with --model and --effort set to the fastest model and the lowest effort your instructions list, then -- "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for that session, check on it or read secret.txt yourself.`
+const START_A_CHILD_THAT_REPORTS_BACK = `Run this shell command exactly once: koloft session new, with --model and --effort set to what your instructions give for a very simple task, then -- "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for that session, check on it or read secret.txt yourself.`
 
 const QUOTE_HELPER_RULE_ONE =
   'Do not run any tool. Under HELPERS in your instructions, rule 1 names a command to run. Reply with only that command, nothing else.'

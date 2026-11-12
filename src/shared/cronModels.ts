@@ -51,16 +51,6 @@ export function effortsFor(backend: BackendId, model: string | undefined): reado
 
 export const needsModel = (backend: BackendId): boolean => NAMED_MODELS[backend].length > 0
 
-export function modelAndEffortChoices(backend: BackendId): string {
-  const efforts = (model?: string): string => effortsFor(backend, model).join('|')
-  const models = NAMED_MODELS[backend]
-  if (!needsModel(backend))
-    return `--effort ${efforts()}, with --model only for a model name it knows`
-  return models.every((m) => efforts(m.id) === efforts(models[0].id))
-    ? `--model ${models.map((m) => m.id).join('|')} with --effort ${efforts(models[0].id)}`
-    : models.map((m) => `--model ${m.id} with --effort ${efforts(m.id)}`).join('; ')
-}
-
 export function effortNotTaken(
   backend: BackendId,
   model: string | undefined,

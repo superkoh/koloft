@@ -111,6 +111,7 @@ import { startToolShim } from './toolShim'
 import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
+import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
@@ -576,6 +577,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ...playwrightMcpOverrides(config.mcp_servers),
       playwrightCacheRootOverride(config.sandbox_workspace_write, cacheDir)
     ]
+  }
+
+  // CODEX§14
+  listedModels(home: string | undefined): Promise<ListedModel[]> {
+    return this.withRpc(home, (rpc) => rpc.request('model/list', {})).then(codexListedModels)
   }
 
   // CODEX§15

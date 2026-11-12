@@ -22,6 +22,7 @@ import type { SendResult } from '../../src/main/inbox'
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
 import { ownerSays } from '../../src/shared/agentGuide'
+import type { PickFacts } from '../../src/shared/sessionPicks'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
 import { turnedOffLine } from '../../src/shared/sessionBackend'
@@ -93,6 +94,7 @@ interface Conducting {
   leftOf?: Record<string, string[]>
   removalsNeverEnd?: boolean
   turnedOff?: BackendId[]
+  pickFacts?: PickFacts
   rooms?: Record<string, string>
   answeringDiscord?: string[]
 }
@@ -156,6 +158,11 @@ function harness(
         peerNames[sessionId] ?? null,
     turnedOff: (backend) =>
       conducting.turnedOff?.includes(backend) ? turnedOffLine(backend) : null,
+    pickFacts: async () =>
+      conducting.pickFacts ?? {
+        fableLeft: true,
+        listed: [{ id: 'any', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }]
+      },
     launch: async (spec) => {
       launched.push(spec)
       openTabs.add('new-tab')
@@ -500,7 +507,7 @@ describe('koloft session new from a Muse session', () => {
 })
 
 describe('koloft session new: the starter picks the model and effort', () => {
-  it('starts nothing without them, and names the choices of the agent it would start', async () => {
+  it('starts nothing without them, and names the three kinds of task with the pick for each, for the agent it would start', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     for (const args of [
       ['new', '--', 'go'],
@@ -510,11 +517,11 @@ describe('koloft session new: the starter picks the model and effort', () => {
       const reply = await verb(args, from('me'))
       expect(reply.exit).toBe(EXIT_USAGE)
       expect(reply.text).toContain(
-        '--model fable|opus|sonnet with --effort low|medium|high|xhigh|max'
+        'Claude: very simple: --model sonnet --effort low; normal: --model opus --effort medium; very hard: --model fable --effort high'
       )
     }
     const codex = await verb(['new', '--backend', 'codex', '--', 'go'], from('me'))
-    expect(codex.text).toContain('--model gpt-6.1-sol|')
+    expect(codex.text).toContain('very hard: --model astra --effort high')
     expect(launched).toEqual([])
   })
 
@@ -524,11 +531,86 @@ describe('koloft session new: the starter picks the model and effort', () => {
     expect(launched[0]).toMatchObject({ kind: 'claude', model: 'opus', effort: 'xhigh' })
   })
 
+  it('starts a very hard Claude task on fable while an account has fable allowance left, and on opus at xhigh, saying so, once none has', async () => {
+    const hard = ['new', '--model', 'fable', '--effort', 'high', '--', 'go']
+    const withFable = harness([session('me', 'claude')])
+    const kept = await withFable.verb(hard, from('me'))
+    expect(withFable.launched[0]).toMatchObject({ model: 'fable', effort: 'high' })
+    expect(kept.text).not.toContain('opus')
+    const without = harness([session('me', 'claude')], {}, [], { pickFacts: { fableLeft: false } })
+    const swapped = await without.verb(hard, from('me'))
+    expect(swapped.exit).toBe(0)
+    expect(without.launched[0]).toMatchObject({ model: 'opus', effort: 'xhigh' })
+    expect(swapped.text).toContain('it runs on --model opus --effort xhigh')
+  })
+
+  it('starts a Codex model named by its family on the newest version the account lists', async () => {
+    const { verb, launched } = harness([session('me', 'codex')], {}, [], {
+      pickFacts: {
+        fableLeft: true,
+        listed: [
+          { id: 'gpt-6-sol', efforts: ['low', 'medium', 'high'] },
+          { id: 'gpt-6.1-sol', efforts: ['low', 'medium', 'high'] },
+          { id: 'gpt-6-luna', efforts: ['low'] }
+        ]
+      }
+    })
+    expect(
+      (await verb(['new', '--model', 'sol', '--effort', 'medium', '--', 'go'], from('me'))).exit
+    ).toBe(0)
+    expect(launched[0]).toMatchObject({ kind: 'codex', model: 'gpt-6.1-sol', effort: 'medium' })
+    const tooMuch = await verb(
+      ['new', '--model', 'luna', '--effort', 'high', '--', 'go'],
+      from('me')
+    )
+    expect(tooMuch.exit).toBe(EXIT_USAGE)
+    expect(tooMuch.text).toContain('gpt-6-luna does not take --effort high; it takes low')
+    const unknown = await verb(
+      ['new', '--model', 'nova', '--effort', 'low', '--', 'go'],
+      from('me')
+    )
+    expect(unknown.text).toContain('Codex has no model "nova" for this account')
+    expect(launched).toHaveLength(1)
+  })
+
+  it('starts a very hard Antigravity task on argon, saying so, when the account lists no carbon', async () => {
+    const hard = ['new', '--model', 'carbon', '--effort', 'high', '--', 'go']
+    const argon = { id: 'gemini-4-argon', efforts: ['low', 'medium', 'high'] as const }
+    const carbon = { id: 'gemini-4-carbon', efforts: ['low', 'medium', 'high'] as const }
+    const has = harness([session('me', 'agy')], {}, [], {
+      pickFacts: {
+        fableLeft: true,
+        listed: [
+          { ...argon, efforts: [...argon.efforts] },
+          { ...carbon, efforts: [...carbon.efforts] }
+        ]
+      }
+    })
+    await has.verb(hard, from('me'))
+    expect(has.launched[0]).toMatchObject({ model: 'gemini-4-carbon', effort: 'high' })
+    const lacks = harness([session('me', 'agy')], {}, [], {
+      pickFacts: { fableLeft: true, listed: [{ ...argon, efforts: [...argon.efforts] }] }
+    })
+    const reply = await lacks.verb(hard, from('me'))
+    expect(lacks.launched[0]).toMatchObject({ model: 'gemini-4-argon', effort: 'high' })
+    expect(reply.text).toContain('This account has no carbon model, so it runs on gemini-4-argon.')
+  })
+
+  it('falls back to the models Koloft last knew when the account’s list cannot be read', async () => {
+    const { verb, launched } = harness([session('me', 'codex')], {}, [], {
+      pickFacts: { fableLeft: true }
+    })
+    expect(
+      (await verb(['new', '--model', 'luna', '--effort', 'low', '--', 'go'], from('me'))).exit
+    ).toBe(0)
+    expect(launched[0]).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
+  })
+
   it('asks a Muse session, which has no model names to pick from, only for its effort', async () => {
     const { verb, launched } = harness([session('me', 'muse', { nativeSessionId: MUSE_ID })])
     const unpicked = await verb(['new', '--', 'go'], from('me'))
-    expect(unpicked.text).toContain('needs --effort:')
-    expect(unpicked.text).toContain('with --model only for a model name it knows')
+    expect(unpicked.text).toContain('needs --effort.')
+    expect(unpicked.text).toContain('Muse: very simple: --effort low; normal: --effort medium')
     expect((await verb(['new', '--effort', 'low', '--', 'go'], from('me'))).exit).toBe(0)
     expect(launched[0]).toMatchObject({ kind: 'muse', effort: 'low' })
   })
@@ -541,17 +623,6 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(reply.exit).toBe(EXIT_USAGE)
     expect(reply.text).toContain("opus is one of Claude's models")
-    expect(launched).toEqual([])
-  })
-
-  it('refuses an Antigravity model with an effort it does not take, and says which it takes', async () => {
-    const { verb, launched } = harness([session('me', 'agy')])
-    const reply = await verb(
-      ['new', '--model', 'gemini-3.1-pro', '--effort', 'medium', '--', 'go'],
-      from('me')
-    )
-    expect(reply.exit).toBe(EXIT_USAGE)
-    expect(reply.text).toContain('it takes low, high')
     expect(launched).toEqual([])
   })
 })
