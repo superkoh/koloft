@@ -136,7 +136,7 @@ for (const remote of [false, true]) {
   })
 }
 
-test('a question answered in its own tab closes its Inbox card as handled there, and an undo inside the 5 seconds sends nothing', async ({
+test('a question answered in its own tab closes its Inbox card as handled there, and an undo inside the 5 seconds sends nothing; with Reduce motion on the Inbox orb and the first card’s coloured edge stay but stand still', async ({
   page
 }) => {
   await waitBooted(page)
@@ -149,6 +149,18 @@ test('a question answered in its own tab closes its Inbox card as handled there,
   await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })
   await openInbox(page)
   const card = inboxCard(page, 'asks a question')
+  const orb = page.locator('.inbox-page .ibx-top .ibx-orb')
+  const edge = card.locator('.ibx-focus-edge')
+  const turning = (): Promise<number[]> =>
+    Promise.all(
+      [orb, edge].map((part) => part.evaluate((el) => el.getAnimations({ subtree: true }).length))
+    )
+  expect(await turning()).toEqual([1, 1])
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect.poll(turning).toEqual([0, 0])
+  await expect(orb).toBeVisible()
+  await expect(edge).toBeVisible()
+  await page.emulateMedia({ reducedMotion: null })
   await card.locator('.ibx-choice', { hasText: 'Red' }).click()
   await card.locator('.ibx-undo').click()
   await expect(card.locator('.ibx-undo')).toHaveCount(0)
