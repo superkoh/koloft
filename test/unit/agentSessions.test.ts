@@ -532,6 +532,17 @@ describe('koloft session new: the starter picks the model and effort', () => {
     expect(launched[0]).toMatchObject({ kind: 'muse', effort: 'low' })
   })
 
+  it('refuses a model named for another agent, so a Claude caller cannot start Codex on opus', async () => {
+    const { verb, launched } = harness([session('me', 'claude')])
+    const reply = await verb(
+      ['new', '--backend', 'codex', '--model', 'opus', '--effort', 'high', '--', 'go'],
+      from('me')
+    )
+    expect(reply.exit).toBe(EXIT_USAGE)
+    expect(reply.text).toContain("opus is one of Claude's models")
+    expect(launched).toEqual([])
+  })
+
   it('refuses an Antigravity model with an effort it does not take, and says which it takes', async () => {
     const { verb, launched } = harness([session('me', 'agy')])
     const reply = await verb(

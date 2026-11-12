@@ -11,7 +11,13 @@ import {
   type WorkspaceRows,
   type WorktreeInfo
 } from '@shared/types'
-import { NAMED_MODELS, effortsFor, modelAndEffortChoices, takenEffort } from '@shared/cronModels'
+import {
+  NAMED_MODELS,
+  effortsFor,
+  modelAndEffortChoices,
+  needsModel,
+  takenEffort
+} from '@shared/cronModels'
 import {
   BUTLER_SAYS_OPENING,
   DISCORD_PREFIX,
@@ -512,9 +518,14 @@ const hasNoName = (backend: BackendId): string =>
   `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
 function modelAndEffortRefusal(backend: BackendId, args: NewSessionArgs): string | null {
-  const needsModel = NAMED_MODELS[backend].length > 0
-  if ((needsModel && !args.model) || !args.effort)
-    return `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${needsModel ? '--model and --effort' : '--effort'}: ${modelAndEffortChoices(backend)}. Pick ${PICK_FOR_THE_TASK}.`
+  const modelNeeded = needsModel(backend)
+  if ((modelNeeded && !args.model) || !args.effort)
+    return `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}: ${modelAndEffortChoices(backend)}. Pick ${PICK_FOR_THE_TASK}.`
+  const owner = SESSION_BACKENDS.find(
+    (b) => b !== backend && NAMED_MODELS[b].some((m) => m.id === args.model)
+  )
+  if (owner)
+    return `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models; ${aSessionOf(backend)} takes ${modelAndEffortChoices(backend)}.`
   if (takenEffort(backend, args.model, args.effort)) return null
   return `koloft session new: ${args.model} does not take --effort ${args.effort}; it takes ${effortsFor(backend, args.model).join(', ')}.`
 }

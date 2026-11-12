@@ -197,7 +197,7 @@ async function aChildWhoseParentTabWasClosed(
       : processOf(env, backend, backend === 'claude' ? parent.sessionId : parentId)
   if (backend !== 'codex') expect(parentPid).toBeDefined()
   expect(
-    await koloftInSession(page, 'session new --model sonnet --effort low -- report back when done')
+    await koloftInSession(page, `session new ${picksFor(backend)} -- report back when done`)
   ).toBe('0')
   const kidRow = wsGroup(page, 'ws-a').locator(
     `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
@@ -667,10 +667,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       expect(tree).not.toBe(env.workspaces.a)
 
       expect(
-        await koloftInSession(
-          page,
-          'session new --model sonnet --effort low -- report back when done'
-        )
+        await koloftInSession(page, `session new ${picksFor('codex')} -- report back when done`)
       ).toBe('0')
       const kidRow = wsGroup(page, 'ws-a').locator(
         `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
