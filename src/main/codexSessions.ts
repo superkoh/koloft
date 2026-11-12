@@ -796,13 +796,14 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§15
   private indexInDefaultHome(threadId: string): Promise<void> {
-    const loading =
-      this.resumedInDefaultHome.get(threadId) ??
-      this.loadInDefaultHome(threadId).catch((error) => {
-        this.resumedInDefaultHome.delete(threadId)
+    let loading = this.resumedInDefaultHome.get(threadId)
+    if (!loading) {
+      loading = this.loadInDefaultHome(threadId).catch((error) => {
+        this.noteBinaryGone(error)
         console.error(`[koloft] Codex could not load ${threadId} in the default home: ${error}`)
       })
-    this.resumedInDefaultHome.set(threadId, loading)
+      this.resumedInDefaultHome.set(threadId, loading)
+    }
     return loading
   }
 

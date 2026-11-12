@@ -721,29 +721,36 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('two reads at once of a session the default home has not loaded both wait for its one resume, and a resume that failed is tried again on the next read', async () => {
+  it('two reads at once of a session the default home has not loaded both wait for its one resume, and a resume that failed is logged and not tried again in this run', async () => {
     const said = [{ completedAt: 1, items: [{ type: 'agentMessage', text: 'Hi there' }] }]
-    let loaded = false
-    let resumeFails = true
-    mocks.request.mockImplementation(async (method) => {
-      if (method === 'thread/resume' && resumeFails) throw new Error('timed out')
-      if (method === 'thread/resume') loaded = true
+    const loaded = new Set<string>()
+    const resumeOfA = deferred<void>()
+    mocks.request.mockImplementation(async (method, params: { threadId: string }) => {
+      if (method === 'thread/resume' && params.threadId === B) throw new Error('timed out')
+      if (method === 'thread/resume') await resumeOfA.promise
+      if (method === 'thread/resume') loaded.add(params.threadId)
       if (method === 'thread/read' || method === 'thread/resume')
-        return { thread: { id: A, cwd: repo, turns: loaded ? said : [] } }
+        return { thread: { id: params.threadId, turns: loaded.has(params.threadId) ? said : [] } }
       return historyOrTrustedHooks(method)
     })
     vi.mocked(deps.homeOf).mockReturnValue(undefined)
-    const read = () => sessions.readTurns(codexSessionKey(A), 5)
-    const resumes = () => mocks.request.mock.calls.filter(([m]) => m === 'thread/resume').length
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const calls = (method: string, id: string) =>
+      mocks.request.mock.calls.filter(([m, p]) => m === method && p.threadId === id).length
+    const replies = (turns: { reply: string }[]) => turns.map((t) => t.reply)
 
-    expect(await read()).toEqual([])
-    resumeFails = false
-    const [first, second] = await Promise.all([read(), read()])
-    expect([first, second].map((turns) => turns.map((t) => t.reply))).toEqual([
-      ['Hi there'],
-      ['Hi there']
-    ])
-    expect(resumes()).toBe(2)
+    const both = Promise.all([0, 1].map(() => sessions.readTurns(codexSessionKey(A), 5)))
+    await vi.waitFor(() => expect(calls('thread/resume', A)).toBe(1))
+    await vi.waitFor(() => expect(calls('thread/read', A)).toBe(2))
+    resumeOfA.resolve()
+    expect((await both).map(replies)).toEqual([['Hi there'], ['Hi there']])
+    expect(calls('thread/resume', A)).toBe(1)
+
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining(`could not load ${B}`))
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(calls('thread/resume', B)).toBe(1)
+    logged.mockRestore()
   })
 
   // CODEX§15
