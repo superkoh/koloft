@@ -2,8 +2,17 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
 import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
+import {
+  centerTerm,
   newSessionInWith,
   openSessionTerminal,
   panelTerm,
@@ -12,7 +21,8 @@ import {
   terminalText,
   waitBooted,
   waitConductorStarted,
-  waitForCalls
+  waitForCalls,
+  wsRows
 } from './helpers/p1'
 import {
   addRemoteWorkspace,
@@ -239,6 +249,65 @@ test.describe('koloft page tap: the owner taps a part of a web page from Discord
       await server.close()
     }
   })
+
+  const OTHER_AGENTS_ON_THIS_MAC = [
+    {
+      label: 'Codex' as const,
+      install: (env: E2EEnv) => installCodex(env)
+    },
+    {
+      label: 'Muse' as const,
+      install: (env: E2EEnv) => {
+        installMuse(env)
+        trustInMuse(env, env.workspaces.a)
+      }
+    },
+    {
+      label: 'Antigravity' as const,
+      install: (env: E2EEnv) => {
+        installAgy(env)
+        trustInAgy(env, env.workspaces.a)
+      }
+    }
+  ]
+
+  for (const agent of OTHER_AGENTS_ON_THIS_MAC) {
+    test(`run in a ${agent.label} session on this Mac, it finds the page in that session’s Workbench and the owner taps it from Discord`, async ({
+      env
+    }) => {
+      seedBinding(env)
+      agent.install(env)
+      const fake = await startFakeDiscord(env)
+      const server = await startEchoServer()
+      const app = await launchApp(env)
+      try {
+        const url = servePageWithAFrameFromAnotherSite(server)
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await expect.poll(() => fake.identifies).toBe(1)
+        await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+        if (agent.label === 'Antigravity') {
+          await newSessionInWith(page, 'ws-a', agent.label)
+          await runIn(page, centerTerm(page), 'first words')
+          await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        } else await startSessionIn(page, 'ws-a', { method: agent.label })
+        await openSessionTerminal(app, page)
+        const shell = (await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty'))!
+        await type(page, shell, `koloft open ${url}`)
+        const guest = await guestByUrl(app, '/check', { timeout: 30_000 })
+        await expect(guest.locator('#holder iframe')).toBeVisible()
+        await type(page, shell, 'koloft page tap "#holder" -- "Tick the box."')
+        await tapsOneSquareInTheFrameThenSaysItPassed(fake, guest)
+        await expect
+          .poll(async () => bare(await terminalText(page, shell)), { timeout: 30_000 })
+          .toContain(bare(TAPS_PASSED))
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+        await server.close()
+      }
+    })
+  }
 
   test.describe('on another machine', () => {
     test.afterEach(({ env }) => killFakeRemote(env))
