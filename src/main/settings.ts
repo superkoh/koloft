@@ -5,15 +5,17 @@ import { DEFAULT_SETTINGS, type Settings } from '@shared/types'
 import { sanitizeLoadedSettings } from '@shared/settingsOps'
 import { assistOnMethodsThatAreOn, sanitizeAssist } from '@shared/assistPicks'
 import { normalizeSessionMethods } from '@shared/sessionBackend'
+import { BackgroundFile } from './backgroundFile'
 
 function settingsFile(): string {
   return path.join(app.getPath('userData'), 'settings.json')
 }
 
-function writeAtomically(file: string, text: string): void {
-  const tmp = `${file}.tmp`
-  fs.writeFileSync(tmp, text)
-  fs.renameSync(tmp, file)
+// PLATFORM§69
+const settingsOnDisk = new BackgroundFile(settingsFile, undefined, () => rereadSettingsOnNextLoad())
+
+export function flushSettings(): void {
+  settingsOnDisk.flushSync()
 }
 
 let cached: Settings | undefined
@@ -40,11 +42,7 @@ export function saveSettings(patch: Partial<Settings>): Settings {
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   const text = JSON.stringify(merged, null, 2)
-  try {
-    writeAtomically(settingsFile(), text)
-    cached = sanitizeLoadedSettings(JSON.parse(text))
-  } catch {
-    rereadSettingsOnNextLoad()
-  }
+  settingsOnDisk.write(text)
+  cached = sanitizeLoadedSettings(JSON.parse(text))
   return merged
 }

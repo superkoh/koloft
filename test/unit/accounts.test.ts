@@ -12,6 +12,7 @@ vi.mock('electron', async () => {
 
 import { app } from 'electron'
 import { loadSettings, saveSettings, rereadSettingsOnNextLoad } from '../../src/main/settings'
+import { BackgroundFile, FOLDER_OF_HALF_WRITTEN_FILES } from '../../src/main/backgroundFile'
 import {
   keychainRead,
   keychainWrite,
@@ -55,10 +56,10 @@ function meta(p: Partial<AccountMeta>): AccountMeta {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(settingsFile, { force: true })
   rereadSettingsOnNextLoad()
-  fs.rmSync(`${settingsFile}.tmp`, { force: true })
   fs.rmSync(fixtureFile, { force: true })
   resetProbeOutcomeState()
   process.env.KOLOFT_TEST_BACKGROUND = '1'
@@ -99,8 +100,9 @@ describe('U3 · registry persistence', () => {
     expect(listAccounts().map((a) => a.name)).toEqual(['alpha', 'bravo', 'charlie', 'api'])
   })
 
-  it('custom entries survive only with a valid http(s) URL and a safe model id (both land in shell exports in the shim)', () => {
+  it('custom entries survive only with a valid http(s) URL and a safe model id (both land in shell exports in the shim)', async () => {
     saveSettings({})
+    await BackgroundFile.whenAllWritten()
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     const base = { kind: 'custom', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
     raw.accounts = [
@@ -118,9 +120,10 @@ describe('U3 · registry persistence', () => {
     expect(kept[1].model).toBeUndefined()
   })
 
-  it('saveSettings writes atomically: no .tmp remains, content is complete JSON', () => {
+  it('saveSettings writes atomically: no half-written file remains, content is complete JSON', async () => {
     upsertAccountMeta(meta({ name: 'bravo' }))
-    expect(fs.existsSync(`${settingsFile}.tmp`)).toBe(false)
+    await BackgroundFile.whenAllWritten()
+    expect(fs.readdirSync(path.join(userData, FOLDER_OF_HALF_WRITTEN_FILES))).toEqual([])
     const parsed = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     expect(parsed.accounts).toHaveLength(1)
   })
@@ -128,6 +131,7 @@ describe('U3 · registry persistence', () => {
   it('LEAK ASSERTION: settings.json never contains sk-ant bytes', async () => {
     await keychainWrite('oauth', 'bravo', 'sk-ant-oat01-SUPER-SECRET')
     upsertAccountMeta(meta({ name: 'bravo' }))
+    await BackgroundFile.whenAllWritten()
     expect(fs.readFileSync(settingsFile, 'utf8')).not.toContain('sk-ant')
   })
 
@@ -143,8 +147,9 @@ describe('U3 · registry persistence', () => {
     reads.mockRestore()
   })
 
-  it('hostile entries on disk are dropped on load (names reach a shell)', () => {
+  it('hostile entries on disk are dropped on load (names reach a shell)', async () => {
     saveSettings({})
+    await BackgroundFile.whenAllWritten()
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     raw.accounts = [
       { name: 'ok-name', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 },
@@ -290,8 +295,9 @@ describe('U3 · fable capability + §08 downgrade clock', () => {
     expect(listAccounts()[0].fable).toBe('yes')
   })
 
-  it('fableCheckedAt survives the settings sanitizer; non-numeric garbage is dropped', () => {
+  it('fableCheckedAt survives the settings sanitizer; non-numeric garbage is dropped', async () => {
     saveSettings({})
+    await BackgroundFile.whenAllWritten()
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     const base = { kind: 'oauth', enabled: true, fable: 'no', status: 'ok', addedAt: 1 }
     raw.accounts = [

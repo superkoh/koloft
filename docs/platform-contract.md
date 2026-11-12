@@ -3600,7 +3600,10 @@ in a `.koloft-writes` folder inside the target's folder and moves it into place 
 main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
 save's last check and its rename together on the main thread; `signalLog`
-(`machineRoom.ts`) appends to and trims its log through `fs.promises`.
+(`machineRoom.ts`) appends to and trims its log through `fs.promises`; `saveSettings`
+writes `settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and
+git-freshness sweeps' "is the workspace folder still there" and the timed look at Muse's
+registry folders stat them through `fs.promises`.
 
 ## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
 

@@ -9,7 +9,7 @@ function sweepOver(
   let pushed = 0
   const asked: string[] = []
   const sweep = new GithubCountsSweep({
-    workspaces: () => workspaces,
+    workspaces: async () => workspaces,
     openCounts: async (p) => {
       asked.push(p)
       return answers[p] ?? null
@@ -59,7 +59,7 @@ describe('GithubCountsSweep', () => {
     const answerOfCall: (WorkspaceGithub | null)[] = [null, KOLOFT]
     let calls = 0
     const sweep = new GithubCountsSweep({
-      workspaces: () => [{ path: '/a', missing: false }],
+      workspaces: async () => [{ path: '/a', missing: false }],
       openCounts: async () => {
         const call = calls++
         if (call === 0) await firstAnswerHeld
