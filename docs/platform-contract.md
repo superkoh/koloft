@@ -2203,8 +2203,8 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   same is inferred, not checked. Started as Koloft starts a remote
   tab (`tmux -L koloft -u -f <Koloft's conf> new-session -A -D -s <name> <agent>`) from a
   python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
-  reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 in
-  the pane, each through start, trust question, a turn with a tool run, a resize,
+  reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 run directly
+  in the pane (without Koloft's launcher script and status relay), each through start, trust question, a turn with a tool run, a resize,
   `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
   only questions the outer terminal got, both in Koloft's off-screen pass-through list
   (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
