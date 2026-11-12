@@ -315,6 +315,7 @@ export class CronRunner {
   private kept = new Map<string, KeptTab>()
   private windowShowsTabs = false
   private inFlight = new Set<string>()
+  private toTidy = new Set<string>()
   private launching = new Set<string>()
   private reopening = new Set<string>()
   private held = new Map<string, Due[]>()
@@ -876,18 +877,16 @@ export class CronRunner {
     return [...this.kept.values()].some((k) => runFolder(k.root, k.worktree) === folder)
   }
 
+  private boundFolderOf(run: LiveRun): string | undefined {
+    const held = run.sessionId ? this.folderOf(run) : undefined
+    return held && runFolder(held.root, held.worktree)
+  }
+
   tidiesFolder(folder: string): boolean {
-    const live = [...this.live.values()]
     return (
       this.holdsFolder(folder) ||
-      this.jobs.some((job) =>
-        [...job.history, ...live.filter((r) => r.jobId === job.id)].some(
-          (run) =>
-            !!run.worktree &&
-            !!run.sessionId &&
-            runFolder(job.workspacePath, run.worktree) === folder
-        )
-      )
+      this.toTidy.has(folder) ||
+      [...this.live.values()].some((run) => this.boundFolderOf(run) === folder)
     )
   }
 
@@ -899,6 +898,8 @@ export class CronRunner {
   }
 
   private closeOut(run: LiveRun, exit: AgentExit | undefined): void {
+    const bound = this.boundFolderOf(run)
+    if (bound) this.toTidy.add(bound)
     this.clearTimer(run.tabId)
     this.dropRun(run)
     this.refreshFolders()
@@ -985,6 +986,7 @@ export class CronRunner {
       }
       if (line && noteFolder(line, result)) changed = true
     }
+    for (const h of job.history) if (h.worktree) this.toTidy.delete(runFolder(root, h.worktree))
     if (changed) {
       this.d.store.save(this.jobs)
       this.push()

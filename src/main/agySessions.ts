@@ -207,6 +207,7 @@ interface AgyRun extends StoredRun {
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
+  titleChase?: { id: string; readsLeft: number }
   touched: Map<string, FileAcc>
   liveWrites: number
   background?: BackgroundItem
@@ -1269,7 +1270,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    void this.takeListedTitle(run, id, LISTED_TITLE_READS_AFTER_A_TURN)
+    const chasing = run.titleChase?.id === id
+    run.titleChase = { id, readsLeft: LISTED_TITLE_READS_AFTER_A_TURN }
+    if (!chasing) void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
     if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file)
@@ -1310,7 +1313,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8 AGY§11
-  private async takeListedTitle(run: AgyRun, id: string, readsLeft = 0): Promise<void> {
+  private async takeListedTitle(run: AgyRun, id: string, chase = false): Promise<void> {
     const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
@@ -1318,13 +1321,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           .agyConversations()
           .then((rows) => historyEntries(rows))
       : listAgyConversations(this.gemini)
-    const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
-    if (run.info?.nativeSessionId !== id) return
-    if (!name) {
-      if (readsLeft > 0 && this.runs.get(run.tabId) === run)
-        this.takeListedTitleSoon(run, id, readsLeft - 1)
-      return
+    const rows = await listed.catch(() => undefined)
+    const name = rows?.find((e) => e.id === id)?.name
+    const current = this.runs.get(run.tabId) === run && run.info?.nativeSessionId === id
+    const chased = chase && run.titleChase?.id === id ? run.titleChase : undefined
+    if (chased) {
+      if (current && rows && !name && chased.readsLeft-- > 0)
+        return this.takeListedTitleSoon(run, id, true)
+      run.titleChase = undefined
     }
+    if (!current || !name || !run.info) return
     if (!given) {
       if (name !== run.info.title) this.retitle(run.info, name)
       return
@@ -1335,9 +1341,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8
-  private takeListedTitleSoon(run: AgyRun, id: string, readsLeft = 0): void {
+  private takeListedTitleSoon(run: AgyRun, id: string, chase = false): void {
     setTimeout(
-      () => void this.takeListedTitle(run, id, readsLeft),
+      () => void this.takeListedTitle(run, id, chase),
       LISTED_TITLE_AFTER_PROMPT_MS
     ).unref?.()
   }

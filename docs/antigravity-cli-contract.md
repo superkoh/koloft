@@ -406,6 +406,10 @@ only downloaded the public release.
     ends.
   - The row appears 0.4–0.6 s after Enter, with the made-up title. `/rename` updates
     `title`. A `/new` that is never used stays as a row with `step_count` 0.
+  - The made-up title comes from its own model call (the title call, below), so nothing
+    ties it to the end of the turn: a reader that looks once when a short turn ends can
+    find the row still untitled. How late it can land has not been timed against agy
+    itself; Koloft rereads the list after a turn ends until the title is there.
   - `status` (`CASCADE_RUN_STATUS_IDLE` / `RUNNING`) does not tell whether a process
     is live: a finished `-p` leaves `IDLE`, opening the `/resume` picker sets every
     row not live to `""`, an open ask reads `RUNNING` with `not_fully_idle=1`, a

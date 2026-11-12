@@ -33,7 +33,7 @@ const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
 const LISTED_TITLE_READ_SETTLES_MS = 300
-const TITLE_LANDS_AFTER_THE_TURN_MS = 2500
+const TITLE_LANDS_AFTER_THE_TURN_MS = 1500
 const STANDING_CRON = {
   name: 'schedule',
   args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
