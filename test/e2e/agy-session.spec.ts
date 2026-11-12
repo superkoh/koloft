@@ -130,7 +130,7 @@ function lockHolders(lock: string): string {
 function seedConductor(env: E2EEnv): void {
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend: 'claude' },
+    assist: { backend: 'claude' },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
@@ -193,7 +193,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     const PROMPT = 'Tidy the agy readme'
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
       JSON.stringify({ workspace: 1, worktree: 'main', title: 'Agy readme', why: 'ws-a.' })
@@ -242,7 +242,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     env
   }) => {
     installAgy(env)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -1163,6 +1163,78 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  test('after Koloft is reopened, the first Antigravity session started while no quota can be read runs in the account added since, not the one that was full when Koloft was last open', async ({
+    env
+  }) => {
+    const binary = path.join(env.fakeBin, 'agy')
+    fs.symlinkSync(FAKE_AGY, binary)
+    env.launchEnv.KOLOFT_AGY_CMD = binary
+    trustInAgy(env, env.workspaces.a)
+    const homeOf = (name: string) => path.join(env.userData, 'agy-homes', name)
+    const signInWithGoogle = (name: string) => {
+      const appDir = path.join(homeOf(name), 'antigravity-cli')
+      fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
+      fs.writeFileSync(
+        path.join(appDir, 'cache', 'onboarding.json'),
+        JSON.stringify({ onboardingComplete: true })
+      )
+      fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+    }
+    signInWithGoogle(E2E_AGY_ACCOUNT)
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    const usage = path.join(env.home, 'fake-agy-usage.json')
+    fs.writeFileSync(
+      usage,
+      JSON.stringify({
+        groups: [
+          {
+            name: 'Gemini Models',
+            buckets: [
+              {
+                id: 'gemini-weekly',
+                name: 'Weekly Limit Remaining',
+                window: 'weekly',
+                remaining_fraction: 0,
+                reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
+              }
+            ]
+          }
+        ]
+      })
+    )
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.accounts.probe())).find(
+              (a) => a.kind === 'agy-home'
+            )?.quota?.[0]?.used,
+          { timeout: 30_000 }
+        )
+        .toBe(1)
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    signInWithGoogle('roomy')
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home'), seededAccount('roomy', 'agy-home')]
+    })
+    fs.writeFileSync(usage, '{"groups":"unread"}')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect((await startAgy(page, env)).geminiDir).toBe(homeOf('roomy'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§5
   test('a Sign in with Google tab closed with its Cancel before agy is signed in brings Settings ▸ Accounts back saying the sign-in did not complete, with no row left for the new account', async ({
     env
@@ -1243,7 +1315,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   }) => {
     const PROMPT = 'Fix the flaky login test'
     installAgy(env)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'agy' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'agy' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-agy-assist-reply'),
       JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', why: 'ws-a.' })
@@ -1267,7 +1339,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       for (const shot of oneShots) {
         expect(shot.argv[0].startsWith(`--gemini_dir=${shots}${path.sep}agy-`)).toBe(true)
         expect(shot.argv.slice(1, 2)).toEqual(['-p'])
-        expect(shot.argv.slice(3)).toEqual(['--output-format', 'json'])
+        expect(shot.argv.slice(3)).toEqual([
+          '--output-format',
+          'json',
+          '--model',
+          'gemini-3.8-flash',
+          '--effort',
+          'low'
+        ])
         expect(shot.env.GEMINI_API_KEY).toBe(true)
       }
       expect(oneShots.some((c) => c.argv[2].includes(PROMPT))).toBe(true)

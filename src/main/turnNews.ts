@@ -101,6 +101,7 @@ export async function judgeTurn(assist: Assist, turn: Turn): Promise<Verdict> {
   if (!reply) return { news: false }
   if (saysNothingForYou(reply)) return { news: true }
   const answer = await assist({
+    row: 'turn',
     system: SYSTEM,
     prompt: `${INSTRUCTIONS}\n\nAgent replied:\n${reply.slice(-REPLY_CHARS_SENT)}`
   })

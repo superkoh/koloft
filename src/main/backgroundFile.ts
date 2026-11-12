@@ -1,4 +1,22 @@
 import fs from 'fs'
+import path from 'path'
+
+// PLATFORM§69
+export const FOLDER_OF_HALF_WRITTEN_FILES = '.koloft-writes'
+
+function halfWrittenFileOf(target: string, suffix = ''): string {
+  return path.join(
+    path.dirname(target),
+    FOLDER_OF_HALF_WRITTEN_FILES,
+    `${path.basename(target)}.${process.pid}${suffix}`
+  )
+}
+
+function dropTheOlderSaveStillOnItsWayIn(target: string): void {
+  try {
+    fs.unlinkSync(halfWrittenFileOf(target))
+  } catch {}
+}
 
 export class BackgroundFile {
   private static readonly draining = new Set<Promise<void>>()
@@ -11,6 +29,7 @@ export class BackgroundFile {
   private latestGen = 0
   private savedGen = 0
   private writing = false
+  private folderMadeFor: string | undefined
 
   constructor(
     private readonly file: () => string,
@@ -29,9 +48,11 @@ export class BackgroundFile {
   flushSync(): void {
     if (this.savedGen >= this.latestGen) return
     const target = this.file()
-    const tmp = `${target}.koloft-${process.pid}-now`
+    const tmp = halfWrittenFileOf(target, '-now')
     try {
+      fs.mkdirSync(path.dirname(tmp), { recursive: true })
       fs.writeFileSync(tmp, this.latest, { mode: this.mode })
+      dropTheOlderSaveStillOnItsWayIn(target)
       fs.renameSync(tmp, target)
     } catch {}
     this.savedGen = this.latestGen
@@ -39,15 +60,26 @@ export class BackgroundFile {
 
   private async drain(): Promise<void> {
     this.writing = true
+    let genTriedAgain = 0
     while (this.savedGen < this.latestGen) {
-      const gen = this.latestGen
+      let gen = this.latestGen
       const target = this.file()
-      const tmp = `${target}.koloft-${process.pid}`
+      const tmp = halfWrittenFileOf(target)
       try {
+        if (this.folderMadeFor !== target) {
+          await fs.promises.mkdir(path.dirname(tmp), { recursive: true })
+          this.folderMadeFor = target
+        }
+        gen = this.latestGen
         await fs.promises.writeFile(tmp, this.latest, { mode: this.mode })
-        if (gen > this.savedGen) fs.renameSync(tmp, target)
+        if (gen > this.savedGen) await fs.promises.rename(tmp, target)
         else await fs.promises.rm(tmp, { force: true })
-      } catch {}
+      } catch {
+        this.folderMadeFor = undefined
+        const theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore = genTriedAgain !== gen
+        genTriedAgain = gen
+        if (theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore) continue
+      }
       this.savedGen = Math.max(this.savedGen, gen)
     }
     this.writing = false

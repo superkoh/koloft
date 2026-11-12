@@ -22,13 +22,11 @@ export function looksBinary(buf: Buffer): boolean {
   return n > 0 && control / n > 0.1
 }
 
-function canWrite(p: string): boolean {
-  try {
-    fs.accessSync(p, fs.constants.W_OK)
-    return true
-  } catch {
-    return false
-  }
+function canWrite(p: string): Promise<boolean> {
+  return fs.promises.access(p, fs.constants.W_OK).then(
+    () => true,
+    () => false
+  )
 }
 
 // PLATFORM§24
@@ -63,40 +61,32 @@ function writeError(e: unknown): Error {
   return new Error('KOLOFT_WRITE_FAILED')
 }
 
-export function openForEdit(p: string, maxBytes = EDIT_OPEN_MAX_BYTES): EditOpenResult {
+// PLATFORM§69
+export async function openForEdit(
+  p: string,
+  maxBytes = EDIT_OPEN_MAX_BYTES
+): Promise<EditOpenResult> {
   if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
-  let real: string
-  try {
-    real = fs.realpathSync(p)
-  } catch {
+  const real = await fs.promises.realpath(p).catch(() => {
     throw new Error('KOLOFT_GONE')
-  }
-
-  let statBeforeRead: fs.Stats
-  try {
-    statBeforeRead = fs.statSync(real)
-  } catch {
+  })
+  const statBeforeRead = await fs.promises.stat(real).catch(() => {
     throw new Error('KOLOFT_GONE')
-  }
+  })
   if (!statBeforeRead.isFile()) throw new Error('KOLOFT_NOT_FILE')
   if (statBeforeRead.size > maxBytes) throw new Error('KOLOFT_TOO_LARGE')
 
-  let buf: Buffer
-  try {
-    buf = fs.readFileSync(real)
-  } catch {
+  const buf = await fs.promises.readFile(real).catch(() => {
     throw new Error('KOLOFT_READ_FAILED')
-  }
-  return editOpenResult(buf, statBeforeRead, {
-    file: () => canWrite(real),
-    dir: () => canWrite(path.dirname(real))
   })
+  const [file, dir] = await Promise.all([canWrite(real), canWrite(path.dirname(real))])
+  return editOpenResult(buf, statBeforeRead, { file, dir })
 }
 
 export function editOpenResult(
   buf: Buffer,
   fp: EditFingerprint,
-  writable: { file: () => boolean; dir: () => boolean }
+  writable: { file: boolean; dir: boolean }
 ): EditOpenResult {
   if (looksBinary(buf)) throw new Error('KOLOFT_BINARY')
 
@@ -108,9 +98,9 @@ export function editOpenResult(
     ? 'notUtf8'
     : mixed
       ? 'mixedEol'
-      : !writable.file()
+      : !writable.file
         ? 'noPerm'
-        : !writable.dir()
+        : !writable.dir
           ? 'dirNotWritable'
           : null
 
@@ -138,47 +128,42 @@ export function checkNewFileName(name: unknown): asserts name is string {
   }
 }
 
-function staleResult(real: string, st: fs.Stats): EditWriteResult {
+async function staleResult(real: string, st: fs.Stats): Promise<EditWriteResult> {
   let text: string | null = null
   if (st.size <= EDIT_OPEN_MAX_BYTES) {
-    try {
-      const buf = fs.readFileSync(real)
-      if (!looksBinary(buf)) text = buf.toString('utf8')
-    } catch {}
+    const buf = await fs.promises.readFile(real).catch(() => null)
+    if (buf && !looksBinary(buf)) text = buf.toString('utf8')
   }
   return { ok: false, code: 'stale', mtimeMs: st.mtimeMs, size: st.size, text }
 }
 
-function goneError(p: string): Error {
-  return new Error(fs.existsSync(path.dirname(p)) ? 'KOLOFT_GONE' : 'KOLOFT_DIR_GONE')
+async function goneError(p: string): Promise<Error> {
+  const folderThere = await fs.promises.access(path.dirname(p)).then(
+    () => true,
+    () => false
+  )
+  return new Error(folderThere ? 'KOLOFT_GONE' : 'KOLOFT_DIR_GONE')
 }
 
-// PLATFORM§3
-export function writeText(
+// PLATFORM§3 PLATFORM§69
+export async function writeText(
   p: string,
   text: string,
   expect: unknown,
   opts?: { force?: unknown; eol?: unknown },
   maxBytes = EDIT_WRITE_MAX_BYTES
-): EditWriteResult {
+): Promise<EditWriteResult> {
   if (typeof p !== 'string' || !p) throw new Error('KOLOFT_GONE')
   if (typeof text !== 'string') throw new Error('KOLOFT_WRITE_FAILED')
   const force = opts?.force === true
   if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new Error('KOLOFT_TOO_LARGE')
 
-  let real: string
-  try {
-    real = fs.realpathSync(p)
-  } catch {
-    throw goneError(p)
-  }
-
-  let st: fs.Stats
-  try {
-    st = fs.statSync(real)
-  } catch {
-    throw goneError(real)
-  }
+  const real = await fs.promises.realpath(p).catch(async () => {
+    throw await goneError(p)
+  })
+  const st = await fs.promises.stat(real).catch(async () => {
+    throw await goneError(real)
+  })
   if (!st.isFile()) throw new Error('KOLOFT_NOT_FILE')
 
   const matches = (s: fs.Stats): boolean => sameFingerprint(expect, s)
@@ -194,40 +179,35 @@ export function writeText(
   let done = false
   let after: fs.Stats
   try {
-    const fd = fs.openSync(tmp, 'wx', 0o600)
+    const half = await fs.promises.open(tmp, 'wx', 0o600)
     created = true
     try {
-      fs.writeFileSync(fd, data)
-      fs.fsyncSync(fd)
-      fs.fchmodSync(fd, st.mode & 0o7777)
-      after = fs.fstatSync(fd)
+      await half.writeFile(data)
+      await half.sync()
+      await half.chmod(st.mode & 0o7777)
+      after = await half.stat()
     } finally {
-      fs.closeSync(fd)
+      await half.close()
     }
 
     if (!force) {
       const now = fs.statSync(real)
-      if (!matches(now)) return staleResult(real, now)
+      if (!matches(now)) return await staleResult(real, now)
     }
-
     fs.renameSync(tmp, real)
     done = true
     try {
-      const dfd = fs.openSync(dir, 'r')
+      const folder = await fs.promises.open(dir, 'r')
       try {
-        fs.fsyncSync(dfd)
+        await folder.sync()
       } finally {
-        fs.closeSync(dfd)
+        await folder.close()
       }
     } catch {}
   } catch (e) {
     throw writeError(e)
   } finally {
-    if (created && !done) {
-      try {
-        fs.unlinkSync(tmp)
-      } catch {}
-    }
+    if (created && !done) await fs.promises.unlink(tmp).catch(() => {})
   }
 
   return { ok: true, mtimeMs: after.mtimeMs, size: after.size }

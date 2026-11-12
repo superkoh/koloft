@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { titleForTask } from '../../src/main/sessionTitle'
 import { koloftAssist } from '../../src/main/assist'
+import { DEFAULT_SETTINGS } from '../../src/shared/types'
 
 function fakeClaude(body: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-title-'))
@@ -14,7 +15,11 @@ function fakeClaude(body: string): string {
 
 function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
   return koloftAssist({
-    setting: () => ({ on: true, backend: 'claude' }),
+    picks: () => ({
+      assist: { backend: 'claude' },
+      sessionMethods: DEFAULT_SETTINGS.sessionMethods,
+      accounts: []
+    }),
     enabled: () => true,
     target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null)
   })

@@ -68,6 +68,7 @@ export async function titleForTask(
   ownerWords?: string
 ): Promise<string> {
   const reply = await assist({
+    row: 'title',
     system: TITLE_SYSTEM,
     prompt: titleInstructions(ownerWords) + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE)
   })

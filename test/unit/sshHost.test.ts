@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
-import { killSessionCmd } from '../../src/main/remote/launch'
+import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
@@ -385,21 +385,23 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ])
     })
 
-    it("offers a Codex or Muse task the machine's own folders for that agent, read on the machine (#675)", async () => {
-      const put = (file: string): void => {
+    it("offers a Codex, Muse or Antigravity task the machine's own folders for that agent, read on the machine (#675)", async () => {
+      const put = (file: string, text = '---\ndescription: d\n---'): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })
-        fs.writeFileSync(file, '---\ndescription: d\n---')
+        fs.writeFileSync(file, text)
       }
+      put(path.join(repo, '_agents', 'skills', 'agy-dir', 'SKILL.md'), '---\nname: agy-only\n---')
       put(path.join(repo, '.agents', 'skills', 'shared', 'SKILL.md'))
       put(path.join(repo, '.codex', 'skills', 'codex-only', 'SKILL.md'))
       put(path.join(repo, '.claude', 'skills', 'claude-only', 'SKILL.md'))
       put(path.join(home, '.agents', 'skills', 'mine', 'SKILL.md'))
       put(path.join(home, '.config', 'muse', 'skills', 'muse-mine', 'SKILL.md'))
 
-      const names = async (backend: 'codex' | 'muse'): Promise<string[]> =>
+      const names = async (backend: 'codex' | 'muse' | 'agy'): Promise<string[]> =>
         (await machine().listSkills(keyed(repo), backend)).map((s) => s.name)
       expect(await names('codex')).toEqual(['$codex-only', '$shared', '$mine'])
       expect(await names('muse')).toEqual(['/claude-only', '/shared', '/mine', '/muse-mine'])
+      expect(await names('agy')).toEqual(['/agy-only'])
     })
 
     it("finds a Muse task's skills under the machine's XDG_CONFIG_HOME even when it ends in a slash", async () => {
@@ -918,6 +920,50 @@ describe('ending a session that runs on the machine', () => {
     expect(await host.endTmuxSession(tmux)).toBeUndefined()
     await host.launch({ root: keyed('/w'), resumeSessionId: live })
     expect(pickAccount).toHaveBeenCalled()
+  })
+
+  // ADR-0044
+  describe('while the rename that follows a moved conversation is still on its way to the machine', () => {
+    const moved = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const renamed = `k-${moved}`
+    const tmuxWhoseOnlySessionIs = (name: string): string => {
+      const bin = path.join(home, '.local', 'bin')
+      fs.mkdirSync(bin, { recursive: true })
+      const killed = path.join(home, 'killed-sessions')
+      fs.writeFileSync(
+        path.join(bin, 'tmux'),
+        `#!/bin/sh
+[ "$3" = kill-session ] || exit 0
+[ "$5" = ${name} ] || { echo "can't find session: $5" >&2; exit 1; }
+printf '%s\\n' "$5" >> ${JSON.stringify(killed)}
+`,
+        { mode: 0o755 }
+      )
+      return killed
+    }
+
+    it.each([
+      ['has not reached the machine yet', tmux],
+      ['has already renamed the session there', renamed]
+    ])(
+      'a kill under the old name, sent when the rename %s, ends the session, and the next launch of the moved conversation starts afresh',
+      async (_when, nameOnTheMachine) => {
+        const killed = tmuxWhoseOnlySessionIs(nameOnTheMachine)
+        const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+        const neverBack = new Promise<BytesResult>(() => {})
+        const host = machine(
+          (cmd, opts) =>
+            cmd === renameSessionCmd('pty-1', tmux, renamed) ? neverBack : runOnMachine(cmd, opts),
+          { alive: () => new Set([moved]), pickAccount }
+        )
+        void host.renameTmuxSession('pty-1', tmux, renamed)
+
+        expect(await host.endTmuxSession(tmux)).toBeUndefined()
+        expect(fs.readFileSync(killed, 'utf8')).toBe(`${nameOnTheMachine}\n`)
+        await host.launch({ root: keyed('/w'), resumeSessionId: moved })
+        expect(pickAccount).toHaveBeenCalled()
+      }
+    )
   })
 })
 

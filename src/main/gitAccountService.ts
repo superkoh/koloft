@@ -590,6 +590,11 @@ export class GitAccountService {
     return this.onMachine.gh(at.host, at.path, args)
   }
 
+  // PLATFORM§33
+  machineLoginPath(machine: string): Promise<string> {
+    return this.onMachine.loginPath(machine)
+  }
+
   async ghEnvForRepo(
     slug: string | undefined,
     workspaces: string[]

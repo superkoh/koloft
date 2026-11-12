@@ -14,6 +14,7 @@ import {
 import {
   E2E_MUSE_ACCOUNT,
   installCodex,
+  addMuseAccount,
   installMuse,
   museCalls,
   museSaid,
@@ -197,7 +198,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     env
   }) => {
     installMuse(env)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -246,6 +247,49 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
         `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('after Koloft is reopened, the first Muse session started while no quota can be read runs in the account added since, not the one that was full when Koloft was last open', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const signedInWithMeta = JSON.stringify({
+      schema_version: 1,
+      providers: { meta: { access_token: 'fake' } }
+    })
+    const configOf = (name: string) => path.join(env.userData, 'muse-homes', name, 'muse')
+    fs.writeFileSync(path.join(configOf(E2E_MUSE_ACCOUNT), 'auth.json'), signedInWithMeta)
+    const quota = path.join(env.home, 'fake-muse-quota.json')
+    fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 100 }))
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.accounts.probe())).find(
+              (a) => a.kind === 'muse-home'
+            )?.limits?.windows.length,
+          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
+        )
+        .toBe(2)
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    addMuseAccount(env, 'roomy', signedInWithMeta)
+    fs.writeFileSync(quota, JSON.stringify({ current: 'unread', weekly: 'unread' }))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect((await startMuse(page, env)).configHome).toBe(path.dirname(configOf('roomy')))
     } finally {
       await quitAndClose(app)
     }

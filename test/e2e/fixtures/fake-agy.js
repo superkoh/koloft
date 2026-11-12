@@ -1218,6 +1218,9 @@ async function endToolTurn(turn, result, success, failure) {
 function fileAsk(turn, file, kind) {
   const create = kind === 'create'
   const apiMinimal = turn.origin.api && !turn.origin.fullConfig
+  // AGY§26
+  const outside = create && path.relative(process.cwd(), file).startsWith('..')
+  const noKey = outside ? '3' : '2'
   return {
     needed: !(acceptEdits || skipPermissions || apiMinimal),
     stepType: 'CORTEX_STEP_TYPE_CODE_ACTION',
@@ -1232,14 +1235,19 @@ function fileAsk(turn, file, kind) {
       'permission',
       `Approve ${create ? 'WriteToFile' : 'ReplaceFileContent'}: Write: ${file}`
     ],
-    screen: create
-      ? `${file}\n+ ${WRITTEN_BY_FAKE.trim()}\nAllow creation of this file?\n> 1. Yes, allow creation\n  2. No, deny creation`
-      : `${file}\nAccept this file edit?\n> 1. Yes, accept this change\n  2. No, reject this change\nshift+tab to auto-approve file edits`,
+    screen: outside
+      ? `${file}\n+ ${WRITTEN_BY_FAKE.trim()}\nReason: outside workspace\nAllow creation of this file?\n> 1. Yes, allow creation\n  2. Yes, and always allow non-workspace access\n  3. No, deny creation`
+      : create
+        ? `${file}\n+ ${WRITTEN_BY_FAKE.trim()}\nAllow creation of this file?\n> 1. Yes, allow creation\n  2. No, deny creation`
+        : `${file}\nAccept this file edit?\n> 1. Yes, accept this change\n  2. No, reject this change\nshift+tab to auto-approve file edits`,
     deniedError: `user denied permission for write_file(${file})`,
     onKey: (key) => {
-      if (key === '1' || key === ENTER) return { allow: true }
-      if (key === '2') return { allow: false, via: 'key' }
-      if (key === ESC) return { allow: false, via: 'key' }
+      if (key === '1' || key === ENTER || (outside && key === '2')) return { allow: true }
+      if (key === noKey) return { allow: false, via: 'key' }
+      // AGY§14
+      if (key === ESC && create) return { allow: false, via: 'esc' }
+      if (key === ESC)
+        return say('Esc disabled during file edits — press 1 to accept or 2 to reject.')
       if (key === SHIFT_TAB && !create) {
         acceptEdits = true
         say('Accept-edits mode: file edits auto-approved')

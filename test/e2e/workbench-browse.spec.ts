@@ -306,7 +306,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await expect(browseSection(page, 'scratchpad')).toBeVisible()
   })
 
-  test('WB-B05: a written gitignored file is forced visible, and status / ±N / pulse / dir marks paint', async ({
+  test('WB-B05: a written gitignored file is forced visible, and status / ±N / pulse / dir marks paint — with Reduce motion on the pulse dot stays but its halo stands still', async ({
     page,
     env
   }) => {
@@ -345,8 +345,16 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     const pulsing = fx.paths.changeable[1]
     await runIn(page, centerTerm(page), `/write ${fx.rel(pulsing)}`)
-    await expect(browseRow(page, pulsing).locator('.ft-pulse')).toBeVisible({ timeout: 10_000 })
+    const dot = browseRow(page, pulsing).locator('.ft-pulse')
+    await expect(dot).toBeVisible({ timeout: 10_000 })
     await expect(browseRow(page, pulsing)).toHaveClass(/\blive\b/)
+    const haloMoving = (): Promise<number> =>
+      dot.evaluate((el) => el.getAnimations({ subtree: true }).length)
+    expect(await haloMoving()).toBe(1)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect.poll(haloMoving).toBe(0)
+    await expect(dot).toBeVisible()
+    await page.emulateMedia({ reducedMotion: null })
 
     await expect(centerTerm(page)).toContainText(`wrote ${fx.rel(pulsing)}`, { timeout: 30_000 })
     await expect(browseRow(page, `${fx.root}/src`).locator('.ft-dir-agg')).toContainText('●', {

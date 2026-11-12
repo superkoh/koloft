@@ -215,6 +215,7 @@ export class TerminalOutput {
     for (const tab of this.tabs.values()) if (tab.timer) clearTimeout(tab.timer)
     this.tabs.clear()
     for (const gate of this.gates.values()) gate.reset()
+    this.gates.clear()
     this.offScreen.clear()
   }
 

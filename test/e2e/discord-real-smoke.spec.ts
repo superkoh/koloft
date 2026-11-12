@@ -67,7 +67,7 @@ function seedConductor(env: E2EEnv, backend: 'claude' | 'codex'): void {
   gitInit(env.workspaces.a)
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend },
+    assist: { backend },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,

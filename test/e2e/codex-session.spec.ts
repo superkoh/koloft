@@ -36,6 +36,7 @@ import {
 } from './helpers/env'
 import {
   FAILED_LOG,
+  FAILING_CHECK_PASTE_HEAD,
   ONE_FAILING_OF_FIVE,
   WORKBENCH,
   commentOnFirstHunk,
@@ -44,6 +45,7 @@ import {
   expectOnePromptFromTheComment,
   expectOnePromptFromThePassage,
   openInBrowse,
+  putCommentOnFirstHunkInSession,
   sendFailingChecks,
   showBrowse,
   wbActiveTab,
@@ -2072,6 +2074,39 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('after Koloft is reopened, the first Codex session started before any limit read has answered runs in the account that had room when Koloft was last open, not the full one listed first', async ({
+    env
+  }) => {
+    installCodex(env)
+    const homeOf = (name: string) => path.join(env.userData, 'codex-homes', name)
+    fs.writeFileSync(path.join(homeOf('e2e-codex'), 'auth.json'), '{"usedPercent":100}')
+    fs.mkdirSync(homeOf('roomy'), { recursive: true })
+    fs.writeFileSync(path.join(homeOf('roomy'), 'auth.json'), '{"usedPercent":10}')
+    const accounts = settingsOnDisk(env).accounts as Record<string, unknown>[]
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [...accounts, seededAccount('roomy', 'codex-home')]
+    })
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    fs.writeFileSync(path.join(env.home, 'fake-codex-account-read-fails'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect((await startCodex(page, env)).codexHome).toBe(homeOf('roomy'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§14
   test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, starting on "Same as my other sessions", which with Skip permission prompts on never asks, and counts as running once Codex binds', async ({
     env
@@ -2374,6 +2409,42 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
       await sendFailingChecks(page)
       await expectOnePromptFromTheChecks(() => codexPrompts(env))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§23
+  test('failing checks sent while a ✎ comment and its note still wait in the Codex composer start on lines of their own, and one Enter sends both as one message', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    setupChangeFixture(env.workspaces.a).modifyTracked(1)
+    installFakeGh(env, { checks: ONE_FAILING_OF_FIVE, failedLog: FAILED_LOG })
+    setGithubFixture(env, {
+      [env.workspaces.a]: { owner: 'acme', repo: 'widgets', branch: 'feature/login', pr: 265 }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const note = 'Codex keep the old name.'
+      const head = await putCommentOnFirstHunkInSession(page, 'src/change-1.ts', note)
+      await sendFailingChecks(page)
+      const fromNote = (): string[] => codexPrompts(env).filter((p) => p.includes(note))
+      await expect.poll(fromNote, { timeout: 30_000 }).toHaveLength(1)
+      const [prompt] = fromNote()
+      expect(prompt.startsWith(head)).toBe(true)
+      expect(prompt).toContain(`${note}\n\n${FAILING_CHECK_PASTE_HEAD}`)
     } finally {
       await quitAndClose(app)
     }

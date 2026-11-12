@@ -31,6 +31,9 @@ export function developerInstructions(lines: string[]): string {
 // CODEX§1
 export const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
+// CODEX§36
+export const EVERY_KEY_SHOWS_AT_ONCE = 'disable_paste_burst=true'
+
 const stringList = (raw: unknown): string[] =>
   (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === 'string')
 

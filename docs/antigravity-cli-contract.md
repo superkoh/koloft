@@ -996,6 +996,18 @@ only downloaded the public release.
   `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
   API-key route against a fake Gemini server, a python pty answering the TUI's queries,
   2026-11-08; 1 run each.)
+- A bracketed paste keeps the line feeds it starts with, and lands right after whatever
+  the box holds. `NOTE typed first.` typed, then one write of a paste: with no line
+  feed first the box showed `NOTE typed first.PASTED one`; with `\n\n` as the paste's
+  first characters it showed the note, an empty line, then the pasted lines; `\n\n`
+  typed as plain keys in the same write just before the paste's start mark showed the
+  same. Into an empty box both forms showed two empty lines above the pasted text.
+  1.3.6 drops a paste's trailing line feeds as 1.5.3 does: a paste starting and ending
+  with `\n\n`, then ` TYPED-AFTER` typed, showed the typed text on the last pasted
+  line, while `\n\n` typed after the paste's end mark kept it two lines lower.
+  What the box showed, not what a send carried. (agy 1.3.6, Linux arm64, Docker
+  `--network none`, inside tmux 3.3a, each write sent with `tmux send-keys -H` and the
+  box read with `capture-pane`, 2026-11-11; 1 run each. Not run on 1.5.3.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
@@ -1231,6 +1243,25 @@ only downloaded the public release.
   is not probed.
 - `/model`, Down, Esc leaves the model unchanged.
 
+- **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
+  macOS, the token file of one signed-in account copied into a throwaway `--gemini_dir`,
+  `WSL_INTEROP` set, `--output-format json`). Every `-p` reads about 8.7K input tokens
+  before the prompt. A short naming prompt, one at a time, three runs each (seconds): no
+  `--model` 10.1 / 11.2 / 11.8 (178–243 thinking tokens), `gemini-3.8-flash` `low` 4.1 /
+  4.5 / 5.8 (0), `gemini-4-argon` `low` 6.7 / 7.5 / 13.0 (0). On the owner's 86
+  hand-labelled end-of-turn replies (`src/main/turnNews.ts` as shipped, three runs each,
+  four at a time, 60 s allowed): no `--model` 82 / 83 / 84 right, no reply that asks the
+  owner read as news, mean 18.8 s, 25–29 of 65 calls over 15 s and 6–7 more over 60 s;
+  `gemini-4-argon` `medium` 84 / 83 / 83 right, 2–3 asks read as news (two of them in
+  every run), mean 10.3 s, 2–8 calls over 15 s; `gemini-3.8-flash` `medium` 81 / 80 / 81
+  right, 1–2 asks read as news, mean 9.4 s, 5–7 over 15 s. So within Assist's 15 s the
+  default model answers about half the time; the turn judgement runs on
+  `gemini-4-argon` at `medium` and the other jobs on `gemini-3.8-flash` at `low`.
+- `-p --conversation <id> --model gemini-3.8-flash --effort low` continued a
+  conversation a default-model `-p` had started in the same folder: `num_turns` 2, and
+  the answer named the earlier turn's word (same day and build). Which model the second
+  turn ran on is not in the JSON; it took 3.9 s against the first turn's 9.7 s.
+
 ## §22 Errors and retries
 
 | Model server answer | Retries | 7501 | Screen |
@@ -1385,6 +1416,39 @@ only downloaded the public release.
   `4` changed nothing in the 3 s watched, the box still up. The tool list was §13's
   1.4.7 one; `read_file {Path, StartLine?, EndLine?, ByteOffset?}` refuses any other
   property ("additional properties 'toolSummary' not allowed").
+- **Which key says no depends on the box, and `2` on a file to create outside the
+  workspace allows it for good.** agy 1.5.5 (the manifest's Linux arm64 build, sha512
+  matched), 1.5.3 (build `1.5.3-6604829099950080`) and 1.4.2 (build
+  `1.4.2-4835981233356800`; both from the same bucket path, their sha512 not checked, the
+  manifest naming only the newest), Docker `--network none`, default mode, a fresh
+  `--gemini_dir` per run with the folder trusted, the TUI in a python3 pty answering the
+  terminal and 7501 queries, a fake Gemini server making one tool call, the key sent 1.5
+  s after `blocked`, 2026-11-11; one run per cell, the three versions agreeing wherever
+  more than one ran (1.4.2 with its own `write_to_file`, `replace_file_content` and
+  `view_file {AbsolutePath, toolSummary, toolAction}`).
+
+  | ask, its 7501 msg | the box | `2` | `3` | `4` | Esc |
+  |---|---|---|---|---|---|
+  | create or overwrite a file outside the workspace, "Approve WriteFile: Write: <path>" ("WriteToFile" on 1.4.2) | 1 Yes / 2 Yes, and always allow non-workspace access / 3 No, deny creation | **writes the file and saves `"allowNonWorkspaceAccess": true`** | declines | nothing | declines |
+  | create or overwrite a file inside it, same msg | 1 Yes / 2 No, deny creation | declines | nothing | — | declines |
+  | edit a file, inside or outside, "Approve EditFile: Write: <path>" ("ReplaceFileContent" on 1.4.2) | 1 Yes, accept / 2 No, reject | declines | nothing | — | nothing: "Esc disabled during file edits — press 1 to accept or 2 to reject." |
+  | read a file outside it, "Approve ReadFile: Read: <path>" ("ViewFile" on 1.4.2) | 1 Yes / 2 Yes, and always allow non-workspace access / 3 No, deny access | not pressed | declines | nothing | declines |
+  | run a command, "Approve RunCommand: <cmd>" | 1 Yes / 2, 3 Yes, and always allow… / 4 No, cancel | not pressed | not pressed | declines | declines |
+
+  A digit's "declines" leaves the step `ERROR` and the screen "User declined the tool
+  call"; Esc leaves it `CANCELED` with only "Interrupted · What should Antigravity CLI do
+  instead?". Either way the turn ends on `idle` and no model request follows. Down five
+  times then Enter is no way to reach the last row: on the command box it ran the command
+  (the highlight wraps). Through the Connect API (§16) `permission: {allow: false}` on
+  the waiting step declined an outside create, an outside edit and an outside read, and
+  `{allow: true}` let the read through (`200 {}` each; the model got "user denied
+  permission for read_file(<path>)" or the file's lines; nothing saved to
+  `settings.json`): the create and the read's no on 1.5.3 and 1.5.5, the edit on 1.5.5,
+  the read's yes on 1.5.3. So Koloft picks its "no" key from the tool the
+  7501 msg of the `blocked` frame names, which comes in the same read as the box (§14) —
+  or, in a tab on a machine, where no frame reaches it (§29), from the tool of the last
+  PreToolUse hook: `2` only for an edit, Esc for a file to create or read, `4` for a
+  command and for a tool it does not know (`4` and Esc allowed nothing on any box here).
 - (1.4.2, same setup) `/config` rows and what they write to `settings.json`; picking
   the default removes the key. Agent Mode `default` / `accept-edits` / `plan`
   (`agentMode`; no `auto` in the list). Tool Permission `request-review` (default) /
@@ -1723,6 +1787,24 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   plain text, with no error; `/zebra-skill` alone, with a second skill `zebra-skill-pro`
   installed, sent `zebra-skill`'s body and not the other's; a three-line paste whose
   first line was `/zebra-skill do X` sent all three lines and the body.
+- **Each of the three project folders runs a skill by `/<name>`, and only by the `name`
+  in its file.** 2026-11-11, agy 1.5.5 (build `6740358537805824`, `linux_arm64.json`),
+  Docker (`--network none`), a fake Gemini server logging each request, each skill's body
+  holding its own codeword, 1 run each; the `-p` runs for one `name` in several folders
+  were in folders not in `trustedWorkspaces`, the rest in a trusted one. `-p /skills --output-format json` listed one skill from each of
+  `<workspace>/.agents/skills/`, `<workspace>/_agents/skills/` and
+  `<workspace>/.agent/skills/` under its frontmatter `name`, and `-p "/<name> say hi"`
+  put that skill's body in the user turn (`/<name> is a [Slash Command]: <SKILL>…`) for
+  all three. A `SKILL.md` with a `description` and no `name` was listed as `SKILL`, and
+  `/<its folder>` sent no body; one with no frontmatter was not listed, and `/<its
+  folder>` sent no body. `user-invocable: false` changed nothing: the skill was listed
+  and `/<name>` sent its body. Typed into the TUI in tmux 3.3a (onboarding seeded) and
+  Enter, `/<name> say hi` (sent key by key) put the body in the user turn for a skill in each of the three
+  folders too. One `name` in more than one folder is listed once and `/<name>` sends
+  that copy's body: `.agent/skills/` beat the other two and `.agents/skills/` beat
+  `_agents/skills/`, no matter which copy's own folder name sorted first. Not probed:
+  `/SKILL`, an empty `name`, a `name` with a space or one agy's own command has, two
+  copies of a `name` inside one folder, and the TUI in a workspace agy does not trust.
 
 ## §32 The folder's AGENTS.md as a memory
 

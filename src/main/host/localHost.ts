@@ -18,6 +18,7 @@ import { LocalRunner, networkGit } from '../gitFreshness'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
+import { aboveItsTools } from '../agentLift'
 import { claudeArgv } from '../claudeArgs'
 import {
   acceptClaudeTrust,
@@ -113,7 +114,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   }
   if (spec.trustFolder) trustFolder(spec.cwd ?? spec.root)
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
-  const launchCommand = `exec ${args.argv.join(' ')}`
+  const launchCommand = `exec ${aboveItsTools(args.argv).join(' ')}`
   const worktree = spec.worktree ?? worktreeNameAround(cwd)
   // ADR-0029
   const assist = d.assistOf(cwd, spec.resumeSessionId)
@@ -201,8 +202,8 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     gitFileDiffFull,
     readText,
     readBytes: (p) => fs.promises.readFile(p),
-    openForEdit: async (p) => openForEdit(p),
-    writeText: async (p, text, expect, opts) => writeText(p, text, expect, opts),
+    openForEdit: (p) => openForEdit(p),
+    writeText: (p, text, expect, opts) => writeText(p, text, expect, opts),
     createFile: async (dir, name) => createFile(dir, name),
     watchDir,
     unwatchDir,

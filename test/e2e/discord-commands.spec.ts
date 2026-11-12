@@ -149,7 +149,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   }) => {
     installAgy(env)
     seedConductor(env)
-    seedSettings(env, { assist: { on: true, backend: 'agy' } })
+    seedSettings(env, { assist: { backend: 'agy' } })
     const fake = await startFakeDiscord(env)
     const app = await launchApp(env)
     try {
@@ -188,7 +188,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   }) => {
     installCodex(env)
     seedConductor(env)
-    seedSettings(env, { assist: { on: true, backend: 'codex' } })
+    seedSettings(env, { assist: { backend: 'codex' } })
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {
@@ -221,7 +221,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   }) => {
     installMuse(env)
     seedConductor(env)
-    seedSettings(env, { assist: { on: true, backend: 'muse' } })
+    seedSettings(env, { assist: { backend: 'muse' } })
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {

@@ -387,13 +387,14 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     expect(sent.at(-1)).toEqual({ id: 't', data: 'restarted$ ' })
   })
 
-  it('when the window goes, every paused pty resumes and held output is dropped; the new window starts each tab detached', () => {
+  it('when the window goes, every paused pty resumes and held output is dropped; the new window starts each tab detached, with no flow stats left from the old one', () => {
     const { out, sent, calls } = makeOutput()
     out.attach('a')
     out.push('a', 'x'.repeat(FLOW_QUEUE_PAUSE + 2 * FLOW_SLICE_UTF16_UNITS))
     out.push('b', 'unseen')
     out.clear()
     expect(calls).toEqual(['pause a', 'resume a'])
+    expect(out.stats()).toEqual([])
     const before = sent.length
     vi.runAllTimers()
     out.push('a', 'after reload')

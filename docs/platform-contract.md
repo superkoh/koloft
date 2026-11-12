@@ -483,6 +483,15 @@ method. A recheck adds its date, version and command to the bullet.
   - `disableHtmlFullscreenWindowResize` changes nothing, set on the guest or on the
     host window.
   - A hidden window that is allowed to follow the guest shows itself.
+- **Taking a `<webview>` out of the DOM ends its renderer process and gives its memory
+  back; one that is only `visibility: hidden` keeps both.** With three hidden-or-shown
+  pages on three origins (a title and about 100 KB of text each), `app.getAppMetrics()`
+  listed 7 processes, each page's own at 29 MB by `footprint <pid>`. Three seconds after
+  two of the elements were removed it listed 5, those two pids gone, and the sum of
+  every process's footprint went from 518 to 356 MB (the GPU process alone from 232 to
+  112 MB). Mounting the element again loads the address from the network (the
+  fixture server counted a second request). Measured once, 2026-11-11, Electron 43.8.6, macOS 27.0, in the e2e suite's hidden
+  window.
 
 ## §9 `<webview>`: visibility, frames and capture
 
@@ -1104,6 +1113,31 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **About 16 live WebGL contexts per renderer process**, shared by every tab in it.
   Past that Chromium kills the oldest ("Too many active WebGL contexts. The oldest
   context will be lost."), which scrambles that terminal's glyphs.
+- **A WebGL terminal canvas costs the GPU process several times its own pixels, and
+  disposing the addon does not give that back.** Read with `footprint <GPU process
+  pid>` on a hidden e2e window, devicePixelRatio 2 (2026-11-11, Electron 43, addon
+  0.20.0-beta.298, macOS 27.0). At a 1080×1632-pixel canvas (7 MB a buffer) four WebGL
+  terminals cost 87 MB more than four DOM-drawn ones and eight cost 114 MB more than
+  four: 22–28 MB each (one run a case; the empty app's own reading moved between 171 and
+  256 MB). At 2100×2720 pixels (23 MB a buffer) three cost about 370 MB:
+  about 124 MB each. Most of it is `IOSurface` (the drawing buffers). The glyph atlas is
+  uploaded into every context too (`GlyphRenderer` keeps one texture per atlas page per
+  canvas), but it is the smaller part: seven 512-pixel pages of CJK added about 50 MB
+  across four canvases. After `WebglAddon.dispose()` on three of four such terminals the
+  footprint was unchanged at 1 s and down 89 MB at 15 s (the canvases wait for garbage
+  collection); with `WEBGL_lose_context.loseContext()` called right after the dispose it
+  was down 155 MB at 1 s and 248 MB at 15 s, back at the empty app's level. Every figure
+  here was resident ("Dirty"); `footprint` printed no swapped column in any run, so
+  this says nothing about memory the system had already compressed. `dispose()` removes the addon's
+  `webglcontextlost` listener first, so a `loseContext()` after it fires no
+  `onContextLoss`.
+- **Giving a hidden terminal a new WebGL context is cheap when the shared atlas is left
+  alone.** Switching to a session tab whose context had been lost and disposed, the
+  first render came 17–37 ms after the click and the longest frame was 24 ms, with a
+  screen of coloured CJK, at both canvas sizes above (15 and 12 switches); a tab that
+  kept its context took 13–24 ms. Clearing the shared atlas 50 ms after each such
+  hand-back made the same switch block for
+  50–60 ms and draw the screen twice (same day and versions).
 - **GPU memory can be lost with no event.** Wake from sleep, screen unlock, and adding,
   removing or changing displays (these come in bursts) can wipe texture memory; a
   minimized or fully covered window can lose its WebGL drawing buffers. No
@@ -1265,12 +1299,23 @@ inferred, not checked.
   fires only from a page merge, once per deleted page, to every addon sharing the atlas.
   After a merge the renderer heals on the NEXT frame, so output that stops on the merge
   frame leaves the screen garbled until something asks for a refresh.
-- **A terminal joining or leaving churns the shared atlas**: pages are added when an
-  xterm mounts and dropped or merged when one is disposed, and a merge that lands on a
-  frame no remaining terminal redraws leaves them garbled (seen: closing a Workbench
-  tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
+- **A terminal joining can churn the shared atlas, and one leaving has been seen to
+  garble the others**: pages are added when an xterm mounts, and a merge that lands on a
+  frame no remaining terminal redraws leaves them garbled (seen, addon version not
+  recorded: closing a Workbench tab scrambled the Claude TUI). The dispose itself
+  changes no page of an atlas that still has an owner (next bullet). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **A renderer disposed while another terminal still owns its atlas leaves that atlas
+  untouched.** `WebglRenderer`'s dispose ends in `removeTerminalFromCache`, which only
+  takes the terminal off the atlas entry's `ownedBy` list; the atlas is disposed only
+  when the leaving terminal was its last owner, and then nothing draws from it. The
+  rest of the dispose deletes that canvas's own program, buffers and textures (read
+  2026-11-11 in `@xterm/addon-webgl` 0.20.0-beta.298: `CharAtlasCache.ts`,
+  `WebglRenderer.ts`, `GlyphRenderer.ts`). In the hidden e2e window, which §20 says has
+  not been seen to show such damage, a shown session terminal kept its picture while a
+  hidden one sharing its atlas was disposed and its context lost, with no atlas clear
+  (`webgl-terminal.spec.ts`, same day).
 - **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
   `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
   meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
@@ -1879,6 +1924,30 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
   macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
   5.9, reached directly, a scratch node script.)
+- **A remote Codex tab's app-server finds such a program only when its start script is
+  handed that `"$SHELL" -lic` PATH.** A tool only in `/opt/ztools/bin`, and `command -v
+  ztool` run by the fake Codex in a remote Codex tab of a built Koloft:
+
+  | login shell, where its PATH line is | script runs `bash -lc` itself | script is handed the `"$SHELL" -lic` PATH asked over a plain `ssh host cmd` |
+  |---|---|---|
+  | bash, end of `~/.bashrc` | exit 1 | exit 0 |
+  | zsh, `~/.zshrc` (plus an `echo` and a `sleep 25 &`) | exit 1 | exit 0, row bound 1.9 s after the click |
+  | fish, `config.fish` | not run | exit 0 |
+  | tcsh, `~/.login` | not run | exit 1, the tab still starts |
+
+  So the script keeps its own `bash -lc` only for when the handed PATH is empty (tcsh, or
+  a machine the ask could not reach). Running the `-lic` shell inside the script, under the tab's own `ssh -tt` line where it
+  has a terminal, gave the same four results and bound in 1.4 s; it is not used, since an
+  rc file that reads `/dev/tty` there (a passphrase or `compinit` question) could wait
+  for ever with its question sent to `/dev/null` (read from how those tools ask, not
+  run). The fake Codex runs its command with `sh -c` (zsh's `-c` where `/bin/zsh`
+  exists), so this measures the PATH Koloft hands the app-server, not what a real Codex
+  adds. On the bash and zsh machines a fake Claude Code tab's `command -v ztool` did not
+  find the tool: the tab script of Claude Code, Muse Code and Antigravity tabs adds
+  fixed folders only and asks no login shell (Muse Code and Antigravity share that
+  script; not run). What each real agent's own shell tool adds on top was not measured.
+  (2026-11-11, OpenSSH_10.3p1 on macOS 27 to the e2e Docker ssh lab image, Debian
+  bookworm, plus zsh 5.9; a scratch Playwright spec driving a built Koloft.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
@@ -3257,6 +3326,33 @@ server unless a line says so.
 - Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
   Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
   tab.
+- **`taskpolicy -a <program>` puts the program above the ones it starts.** `ps -M` showed
+  the main thread of `/usr/sbin/taskpolicy -a /bin/sh -c '/bin/sleep 3 & /bin/sleep 3 &
+  wait'` at priority 46 and both `sleep` children at 31; without `-a` all three were at
+  31. `taskpolicy` replaces itself with the program: the pid it was started with is the
+  program's, and `ps -o comm=` names the program. It ran without sudo. Only the main
+  thread moves: of the 11 threads of a `node` started that way 1 read 46 and 10 read
+  31, and of the 33 of `codex app-server --stdio` 2 read 46 and 31 read 31.
+- **A program it cannot find ends it with exit code 66**: `taskpolicy -a
+  no-such-program` printed `taskpolicy: posix_spawn: No such file or directory`, where a
+  shell's own `exec` of a missing command ends with 127.
+- **`-a` works only at launch.** `taskpolicy -a -p <pid>` on a running `/bin/sleep`
+  exited 0 and left it at 31. A program started with `-a` went 46 → 4 under `taskpolicy
+  -b -p <pid>` and back to 46 under `-B -p`; nothing moved it to 31.
+- **A real agent started that way keeps the step, and what it starts does not get
+  it.** Claude Code 2.1.322 started as `taskpolicy -a <claude>` in a python pty (a fake
+  Messages API on localhost, a throwaway `CLAUDE_CONFIG_DIR`): its main thread read 46,
+  the zsh of its Bash tool and the python that zsh ran read 31, and a `claude -p` that
+  python started read 31. Codex 0.166.0's TUI started the same way read 46.
+- All three measured 2026-11-11 on the same Mac (macOS 27.0, Darwin 27.0.0), by python
+  scripts run from a Koloft Claude Code tab, one run each. Inferred, not checked: an
+  agent whose command is a launcher that starts the real program as a child — the npm
+  `codex` before 0.166.0 (CODEX§5) — has only the launcher lifted. Not run: the real
+  `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
+  lowers a `-a` program while its app is not frontmost or the screen is locked.
+
+Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
+program on this Mac through `taskpolicy -a` (ADR-0042).
 
 ## §60 Electron: is someone at the Mac
 
@@ -3313,10 +3409,20 @@ call twice on one home, the second time over the link the first one made.
   that way differs from its own echo on the typed line.
 - Measured 2026-10-28 in the `debian:bookworm` Docker image: fish 3.6.0, zsh 5.9, the
   image's bash, `fakecli` a `/bin/sh` script printing `$A`.
+- **zsh's `exec name` runs a function or a `hash` entry called `name`; a program that
+  starts `name` itself never does.** With `claude() { …; command claude --from-function
+  "$@"; }` in `.zshrc`, `zsh -i -c 'exec claude --resume x'` ran the function, and `exec
+  /usr/sbin/taskpolicy -a claude --resume x` ran the `claude` on `PATH` with `--resume x`
+  alone; with `hash claude=/bin/echo` the first ran `/bin/echo`, the second the `claude`
+  on `PATH`. An alias `claude="claude --from-alias"` was used by neither. bash ran the
+  `claude` on `PATH` in all six. Measured 2026-11-11, this Mac's `/bin/zsh` and
+  `/bin/bash`, a scratch `ZDOTDIR`; fish not run.
 
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
-Antigravity sign-in into the user's login shell with an account's environment, and
-`MARK_OUTPUT_START` in `src/main/signInOutput.ts`.
+Antigravity sign-in into the user's login shell with an account's environment,
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaude` in
+`src/main/host/localHost.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
+no longer runs a zsh function or `hash` entry named `claude`.
 
 ## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
 
@@ -3442,3 +3548,118 @@ paragraph; one range from the first paragraph into the second, added to the sele
 Koloft dependents: the ✎ comment on a rendered Markdown file (`PreviewViewer.tsx`) quotes
 the selection's own text, and the rendered code block's chrome is `user-select: none`
 (`previewViewer.css`); `md-comment.spec.ts` checks it in the app's Electron.
+
+## §69 macOS: what a busy disk makes the main thread wait for
+
+Measured 2026-11-11 on macOS 27.0 (Darwin 27.0.0, APFS), Apple silicon, 10 cores, memory
+pressure level 1, load average 2–4. "Busy disk" below is two node processes that each, in
+a loop, write 64 MB, `fsync`, read it back and delete it; no CPU load is added.
+
+In a Node 24.13.0 script, timing a synchronous `fs.realpathSync` of a file three folders
+below a folder D, once every 5 ms:
+
+| what else the same process does | calls | longest | calls over 50 ms |
+|---|---|---|---|
+| nothing, idle disk | 447–461 | 0.14–0.25 ms | 0 |
+| nothing, busy disk | 1225 | 36 ms | 0 |
+| busy disk, and every 20 ms `fs.promises.writeFile` of a new file in D, then a rename onto a file in D (two runs) | 507, 508 | 338 ms, 366 ms | 9, 10 |
+| busy disk, and the same write, but the new file is created in a sibling folder of D and renamed into D (one run) | 1239 | 1.7 ms | 0 |
+
+- **So while a file is being created in a folder and the disk is busy, the first
+  synchronous lookup through that folder waited with it**, though the create itself ran on
+  the libuv pool. With the new file created in another folder the lookups did not wait;
+  that run's one slow call was an asynchronous `fs.promises.realpath` (322 ms), off the
+  main thread.
+- **Which synchronous write is slow on a busy disk** (same script style, 42 rounds, 8 KB
+  of text): creating a new file and writing it, 16 calls over 50 ms (longest 371 ms);
+  writing into an existing empty file, 8 over 50 ms (371 ms); truncating and rewriting a
+  file that already held 8 KB, 1 over 50 ms (314 ms); writing 8 KB in place with `r+` and
+  no truncate, none (longest 6.6 ms); a rename onto an existing file, 1 over 50 ms
+  (406 ms); unlink, none. With an idle disk none of them passed 13 ms.
+- **In Koloft** (Electron 43.8.6, built app, hidden window, six tabs: two Claude, Codex,
+  Muse, an Antigravity tab whose session never bound, and one remote Claude over the fake
+  ssh; a click on the next session row and four keys about every 400 ms; every
+  `fs.*Sync`, `fs.watch`, `FSWatcher.close` and `child_process` call in the main process
+  timed; three rounds of 10 s idle then 10 s busy disk):
+  - Switching and typing only, each background save's temp file next to its target in
+    `userData`: 0 event-loop stalls of 50 ms or more idle, 36 busy (20 of them 150 ms or
+    more, the longest 303 ms), each holding a slow synchronous call: 53
+    `fs.realpathSync` of the workspace note under `userData` (longest 309 ms) and 2
+    `fs.renameSync` (57 ms). With the temp files in a folder of their own: 1 stall
+    (75 ms), `fs.realpathSync` at most 0.1 ms. In these runs `fs.watch(dir, { recursive:
+    true })` took at most 0.3 ms and `FSWatcher.close` at most 16–25 ms, busy or idle.
+  - Adding a process that creates and deletes small files in the two workspace folders
+    (one every 15 ms, as an agent's build does) and a file save through Koloft about
+    every 1.2 s, on the code before this section: 56 stalls of 50 ms or more (37 of
+    150 ms or more, longest 437 ms) in 73 switches; slow calls were `fs.realpathSync`
+    opening a file (41, longest 384 ms), `fs.openSync(…, 'wx')` of a save's temp file in
+    the workspace (11, 403 ms), `fs.fsyncSync` (14, 261 ms), `fs.renameSync` into
+    `userData` (2, 257 ms) and `fs.watch` of the workspace (2, 199 ms; 13 of them,
+    longest 330 ms, in a run where the other calls were already off the main thread). A
+    one-byte asynchronous `fs.write` to `/dev/null` through the libuv pool, every 50 ms,
+    waited up to 384 ms (10 over 20 ms). After, in two runs: 1 stall each (247 ms and
+    91 ms, each an `fs.statSync` of a folder: the first in `dirExistsSync`, the second
+    the check `fileWatch.ts` makes before it reuses a kept watcher) in 100 and 121 switches, the pool write at
+    most 23 ms and 9 ms, the save's `fs.renameSync` in the workspace at most 7 ms. Three
+    rounds a run; the Mac's load average was 9–17 from other work, memory pressure
+    level 1–2.
+  - A settings save (`fs.writeFileSync` of a new `settings.json.tmp` in `userData`, 31
+    of them in the busy 30 s): 19 over 50 ms, longest 315 ms.
+- **What the busy disk did not slow in any of those runs**: `fs.statSync` and
+  `fs.existsSync` (at most 0.2 ms but for the one above), `fs.writeFileSync` over a
+  file already holding text (at most 18 ms), starting a child with `execFile` (at most
+  14 ms).
+
+Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-written file
+in a `.koloft-writes` folder inside the target's folder and moves it into place off the
+main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
+`fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
+save's last check and its rename together on the main thread; `signalLog`
+(`machineRoom.ts`) appends to and trims its log through `fs.promises`.
+
+## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
+
+- **While the main process's JavaScript is busy, no key press and no wheel turn reaches
+  a window**, wherever the terminal behind it lives. Electron's own docs (Performance,
+  "Blocking the main process", read 2026-11-12) say the main process "also houses the
+  UI thread" and that blocking it freezes the whole app; Chromium's
+  `render_widget_host_view_cocoa.mm` takes `keyEvent:` and `scrollWheel:` in the
+  browser process's window view before handing them to the renderer, and an input
+  method's text goes the same way. So moving node-pty out of the main process cannot
+  keep typing or scrolling going while the main thread stalls: only a main thread that
+  does not stall can.
+- **What a throwaway Electron 43.8.6 app showed** (hidden window, a `cat` in a node-pty,
+  the main process busy-waiting 1 s): node-pty loads in a `utilityProcess` — from a
+  plain folder and from an `app.asar` with node-pty in `app.asar.unpacked` — and a
+  `MessageChannelMain` port reaches the renderer's preload with context isolation on.
+  Text the page itself wrote over that port came back from the pty with p99 1–8.8 ms
+  during the stall (the same path through the main process: 980–990 ms), and the
+  renderer drew 160 frames in that second. Keys and wheel turns sent through CDP's
+  `Input.dispatchKeyEvent` / `Input.dispatchMouseEvent` reached the page only after
+  the stall (keys p99 938–942 ms over two rounds, wheel p99 946 ms with 16 of 30
+  arriving), but so did a plain `Runtime.evaluate` (896–899 ms): every CDP command
+  waits for the main thread, so these numbers agree with the source above without
+  proving it. Not measured: a real keyboard (it needs a focused window), and whether
+  the frames drawn during the stall reach the screen.
+- **The rest of that app**: the `utilityProcess`'s main thread read priority 47 under
+  `ps -M` (the main process 46, both libuv pools 31). Killing it with SIGKILL gave the
+  main process its `exit` event; a program in its pty died of the hangup, one that
+  ignored SIGHUP lived on with parent 1, and a new fork started fine. Killing the main
+  process with SIGKILL ended the `utilityProcess` too.
+- **Timing the main thread from inside costs little and tells waiting from working.**
+  In a hidden Electron 43.8.6 window (Node 24.22.1), a `setInterval` every 25 ms that
+  reads `performance.now()` and `process.threadCpuUsage()` added 52–56 ms of process
+  CPU per 10 s over three runs (every 10 ms: about 105 ms); the app alone used about
+  10 ms. A 200 ms busy loop showed as a 203–213 ms gap with 197–200 ms of main-thread CPU, a 200 ms
+  `Atomics.wait` as a 212–228 ms gap with under 1 ms of CPU, and 60 s with nothing
+  to do showed no gap over 75 ms. `perf_hooks.monitorEventLoopDelay` at a 10 ms
+  resolution, read every second, reported the wait but not the busy loop in one run.
+- Measured 2026-11-12 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, with
+  `NSApplicationActivationPolicyAccessory` and the window never shown, one or two runs
+  each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
+  app with a Dock icon whose window stays covered for long.
+
+Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
+and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
+`userData` whenever the main thread took no new work for 75 ms or more, with how much
+of that it spent on the CPU.

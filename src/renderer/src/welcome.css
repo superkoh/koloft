@@ -902,6 +902,7 @@
   .wl *,
   .wl-aside {
     animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
     animation-delay: 0s !important;
     transition-duration: 0.2s !important;
   }

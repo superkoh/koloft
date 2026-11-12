@@ -74,6 +74,7 @@ export interface PendingInteraction {
   stepIndex: number
   kind: 'command' | 'file' | 'question'
   target?: string
+  read?: true
   questions?: { question: string; options: { id: string; text: string }[]; multiSelect?: true }[]
 }
 
@@ -88,11 +89,13 @@ function pendingOf(trajectory: Record<string, unknown>): PendingInteraction | un
   const asked = record(step.requestedInteraction)
   const base = { trajectoryId: trajectory.trajectoryId, stepIndex }
   const resource = record(record(asked.permission).resource)
-  if (resource.action === 'command' || resource.action === 'write_file')
+  // AGY§26
+  if (['command', 'write_file', 'read_file'].includes(String(resource.action)))
     return {
       ...base,
       kind: resource.action === 'command' ? 'command' : 'file',
-      target: typeof resource.target === 'string' ? resource.target : undefined
+      target: typeof resource.target === 'string' ? resource.target : undefined,
+      ...(resource.action === 'read_file' && { read: true as const })
     }
   const questions = record(asked.askQuestion).questions
   if (!Array.isArray(questions)) return undefined

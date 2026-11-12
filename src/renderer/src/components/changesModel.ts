@@ -157,8 +157,6 @@ export interface HunkPrompt {
   typed: string
 }
 
-const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
-
 function fenced(lang: string, text: string): string[] {
   const fence = fenceFor(text)
   return [fence + lang, text, fence]
@@ -167,7 +165,7 @@ function fenced(lang: string, text: string): string[] {
 // CC§18 CODEX§23
 function commentPrompt(pastedLines: string[], note: string): HunkPrompt {
   return {
-    pasted: APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + pastedLines.join('\n') + '\n\n',
+    pasted: pastedLines.join('\n') + '\n\n',
     typed: note.trim()
   }
 }

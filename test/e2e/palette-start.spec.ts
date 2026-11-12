@@ -334,7 +334,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     })
   }
 
-  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on without asking it; once one workspace is named a second @ offers none, two workspaces keep Start off, and one named twice does not', async ({
+  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word and without asking Assist; once one workspace is named a second @ offers none, two workspaces keep Start off, and one named twice does not', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -342,9 +342,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await page.evaluate(() =>
-        window.api.settings.set({ assist: { on: false, backend: 'claude' } })
-      )
       await ask(app, page, 'fix the footer ')
       await page.keyboard.type('@ws')
       const suggested = palette(page).getByRole('group', { name: 'Workspaces' })
@@ -372,9 +369,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(assistWasAsked(env)).toBe('')
 
-      await page.evaluate(() =>
-        window.api.settings.set({ assist: { on: true, backend: 'claude' } })
-      )
       assistAnswers(env, { hand: 'koloft', title: 'Readme', why: 'rule 8' })
       await ask(app, page, '@ws-a tidy the readme, and ')
       await page.keyboard.type('@ws')
@@ -398,7 +392,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('a git workspace never starts in its main checkout: when Assist answers main, or the picker is used with Assist off, the session starts in a fresh worktree of its own', async ({
+  test('a git workspace never starts in its main checkout: when Assist answers main, or the owner names the workspace with @, the session starts in a fresh worktree of its own', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -417,13 +411,8 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const first = atOnce.argv.join(' ').match(fresh)?.[1]
       expect(first).toBeDefined()
 
-      const picker = page.getByRole('dialog', { name: 'New Session in…' })
-      await page.evaluate(() =>
-        window.api.settings.set({ assist: { on: false, backend: 'claude' } })
-      )
-      await ask(app, page, 'read the readme')
+      await ask(app, page, '@ws-a read the readme')
       await page.keyboard.press('Enter')
-      await picker.locator('.cb-row', { hasText: 'ws-a' }).click()
       const calls = await waitForAllCalls(env, 2, 30_000)
       const second = calls[1].argv.join(' ').match(fresh)?.[1]
       expect(second).toBeDefined()
@@ -481,7 +470,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to a helper of the butler’s on the agent the owner picked, not on the butler’s own, and with Assist off the workspace picker opens and the session starts on the pick', async ({
+  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words, and with Reduce motion on its thinking icon stays but stands still; an answer it cannot use hands the words to a helper of the butler’s on the agent the owner picked, not on the butler’s own', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -497,13 +486,20 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(palette(page).locator('.cb-row.hot')).toHaveCount(0)
       await page.keyboard.press('Enter')
       await expect(palette(page).locator('.fresh-line.busy')).toBeVisible()
+      const thinkingIcon = palette(page).locator('.fresh-line.busy .fico-l svg')
+      const spinning = (): Promise<number> =>
+        thinkingIcon.evaluate((el) => el.getAnimations().length)
+      expect(await spinning()).toBe(1)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(spinning).toBe(0)
+      await expect(thinkingIcon).toBeVisible()
+      await page.emulateMedia({ reducedMotion: null })
       await page.keyboard.press('Escape')
       await expect(palette(page).locator('.fresh-line.busy')).toHaveCount(0)
       await expect(askBox(page)).toHaveValue('ws-b')
       await page.keyboard.press('Escape')
       await expect(palette(page)).toHaveCount(0)
 
-      const picker = page.getByRole('dialog', { name: 'New Session in…' })
       assistAnswers(env, 'not an answer')
       await ask(app, page, 'fix the build')
       await page.keyboard.press('Meta+Enter')
@@ -524,18 +520,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         )
         .toContain('Theownertypedthisin⌘P:fixthebuild')
       await expect(page.locator('.modal')).toHaveCount(0)
-
-      await page.evaluate(() =>
-        window.api.settings.set({ assist: { on: false, backend: 'claude' } })
-      )
-      await ask(app, page, 'tidy the changelog')
-      await page.keyboard.press('Enter')
-      await expect(page.locator('.toast')).toContainText('Koloft Assist is off')
-      await expect(picker).toBeVisible()
-      await page.keyboard.press('Enter')
-      const calls = await waitForAllCalls(env, 2)
-      expect(textAfterDashes(calls[1])).toBe('tidy the changelog')
-      expect(readAllCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
@@ -642,7 +626,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         await page.evaluate(
           (b) =>
             window.api.settings.set({
-              assist: { on: true, backend: b },
+              assist: { backend: b },
               sessionMethods: {
                 defaultBackend: b,
                 enabled: { claude: true, codex: true, muse: true, agy: true }

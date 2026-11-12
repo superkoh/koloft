@@ -163,6 +163,7 @@ export const CH = {
     cdpOp: 'browser:cdp-op',
     cdpOpDone: 'browser:cdp-op-done',
     cdpAttached: 'browser:cdp-attached',
+    memoryCritical: 'browser:memory-critical',
     certProceed: 'browser:cert-proceed',
     clearData: 'browser:clear-data',
     openExternal: 'browser:open-external',

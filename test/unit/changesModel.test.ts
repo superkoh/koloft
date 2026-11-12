@@ -332,11 +332,9 @@ describe('writtenPaths', () => {
 describe('hunkPrompt — what a ✎ comment puts in the session’s input box', () => {
   const hunk = '@@ -1,2 +1,2 @@ greet()\n-  return "hi"\n+  return "hello"\n'
 
-  it('pastes a blank line, the path, then the hunk with its @@ line in a diff fence, then a blank line; the note is typed after it, not pasted, so claude takes it as the person’s own words', () => {
+  it('pastes the path, then the hunk with its @@ line in a diff fence, then a blank line; the note is typed after it, not pasted, so claude takes it as the person’s own words', () => {
     expect(hunkPrompt('src/greet.ts', hunk, '  keep "hi"\n  and say why  ')).toEqual({
       pasted: [
-        '',
-        '',
         'src/greet.ts',
         '```diff',
         '@@ -1,2 +1,2 @@ greet()',
@@ -352,7 +350,7 @@ describe('hunkPrompt — what a ✎ comment puts in the session’s input box', 
 
   it('types nothing when the note is blank', () => {
     expect(hunkPrompt('a.md', '@@ -1 +1 @@\n-a\n+b', ' \n ')).toEqual({
-      pasted: '\n\na.md\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n\n',
+      pasted: 'a.md\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n\n',
       typed: ''
     })
   })
@@ -360,7 +358,7 @@ describe('hunkPrompt — what a ✎ comment puts in the session’s input box', 
   it('fences with more backticks than the longest run in the hunk, so a ``` context line cannot close it', () => {
     const withFences = '@@ -1,3 +1,3 @@\n ```ts\n-a\n+b\n ````'
     const out = hunkPrompt('README.md', withFences, 'note').pasted.split('\n')
-    expect(out[3]).toBe('`````diff')
+    expect(out[1]).toBe('`````diff')
     expect(out[out.length - 3]).toBe('`````')
   })
 })
@@ -372,8 +370,6 @@ describe('passagePrompt — what a ✎ comment on a rendered Markdown file puts 
     const p = passageAt('docs/plan.md', plan, [3, 4], 'Give up after 3 tries')
     expect(passagePrompt(p, '  make it 5  ')).toEqual({
       pasted: [
-        '',
-        '',
         'docs/plan.md:4',
         '```markdown',
         '- Give up after 3 tries.',
@@ -403,18 +399,12 @@ describe('passagePrompt — what a ✎ comment on a rendered Markdown file puts 
 
   it('names only the path when the selected block has no lines, and still quotes the words', () => {
     const p = passageAt('a.md', plan, null, 'raw html')
-    expect(passagePrompt(p, 'x').pasted).toBe('\n\na.md\nSelected: “raw html”\n\n')
+    expect(passagePrompt(p, 'x').pasted).toBe('a.md\nSelected: “raw html”\n\n')
   })
 
   it('makes the fence longer than any run of backticks in the quoted lines', () => {
     const p = passageAt('a.md', '````\ncode\n````\n', [0, 3], 'code')
-    expect(passagePrompt(p, '').pasted.split('\n')[3]).toBe('`````markdown')
-  })
-
-  it('starts each paste on its own lines, so a second comment put in before Enter does not run on from the note typed after the first', () => {
-    const first = passagePrompt(passageAt('a.md', plan, [0, 1], 'Retry'), 'one')
-    const second = hunkPrompt('b.ts', '@@ -1 +1 @@\n-a\n+b', 'two')
-    expect(first.pasted + first.typed + second.pasted).toContain('one\n\nb.ts\n')
+    expect(passagePrompt(p, '').pasted.split('\n')[1]).toBe('`````markdown')
   })
 })
 

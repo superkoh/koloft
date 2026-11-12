@@ -2242,6 +2242,41 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test("BB-M16 in Antigravity: an Antigravity task suggests the project's .agents skills after /, by the name in each skill file", async ({
+    env
+  }) => {
+    installAgy(env)
+    gitInit(env.workspaces.a)
+    const put = (dir: string, folder: string, frontMatter: string): void => {
+      fs.mkdirSync(path.join(dir, folder), { recursive: true })
+      fs.writeFileSync(path.join(dir, folder, 'SKILL.md'), `---\n${frontMatter}\n---\n`)
+    }
+    put(path.join(env.workspaces.a, '.claude', 'skills'), 'zeta', 'name: zeta')
+    put(path.join(env.workspaces.a, '.agents', 'skills'), 'ship-dir', 'name: ship')
+    put(path.join(env.workspaces.a, '.agents', 'skills'), 'nameless', 'description: No name')
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      const task = dlg.locator('[aria-label="What to run"]')
+
+      await expect(dlg.locator('p.field-hint', { hasText: "skill's /name" })).toContainText(
+        'the same as in Antigravity CLI'
+      )
+      await task.fill('/')
+      await expect(dlg.locator('.wt-list .cb-row .wt-name')).toHaveText(['/ship'])
+      await page.keyboard.press('Enter')
+      await expect(task).toHaveValue('/ship ')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('BB-N04: a run is an ordinary session to everything else in Koloft', async ({ env }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)

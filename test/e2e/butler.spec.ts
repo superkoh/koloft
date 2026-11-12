@@ -203,7 +203,7 @@ function peerLines(env: E2EEnv): string {
 }
 
 const AGY_EVERYWHERE = {
-  assist: { on: true, backend: 'agy' },
+  assist: { backend: 'agy' },
   sessionMethods: {
     defaultBackend: 'agy',
     enabled: { claude: true, codex: true, muse: true, agy: true }
@@ -433,7 +433,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
   test('a Codex butler reads and adds to the same global note', async ({ env }) => {
     installCodex(env)
     seedNote(env, GLOBAL_SCOPE, 'from the owner')
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'codex' } })
+    const { page, close } = await launched(env, { assist: { backend: 'codex' } })
     try {
       await openButler(page)
       expect(await koloftSays(page, 'note')).toContain('from the owner')
@@ -449,7 +449,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     env
   }) => {
     installCodex(env)
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'codex' } })
+    const { page, close } = await launched(env, { assist: { backend: 'codex' } })
     try {
       await openButler(page)
       await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
@@ -489,7 +489,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     env
   }) => {
     installMuse(env)
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'muse' } })
+    const { page, close } = await launched(env, { assist: { backend: 'muse' } })
     try {
       await openButler(page)
       await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
@@ -515,7 +515,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
   }) => {
     installAgy(env)
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    const { page, close } = await launched(env, { assist: { backend: 'agy' } })
     try {
       await butlerRow(page).click()
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
@@ -563,7 +563,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
   }) => {
     installAgy(env)
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    const { page, close } = await launched(env, { assist: { backend: 'agy' } })
     try {
       await butlerRow(page).click()
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
@@ -592,7 +592,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     installAgy(env)
     fs.writeFileSync(path.join(env.home, 'fake-agy-stuck-in-setup'), '')
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    const { page, close } = await launched(env, { assist: { backend: 'agy' } })
     try {
       await butlerRow(page).click()
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
@@ -944,7 +944,7 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
     env
   }) => {
     const { page, close } = await launched(env, {
-      assist: { on: true, backend: 'claude' },
+      assist: { backend: 'claude' },
       sessionMethods: {
         defaultBackend: 'claude',
         enabled: { claude: true, codex: true, muse: true, agy: true }
@@ -979,10 +979,10 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
     }
   })
 
-  test('before Assist is set up, the butler row is grey and opens the Assist setup only when clicked', async ({
+  test('before Koloft has an account, the butler row is grey and opens the Assist setup only when clicked', async ({
     env
   }) => {
-    const { page, close } = await launched(env, { assist: null })
+    const { page, close } = await launched(env, { accounts: [] })
     try {
       const setup = page.getByRole('dialog', { name: 'Koloft Assist' })
       await expect(butlerRow(page)).toHaveClass(/\bcold\b/)

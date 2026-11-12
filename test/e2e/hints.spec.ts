@@ -75,6 +75,28 @@ async function expectAnchoredAt(page: Page, selector: string): Promise<void> {
     })
 }
 
+async function expectWorkbenchCardUnderItsButtonWithNothingDimmed(page: Page): Promise<void> {
+  const shown = card(page, 'workbench')
+  await expect(shown).toBeVisible()
+  await expect
+    .poll(
+      async () => {
+        const button = await page.locator(WORKBENCH.titlebarIcon).first().boundingBox()
+        const box = await shown.boundingBox()
+        if (!button || !box) return null
+        const buttonMid = button.x + button.width / 2
+        return {
+          below: box.y >= button.y + button.height,
+          near: box.y - (button.y + button.height) < button.height,
+          under: box.x <= buttonMid && buttonMid <= box.x + box.width
+        }
+      },
+      { timeout: 15_000 }
+    )
+    .toEqual({ below: true, near: true, under: true })
+  await expect(page.locator('.hint-backdrop')).toHaveCount(0)
+}
+
 async function shownTabId(page: Page): Promise<string> {
   const id = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
   if (!id) throw new Error('the shown session row carries no data-tab-id')
@@ -91,6 +113,26 @@ async function typeIntoHiddenRow(page: Page, tabId: string, line: string): Promi
 async function stayAbsentPastPumpGap(page: Page, ms = 4000): Promise<void> {
   await page.waitForTimeout(ms)
   await expect(card(page)).toHaveCount(0)
+}
+
+async function expectCardCoversNoSidebarRow(page: Page): Promise<void> {
+  expect(await page.locator('.side .ws-tab').count()).toBeGreaterThan(1)
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const box = document.querySelector('.hint-card')?.getBoundingClientRect()
+          if (!box) return null
+          return [...document.querySelectorAll('.side .ws-tab')].filter((row) => {
+            const r = row.getBoundingClientRect()
+            return (
+              r.right > box.left && box.right > r.left && r.bottom > box.top && box.bottom > r.top
+            )
+          }).length
+        }),
+      { timeout: 15_000 }
+    )
+    .toBe(0)
 }
 
 type HeldReads = { heldWorkbenchReads: ((state: unknown) => void)[] }
@@ -119,7 +161,7 @@ async function answerWorkbenchReadsCollapsed(app: ElectronApplication): Promise<
 }
 
 test.describe('Contextual hints · one card at a time, anchored at its subject, silenced only by Don’t show tips', () => {
-  test('T-HN-01: the workbench hint comes up once, takes no focus, and never returns', async ({
+  test('T-HN-01: the workbench hint comes up once as a card under the Workbench button with nothing dimmed, takes no focus, and never returns', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -130,14 +172,14 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await expect(card(page, 'workbench')).toBeVisible({ timeout: 30_000 })
       await expect(card(page, 'workbench').locator('.h')).toHaveText('Claude changed a file')
       await expect(card(page, 'workbench').locator('.foot .n')).toHaveText('tip 1 of 5')
-      await expectAnchoredAt(page, WORKBENCH.titlebarIcon)
+      await expectWorkbenchCardUnderItsButtonWithNothingDimmed(page)
       await snap(page, 'T-HN-01')
 
       expect(await focusOwner(page)).toBe('tui')
       await page.keyboard.type('hint-focus-probe')
       await page.keyboard.press('Enter')
       await expect(centerTerm(page)).toContainText('handled: hint-focus-probe', { timeout: 30_000 })
-      await expect(card(page, 'workbench')).toBeVisible()
+      await expectWorkbenchCardUnderItsButtonWithNothingDimmed(page)
 
       await card(page, 'workbench').locator('button.mini', { hasText: 'Got it' }).click()
       await expect(card(page)).toHaveCount(0)
@@ -183,7 +225,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
       await answerWorkbenchReadsCollapsed(app)
       await expect(card(page, 'workbench')).toBeVisible({ timeout: 30_000 })
-      await expectAnchoredAt(page, WORKBENCH.titlebarIcon)
+      await expectWorkbenchCardUnderItsButtonWithNothingDimmed(page)
     } finally {
       await quitAndClose(app)
     }
@@ -214,6 +256,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
         'Amber means a session needs you'
       )
       await expectAnchoredAt(page, rowSel(b))
+      await expectCardCoversNoSidebarRow(page)
       await snap(page, 'T-HN-02')
     } finally {
       await quitAndClose(app)
@@ -307,6 +350,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await expect(card(page, 'worktree')).toBeVisible({ timeout: 30_000 })
       await expect(card(page, 'worktree').locator('.h')).toHaveText('Two sessions on one folder?')
       await expectAnchoredAt(page, rowSel(await shownTabId(page)))
+      await expectCardCoversNoSidebarRow(page)
       await snap(page, 'T-HN-04')
     } finally {
       await quitAndClose(app)

@@ -1464,6 +1464,11 @@ input.switch:focus-visible {
 .fresh-line.busy .fico-l svg {
   animation: lspin 1s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .fresh-line.busy .fico-l svg {
+    animation: none;
+  }
+}
 
 .wb-bar {
   -webkit-app-region: no-drag;

@@ -843,10 +843,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       const methodSwitch = (name: string): Locator =>
         page.getByRole('switch', { name: `Enable ${name}`, exact: true })
       await expect(defaultMethod).toHaveText('Claude')
-      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'claude' })
+      expect(settingsOnDisk(env).assist).toEqual({ backend: 'claude' })
       await methodSwitch('Claude').uncheck()
       await expect(defaultMethod).toHaveText('Codex')
-      await expect.poll(() => settingsOnDisk(env).assist).toEqual({ on: true, backend: 'codex' })
+      await expect.poll(() => settingsOnDisk(env).assist).toEqual({ backend: 'codex' })
       await methodSwitch('Muse').uncheck()
       await expect(methodSwitch('Codex')).toBeEnabled()
       await methodSwitch('Antigravity').uncheck()

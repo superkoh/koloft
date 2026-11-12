@@ -1155,7 +1155,41 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     ]
   })
 
-  it("presses the key agy's own dialog takes when its API does not answer, and says it went in as keys: 1 runs a command, 4 declines it, 2 declines a file", async () => {
+  // AGY§26
+  it("declines by the key that says no on the box of the tool agy's blocked message names — or, when that names none, as in a tab on a machine, of the tool its hook named — picked when the ask is read, never 2 on a box whose 2 is “always allow”: 2 on an edit, Esc on a file to create or read, 4 on a command or a tool it does not know", async () => {
+    const id = await boundTab()
+    const OUTSIDE = '/elsewhere/outside.txt'
+    const asks: [tool: string, args: Record<string, unknown>, message: string, noKey: string][] = [
+      ['edit_file', { Path: OUTSIDE }, `Approve EditFile: Write: ${OUTSIDE}`, '2'],
+      [
+        'replace_file_content',
+        { TargetFile: OUTSIDE },
+        `Approve ReplaceFileContent: Write: ${OUTSIDE}`,
+        '2'
+      ],
+      ['write_file', { Path: OUTSIDE }, `Approve WriteFile: Write: ${OUTSIDE}`, ESC],
+      ['write_to_file', { TargetFile: OUTSIDE }, `Approve WriteToFile: Write: ${OUTSIDE}`, ESC],
+      ['read_file', { Path: OUTSIDE }, `Approve ReadFile: Read: ${OUTSIDE}`, ESC],
+      ['run_command', { CommandLine: 'ls' }, 'Approve RunCommand: ls', '4'],
+      ['edit_file', { Path: OUTSIDE }, `Approve WriteFile: Write: ${OUTSIDE}`, ESC],
+      ['edit_file', { Path: OUTSIDE }, 'no tool named', '2'],
+      ['write_to_file', { TargetFile: OUTSIDE }, 'no tool named', ESC],
+      ['view_file', { AbsolutePath: OUTSIDE }, 'no tool named', ESC],
+      ['run_command', { CommandLine: 'ls' }, 'no tool named', '4'],
+      ['call_mcp_tool', { ToolName: 'ping' }, 'no tool named', '4']
+    ]
+    for (const [name, args, message] of asks) {
+      hook(id, 'PreToolUse', { toolCall: { name, args } })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=permission:msg=${b64(message)}`))
+      hook(id, 'PreToolUse', { toolCall: { name: 'edit_file', args: { Path: '/later/tool.md' } } })
+      await hooksTaken(id)
+      expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
+    }
+    expect(pty.write.mock.calls).toEqual(asks.map(([, , , noKey]) => [id, noKey]))
+  })
+
+  it("presses the key agy's own dialog takes when its API does not answer, and says it went in as keys: 1 runs a command, 4 declines it, Esc declines a file to create", async () => {
     const id = await boundTab()
     const ask = async (name: string, args: Record<string, unknown>, msg: string): Promise<void> => {
       hook(id, 'PreToolUse', { toolCall: { name, args } })
@@ -1177,7 +1211,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write.mock.calls).toEqual([
       [id, '4'],
       [id, '1'],
-      [id, '2']
+      [id, ESC]
     ])
     expect(await sessions.answer(id, 'yes')).toBe(false)
   })
@@ -1197,13 +1231,38 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
   })
 
   // AGY§26
-  it('marks an approval for read_file, from its Path, as a read', async () => {
+  it("marks an approval for read_file, from its Path, and for agy 1.4.2's view_file, from its AbsolutePath, as a read", async () => {
     const id = await boundTab()
     const file = '/elsewhere/outside.txt'
     hook(id, 'PreToolUse', { toolCall: { name: 'read_file', args: { Path: file } } })
     await hooksTaken(id)
     say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
     expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
+    hook(id, 'PreToolUse', { toolCall: { name: 'view_file', args: { AbsolutePath: file } } })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ViewFile: Read: ${file}`)}`))
+    expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
+  })
+
+  // AGY§26
+  it("keeps a read ask a read when agy's API names it, and declines it through the API with no key pressed", async () => {
+    apiAnswers = true
+    const file = '/elsewhere/outside.txt'
+    trajectory = waitingStep({ permission: { resource: { action: 'read_file', target: file } } })
+    const id = await boundTab()
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
+    await vi.waitFor(() => expect(sessions.openApproval(id)?.id).toBe('t9:2'))
+    const approval = sessions.openApproval(id)
+    expect(approval).toMatchObject({ command: file, file, read: true })
+    expect(approval?.reason).toBeUndefined()
+    await sessions.answer(id, 'no')
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: { trajectoryId: 't9', stepIndex: 2, permission: { allow: false } }
+      }
+    ])
+    expect(pty.write).not.toHaveBeenCalled()
   })
 
   it("answers an approval through agy's API when it answers, and presses no key", async () => {

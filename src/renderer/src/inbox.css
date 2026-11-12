@@ -337,6 +337,12 @@
   );
   animation: lspin 6s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .ibx-orb,
+  .ibx-focus-edge::before {
+    animation: none;
+  }
+}
 
 .ibx-item.done {
   cursor: default;
@@ -769,6 +775,11 @@
   border: 2px solid var(--line-2);
   border-top-color: var(--fg-dim);
   animation: lspin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ibx-spin {
+    animation: none;
+  }
 }
 
 .ibx-confirm {

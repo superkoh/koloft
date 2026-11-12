@@ -115,6 +115,22 @@ export function dialogHasLiveOwner(
   return !!owner && liveTabs.has(owner)
 }
 
+export interface HiddenPageFacts {
+  owner: string | undefined
+  onScreen: boolean
+  heldForAnAgent: boolean
+  guestId: number
+}
+
+export function mayDropForMemory(
+  page: HiddenPageFacts,
+  inUse: { guestIds: ReadonlySet<number>; owners: ReadonlySet<string> }
+): boolean {
+  if (!page.owner || !page.guestId) return false
+  if (page.onScreen || page.heldForAnAgent) return false
+  return !inUse.guestIds.has(page.guestId) && !inUse.owners.has(page.owner)
+}
+
 export function activateTab(set: WorkbenchTabSet, id: string): WorkbenchTabSet {
   if (!set.tabs.some((t) => t.id === id)) return set
   return {

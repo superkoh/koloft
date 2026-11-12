@@ -33,7 +33,7 @@ import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { relOf } from './filesModel'
 import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
-import { editRefusal, useEditProbe } from './EditPane'
+import { editRefusal, startEditRead, useEditProbe } from './EditPane'
 import {
   allEditTabs,
   beginEdit,
@@ -56,6 +56,7 @@ import {
   cycleTab,
   dialogHasLiveOwner,
   emptyTabSet,
+  mayDropForMemory,
   moveTab,
   navigateTab,
   openTab,
@@ -187,6 +188,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const [outlineOpen, setOutlineOpen] = useState<Record<string, boolean>>({})
   const [reloadNonce, setReloadNonce] = useState<Record<string, number>>({})
   const [editing, setEditing] = useState<Record<string, boolean>>({})
+  const [readingForEdit, setReadingForEdit] = useState<Record<string, string>>({})
   const [editFocus, setEditFocus] = useState<Record<string, number>>({})
   const [editTick, bumpEdit] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bumpEdit), [])
@@ -469,13 +471,65 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     closeIn
   })
 
+  // PLATFORM§8
+  const droppedForMemory = useRef(new Set<string>())
+  const panelNow = useRef({ visible, ownerTab, activeId: set.activeId, sessionCold, staged })
+  panelNow.current = { visible, ownerTab, activeId: set.activeId, sessionCold, staged }
+  useEffect(() => {
+    return window.api.browser.onMemoryCritical((inUse) => {
+      const now = panelNow.current
+      const used = { guestIds: new Set(inUse.guestIds), owners: new Set(inUse.owners) }
+      for (const s of useStore.getState().sessions)
+        if (s.tabId && (s.status === 'working' || s.status === 'approval')) used.owners.add(s.tabId)
+      const going = new Set(
+        [...els.current].flatMap(([id, el]) => {
+          const owner = webIndexRef.current.get(id)?.owner
+          const goes = mayDropForMemory(
+            {
+              owner,
+              onScreen:
+                now.visible && owner === now.ownerTab && id === now.activeId && !now.sessionCold,
+              heldForAnAgent: pinnedRef.current.has(id) || now.staged.has(id) || mounting(id),
+              guestId: guestId(el)
+            },
+            used
+          )
+          return goes ? [id] : []
+        })
+      )
+      if (!going.size) return
+      for (const id of going) {
+        droppedForMemory.current.add(id)
+        patchRuntime(id, { loading: false, canBack: false, canForward: false })
+      }
+      setLive((prev) => prev.filter((id) => !going.has(id)))
+    })
+  }, [mounting, patchRuntime])
+
+  const activeWebUrl = activeTab?.kind === 'web' ? activeTab.url : undefined
+  useLayoutEffect(() => {
+    const dropped = droppedForMemory.current
+    for (const id of dropped) if (live.includes(id) || !webIndex.has(id)) dropped.delete(id)
+    if (!visible || sessionCold || !activeTab || !activeWebUrl) return
+    if (dropped.delete(activeTab.id)) applyLive(activeTab.id, activeWebUrl)
+  }, [visible, sessionCold, activeTab?.id, activeWebUrl, live, webIndex, applyLive])
+
   const enterEdit = useCallback(
-    (tabId: string, path: string, created?: EditFingerprint): void => {
+    (tabId: string, path: string, created?: EditFingerprint, tabIsNew = false): void => {
       if (!ownerTab) return
       const sid = ownerTab
       const arm = (): void => {
         setEditing((prev) => ({ ...prev, [tabId]: true }))
         setEditFocus((prev) => ({ ...prev, [tabId]: (prev[tabId] ?? 0) + 1 }))
+      }
+      const readDone = (): void => {
+        if (!tabIsNew) return
+        setReadingForEdit((prev) => {
+          if (prev[tabId] !== path) return prev
+          const next = { ...prev }
+          delete next[tabId]
+          return next
+        })
       }
       if (created) {
         beginEdit(sid, tabId, { path, text: '', eol: 'lf', stamp: created, readOnly: null })
@@ -487,9 +541,10 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         arm()
         return
       }
-      void window.api.edit
-        .open(path)
+      if (tabIsNew) setReadingForEdit((prev) => ({ ...prev, [tabId]: path }))
+      void startEditRead(path)
         .then((r) => {
+          readDone()
           const now = statesRef.current[sid]?.tabs.find((t) => t.id === tabId)
           if (!now || now.path !== path) return
           if (isTabDirty(sid, tabId)) {
@@ -506,6 +561,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           arm()
         })
         .catch((err: unknown) => {
+          readDone()
           useStore.getState().showToast(editRefusal(String((err as Error)?.message ?? '')))
         })
     },
@@ -550,7 +606,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     (path: string, created?: EditFingerprint): void => {
       openHere({ kind: 'file', path, source: 'user' }, (r) => {
         setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-        enterEdit(r.tabId, path, created)
+        enterEdit(r.tabId, path, created, r.created)
       })
     },
     [openHere, enterEdit]
@@ -1538,6 +1594,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
                 scrollTop={t.scrollTop}
                 shown={t.id === set.activeId}
                 editing={editingHere}
+                readingForEdit={!editingHere && !!t.path && readingForEdit[t.id] === t.path}
                 editFocus={editFocus[t.id] ?? 0}
                 editText={unsaved && !editingHere ? getEntry(ownerTab, t.id)?.text : undefined}
                 editUnsaved={unsaved}

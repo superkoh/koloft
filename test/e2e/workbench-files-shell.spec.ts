@@ -17,7 +17,7 @@ const filterBtn = (page: Page): ReturnType<Page['locator']> =>
   page.locator('.wb-bar .seg button', { hasText: 'Filter' })
 const filesMenu = (page: Page): ReturnType<Page['locator']> => page.locator('.wb-bar .fv-menu')
 
-async function dismissWorktreeHintCardCoveringTheRows(page: Page): Promise<void> {
+async function dismissWorktreeHintCardThatAnyClickWouldClose(page: Page): Promise<void> {
   await page
     .locator('.hint-card[data-hint="worktree"]')
     .getByRole('button', { name: 'Got it', exact: true })
@@ -141,7 +141,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
     await startSessionIn(page, 'ws-a')
     const rows = page.locator('.ws .ws-tab')
     await expect(rows).toHaveCount(2, { timeout: 25_000 })
-    await dismissWorktreeHintCardCoveringTheRows(page)
+    await dismissWorktreeHintCardThatAnyClickWouldClose(page)
     const rowB = rows.nth(0)
     const rowA = rows.nth(1)
     const browseBtn = (): Locator => viewSwitch(page).locator('button').nth(1)
