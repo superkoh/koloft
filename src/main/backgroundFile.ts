@@ -80,7 +80,8 @@ export class BackgroundFile {
         const theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore = genTriedAgain !== gen
         genTriedAgain = gen
         if (theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore) continue
-        this.gaveUp?.()
+        const noNewerTextWaits = gen === this.latestGen
+        if (noNewerTextWaits) this.gaveUp?.()
       }
       this.savedGen = Math.max(this.savedGen, gen)
     }

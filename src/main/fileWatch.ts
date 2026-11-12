@@ -49,7 +49,7 @@ interface DirWatch {
   count: number
   timer: ReturnType<typeof setTimeout> | null
   changed: Set<string> | null
-  folderId: string
+  folderId: string | undefined
   changedWithNoViewer: boolean
 }
 const dirWatchers = new Map<string, DirWatch>()
@@ -146,6 +146,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     reportSoon(root, entry, onChange)
   })
   entry.watcher.on('error', () => {
+    if (dirWatchers.get(root) !== entry) return void closeWatcher(entry)
     if (entry.count === 0) {
       forget(root, entry)
       return
@@ -156,9 +157,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     } catch {}
     try {
       entry.watcher = fs.watch(root, { recursive: true })
-      void inOrderFor(root, async () => {
-        entry.folderId = (await folderIdOf(root)) ?? entry.folderId
-      })
+      entry.folderId = undefined
       attachWatcher(root, entry, onChange)
     } catch {
       if (entry.timer) clearTimeout(entry.timer)
@@ -186,8 +185,10 @@ async function watchDirNow(
   const folderId = await folderIdOf(root)
   if (timesAllWereClosed !== closedSoFar) return false
   const kept = dirWatchers.get(root)
-  if (kept && folderId !== kept.folderId) forget(root, kept)
+  const rebuiltOnTheFolderAsItIsNow = kept?.folderId === undefined
+  if (kept && !rebuiltOnTheFolderAsItIsNow && folderId !== kept.folderId) forget(root, kept)
   else if (kept) {
+    kept.folderId ??= folderId
     noLongerKept(root)
     kept.changed = kept.changedWithNoViewer ? null : new Set()
     if (kept.changedWithNoViewer) reportSoon(root, kept, onChange)
@@ -216,7 +217,7 @@ async function watchDirNow(
 }
 
 export function unwatchDir(root: string): void {
-  void inOrderFor(root, () => unwatchDirNow(root))
+  void inOrderFor(root, () => unwatchDirNow(root)).catch(() => {})
 }
 
 function unwatchDirNow(root: string): void {

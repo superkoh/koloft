@@ -357,6 +357,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
   private registryLooking = false
+  private registryLooks = 0
   private registrySeenAt?: number
   private unreadable = new Set<string>()
   private remoteHistory = new Map<string, MuseHistoryEntry[]>()
@@ -713,10 +714,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.sweeping ??= setInterval(() => {
       if (this.registryLooking) return
       this.registryLooking = true
+      const looksBefore = this.registryLooks
       // PLATFORM§69
       void registryDirsChanged(this.env)
         .then((dirs) => {
-          this.sweepRegistry(dirs)
+          const aLaterLookAlreadyRan = this.registryLooks !== looksBefore
+          if (!aLaterLookAlreadyRan) this.sweepRegistry(dirs)
           this.followLogs()
         })
         .catch((error) => console.error('[koloft] Muse registry sweep failed:', error))
@@ -1245,6 +1248,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   // MUSE§4
   private sweepRegistry(dirs = registryDirsChangedNow(this.env)): Set<MuseRun> {
+    this.registryLooks++
     const rebound = new Set<MuseRun>()
     const live = [...this.runs.values()].filter(
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
@@ -1256,9 +1260,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
     if (!dirs.length) return rebound
     const changedAt = Math.max(...dirs.map((d) => d.changed))
-    const aNewerLookAlreadyReadIt =
-      this.registrySeenAt !== undefined && changedAt < this.registrySeenAt
-    if (aNewerLookAlreadyReadIt) return rebound
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound
     const since = (run: MuseRun): number => run.startedAt - REGISTRY_WRITE_LEEWAY_MS
     const pids = new Set(live.map((r) => r.pid!))
