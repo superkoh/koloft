@@ -56,6 +56,7 @@ import {
   cycleTab,
   dialogHasLiveOwner,
   emptyTabSet,
+  mayDropForMemory,
   moveTab,
   navigateTab,
   openTab,
@@ -469,6 +470,49 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     onCdpDone,
     closeIn
   })
+
+  // PLATFORM§8
+  const droppedForMemory = useRef(new Set<string>())
+  const panelNow = useRef({ visible, ownerTab, activeId: set.activeId, sessionCold, staged })
+  panelNow.current = { visible, ownerTab, activeId: set.activeId, sessionCold, staged }
+  useEffect(() => {
+    return window.api.browser.onMemoryCritical((inUse) => {
+      const now = panelNow.current
+      const used = { guestIds: new Set(inUse.guestIds), owners: new Set(inUse.owners) }
+      for (const s of useStore.getState().sessions)
+        if (s.tabId && (s.status === 'working' || s.status === 'approval')) used.owners.add(s.tabId)
+      const going = new Set(
+        [...els.current].flatMap(([id, el]) => {
+          const owner = webIndexRef.current.get(id)?.owner
+          const goes = mayDropForMemory(
+            {
+              owner,
+              onScreen:
+                now.visible && owner === now.ownerTab && id === now.activeId && !now.sessionCold,
+              heldForAnAgent: pinnedRef.current.has(id) || now.staged.has(id) || mounting(id),
+              guestId: guestId(el)
+            },
+            used
+          )
+          return goes ? [id] : []
+        })
+      )
+      if (!going.size) return
+      for (const id of going) {
+        droppedForMemory.current.add(id)
+        patchRuntime(id, { loading: false, canBack: false, canForward: false })
+      }
+      setLive((prev) => prev.filter((id) => !going.has(id)))
+    })
+  }, [mounting, patchRuntime])
+
+  const activeWebUrl = activeTab?.kind === 'web' ? activeTab.url : undefined
+  useLayoutEffect(() => {
+    const dropped = droppedForMemory.current
+    for (const id of dropped) if (live.includes(id) || !webIndex.has(id)) dropped.delete(id)
+    if (!visible || sessionCold || !activeTab || !activeWebUrl) return
+    if (dropped.delete(activeTab.id)) applyLive(activeTab.id, activeWebUrl)
+  }, [visible, sessionCold, activeTab?.id, activeWebUrl, live, webIndex, applyLive])
 
   const enterEdit = useCallback(
     (tabId: string, path: string, created?: EditFingerprint, tabIsNew = false): void => {

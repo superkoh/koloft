@@ -16,6 +16,8 @@ const LOAD_STAYS_HIGH_MS_BEFORE_BUSY = 30_000
 const CALM_MS_BEFORE_ROOMY = 60_000
 // PLATFORM§59
 export const MEMORY_PRESSURE_WARNING = 2
+export const MEMORY_PRESSURE_CRITICAL = 4
+const CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING = 2
 export const GAP_AFTER_A_COMMAND_MS = 30_000
 const SIGNAL_LINE_EVERY_MS = 60_000
 
@@ -28,9 +30,11 @@ export interface MachineRoomDeps {
   read(): Promise<MachineReading>
   now(): number
   log(line: string): void
+  memoryStaysCritical?(): void
 }
 
 export class MachineRoom {
+  private criticalReadingsInARow = 0
   private busyNow = false
   private loadHighSince: number | undefined
   private calmSince: number | undefined
@@ -64,6 +68,8 @@ export class MachineRoom {
     this.lastReading = r
     const now = this.d.now()
     const memoryTight = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_WARNING
+    const memoryCritical = r.pressure !== null && r.pressure >= MEMORY_PRESSURE_CRITICAL
+    this.criticalReadingsInARow = memoryCritical ? this.criticalReadingsInARow + 1 : 0
     const loadHigh = r.load1 >= BUSY_AT_LOAD_PER_CORE * this.d.cores
     const loadCalm = r.load1 < ROOMY_BELOW_LOAD_PER_CORE * this.d.cores
     this.loadHighSince = loadHigh ? (this.loadHighSince ?? now) : undefined
@@ -85,6 +91,8 @@ export class MachineRoom {
         `[koloft] machine: ${this.busyNow ? 'busy' : 'roomy'} · memory pressure ${r.pressure ?? '-'} · load ${r.load1.toFixed(1)} on ${this.d.cores} cores`
       )
     }
+    if (this.criticalReadingsInARow >= CRITICAL_READINGS_IN_A_ROW_BEFORE_ACTING)
+      this.d.memoryStaysCritical?.()
   }
 
   private syncMarker(): void {
