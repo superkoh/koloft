@@ -305,7 +305,7 @@ import {
 } from './cronRunner'
 import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
-import { watchMainThreadStalls } from './mainThreadStalls'
+import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -3235,7 +3235,11 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
-  watchMainThreadStalls(signalLog(path.join(app.getPath('userData'), 'main-stalls.log')))
+  const stalls = new StallWatchWhileFocused(
+    signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  )
+  app.on('browser-window-focus', () => stalls.focused())
+  app.on('browser-window-blur', () => stalls.blurred())
   presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
@@ -3781,12 +3785,8 @@ app.whenReady().then(() => {
             !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
     memberDropped: (sessionId, why) => {
-      try {
-        fs.appendFileSync(
-          path.join(app.getPath('userData'), 'dropped-sessions.log'),
-          `${new Date().toISOString()} ${sessionId} ${why}\n`
-        )
-      } catch {}
+      droppedSessionsLog ??= signalLog(path.join(app.getPath('userData'), 'dropped-sessions.log'))
+      droppedSessionsLog(`${sessionId} ${why}`)
     }
   })
   butler = new Butler({
@@ -4912,6 +4912,7 @@ const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
 const unexpectedExits = new Map<string, string>()
 let agentExitLog: ((line: string) => void) | undefined
+let droppedSessionsLog: ((line: string) => void) | undefined
 let windowOpenedAt = 0
 
 function unexpectedExitHeading(h: PtyHandle, e: TerminalExit): string {

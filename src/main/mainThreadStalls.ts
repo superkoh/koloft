@@ -23,7 +23,7 @@ export class StallWatch {
     const gap = at - this.lastAt
     if (gap - LOOK_EVERY_MS >= LOGGED_ONCE_A_LOOK_COMES_LATE_BY_MS)
       this.d.log(
-        `main thread took no new work for ${Math.round(gap)} ms, on the CPU for ${Math.round(cpu - this.lastCpu)} ms of it`
+        `main thread took no new work in the ${Math.round(gap)} ms before this line, and was on the CPU for ${Math.round(cpu - this.lastCpu)} ms of them`
       )
     this.lastAt = at
     this.lastCpu = cpu
@@ -35,7 +35,24 @@ function mainThreadCpuMs(): number {
   return (user + system) / 1000
 }
 
-export function watchMainThreadStalls(log: (line: string) => void): void {
-  const watch = new StallWatch({ log, now: () => performance.now(), cpuMs: mainThreadCpuMs })
-  setInterval(() => watch.look(), LOOK_EVERY_MS).unref()
+// PLATFORM§70
+export class StallWatchWhileFocused {
+  private timer: ReturnType<typeof setInterval> | undefined
+
+  constructor(private readonly log: (line: string) => void) {}
+
+  focused(): void {
+    if (this.timer) return
+    const watch = new StallWatch({
+      log: this.log,
+      now: () => performance.now(),
+      cpuMs: mainThreadCpuMs
+    })
+    this.timer = setInterval(() => watch.look(), LOOK_EVERY_MS)
+  }
+
+  blurred(): void {
+    clearInterval(this.timer)
+    this.timer = undefined
+  }
 }

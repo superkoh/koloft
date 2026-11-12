@@ -24,9 +24,8 @@ describe('the main-thread stall log', () => {
     expect(w.lines).toEqual([])
     w.after(212, 197)
     w.after(LOOK_EVERY_MS + 200, 0.4)
-    expect(w.lines).toEqual([
-      'main thread took no new work for 212 ms, on the CPU for 197 ms of it',
-      'main thread took no new work for 225 ms, on the CPU for 0 ms of it'
-    ])
+    expect(w.lines).toHaveLength(2)
+    expect(w.lines[0]).toMatch(/\b212 ms\b.*\b197 ms\b/)
+    expect(w.lines[1]).toMatch(/\b225 ms\b.*\b0 ms\b/)
   })
 })

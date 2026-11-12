@@ -136,7 +136,7 @@ describe('when memory counts as critical', () => {
 })
 
 describe('the signal log the thresholds are tuned from', () => {
-  it('keeps whole timestamped lines, and never grows past two megabytes', async () => {
+  it('keeps whole timestamped lines, and trims itself back under two megabytes', async () => {
     const file = path.join(regDir, 'machine.log')
     const log = signalLog(file)
     log('first')
@@ -144,14 +144,16 @@ describe('the signal log the thresholds are tuned from', () => {
       expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/)
     )
     const line = 'x'.repeat(1000)
-    for (let i = 0; i < 2199; i++) log(line)
-    log('last')
-    await vi.waitFor(() => {
-      const whole = fs.readFileSync(file, 'utf8')
-      expect(whole).toMatch(/ last\n$/)
-      expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
-    })
-    const text = fs.readFileSync(file, 'utf8').replace(/.* last\n$/, '')
+    for (const batch of ['one', 'two', 'three']) {
+      for (let i = 0; i < 800; i++) log(line)
+      log(batch)
+      await vi.waitFor(() => {
+        const whole = fs.readFileSync(file, 'utf8')
+        expect(whole).toMatch(new RegExp(` ${batch}\\n$`))
+        expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
+      })
+    }
+    const text = fs.readFileSync(file, 'utf8').replace(/.* (one|two|three)\n/g, '')
     expect(text).not.toContain('first')
     expect(
       text

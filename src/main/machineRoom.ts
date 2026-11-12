@@ -130,6 +130,8 @@ export function signalLog(file: string): (line: string) => void {
   }
   return (line) => {
     waiting += `${new Date().toISOString()} ${line}\n`
+    if (waiting.length > SIGNAL_LOG_KEEPS_BYTES)
+      waiting = waiting.slice(waiting.indexOf('\n', waiting.length - SIGNAL_LOG_KEEPS_BYTES) + 1)
     if (!writing) void write()
   }
 }

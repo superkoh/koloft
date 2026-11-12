@@ -3596,6 +3596,7 @@ save's last check and its rename together on the main thread; `signalLog`
   each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
   app with a Dock icon whose window stays covered for long.
 
-Koloft dependents: `mainThreadStalls.ts` writes a line to `main-stalls.log` in
+Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
+and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
 of that it spent on the CPU.
