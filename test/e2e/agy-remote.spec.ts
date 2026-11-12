@@ -604,7 +604,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect
         .poll(() => terminalText(page, wokenTab), { timeout: 90_000 })
         .toContain('Antigravity CLI')
-      expect(liveTmuxSessions(env)).toEqual([tmuxName(asleep.id)])
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .toEqual([tmuxName(asleep.id)])
 
       await page.evaluate((id) => window.api.terminal.write(id, 'after waking\r'), wokenTab)
       await expect.poll(said, { timeout: 60_000 }).toContain('Answer to: after waking')

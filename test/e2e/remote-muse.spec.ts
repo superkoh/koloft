@@ -418,13 +418,13 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await addRemoteWorkspace(page, env)
       const first = await startRemoteMuse(page, env)
       const said = (): string[] => museSaid(env, first.sessionId, machineHome(env))
-      const row = remoteRows(page)
+      const row = remoteRows(page).first()
       await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
         timeout: ON_THE_MACHINE_WITHIN_MS
       })
       await runIn(page, centerTerm(page), 'before sleep')
       await expect.poll(said, { timeout: ON_THE_MACHINE_WITHIN_MS }).toContain('echo: before sleep')
-      const asleepTab = await row.getAttribute('data-tab-id')
+      const asleepTab = (await row.getAttribute('data-tab-id')) ?? ''
       expect(asleepTab).toBeTruthy()
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const localRow = wsRows(page, 'ws-a').first()
@@ -447,18 +447,20 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toBe(2)
       expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', first.sessionId])
-      await expect(row).not.toHaveAttribute('data-tab-id', asleepTab!, { timeout: 30_000 })
+      await expect(row).not.toHaveAttribute('data-tab-id', asleepTab, { timeout: 30_000 })
       const wokenTab = (await row.getAttribute('data-tab-id')) ?? ''
       await expect
         .poll(() => terminalText(page, wokenTab), { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toContain(`Muse fixture ready ${first.sessionId}`)
-      expect(liveTmuxSessions(env)).toEqual([tmuxName(first.sessionId)])
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .toEqual([tmuxName(first.sessionId)])
 
       await page.evaluate((id) => window.api.terminal.write(id, 'after waking\r'), wokenTab)
       await expect.poll(said, { timeout: ON_THE_MACHINE_WITHIN_MS }).toContain('echo: after waking')
       await page.evaluate(
         (id) => window.api.terminal.paste(id, 'pasted into the old tab', '\r'),
-        asleepTab!
+        asleepTab
       )
       await expect
         .poll(said, { timeout: ON_THE_MACHINE_WITHIN_MS })
