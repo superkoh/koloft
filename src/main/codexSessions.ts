@@ -652,10 +652,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   private async readMachineHistory(machine: string): Promise<void> {
     const startedAt = Date.now()
-    const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
-    if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
-    const threads =
-      home.code === 0 ? await this.withMachineRpc(machine, (rpc) => listThreads(rpc)) : []
+    const list = (): Promise<ListedThread[]> =>
+      this.withMachineRpc(machine, (rpc) => listThreads(rpc))
+    // CODEX§16
+    const onOpenLine = this.machineSideServers.isOpen(machine)
+      ? await list().catch(() => undefined)
+      : undefined
+    let threads = onOpenLine ?? []
+    let homeThere = threads.length > 0
+    if (!homeThere) {
+      const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
+      if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
+      homeThere = home.code === 0
+      threads = homeThere ? (onOpenLine ?? (await list())) : []
+    }
     if (this.shuttingDown) return
     const others = (key: string): boolean => hostOfKey(key) !== machine
     this.history = new Map([...this.history].filter(([key]) => others(key)))
@@ -664,7 +674,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.history.set(key, entry)
       if (archived) this.archivedIds.add(key)
     }
-    if (home.code === 0) this.listedAt.set(machine, startedAt)
+    if (homeThere) this.listedAt.set(machine, startedAt)
     else this.listedAt.delete(machine)
     this.changed()
   }
