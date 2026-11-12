@@ -8,7 +8,8 @@ import {
   TURNED_DOWN_IN_KOLOFT,
   type PlacedCard,
   type SecretAsk,
-  type SecretAskDeps
+  type SecretAskDeps,
+  type TapRounds
 } from '../../src/main/discord/secretAsks'
 import type { Card } from '../../src/main/discord/cards'
 import type { DiscordInteraction } from '../../src/main/discord/link'
@@ -226,5 +227,88 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
     await closed.posted()
     closed.asks.forget('tab-1')
     expect(await answer).toEqual({ ended: 'timeout' })
+  })
+})
+
+describe('asking the owner to tap a page from Discord, in rounds', () => {
+  const PICTURE = { name: 'page.png', data: Buffer.from('png') }
+  const tapAsk = (taps: TapRounds): SecretAsk => ({
+    tabId: 'tab-1',
+    from: 'tab-1',
+    shape: { kind: 'tap', guestId: 7, url: 'https://x.test/', label: 'Tick the box.' },
+    header: (n: string) => `👆 **${n}** asks you to tap a web page`,
+    body: 'Tick the box.',
+    label: 'Squares to tap, in order',
+    taps
+  })
+  const button = (cards: Card[], label: string): string =>
+    cards[0].buttons!.find((b) => b.label === label)!.id
+
+  it('a Give up pressed while the taps run stops the taps still to come', async () => {
+    let letGo!: () => void
+    const held = new Promise<void>((r) => (letGo = r))
+    const tapped: string[] = []
+    const { asks, cards, interaction, posted } = setup()
+    const answer = asks.ask(
+      tapAsk({
+        picture: async () => PICTURE,
+        tap: async (squares, going) => {
+          for (const square of squares.split(' ')) {
+            if (!going()) break
+            tapped.push(square)
+            await held
+          }
+          return 'Tapped.'
+        }
+      }),
+      LONG
+    )
+    await posted()
+    await asks.submit(interaction(5, { fields: { value: 'A1 B1 C1' } }))
+    await settle()
+    await asks.press(interaction(3, { customId: button(cards, 'Give up') }))
+    letGo()
+    await settle()
+    expect(await answer).toEqual({ ended: 'declined' })
+    expect(tapped).toEqual(['A1'])
+  })
+
+  it('when the next card cannot be posted, the card before keeps its buttons', async () => {
+    let placed = 0
+    const { asks, cards, edits, interaction, posted } = setup({
+      place: async (_tab, card): Promise<PlacedCard> => {
+        if (placed++) throw new Error('Discord answered 500')
+        cards.push(card('fix-login'))
+        return PLACED
+      }
+    })
+    void asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped A1.' }), LONG)
+    await posted()
+    await asks.submit(interaction(5, { fields: { value: 'A1' } }))
+    await settle()
+    await settle()
+    expect(placed).toBe(2)
+    expect(edits).toEqual([])
+  })
+
+  it('two presses of New picture close together take one new picture, and the second is told to wait', async () => {
+    let pictures = 0
+    const { asks, cards, responses, interaction, posted } = setup()
+    void asks.ask(
+      tapAsk({
+        picture: async () => {
+          pictures++
+          return PICTURE
+        },
+        tap: async () => 'Tapped.'
+      }),
+      LONG
+    )
+    await posted()
+    const press = interaction(3, { customId: button(cards, 'New picture') })
+    await Promise.all([asks.press(press), asks.press(press)])
+    await settle()
+    expect(pictures).toBe(2)
+    expect(JSON.stringify(responses)).toMatch(/still at the last taps/)
   })
 })

@@ -4,6 +4,7 @@ import type { SecretAskShape, SecretAskView } from '@shared/types'
 import { accentOf, type Card, type CardButton } from './cards'
 import { privately, type DiscordFile, type DiscordInteraction } from './link'
 import { ONLY_THE_OWNER_ANSWERS } from './buttons'
+import { errorText } from '../agentRequests'
 
 export const SECRET_ID_PREFIX = 'secret:'
 const OPEN_A_FORM = 9
@@ -23,17 +24,17 @@ export const NOTHING_TYPED = 'Nothing was typed, so nothing was passed on.'
 export const ANSWERED_IN_KOLOFT = '✅ Answered in Koloft.'
 export const TURNED_DOWN_IN_KOLOFT = '⏹ Turned down in Koloft.'
 
-export const TAPS_FIRST_FOOTER =
+const TAPS_FIRST_FOOTER =
   '-# Koloft taps the middle of each square you name, then sends a new picture.'
 export const TAPPING = 'Koloft taps them and sends a new picture.'
-export const STILL_TAPPING = 'Koloft is still at the last taps: wait for the new picture.'
-export const GAVE_UP = '⏹ The owner gave up.'
+const STILL_TAPPING = 'Koloft is still at the last taps: wait for the new picture.'
+const GAVE_UP = '⏹ The owner gave up.'
 export const PASSED = '✅ The owner said it passed.'
 const SQUARES_EXAMPLE = 'B5 H4 F8'
 
 export interface TapRounds {
   picture(): Promise<DiscordFile>
-  tap(squares: string): Promise<string>
+  tap(squares: string, going: () => boolean): Promise<string>
 }
 
 export interface SecretAsk {
@@ -157,26 +158,35 @@ export class SecretAsks {
   }
 
   private async placeCard(id: string, pending: Pending): Promise<void> {
-    if (pending.ask.taps) return this.placeTapCard(id, pending, TAPS_FIRST_FOOTER)
+    if (pending.ask.taps) {
+      await this.placeTapCard(id, pending, TAPS_FIRST_FOOTER)
+      return
+    }
     const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
-    const placed = await this.d
-      .place(pending.ask.tabId, (name) => cardOf(pending.ask, name, PLAIN_TEXT_WARNING, [button]))
-      .catch(() => undefined)
-    if (!placed) return
-    pending.placed = placed
-    if (pending.footer) this.editCard(pending)
+    await this.put(pending, (name) => cardOf(pending.ask, name, PLAIN_TEXT_WARNING, [button]))
   }
 
-  private async placeTapCard(id: string, pending: Pending, footer: string): Promise<void> {
-    const taps = pending.ask.taps!
-    const picture = await taps.picture().then(
+  private async put(
+    pending: Pending,
+    card: (name: string) => Card,
+    files?: DiscordFile[]
+  ): Promise<boolean> {
+    const placed = await this.d.place(pending.ask.tabId, card, files).catch(() => undefined)
+    if (!placed) return false
+    pending.placed = placed
+    if (pending.footer) this.editCard(pending)
+    return true
+  }
+
+  private async placeTapCard(id: string, pending: Pending, footer: string): Promise<boolean> {
+    const picture = await pending.ask.taps!.picture().then(
       (file) => ({ files: [file], note: '' }),
       (error: unknown) => ({
         files: [],
-        note: `\n-# Koloft could not take the page's picture: ${error instanceof Error ? error.message : String(error)}.`
+        note: `\n-# Koloft could not take the page's picture: ${errorText(error)}.`
       })
     )
-    if (!this.pending.has(id)) return
+    if (!this.pending.has(id)) return false
     const button = (label: string, style: CardButton['style'], action?: TapAction): CardButton => ({
       label,
       style,
@@ -188,32 +198,25 @@ export class SecretAsks {
       button('It passed', 'success', 'passed'),
       button('Give up', 'secondary', 'give-up')
     ]
-    const placed = await this.d
-      .place(
-        pending.ask.tabId,
-        (name) => cardOf(pending.ask, name, `${footer}${picture.note}`, buttons),
-        picture.files
-      )
-      .catch(() => undefined)
-    if (!placed) return
-    pending.placed = placed
-    if (pending.footer) this.editCard(pending)
+    return this.put(
+      pending,
+      (name) => cardOf(pending.ask, name, `${footer}${picture.note}`, buttons),
+      picture.files
+    )
   }
 
   private async tapRound(id: string, pending: Pending, act: () => Promise<string>): Promise<void> {
-    pending.tapping = true
     try {
       const note = await act().catch(
-        (error: unknown) =>
-          `Koloft could not tap: ${error instanceof Error ? error.message : String(error)}.`
+        (error: unknown) => `Koloft could not tap: ${errorText(error)}.`
       )
       if (!this.pending.has(id)) return
       const before = pending.placed
-      if (before)
+      const placed = await this.placeTapCard(id, pending, `-# ${note} This is the page now.`)
+      if (placed && before)
         void this.d
           .edit(before, cardOf(pending.ask, before.name, `-# ${note}`))
           .catch(() => undefined)
-      await this.placeTapCard(id, pending, `-# ${note} This is the page now.`)
     } finally {
       pending.tapping = false
     }
@@ -238,9 +241,10 @@ export class SecretAsks {
     if (!found) return
     const [id, pending, action] = found
     if (action === 'passed' || action === 'give-up') {
-      if (action === 'passed') this.end(id, { passed: true }, PASSED)
-      else this.end(id, { ended: 'declined' }, GAVE_UP)
-      await this.d.respond(i, privately(action === 'passed' ? PASSED : GAVE_UP))
+      const [answer, note]: [SecretAnswer, string] =
+        action === 'passed' ? [{ passed: true }, PASSED] : [{ ended: 'declined' }, GAVE_UP]
+      this.end(id, answer, note)
+      await this.d.respond(i, privately(note))
       return
     }
     if (pending.ask.taps && pending.tapping) {
@@ -248,6 +252,7 @@ export class SecretAsks {
       return
     }
     if (action === 'picture') {
+      pending.tapping = true
       await this.d.respond(i, privately('Koloft sends a new picture.'))
       void this.tapRound(id, pending, async () => 'New picture.')
       return
@@ -292,8 +297,9 @@ export class SecretAsks {
         await this.d.respond(i, privately(STILL_TAPPING))
         return
       }
+      pending.tapping = true
       await this.d.respond(i, privately(TAPPING))
-      void this.tapRound(id, pending, () => taps.tap(value))
+      void this.tapRound(id, pending, () => taps.tap(value, () => this.pending.has(id)))
       return
     }
     this.end(id, { typed: value }, '✅ Passed on.')

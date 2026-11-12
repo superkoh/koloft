@@ -13,21 +13,21 @@ import {
   type Point
 } from './tapGrid'
 
-export const PAGE_USAGE =
+const PAGE_USAGE =
   'koloft: usage: koloft page tap <css selector> -- "<one line that tells the owner what to do>"'
-export const NO_SUCH_PART =
-  "koloft: no single element matches that selector in this session's Workbench pages. Give a selector that matches exactly one element: the smallest one that holds what the owner must tap, usually the check's <iframe>."
-export const OWNER_ASLEEP_TAP =
+const NO_SUCH_PART =
+  "koloft: no single element matches that selector in this session's Workbench pages, or it is not valid CSS. Give a selector that matches exactly one element: the smallest one that holds what the owner must tap, usually the check's <iframe>."
+const OWNER_ASLEEP_TAP =
   'koloft: the owner is asleep and cannot tap the page now. Skip this step, go on with the rest, and say in your report that it waits for the owner.'
 export const TAPS_PASSED =
   'The owner said it passed. Look at the page to see whether it went through.'
 export const DONE_AT_THE_MAC =
   'The owner said they were done, on the Mac. Look at the page to see whether it went through.'
-export const OWNER_GAVE_UP =
+const OWNER_GAVE_UP =
   'koloft: the owner gave up on this; nothing more is tapped. Look at the page to see where it stands.'
-export const TAPS_NOT_IN_TIME =
+const TAPS_NOT_IN_TIME =
   'koloft: the owner did not finish in time. Look at the page to see where it stands.'
-export const SQUARES_LABEL = 'Squares to tap, in order'
+const SQUARES_LABEL = 'Squares to tap, in order'
 const OUT_OF_VIEW = 'the part of the page to show is out of view'
 
 const A_TAPPED_PAGE_SETTLES_MS = 1500
@@ -38,8 +38,8 @@ const A_PAGE_BROUGHT_TO_THE_FRONT_PAINTS_MS = 800
 export interface TapPage {
   guestId: number
   url(): string
-  find(selector: string): Promise<PartOnPage>
-  picture(box: Box): Promise<Buffer>
+  find(selector: string, scroll: boolean): Promise<PartOnPage>
+  picture(box: Box, ratio: number): Promise<Buffer>
   tap(point: Point): Promise<void>
 }
 
@@ -52,34 +52,40 @@ export interface PageVerbDeps {
   sleep(ms: number): Promise<void>
 }
 
-const boxKey = (b: Box): string => [b.x, b.y, b.width, b.height].map(Math.round).join(',')
+const NOTHING_FOUND: PartOnPage = { count: 0 }
 
-function rounds(d: PageVerbDeps, page: TapPage, selector: string, first: PartOnPage): TapRounds {
-  const seenAtStart = new Set((first.frames ?? []).map(boxKey))
-  let part = first.box!
-  let view = first.view!
+function rounds(
+  d: PageVerbDeps,
+  page: TapPage,
+  selector: string,
+  first: Required<PartOnPage>
+): TapRounds {
+  const seenAtStart = new Set(first.frames.map((f) => f.src))
+  let { box: part, view, ratio } = first
   let grid: Grid | undefined
   let shownBefore = false
   return {
     picture: async () => {
       if (!shownBefore) await d.sleep(A_PAGE_BROUGHT_TO_THE_FRONT_PAINTS_MS)
       shownBefore = true
-      const now = await page.find(selector).catch((): PartOnPage => ({ count: 0 }))
+      const now = await page.find(selector, true).catch(() => NOTHING_FOUND)
       if (now.count === 1 && now.box) part = now.box
-      if (now.view) view = now.view
-      const cameIntoView = (now.frames ?? []).filter((f) => !seenAtStart.has(boxKey(f)))
-      const shown = clipTo(boxAround([part, ...cameIntoView]), view)
+      view = now.view ?? view
+      ratio = now.ratio ?? ratio
+      const cameIntoView = (now.frames ?? []).filter((f) => !seenAtStart.has(f.src))
+      const shown = clipTo(boxAround([part, ...cameIntoView.map((f) => f.box)]), view)
       if (!shown) throw new Error(OUT_OF_VIEW)
       grid = gridOver(shown)
-      return d.draw(await page.picture(shown), grid)
+      return d.draw(await page.picture(shown, ratio), grid)
     },
-    tap: async (text) => {
+    tap: async (text, going) => {
       if (!grid) return 'Koloft has no picture to tap on yet: press New picture.'
       const read = readSquares(grid, text)
       if ('unknown' in read)
         return `Koloft tapped nothing: ${read.unknown.length ? read.unknown.join(', ') : 'no square'} is not a square on the picture.`
       for (const [i, point] of read.points.entries()) {
         if (i) await d.sleep(BETWEEN_TAPS_MS)
+        if (!going()) break
         await page.tap(point)
       }
       await d.sleep(A_TAPPED_PAGE_SETTLES_MS)
@@ -97,11 +103,12 @@ async function tapAsk(
   if (d.ownerAsleep()) return refused(OWNER_ASLEEP_TAP)
   const pages = d.pages(at.tabId)
   const found = await Promise.all(
-    pages.map((p) => p.find(selector).catch((): PartOnPage => ({ count: 0 })))
+    pages.map((p) => p.find(selector, false).catch(() => NOTHING_FOUND))
   )
   if (found.reduce((n, f) => n + f.count, 0) !== 1) return refused(NO_SUCH_PART)
-  const i = found.findIndex((f) => f.count === 1)
-  const page = pages[i]
+  const page = pages[found.findIndex((f) => f.count === 1)]
+  const first = await page.find(selector, true).catch(() => NOTHING_FOUND)
+  if (first.count !== 1) return refused(NO_SUCH_PART)
   const url = page.url()
   const site = urlOrNull(url)?.host || url
   const a = await d.ask({
@@ -110,7 +117,7 @@ async function tapAsk(
     header: (name) => `👆 **${name}** asks you to tap a web page`,
     body: `Page: ${site}\n${what}\nSay which squares to tap.`,
     label: SQUARES_LABEL,
-    taps: rounds(d, page, selector, found[i])
+    taps: rounds(d, page, selector, first as Required<PartOnPage>)
   })
   if ('ended' in a) return refused(a.ended === 'declined' ? OWNER_GAVE_UP : TAPS_NOT_IN_TIME)
   return answered('passed' in a ? TAPS_PASSED : DONE_AT_THE_MAC)

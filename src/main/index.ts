@@ -524,10 +524,22 @@ import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
+import {
+  SECRET_ID_PREFIX,
+  SecretAsks,
+  type SecretAnswer,
+  type SecretAsk
+} from './discord/secretAsks'
 import { secretVerb, type FieldPage } from './agentSecret'
 import { pageVerb, type TapPage } from './agentPageTap'
-import { findPart, pictureOfPart, tapAt, type PartOnPage } from './guestTap'
+import {
+  A_PAGE_ANSWERS_WITHIN_MS,
+  findPart,
+  pictureOfPart,
+  tapAt,
+  type PartOnPage
+} from './guestTap'
+import { within } from './within'
 import { gridPictureHtml } from './tapGrid'
 import { ButlerTyping } from './discord/butlerTyping'
 import {
@@ -2106,6 +2118,15 @@ async function answerSession(tabId: string, reply: string): Promise<string | und
   return discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING
 }
 
+const ownerAsks = {
+  sessionTab: (tabId: string): string => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
+  ask: (a: SecretAsk): Promise<SecretAnswer> =>
+    secretAsks
+      ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
+      : Promise.resolve({ ended: 'timeout' }),
+  ownerAsleep: (): boolean => ownerAsleep.asleep()
+}
+
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
@@ -2150,12 +2171,7 @@ const agentRequests = new AgentRequests({
       openRoom: openRoomByRef
     }),
     [SECRET_VERB]: secretVerb({
-      sessionTab: (tabId) => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
-      ask: (a) =>
-        secretAsks
-          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
-          : Promise.resolve({ ended: 'timeout' }),
-      ownerAsleep: () => ownerAsleep.asleep(),
+      ...ownerAsks,
       machine: machineOfTab,
       pages: guestPagesOf,
       showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
@@ -2163,12 +2179,7 @@ const agentRequests = new AgentRequests({
       sleep
     }),
     page: pageVerb({
-      sessionTab: (tabId) => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
-      ask: (a) =>
-        secretAsks
-          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
-          : Promise.resolve({ ended: 'timeout' }),
-      ownerAsleep: () => ownerAsleep.asleep(),
+      ...ownerAsks,
       pages: tapPagesOf,
       draw: async (png, grid) => {
         const { html, width, height } = gridPictureHtml(png, grid)
@@ -2177,7 +2188,7 @@ const agentRequests = new AgentRequests({
           { width, height, pictureHeight: Infinity, mostPictures: 1 },
           'the page'
         )
-        return { ...shot.files[0], name: 'page.png' }
+        return shot.files[0]
       },
       sleep
     }),
@@ -3959,8 +3970,10 @@ app.whenReady().then(() => {
     place: async (tabId, card, files) => {
       const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
       if (!channelId) return undefined
-      const name = await secretAskerName(tabId)
-      if (files?.length) await link.upload(channelId, files, '')
+      const [name] = await Promise.all([
+        secretAskerName(tabId),
+        files?.length ? link.upload(channelId, files, '').catch(() => undefined) : undefined
+      ])
       const messageId = (await link.card(channelId, card(name))).at(-1)
       return messageId ? { channelId, messageId, name } : undefined
     },
@@ -5979,37 +5992,46 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   return r.stdout.trim() || `nothing (${r.stderr.trim()})`
 }
 
-function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
+function guestsOfTab(tabId: string): WebContents[] {
   return webContents
     .getAllWebContents()
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
-    .map((wc) => ({
-      guestId: wc.id,
-      url: () => wc.getURL(),
-      // PLATFORM§10
-      run: async (script: string) => {
-        await compositionDone()
-        return await wc.executeJavaScript(script)
-      },
-      reload: () =>
-        new Promise<void>((resolve) => {
-          wc.once('did-stop-loading', () => resolve())
-          wc.reload()
-        })
-    }))
+}
+
+function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
+  return guestsOfTab(tabId).map((wc) => ({
+    guestId: wc.id,
+    url: () => wc.getURL(),
+    // PLATFORM§10
+    run: async (script: string) => {
+      await compositionDone()
+      return await wc.executeJavaScript(script)
+    },
+    reload: () =>
+      new Promise<void>((resolve) => {
+        wc.once('did-stop-loading', () => resolve())
+        wc.reload()
+      })
+  }))
 }
 
 function tapPagesOf(tabId: string): TapPage[] {
-  return webContents
-    .getAllWebContents()
-    .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
-    .map((wc) => ({
-      guestId: wc.id,
-      url: () => wc.getURL(),
-      find: async (selector) => (await wc.executeJavaScript(findPart(selector))) as PartOnPage,
-      picture: (box) => pictureOfPart(wc, box),
-      tap: (point) => tapAt(wc, point)
-    }))
+  return guestsOfTab(tabId).map((wc) => ({
+    guestId: wc.id,
+    url: () => wc.getURL(),
+    find: (selector, scroll) =>
+      within(
+        wc.executeJavaScript(findPart(selector, scroll)) as Promise<PartOnPage>,
+        A_PAGE_ANSWERS_WITHIN_MS,
+        'the page did not answer'
+      ),
+    picture: (box, ratio) => pictureOfPart(wc, box, ratio),
+    // PLATFORM§10
+    tap: async (point) => {
+      await compositionDone()
+      await tapAt(wc, point)
+    }
+  }))
 }
 
 async function saveDiscordToken(token: string): Promise<boolean> {

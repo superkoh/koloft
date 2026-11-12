@@ -91,7 +91,7 @@ export function SecretPageBar({ ask }: { ask: WebAsk }): JSX.Element {
           <IconSignIn size={16} />
         )}
       </span>
-      <span className="bperm-msg">
+      <span className="bperm-msg" title={ask.kind === 'tap' ? ask.label : undefined}>
         {ask.kind === 'page' ? (
           <>
             This session needs your <b>{ask.label}</b> on this page.

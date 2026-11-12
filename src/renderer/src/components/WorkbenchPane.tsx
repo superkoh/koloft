@@ -49,6 +49,7 @@ import {
 import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
 import { workspaceOfTab } from '../sessionRows'
 import { useStore } from '../store'
+import { useShallow } from 'zustand/react/shallow'
 import {
   FILES_TAB_ID,
   activateTab,
@@ -705,33 +706,30 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       ? secretAsk
       : undefined
   const askedGuest = secretAsk && secretAsk.kind !== 'url' ? secretAsk.guestId : undefined
-  const webTabOfGuest = (tabId: string, guestId: number): string | undefined =>
-    (statesRef.current[tabId] ?? NO_TABS).tabs.find(
-      (t) => t.kind === 'web' && guestIdOf(t.id) === guestId
-    )?.id
+  const webTabOfGuest = (tabs: WorkbenchTabSet[], guestId: number): string | undefined =>
+    tabs.flatMap((s) => s.tabs).find((t) => t.kind === 'web' && guestIdOf(t.id) === guestId)?.id
   useEffect(() => {
     if (askedGuest === undefined || !ownerTab) return
-    const hit = webTabOfGuest(ownerTab, askedGuest)
+    const hit = webTabOfGuest([statesRef.current[ownerTab] ?? NO_TABS], askedGuest)
     if (!hit) return
     const st = useStore.getState()
     if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
     activate(hit)
   }, [askedGuest, ownerTab])
-  const tappedPages = useStore((s) =>
-    s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [`${a.tabId} ${a.guestId}`] : [])).join('\n')
+  const tappedGuests = useStore(
+    useShallow((s) => s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [a.guestId] : [])))
   )
   useEffect(() => {
-    const held = tappedPages
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => line.split(' '))
-      .flatMap(([tabId, guestId]) => webTabOfGuest(tabId, Number(guestId)) ?? [])
+    const all = Object.values(statesRef.current)
+    const held = tappedGuests
+      .flatMap((guest) => webTabOfGuest(all, guest) ?? [])
+      .filter((id) => !panelNow.current.staged.has(id))
     // PLATFORM§9
     for (const id of held) stage(id)
     return () => {
       for (const id of held) if (!pinnedRef.current.has(id)) unstage(id)
     }
-  }, [tappedPages])
+  }, [tappedGuests])
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined
