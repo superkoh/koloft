@@ -1,8 +1,8 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MachineRoom, signalLog, signalLogOffTheMainThread } from '../../src/main/machineRoom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MachineRoom, signalLog } from '../../src/main/machineRoom'
 
 let dir: string
 let lines: string[]
@@ -82,29 +82,33 @@ describe('the signal log the tiers are counted from', () => {
     ])
   })
 
-  it.each([
-    ['written at once', signalLog],
-    ['written off the main thread', signalLogOffTheMainThread]
-  ])(
-    '%s, it keeps whole timestamped lines in the order written, and never grows past two megabytes',
-    async (_how, make) => {
-      const file = path.join(dir, 'machine.log')
-      const write = make(file)
-      const log = async (line: string): Promise<void> => write(line)
-      await log('first')
-      expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/)
-      const line = 'x'.repeat(1000)
-      let last = Promise.resolve()
-      for (let i = 0; i < 2200; i++) last = log(`${i} ${line}`)
-      await last
-      const text = fs.readFileSync(file, 'utf8')
-      expect(text.length).toBeLessThanOrEqual(2 * 2 ** 20)
-      expect(text).not.toContain('first')
-      const kept = text.split('\n').filter(Boolean)
-      expect(kept.every((l) => l.endsWith(line))).toBe(true)
-      const numbers = kept.map((l) => Number(l.split(' ')[1]))
-      expect(numbers).toEqual([...numbers].sort((a, b) => a - b))
-      expect(numbers.at(-1)).toBe(2199)
+  it('keeps whole timestamped lines, and trims itself back under two megabytes', async () => {
+    const file = path.join(dir, 'machine.log')
+    const log = signalLog(file)
+    log('first')
+    await vi.waitFor(
+      () => expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/),
+      { timeout: 10_000 }
+    )
+    const line = 'x'.repeat(1000)
+    for (const batch of ['one', 'two', 'three']) {
+      for (let i = 0; i < 800; i++) log(line)
+      log(batch)
+      await vi.waitFor(
+        () => {
+          const whole = fs.readFileSync(file, 'utf8')
+          expect(whole).toMatch(new RegExp(` ${batch}\\n$`))
+          expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
+        },
+        { timeout: 10_000 }
+      )
     }
-  )
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    expect(lines.some((l) => l.endsWith(' first'))).toBe(false)
+    expect(
+      lines.every(
+        (l) => l.endsWith(line) || ['one', 'two', 'three'].some((b) => l.endsWith(` ${b}`))
+      )
+    ).toBe(true)
+  })
 })

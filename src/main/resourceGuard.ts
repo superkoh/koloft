@@ -58,7 +58,12 @@ export class ResourceGuard {
   }
 
   lookedAtChanged(): void {
-    if (this.room.memoryStaysCritical) void this.inTurn(() => this.lookAt(), undefined)
+    const tab = this.d.lookedAt()
+    if (!tab || !this.lowered.has(tab)) return
+    void this.inTurn(async () => {
+      await this.lift([tab], await this.d.readTrees())
+      this.push()
+    }, undefined)
   }
 
   free(tabId: string): Promise<boolean> {
@@ -74,8 +79,8 @@ export class ResourceGuard {
 
   forget(tabId: string): void {
     this.ownerWantsAtFullSpeed.delete(tabId)
-    if (!this.lowered.has(tabId)) return
     void this.inTurn(async () => {
+      if (!this.lowered.has(tabId)) return
       await this.lift([tabId], await this.d.readTrees())
       this.push()
     }, undefined)
@@ -121,7 +126,7 @@ export class ResourceGuard {
     const rows = await this.d.readTrees()
     if (!rows.length || this.quitting) return
     const trees = treesByTab(rows)
-    const startedAt = new Map(rows.map((p) => [p.pid, p.started]))
+    const byPid = new Map(rows.map((p) => [p.pid, p]))
     this.memory = {}
     for (const [tab, members] of trees)
       this.memory[tab] = members.reduce((sum, p) => sum + p.rssBytes, 0)
@@ -130,12 +135,17 @@ export class ResourceGuard {
       [...this.lowered.keys()].filter((tab) => !givingWay.includes(tab)),
       rows
     )
+    if (this.quitting) return
     const newlyLowered: number[] = []
+    const becameAnAgent: number[] = []
     for (const tab of givingWay) {
-      const before = this.lowered.get(tab)
       const now: StartedAtByPid = new Map()
-      for (const [pid, started] of before ?? [])
-        if (startedAt.get(pid) === started) now.set(pid, started)
+      for (const [pid, started] of this.lowered.get(tab) ?? []) {
+        const p = byPid.get(pid)
+        if (p?.started !== started) continue
+        if (toolsOf([p], this.d.koloftPid).length) now.set(pid, started)
+        else becameAnAgent.push(pid)
+      }
       for (const p of toolsOf(trees.get(tab) ?? [], this.d.koloftPid)) {
         if (!now.has(p.pid)) newlyLowered.push(p.pid)
         now.set(p.pid, p.started)
@@ -143,6 +153,7 @@ export class ResourceGuard {
       if (now.size) this.lowered.set(tab, now)
       else this.lowered.delete(tab)
     }
+    await this.setEach(becameAnAgent, false)
     await this.setEach(newlyLowered, true)
     this.push()
   }
@@ -156,7 +167,7 @@ export class ResourceGuard {
 
   // PLATFORM§59
   private async lift(tabs: string[], rows: TaggedProcess[]): Promise<void> {
-    if (!tabs.length) return
+    if (!tabs.length || !rows.length) return
     const startedAt = new Map(rows.map((p) => [p.pid, p.started]))
     const stillThere = new Set<number>()
     for (const tab of tabs) {
@@ -168,7 +179,7 @@ export class ResourceGuard {
   }
 
   private async setEach(pids: number[], on: boolean): Promise<void> {
-    for (let i = 0; i < pids.length; i += TASKPOLICY_RUNS_AT_ONCE)
+    for (let i = 0; i < pids.length && !(on && this.quitting); i += TASKPOLICY_RUNS_AT_ONCE)
       await Promise.all(
         pids.slice(i, i + TASKPOLICY_RUNS_AT_ONCE).map((pid) => this.d.giveWay(pid, on))
       )

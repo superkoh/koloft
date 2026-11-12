@@ -236,6 +236,33 @@ describe('getting a slowed tab back to full speed', () => {
     expect(ways).toEqual(['-b 11'])
   })
 
+  it('a slowed shell that has since become an agent program is lifted at the next look and left alone after', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = world.rows.map((p) => (p.pid === 11 ? { ...p, agent: true } : p))
+    ways.length = 0
+    await guard.tick()
+    await guard.tick()
+    expect(ways).toEqual(['-B 11'])
+    expect(guard.state().slowed).toEqual([])
+  })
+
+  it('when the process table comes back empty as memory calms, the slowed tools are remembered and lifted at the next look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    const rows = world.rows
+    world.rows = []
+    world.pressure = 2
+    ways.length = 0
+    await guard.tick()
+    expect(ways).toEqual([])
+    expect(guard.state().slowed).toEqual(['away'])
+    world.rows = rows
+    await guard.tick()
+    expect(ways).toEqual(['-B 11'])
+    expect(guard.state().slowed).toEqual([])
+  })
+
   it('opening a row does nothing while memory is not critical', async () => {
     const { guard, ways } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
     expect(await guard.free('away')).toBe(false)

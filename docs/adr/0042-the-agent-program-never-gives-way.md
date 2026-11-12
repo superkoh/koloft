@@ -27,10 +27,10 @@ and lifts what Koloft lowered and everything under those, since a lowered tool's
 children are lowered with it and lifting the parent does not reach them; a tool Koloft
 never lowered is left as it is.
 **Rejected**: lowering at "warning", or on high load — it would fire most nights and slow
-unattended work five- to sixfold with nobody to lift it, which is how the queue of #846
-came to hold nearly every session (#862 turned it off). Holding a background tab's shell
-commands with a hook, and queueing background launches — both removed with this record's
-predecessors 0041 and 0043; neither had run since #862. A variable in the tab's
+unattended work five- to sixfold with nobody to lift it. Holding a tab's shell commands
+with a hook, or queueing launches, until the machine has room — the same trigger, so the
+same nights, and a held command gives the agent nothing to read while it waits. A
+variable in the tab's
 environment that Koloft's `claude` wrapper reads to lift the program — every `claude -p`
 the agent starts inherits it and is lifted too, so the agent's own helpers compete with it
 again. Lifting an agent only while its tab is on screen — a running program cannot be
