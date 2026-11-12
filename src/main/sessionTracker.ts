@@ -497,6 +497,7 @@ export class SessionTracker extends SessionRuntime {
   dialogJustClosed?: (tabId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
+  nextMirrorPull?: (host: string) => Promise<void> | undefined
 
   private realFilesOf(tabId: string, remote: RemoteTab | undefined): RealFiles {
     const real: RealFiles = remote
@@ -697,14 +698,22 @@ export class SessionTracker extends SessionRuntime {
     const t = this.tracked.get(tabId)
     if (!t) return
     await this.parse(t).catch(() => {})
-    const turn = t.turns.open()
+    if (this.tracked.get(tabId) !== t) return
+    const turn = t.turns.open() ?? (t.remote && (await this.turnPulledLate(t, t.remote.host)))
     if (this.tracked.get(tabId) !== t || !turn) return
-    if (t.replyDone) return this.finishTurn(t, turn)
+    if (t.replyDone || turn !== t.turns.open()) return this.finishTurn(t, turn)
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = {
       turn,
       deadline: setTimeout(() => this.finishTurn(t, turn), TURN_TEXT_WAIT_MS)
     }
+  }
+
+  private async turnPulledLate(t: Tracked, host: string): Promise<TalkTurn | undefined> {
+    const lastEnded = t.turns.last(1)[0]
+    await this.nextMirrorPull?.(host)
+    await this.parse(t).catch(() => {})
+    return t.turns.after(lastEnded)
   }
 
   private finishTurn(t: Tracked, turn: TalkTurn): void {

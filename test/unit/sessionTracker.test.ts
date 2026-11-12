@@ -2037,6 +2037,88 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     ])
   })
 
+  describe('a remote tab, whose Stop can come one mirror pull before its turn’s lines', () => {
+    const RCWD = '/home/koh/app'
+    const ended: { turn: { said: { text: string }[]; reply: string } }[] = []
+    let file = ''
+    let pullsAsked = 0
+    let pull = (): void => {}
+
+    async function remoteTurnTab(sid: string): Promise<InstanceType<typeof SessionTracker>> {
+      ended.length = 0
+      pullsAsked = 0
+      const mirror = path.join(home, 'remote', sid, 'projects')
+      file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(
+        file,
+        [human('earlier question', 1), said(text('earlier answer'), 2)]
+          .map((l) => JSON.stringify(l))
+          .join('\n') + '\n'
+      )
+      const tracker = newTracker()
+      tracker.on('turn-ended', (e) => ended.push(e))
+      tracker.nextMirrorPull = (host) => {
+        expect(host).toBe('devbox')
+        pullsAsked++
+        return new Promise<void>((done) => (pull = done))
+      }
+      tracker.track('tabRT', RCWD, { host: 'devbox', projectsRoot: mirror, tmuxName: `k-${sid}` })
+      tracker.bindSession('tabRT', file, sid, RCWD)
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.title === 'earlier question')
+      return tracker
+    }
+
+    const append = (...lines: unknown[]): void =>
+      fs.appendFileSync(file, lines.map((l) => JSON.stringify(l) + '\n').join(''))
+    const replies = (): string[] => ended.map((e) => e.turn.reply)
+
+    it('a Stop that finds no turn waits for the next pull, then ends the turn that pull brought; the next turn ends on its own, and a repeated Stop ends nothing', async () => {
+      const tracker = await remoteTurnTab('88888888-8888-4888-8888-888888888888')
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect.poll(() => pullsAsked).toBe(1)
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31))
+      pull()
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+
+      append(human('pick a size', 40), said(text('Picked: Small'), 41))
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small'])
+      expect(ended.map((e) => e.turn.said.map((l) => l.text))).toEqual([
+        ['pick a colour'],
+        ['pick a size']
+      ])
+
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect.poll(() => pullsAsked).toBe(2)
+      pull()
+      await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+      expect(replies()).toEqual(['Picked: Green', 'Picked: Small'])
+    })
+
+    it('when one pull brings the early-stopped turn and the next turn’s prompt, the early Stop ends the first turn, not the new one', async () => {
+      const tracker = await remoteTurnTab('99999999-9999-4999-8999-999999999999')
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect.poll(() => pullsAsked).toBe(1)
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31), human('pick a size', 40))
+      pull()
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+
+      append(said(text('Picked: Small'), 41))
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small'])
+      expect(ended[1].turn.said.map((l) => l.text)).toEqual(['pick a size'])
+    })
+  })
+
   // CC§2
   it('a skill command is the owner’s line that opens its turn, live and on disk, so the turn ends once with its reply even when its Stop comes before any of it is on disk; a built-in command opens no turn', async () => {
     const cwd = makeWorkspace({})

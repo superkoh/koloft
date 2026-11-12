@@ -42,6 +42,10 @@ export class TurnLog {
     return true
   }
 
+  after(turn: Turn | undefined): Turn | undefined {
+    return this.turns[turn ? this.turns.indexOf(turn) + 1 : 0]
+  }
+
   last(n: number): Turn[] {
     return this.turns.slice(-n)
   }

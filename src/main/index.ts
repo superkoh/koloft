@@ -1350,6 +1350,7 @@ let githubCounts: GithubCountsSweep | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
+tracker.nextMirrorPull = (host) => remoteSync?.nextPullDone(host)
 const realFilesOn = (host: string, files: string[]): Promise<Map<string, string>> =>
   hosts.machine(host).realFiles(files)
 tracker.realFilesOn = realFilesOn
