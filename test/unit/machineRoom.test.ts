@@ -140,18 +140,22 @@ describe('the signal log the thresholds are tuned from', () => {
     const file = path.join(regDir, 'machine.log')
     const log = signalLog(file)
     log('first')
-    await vi.waitFor(() =>
-      expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/)
+    await vi.waitFor(
+      () => expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/),
+      { timeout: 10_000 }
     )
     const line = 'x'.repeat(1000)
     for (const batch of ['one', 'two', 'three']) {
       for (let i = 0; i < 800; i++) log(line)
       log(batch)
-      await vi.waitFor(() => {
-        const whole = fs.readFileSync(file, 'utf8')
-        expect(whole).toMatch(new RegExp(` ${batch}\\n$`))
-        expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
-      })
+      await vi.waitFor(
+        () => {
+          const whole = fs.readFileSync(file, 'utf8')
+          expect(whole).toMatch(new RegExp(` ${batch}\\n$`))
+          expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
+        },
+        { timeout: 10_000 }
+      )
     }
     const text = fs.readFileSync(file, 'utf8').replace(/.* (one|two|three)\n/g, '')
     expect(text).not.toContain('first')

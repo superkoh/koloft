@@ -3238,8 +3238,9 @@ app.whenReady().then(() => {
   const stalls = new StallWatchWhileFocused(
     signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
   )
-  app.on('browser-window-focus', () => stalls.focused())
-  app.on('browser-window-blur', () => stalls.blurred())
+  const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
+  app.on('browser-window-focus', followFocus)
+  app.on('browser-window-blur', () => setImmediate(followFocus))
   presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
@@ -3538,6 +3539,7 @@ app.whenReady().then(() => {
   })
 
   const userData = app.getPath('userData')
+  const droppedSessionsLog = signalLog(path.join(userData, 'dropped-sessions.log'))
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
@@ -3784,10 +3786,7 @@ app.whenReady().then(() => {
           (identityOf(key).backendId !== 'claude' &&
             !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
-    memberDropped: (sessionId, why) => {
-      droppedSessionsLog ??= signalLog(path.join(app.getPath('userData'), 'dropped-sessions.log'))
-      droppedSessionsLog(`${sessionId} ${why}`)
-    }
+    memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   butler = new Butler({
     userData,
@@ -4912,7 +4911,6 @@ const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
 const unexpectedExits = new Map<string, string>()
 let agentExitLog: ((line: string) => void) | undefined
-let droppedSessionsLog: ((line: string) => void) | undefined
 let windowOpenedAt = 0
 
 function unexpectedExitHeading(h: PtyHandle, e: TerminalExit): string {

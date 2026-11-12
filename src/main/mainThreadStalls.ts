@@ -41,7 +41,12 @@ export class StallWatchWhileFocused {
 
   constructor(private readonly log: (line: string) => void) {}
 
-  focused(): void {
+  follow(aWindowHasFocus: boolean): void {
+    if (!aWindowHasFocus) {
+      clearInterval(this.timer)
+      this.timer = undefined
+      return
+    }
     if (this.timer) return
     const watch = new StallWatch({
       log: this.log,
@@ -49,10 +54,5 @@ export class StallWatchWhileFocused {
       cpuMs: mainThreadCpuMs
     })
     this.timer = setInterval(() => watch.look(), LOOK_EVERY_MS)
-  }
-
-  blurred(): void {
-    clearInterval(this.timer)
-    this.timer = undefined
   }
 }
