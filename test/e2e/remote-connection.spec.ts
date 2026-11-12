@@ -168,14 +168,11 @@ async function startOnTheMachine(
     await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
     await agent.bound?.(page)
   }
-  const row = wsRows(page, REMOTE_WS_NAME).first()
-  if (agent.label === 'Antigravity') await theFirstWordsTurnHasEndedOnTheRow(row)
-  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
+    timeout: 60_000
+  })
   return boundInTheRemoteRow(page)
 }
-
-const theFirstWordsTurnHasEndedOnTheRow = (row: Locator): Promise<void> =>
-  expect(row.locator('.ws-tab-unread')).toHaveCount(1, { timeout: 60_000 })
 
 async function untilItCameBackOnTheMachine(
   env: E2EEnv,
@@ -408,6 +405,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         const unread = row.locator('.ws-tab-unread')
         await there.longTurn(env, page)
         await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+        await expect(unread).toHaveCount(0)
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
         await expect(unread).toHaveCount(1)
         launches = there.launches(env)
