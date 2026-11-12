@@ -765,5 +765,8 @@ function tui() {
   })
   process.on('SIGHUP', () => process.exit(0))
   process.stdout.on('error', () => process.exit(0))
-  if (!asking) start()
+  const bindDelayMs = Number(read('fake-muse-bind-delay', '0'))
+  if (asking) return
+  if (bindDelayMs) setTimeout(start, bindDelayMs)
+  else start()
 }
