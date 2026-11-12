@@ -561,24 +561,27 @@ checked** for 0.167.1; and a web search tool in a turn (§15). On 0.167.2 (2026-
 the same way against 0.167.1, two `gpt-6-luna` turns each, `approvalPolicy: never`,
 read-only sandbox): `codex --help` and the `--help` of `app-server`, `exec`, `resume`,
 `queue`, `doctor`, `update` and `agents` are byte-identical to 0.167.1's; `features list`
-differs only in `incremental_tools_legacy`, moved from `under development false` to
-`stable false`, and a new `incremental_tools_legacy_gcp stable true` (§15);
-`app-server generate-json-schema`
-(plain and `--experimental`) is byte-identical; sections 1 (`initialize` keys,
-`thread/start` keys, `thread/list` keys and 32 keys per thread; the same kinds and counts
-of notification in each of two one-word turns, and no request from the server), 13/14
-(`model/list` the same eight models, default `gpt-6.1-sol`; the token-usage fields and the
-rollout record types and counts of two turns) and, of 15, the rollout's size and its
-`additional_tools` record were measured again, the same on both, save for four more
-lines inside one developer message on 0.167.2 and sizes that drift from run to run
-(§15), and the same e2e specs passed, the remote ones (E-SSH-23/24/25) too. That
-the Linux lab machine ran 0.167.2 is **inferred, not checked**, the same way as for
-0.167.1 above. No other section was probed by hand on 0.167.2: sections 3, 5, 16, 17, 18,
-20–28, 30 and 34, and 15's login parts, stand on 0.167.0's measurements above and on
-those specs; 11 stands on 0.166.0's. Not reached on 0.167.2: a GCP provider, the only one
-the new flag acts on (read from the upstream change, **inferred, not checked**, §15);
-compaction (upstream changed only a test, `compact_remote.rs`), so §21's
-auto-compaction stays **inferred, not checked**; and a web search tool in a turn (§15).
+differs in two lines: `incremental_tools_legacy` moved from `under development false` to
+`stable false`, and `incremental_tools_legacy_gcp stable true` is new (§15);
+`app-server generate-json-schema` (plain and `--experimental`) is byte-identical;
+sections 1 (`initialize` keys, `thread/start` keys, `thread/list` keys and 32 keys per
+thread; the same 10 kinds of notification in a one-word second turn as on 0.167.1 above,
+the same kinds and counts on both in the first turn, and no request from the server),
+13/14 (`model/list` the same eight models, default `gpt-6.1-sol`; the token-usage fields
+and the rollout record types and counts of two turns) and, of 15, the rollout and its
+`additional_tools` record were measured again: the record the same on both once ids and
+times are taken out, the first turn's rollout 164 B larger on 0.167.2 for four more
+lines inside one developer message (§15). The same e2e specs passed with 0.167.2 as the
+Mac's codex, the remote ones (E-SSH-23/24/25) too. That the Linux lab machine ran
+0.167.2 is **inferred, not checked**, the same way as for 0.167.1 above. No other section
+was probed by hand on 0.167.2: sections 3, 5, 16, 17, 18, 20–28, 30 and 34, and 15's
+login parts, stand on 0.167.0's measurements above and on those specs; 11 stands on
+0.166.0's. Not reached on 0.167.2: a Google Cloud (Vertex AI) or Amazon Bedrock provider,
+the only ones the two changed flags act on, and then only for a model without
+`use_responses_lite`, which no cached model is (read from the upstream change,
+**inferred, not checked**, §15); compaction (upstream changed only a test,
+`compact_remote.rs`), so §21's auto-compaction stays **inferred, not checked**; and a web
+search tool in a turn (§15).
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
@@ -1555,25 +1558,29 @@ search tool in the request's top-level tools instead of the history's, are read 
 upstream change — **inferred, not checked**: no `web_search` appeared in either build's
 rollout, even with `-c web_search="live"`.
 
-**The same on 0.167.1 and 0.167.2.** 2026-11-12, the same way, one run per build with
-0.167.1 run first: a first turn wrote 102,890 B on 0.167.1 and 103,054 B on 0.167.2, the
-`additional_tools` record 39,546 B on both and the same once ids and times are taken
-out; a second turn added about 50.9 KB on both; the record types and counts were the
-same. This 0.167.1 is a few KB off its own figures of 2026-11-11 above, so a rollout's
-size drifts from run to run by more than a version changes it. The 164 B are four more
-lines (Figma, Finances, GitHub and Gmail, each `@openai-curated-remote`) inside the first
-turn's `<recommended_plugins>` developer message on 0.167.2, not an extra record. After
-both runs `plugin/list` answered those four as installed in both homes, and the homes'
-`cache/` and `plugins/` folders were the same, so that the difference comes from when
-the plugin catalog arrived at start, not from the version, is **inferred, not checked**
-(one run each). Koloft reads neither that message nor these flags. Read from the
-upstream change (`step_context.rs`), **inferred, not checked** as neither provider was
-run: a model with `use_responses_lite` (every model in both homes' cache) is still
-governed by `incremental_tools` alone, whatever the provider; only for a model without
-it does 0.167.2's new `incremental_tools_legacy_gcp` (`stable true`, so on by default)
-turn tool declarations on for a GCP provider, while `incremental_tools_legacy` (moved
-from `under development` to `stable`, still off by default) does so only for Amazon
-Bedrock.
+**Nearly the same on 0.167.1 and 0.167.2.** 2026-11-12, the same way, one run per build
+with 0.167.1 run first.
+
+- Sizes: a first turn wrote 102,890 B on 0.167.1 and 103,054 B on 0.167.2; the
+  `additional_tools` record was 39,546 B on both, and the same once ids and times are
+  taken out; a second turn added about 50.9 KB on both; the record types and counts
+  were the same.
+- The 164 B are four more lines (Figma, Finances, GitHub and Gmail, each
+  `@openai-curated-remote`) inside the first turn's `<recommended_plugins>` developer
+  message on 0.167.2, not an extra record. After both runs `plugin/list` answered those
+  four as installed in both homes, and the homes' `cache/` and `plugins/` folders were
+  the same. That the four lines come from when the plugin catalog arrived at start, not
+  from the version, is **inferred, not checked** (one run each).
+- This 0.167.1 is off its own 2026-11-11 figures above (about 103 KB against 107 KB for
+  the first turn, 50.9 KB against 48 KB for the second). That a rollout's size drifts
+  from run to run by a few KB is **inferred, not checked**: one run on each day.
+- The flags, read from the upstream change (`step_context.rs`), **inferred, not
+  checked**, as neither provider was run: a model with `use_responses_lite` (every
+  model in both homes' cache) is governed by `incremental_tools` alone, whatever the
+  provider. Only for a model without it does the new `incremental_tools_legacy_gcp`
+  (`stable true`, so on by default) send tool declarations step by step for a Google
+  Cloud (Vertex AI) provider, and `incremental_tools_legacy` (moved from `under
+  development` to `stable`, still off by default) for Amazon Bedrock.
 
 **The rate-limit reply also carries the credit balance and saved limit resets; one can be
 spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
@@ -1797,9 +1804,10 @@ makes the next one exit with "app-server control socket is already in use". A `-
 server here ended within 3 s of SIGTERM, idle or after a stand-in turn — not the signed-in
 two-turn case with a `codex-code-mode` child measured below, which was not rerun. On
 Linux, `codex --help` lacks only the Mac's `app` line, and `app-server --help` is the
-same as the Mac's. On 0.167.1 (2026-11-11) and 0.167.2 (2026-11-12) none of this was
-probed by hand; only the remote e2e specs ran, and passed, with the Mac on that version
-(that the machine ran it too is **inferred, not checked**, §7).
+same as the Mac's. On 0.167.1 (2026-11-11) none of this was probed by hand; only the
+remote e2e specs ran, and passed, with the Mac on 0.167.1 (that the machine ran 0.167.1
+too is **inferred, not checked**, §7). The same holds for 0.167.2 on 2026-11-12: the Mac
+on 0.167.2, the machine on 0.167.2 **inferred, not checked**.
 
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
