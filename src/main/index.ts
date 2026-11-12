@@ -124,7 +124,6 @@ import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
-  HOLD_FILE,
   HOOK_SCRIPT,
   forgetAssistMarkers,
   noteDiscordId,
@@ -197,7 +196,6 @@ import {
   mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
   remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
@@ -303,7 +301,7 @@ import {
   type LeftTab,
   type RunLeftovers
 } from './cronRunner'
-import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
+import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
@@ -950,6 +948,7 @@ attention.waitsOnAnother = (tabId) => {
   )
 }
 let uiActiveTabId: string | null = null
+let lastTabTheOwnerLookedAt: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
@@ -1397,7 +1396,6 @@ function machinePackage(): MachinePackage {
     [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
     ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
-    [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
@@ -1927,12 +1925,6 @@ const sessionDeps: SessionVerbDeps = {
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
-  },
-  waiting: {
-    list: () => guard?.queue.list() ?? [],
-    notStartedYet: () => guard?.queue.notStartedYet() ?? [],
-    hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
-    drop: (tabId) => !!guard?.queue.drop(tabId)
   },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
@@ -3361,20 +3353,19 @@ app.whenReady().then(() => {
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
       allowKoloft,
       conductor,
-      !!guard?.isBackground(tabId),
       playwrightServers
     )
   hookRegDir = hookPaths.regDir
   guard = new ResourceGuard({
-    regDir: hookPaths.regDir,
-    cores: os.cpus().length,
+    koloftPid: process.pid,
     read: readTheMachine,
-    now: Date.now,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
     memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
-    heldDirs: () => remoteHookMirrors(),
-    freeOnMachine: freeOnMachine,
-    isRemote: (tabId) => !!machineOfTab(tabId),
+    agentTabsOnThisMac: () =>
+      allSessions()
+        .map((s) => s.tabId)
+        .filter((tabId) => !machineOfTab(tabId)),
+    lookedAt: () => lastTabTheOwnerLookedAt && sleepers.liveTabOf(lastTabTheOwnerLookedAt),
     changed: (state) => sendToRenderer(CH.machine.state, state),
     readTrees: readTaggedTable,
     giveWay: process.platform === 'darwin' ? giveWay : async () => {}
@@ -3446,7 +3437,6 @@ app.whenReady().then(() => {
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
     awayDigest?.forget(e.id)
-    forgetFreeOnMachine(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
@@ -3560,8 +3550,6 @@ app.whenReady().then(() => {
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.cron.toast, message),
     noAccountMessage: noAccountNow,
-    holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
-    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
     hookRegDir: hookPaths.regDir
   }
   try {
@@ -4394,6 +4382,7 @@ app.on('before-quit', (e) => {
     pageForwards.cancelOnQuit()
   }
   quitCommitted = true
+  guard?.liftAllBeforeQuitting()
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
     if (!storedQuitPending) {
@@ -5768,36 +5757,6 @@ async function launchQuietTab(
   return r.id
 }
 
-function remoteHookMirrors(): string[] {
-  const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
-  return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
-}
-
-const freedOnMachine = new Map<string, string>()
-
-async function freeOnMachine(tabId: string): Promise<void> {
-  const host = machineOfTab(tabId)
-  if (!host) return
-  await loginEnvReady()
-  await runSsh(
-    host,
-    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [
-      tabId
-    ]),
-    { controlDir: remoteControlDir }
-  )
-  freedOnMachine.set(tabId, host)
-}
-
-function forgetFreeOnMachine(tabId: string): void {
-  const host = freedOnMachine.get(tabId)
-  if (!host) return
-  freedOnMachine.delete(tabId)
-  void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
-    controlDir: remoteControlDir
-  }).catch(() => undefined)
-}
-
 function forgetShellOnMachine(host: string, tabId: string): void {
   void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
     controlDir: remoteControlDir
@@ -6474,13 +6433,7 @@ const hosts = new Hosts(
         noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(
-            tabId,
-            dir,
-            loadSettings().statuslineBuiltin,
-            allowKoloft,
-            !!guard?.isBackground(tabId)
-          )
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
       }
     })
 )
@@ -6547,18 +6500,20 @@ function registerIpc(): void {
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
     const live = sleepers.liveTabOf(id)
-    if (guard?.isBackground(live) && ownerTyped(data)) void guard.free(live)
+    if (ownerTyped(data)) void guard?.free(live)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(live)
     if (touchesADialog(id, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
-  ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
+  ipcMain.handle(
+    CH.machine.free,
+    (_e, tabId: string) => guard?.free(sleepers.liveTabOf(tabId)) ?? false
+  )
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
-  ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     const live = sleepers.liveTabOf(id)
-    if (guard?.isBackground(live)) void guard.free(live)
+    void guard?.free(live)
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(live)
     ownerTouchedTheScreen(live)
@@ -6699,6 +6654,8 @@ function registerIpc(): void {
   })
   ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     uiActiveTabId = typeof id === 'string' && id ? id : null
+    lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
+    guard?.lookedAtChanged()
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
     if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()

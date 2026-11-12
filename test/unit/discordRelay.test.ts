@@ -512,7 +512,7 @@ describe('DiscordRelay: an owner message to a Codex or Muse butler', () => {
     const shimDir = fs.mkdtempSync(path.join(dir, 'muse-shim-'))
     const hooks = JSON.parse(
       fs.readFileSync(
-        writeMuseHooks(shimDir, shimDir, undefined, undefined, undefined, {
+        writeMuseHooks(shimDir, shimDir, undefined, undefined, {
           regDir: dir,
           tabId: TAB
         }),

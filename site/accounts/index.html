@@ -376,36 +376,125 @@
 
         <h2 id="assist">Assist and your butler</h2>
         <p>
-          <mark class="hl">Assist</mark> is Koloft's own AI. One of your accounts runs it. It does
-          small jobs for Koloft. Your butler, the AI you talk to, runs on the same agent, and works
-          whether the small jobs are on or off. Settings ▸ Assist has three rows:
-          <code>Koloft Assist</code> turns the small jobs on or off; <code>Runs on</code> picks the
-          agent, Claude, Codex, Muse or Antigravity, for the small jobs and for your butler;
-          <code>Name</code> is your butler's name.
+          <mark class="hl">Assist</mark> is Koloft's own AI. It does small jobs for Koloft, and it
+          is always on. Your butler, the AI you talk to, runs on it too. It runs on your accounts.
+          Until you pick an agent for it, it uses the agent (Claude, Codex, Muse or Antigravity) of
+          the first account you added that still works and whose agent is on in Settings ▸ Sessions.
+          Each Assist job costs a little of the plan or API balance of the account it runs on: about
+          a cent or less.
         </p>
         <p>The small jobs:</p>
         <ul class="dash">
           <li>
-            the short title of a session that an agent starts with
-            <code>koloft session new</code> (see <a href="../agents/">agents</a>)
+            <code>Name a new session</code>: a short title for a session that an agent or your
+            butler starts (see <a href="../agents/">agents</a>)
           </li>
-          <li>which docs the <a href="../workbench/#folded">folded Workbench card</a> lists</li>
           <li>
-            which folder a session you ask for in <kbd>⌘P</kbd> should start in (see
-            <a href="../sessions/#find">find any session</a>)
+            <code>Translate a handover</code>: the note a new session gets, put into your language
+            when the session was started from your own words
+          </li>
+          <li>
+            <code>After each turn</code>: decides whether a reply needs you or is only news, and
+            offers one-click answers (see <a href="../sessions/#inbox">Inbox</a>)
+          </li>
+          <li>
+            <code>Pick the documents to show</code>: which docs the
+            <a href="../workbench/#folded">folded Workbench card</a> lists
+          </li>
+          <li>
+            <code>Route what you type in ⌘P</code>: which folder, session or feature your words are
+            for (see <a href="../sessions/#find">find any session</a>)
           </li>
         </ul>
-        <p>How they run:</p>
+        <p>Settings ▸ Assist has:</p>
         <ul class="dash">
           <li>
-            on Claude it uses Haiku, on Codex GPT-6 Luna, on Muse and Antigravity their default
-            model, for the small jobs; each costs a tiny bit of that account's plan or API balance,
-            far less than one cent
+            <code>Runs on</code>: the agent for every job and for your butler, unless you pick
+            another in that job's row
           </li>
           <li>
-            with Koloft Assist off, the small jobs run without AI: a session an agent starts is
-            named after the first line of its task, the card lists every doc the agent wrote, and
-            <kbd>⌘P</kbd> opens the folder picker
+            a row for each small job, and one for your butler. Each row has a button that reads
+            <code>Default</code> until you pick something. Click it to pick that row's own
+            <code>Runs on</code>, <code>Model</code> and <code>Thinking</code>
+          </li>
+          <li><code>Name</code>: your butler's name</li>
+        </ul>
+        <p>
+          Switch an agent off in Settings ▸ Sessions and the rows that picked it go back to
+          <code>Default</code>.
+        </p>
+        <p>
+          What <code>Default</code> means for the small jobs: the model, then how hard it thinks
+          (Low, Medium):
+        </p>
+        <div class="typed-table stacked">
+          <table>
+            <thead>
+              <tr>
+                <th>agent</th>
+                <th>most jobs</th>
+                <th>After each turn</th>
+                <th>⌘P</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Claude</td>
+                <td>Haiku</td>
+                <td>Haiku</td>
+                <td>Sonnet, Low</td>
+              </tr>
+              <tr>
+                <td>Codex</td>
+                <td>GPT-6-Luna, Low</td>
+                <td>GPT-6.1-Sol, Medium</td>
+                <td>GPT-6.1-Sol, Low</td>
+              </tr>
+              <tr>
+                <td>Muse</td>
+                <td>its own model, Low</td>
+                <td>its own model, Medium</td>
+                <td>its own model, Low</td>
+              </tr>
+              <tr>
+                <td>Antigravity</td>
+                <td>Gemini 3.8 Flash, Low</td>
+                <td>Gemini 4 Argon, Medium</td>
+                <td>Gemini 3.8 Flash, Low</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          By default, your butler uses its agent's usual model and thinking. A change takes effect
+          the next time the butler starts.
+        </p>
+        <p>How the small jobs run:</p>
+        <ul class="dash">
+          <li>
+            a small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more
+            thinking is slower
+          </li>
+          <li>
+            if its agent cannot run it (no working account, say), the job runs on another of your
+            agents
+          </li>
+          <li>
+            if the account turns down the model in the table above, the job tries once more on Haiku
+            (Claude) or GPT-6-Luna (Codex), or on the agent's own model, when there is time left
+          </li>
+          <li>
+            when no answer comes, the job goes on its own way: the session is named after the first
+            line of its task; the handover note stays in English; only Koloft's own rules decide
+            whether a reply needs you, and no one-click answers show; the card lists every doc the
+            agent wrote; and in
+            <kbd>⌘P</kbd> your words go to a helper of your butler
+          </li>
+          <li>
+            when none of your accounts can run Assist (each is turned off or not working, or its
+            agent is off in Settings ▸ Sessions), the <kbd>⌘P</kbd> button still reads
+            <code>Ask AI</code>, but ⏎ opens the folder picker with your words kept (unless you
+            named a folder with @)
           </li>
         </ul>
 
@@ -424,17 +513,18 @@
         </figure>
         <p>
           Your <mark class="hl">butler</mark> is the AI you talk to in Koloft. It is called Alfred
-          until you give it another name. It is one session, on the agent Settings ▸ Assist ▸ Runs
-          on picks, and it runs on your Mac in a folder of its own, not in one of your projects.
-          Tell it what you want and it reaches your sessions for you (see
-          <a href="#what-it-can-do">what it can do</a>).
+          until you give it another name. It is one session. It runs on the agent you pick for it in
+          Settings ▸ Assist, or the one in <code>Runs on</code> if you pick none. It runs on your
+          Mac in a folder of its own, not in one of your projects. Tell it what you want and it
+          reaches your sessions for you (see <a href="#what-it-can-do">what it can do</a>).
         </p>
         <ul class="dash">
           <li>
             Its row, <code>Alfred · Butler</code>, sits at the top of the sessions list, under the
             <a href="../sessions/#inbox">Inbox</a> row. Under the name is its Discord channel, or
-            <code>not on Discord</code>. Before Assist is set up, the row is grey and says
-            <code>Not set up — click to start</code>.
+            <code>not on Discord</code>. Until it has a Discord channel, the row is grey and says
+            <code>Not set up — click to start</code> while you have no account, or while
+            <code>Skip permission prompts</code> is on and you have not yet said yes to it.
           </li>
           <li>
             When no agent can run it, a red line under the row says why: the agent is turned off,
@@ -467,9 +557,9 @@
           </li>
           <li>
             You can also talk to it from your phone, once it has a Discord channel (see
-            <a href="../discord/">discord</a>). With Assist on, what you type in <kbd>⌘P</kbd> that
-            Koloft cannot do by itself goes to a helper of your butler, which reports back to it
-            (see <a href="../sessions/#find">find any session</a>).
+            <a href="../discord/">discord</a>). What you type in <kbd>⌘P</kbd> that Koloft cannot do
+            by itself goes to a helper of your butler, which reports back to it (see
+            <a href="../sessions/#find">find any session</a>).
           </li>
         </ul>
 

@@ -35,7 +35,6 @@ import {
   MUSE_HOOKS_ENV,
   museHook,
   writeMuseHooks,
-  type MuseHold,
   type MuseRelayFiles,
   type MuseHook
 } from './museHooks'
@@ -667,8 +666,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       context: agentTools ? koloftPrompt('muse') : undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
-      ownerWords: opts.ownerWords,
-      holdWhileBusy: !!this.deps.holdWhileBusy?.(tabId)
+      ownerWords: opts.ownerWords
     })
     this.assertStarting()
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -755,14 +753,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
-    const hold = this.deps.holdWhileBusy?.(tabId) ? this.deps.holdScript : undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
-      hold && { ...hold, tabId },
       this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
@@ -813,7 +809,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
     ownerWords: string | undefined,
-    hold: MuseHold | undefined,
     relay: MuseRelayFiles | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
@@ -841,7 +836,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold, relay)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, relay)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },
