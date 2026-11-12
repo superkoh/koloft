@@ -130,7 +130,7 @@ const EVERY_KIND = [
 ]
 
 test.describe('past sessions in a folder’s empty panel', () => {
-  test('a folder added by hand lists its newest three past sessions with branch and age under the New buttons; the fourth is behind a last row that opens Restore session; a click resumes one and the block goes as its row joins the sidebar', async ({
+  test('the first folder added by hand lists its newest three past sessions with branch and age under the New buttons; the fourth is behind a last row that opens Restore session; a click resumes one, and once the folder has a row of its own its panel shows Recent and no Past sessions', async ({
     env
   }) => {
     const dir = path.join(env.home, 'old-work')
@@ -167,6 +167,18 @@ test.describe('past sessions in a folder’s empty panel', () => {
         .poll(() => readCalls(env).map((c) => c.sessionId), { timeout: AN_AGENT_BINDS_WITHIN_MS })
         .toContain(newest)
       await expect(wsRows(page, 'old-work')).toHaveCount(1)
+      await expect(wsRows(page, 'old-work')).toHaveClass(/st-waiting/, {
+        timeout: AN_AGENT_BINDS_WITHIN_MS
+      })
+
+      await closeActiveTab(app, page)
+      await page.locator('.ws-head', { hasText: 'old-work' }).click()
+      const recent = emptyPanel(page).locator('.recent-list', {
+        has: page.locator('.recent-hd', { hasText: /^Recent$/ })
+      })
+      await expect(recent.locator('.ws-tab-title')).toHaveText(['Fix the login redirect'], {
+        timeout: 20_000
+      })
       await expect(pastSessions(page)).toHaveCount(0)
     } finally {
       await quitAndClose(app)
