@@ -125,8 +125,42 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
       ])
     })
 
-    it('Antigravity: nothing, as agy started with -i sends a /name as plain text (#1618)', () => {
-      expect(names('agy')).toEqual([])
+    it('Antigravity: .agent, .agents and _agents skills in the project, as /name — none from the home, as the form cannot tell which account folder a run will get', () => {
+      expect(names('agy')).toEqual(['/agent-project', '/agents-project', '/underscore-project'])
+    })
+
+    it('Antigravity: a skill is offered only by the name in its file, even one marked not user-invocable, as that is what agy runs', () => {
+      const fs = fakeFs({
+        [`${WS}/.agents/skills`]: ['named-dir', 'nameless-dir', 'hidden-dir'],
+        [`${WS}/.agents/skills/named-dir`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/named-dir/SKILL.md`]: '---\nname: ship\n---',
+        [`${WS}/.agents/skills/nameless-dir`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/nameless-dir/SKILL.md`]: '---\ndescription: No name\n---',
+        [`${WS}/.agents/skills/hidden-dir`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/hidden-dir/SKILL.md`]: '---\nname: quiet\nuser-invocable: false\n---'
+      })
+      expect(listSkills(fs, 'agy', AT).map((s) => s.name)).toEqual(['/quiet', '/ship'])
+      expect(listSkills(fs, 'codex', AT).map((s) => s.name)).toEqual(['$nameless-dir', '$ship'])
+    })
+
+    it('Antigravity: a name in more than one project folder shows the copy agy runs: .agent first, then .agents, then _agents', () => {
+      const fs = fakeFs({
+        [`${WS}/_agents/skills`]: ['a'],
+        [`${WS}/_agents/skills/a`]: ['SKILL.md'],
+        [`${WS}/_agents/skills/a/SKILL.md`]: '---\nname: ship\ndescription: from _agents\n---',
+        [`${WS}/.agents/skills`]: ['b', 'c'],
+        [`${WS}/.agents/skills/b`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/b/SKILL.md`]: '---\nname: ship\ndescription: from .agents\n---',
+        [`${WS}/.agents/skills/c`]: ['SKILL.md'],
+        [`${WS}/.agents/skills/c/SKILL.md`]: '---\nname: tidy\ndescription: from .agents\n---',
+        [`${WS}/.agent/skills`]: ['d'],
+        [`${WS}/.agent/skills/d`]: ['SKILL.md'],
+        [`${WS}/.agent/skills/d/SKILL.md`]: '---\nname: tidy\ndescription: from .agent\n---'
+      })
+      expect(listSkills(fs, 'agy', AT).map((s) => `${s.name} ${s.description}`)).toEqual([
+        '/ship from .agents',
+        '/tidy from .agent'
+      ])
     })
   })
 
