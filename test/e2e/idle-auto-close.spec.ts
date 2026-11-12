@@ -29,7 +29,7 @@ const FULLSCREEN_TUI_MOUSE_AND_FOCUS_REPORTS_ON =
   '\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006h'
 const OLD_SCREEN_FOCUS_OUT_AND_MOUSE_MOVE = '\x1b[O\x1b[<35;10;10M'
 
-test('an idle session goes to sleep quietly, its needs-you mark unseen and kept: its process ends but its row, red dot, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes, and one typed after, reach it with nothing from the mouse moves and focus reports its old screen sent', async ({
+test('an idle session goes to sleep quietly, its needs-you mark unseen and kept: its process ends but its row, red dot, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes, one typed after, and a paste still sent to its old tab, reach it with nothing from the mouse moves and focus reports its old screen sent', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -125,6 +125,13 @@ test('an idle session goes to sleep quietly, its needs-you mark unseen and kept:
     await expect
       .poll(() => terminalText(page, wokenTab!), { timeout: 30_000 })
       .toContain('answered: after the handover')
+    await page.evaluate(
+      (id) => window.api.terminal.paste(id, '/answer pasted into the old tab', '\r'),
+      asleepTab!
+    )
+    await expect
+      .poll(() => terminalText(page, wokenTab!), { timeout: 30_000 })
+      .toContain('answered: pasted into the old tab')
     await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
     await expect(wsRows(page, 'ws-a')).toHaveCount(2)
   } finally {

@@ -14,7 +14,7 @@ const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
 
 export class SleepingTabs {
   private readonly tabs = new Map<string, OpenTab>()
-  private readonly typedWhileAsleep = new Map<string, string>()
+  private readonly typedWhileAsleep = new Map<string, { typed: string; kind: OpenTab['kind'] }>()
   private readonly wokenAs = new Map<string, string>()
   private restoredSeq = 0
 
@@ -38,7 +38,7 @@ export class SleepingTabs {
 
   add(tabId: string, t: OpenTab): void {
     this.tabs.set(tabId, t)
-    this.typedWhileAsleep.set(tabId, '')
+    this.typedWhileAsleep.set(tabId, { typed: '', kind: t.kind })
   }
 
   addRestored(t: OpenTab): string {
@@ -74,16 +74,20 @@ export class SleepingTabs {
   }
 
   heldPaste(tabId: string, text: string, typedAfter = ''): boolean {
-    if (!this.typedWhileAsleep.has(tabId)) return false
-    this.write(tabId, pasteFor(text, this.tabs.get(tabId)?.kind) + typedAfter)
+    const held = this.typedWhileAsleep.get(tabId)
+    if (!held) return false
+    this.write(tabId, pasteFor(text, held.kind) + typedAfter)
     return true
   }
 
+  liveTabOf(tabId: string): string {
+    return this.wokenAs.get(tabId) ?? tabId
+  }
+
   write(tabId: string, data: string): void {
-    const typed = this.typedWhileAsleep.get(tabId)
+    const held = this.typedWhileAsleep.get(tabId)
     const woken = this.wokenAs.get(tabId)
-    if (typed !== undefined)
-      this.typedWhileAsleep.set(tabId, typed + withoutMouseAndFocusReports(data))
+    if (held) held.typed += withoutMouseAndFocusReports(data)
     else if (woken) this.d.write(woken, withoutMouseAndFocusReports(data))
     else this.d.write(tabId, data)
   }
@@ -99,7 +103,7 @@ export class SleepingTabs {
   // CC§12 CC§18
   private async handOverTyping(oldId: string, newId: string): Promise<void> {
     const ready = await this.d.ready(newId)
-    const typed = this.typedWhileAsleep.get(oldId) ?? ''
+    const typed = this.typedWhileAsleep.get(oldId)?.typed ?? ''
     this.typedWhileAsleep.delete(oldId)
     if (!ready || !typed) return
     const keys = typed
