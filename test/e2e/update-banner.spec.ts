@@ -119,7 +119,7 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<v
 }
 
 test.describe('the update modal: what can and cannot close it, and what can stack on it', () => {
-  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte; a download of unknown size slides its bar, and with Reduce motion on the bar stands still across the whole track at once, with no slide to get there', async ({
+  test('while an update downloads, Esc, a backdrop click and a missing × all fail to close the modal, even at 100% because the install can still fail after the last byte; a download of unknown size slides its bar, and with Reduce motion on the bar stands still across the whole track at once, with no slide to get there, and a known size jumps straight to its percent', async ({
     env
   }) => {
     const fixture = withFixtureEnv(env)
@@ -139,17 +139,21 @@ test.describe('the update modal: what can and cannot close it, and what can stac
       await expect(modal).toContainText('Downloading update…')
 
       await sendDownloadProgress(app, -1)
-      const unknownSize = modal.locator('.update-progress-fill.indet')
-      await expect(unknownSize).toBeVisible()
-      const moving = (): Promise<number> => unknownSize.evaluate((el) => el.getAnimations().length)
+      const fill = modal.locator('.update-progress-fill')
+      await expect(modal.locator('.update-progress-fill.indet')).toBeVisible()
+      const moving = (): Promise<number> => fill.evaluate((el) => el.getAnimations().length)
       await expect.poll(moving).toBe(1)
-      expect(await fillsItsTrack(unknownSize)).toBe(false)
+      expect(await fillsItsTrack(fill)).toBe(false)
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await expect
-        .poll(() => unknownSize.evaluate((el) => getComputedStyle(el).animationName))
+        .poll(() => fill.evaluate((el) => getComputedStyle(el).animationName))
         .toBe('none')
       expect(await moving()).toBe(0)
-      expect(await fillsItsTrack(unknownSize)).toBe(true)
+      expect(await fillsItsTrack(fill)).toBe(true)
+
+      await sendDownloadProgress(app, 12)
+      await expect(modal.locator('.update-hint')).toHaveText('12%')
+      expect(await moving()).toBe(0)
       await page.emulateMedia({ reducedMotion: null })
 
       await sendDownloadProgress(app, 100)
