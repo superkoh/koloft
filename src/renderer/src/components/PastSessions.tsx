@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import type { SessionRow } from '@shared/types'
 import { HistoryRowMeta, useHistoryRows } from './RestoreDialog'
 import { mixesBackends } from '../sessionRows'
+import '../restoreDialog.css'
 
 const PAST_SESSIONS_SHOWN = 3
 

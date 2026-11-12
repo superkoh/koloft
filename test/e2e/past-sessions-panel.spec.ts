@@ -221,7 +221,7 @@ test.describe('past sessions in a folder’s empty panel', () => {
         const past = pastSessions(page).locator('.recent-row')
         await expect(past).toHaveCount(1, { timeout: 30_000 })
         await past.click()
-        await expect.poll(() => boundSession(page, backend, kind.remote)).toBe(id)
+        expect(await boundSession(page, backend, kind.remote)).toBe(id)
         await expect(row).toHaveCount(1)
         await expect(pastSessions(page)).toHaveCount(0)
       } finally {
