@@ -3,6 +3,7 @@ import type { AttentionEvent, AttentionKind, AttentionSubject, SessionStatus } f
 export type SavedMark = AttentionEvent & { sessionId: string }
 
 const PARKED_WHILE_ITS_TAB_RESTARTS = ':restarting'
+const STOPPED_BY_A_RESTART = { kind: 'turn-done', wasAsking: true, stoppedByRestart: true } as const
 
 export function edgeAttention(
   prev: SessionStatus | undefined,
@@ -20,6 +21,7 @@ export class AttentionTracker {
   waitsOnAnother: (tabId: string) => boolean = () => false
   watching: () => string | null = () => null
   turnDone: (tabId: string) => void = () => {}
+  outlivesKoloft: (tabId: string) => boolean = () => false
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
@@ -43,7 +45,6 @@ export class AttentionTracker {
     const carried = this.list().find((e) => e.sessionId === sessionId)
     if (!carried) return
     const askingHere = this.pending.get(tabId)
-    this.askKeptThroughWorking.delete(tabId)
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
     const wasAsking = carried.kind === 'approval' || carried.wasAsking
     this.pending.set(
@@ -70,11 +71,10 @@ export class AttentionTracker {
     subject: AttentionSubject = {}
   ): void {
     if (next === 'working') {
-      if (this.pending.get(tabId)?.wasAsking && !this.askKeptThroughWorking.has(tabId)) {
-        this.askKeptThroughWorking.add(tabId)
-        return
-      }
-      this.clear(tabId)
+      const cur = this.pending.get(tabId)
+      const mayAskAgain = cur?.wasAsking && !cur.stoppedByRestart && this.outlivesKoloft(tabId)
+      if (!mayAskAgain || this.askKeptThroughWorking.has(tabId)) this.clear(tabId)
+      else this.askKeptThroughWorking.add(tabId)
       return
     }
     const kind = edgeAttention(prev, next)
@@ -120,25 +120,22 @@ export class AttentionTracker {
   }
 
   private drop(tabId: string): void {
+    this.askKeptThroughWorking.delete(tabId)
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
   clearKeepingExit(tabId: string): void {
+    this.drop(tabId + PARKED_WHILE_ITS_TAB_RESTARTS)
     if (this.pending.get(tabId)?.kind !== 'exited') this.clear(tabId)
   }
 
-  tabRestarting(tabId: string): void {
+  tabStopping(tabId: string, restarting: boolean): void {
     const cur = this.pending.get(tabId)
-    if (cur?.kind !== 'approval' && !cur?.wasAsking) return this.clearKeepingExit(tabId)
+    const asking = cur?.kind === 'approval' || cur?.wasAsking
+    if (!restarting || !asking || !cur.sessionId) return this.clearKeepingExit(tabId)
     const parked = tabId + PARKED_WHILE_ITS_TAB_RESTARTS
     this.pending.delete(tabId)
-    this.pending.set(parked, {
-      ...cur,
-      tabId: parked,
-      kind: 'turn-done',
-      wasAsking: true,
-      stoppedByRestart: true
-    })
+    this.pending.set(parked, { ...cur, ...STOPPED_BY_A_RESTART, tabId: parked })
     this.onChange(this.list(), null)
   }
 
@@ -160,7 +157,8 @@ export class AttentionTracker {
   ): void {
     const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
     const cur = this.pending.get(tabId)
-    const sameAskAsBefore = kind === 'approval' && sameAsk && cur?.wasAsking
+    const sameAskAsBefore =
+      kind === 'approval' && sameAsk && cur?.wasAsking && !cur.stoppedByRestart
     const at = sameAskAsBefore ? cur.at : Date.now()
     const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return

@@ -32,7 +32,7 @@ type MadeLater<T> = () => T | null
 
 export interface TabSubsystems {
   slash: Pick<SlashCommands, 'closed'>
-  attention: Pick<AttentionTracker, 'clear' | 'clearKeepingExit' | 'tabRestarting'>
+  attention: Pick<AttentionTracker, 'clear' | 'tabStopping'>
   cdpTabClosed: (tabId: string) => void
   claude: Pick<ClaudeBackend, 'onPtyExit'>
   tracker: Pick<SessionTracker, 'setAlive'>
@@ -48,9 +48,7 @@ export interface TabSubsystems {
 }
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
-  lifecycle.on('stopping', (tabId, restarting) =>
-    restarting ? s.attention.tabRestarting(tabId) : s.attention.clearKeepingExit(tabId)
-  )
+  lifecycle.on('stopping', (tabId, restarting) => s.attention.tabStopping(tabId, restarting))
   lifecycle.on('stopping', (tabId) => s.cdpTabClosed(tabId))
 
   lifecycle.on('exit', ({ tabId }) => s.slash.closed(tabId))

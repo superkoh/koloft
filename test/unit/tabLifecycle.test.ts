@@ -18,8 +18,7 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     slash: { closed: say('slash.closed') },
     attention: {
       clear: say('attention.clear'),
-      clearKeepingExit: say('attention.clearKeepingExit'),
-      tabRestarting: say('attention.tabRestarting')
+      tabStopping: say('attention.tabStopping')
     },
     cdpTabClosed: say('cdpTabClosed'),
     claude: { onPtyExit: say('claude.onPtyExit') },
@@ -52,16 +51,12 @@ const exitOf = (over: Partial<TabExit> = {}): TabExit => ({
 })
 
 describe('TabLifecycle', () => {
-  it('a tab whose process is being stopped, to close or sleep, drops its attention mark but keeps its exit, and its CDP endpoint goes', () => {
-    const { lifecycle, calls } = wired()
-    lifecycle.emit('stopping', 't1', false)
-    expect(calls).toEqual(['attention.clearKeepingExit t1', 'cdpTabClosed t1'])
-  })
-
-  it('a tab being restarted hands its attention mark to the restart', () => {
-    const { lifecycle, calls } = wired()
-    lifecycle.emit('stopping', 't1', true)
-    expect(calls).toEqual(['attention.tabRestarting t1', 'cdpTabClosed t1'])
+  it('a tab whose process is being stopped, to close, restart or sleep, tells attention whether it restarts, and its CDP endpoint goes', () => {
+    for (const restarting of [false, true]) {
+      const { lifecycle, calls } = wired()
+      lifecycle.emit('stopping', 't1', restarting)
+      expect(calls).toEqual([`attention.tabStopping t1 ${restarting}`, 'cdpTabClosed t1'])
+    }
   })
 
   it('an exit, asleep or not, makes each Discord part forget the tab', () => {

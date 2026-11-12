@@ -202,8 +202,9 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     ])
   })
 
-  it('a reattached tab that works once before it shows its ask again keeps that ask as the same one, silently; a second working clears it', () => {
+  it('a reattached tab of a session that outlives Koloft, which works once before it shows its ask again, keeps that ask as the same one, silently; a second working clears it', () => {
     const { t, changes } = makeTracker(lastRun)
+    t.outlivesKoloft = () => true
     t.bound('tab-new', 'sid-2')
     t.onStatusChange('tab-new', undefined, 'waiting')
     t.onStatusChange('tab-new', 'waiting', 'working')
@@ -212,6 +213,7 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     expect(changes.at(-1)?.event).toBeNull()
 
     const other = makeTracker(lastRun).t
+    other.outlivesKoloft = () => true
     other.bound('tab-new', 'sid-2')
     other.onStatusChange('tab-new', 'waiting', 'working')
     other.onStatusChange('tab-new', 'working', 'waiting')
@@ -219,8 +221,16 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     expect(other.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
   })
 
+  it('a session that stopped with Koloft clears its ask on its first working, as that is the owner moving on', () => {
+    const { t } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    expect(t.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
+  })
+
   it('a turn a resumed session finishes after an ask it was asking is new, and notified', () => {
     const { t, changes } = makeTracker(lastRun)
+    t.outlivesKoloft = () => true
     t.bound('tab-new', 'sid-2')
     t.onStatusChange('tab-new', 'waiting', 'working')
     t.onStatusChange('tab-new', 'working', 'waiting', { sessionId: 'sid-2' })
@@ -245,8 +255,8 @@ describe('attention — a session starting again keeps its mark', () => {
     t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
     const since = t.list()[0].at
     t.onStatusChange('tab-news', 'working', 'waiting', { sessionId: 'sid-2' })
-    t.tabRestarting('tab-old')
-    t.tabRestarting('tab-news')
+    t.tabStopping('tab-old', true)
+    t.tabStopping('tab-news', true)
     t.clear('tab-old')
     expect(t.list()).toEqual([
       expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done', wasAsking: true, at: since })
@@ -256,6 +266,34 @@ describe('attention — a session starting again keeps its mark', () => {
       expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: since })
     ])
     expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('an ask stopped by a restart never comes back on screen: the restarted tab clears it on its first working even on a machine, and a new question there is a new ask', () => {
+    const { t: worked } = makeTracker()
+    worked.outlivesKoloft = () => true
+    worked.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    worked.tabStopping('tab-old', true)
+    worked.bound('tab-new', 'sid-1')
+    worked.onStatusChange('tab-new', 'waiting', 'working')
+    expect(worked.list()).toEqual([])
+
+    const { t: asked, changes } = makeTracker()
+    asked.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    asked.tabStopping('tab-old', true)
+    asked.bound('tab-new', 'sid-1')
+    asked.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
+    expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'approval' })
+    expect(asked.list()[0].stoppedByRestart).toBeUndefined()
+  })
+
+  it('a restart that never comes back leaves its ask until its tab is closed', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    t.tabStopping('tab-old', true)
+    t.clear('tab-old')
+    expect(t.list()).toHaveLength(1)
+    t.tabStopping('tab-old', false)
+    expect(t.list()).toEqual([])
   })
 
   it('a tab put to sleep keeps its mark through its process ending, until it is closed', () => {
