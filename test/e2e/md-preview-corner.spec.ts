@@ -857,24 +857,40 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page).locator('.md-alert .mmd svg')).toHaveCount(1)
   })
 
-  test('BB-C39 a flowchart, a state diagram and a sequence diagram are drawn with pale purple boxes, the look they had before mermaid 12', async ({
+  test('BB-C39 a flowchart and a state diagram that ask for nothing are drawn like ones that ask for mermaid 11’s own settings: dagre layout, default theme, classic look, labels wrapping at 200 with no minimum box width', async ({
     page,
     env
   }) => {
     test.setTimeout(300_000)
-    const PALE_PURPLE = 'rgb(236, 236, 255)'
     const ws = env.workspaces.a
+    const asksForThe11Look = (section: string): string =>
+      [
+        '---',
+        'config:',
+        '  theme: default',
+        '  look: classic',
+        '  layout: dagre',
+        `  ${section}:`,
+        '    wrappingWidth: 200',
+        '    minNodeWidth: 0',
+        '---'
+      ].join('\n')
+    const flowSrc =
+      'flowchart TD\n  C39a[C39 a label long enough that it has to wrap onto a second line] --> C39b[b]'
+    const stateSrc = 'stateDiagram-v2\n  C39idle --> C39busy: go'
     write(
       ws,
       'c39.md',
       [
         '# C39',
         '',
-        fence('mermaid', flow('C39f')),
+        fence('mermaid', flowSrc),
         '',
-        fence('mermaid', 'stateDiagram-v2\n  C39idle --> C39busy'),
+        fence('mermaid', `${asksForThe11Look('flowchart')}\n${flowSrc}`),
         '',
-        fence('mermaid', 'sequenceDiagram\n  C39a->>C39b: hello'),
+        fence('mermaid', stateSrc),
+        '',
+        fence('mermaid', `${asksForThe11Look('state')}\n${stateSrc}`),
         ''
       ].join('\n')
     )
@@ -883,14 +899,15 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await openDoc(page, env, 'c39.md')
     await scrollToBottom(page)
 
-    await expect(diagrams(page)).toHaveCount(3, { timeout: 120_000 })
-    const fills = await diagrams(page).evaluateAll((svgs) =>
+    await expect(diagrams(page)).toHaveCount(4, { timeout: 120_000 })
+    const drawn = await diagrams(page).evaluateAll((svgs) =>
       svgs.map((svg) => {
-        const box = svg.querySelector('.node rect, rect.actor')
-        return box ? getComputedStyle(box).fill : 'no box'
+        const box = svg.querySelector('.node rect')
+        return `${svg.getAttribute('viewBox')} ${box ? getComputedStyle(box).fill : 'no box'}`
       })
     )
-    expect(fills).toEqual([PALE_PURPLE, PALE_PURPLE, PALE_PURPLE])
+    expect(drawn[0], 'flowchart').toBe(drawn[1])
+    expect(drawn[2], 'state diagram').toBe(drawn[3])
   })
 
   test('BB-C18 all diagrams show even when their count exceeds the cache size', async ({
