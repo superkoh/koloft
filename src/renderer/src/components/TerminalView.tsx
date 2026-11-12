@@ -60,7 +60,6 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   const [loadedFamily, setLoadedFamily] = useState(() =>
     monoFontsLoaded(fontFamily) ? fontFamily : null
   )
-  const [focusWhenAsked] = useState(() => document.activeElement)
   useEffect(() => {
     let live = true
     void loadMonoFonts(fontFamily).then(() => {
@@ -73,13 +72,18 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   return loadedFamily === null ? (
     <div className="term" />
   ) : (
-    <LiveTerminal {...props} fontFamily={loadedFamily} focusWhenAsked={focusWhenAsked} />
+    <LiveTerminal {...props} fontFamily={loadedFamily} />
   )
+}
+
+function ownerTypesInAnotherField(): boolean {
+  const at = document.activeElement
+  if (!(at instanceof HTMLElement) || at.closest('.xterm')) return false
+  return at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || at.isContentEditable
 }
 
 function LiveTerminal({
   fontFamily,
-  focusWhenAsked,
   id,
   active,
   onUserInput,
@@ -90,7 +94,7 @@ function LiveTerminal({
   onOutput,
   maxCols,
   copiesToClipboard = false
-}: TerminalViewProps & { fontFamily: string; focusWhenAsked: Element | null }): JSX.Element {
+}: TerminalViewProps & { fontFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -523,12 +527,10 @@ function LiveTerminal({
         const term = termRef.current
         if (!term) return
         safeFit()
-        const now = document.activeElement
-        const ownerMovedFocusMeanwhile =
-          firstShow.current && now !== document.body && now !== focusWhenAsked
+        const leaveTheOwnerTyping = firstShow.current && ownerTypesInAnotherField()
         firstShow.current = false
         try {
-          if (autoFocus && !ownerMovedFocusMeanwhile) term.focus()
+          if (autoFocus && !leaveTheOwnerTyping) term.focus()
         } catch {}
         inner = requestAnimationFrame(() => {
           forceRepaint()

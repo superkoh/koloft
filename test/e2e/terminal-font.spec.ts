@@ -55,6 +55,7 @@ async function restoreWithFacesHeldBack(page: Page, meanwhile: () => Promise<voi
   })
   await page.reload()
   await waitBooted(page)
+  await expect(page.locator('.term').first()).toBeAttached()
   await meanwhile()
   expect(await page.locator('.xterm').count()).toBe(0)
   await page.evaluate(() => (window as unknown as { __releaseFaces: () => void }).__releaseFaces())
@@ -90,7 +91,7 @@ test.describe('the terminal font ships with the app', () => {
     page
   }) => {
     await restoreWithFacesHeldBack(page, async () => {})
-    expect(await focusIn(page, '.xterm')).toBe(true)
+    await expect.poll(() => focusIn(page, '.xterm')).toBe(true)
   })
 
   test('a restored terminal built once its faces have loaded leaves the keyboard in the note the owner clicked meanwhile', async ({
