@@ -94,7 +94,7 @@ describe('SleepingTabs — typing into a tab that is asleep', () => {
     sleepers.settle([live('new', 's1')])
     expect(sleepers.heldPaste('old', 'text\n')).toBe(true)
     await becomeReady('new')
-    expect(typed[0].keys.join('')).toBe('\x1b[200~text\x1b[201~\n')
+    expect(typed[0].keys.join('')).toBe('\x1b[200~\n\ntext\x1b[201~\n')
   })
 
   it('a paste into a tab that is not asleep is left for the tab itself', () => {
