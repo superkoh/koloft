@@ -576,9 +576,9 @@ export function launchLine(a: AccountView, nowMs: number): string {
       a.limits.windows.map((w) => ({ label: windowLabel(w.minutes), used: w.used })),
       { at: a.limits.at, nowMs }
     )
-  const quota = a.probeError ? [] : (a.quota ?? [])
   return accountLine(
     a.name,
-    quota.map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used }))
+    (a.quota ?? []).map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used })),
+    a.quotaAt === undefined ? undefined : { at: a.quotaAt, nowMs }
   )
 }

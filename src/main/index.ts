@@ -1586,7 +1586,7 @@ function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
 function pushHomeAccount(name: string, kind: SignInFolderKind): void {
   const key = viewKey(name, kind)
   if (findAccount(name, kind)?.status === 'ok')
-    saveHomeUsage(savedHomeUsage, key, usageViews.get(key), Date.now())
+    saveHomeUsage(savedHomeUsage, key, usageViews.get(key))
   pushAccounts()
 }
 
@@ -2927,7 +2927,10 @@ async function probeAgyAccount(name: string): Promise<void> {
   if (apiKey) usageViews.set(key, { apiKey: true })
   else if (signedIn) {
     const quota = await agyUsage(home)
-    usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
+    usageViews.set(
+      key,
+      quota ? { quota, quotaAt: Date.now() } : { ...usageViews.get(key), probeError: 'network' }
+    )
   }
   pushHomeAccount(name, 'agy-home')
 }

@@ -337,11 +337,17 @@ describe('launchLine — the account line a Muse or Antigravity tab prints befor
     )
   })
 
-  it('leaves out an Antigravity quota its last probe failed to refresh, as a bucket carries no time to say how old it is', () => {
+  it('flags an Antigravity quota read longer ago than STALE_MS, and keeps it when the last probe failed to refresh it, as a Codex or Muse limit is kept', () => {
     const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
-    expect(
-      launchLine(view({ name: 'g', kind: 'agy-home', quota, probeError: 'network' }), NOW_MS)
-    ).toBe('koloft: → g')
+    const agy = (p: Partial<AccountView>) => view({ name: 'g', kind: 'agy-home', quota, ...p })
+    expect(launchLine(agy({ quotaAt: NOW_MS }), NOW_MS)).toBe('koloft: → g · Gemini Models 5h 3%')
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(agy({ quotaAt: old }), NOW_MS)).toMatch(
+      /^koloft: → g · Gemini Models 5h 3% · \d+ min ago$/
+    )
+    expect(launchLine(agy({ quotaAt: old, probeError: 'network' }), NOW_MS)).toMatch(
+      /^koloft: → g · Gemini Models 5h 3% · \d+ min ago$/
+    )
   })
 })
 

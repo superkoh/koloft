@@ -293,6 +293,7 @@ export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
   quota?: QuotaBucket[]
+  quotaAt?: number
   probeError?: ProbeErrorKind
   apiKey?: true
 }
