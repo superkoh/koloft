@@ -155,11 +155,14 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await expect
         .poll(async () => unwrapped(await terminalText(page, tab)))
         .toContain(unwrapped('finished the sign-in in this session'))
+      await expect
+        .poll(async () => unwrapped(await terminalText(page, tab)))
+        .toContain(unwrapped('koloft exit=0'))
       await expect(page.locator(SECRET_BAR)).toHaveCount(0)
       const heard = unwrapped(await terminalText(page, tab))
       expect(heard).not.toContain(SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN)
       expect(heard).not.toContain('/auth/callback')
-      expect(heard).not.toContain(`localhost:${cli.port}`)
+      expect(heard).not.toContain(`:${cli.port}/`)
     } finally {
       await quitAndClose(app)
       await server.close()
