@@ -145,6 +145,9 @@ test.describe('the update modal: what can and cannot close it, and what can stac
       await expect.poll(moving).toBe(1)
       expect(await fillsItsTrack(unknownSize)).toBe(false)
       await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect
+        .poll(() => unknownSize.evaluate((el) => getComputedStyle(el).animationName))
+        .toBe('none')
       expect(await moving()).toBe(0)
       expect(await fillsItsTrack(unknownSize)).toBe(true)
       await page.emulateMedia({ reducedMotion: null })
