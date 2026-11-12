@@ -149,14 +149,15 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
 
 function WhyButlerCannotStart(): JSX.Element | null {
   const name = useStore((s) => s.settings.butler.name)
-  const settings = useStore((s) => s.settings)
+  const assist = useStore((s) => s.settings.assist)
+  const sessionMethods = useStore((s) => s.settings.sessionMethods)
   const accounts = useStore((s) => s.accounts)
   const openSettingsPane = useStore((s) => s.openSettingsPane)
   const { installed } = useInstalledBackends()
   if (!accounts || !installed) return null
   const start = butlerStart(
-    assistBackendsFor('butler', settings),
-    { enabled: settings.sessionMethods.enabled, installed, accounts },
+    assistBackendsFor('butler', { assist, sessionMethods, accounts }),
+    { enabled: sessionMethods.enabled, installed, accounts },
     name
   )
   if (!('error' in start)) return null

@@ -21,10 +21,18 @@ export interface ModelAndEffort {
   effort?: CronEffort
 }
 
+// CC§9 CODEX§15
+export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {
+  claude: { model: 'haiku' },
+  codex: { model: 'gpt-6-luna' },
+  muse: {},
+  agy: {}
+}
+
 // CC§9 CODEX§15 MUSE§1 AGY§21
 const SMALL_AND_QUICK: Record<BackendId, ModelAndEffort> = {
-  claude: { model: 'haiku' },
-  codex: { model: 'gpt-6-luna', effort: 'low' },
+  claude: EVERY_ACCOUNT_TAKES.claude,
+  codex: { ...EVERY_ACCOUNT_TAKES.codex, effort: 'low' },
   muse: { effort: 'low' },
   agy: { model: 'gemini-3.8-flash', effort: 'low' }
 }
@@ -115,24 +123,27 @@ export function assistBackendsFor(row: AssistRowId, s: Resolved): BackendId[] {
 
 export interface AssistLaunch extends ModelAndEffort {
   modelFromTheTable: boolean
+  effortFromTheTable: boolean
 }
 
 export function assistLaunchOn(row: AssistRowId, backend: BackendId, s: Resolved): AssistLaunch {
   const table = ASSIST_DEFAULTS[row][backend]
-  const own = assistRowBackend(row, s) === backend ? s.assist.rows?.[row] : undefined
+  const pick = s.assist.rows?.[row]
+  const own = pick?.backend === backend ? pick : undefined
   const model = own?.model ?? table.model
   const effort = takenEffort(backend, model, own?.effort ?? table.effort)
   return {
     ...(model !== undefined && { model }),
     ...(effort !== undefined && { effort }),
-    modelFromTheTable: own?.model === undefined
+    modelFromTheTable: own?.model === undefined,
+    effortFromTheTable: own?.effort === undefined
   }
 }
 
 export function withAssistPick(
   assist: AssistSetting,
   row: AssistRowId,
-  pick: AssistPick
+  pick: AssistPick | undefined
 ): AssistSetting {
   const { [row]: _former, ...others } = assist.rows ?? {}
   const kept = sanitizePick(row, pick)
@@ -144,13 +155,13 @@ export function withAssistPick(
 function sanitizePick(row: AssistRowId, raw: unknown): AssistPick | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const { backend, model, effort } = raw as Record<string, unknown>
-  const pick: AssistPick = {}
   const on = backendIdOf(backend)
-  if (on) pick.backend = on
+  if (!on) return undefined
+  const pick: AssistPick = { backend: on }
   if (typeof model === 'string' && isValidModelName(model)) pick.model = model
   if (isCronEffort(effort) && (row === 'butler' || effort !== EFFORT_A_SMALL_JOB_OUTLASTS))
     pick.effort = effort
-  return Object.keys(pick).length ? pick : undefined
+  return pick
 }
 
 export function sanitizeAssist(raw: unknown): AssistSetting {
@@ -173,7 +184,7 @@ export function assistOnMethodsThatAreOn(
   assist: AssistSetting,
   methods: SessionMethods
 ): AssistSetting {
-  const off = (b: BackendId | undefined): boolean => b !== undefined && !methods.enabled[b]
+  const off = (b: BackendId): boolean => !methods.enabled[b]
   const rows = Object.fromEntries(
     Object.entries(assist.rows ?? {}).filter(([, pick]) => !off(pick.backend))
   )

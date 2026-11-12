@@ -138,7 +138,7 @@ describe('Koloft Assist', () => {
       fs.writeFileSync(
         bin,
         `#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' "$*" >> ${JSON.stringify(asked)}\n` +
-          `case "$*" in *${model}*) echo "unknown model" >&2; exit 1 ;; esac\necho ACT\n`,
+          `case "$*" in *${model}*) echo "ERROR: The '${model}' model is not supported when using Codex with a ChatGPT account." >&2; exit 1 ;; esac\necho ACT\n`,
         { mode: 0o755 }
       )
       return {
@@ -165,10 +165,24 @@ describe('Koloft Assist', () => {
       expect(codex.models()).toEqual(['gpt-6.1-sol', 'gpt-6-luna'])
     })
 
+    it('does not run again after a failure that is not about the model', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-auth-'))
+      const bin = path.join(dir, 'codex')
+      const runs = path.join(dir, 'runs')
+      fs.writeFileSync(
+        bin,
+        `#!/bin/sh\ncat > /dev/null\necho x >> ${JSON.stringify(runs)}\necho "ERROR: not signed in" >&2\nexit 1\n`,
+        { mode: 0o755 }
+      )
+      const reply = await assistWith({ backend: 'codex' }, { codex: bin })({ ...JOB, row: 'turn' })
+      expect(reply).toBeNull()
+      expect(read(runs)?.trim().split('\n')).toHaveLength(1)
+    })
+
     it('answers nothing, with no second run, when the owner picked that model', async () => {
       const codex = codexWithout('gpt-6-astra')
       const reply = await assistWith(
-        { backend: 'codex', rows: { turn: { model: 'gpt-6-astra' } } },
+        { backend: 'codex', rows: { turn: { backend: 'codex', model: 'gpt-6-astra' } } },
         { codex: codex.bin }
       )({ ...JOB, row: 'turn' })
       expect(reply).toBeNull()
@@ -200,7 +214,10 @@ describe('Koloft Assist', () => {
       try {
         const { koloftAssist: fresh } = await import('../../src/main/assist')
         return fresh({
-          picks: picksOf({ backend: 'codex', rows: { title: { model: 'gpt-6-luna' } } }),
+          picks: picksOf({
+            backend: 'codex',
+            rows: { title: { backend: 'codex', model: 'gpt-6-luna' } }
+          }),
           enabled: () => true,
           target: async () => ({ binary: codex, env: {} })
         })

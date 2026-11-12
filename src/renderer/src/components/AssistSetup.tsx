@@ -58,6 +58,7 @@ export function AssistSetup({
   setup: AssistSetupState
   offerInstall?: boolean
 }): JSX.Element {
+  const assist = useStore((s) => s.settings.assist)
   const runsOn = useStore((s) => assistRunsOn(s.settings))
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
@@ -83,8 +84,10 @@ export function AssistSetup({
   const signIn = form && 'signIn' in form ? form : null
 
   const pick = (b: BackendId, again: string | undefined): void => {
-    if (setup.usable[b]) closeForms()
-    else if (b === 'claude') openClaudeSignIn(again)
+    if (setup.usable[b]) {
+      closeForms()
+      update({ assist: { ...assist, backend: b } })
+    } else if (b === 'claude') openClaudeSignIn(again)
     else openForm({ signIn: b, again })
   }
 
@@ -99,8 +102,8 @@ export function AssistSetup({
     <div className="assist-setup">
       <div className="quiet">
         Every session in Koloft runs on an account you add here, never on the login this Mac already
-        has. Add one, and Koloft’s own AI uses it for small jobs, like naming a new session. That is{' '}
-        <b>Koloft Assist</b>.
+        has. Add one, then pick the one that does Koloft’s small jobs, like naming a new session.
+        That is <b>Koloft Assist</b>.
       </div>
       <div className="ob-choices">
         {SESSION_BACKENDS.map((b) => {

@@ -47,7 +47,7 @@ const JOB_COPY: Record<(typeof ASSIST_JOBS)[number], { title: string; does: stri
 }
 
 const SMALL_JOB_WAIT_HINT =
-  'A small job waits 15 seconds for its answer. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'
+  'A small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'
 
 function useAgentChoice(setup: AssistSetupState): {
   listed: BackendId[]
@@ -106,16 +106,28 @@ function AssistRow({
   const typedModel = otherDraft ?? (pick?.model && !named ? pick.model : null)
   const efforts = assistEfforts(row, backend, pick?.model ?? ASSIST_DEFAULTS[row][backend].model)
 
-  const save = (next: AssistPick): void => update({ assist: withAssistPick(assist, row, next) })
+  const save = (next: Omit<AssistPick, 'backend'>, on = backend): void => {
+    const nothingOfItsOwn = on === runsOn && !next.model && !next.effort
+    update({
+      assist: withAssistPick(assist, row, nothingOfItsOwn ? undefined : { ...next, backend: on })
+    })
+  }
   const withModel = (model: string | undefined): void => {
-    const { model: _former, effort, ...rest } = pick ?? {}
-    const kept = takenEffort(backend, model ?? ASSIST_DEFAULTS[row][backend].model, effort)
-    save({ ...rest, ...(model && { model }), ...(kept && { effort: kept }) })
+    const kept = takenEffort(backend, model ?? ASSIST_DEFAULTS[row][backend].model, pick?.effort)
+    save({ ...(model && { model }), ...(kept && { effort: kept }) })
+  }
+  const typedModelError =
+    typedModel?.trim() && !isValidModelName(typedModel.trim())
+      ? CRON_SAVE_MESSAGES.model
+      : undefined
+  const commitTypedModel = (): void => {
+    if (otherDraft === null || typedModelError) return
+    withModel(otherDraft.trim() || undefined)
   }
 
   const summary = pick
     ? [
-        pick.backend && BACKEND_LABEL[pick.backend],
+        BACKEND_LABEL[pick.backend],
         pick.model && modelLabel(row, backend, pick.model),
         pick.effort && effortLabel(pick.effort)
       ]
@@ -152,8 +164,9 @@ function AssistRow({
                   ariaLabel={`${title} runs on`}
                   choice={choice}
                   onPick={(b) => {
+                    if (b === backend) return
                     setOtherDraft(null)
-                    save(b === runsOn ? {} : { backend: b })
+                    save({}, b)
                   }}
                 />
               </div>
@@ -168,25 +181,22 @@ function AssistRow({
                 setOtherDraft(null)
                 withModel(model || undefined)
               }}
-              onModelOther={(text) => {
-                setOtherDraft(text)
-                const typed = text.trim()
-                if (!typed || isValidModelName(typed)) withModel(typed || undefined)
+              onModelOther={setOtherDraft}
+              otherInput={{
+                className: 'cb-input',
+                onBlur: commitTypedModel,
+                onKeyDown: (e) => {
+                  if (e.key === 'Enter') commitTypedModel()
+                }
               }}
-              otherInput={{ className: 'cb-input' }}
               modelHint={`Default: ${whatDefaultIs(row, backend)}.`}
-              modelError={
-                typedModel?.trim() && !isValidModelName(typedModel.trim())
-                  ? CRON_SAVE_MESSAGES.model
-                  : undefined
-              }
+              modelError={typedModelError}
               efforts={efforts}
               effort={pick?.effort ?? ''}
               unsetEffort="Default"
-              onEffort={(effort) => {
-                const { effort: _former, ...rest } = pick ?? {}
-                save({ ...rest, ...(effort && { effort }) })
-              }}
+              onEffort={(effort) =>
+                save({ ...(pick?.model && { model: pick.model }), ...(effort && { effort }) })
+              }
               effortHint={
                 row === 'butler'
                   ? 'How hard it thinks before it answers. A change applies the next time it starts.'

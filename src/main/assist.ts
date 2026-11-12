@@ -4,7 +4,7 @@ import type { AssistJobId, BackendId } from '@shared/types'
 import {
   assistBackendsFor,
   assistLaunchOn,
-  type AssistLaunch,
+  EVERY_ACCOUNT_TAKES,
   type ModelAndEffort
 } from '@shared/assistPicks'
 import { lastCompletedText } from './museSessionLog'
@@ -21,14 +21,6 @@ export type Assist = (job: AssistJob) => Promise<string | null>
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
-
-// CC§9 CODEX§15
-const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {
-  claude: { model: 'haiku' },
-  codex: { model: 'gpt-6-luna' },
-  muse: {},
-  agy: {}
-}
 
 // CC§9
 const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
@@ -105,19 +97,23 @@ const ONE_SHOT: Record<
     stdin(job: AssistJob): string
     answer(out: string): string | null
     secondTryWhenLate?: true
+    saysItHasNoSuchModel?: RegExp
   }
 > = {
+  // CC§9
   claude: {
     argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
     stdin: (job) => job.prompt,
-    answer: (out) => out
+    answer: (out) => out,
+    saysItHasNoSuchModel: /issue with the selected model/
   },
   // CODEX§15
   codex: {
     argv: (_job, launch) => CODEX_ONE_SHOT(launch),
     stdin: withSystemFirst,
     answer: (out) => out,
-    secondTryWhenLate: true
+    secondTryWhenLate: true,
+    saysItHasNoSuchModel: /model is not supported/
   },
   muse: {
     argv: (job, launch) => MUSE_ONE_SHOT(withSystemFirst(job), launch),
@@ -127,7 +123,9 @@ const ONE_SHOT: Record<
   agy: {
     argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
     stdin: () => '',
-    answer: agyResponse
+    answer: agyResponse,
+    // AGY§21
+    saysItHasNoSuchModel: /invalid model selection/
   }
 }
 
@@ -152,7 +150,7 @@ function runOnce(
   input: string,
   signal: AbortSignal | undefined,
   timeoutMs: number,
-  quitByItself?: () => void
+  quitSaying?: (said: string) => void
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const child = execFile(
@@ -168,7 +166,7 @@ function runOnce(
             stderr.slice(-2000)
           )
         }
-        if (err && !err.killed && typeof err.code === 'number') quitByItself?.()
+        if (err && !err.killed && typeof err.code === 'number') quitSaying?.(stdout + stderr)
         resolve(err ? null : stdout)
       }
     )
@@ -209,11 +207,6 @@ async function withASecondTryWhenLate(
 
 const WORTH_ANOTHER_RUN_MS = 2_000
 
-function takenByEveryAccount(backend: BackendId, launch: AssistLaunch): boolean {
-  const safe = EVERY_ACCOUNT_TAKES[backend]
-  return launch.model === safe.model && launch.effort === safe.effort
-}
-
 export function koloftAssist(deps: AssistDeps): Assist {
   return async (job) => {
     const picks = deps.picks()
@@ -226,7 +219,8 @@ export function koloftAssist(deps: AssistDeps): Assist {
       const launch = assistLaunchOn(job.row, backend, picks)
       const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()
-      let refused = false
+      const safe = EVERY_ACCOUNT_TAKES[backend]
+      let modelRefused = false
       const runWith =
         (with_: ModelAndEffort): OneRun =>
         (signal, timeoutMs) =>
@@ -236,7 +230,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
             shot.stdin(job),
             signal,
             timeoutMs,
-            () => (refused = true)
+            (said) => (modelRefused = !!shot.saysItHasNoSuchModel?.test(said))
           )
       const answered = async (): Promise<string | null> => {
         const first = await (shot.secondTryWhenLate
@@ -244,12 +238,10 @@ export function koloftAssist(deps: AssistDeps): Assist {
           : runWith(launch)(job.signal, ASSIST_TIMEOUT_MS))
         const leftMs = limitMs - (Date.now() - started)
         const tableModelRefused =
-          first === null &&
-          refused &&
-          launch.modelFromTheTable &&
-          !takenByEveryAccount(backend, launch)
+          first === null && modelRefused && launch.modelFromTheTable && launch.model !== safe.model
         if (!tableModelRefused || leftMs < WORTH_ANOTHER_RUN_MS || job.signal?.aborted) return first
-        return runWith(EVERY_ACCOUNT_TAKES[backend])(job.signal, leftMs)
+        const effort = launch.effortFromTheTable ? safe.effort : launch.effort
+        return runWith({ ...safe, ...(effort && { effort }) })(job.signal, leftMs)
       }
       const out = await answered().finally(() => target.done?.())
       return out === null ? null : shot.answer(out)

@@ -1955,6 +1955,14 @@ other bullets of §9 were not re-measured on this build.
   2.5–3.3 s. So a small job is offered no `max`. One 4.1 KB turn judgement
   (`--output-format json`, `total_cost_usd`): `haiku` 1879 input tokens, all one-hour
   cache writes, $0.00048; `sonnet` at `medium` 1858, $0.0086.
+- **A model the account cannot use ends the one-shot at once, the reason on stdout.**
+  Same day and build, `--model no-such-model`: exit 1 after 1.8 s, stdout `There's an
+  issue with the selected model (no-such-model). It may not exist or you may not have
+  access to it. Run --model to pick a different model.`, and on stderr `Claude Code
+  doesn't recognize the model "no-such-model"…` and `[claude-code:unrecognized_model]
+  {…}`. Assist reads "issue with the selected model" as that refusal and, when the
+  model came from Koloft's own table, runs once more on `haiku` inside the same wait;
+  any other failure is not run again.
 - **On 86 real end-of-turn replies Sonnet judged no better than Haiku.** Same day and
   build, the owner's hand-labelled set, `src/main/turnNews.ts` as shipped, three runs
   each, four at a time: `haiku` with no effort 82 / 83 / 83 right, one reply that asks

@@ -200,18 +200,20 @@ describe('sanitizeLoadedSettings and the Assist choice', () => {
       expect(sanitizeLoadedSettings({ fontSize: 13, assist }).assist).toEqual({})
   })
 
-  it('keeps each job’s own pick, and drops a pick it cannot read, a model name no command line takes, and Max on a small job', () => {
+  it('keeps each job’s own pick, and drops a pick that names no tool, a model name no command line takes, and Max on a small job', () => {
     const rows = {
       turn: { backend: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
-      route: { model: 'has space', effort: 'max' },
-      title: { backend: 'nope' },
-      butler: { effort: 'max' },
-      unknown: { model: 'haiku' }
+      route: { backend: 'claude', model: 'has space', effort: 'max' },
+      title: { backend: 'nope', model: 'haiku' },
+      docs: { model: 'haiku' },
+      butler: { backend: 'agy', effort: 'max' },
+      unknown: { backend: 'claude', model: 'haiku' }
     }
     expect(sanitizeLoadedSettings({ assist: { rows } }).assist).toEqual({
       rows: {
         turn: { backend: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
-        butler: { effort: 'max' }
+        route: { backend: 'claude' },
+        butler: { backend: 'agy', effort: 'max' }
       }
     })
   })

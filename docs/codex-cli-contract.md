@@ -1613,9 +1613,13 @@ real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-us
   (longest 34 s); `gpt-6.1-sol` at `medium` 80 / 81 / 80 right, none read as news, no
   call over 14.5 s, but one-tap answers on 26 of 36 asks against 32–34 of 35. So the turn
   judgement runs on `gpt-6.1-sol` at `medium`.
-- That a plan without `gpt-6.1-sol` refuses it is **not probed yet** (section 14); a
-  run that exits by itself on a model from Koloft's own table is tried once more on
-  `gpt-6-luna` with no level, inside the same wait.
+- A model the account does not have: `-m gpt-no-such-model` exited 1 after 4.3 s with
+  nothing on stdout and, on stderr, ``warning: Model metadata for `gpt-no-such-model`
+  not found…`` then `ERROR: The 'gpt-no-such-model' model is not supported when using
+  Codex with a ChatGPT account.` (twice). Assist reads "model is not supported" as that
+  refusal and, when the model came from Koloft's own table, runs once more on
+  `gpt-6-luna` inside the same wait. That a plan without `gpt-6.1-sol` words its
+  refusal the same way is **not probed yet** (section 14).
 
 ## 16. Codex on a remote machine
 

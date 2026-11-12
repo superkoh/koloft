@@ -373,7 +373,7 @@ export type AssistJobId = (typeof ASSIST_JOBS)[number]
 export type AssistRowId = AssistJobId | 'butler'
 
 export interface AssistPick {
-  backend?: BackendId
+  backend: BackendId
   model?: string
   effort?: CronEffort
 }

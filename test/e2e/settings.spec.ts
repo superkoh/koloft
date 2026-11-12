@@ -33,10 +33,10 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
     await expect(pick.getByRole('button', { name: 'Max', exact: true })).toHaveCount(0)
     await pick.getByRole('button', { name: 'Opus', exact: true }).click()
     await pick.getByRole('button', { name: 'High', exact: true }).click()
-    await expect(turn).toHaveText('Opus · High')
+    await expect(turn).toHaveText('Claude · Opus · High')
     await expect.poll(saved).toEqual({
       backend: 'claude',
-      rows: { turn: { model: 'opus', effort: 'high' } }
+      rows: { turn: { backend: 'claude', model: 'opus', effort: 'high' } }
     })
 
     await pick.getByRole('button', { name: 'Default', exact: true }).first().click()

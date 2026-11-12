@@ -61,39 +61,50 @@ describe('the model and thinking a job runs with', () => {
     expect(assistLaunchOn('turn', 'codex', on({ backend: 'codex' }))).toEqual({
       model: 'gpt-6.1-sol',
       effort: 'medium',
-      modelFromTheTable: true
+      modelFromTheTable: true,
+      effortFromTheTable: true
     })
-    expect(assistLaunchOn('title', 'claude', on({}))).toEqual({
-      model: 'haiku',
-      modelFromTheTable: true
+    expect(assistLaunchOn('title', 'claude', on({}))).toMatchObject({ model: 'haiku' })
+    expect(assistLaunchOn('butler', 'claude', on({}))).toEqual({
+      modelFromTheTable: true,
+      effortFromTheTable: true
     })
-    expect(assistLaunchOn('butler', 'claude', on({}))).toEqual({ modelFromTheTable: true })
   })
 
-  it('take the job’s own model and thinking each on its own, and only on the tool the pick is for', () => {
-    const s = on({
-      backend: 'claude',
-      rows: { turn: { model: 'opus' }, route: { effort: 'high' } }
-    })
-    expect(assistLaunchOn('turn', 'claude', s)).toEqual({ model: 'opus', modelFromTheTable: false })
-    expect(assistLaunchOn('route', 'claude', s)).toEqual({
-      model: 'sonnet',
-      effort: 'high',
-      modelFromTheTable: true
-    })
-    expect(assistLaunchOn('turn', 'codex', s)).toEqual({
-      model: 'gpt-6.1-sol',
-      effort: 'medium',
-      modelFromTheTable: true
-    })
+  it('take the job’s own model and thinking each on its own, and only on the tool the pick names, even after Assist moves to another tool', () => {
+    const rows = {
+      turn: { backend: 'claude' as const, model: 'opus' },
+      route: { backend: 'claude' as const, effort: 'high' as const }
+    }
+    for (const backend of ['claude', 'codex'] as const) {
+      const s = on({ backend, rows })
+      expect(assistLaunchOn('turn', 'claude', s)).toEqual({
+        model: 'opus',
+        modelFromTheTable: false,
+        effortFromTheTable: true
+      })
+      expect(assistLaunchOn('route', 'claude', s)).toEqual({
+        model: 'sonnet',
+        effort: 'high',
+        modelFromTheTable: true,
+        effortFromTheTable: false
+      })
+      expect(assistLaunchOn('turn', 'codex', s)).toMatchObject({
+        model: 'gpt-6.1-sol',
+        effort: 'medium',
+        modelFromTheTable: true
+      })
+      expect(assistBackendsFor('turn', s)[0]).toBe('claude')
+    }
   })
 
   // AGY§21
   it('drop a thinking level the model does not take', () => {
-    const s = on({ backend: 'agy', rows: { turn: { model: 'gemini-3.1-pro' } } })
+    const s = on({ rows: { turn: { backend: 'agy', model: 'gemini-3.1-pro' } } })
     expect(assistLaunchOn('turn', 'agy', s)).toEqual({
       model: 'gemini-3.1-pro',
-      modelFromTheTable: false
+      modelFromTheTable: false,
+      effortFromTheTable: true
     })
   })
 
@@ -113,6 +124,6 @@ describe('saving a job’s pick', () => {
       backend: 'codex',
       rows: { turn: { model: 'opus', backend: 'claude' } }
     })
-    expect(withAssistPick(picked, 'turn', {})).toEqual({ backend: 'codex' })
+    expect(withAssistPick(picked, 'turn', undefined)).toEqual({ backend: 'codex' })
   })
 })
