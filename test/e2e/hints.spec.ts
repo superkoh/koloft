@@ -115,6 +115,26 @@ async function stayAbsentPastPumpGap(page: Page, ms = 4000): Promise<void> {
   await expect(card(page)).toHaveCount(0)
 }
 
+async function expectCardCoversNoSidebarRow(page: Page): Promise<void> {
+  expect(await page.locator('.side .ws-tab').count()).toBeGreaterThan(1)
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const box = document.querySelector('.hint-card')?.getBoundingClientRect()
+          if (!box) return null
+          return [...document.querySelectorAll('.side .ws-tab')].filter((row) => {
+            const r = row.getBoundingClientRect()
+            return (
+              r.right > box.left && box.right > r.left && r.bottom > box.top && box.bottom > r.top
+            )
+          }).length
+        }),
+      { timeout: 15_000 }
+    )
+    .toBe(0)
+}
+
 type HeldReads = { heldWorkbenchReads: ((state: unknown) => void)[] }
 
 async function holdWorkbenchReads(app: ElectronApplication): Promise<void> {
@@ -236,6 +256,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
         'Amber means a session needs you'
       )
       await expectAnchoredAt(page, rowSel(b))
+      await expectCardCoversNoSidebarRow(page)
       await snap(page, 'T-HN-02')
     } finally {
       await quitAndClose(app)
@@ -329,6 +350,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await expect(card(page, 'worktree')).toBeVisible({ timeout: 30_000 })
       await expect(card(page, 'worktree').locator('.h')).toHaveText('Two sessions on one folder?')
       await expectAnchoredAt(page, rowSel(await shownTabId(page)))
+      await expectCardCoversNoSidebarRow(page)
       await snap(page, 'T-HN-04')
     } finally {
       await quitAndClose(app)

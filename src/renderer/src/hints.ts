@@ -40,9 +40,13 @@ export function wbTabSelector(tabId: string): string {
   return `.wb-tab[data-wb-tab-id="${tabId}"]`
 }
 
+export function pointsAtASidebarRow(selector: string): boolean {
+  return selector.startsWith(SIDEBAR_ROW)
+}
+
 export function selectorOf(h: HintFire, panelShown: boolean, sidebarHidden: boolean): string {
   if (h.id === 'agent-web' && !panelShown) return WORKBENCH_TOGGLE
-  if (sidebarHidden && h.selector.startsWith(SIDEBAR_ROW)) return SIDEBAR_TOGGLE
+  if (sidebarHidden && pointsAtASidebarRow(h.selector)) return SIDEBAR_TOGGLE
   return h.selector
 }
 
