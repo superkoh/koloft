@@ -157,6 +157,7 @@ function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
     keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
     mirrorDir: () => directory,
     nextPull: async () => {},
+    loginPath: async () => '',
     ...overrides
   }
 }

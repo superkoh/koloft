@@ -168,6 +168,8 @@ async function claudeTab(
 const ownFile = (rel: string): string =>
   fs.existsSync(path.join(home, rel)) ? fs.readFileSync(path.join(home, rel), 'utf8') : ''
 
+const MACHINE_LOGIN_PATH_FOLDERS = '/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
+
 const machineTreeIo: TreeIo = {
   git: async (dir, args) =>
     (await execFileAsync('git', ['-C', barePath(dir), ...args])).stdout.trimEnd(),
@@ -207,7 +209,8 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
       fileExists: async () => false,
       keyed: (machine, p) => `ssh://${machine}${p}`,
       mirrorDir: () => tabDirs,
-      nextPull: async () => {}
+      nextPull: async () => {},
+      loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
     },
     changed: () => {},
     events: () => {},
@@ -441,4 +444,11 @@ it("hands a Claude Code tab on this Mac the koloft-docs plugin with agent tools 
   const off = await claudeTab(repo, {}, false)
   expect(off).toContain(docs)
   expect(off).not.toContain('KOLOFT_AGENT_PLUGIN')
+})
+
+// PLATFORM§33
+it("writes the machine's login-shell PATH into the start script of a Codex tab over SSH", async () => {
+  expect(await codexTab(`ssh://${MACHINE}${repo}`, {})).toContain(
+    `PATH="$PATH":'${MACHINE_LOGIN_PATH_FOLDERS}'`
+  )
 })

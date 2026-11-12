@@ -60,6 +60,7 @@ export interface CodexTabSpec {
   hookTrust: { key: string; hash: string }[]
   ownerWords?: string
   agentTools: boolean
+  loginPath: string
 }
 
 const SERVER_START_TRIES = 150
@@ -67,8 +68,8 @@ const SERVER_START_TRIES = 150
 // CODEX§16
 const NO_LOGIN_SHELL = 'allow_login_shell=false'
 
-// CODEX§16
-const LOGIN_PATH_TOO = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
+// CODEX§16 PLATFORM§33
+const BASH_LOGIN_PATH_WHEN_THE_USERS_SHELL_GAVE_NONE = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
 [ -n "$login_path" ] && PATH="$PATH:$login_path"`
 
 const REPLY_LANGUAGE_FILE = 'codex-reply-language.sh'
@@ -126,6 +127,10 @@ export function codexTabScript(s: CodexTabSpec): string {
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
   const skill = `${skillsFromMachineLine('$H/skills', '$M', s.agentTools)}\n`
+  // CODEX§16 PLATFORM§33
+  const loginPathToo = s.loginPath
+    ? `PATH="$PATH":${shq(s.loginPath)}`
+    : BASH_LOGIN_PATH_WHEN_THE_USERS_SHELL_GAVE_NONE
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
@@ -136,7 +141,7 @@ mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" "${serversDir(s.inst
 ${skill}cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S".* "${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
-${ownerWords}${LOGIN_PATH_TOO}
+${ownerWords}${loginPathToo}
 (
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"

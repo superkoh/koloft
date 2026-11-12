@@ -244,6 +244,7 @@ export interface CodexMachineDeps {
   keyed(machine: string, onMachine: string): string
   mirrorDir(machine: string): string
   nextPull(machine: string): Promise<void>
+  loginPath(machine: string): Promise<string>
 }
 
 function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promise<string[]> {
@@ -957,16 +958,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
-      const [hookTrust, , trustedThere, ownConfig] = machine
+      const [hookTrust, , trustedThere, ownConfig, loginPath] = machine
         ? await Promise.all([
             this.koloftHookStates(hooks),
             this.sweptOnce(machine),
             askMachineTrust &&
               (trustedOnMachine.includes(barePath(cwd)) ||
                 this.machineTrusts(parseRemoteKey(cwd)!)),
-            askMachineTrust ? this.ownConfig(home) : {}
+            askMachineTrust ? this.ownConfig(home) : {},
+            this.machineDeps()
+              .loginPath(machine)
+              .catch(() => '')
           ])
-        : [[], undefined, false, {}]
+        : [[], undefined, false, {}, '']
       // CODEX§16
       const launchFlags = trustedThere
         ? machineTrustedFolderFlags(ownConfig)
@@ -1037,7 +1041,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
                 config: serverConfig,
                 hookTrust: hookTrust.map((h) => ({ key: h.key, hash: h.currentHash })),
                 ownerWords: opts.ownerWords,
-                agentTools: !!agent
+                agentTools: !!agent,
+                loginPath
               })
             ]
           }
