@@ -2039,7 +2039,6 @@ describe('SessionTracker — what each turn said: the owner, another session, an
 
   describe('a remote tab, whose Stop can come one mirror pull before its turn’s lines', () => {
     const RCWD = '/home/koh/app'
-    const A_STOP_ON_AN_UNCHANGED_FILE_IS_HANDLED_WITHIN_MS = 500
     const ended: { turn: { said: { text: string }[]; reply: string } }[] = []
     let file = ''
 
@@ -2095,8 +2094,10 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         ['pick a size']
       ])
 
+      tracker.setStatus('tabRT', 'working')
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status === 'working')
       tracker.receive('tabRT', { type: 'stop' })
-      await new Promise((r) => setTimeout(r, A_STOP_ON_AN_UNCHANGED_FILE_IS_HANDLED_WITHIN_MS))
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status !== 'working')
       append(human('pick a shape', 50))
       await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
       expect(replies()).toEqual(['Picked: Green', 'Picked: Small'])
