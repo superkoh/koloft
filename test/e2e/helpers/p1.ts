@@ -8,10 +8,20 @@ import { seedSettings, type E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
 import type {
   BackendAvailability,
+  BackendId,
   ButlerSession,
   DiscordSettings,
   SessionWorkbenchState
 } from '../../../src/shared/types'
+
+const CHEAPEST_PICK: Record<BackendId, string> = {
+  claude: '--model sonnet --effort low',
+  codex: '--model gpt-6-luna --effort low',
+  muse: '--effort low',
+  agy: '--model gemini-3.8-flash --effort low'
+}
+
+export const picksFor = (backend: BackendId): string => CHEAPEST_PICK[backend]
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 export const SCREEN_DIR = path.join(REPO_ROOT, 'test-results', 'p1-screens')

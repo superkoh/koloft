@@ -34,7 +34,10 @@ test.describe('while the Mac is busy, a session started for someone else does no
         .toBe(true)
       await page.evaluate(
         (id) =>
-          window.api.terminal.write(id!, '/koloft session new --name helper -- look around\r'),
+          window.api.terminal.write(
+            id!,
+            '/koloft session new --model sonnet --effort low --name helper -- look around\r'
+          ),
         owner
       )
       const otherTab = (): Promise<string | undefined> =>

@@ -150,7 +150,7 @@ test.describe('attention markers come from real session-status transitions (shim
       await expect.poll(() => markOn(page, parentTab), { timeout: 25_000 }).toBeTruthy()
       const type = (tab: string, line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
-      await type(parentTab, '/koloft session new -- help me')
+      await type(parentTab, '/koloft session new --model sonnet --effort low -- help me')
       await waitForCalls(env, 2)
       const helper = page.locator(`.ws .ws-tab:not([data-tab-id="${parentTab}"])`)
       await expect(helper).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })

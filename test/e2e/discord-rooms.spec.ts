@@ -3,7 +3,13 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
-import { startSessionIn, terminalText, waitBooted, waitConductorStarted } from './helpers/p1'
+import {
+  startSessionIn,
+  terminalText,
+  waitBooted,
+  waitConductorStarted,
+  picksFor
+} from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import {
   addRemoteWorkspace,
@@ -90,7 +96,10 @@ async function talkedToInItsRoom(
   workspace: string,
   onTheMachine?: (session: SessionInfo, messageId: string) => Promise<void>
 ): Promise<void> {
-  fake.say(OWNER, `/koloft session new --workspace ${workspace} --backend ${backend} -- warm up`)
+  fake.say(
+    OWNER,
+    `/koloft session new ${picksFor(backend)} --workspace ${workspace} --backend ${backend} -- warm up`
+  )
   const room = await theRoom(fake)
   expect(room.auto_archive_duration).toBe(ONE_DAY_MINUTES)
   await expect
@@ -294,7 +303,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
         .poll(() => fake.threadMembers)
         .toContainEqual({ threadId: room.id, userId: OWNER.id })
 
-      fake.say(OWNER, '/koloft session new --name Tidy -- sort it')
+      fake.say(OWNER, '/koloft session new --model sonnet --effort low --name Tidy -- sort it')
       await expect
         .poll(
           async () =>
@@ -316,7 +325,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     env
   }) => {
     await withTheButler(env, async (page, fake) => {
-      fake.say(OWNER, '/koloft session new --workspace ws-a -- warm up')
+      fake.say(OWNER, '/koloft session new --model sonnet --effort low --workspace ws-a -- warm up')
       const room = await theRoom(fake)
       await sessionOf(page, 'claude')
       fake.say(OWNER, 'only for the butler')

@@ -67,7 +67,10 @@ async function roomOfANewSession(
   fake: FakeDiscord,
   workspace: string
 ): Promise<{ room: FakeThread; session: SessionInfo }> {
-  fake.say(OWNER, `/koloft session new --workspace ${workspace} -- warm up`)
+  fake.say(
+    OWNER,
+    `/koloft session new --model sonnet --effort low --workspace ${workspace} -- warm up`
+  )
   await expect
     .poll(() => fake.threads.filter((t) => t.parent_id === CHANNEL).length, {
       timeout: STARTS_AND_ANSWERS_MS

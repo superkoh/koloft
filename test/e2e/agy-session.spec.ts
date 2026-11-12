@@ -484,7 +484,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         (t) =>
           window.api.terminal.write(
             t,
-            '!koloft session new --name kid-agy -- report back when done\r'
+            '!koloft session new --model gemini-3.8-flash --effort low --name kid-agy -- report back when done\r'
           ),
         parent.tabId
       )

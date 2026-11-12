@@ -1,14 +1,23 @@
-import type {
-  BackendId,
-  CreateTabOptions,
-  QueuedLaunch,
-  SessionInfo,
-  SessionRow,
-  SessionStatus,
-  WorkspaceRows,
-  WorktreeInfo
+import {
+  CRON_EFFORTS,
+  isCronEffort,
+  type BackendId,
+  type CronEffort,
+  type CreateTabOptions,
+  type QueuedLaunch,
+  type SessionInfo,
+  type SessionRow,
+  type SessionStatus,
+  type WorkspaceRows,
+  type WorktreeInfo
 } from '@shared/types'
-import { BUTLER_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
+import { NAMED_MODELS, effortsFor, modelAndEffortChoices, takenEffort } from '@shared/cronModels'
+import {
+  BUTLER_SAYS_OPENING,
+  DISCORD_PREFIX,
+  PICK_FOR_THE_TASK,
+  ownerSays
+} from '@shared/agentGuide'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
@@ -73,15 +82,20 @@ export interface NewSessionArgs {
   workspace?: string
   worktree?: string
   model?: string
+  effort?: CronEffort
   backend?: BackendId
   prompt: string
 }
 
-const NEW_FLAGS: Record<string, 'name' | 'workspace' | 'worktree' | 'model' | 'backend'> = {
+const NEW_FLAGS: Record<
+  string,
+  'name' | 'workspace' | 'worktree' | 'model' | 'effort' | 'backend'
+> = {
   '--name': 'name',
   '--workspace': 'workspace',
   '-w': 'worktree',
   '--model': 'model',
+  '--effort': 'effort',
   '--backend': 'backend'
 }
 
@@ -109,6 +123,9 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
       const backend = backendIdOf(value)
       if (!backend) return fail(`--backend is one of ${SESSION_BACKENDS.join(', ')}.`)
       flags.backend = backend
+    } else if (key === 'effort') {
+      if (!isCronEffort(value)) return fail(`--effort is one of ${CRON_EFFORTS.join(', ')}.`)
+      flags.effort = value
     } else flags[key] = value
     i++
   }
@@ -494,6 +511,14 @@ export const roomStarted = (link: string): string =>
 const hasNoName = (backend: BackendId): string =>
   `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
+function modelAndEffortRefusal(backend: BackendId, args: NewSessionArgs): string | null {
+  const needsModel = NAMED_MODELS[backend].length > 0
+  if ((needsModel && !args.model) || !args.effort)
+    return `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${needsModel ? '--model and --effort' : '--effort'}: ${modelAndEffortChoices(backend)}. Pick ${PICK_FOR_THE_TASK}.`
+  if (takenEffort(backend, args.model, args.effort)) return null
+  return `koloft session new: ${args.model} does not take --effort ${args.effort}; it takes ${effortsFor(backend, args.model).join(', ')}.`
+}
+
 function starterNamer(
   d: SessionVerbDeps,
   everyRow: PlacedRow[],
@@ -561,6 +586,8 @@ async function startSibling(
     )
   if (!namedAtLaunch(backend, isRemoteKey(workspace)) && args.name !== undefined)
     return refused(hasNoName(backend), EXIT_USAGE)
+  const unpicked = modelAndEffortRefusal(backend, args)
+  if (unpicked) return refused(unpicked, EXIT_USAGE)
   const launched = await launchSibling(
     d,
     names,
@@ -700,6 +727,7 @@ async function launchSibling(
       name,
       worktree,
       model: args.model,
+      effort: args.effort,
       // ADR-0028
       permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
       ownerWords,

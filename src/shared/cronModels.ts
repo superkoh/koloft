@@ -49,6 +49,15 @@ export function effortsFor(backend: BackendId, model: string | undefined): reado
   return (model && AGY_EFFORTS_OF.get(model)) || AGY_EFFORTS_EVERY_MODEL_TAKES
 }
 
+export function modelAndEffortChoices(backend: BackendId): string {
+  const efforts = (model?: string): string => effortsFor(backend, model).join('|')
+  const models = NAMED_MODELS[backend]
+  if (models.length === 0) return `--effort ${efforts()}`
+  return models.every((m) => efforts(m.id) === efforts(models[0].id))
+    ? `--model ${models.map((m) => m.id).join('|')} with --effort ${efforts(models[0].id)}`
+    : models.map((m) => `--model ${m.id} with --effort ${efforts(m.id)}`).join('; ')
+}
+
 export function takenEffort(
   backend: BackendId,
   model: string | undefined,

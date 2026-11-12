@@ -11,7 +11,8 @@ import {
   startSessionIn,
   terminalText,
   waitBooted,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
@@ -896,7 +897,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
               ?.tabId
           fake.say(
             OWNER,
-            `Start one new ${BACKEND_LABEL[child]} session (koloft session new --backend ${child} --workspace ws-a) in the ws-a workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
+            `Start one new ${BACKEND_LABEL[child]} session (koloft session new ${picksFor(child)} --backend ${child} --workspace ws-a) in the ws-a workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
           )
           await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: A_REAL_MODEL_TURN_MS })
           await expect
