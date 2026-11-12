@@ -6062,7 +6062,7 @@ async function copyToPhone(
         }),
     fileDiff: (file) => hosts.of(file).gitFileDiff(file),
     send: (files, parts) => relay.sendParts(channelId, files, parts),
-    sendsLater: (rest) => relay.cardsWaitFor(tabId, rest)
+    cardsWaitFor: (copy) => relay.cardsWaitFor(tabId, copy)
   })
   if (!relay.reaches(tabId)) {
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))

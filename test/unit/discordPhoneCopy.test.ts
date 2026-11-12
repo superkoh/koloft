@@ -49,7 +49,7 @@ function deps(
     send: async (files, parts) => {
       sent.push({ files, parts })
     },
-    sendsLater: () => undefined,
+    cardsWaitFor: () => undefined,
     ...over
   }
 }
@@ -170,21 +170,21 @@ describe('sendPhoneCopy', () => {
     expect(await sendPhoneCopy(d, { page: 'http://localhost:1' }, WHERE)).toBe(
       'Koloft could not also send it to the room: it did not load in time. Say what it shows in your reply.'
     )
+    expect(d.sent).toEqual([])
   })
 
-  it('a copy slower than the reply can wait for: the reply says it is still on its way, and a failure later is told in the room before what waits for the copy goes on', async () => {
+  it('a copy slower than the reply can wait for: cards wait for it from its start, the reply says it is still on its way, and a failure later is told in the room before the cards go on', async () => {
     let fail!: (e: Error) => void
-    const later: Promise<void>[] = []
+    const waitedFor: Promise<void>[] = []
     const d = deps({
       shoot: () => new Promise((_, reject) => (fail = reject)),
-      sendsLater: (rest) => void later.push(rest)
+      cardsWaitFor: (copy) => void waitedFor.push(copy)
     })
-    expect(await sendPhoneCopy(d, { page: 'http://localhost:1' }, WHERE, 0)).toBe(
-      stillSending(WHERE)
-    )
-    expect(later).toHaveLength(1)
+    const reply = sendPhoneCopy(d, { page: 'http://localhost:1' }, WHERE, 0)
+    expect(waitedFor).toHaveLength(1)
+    expect(await reply).toBe(stillSending(WHERE))
     fail(new Error('it did not load in time.'))
-    await Promise.all(later)
+    await Promise.all(waitedFor)
     expect(d.sent).toEqual([
       {
         files: [],

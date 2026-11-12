@@ -111,6 +111,16 @@ function shows(page: Page, fake: FakeDiscord, room: FakeThread, session: Session
   }
 }
 
+async function onePictureThenTheCard(fake: FakeDiscord, room: FakeThread): Promise<void> {
+  const inRoom = (): FakePost[] => fake.posted.filter((p) => p.channelId === room.id)
+  const cardAt = (): number => inRoom().findIndex((p) => /is waiting for you/.test(p.content))
+  await expect.poll(cardAt, { timeout: STARTS_AND_ANSWERS_MS }).toBeGreaterThan(-1)
+  const uploads = inRoom().filter((p) => p.files.length)
+  expect(uploads).toHaveLength(1)
+  expect(isPng(uploads[0].files[0].data)).toBe(true)
+  expect(inRoom().indexOf(uploads[0])).toBeLessThan(cardAt())
+}
+
 function fixtureFiles(dir: string): void {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(
@@ -227,13 +237,7 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
       expect(await said()).not.toContain('Sent')
 
       fs.writeFileSync(presence, 'idle')
-      const inRoom = (): FakePost[] => fake.posted.filter((p) => p.channelId === room.id)
-      const cardAt = (): number => inRoom().findIndex((p) => /is waiting for you/.test(p.content))
-      await expect.poll(cardAt, { timeout: STARTS_AND_ANSWERS_MS }).toBeGreaterThan(-1)
-      const uploads = inRoom().filter((p) => p.files.length)
-      expect(uploads).toHaveLength(1)
-      expect(isPng(uploads[0].files[0].data)).toBe(true)
-      expect(inRoom().indexOf(uploads[0])).toBeLessThan(cardAt())
+      await onePictureThenTheCard(fake, room)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -258,14 +262,7 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
       await expect
         .poll(async () => unwrapped(await said()), { timeout: STARTS_AND_ANSWERS_MS })
         .toContain(unwrapped("Koloft is still sending a copy to this session's room"))
-
-      const inRoom = (): FakePost[] => fake.posted.filter((p) => p.channelId === room.id)
-      const cardAt = (): number => inRoom().findIndex((p) => /is waiting for you/.test(p.content))
-      await expect.poll(cardAt, { timeout: STARTS_AND_ANSWERS_MS }).toBeGreaterThan(-1)
-      const uploads = inRoom().filter((p) => p.files.length)
-      expect(uploads).toHaveLength(1)
-      expect(isPng(uploads[0].files[0].data)).toBe(true)
-      expect(inRoom().indexOf(uploads[0])).toBeLessThan(cardAt())
+      await onePictureThenTheCard(fake, room)
     } finally {
       await quitAndClose(app)
       await fake.close()

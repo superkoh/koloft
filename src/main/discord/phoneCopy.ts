@@ -27,7 +27,7 @@ export interface PhoneCopyDeps {
   readBytes(file: string): Promise<Buffer>
   fileDiff(file: string): Promise<FileDiff>
   send(files: DiscordFile[], parts: string[]): Promise<void>
-  sendsLater(rest: Promise<void>): void
+  cardsWaitFor(copy: Promise<void>): void
 }
 
 const MOST_MESSAGES = 10
@@ -235,6 +235,12 @@ export async function sendPhoneCopy(
     (said) => ({ said }),
     (error: unknown) => ({ error: errorText(error) })
   )
+  let toldStillSending = false
+  d.cardsWaitFor(
+    sending.then((r) =>
+      toldStillSending && 'error' in r ? sayCouldNotSend(d, shown, r.error) : undefined
+    )
+  )
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<undefined>(
     (resolve) => (timer = setTimeout(() => resolve(undefined), reportedWithinMs))
@@ -242,6 +248,6 @@ export async function sendPhoneCopy(
   const first = await Promise.race([sending, late])
   clearTimeout(timer)
   if (first) return 'said' in first ? first.said : couldNot(where, first.error)
-  d.sendsLater(sending.then((r) => ('error' in r ? sayCouldNotSend(d, shown, r.error) : undefined)))
+  toldStillSending = true
   return stillSending(where)
 }

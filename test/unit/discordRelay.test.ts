@@ -1648,6 +1648,17 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       `${butlerAsks('Assist')} Which 1?`
     ])
   })
+
+  it('a copy that fails while a card waits for it does not keep that card or the next one from being posted', async () => {
+    let open: CodexQuestion | undefined
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    relay.cardsWaitFor(TAB, Promise.reject(new Error('the upload broke')))
+    for (const n of [1, 2]) {
+      open = { id: `q${n}`, questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }] }
+      relay.codexAsked(TAB, open)
+      await vi.waitFor(() => expect(posts).toHaveLength(n))
+    }
+  })
 })
 
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {
