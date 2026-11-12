@@ -8,6 +8,7 @@ import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
+import { aboveItsTools } from './agentLift'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
@@ -38,6 +39,7 @@ interface CreateArgs {
   id?: string
   executable?: string
   argv?: string[]
+  aboveItsTools?: boolean
   processEnv?: NodeJS.ProcessEnv
   koloftShim: false | { hookSettings(tabId: string): string | undefined }
   finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
@@ -285,17 +287,17 @@ export class PtyManager extends EventEmitter {
         )
       )
     }
-    const proc = pty.spawn(
-      args.executable ?? shell,
-      args.executable ? (args.argv ?? []) : login.args,
-      {
-        name: 'xterm-256color',
-        cols: args.cols ?? 80,
-        rows: args.rows ?? 24,
-        cwd: args.cwd,
-        env
-      }
-    )
+    const program = args.executable
+      ? [args.executable, ...(args.argv ?? [])]
+      : [shell, ...login.args]
+    const [file, ...fileArgs] = args.aboveItsTools ? aboveItsTools(program) : program
+    const proc = pty.spawn(file, fileArgs, {
+      name: 'xterm-256color',
+      cols: args.cols ?? 80,
+      rows: args.rows ?? 24,
+      cwd: args.cwd,
+      env
+    })
 
     const handle: PtyHandle = {
       id,

@@ -266,6 +266,12 @@ describe('CodexSessions', () => {
     expect(argv[at - 1]).toBe('-c')
   })
 
+  it('starts the Codex TUI with its hold on fast keys turned off, so each typed key shows at once', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv ?? []
+    expect(argv[argv.indexOf('disable_paste_burst=true') - 1]).toBe('-c')
+  })
+
   it('replaces membership on native new while keeping the former history available', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
