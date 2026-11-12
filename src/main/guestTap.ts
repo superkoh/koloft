@@ -4,7 +4,7 @@ import { within } from './within'
 import type { Box, Point } from './tapGrid'
 
 export interface FrameOnPage {
-  src: string
+  key: string
   box: Box
 }
 
@@ -26,7 +26,7 @@ export const findPart = (selector: string, scroll: boolean): string => `(() => {
   const boxOf = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height } }
   const view = { x: 0, y: 0, width: document.documentElement.clientWidth || innerWidth, height: document.documentElement.clientHeight || innerHeight }
   const shown = (e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0 }
-  const frames = [...document.querySelectorAll('iframe')].filter(shown).map((f) => ({ src: f.src, box: boxOf(f) })).filter(({ box: b }) =>
+  const frames = [...document.querySelectorAll('iframe')].map((f, i) => ({ f, key: f.src || '#' + i })).filter(({ f }) => shown(f)).map(({ f, key }) => ({ key, box: boxOf(f) })).filter(({ box: b }) =>
     b.width > 0 && b.height > 0 && b.x < view.width && b.y < view.height && b.x + b.width > 0 && b.y + b.height > 0)
   return { count: 1, box: boxOf(els[0]), frames, view, ratio: devicePixelRatio }
 })()`

@@ -49,6 +49,7 @@ const CONDUCTOR_STARTS_MS = 60_000
 const CARD_HEADER = /^👆 \*\*.+\*\* asks you to tap a web page/
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
 const PAGE_ZOOM = 1.5
+const WINDOW_ZOOM = 1.25
 
 const HOLDER = { width: 300, height: 150 }
 const FRAME = { x: 75, y: 45, width: 150, height: 60 }
@@ -108,7 +109,8 @@ function zoomPage(app: ElectronApplication, urlPart: string, zoom: number): Prom
 async function colorAt(
   app: ElectronApplication,
   png: Buffer,
-  at: { x: number; y: number }
+  at: { x: number; y: number },
+  shown: { width: number; height: number } = HOLDER
 ): Promise<[number, number, number]> {
   return app.evaluate(
     ({ nativeImage }, [b64, fx, fy]) => {
@@ -119,7 +121,7 @@ async function colorAt(
         (Math.floor((fy as number) * height) * width + Math.floor((fx as number) * width)) * 4
       return [bmp[i + 2], bmp[i + 1], bmp[i]] as [number, number, number]
     },
-    [png.toString('base64'), at.x / HOLDER.width, at.y / HOLDER.height] as const
+    [png.toString('base64'), at.x / shown.width, at.y / shown.height] as const
   )
 }
 
@@ -244,6 +246,72 @@ test.describe('koloft page tap: the owner taps a part of a web page from Discord
         .toContain(bare(DONE_AT_THE_MAC))
       expect(cards(fake)).toEqual([])
       expect(pictures(fake)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+      await server.close()
+    }
+  })
+
+  test('in a Koloft window zoomed to 1.25, on a page that must scroll to the check and holds a blank frame of its own, a picture question that a tap opens joins the next picture, and a square named in it lands there', async ({
+    env
+  }) => {
+    seedBinding(env)
+    const fake = await startFakeDiscord(env)
+    const server = await startEchoServer()
+    const app = await launchApp(env)
+    try {
+      servePageWithAFrameFromAnotherSite(server)
+      server.page(
+        '/puzzle',
+        '<!doctype html><style>html,body{margin:0;height:100%;background:rgb(0,170,60)}</style>' +
+          '<script>let n=0;addEventListener("click",function(e){n++;parent.postMessage({puzzle:n,trusted:e.isTrusted},"*")})</script>'
+      )
+      const QUESTION = { x: 10, y: 1000, width: 240, height: 180 }
+      const url = server.page(
+        '/quiz',
+        '<!doctype html><title>quiz</title><style>body{margin:0;height:3000px;background:#fff}iframe{position:absolute;border:0}' +
+          `#holder{position:absolute;left:10px;top:1200px;width:${HOLDER.width}px;height:${HOLDER.height}px}` +
+          `#holder iframe{left:${FRAME.x}px;top:${FRAME.y}px;width:${FRAME.width}px;height:${FRAME.height}px}</style>` +
+          '<iframe style="left:400px;top:1210px;width:50px;height:50px;background:#000"></iframe>' +
+          `<div id="holder"><iframe src="${server.localhostUrl('/frame')}"></iframe></div>` +
+          `<iframe id="question" src="${server.localhostUrl('/puzzle')}" style="left:${QUESTION.x}px;top:-2000px;width:${QUESTION.width}px;height:${QUESTION.height}px"></iframe>` +
+          '<script>let seen={};addEventListener("message",function(e){Object.assign(seen,e.data);' +
+          `document.getElementById("question").style.top="${QUESTION.y}px";` +
+          'document.title="taps:"+seen.n+":"+seen.trusted+"|puzzle:"+seen.puzzle+":"+seen.trusted})</script>'
+      )
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => fake.identifies).toBe(1)
+      await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+      await app.evaluate(({ BrowserWindow }, zoom) => {
+        BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(zoom)
+      }, WINDOW_ZOOM)
+      const tab = await sessionTab(page, env)
+      await type(page, tab, `/koloft open ${url}`)
+      const guest = await guestByUrl(app, '/quiz')
+      await expect(guest.locator('#holder iframe')).toBeAttached()
+      await type(page, tab, '/koloft page tap "#holder" -- "Tick the box."')
+
+      await expect.poll(() => cards(fake).length, { timeout: 30_000 }).toBe(1)
+      const first = pictures(fake)[0].files[0].data
+      expect((await colorAt(app, first, { x: 160, y: 90 }))[2]).toBeGreaterThan(200)
+      expect(Math.min(...(await colorAt(app, first, { x: 40, y: 130 })))).toBeGreaterThan(200)
+      const card = cards(fake)[0]
+      fake.press(OWNER, card.buttons![0], card.channelId)
+      fake.submit(OWNER, card.buttons![0].id, 'G4', card.channelId)
+      await expect.poll(() => guest.title(), { timeout: 20_000 }).toMatch(/^taps:1:true/)
+
+      await expect.poll(() => cards(fake).length, { timeout: 30_000 }).toBe(2)
+      const shown = { width: HOLDER.width, height: 1200 + HOLDER.height - QUESTION.y }
+      const second = pictures(fake)[1].files[0].data
+      const inQuestion = await colorAt(app, second, { x: 140, y: 105 }, shown)
+      expect(inQuestion[1]).toBeGreaterThan(130)
+      expect(inQuestion[0]).toBeLessThan(60)
+      const next = cards(fake)[1]
+      fake.press(OWNER, next.buttons![0], next.channelId)
+      fake.submit(OWNER, next.buttons![0].id, 'E4', next.channelId)
+      await expect.poll(() => guest.title(), { timeout: 20_000 }).toMatch(/\|puzzle:1:true$/)
     } finally {
       await quitAndClose(app)
       await fake.close()

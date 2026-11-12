@@ -2,7 +2,7 @@ import { urlOrNull } from '@shared/browserRoute'
 import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
 import type { SecretAnswer, SecretAsk, TapRounds } from './discord/secretAsks'
 import type { DiscordFile } from './discord/link'
-import type { FrameOnPage, PartOnPage } from './guestTap'
+import type { PartOnPage } from './guestTap'
 import {
   boxAround,
   clipTo,
@@ -60,21 +60,20 @@ function rounds(
   selector: string,
   first: Required<PartOnPage>
 ): TapRounds {
-  const keyOf = (f: FrameOnPage): string =>
-    f.src || [f.box.x, f.box.y, f.box.width, f.box.height].map(Math.round).join(',')
-  const seenAtStart = new Set(first.frames.map(keyOf))
+  let seenAtStart: Set<string> | undefined
   let { box: part, view, ratio } = first
   let grid: Grid | undefined
-  let shownBefore = false
   return {
     picture: async () => {
-      if (!shownBefore) await d.sleep(A_PAGE_BROUGHT_TO_THE_FRONT_PAINTS_MS)
-      shownBefore = true
+      if (!seenAtStart) await d.sleep(A_PAGE_BROUGHT_TO_THE_FRONT_PAINTS_MS)
       const now = await page.find(selector, true).catch(() => NOTHING_FOUND)
       if (now.count === 1 && now.box) part = now.box
       view = now.view ?? view
       ratio = now.ratio ?? ratio
-      const cameIntoView = (now.frames ?? []).filter((f) => !seenAtStart.has(keyOf(f)))
+      const frames = now.frames ?? []
+      seenAtStart ??= new Set(frames.map((f) => f.key))
+      const seen = seenAtStart
+      const cameIntoView = frames.filter((f) => !seen.has(f.key))
       const shown = clipTo(boxAround([part, ...cameIntoView.map((f) => f.box)]), view)
       if (!shown) throw new Error(OUT_OF_VIEW)
       const drawn = gridOver(shown)

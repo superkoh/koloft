@@ -959,7 +959,12 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
     (`capturePage(rect)` did not answer in 20 s) until the Workbench rendered it as a
     staged page (§9); then the picture and the click both worked. With a Playwright
     client attached through the relay (which turns on focus emulation), the picture and
-    the click worked the same, staged or not.
+    the click worked the same, staged or not (one run each; no test keeps this case).
+  - The Koloft window zoomed to 1.25 with the host's `setZoomFactor`, on a 2× display:
+    the guest's `devicePixelRatio` read 2.5 and its `innerWidth` 558 against the host's
+    1152, so the guest took the window's zoom on; `devicePixelRatio` over the display's
+    scale gave the right rect, and the guest's `getZoomFactor()` also read 1.25 in this
+    run (the "answers 1" case of §8 did not show). Taps at the page's CSS points landed.
 
 ## §17 Playwright as a CDP client
 
