@@ -251,7 +251,7 @@ const COMPACTION_SHOWS_AFTER_MS = 500
 const CONTEXT_SUMMARY = 'context_summary'
 // AGY§8
 const LISTED_TITLE_AFTER_PROMPT_MS = 1000
-const LISTED_TITLE_READS_AFTER_A_TURN = 10
+const LISTED_TITLE_REREADS_AFTER_A_TURN = 10
 // AGY§14 AGY§26
 const KEYS = { yes: '1', noCommand: '4', noEdit: '2', noCreateOrRead: '\x1b' } as const
 const TOOL_IN_BLOCKED_MESSAGE_RE = /^Approve (\w+):/
@@ -1271,7 +1271,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!id) return
     const chasing = run.titleChase?.id === id
-    run.titleChase = { id, readsLeft: LISTED_TITLE_READS_AFTER_A_TURN }
+    run.titleChase = { id, readsLeft: LISTED_TITLE_REREADS_AFTER_A_TURN }
     if (!chasing) void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
@@ -1326,8 +1326,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const current = this.runs.get(run.tabId) === run && run.info?.nativeSessionId === id
     const chased = chase && run.titleChase?.id === id ? run.titleChase : undefined
     if (chased) {
-      if (current && rows && !name && chased.readsLeft-- > 0)
-        return this.takeListedTitleSoon(run, id, true)
+      if (current && !name && chased.readsLeft-- > 0) return this.takeListedTitleSoon(run, id, true)
       run.titleChase = undefined
     }
     if (!current || !name || !run.info) return
