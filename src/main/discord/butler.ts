@@ -6,6 +6,7 @@ import type {
   ButlerSetting,
   ConductorOpenResult,
   ConductorSaveResult,
+  CronEffort,
   DiscordChannel,
   DiscordSettings,
   SessionRoom
@@ -24,9 +25,16 @@ export interface ButlerLaunch {
   role: string
   title: string
   firstPrompt?: string
+  model?: string
+  effort?: CronEffort
 }
 
-export type AssistBackendPick = { backend: BackendId; because?: string }
+export type AssistBackendPick = {
+  backend: BackendId
+  because?: string
+  model?: string
+  effort?: CronEffort
+}
 export type AssistBackendChoice = AssistBackendPick | { error: string }
 
 export interface ButlerDeps {
@@ -193,7 +201,8 @@ export class Butler {
     this.changeSession(() => ({
       sessionIds,
       ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
-      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {})
+      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {}),
+      ...(keepLast && s.carried ? { carried: s.carried } : {})
     }))
   }
 
@@ -277,10 +286,24 @@ export class Butler {
     choice: AssistBackendPick,
     firstPrompt?: string
   ): Promise<ConductorOpenResult> {
-    const launch = this.launchFor(choice.backend)
-    const key = this.session.lastSessionKey
-    const resumable = key !== undefined && identityOf(key).backendId === launch.backend
-    if (key !== undefined && !resumable)
+    const launch: ButlerLaunch = {
+      ...this.launchFor(choice.backend),
+      ...(choice.model && { model: choice.model }),
+      ...(choice.effort && { effort: choice.effort })
+    }
+    const last = this.session.lastSessionKey
+    const sameAgent = last !== undefined && identityOf(last).backendId === launch.backend
+    // CC§3 CODEX§11
+    const carried = this.session.carried
+    const keepsWhatItNoLongerNames =
+      sameAgent && ((!!carried?.model && !launch.model) || (!!carried?.effort && !launch.effort))
+    const key = keepsWhatItNoLongerNames ? undefined : last
+    const resumable = key !== undefined && sameAgent
+    if (keepsWhatItNoLongerNames)
+      this.d.toast(
+        `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model or thinking, so it starts a new conversation.`
+      )
+    else if (last !== undefined && !resumable)
       this.d.toast(
         `${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
       )
@@ -311,6 +334,15 @@ export class Butler {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
+    this.changeSession(({ carried: _before, ...kept }) => ({
+      ...kept,
+      ...((launch.model || launch.effort) && {
+        carried: {
+          ...(launch.model && { model: launch.model }),
+          ...(launch.effort && { effort: launch.effort })
+        }
+      })
+    }))
     if (resumedOld && key !== undefined) this.tellOfTodo(key)
     this.resident = tabId
     // AGY§8

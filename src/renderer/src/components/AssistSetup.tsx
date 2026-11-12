@@ -1,7 +1,10 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
 import { accountToSignInAgain } from '@shared/accountUsage'
+import { assistRunsOn } from '@shared/assistPicks'
+import { settingsPaneName } from '@shared/paletteFeatures'
 import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
+import { assistInputs } from '../butlerRows'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import {
@@ -15,16 +18,9 @@ import {
 } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
-// CC§9 CODEX§15 MUSE§1 AGY§2
-export const ASSIST_RUNS_ON: Record<BackendId, string> = {
-  claude: 'Haiku, about 750 tokens a job',
-  codex: 'GPT-6 Luna, a few thousand tokens a job',
-  muse: 'Muse’s default model',
-  agy: 'Antigravity’s default model, plus a short title call, per job'
-}
-
+// CC§9 CODEX§15
 export const ASSIST_COST_LINE =
-  'Each Assist job costs a tiny bit of that account’s plan or API balance — far less than one cent.'
+  'Each Assist job costs a little of that account’s plan or API balance: about a cent or less.'
 
 function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
   const openSignInTab = useStore((s) => s.openSignInTab)
@@ -64,6 +60,7 @@ export function AssistSetup({
   offerInstall?: boolean
 }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
+  const runsOn = useStore((s) => assistRunsOn(assistInputs(s)))
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
@@ -90,7 +87,7 @@ export function AssistSetup({
   const pick = (b: BackendId, again: string | undefined): void => {
     if (setup.usable[b]) {
       closeForms()
-      update({ assist: { on: true, backend: b } })
+      update({ assist: { ...assist, backend: b } })
     } else if (b === 'claude') openClaudeSignIn(again)
     else openForm({ signIn: b, again })
   }
@@ -117,13 +114,15 @@ export function AssistSetup({
           return (
             <button
               key={b}
-              className={'choice' + (assist?.backend === b && setup.usable[b] ? ' on' : '')}
+              className={'choice' + (runsOn === b && setup.usable[b] ? ' on' : '')}
               onClick={() => pick(b, again)}
             >
               <span className="choice-t">{BACKEND_LABEL[b]}</span>
               <span className="choice-d">
                 {setup.usable[b]
-                  ? `Signed in. Assist uses ${ASSIST_RUNS_ON[b]}.`
+                  ? runsOn === b
+                    ? 'Signed in. Assist runs on it.'
+                    : 'Signed in.'
                   : again
                     ? `"${again}" is not signed in. Click to sign in again.`
                     : 'No account yet. Click to sign in.'}
@@ -133,8 +132,8 @@ export function AssistSetup({
         })}
       </div>
       <div className="quiet">
-        {ASSIST_COST_LINE} Turn it off any time in Settings ▸ Sessions; Koloft then does those jobs
-        without AI. Have a Claude token?{' '}
+        {ASSIST_COST_LINE} Choose what each job runs on in {settingsPaneName('assist')}. Have a
+        Claude token?{' '}
         <button className="ob-link" onClick={() => openForm({ paste: 'oauth' })}>
           Paste it
         </button>

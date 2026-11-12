@@ -179,7 +179,6 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   test('⌘⏎ typed on the keyboard in ⌘P, with a session open and Focus Mode ready on ⌘⏎, reaches the palette and starts the words, and Focus Mode stays off', async ({
     shown: { app, page }
   }) => {
-    await page.evaluate(() => window.api.settings.set({ assist: { on: false, backend: 'claude' } }))
     await sessionIn(page, 'ws-a')
     await clickIntoTerminal(app, page)
     realKey(KEY_P, COMMAND_FLAG)
@@ -192,8 +191,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       )
     ).toBe(true)
     realKey(KEY_RETURN, COMMAND_FLAG)
-    await expect(page.getByRole('dialog', { name: 'New Session in…' })).toBeVisible()
-    await expect(palette(page)).toHaveCount(0)
+    await expect(palette(page)).toHaveCount(0, { timeout: 30_000 })
     const terminalShown = (): Promise<boolean> =>
       page.evaluate(
         () => ((document.querySelector('.term-island') as HTMLElement | null)?.offsetWidth ?? 0) > 0

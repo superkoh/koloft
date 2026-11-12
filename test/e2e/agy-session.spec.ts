@@ -130,7 +130,7 @@ function lockHolders(lock: string): string {
 function seedConductor(env: E2EEnv): void {
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend: 'claude' },
+    assist: { backend: 'claude' },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
@@ -193,7 +193,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     const PROMPT = 'Tidy the agy readme'
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
       JSON.stringify({ workspace: 1, worktree: 'main', title: 'Agy readme', why: 'ws-a.' })
@@ -242,7 +242,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     env
   }) => {
     installAgy(env)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -1243,7 +1243,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   }) => {
     const PROMPT = 'Fix the flaky login test'
     installAgy(env)
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'agy' } })
+    seedSettings(env, { hintsOff: true, assist: { backend: 'agy' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-agy-assist-reply'),
       JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', why: 'ws-a.' })
@@ -1267,7 +1267,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       for (const shot of oneShots) {
         expect(shot.argv[0].startsWith(`--gemini_dir=${shots}${path.sep}agy-`)).toBe(true)
         expect(shot.argv.slice(1, 2)).toEqual(['-p'])
-        expect(shot.argv.slice(3)).toEqual(['--output-format', 'json'])
+        expect(shot.argv.slice(3)).toEqual([
+          '--output-format',
+          'json',
+          '--model',
+          'gemini-3.8-flash',
+          '--effort',
+          'low'
+        ])
         expect(shot.env.GEMINI_API_KEY).toBe(true)
       }
       expect(oneShots.some((c) => c.argv[2].includes(PROMPT))).toBe(true)

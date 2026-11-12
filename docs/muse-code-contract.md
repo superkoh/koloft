@@ -99,6 +99,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   answering the terminal's queries, each quit sent 10 s after launch with the input box
   drawn, the code read by `waitpid`).
 
+- `muse exec --help` (1.4.11, Docker, offline with `MUSE_NO_AUTO_UPDATE=1`, 2026-11-11)
+  lists `--model <ID>` and `--reasoning-effort <EFFORT>` among `exec`'s own options:
+  "none|minimal|low|medium|high|xhigh|max|ultra (default: high; alias: --effort)". With
+  `--provider echo` the flag is refused, exit 2: `--reasoning-effort is not supported
+  with --provider echo`. Koloft's one-shot passes it after `exec` (`src/main/assist.ts`);
+  how long a real one-shot takes at each level is **not probed yet** — Koloft has no
+  Muse account.
+
 ## §2 Where Muse keeps its data
 
 - museHome (sessions, live registry) is `$XDG_DATA_HOME/muse`, else

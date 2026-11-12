@@ -6,7 +6,8 @@ import type {
   DiscordSettings,
   SessionRoom
 } from './types'
-import { DEFAULT_BUTLER_NAME } from './types'
+import { DEFAULT_BUTLER_NAME, isCronEffort } from './types'
+import { isValidModelName } from './cronNames'
 import { basename } from './preview'
 import { parseRemoteKey } from './remoteKey'
 import { isRecord } from './workbenchState'
@@ -134,20 +135,30 @@ function legacyBindings(rawDiscord: unknown): LegacyBinding[] {
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
   const knowsTodo = strings(raw.knowsTodo)
+  const carried = cleanCarried(raw.carried)
   return {
     sessionIds: strings(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
-    ...(knowsTodo.length ? { knowsTodo } : {})
+    ...(knowsTodo.length ? { knowsTodo } : {}),
+    ...(carried ? { carried } : {})
   }
 }
 
+function cleanCarried(raw: unknown): ButlerSession['carried'] {
+  if (!isRecord(raw)) return undefined
+  const model = typeof raw.model === 'string' && isValidModelName(raw.model) ? raw.model : undefined
+  const effort = isCronEffort(raw.effort) ? raw.effort : undefined
+  return model || effort ? { ...(model && { model }), ...(effort && { effort }) } : undefined
+}
+
 function mergedSessions(sessions: ButlerSession[]): ButlerSession {
-  const lastSessionKey = sessions.find((s) => s.lastSessionKey)?.lastSessionKey
+  const last = sessions.find((s) => s.lastSessionKey)
   const knowsTodo = [...new Set(sessions.flatMap((s) => s.knowsTodo ?? []))]
   return {
     sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
-    ...(lastSessionKey ? { lastSessionKey } : {}),
-    ...(knowsTodo.length ? { knowsTodo } : {})
+    ...(last?.lastSessionKey ? { lastSessionKey: last.lastSessionKey } : {}),
+    ...(knowsTodo.length ? { knowsTodo } : {}),
+    ...(last?.carried ? { carried: last.carried } : {})
   }
 }
 

@@ -92,12 +92,12 @@ import {
   identityOf,
   messagingOf,
   reachedBySendMessage,
-  preferredAssistBackend,
   effectiveBackend,
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
+import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -1771,7 +1771,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
   agy: () => agyOneShotTarget()
 }
 const assist = koloftAssist({
-  setting: () => loadSettings().assist,
+  picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
@@ -1791,16 +1791,19 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  const preferred = preferredAssistBackend(settings)
+  const order = assistBackendsFor('butler', settings)
+  const preferred = order[0]
   const inputs = {
     enabled: settings.sessionMethods.enabled,
     installed: await installedBackends(),
     accounts: listAccounts()
   }
-  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const choice = butlerStart(order, inputs, butlerNameNow())
   const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
-  return choice
+  if ('error' in choice) return choice
+  const { model, effort } = assistLaunchOn('butler', choice.backend, settings)
+  return { ...choice, ...(model && { model }), ...(effort && { effort }) }
 }
 
 function logWhyButlerIsNotOn(
@@ -3786,7 +3789,9 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
+          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title,
+          model: l.model,
+          effort: l.effort
         },
         l.title
       ),
@@ -3798,7 +3803,9 @@ app.whenReady().then(() => {
         role: l.role,
         conductor: true,
         permission: ownersPermission(),
-        trustFolder: true
+        trustFolder: true,
+        model: l.model,
+        effort: l.effort
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
       const spawned: SpawnedTab = {
@@ -6238,7 +6245,7 @@ function butlerTarget(ref: string): Target | undefined {
     key: 'butler',
     name: butlerNameNow(),
     backend:
-      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
+      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || assistRowBackend('butler', loadSettings()),
     remote: false,
     tabId,
     butler: true,

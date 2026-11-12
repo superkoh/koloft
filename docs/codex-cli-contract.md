@@ -882,7 +882,9 @@ turns, each turn's settings read from the rollout's `turn_context` (its keys as 
   on a bare resume. `-m gpt-6-sol -c model_reasoning_effort="low"` on that TUI line was
   taken with no error, ran `gpt-6-sol` / `low`, and the thread remembered it. `-c
   model=… -c model_reasoning_effort=…` on the app-server was ignored on a resume. Koloft
-  passes `-m` and an effort only on a scheduled job's start, never on a resume.
+  passes `-m` and an effort on a scheduled job's start, and on the butler's start and
+  resume when its row in Settings ▸ Assist names them; because the thread remembers
+  them, the butler starts a new conversation when that row goes back to Codex's own.
 - **On 0.164.0 a `-c` given at two levels of one command line keeps both** (2026-10-23:
   `codex -c model=… exec -c model_reasoning_effort="low" …` ran with both on 0.164.0;
   0.163.0 dropped the top-level `model`). Koloft writes every `-c` at one level.
@@ -1590,6 +1592,34 @@ afterwards) and kept app-server A running while it asked:
   right after `initialize`, and again after `thread/list`, `thread/search`, `config/read`
   and `account/read`, it had `git` and `git-remote-https` children fetching over https
   (no login, a `config.toml` naming one MCP server, which was not started).
+
+**Assist's one-shot with a model and a thinking level.** 2026-11-11, codex-cli 0.166.0,
+real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-user-config
+--ignore-rules -s read-only -m <model> -c model_reasoning_effort="<level>" -C <tmp> -`),
+`--json` added to read `turn.completed.usage`.
+
+- The level lands under `--ignore-user-config`: one prompt on `gpt-6.1-sol` gave 12 and
+  13 `reasoning_output_tokens` at `low`, 30 and 52 at `high`, 124 at `max`.
+- A 9.5 KB prompt, three runs each (seconds): `gpt-6-luna` no level 4.5–8.2,
+  `gpt-6-luna` `max` 9.5 / 10.9 / 53.7, `gpt-6-astra` `max` 9.6–11.4, `gpt-6.1-sol`
+  `high` 6.5–8.1, `gpt-6.1-sol` `max` 8.2–11.5. `gpt-6-luna` at `low` against no level,
+  two rounds of one run each: 3.5 against 6.7 s, then 6.0 against 5.6 s — no steady gain.
+- Every one-shot reads 17–19K input tokens, 11.5–12.3K of them cached, whatever the
+  prompt. One 4.1 KB turn judgement at list price: `gpt-6-luna` about $0.0008,
+  `gpt-6.1-sol` at `medium` about $0.016.
+- On the owner's 86 hand-labelled end-of-turn replies (`src/main/turnNews.ts` as
+  shipped, three runs each, four at a time): `gpt-6-luna` no level 78 / 76 / 76 right,
+  1–2 replies that ask the owner read as news each run, 8 / 1 / 2 calls over 15 s
+  (longest 34 s); `gpt-6.1-sol` at `medium` 80 / 81 / 80 right, none read as news, no
+  call over 14.5 s, but one-tap answers on 26 of 36 asks against 32–34 of 35. So the turn
+  judgement runs on `gpt-6.1-sol` at `medium`.
+- A model the account does not have: `-m gpt-no-such-model` exited 1 after 4.3 s with
+  nothing on stdout and, on stderr, ``warning: Model metadata for `gpt-no-such-model`
+  not found…`` then `ERROR: The 'gpt-no-such-model' model is not supported when using
+  Codex with a ChatGPT account.` (twice). Assist reads "model is not supported" as that
+  refusal and, when the model came from Koloft's own table, runs once more on
+  `gpt-6-luna` inside the same wait. That a plan without `gpt-6.1-sol` words its
+  refusal the same way is **not probed yet** (section 14).
 
 ## 16. Codex on a remote machine
 

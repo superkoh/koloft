@@ -99,7 +99,7 @@ export function setupE2EEnv(): E2EEnv {
     JSON.stringify({
       onboardingSeen: true,
       accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
-      assist: { on: true, backend: 'claude' },
+      assist: { backend: 'claude' },
       skipPermissionsAgreed: true
     })
   )

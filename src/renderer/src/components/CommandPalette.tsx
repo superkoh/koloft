@@ -57,10 +57,10 @@ function countLine(n: number): string {
   return n === 1 ? '1 conversation' : `${n} conversations`
 }
 
-function startLabel(assistOn: boolean, backend: string | undefined): string {
-  const verb = assistOn ? 'Ask AI' : 'Start'
+function startLabel(asksAssist: boolean, backend: string | undefined): string {
+  const verb = asksAssist ? 'Ask AI' : 'Start'
   if (backend) return `${verb} · ${backend}`
-  return assistOn ? verb : 'Start a session'
+  return asksAssist ? verb : 'Start a session'
 }
 
 const SNIPPET_LEAD_CHARS = 24
@@ -121,7 +121,6 @@ export function CommandPalette({
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
-  const assistOn = useStore((s) => !!s.settings.assist?.on)
   const [query, setQuery] = useState('')
   const [caret, setCaret] = useState(0)
   const [dismissedAt, setDismissedAt] = useState<number | null>(null)
@@ -146,7 +145,7 @@ export function CommandPalette({
   const pin = pinnedWorkspace(query, named)
   const choice = choices[pin ? hostOf(pin.wsPath) : 'local']
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
-  const asksAssist = assistOn && !pin
+  const asksAssist = !pin
   const typed = (pin ? pin.prompt : query).trim()
   const startable = !!typed && !twoNamed
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
@@ -459,11 +458,7 @@ export function CommandPalette({
             rows={1}
             spellCheck={false}
             autoComplete="off"
-            placeholder={
-              assistOn
-                ? 'Ask or tell Koloft anything, or find a session to jump to…'
-                : 'What should a new session do? Or find one to jump to…'
-            }
+            placeholder="Ask or tell Koloft anything, or find a session to jump to…"
             aria-label="Ask or jump"
             readOnly={mode === 'thinking'}
             value={query}

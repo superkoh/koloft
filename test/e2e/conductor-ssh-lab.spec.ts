@@ -114,7 +114,7 @@ async function withRemoteWorkspaceConductor(
 ): Promise<void> {
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend: 'claude' },
+    assist: { backend: 'claude' },
     discord: { userId: OWNER.id, userName: OWNER.username }
   })
   const fake = await startFakeDiscord(env)

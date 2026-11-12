@@ -43,7 +43,7 @@ const CONDUCTOR_STARTS_MS = 60_000
 function seedBinding(env: E2EEnv): void {
   seedSettings(env, {
     hintsOff: true,
-    assist: { on: true, backend: 'claude' },
+    assist: { backend: 'claude' },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,

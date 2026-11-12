@@ -856,6 +856,18 @@ the same files into a worktree Koloft makes or rebuilds itself; `worktreeNameFor
 `CronRunner.taken` in `src/main/cronRunner.ts`, which count a left `worktree-<n>` branch
 as a taken name so a scheduled run never hands `-w` such a name.
 
+**A resumed conversation keeps the model it last ran on.** 2026-11-11, CC 2.1.322,
+`claude -p --output-format json` through Koloft's shim on an account whose own model is
+`claude-fable-5-2` (a fresh `-p` with no `--model` ran on it), `modelUsage` read after
+each run: started `--model sonnet`; `--resume <id>` with no `--model` ran Sonnet again;
+`--resume <id> --model haiku` ran Haiku, in the same session id; the next bare
+`--resume <id>` ran Haiku again. So a model given on a resume takes effect and stays,
+and leaving `--model` out never goes back to the account's own model. `--effort` on a
+resume was passed and taken without error; that it is kept the same way is inferred,
+not checked. The TUI's `--resume` was not run. Koloft dependent: the butler
+(`src/main/discord/butler.ts`) remembers the model and thinking it last carried, and
+starts a new conversation when it is set back to the tool's own.
+
 ## §4 Worktree session exit
 
 - **`/exit` from an UNCHANGED worktree removes it silently — no Keep/Remove page**: dir
@@ -1934,6 +1946,30 @@ other bullets of §9 were not re-measured on this build.
   from ant auth login …" line (`strings`) needs an ended claude.ai login plus an
   `ant auth login` profile under `~/.config/anthropic/`; that case, and whether the line
   goes to stdout (which Assist reads as the answer) or stderr, are not probed yet.
+- **The one-shot takes any model alias and `--effort`; only `max` outlasts 15 s.**
+  2026-11-11, CC 2.1.322, through Koloft's shim on real accounts, Assist's argv with
+  `--model <alias>` and `--effort <level>` after `-p`. A 9.5 KB prompt, three runs each
+  (seconds): `haiku` no effort 3.2–3.7, `haiku` `xhigh` 4.0–4.7, `haiku` `max` 11.8 /
+  18.9 / 24.8, `sonnet` `max` 4.7–5.3, `opus` `max` 7.4–10.0, `fable` `max` 3.7–4.1. A
+  short prompt, one run each: `haiku`, `sonnet`, `opus`, `fable` at `low` or `high`
+  2.5–3.3 s. So a small job is offered no `max`. One 4.1 KB turn judgement
+  (`--output-format json`, `total_cost_usd`): `haiku` 1879 input tokens, all one-hour
+  cache writes, $0.00048; `sonnet` at `medium` 1858, $0.0086.
+- **A model the account cannot use ends the one-shot at once, the reason on stdout.**
+  Same day and build, `--model no-such-model`: exit 1 after 1.8 s, stdout `There's an
+  issue with the selected model (no-such-model). It may not exist or you may not have
+  access to it. Run --model to pick a different model.`, and on stderr `Claude Code
+  doesn't recognize the model "no-such-model"…` and `[claude-code:unrecognized_model]
+  {…}`. Assist reads "issue with the selected model" as that refusal and, when the
+  model came from Koloft's own table, runs once more on `haiku` inside the same wait;
+  any other failure is not run again.
+- **On 86 real end-of-turn replies Sonnet judged no better than Haiku.** Same day and
+  build, the owner's hand-labelled set, `src/main/turnNews.ts` as shipped, three runs
+  each, four at a time: `haiku` with no effort 82 / 83 / 83 right, one reply that asks
+  the owner read as news in every run, no call over 7.2 s; `sonnet` at `medium` 82 / 81
+  / 76 right, none read as news, but 9 of 195 calls over 15 s, 7 of them killed at 60 s
+  (two replies in two runs each; a Codex set ran beside it, so a rate limit is not
+  ruled out). The turn judgement therefore stays on `haiku`.
 - **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
   the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
   Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every

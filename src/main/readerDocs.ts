@@ -101,6 +101,7 @@ export class ReaderDocs {
     })
     if (!written.length && !namesANewDoc) return
     const reply = await this.deps.assist({
+      row: 'docs',
       system: SYSTEM,
       prompt: promptFor(
         turn,
