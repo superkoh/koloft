@@ -2195,6 +2195,17 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
   `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
   tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
+- **Under Koloft's tmux.conf, tmux 3.3a asks the outer terminal only `ESC[>c` (DA2) and
+  `ESC[>q` (XTVERSION), once at attach; the bare questions its pane asks never come
+  out** (neither agent below wrapped one for passthrough).
+  Started as Koloft starts a remote tab (`tmux -L koloft -u -f <Koloft's conf>
+  new-session -A -D -s <name> <agent>`) from a python pty answering like Koloft's
+  terminal (DA2 `ESC[>0;276;0c`, no XTVERSION reply), with agy 1.5.7 and muse 1.4.15 in
+  the pane, each through start, trust question, a turn with a tool run, a resize,
+  `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
+  only questions the outer terminal got, both in Koloft's off-screen pass-through list
+  (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
+  3.3a, 1 run each).
 
 ## §36 ccstatusline
 

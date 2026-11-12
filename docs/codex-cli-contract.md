@@ -3494,3 +3494,32 @@ and once with `-c disable_paste_burst=true` on the TUI's command line, in a fres
 Koloft dependents: `EVERY_KEY_SHOWS_AT_ONCE` in `src/main/codexLaunchConfig.ts`, passed
 to the TUI of every Codex tab; a remote tab's TUI runs on the Mac too (§16).
 
+## 37. What the TUI asks the terminal
+
+**Every question the TUI asks its terminal is one Koloft's off-screen batching lets
+through at once.** Measured 2026-11-12 on codex-cli 0.166.0
+(`~/.codex/packages/standalone/current/bin/codex`) and 0.167.2 (npm, in a scratch
+folder): a python pty at 120×40 that answered like Koloft's terminal (DA1, DA2, cursor
+position, `?u` with `?0u`, DECRQM, OSC 10/11/12; no XTVERSION reply, as Koloft gives
+none), a throwaway `HOME` and `CODEX_HOME` whose `config.toml` points at a fake Responses
+server (§35), `TERM=xterm-256color`, `COLORTERM=truecolor`,
+`TERM_PROGRAM=Apple_Terminal`. Both launch shapes on both versions, one run each:
+`codex --no-daemon`, and `codex --remote unix://<sock> -C <dir>` on an `app-server
+--listen` of its own (the shape Koloft's tabs use). Each run: start, one typed prompt
+whose answer asked to run `touch` outside the sandbox (the approval question, `y`),
+a resize to 100×30, `/clear`, a second prompt, Ctrl+C twice.
+
+- At start, in one read: `ESC[?u`, `ESC[c`, `ESC[6n`, `ESC]10;?ESC\`, `ESC]11;?ESC\`.
+- After the resize: `ESC[6n` again. At exit: `ESC[c` again.
+- Nothing else: no XTVERSION, no DECRQM, no OSC 4, no DCS or APC question, and nothing
+  new during the turn, the approval question or `/clear`. Every run, both versions and
+  both shapes, the same.
+- Each run's reads, replayed in order and at their recorded times into Koloft's
+  `TerminalOutput` for a tab off screen, sent every read holding a question at once;
+  the same replay counting reads that hold `ESC[?25l` (no question) found every one of
+  them held back (41–43 per run).
+
+A remote tab's TUI runs on the Mac (§16), so it asks the same.
+
+Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+

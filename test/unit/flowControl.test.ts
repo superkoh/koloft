@@ -462,12 +462,20 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
   })
 
   it('a program asking the terminal a question off screen is not kept waiting for the batch', () => {
+    // PLATFORM§35 CODEX§37 MUSE§23 AGY§33
     for (const question of [
       '\x1b[6n',
       '\x1b[c',
+      '\x1b[>c',
       '\x1b[>q',
+      '\x1b[?u',
+      '\x1b[?996n',
       '\x1b[?2026$p',
+      '\x1b[?2027$p',
       '\x1b]11;?\x07',
+      '\x1b]10;?\x1b\\',
+      '\x1b]4;15;?\x07',
+      '\x1b]7501;?\x1b\\',
       '\x1b[14;2t'
     ]) {
       const { out, sent } = offScreenTab()
