@@ -243,7 +243,7 @@ import {
   setQuitAsk
 } from './quitGuard'
 import { mutedWhileHidden } from './mutedWhileHidden'
-import { loadSettings, saveSettings } from './settings'
+import { flushSettings, loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
   keychainRead,
@@ -1692,7 +1692,7 @@ function butlerSide(tabId: string): boolean {
 
 async function mcpServersNow(): Promise<McpServer[]> {
   const folders = [
-    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
   const walks = await Promise.all(
@@ -2158,7 +2158,7 @@ const agentRequests = new AgentRequests({
         await loginEnvReady()
         const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
         if (!workspace) {
-          const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+          const pinned = workspaceMgr?.pinnedPathList() ?? []
           return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
         }
         const remote = parseRemoteKey(workspace)
@@ -4166,8 +4166,10 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
+  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
+    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
-    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
@@ -4181,7 +4183,7 @@ app.whenReady().then(() => {
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
-    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    workspaces: pinnedPathsChecked,
     openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
     onChange: () => workspaceMgr?.restampLive()
   })
@@ -4202,7 +4204,7 @@ app.whenReady().then(() => {
     bootTime: BOOT_TIME,
     store: {
       load: () => {
-        const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+        const pinned = workspaceMgr?.pinnedPathList() ?? []
         return loadCron(cronFs, cronFile, pinned)
       },
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
@@ -4411,6 +4413,7 @@ app.on('before-quit', (e) => {
   butler?.flush()
   workspaceMgr?.dispose()
   flushLayout()
+  flushSettings()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
@@ -4991,6 +4994,7 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
+    anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
     sessionForTab: (tabId) =>
       claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
@@ -7017,7 +7021,7 @@ function registerIpc(): void {
 
   const sessionSearch = new SessionSearch({
     candidates: () => {
-      const pins = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+      const pins = workspaceMgr?.pinnedPathList() ?? []
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
         ...storedSessions().flatMap((s) => s.searchable(pins))

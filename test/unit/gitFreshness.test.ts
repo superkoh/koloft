@@ -81,7 +81,7 @@ function harness(
   const local = new LocalRunner(opts.gitBin)
   const engine = new GitFreshnessEngine(
     {
-      workspaces: () =>
+      workspaces: async () =>
         (opts.paths ?? [work]).map((p) => ({
           path: p,
           missing: opts.missing ? opts.missing.includes(p) : !fs.existsSync(p)

@@ -245,6 +245,30 @@ function registryDirs(env: NodeJS.ProcessEnv): string[] {
   ]
 }
 
+interface RegistryDir {
+  dir: string
+  changed: number
+}
+
+function registryDirsChangedNow(env: NodeJS.ProcessEnv): RegistryDir[] {
+  return registryDirs(env).flatMap((dir) => {
+    const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
+    return changed === undefined ? [] : [{ dir, changed }]
+  })
+}
+
+async function registryDirsChanged(env: NodeJS.ProcessEnv): Promise<RegistryDir[]> {
+  const seen = await Promise.all(
+    registryDirs(env).map((dir) =>
+      fs.promises.stat(dir).then(
+        (st) => [{ dir, changed: st.mtimeMs }],
+        () => []
+      )
+    )
+  )
+  return seen.flat()
+}
+
 // MUSE§2 MUSE§10
 function trustFile(env: NodeJS.ProcessEnv): string {
   return path.join(museConfigHome(env), 'muse', 'trust.json')
@@ -331,6 +355,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
+  private registryLooking = false
+  private registryLooks = 0
   private registrySeenAt?: number
   private unreadable = new Set<string>()
   private remoteHistory = new Map<string, MuseHistoryEntry[]>()
@@ -684,8 +710,18 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private keepSweeping(): void {
     this.sweeping ??= setInterval(() => {
-      this.sweepRegistry()
-      this.followLogs()
+      if (this.registryLooking) return
+      this.registryLooking = true
+      const looksBefore = this.registryLooks
+      // PLATFORM§69
+      void registryDirsChanged(this.env)
+        .then((dirs) => {
+          const aLaterLookAlreadyRan = this.registryLooks !== looksBefore
+          if (!aLaterLookAlreadyRan) this.sweepRegistry(dirs)
+          this.followLogs()
+        })
+        .catch((error) => console.error('[koloft] Muse registry sweep failed:', error))
+        .finally(() => (this.registryLooking = false))
     }, REGISTRY_SWEEP_MS)
     this.sweeping.unref?.()
   }
@@ -1206,7 +1242,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§4
-  private sweepRegistry(): Set<MuseRun> {
+  private sweepRegistry(dirs = registryDirsChangedNow(this.env)): Set<MuseRun> {
+    this.registryLooks++
     const rebound = new Set<MuseRun>()
     const live = [...this.runs.values()].filter(
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
@@ -1216,10 +1253,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       this.sweeping = undefined
       return rebound
     }
-    const dirs = registryDirs(this.env).flatMap((dir) => {
-      const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
-      return changed === undefined ? [] : [{ dir, changed }]
-    })
     if (!dirs.length) return rebound
     const changedAt = Math.max(...dirs.map((d) => d.changed))
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound
