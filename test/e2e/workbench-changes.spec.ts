@@ -3,14 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgentFor, installCodex, type E2EEnv } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
   type AgentName,
@@ -136,18 +129,6 @@ async function openChanges(page: Page, ws = 'ws-a', method?: AgentName): Promise
   await startSessionIn(page, ws, { method })
   await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
   await showChanges(page)
-}
-
-function installAgentFor(env: E2EEnv, agent: AgentName, ws: string): void {
-  if (agent === 'Codex') installCodex(env)
-  if (agent === 'Muse') {
-    installMuse(env)
-    trustInMuse(env, ws)
-  }
-  if (agent === 'Antigravity') {
-    installAgy(env)
-    trustInAgy(env, ws)
-  }
 }
 
 async function openChangesTyping(page: Page, agent: AgentName, line: string): Promise<void> {

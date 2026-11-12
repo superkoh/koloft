@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { WebglAddon } from '@xterm/addon-webgl'
 import {
+  forgetWebglThatLeftItsAtlasAsItWas,
   registerWebglRepair,
   unregisterWebglRepair,
   repairAllWebgl
@@ -124,6 +125,23 @@ describe('webglRepair: a terminal joining or leaving churns the shared atlas', (
     register('c', fakeAddon(), () => refreshed.push('c'))
     vi.advanceTimersByTime(60)
     expect(a.cleared).toBe(1)
+  })
+
+  it('a hidden terminal handing its context back, its atlas left as it was, neither clears the atlas nor repaints the terminals that stay', () => {
+    const a = fakeAddon()
+    const b = fakeAddon()
+    const refreshed: string[] = []
+    register('a', a, () => refreshed.push('a'))
+    register('b', b, () => refreshed.push('b'))
+    vi.advanceTimersByTime(60)
+    a.cleared = 0
+    refreshed.length = 0
+
+    forgetWebglThatLeftItsAtlasAsItWas('b')
+    vi.advanceTimersByTime(60)
+    expect(a.cleared).toBe(0)
+    expect(refreshed).toEqual([])
+    expect(b.mergeListeners).toHaveLength(0)
   })
 
   it('a terminal leaving clears the atlas and repaints the terminals that stay', () => {

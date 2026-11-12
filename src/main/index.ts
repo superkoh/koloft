@@ -2316,8 +2316,8 @@ const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
 const LOGIN_TIMED_OUT = 'Sign-in timed out'
 // CC§10
-const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
-const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
+const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -2425,7 +2425,10 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
     giveUp: installFirst
       ? giveUpLoginAfter(
           handle.id,
-          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          cronTestMs(
+            'KOLOFT_INSTALL_SILENCE_MS',
+            INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS
+          ),
           INSTALL_STALLED
         )
       : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
@@ -3552,7 +3555,8 @@ app.whenReady().then(() => {
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
         keyed: pinnedKeyOn,
         mirrorDir: (host) => mirrorHookDir(userData, host),
-        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve(),
+        loginPath: (host) => gitAccounts?.machineLoginPath(host) ?? Promise.resolve('')
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
@@ -6464,22 +6468,24 @@ function registerIpc(): void {
   )
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
-    if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    const live = sleepers.liveTabOf(id)
+    if (guard?.isBackground(live) && ownerTyped(data)) void guard.free(live)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
-    if (ownerTyped(data)) ownerTouched(id)
-    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
+    if (ownerTyped(data)) ownerTouched(live)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
   ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
-    if (guard?.isBackground(id)) void guard.free(id)
+    const live = sleepers.liveTabOf(id)
+    if (guard?.isBackground(live)) void guard.free(live)
     if (typedAfter?.includes('\r')) ownerCameBack()
-    ownerTouched(id)
-    ownerTouchedTheScreen(id)
+    ownerTouched(live)
+    ownerTouchedTheScreen(live)
     if (sleepers.heldPaste(id, text, typedAfter)) return
-    return ptyMgr.paste(id, text, typedAfter)
+    return ptyMgr.paste(live, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
     if (typeof text === 'string' && text) clipboard.writeText(text)

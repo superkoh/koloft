@@ -1780,6 +1780,21 @@ on the same lab line, each run five times: a fresh line that sends `initialize` 
 kept open, each later `thread/list` answered in under 1 ms. The lab is a local container,
 not a network.
 
+**An app-server will not start on a missing `CODEX_HOME`, and one already running answers
+an empty `thread/list` once its home is removed.** Measured 2026-11-11, `codex-cli 0.166.0`
+on the Mac and, by npm, 0.166.0 and 0.167.1 on Debian 12 (`node:22-bookworm-slim` in
+Docker, arm64, a non-root user), the same on all three: `app-server --stdio -c check_for_update_on_startup=false`, a
+temp `CODEX_HOME`, no login. Started with `CODEX_HOME` set to a folder that does not
+exist, the process exited 1 before answering `initialize` (`Error: CODEX_HOME points to
+"<path>", but that path does not exist`) and did not create the folder. Started on a home
+holding one hand-written rollout (a `session_meta` line with `source: "cli"`, then one
+user message), `thread/list` answered `data` of length 1, at once and 4 s later. With the
+home then removed (`rm -rf`) while the server ran, the next two `thread/list` calls each
+answered `data: []` with no error, the folder was not created again and the process
+stayed up; with the home and its rollout put back, the very next `thread/list` on that
+same server held the thread again. A rollout whose only lines are `session_meta` and
+settings, with no user message, was never listed.
+
 **A `--listen` app-server shrugs off SIGTERM.** Measured 2026-10-17, `@openai/codex@0.162.0`
 installed by npm on Debian 12 (Docker, arm64), signed in with `chatgptAuthTokens`, idle
 after two real turns and with no client connected: the process tree was the npm `node`
@@ -2565,11 +2580,11 @@ message" (3 runs).
   `! echo BANGDEL` in Shell mode. Koloft never deletes a character it typed. A message
   from Koloft to a Codex session (`koloft session send`, a Discord line) goes through
   `thread/queue/add` (§17), not the composer. Three things are pasted into the composer:
-  a picked element (starts `Element picked in the Workbench browser`, `elementPick.ts`),
-  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk or passage comment,
-  which starts with two LFs and then the file's path (`hunkPrompt`, `passagePrompt`,
-  `changesModel.ts`); whether those LFs keep a file whose name starts with `!` out of
-  Shell mode was not probed.
+  a picked element (`Element picked in the Workbench browser`, `elementPick.ts`),
+  failing checks (`CI check "…"`, `prChecks.ts`) and a hunk or passage comment (the
+  file's path, `hunkPrompt`, `passagePrompt`, `changesModel.ts`). Each is pasted with
+  two LFs before it; whether those LFs keep a comment on a file whose name starts with
+  `!` out of Shell mode was not probed.
 - **A second paste lands right after whatever the composer holds, with nothing between.**
   2026-11-10, Codex CLI 0.166.0 on this Mac, Koloft's ✎ comment on a rendered Markdown
   file done twice before any Enter (`agent-tools-real-smoke.spec.ts` › "a real Codex
@@ -2577,7 +2592,12 @@ message" (3 runs).
   `UserMessage`, but with each paste starting at its path the first note ran straight
   into the second path (`… make it 5 tries.docs/plan.md:7`, 2 of 2 runs). With two LFs
   at the start of each paste the note and the next path sat on lines of their own
-  (1 run).
+  (1 run). A long second paste keeps its two leading LFs too: 2026-11-11, Codex CLI
+  0.166.0 on this Mac, a ✎ comment on a rendered Markdown file and then Send failing
+  checks for superkoh/koloft PR #3 before any Enter (`agent-tools-real-smoke.spec.ts` ›
+  "a real Codex puts the failing checks of PR #3 on lines of their own …"): the checks
+  showed as `[Pasted Content N chars]`, nothing was sent for 5 s, and the CR sent one
+  `UserMessage` reading `… make it 5 tries.\n\nCI check "check" …` (2 of 2 runs).
 - Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
   ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
   sends the app-server on the machine does.

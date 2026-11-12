@@ -996,6 +996,18 @@ only downloaded the public release.
   `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
   API-key route against a fake Gemini server, a python pty answering the TUI's queries,
   2026-11-08; 1 run each.)
+- A bracketed paste keeps the line feeds it starts with, and lands right after whatever
+  the box holds. `NOTE typed first.` typed, then one write of a paste: with no line
+  feed first the box showed `NOTE typed first.PASTED one`; with `\n\n` as the paste's
+  first characters it showed the note, an empty line, then the pasted lines; `\n\n`
+  typed as plain keys in the same write just before the paste's start mark showed the
+  same. Into an empty box both forms showed two empty lines above the pasted text.
+  1.3.6 drops a paste's trailing line feeds as 1.5.3 does: a paste starting and ending
+  with `\n\n`, then ` TYPED-AFTER` typed, showed the typed text on the last pasted
+  line, while `\n\n` typed after the paste's end mark kept it two lines lower.
+  What the box showed, not what a send carried. (agy 1.3.6, Linux arm64, Docker
+  `--network none`, inside tmux 3.3a, each write sent with `tmux send-keys -H` and the
+  box read with `capture-pane`, 2026-11-11; 1 run each. Not run on 1.5.3.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
@@ -1404,6 +1416,39 @@ only downloaded the public release.
   `4` changed nothing in the 3 s watched, the box still up. The tool list was §13's
   1.4.7 one; `read_file {Path, StartLine?, EndLine?, ByteOffset?}` refuses any other
   property ("additional properties 'toolSummary' not allowed").
+- **Which key says no depends on the box, and `2` on a file to create outside the
+  workspace allows it for good.** agy 1.5.5 (the manifest's Linux arm64 build, sha512
+  matched), 1.5.3 (build `1.5.3-6604829099950080`) and 1.4.2 (build
+  `1.4.2-4835981233356800`; both from the same bucket path, their sha512 not checked, the
+  manifest naming only the newest), Docker `--network none`, default mode, a fresh
+  `--gemini_dir` per run with the folder trusted, the TUI in a python3 pty answering the
+  terminal and 7501 queries, a fake Gemini server making one tool call, the key sent 1.5
+  s after `blocked`, 2026-11-11; one run per cell, the three versions agreeing wherever
+  more than one ran (1.4.2 with its own `write_to_file`, `replace_file_content` and
+  `view_file {AbsolutePath, toolSummary, toolAction}`).
+
+  | ask, its 7501 msg | the box | `2` | `3` | `4` | Esc |
+  |---|---|---|---|---|---|
+  | create or overwrite a file outside the workspace, "Approve WriteFile: Write: <path>" ("WriteToFile" on 1.4.2) | 1 Yes / 2 Yes, and always allow non-workspace access / 3 No, deny creation | **writes the file and saves `"allowNonWorkspaceAccess": true`** | declines | nothing | declines |
+  | create or overwrite a file inside it, same msg | 1 Yes / 2 No, deny creation | declines | nothing | — | declines |
+  | edit a file, inside or outside, "Approve EditFile: Write: <path>" ("ReplaceFileContent" on 1.4.2) | 1 Yes, accept / 2 No, reject | declines | nothing | — | nothing: "Esc disabled during file edits — press 1 to accept or 2 to reject." |
+  | read a file outside it, "Approve ReadFile: Read: <path>" ("ViewFile" on 1.4.2) | 1 Yes / 2 Yes, and always allow non-workspace access / 3 No, deny access | not pressed | declines | nothing | declines |
+  | run a command, "Approve RunCommand: <cmd>" | 1 Yes / 2, 3 Yes, and always allow… / 4 No, cancel | not pressed | not pressed | declines | declines |
+
+  A digit's "declines" leaves the step `ERROR` and the screen "User declined the tool
+  call"; Esc leaves it `CANCELED` with only "Interrupted · What should Antigravity CLI do
+  instead?". Either way the turn ends on `idle` and no model request follows. Down five
+  times then Enter is no way to reach the last row: on the command box it ran the command
+  (the highlight wraps). Through the Connect API (§16) `permission: {allow: false}` on
+  the waiting step declined an outside create, an outside edit and an outside read, and
+  `{allow: true}` let the read through (`200 {}` each; the model got "user denied
+  permission for read_file(<path>)" or the file's lines; nothing saved to
+  `settings.json`): the create and the read's no on 1.5.3 and 1.5.5, the edit on 1.5.5,
+  the read's yes on 1.5.3. So Koloft picks its "no" key from the tool the
+  7501 msg of the `blocked` frame names, which comes in the same read as the box (§14) —
+  or, in a tab on a machine, where no frame reaches it (§29), from the tool of the last
+  PreToolUse hook: `2` only for an edit, Esc for a file to create or read, `4` for a
+  command and for a tool it does not know (`4` and Esc allowed nothing on any box here).
 - (1.4.2, same setup) `/config` rows and what they write to `settings.json`; picking
   the default removes the key. Agent Mode `default` / `accept-edits` / `plan`
   (`agentMode`; no `auto` in the list). Tool Permission `request-review` (default) /

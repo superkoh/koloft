@@ -1041,6 +1041,31 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **About 16 live WebGL contexts per renderer process**, shared by every tab in it.
   Past that Chromium kills the oldest ("Too many active WebGL contexts. The oldest
   context will be lost."), which scrambles that terminal's glyphs.
+- **A WebGL terminal canvas costs the GPU process several times its own pixels, and
+  disposing the addon does not give that back.** Read with `footprint <GPU process
+  pid>` on a hidden e2e window, devicePixelRatio 2 (2026-11-11, Electron 43, addon
+  0.20.0-beta.298, macOS 27.0). At a 1080×1632-pixel canvas (7 MB a buffer) four WebGL
+  terminals cost 87 MB more than four DOM-drawn ones and eight cost 114 MB more than
+  four: 22–28 MB each (one run a case; the empty app's own reading moved between 171 and
+  256 MB). At 2100×2720 pixels (23 MB a buffer) three cost about 370 MB:
+  about 124 MB each. Most of it is `IOSurface` (the drawing buffers). The glyph atlas is
+  uploaded into every context too (`GlyphRenderer` keeps one texture per atlas page per
+  canvas), but it is the smaller part: seven 512-pixel pages of CJK added about 50 MB
+  across four canvases. After `WebglAddon.dispose()` on three of four such terminals the
+  footprint was unchanged at 1 s and down 89 MB at 15 s (the canvases wait for garbage
+  collection); with `WEBGL_lose_context.loseContext()` called right after the dispose it
+  was down 155 MB at 1 s and 248 MB at 15 s, back at the empty app's level. Every figure
+  here was resident ("Dirty"); `footprint` printed no swapped column in any run, so
+  this says nothing about memory the system had already compressed. `dispose()` removes the addon's
+  `webglcontextlost` listener first, so a `loseContext()` after it fires no
+  `onContextLoss`.
+- **Giving a hidden terminal a new WebGL context is cheap when the shared atlas is left
+  alone.** Switching to a session tab whose context had been lost and disposed, the
+  first render came 17–37 ms after the click and the longest frame was 24 ms, with a
+  screen of coloured CJK, at both canvas sizes above (15 and 12 switches); a tab that
+  kept its context took 13–24 ms. Clearing the shared atlas 50 ms after each such
+  hand-back made the same switch block for
+  50–60 ms and draw the screen twice (same day and versions).
 - **GPU memory can be lost with no event.** Wake from sleep, screen unlock, and adding,
   removing or changing displays (these come in bursts) can wipe texture memory; a
   minimized or fully covered window can lose its WebGL drawing buffers. No
@@ -1202,12 +1227,23 @@ inferred, not checked.
   fires only from a page merge, once per deleted page, to every addon sharing the atlas.
   After a merge the renderer heals on the NEXT frame, so output that stops on the merge
   frame leaves the screen garbled until something asks for a refresh.
-- **A terminal joining or leaving churns the shared atlas**: pages are added when an
-  xterm mounts and dropped or merged when one is disposed, and a merge that lands on a
-  frame no remaining terminal redraws leaves them garbled (seen: closing a Workbench
-  tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
+- **A terminal joining can churn the shared atlas, and one leaving has been seen to
+  garble the others**: pages are added when an xterm mounts, and a merge that lands on a
+  frame no remaining terminal redraws leaves them garbled (seen, addon version not
+  recorded: closing a Workbench tab scrambled the Claude TUI). The dispose itself
+  changes no page of an atlas that still has an owner (next bullet). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **A renderer disposed while another terminal still owns its atlas leaves that atlas
+  untouched.** `WebglRenderer`'s dispose ends in `removeTerminalFromCache`, which only
+  takes the terminal off the atlas entry's `ownedBy` list; the atlas is disposed only
+  when the leaving terminal was its last owner, and then nothing draws from it. The
+  rest of the dispose deletes that canvas's own program, buffers and textures (read
+  2026-11-11 in `@xterm/addon-webgl` 0.20.0-beta.298: `CharAtlasCache.ts`,
+  `WebglRenderer.ts`, `GlyphRenderer.ts`). In the hidden e2e window, which §20 says has
+  not been seen to show such damage, a shown session terminal kept its picture while a
+  hidden one sharing its atlas was disposed and its context lost, with no atlas clear
+  (`webgl-terminal.spec.ts`, same day).
 - **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
   `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
   meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
@@ -1816,6 +1852,30 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
   macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
   5.9, reached directly, a scratch node script.)
+- **A remote Codex tab's app-server finds such a program only when its start script is
+  handed that `"$SHELL" -lic` PATH.** A tool only in `/opt/ztools/bin`, and `command -v
+  ztool` run by the fake Codex in a remote Codex tab of a built Koloft:
+
+  | login shell, where its PATH line is | script runs `bash -lc` itself | script is handed the `"$SHELL" -lic` PATH asked over a plain `ssh host cmd` |
+  |---|---|---|
+  | bash, end of `~/.bashrc` | exit 1 | exit 0 |
+  | zsh, `~/.zshrc` (plus an `echo` and a `sleep 25 &`) | exit 1 | exit 0, row bound 1.9 s after the click |
+  | fish, `config.fish` | not run | exit 0 |
+  | tcsh, `~/.login` | not run | exit 1, the tab still starts |
+
+  So the script keeps its own `bash -lc` only for when the handed PATH is empty (tcsh, or
+  a machine the ask could not reach). Running the `-lic` shell inside the script, under the tab's own `ssh -tt` line where it
+  has a terminal, gave the same four results and bound in 1.4 s; it is not used, since an
+  rc file that reads `/dev/tty` there (a passphrase or `compinit` question) could wait
+  for ever with its question sent to `/dev/null` (read from how those tools ask, not
+  run). The fake Codex runs its command with `sh -c` (zsh's `-c` where `/bin/zsh`
+  exists), so this measures the PATH Koloft hands the app-server, not what a real Codex
+  adds. On the bash and zsh machines a fake Claude Code tab's `command -v ztool` did not
+  find the tool: the tab script of Claude Code, Muse Code and Antigravity tabs adds
+  fixed folders only and asks no login shell (Muse Code and Antigravity share that
+  script; not run). What each real agent's own shell tool adds on top was not measured.
+  (2026-11-11, OpenSSH_10.3p1 on macOS 27 to the e2e Docker ssh lab image, Debian
+  bookworm, plus zsh 5.9; a scratch Playwright spec driving a built Koloft.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
@@ -3416,3 +3476,70 @@ paragraph; one range from the first paragraph into the second, added to the sele
 Koloft dependents: the ✎ comment on a rendered Markdown file (`PreviewViewer.tsx`) quotes
 the selection's own text, and the rendered code block's chrome is `user-select: none`
 (`previewViewer.css`); `md-comment.spec.ts` checks it in the app's Electron.
+
+## §69 macOS: what a busy disk makes the main thread wait for
+
+Measured 2026-11-11 on macOS 27.0 (Darwin 27.0.0, APFS), Apple silicon, 10 cores, memory
+pressure level 1, load average 2–4. "Busy disk" below is two node processes that each, in
+a loop, write 64 MB, `fsync`, read it back and delete it; no CPU load is added.
+
+In a Node 24.13.0 script, timing a synchronous `fs.realpathSync` of a file three folders
+below a folder D, once every 5 ms:
+
+| what else the same process does | calls | longest | calls over 50 ms |
+|---|---|---|---|
+| nothing, idle disk | 447–461 | 0.14–0.25 ms | 0 |
+| nothing, busy disk | 1225 | 36 ms | 0 |
+| busy disk, and every 20 ms `fs.promises.writeFile` of a new file in D, then a rename onto a file in D (two runs) | 507, 508 | 338 ms, 366 ms | 9, 10 |
+| busy disk, and the same write, but the new file is created in a sibling folder of D and renamed into D (one run) | 1239 | 1.7 ms | 0 |
+
+- **So while a file is being created in a folder and the disk is busy, the first
+  synchronous lookup through that folder waited with it**, though the create itself ran on
+  the libuv pool. With the new file created in another folder the lookups did not wait;
+  that run's one slow call was an asynchronous `fs.promises.realpath` (322 ms), off the
+  main thread.
+- **Which synchronous write is slow on a busy disk** (same script style, 42 rounds, 8 KB
+  of text): creating a new file and writing it, 16 calls over 50 ms (longest 371 ms);
+  writing into an existing empty file, 8 over 50 ms (371 ms); truncating and rewriting a
+  file that already held 8 KB, 1 over 50 ms (314 ms); writing 8 KB in place with `r+` and
+  no truncate, none (longest 6.6 ms); a rename onto an existing file, 1 over 50 ms
+  (406 ms); unlink, none. With an idle disk none of them passed 13 ms.
+- **In Koloft** (Electron 43.8.6, built app, hidden window, six tabs: two Claude, Codex,
+  Muse, an Antigravity tab whose session never bound, and one remote Claude over the fake
+  ssh; a click on the next session row and four keys about every 400 ms; every
+  `fs.*Sync`, `fs.watch`, `FSWatcher.close` and `child_process` call in the main process
+  timed; three rounds of 10 s idle then 10 s busy disk):
+  - Switching and typing only, each background save's temp file next to its target in
+    `userData`: 0 event-loop stalls of 50 ms or more idle, 36 busy (20 of them 150 ms or
+    more, the longest 303 ms), each holding a slow synchronous call: 53
+    `fs.realpathSync` of the workspace note under `userData` (longest 309 ms) and 2
+    `fs.renameSync` (57 ms). With the temp files in a folder of their own: 1 stall
+    (75 ms), `fs.realpathSync` at most 0.1 ms. In these runs `fs.watch(dir, { recursive:
+    true })` took at most 0.3 ms and `FSWatcher.close` at most 16–25 ms, busy or idle.
+  - Adding a process that creates and deletes small files in the two workspace folders
+    (one every 15 ms, as an agent's build does) and a file save through Koloft about
+    every 1.2 s, on the code before this section: 56 stalls of 50 ms or more (37 of
+    150 ms or more, longest 437 ms) in 73 switches; slow calls were `fs.realpathSync`
+    opening a file (41, longest 384 ms), `fs.openSync(…, 'wx')` of a save's temp file in
+    the workspace (11, 403 ms), `fs.fsyncSync` (14, 261 ms), `fs.renameSync` into
+    `userData` (2, 257 ms) and `fs.watch` of the workspace (2, 199 ms; 13 of them,
+    longest 330 ms, in a run where the other calls were already off the main thread). A
+    one-byte asynchronous `fs.write` to `/dev/null` through the libuv pool, every 50 ms,
+    waited up to 384 ms (10 over 20 ms). After, in two runs: 1 stall each (247 ms and
+    91 ms, each an `fs.statSync` of a folder: the first in `dirExistsSync`, the second
+    the check `fileWatch.ts` makes before it reuses a kept watcher) in 100 and 121 switches, the pool write at
+    most 23 ms and 9 ms, the save's `fs.renameSync` in the workspace at most 7 ms. Three
+    rounds a run; the Mac's load average was 9–17 from other work, memory pressure
+    level 1–2.
+  - A settings save (`fs.writeFileSync` of a new `settings.json.tmp` in `userData`, 31
+    of them in the busy 30 s): 19 over 50 ms, longest 315 ms.
+- **What the busy disk did not slow in any of those runs**: `fs.statSync` and
+  `fs.existsSync` (at most 0.2 ms but for the one above), `fs.writeFileSync` over a
+  file already holding text (at most 18 ms), starting a child with `execFile` (at most
+  14 ms).
+
+Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-written file
+in a `.koloft-writes` folder inside the target's folder and moves it into place off the
+main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
+`fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
+save's last check and its rename together on the main thread.
