@@ -109,16 +109,44 @@ export class MachineRoom {
 
 const SIGNAL_LOG_MAX_BYTES = 2 * 2 ** 20
 const SIGNAL_LOG_KEEPS_BYTES = 2 ** 20
+const NEWLINE = 0x0a
 
+// PLATFORM§69
 export function signalLog(file: string): (line: string) => void {
+  const waiting: string[] = []
+  let waitingLength = 0
+  let size: number | undefined
+  let writing = false
+  const write = async (): Promise<void> => {
+    writing = true
+    while (waiting.length) {
+      const text = waiting.splice(0).join('')
+      waitingLength = 0
+      try {
+        size ??= await fs.promises
+          .stat(file)
+          .then((s) => s.size)
+          .catch(() => 0)
+        await fs.promises.appendFile(file, text)
+        size += Buffer.byteLength(text)
+        if (size <= SIGNAL_LOG_MAX_BYTES) continue
+        const tail = (await fs.promises.readFile(file)).subarray(-SIGNAL_LOG_KEEPS_BYTES)
+        const kept = tail.subarray(tail.indexOf(NEWLINE) + 1)
+        await fs.promises.writeFile(file, kept)
+        size = kept.length
+      } catch {
+        size = undefined
+      }
+    }
+    writing = false
+  }
   return (line) => {
-    try {
-      fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`)
-      if (fs.statSync(file).size <= SIGNAL_LOG_MAX_BYTES) return
-      const text = fs.readFileSync(file, 'utf8')
-      const tail = text.slice(-SIGNAL_LOG_KEEPS_BYTES)
-      fs.writeFileSync(file, tail.slice(tail.indexOf('\n') + 1))
-    } catch {}
+    const entry = `${new Date().toISOString()} ${line}\n`
+    waiting.push(entry)
+    waitingLength += entry.length
+    while (waiting.length > 1 && waitingLength > SIGNAL_LOG_KEEPS_BYTES)
+      waitingLength -= waiting.shift()!.length
+    if (!writing) void write()
   }
 }
 

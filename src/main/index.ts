@@ -305,6 +305,7 @@ import {
 } from './cronRunner'
 import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
+import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -3234,6 +3235,12 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  const stalls = new StallWatchWhileFocused(
+    signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  )
+  const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
+  app.on('browser-window-focus', followFocus)
+  app.on('browser-window-blur', () => setImmediate(followFocus))
   presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
@@ -3532,6 +3539,7 @@ app.whenReady().then(() => {
   })
 
   const userData = app.getPath('userData')
+  const droppedSessionsLog = signalLog(path.join(userData, 'dropped-sessions.log'))
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
@@ -3778,14 +3786,7 @@ app.whenReady().then(() => {
           (identityOf(key).backendId !== 'claude' &&
             !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
-    memberDropped: (sessionId, why) => {
-      try {
-        fs.appendFileSync(
-          path.join(app.getPath('userData'), 'dropped-sessions.log'),
-          `${new Date().toISOString()} ${sessionId} ${why}\n`
-        )
-      } catch {}
-    }
+    memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   butler = new Butler({
     userData,

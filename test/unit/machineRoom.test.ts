@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BUSY_MARKER, MachineRoom, signalLog } from '../../src/main/machineRoom'
 
 const CORES = 10
@@ -136,21 +136,33 @@ describe('when memory counts as critical', () => {
 })
 
 describe('the signal log the thresholds are tuned from', () => {
-  it('keeps whole timestamped lines, and never grows past two megabytes', () => {
+  it('keeps whole timestamped lines, and trims itself back under two megabytes', async () => {
     const file = path.join(regDir, 'machine.log')
     const log = signalLog(file)
     log('first')
-    expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/)
+    await vi.waitFor(
+      () => expect(fs.readFileSync(file, 'utf8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z first\n$/),
+      { timeout: 10_000 }
+    )
     const line = 'x'.repeat(1000)
-    for (let i = 0; i < 2200; i++) log(line)
-    const text = fs.readFileSync(file, 'utf8')
-    expect(text.length).toBeLessThanOrEqual(2 * 2 ** 20)
-    expect(text).not.toContain('first')
+    for (const batch of ['one', 'two', 'three']) {
+      for (let i = 0; i < 800; i++) log(line)
+      log(batch)
+      await vi.waitFor(
+        () => {
+          const whole = fs.readFileSync(file, 'utf8')
+          expect(whole).toMatch(new RegExp(` ${batch}\\n$`))
+          expect(whole.length).toBeLessThanOrEqual(2 * 2 ** 20)
+        },
+        { timeout: 10_000 }
+      )
+    }
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    expect(lines.some((l) => l.endsWith(' first'))).toBe(false)
     expect(
-      text
-        .split('\n')
-        .filter(Boolean)
-        .every((l) => l.endsWith(line))
+      lines.every(
+        (l) => l.endsWith(line) || ['one', 'two', 'three'].some((b) => l.endsWith(` ${b}`))
+      )
     ).toBe(true)
   })
 })
