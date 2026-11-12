@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type JSX } from 'react'
 import type { SecretAskView } from '@shared/types'
-import { IconClose, IconLock, IconSignIn } from '../icons'
+import { IconClose, IconLock, IconSignIn, IconWebPage } from '../icons'
 import { isComposing } from '../keys'
 
 export type SudoAsk = Extract<SecretAskView, { kind: 'sudo' }>
@@ -83,12 +83,22 @@ export function SecretPageBar({ ask }: { ask: WebAsk }): JSX.Element {
   return (
     <div className="bperm" role="alertdialog" aria-label="Secret ask">
       <span className="bperm-ico">
-        {ask.kind === 'page' ? <IconLock size={16} /> : <IconSignIn size={16} />}
+        {ask.kind === 'page' ? (
+          <IconLock size={16} />
+        ) : ask.kind === 'tap' ? (
+          <IconWebPage size={16} />
+        ) : (
+          <IconSignIn size={16} />
+        )}
       </span>
       <span className="bperm-msg">
         {ask.kind === 'page' ? (
           <>
             This session needs your <b>{ask.label}</b> on this page.
+          </>
+        ) : ask.kind === 'tap' ? (
+          <>
+            This session needs you to click on this page: <b>{ask.label}</b>
           </>
         ) : (
           'This session needs you to finish this sign-in here.'
@@ -98,7 +108,7 @@ export function SecretPageBar({ ask }: { ask: WebAsk }): JSX.Element {
         <button className="bperm-b" onClick={() => window.api.secret.decline(ask.id)}>
           Cancel
         </button>
-        {ask.kind === 'page' && (
+        {ask.kind !== 'url' && (
           <button className="bperm-b pri" onClick={() => window.api.secret.done(ask.id)}>
             Done
           </button>

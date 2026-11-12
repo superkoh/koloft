@@ -725,7 +725,7 @@ export interface AttentionSubject {
 
 export type SecretAskShape =
   | { kind: 'sudo'; command: string; prompt: string }
-  | { kind: 'page'; guestId: number; url: string; label: string }
+  | { kind: 'page' | 'tap'; guestId: number; url: string; label: string }
   | { kind: 'url'; signIn: string }
 
 export type SecretAskView = SecretAskShape & { id: string; tabId: string }

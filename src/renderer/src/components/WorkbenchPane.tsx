@@ -704,17 +704,34 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
       ? secretAsk
       : undefined
-  const askedGuest = secretAsk?.kind === 'page' ? secretAsk.guestId : undefined
+  const askedGuest = secretAsk && secretAsk.kind !== 'url' ? secretAsk.guestId : undefined
+  const webTabOfGuest = (tabId: string, guestId: number): string | undefined =>
+    (statesRef.current[tabId] ?? NO_TABS).tabs.find(
+      (t) => t.kind === 'web' && guestIdOf(t.id) === guestId
+    )?.id
   useEffect(() => {
     if (askedGuest === undefined || !ownerTab) return
-    const hit = (statesRef.current[ownerTab] ?? NO_TABS).tabs.find(
-      (t) => t.kind === 'web' && guestIdOf(t.id) === askedGuest
-    )
+    const hit = webTabOfGuest(ownerTab, askedGuest)
     if (!hit) return
     const st = useStore.getState()
     if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
-    activate(hit.id)
+    activate(hit)
   }, [askedGuest, ownerTab])
+  const tappedPages = useStore((s) =>
+    s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [`${a.tabId} ${a.guestId}`] : [])).join('\n')
+  )
+  useEffect(() => {
+    const held = tappedPages
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.split(' '))
+      .flatMap(([tabId, guestId]) => webTabOfGuest(tabId, Number(guestId)) ?? [])
+    // PLATFORM§9
+    for (const id of held) stage(id)
+    return () => {
+      for (const id of held) if (!pinnedRef.current.has(id)) unstage(id)
+    }
+  }, [tappedPages])
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined

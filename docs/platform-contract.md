@@ -946,6 +946,20 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   one click through its Turnstile frame's own session, but a load of the same address
   minutes later, in the same profile, was past the check with no click, so the click
   is not shown to be what passed it.
+- **The same picture and click inside Koloft, and how page zoom maps them.** Measured
+  2026-11-12, Electron 43.8.6, the built app in the e2e suite's never-shown window
+  (`discord-page-tap.spec.ts`), a Workbench page on `127.0.0.1` with an iframe from
+  `localhost` that counts clicks, the page zoomed to 1.5 with `setZoomFactor`:
+  - `capturePage(rect)` takes the rect in zoomed pixels: the page's CSS box times the
+    zoom factor drew the iframe in its place.
+  - `Input.dispatchMouseEvent` takes the page's own CSS pixels, not zoomed ones: at
+    the CSS point it landed in the iframe (`isTrusted: true`); at that point times 1.5
+    it missed (title unchanged after 20 s).
+  - A page whose session was not the one on screen gave no picture
+    (`capturePage(rect)` did not answer in 20 s) until the Workbench rendered it as a
+    staged page (§9); then the picture and the click both worked. With a Playwright
+    client attached through the relay (which turns on focus emulation), the picture and
+    the click worked the same, staged or not.
 
 ## §17 Playwright as a CDP client
 

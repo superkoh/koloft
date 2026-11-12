@@ -526,6 +526,9 @@ import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb, type FieldPage } from './agentSecret'
+import { pageVerb, type TapPage } from './agentPageTap'
+import { findPart, pictureOfPart, tapAt, type PartOnPage } from './guestTap'
+import { gridPictureHtml } from './tapGrid'
 import { ButlerTyping } from './discord/butlerTyping'
 import {
   machineOfShotPage,
@@ -2157,6 +2160,25 @@ const agentRequests = new AgentRequests({
       pages: guestPagesOf,
       showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
       open: openSignInEndOn,
+      sleep
+    }),
+    page: pageVerb({
+      sessionTab: (tabId) => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
+      ask: (a) =>
+        secretAsks
+          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
+          : Promise.resolve({ ended: 'timeout' }),
+      ownerAsleep: () => ownerAsleep.asleep(),
+      pages: tapPagesOf,
+      draw: async (png, grid) => {
+        const { html, width, height } = gridPictureHtml(png, grid)
+        const shot = await shootHtml(
+          html,
+          { width, height, pictureHeight: Infinity, mostPictures: 1 },
+          'the page'
+        )
+        return { ...shot.files[0], name: 'page.png' }
+      },
       sleep
     }),
     gh: githubVerb({
@@ -3934,10 +3956,11 @@ app.whenReady().then(() => {
     ended: (tabId) => {
       if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
     },
-    place: async (tabId, card) => {
+    place: async (tabId, card, files) => {
       const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
       if (!channelId) return undefined
       const name = await secretAskerName(tabId)
+      if (files?.length) await link.upload(channelId, files, '')
       const messageId = (await link.card(channelId, card(name))).at(-1)
       return messageId ? { channelId, messageId, name } : undefined
     },
@@ -4867,7 +4890,7 @@ function pagesInUse(): BrowserPagesInUse {
   for (const ask of secretAsks?.views() ?? []) {
     if (ask.kind === 'sudo') continue
     owners.add(ask.tabId)
-    if (ask.kind === 'page') guestIds.add(ask.guestId)
+    if (ask.kind !== 'url') guestIds.add(ask.guestId)
   }
   for (const page of webContents.getAllWebContents()) {
     if (page.isDestroyed() || !isWorkbenchPage(page)) continue
@@ -5973,6 +5996,19 @@ function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
           wc.once('did-stop-loading', () => resolve())
           wc.reload()
         })
+    }))
+}
+
+function tapPagesOf(tabId: string): TapPage[] {
+  return webContents
+    .getAllWebContents()
+    .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
+    .map((wc) => ({
+      guestId: wc.id,
+      url: () => wc.getURL(),
+      find: async (selector) => (await wc.executeJavaScript(findPart(selector))) as PartOnPage,
+      picture: (box) => pictureOfPart(wc, box),
+      tap: (point) => tapAt(wc, point)
     }))
 }
 

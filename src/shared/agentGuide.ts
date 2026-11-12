@@ -315,7 +315,7 @@ koloft todo file <workspace> <file>
     Print one of the instruction or TODO files koloft todo lists for a workspace, also from a workspace on another machine.
     Example: koloft todo file koloft CLAUDE.md
 
-PASSWORDS, CODES AND SIGN-INS
+PASSWORDS, CODES, SIGN-INS AND ROBOT CHECKS
 
 When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's tab in Koloft (a web page or sign-in in this session's Workbench), and also on a card in Discord when the owner is away from the Mac or talks to you from Discord. Koloft passes it on itself: you never see it. Never ask the owner to write a password or code in a message.
 
@@ -330,6 +330,10 @@ koloft secret page <css selector>
 koloft secret url "<sign-in address>"
     For a sign-in that a command line tool starts in a browser and that ends on a 127.0.0.1 or localhost address, like codex login. Start the tool in the background first and give its sign-in address. Koloft opens it in this session's Workbench, where the owner can finish it; or the owner finishes it on a phone and pastes the address it ended on, and Koloft opens that address on the machine this session runs on, which finishes the sign-in. Prefer a tool's device code sign-in when it has one: then just tell the owner the address and the code.
     Example: koloft secret url "https://auth.openai.com/oauth/authorize?..."
+
+koloft page tap <css selector> -- "<one line that tells the owner what to do>"
+    For a robot check ("I'm not a robot", a picture puzzle) or anything else on a page in this session's Workbench browser that only the owner may click. Never click such a check yourself: hand it to the owner. At the Mac the page comes to the front and the owner clicks it; away from the Mac, Koloft sends the owner a picture of that part of the page with a grid on it, the owner names squares, and Koloft taps them, for as many rounds as it takes. The selector must match exactly one element in one open page: the smallest one that holds the check, usually its <iframe>. Then look at the page to see what happened.
+    Example: koloft page tap "iframe[title='reCAPTCHA']" -- "Tick the I'm not a robot box."
 
 DISCORD
 
