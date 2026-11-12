@@ -113,6 +113,7 @@ async function folderIdOf(root: string): Promise<string | undefined> {
 }
 
 const stepsOfAFolder = new Map<string, Promise<unknown>>()
+let timesAllWereClosed = 0
 
 function inOrderFor<T>(root: string, step: () => T | Promise<T>): Promise<T> {
   const run = (stepsOfAFolder.get(root) ?? Promise.resolve()).then(step)
@@ -155,7 +156,9 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     } catch {}
     try {
       entry.watcher = fs.watch(root, { recursive: true })
-      void folderIdOf(root).then((id) => (entry.folderId = id ?? entry.folderId))
+      void inOrderFor(root, async () => {
+        entry.folderId = (await folderIdOf(root)) ?? entry.folderId
+      })
       attachWatcher(root, entry, onChange)
     } catch {
       if (entry.timer) clearTimeout(entry.timer)
@@ -165,16 +168,23 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
 }
 
 export function watchDir(root: string, onChange: DirChangeListener): Promise<boolean> {
-  return inOrderFor(root, () => watchDirNow(root, onChange))
+  const closedSoFar = timesAllWereClosed
+  return inOrderFor(root, () => watchDirNow(root, onChange, closedSoFar))
 }
 
-async function watchDirNow(root: string, onChange: DirChangeListener): Promise<boolean> {
+async function watchDirNow(
+  root: string,
+  onChange: DirChangeListener,
+  closedSoFar: number
+): Promise<boolean> {
+  if (timesAllWereClosed !== closedSoFar) return false
   const watched = dirWatchers.get(root)
   if (watched && watched.count > 0) {
     watched.count++
     return true
   }
   const folderId = await folderIdOf(root)
+  if (timesAllWereClosed !== closedSoFar) return false
   const kept = dirWatchers.get(root)
   if (kept && folderId !== kept.folderId) forget(root, kept)
   else if (kept) {
@@ -228,6 +238,7 @@ function unwatchDirNow(root: string): void {
 }
 
 export function closeAllDirWatchers(): void {
+  timesAllWereClosed++
   for (const entry of dirWatchers.values()) closeWatcher(entry)
   dirWatchers.clear()
   keptWithNoViewerOldestFirst.length = 0

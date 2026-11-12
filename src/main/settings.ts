@@ -12,7 +12,7 @@ function settingsFile(): string {
 }
 
 // PLATFORM§69
-const settingsOnDisk = new BackgroundFile(settingsFile)
+const settingsOnDisk = new BackgroundFile(settingsFile, undefined, () => rereadSettingsOnNextLoad())
 
 export function flushSettings(): void {
   settingsOnDisk.flushSync()

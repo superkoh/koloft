@@ -916,7 +916,7 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  watchDir(dir: string, onChange: DirChangeListener): boolean {
+  async watchDir(dir: string, onChange: DirChangeListener): Promise<boolean> {
     this.deps.watch(this.bare(dir), () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }))
     return false
   }

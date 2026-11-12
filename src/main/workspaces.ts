@@ -443,12 +443,16 @@ export class WorkspaceManager {
     }))
   }
 
+  pinnedPathList(): string[] {
+    return this.layout.workspaces.map((ws) => ws.path)
+  }
+
   // PLATFORM§69
   pinnedPathsCheckedOffTheMainThread(): Promise<{ path: string; missing: boolean }[]> {
     return Promise.all(
       this.layout.workspaces.map(async (ws) => ({
         path: ws.path,
-        missing: !isRemoteKey(ws.path) && !(await dirExists(ws.path))
+        missing: await this.missing(ws.path)
       }))
     )
   }

@@ -719,6 +719,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           this.sweepRegistry(dirs)
           this.followLogs()
         })
+        .catch((error) => console.error('[koloft] Muse registry sweep failed:', error))
         .finally(() => (this.registryLooking = false))
     }, REGISTRY_SWEEP_MS)
     this.sweeping.unref?.()
@@ -1255,6 +1256,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
     if (!dirs.length) return rebound
     const changedAt = Math.max(...dirs.map((d) => d.changed))
+    const aNewerLookAlreadyReadIt =
+      this.registrySeenAt !== undefined && changedAt < this.registrySeenAt
+    if (aNewerLookAlreadyReadIt) return rebound
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound
     const since = (run: MuseRun): number => run.startedAt - REGISTRY_WRITE_LEEWAY_MS
     const pids = new Set(live.map((r) => r.pid!))

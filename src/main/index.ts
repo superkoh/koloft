@@ -1693,7 +1693,7 @@ function butlerSide(tabId: string): boolean {
 
 async function mcpServersNow(): Promise<McpServer[]> {
   const folders = [
-    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
   const walks = await Promise.all(
@@ -2165,7 +2165,7 @@ const agentRequests = new AgentRequests({
         await loginEnvReady()
         const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
         if (!workspace) {
-          const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+          const pinned = workspaceMgr?.pinnedPathList() ?? []
           return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
         }
         const remote = parseRemoteKey(workspace)
@@ -4215,7 +4215,7 @@ app.whenReady().then(() => {
     bootTime: BOOT_TIME,
     store: {
       load: () => {
-        const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+        const pinned = workspaceMgr?.pinnedPathList() ?? []
         return loadCron(cronFs, cronFile, pinned)
       },
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
@@ -7062,7 +7062,7 @@ function registerIpc(): void {
 
   const sessionSearch = new SessionSearch({
     candidates: () => {
-      const pins = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+      const pins = workspaceMgr?.pinnedPathList() ?? []
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
         ...storedSessions().flatMap((s) => s.searchable(pins))

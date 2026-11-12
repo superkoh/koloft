@@ -290,11 +290,13 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await channelRow(dlg, CHANNEL_A).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).channel).toEqual({
-        guildId: '111',
-        channelId: '222',
-        name: CHANNEL_A
-      })
+      await expect
+        .poll(() => discordOnDisk(env)?.channel)
+        .toEqual({
+          guildId: '111',
+          channelId: '222',
+          name: CHANNEL_A
+        })
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText(`#${CHANNEL_A}`)
       expect(await butlerMenu(page)).toEqual([
         'Open↩',

@@ -413,8 +413,9 @@ export class GitFreshnessEngine {
 
   private async refresh(paths: string[]): Promise<void> {
     if (this.gitUnavailable) return
+    const onlyRemote = paths.every((p) => isRemoteKey(p))
     const missing = new Set(
-      (await this.deps.workspaces()).filter((w) => w.missing).map((w) => w.path)
+      onlyRemote ? [] : (await this.deps.workspaces()).filter((w) => w.missing).map((w) => w.path)
     )
     for (const p of paths) {
       if (missing.has(p)) continue

@@ -233,6 +233,10 @@ export async function createFile(dirPath: string, name: string): Promise<EditCre
     if ((e as NodeJS.ErrnoException | null)?.code === 'EEXIST') throw new Error('KOLOFT_EXISTS')
     throw writeError(e)
   }
-  const st = await file.stat().finally(() => file.close())
-  return { path: target, mtimeMs: st.mtimeMs, size: st.size }
+  try {
+    const st = await file.stat()
+    return { path: target, mtimeMs: st.mtimeMs, size: st.size }
+  } finally {
+    await file.close().catch(() => {})
+  }
 }

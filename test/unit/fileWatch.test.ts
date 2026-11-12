@@ -313,6 +313,14 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
+  it('a watch still waiting on the disk when every watcher is closed opens none', async () => {
+    const spy = vi.spyOn(fs, 'watch')
+    const pending = watchDir(dir, () => {})
+    closeAllDirWatchers()
+    expect(await pending).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
   it('keeps the watchers of only the 8 folders left most recently, so a ninth closes the one left longest ago', async () => {
     const folders = Array.from({ length: 9 }, (_, i) => {
       const folder = path.join(dir, `ws-${i}`)

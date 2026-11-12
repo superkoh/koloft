@@ -3553,5 +3553,5 @@ main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer 
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
 save's last check and its rename together on the main thread; `saveSettings` writes
 `settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and git-freshness
-sweeps' "is the workspace folder still there" and Muse's registry sweep stat folders
-through `fs.promises`.
+sweeps' "is the workspace folder still there" and the timed look at Muse's registry
+folders stat them through `fs.promises`.

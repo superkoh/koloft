@@ -33,7 +33,8 @@ export class BackgroundFile {
 
   constructor(
     private readonly file: () => string,
-    private readonly mode?: number
+    private readonly mode?: number,
+    private readonly gaveUp?: () => void
   ) {}
 
   write(text: string): void {
@@ -79,6 +80,7 @@ export class BackgroundFile {
         const theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore = genTriedAgain !== gen
         genTriedAgain = gen
         if (theFolderMayBeGoneSoMakeItAndTryThisTextOnceMore) continue
+        this.gaveUp?.()
       }
       this.savedGen = Math.max(this.savedGen, gen)
     }
