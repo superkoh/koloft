@@ -132,10 +132,11 @@ async function untilTheMachineHasStamped(env: E2EEnv, bare: string): Promise<voi
 }
 
 async function untilTwoHeartbeatsLeaveOut(env: E2EEnv, bare: string): Promise<void> {
+  const since = heartbeats(env).length
   await expect
     .poll(
       () => {
-        const lastTwo = heartbeats(env).slice(-2)
+        const lastTwo = heartbeats(env).slice(since).slice(-2)
         return lastTwo.length === 2 && lastTwo.every((c) => !c.includes(`'${bare}'`))
       },
       { timeout: 60_000 }

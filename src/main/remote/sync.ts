@@ -105,6 +105,7 @@ interface Watch {
   count: number
   stamp?: string
   keepsStampAcrossUnwatch: boolean
+  catchUpFrom?: string
   onChange: (stamp: string) => void
 }
 
@@ -166,20 +167,21 @@ export class RemoteSync {
   ): void {
     let paths = this.watches.get(host)
     if (!paths) this.watches.set(host, (paths = new Map()))
-    const w = paths.get(path)
+    let w = paths.get(path)
     if (w) {
       w.count++
       w.keepsStampAcrossUnwatch ||= reportsWhatChangedWhileUnwatched
-      return
+    } else {
+      w = { count: 1, keepsStampAcrossUnwatch: reportsWhatChangedWhileUnwatched, onChange }
+      paths.set(path, w)
     }
+    if (!reportsWhatChangedWhileUnwatched) return
     const kept = this.stampsOfUnwatched.get(host)
-    paths.set(path, {
-      count: 1,
-      stamp: reportsWhatChangedWhileUnwatched ? kept?.get(path) : undefined,
-      keepsStampAcrossUnwatch: reportsWhatChangedWhileUnwatched,
-      onChange
-    })
+    const stampWhenUnwatched = kept?.get(path)
+    if (stampWhenUnwatched === undefined) return
     kept?.delete(path)
+    w.catchUpFrom = stampWhenUnwatched
+    this.askSoon(host)
   }
 
   unwatch(host: string, path: string): void {
@@ -190,7 +192,13 @@ export class RemoteSync {
     if (!w.keepsStampAcrossUnwatch) return
     let kept = this.stampsOfUnwatched.get(host)
     if (!kept) this.stampsOfUnwatched.set(host, (kept = new Map()))
-    kept.set(path, w.stamp ?? UNWATCHED_BEFORE_ITS_FIRST_STAMP)
+    kept.set(path, w.catchUpFrom ?? w.stamp ?? UNWATCHED_BEFORE_ITS_FIRST_STAMP)
+  }
+
+  private askSoon(host: string): void {
+    const st = this.hosts.get(host)
+    if (this.stopped || !st || st.running || st.failures) return
+    if (st.dueAt - Date.now() > FAST_INTERVAL_MS) this.next(host, st, 0)
   }
 
   unwatchAll(): void {
@@ -204,8 +212,9 @@ export class RemoteSync {
       const w = paths?.get(path)
       const stamp = stamps[i]
       if (!w || stamp === undefined) return
-      const before = w.stamp
+      const before = w.catchUpFrom ?? w.stamp
       w.stamp = stamp
+      w.catchUpFrom = undefined
       if (before !== undefined && before !== stamp) w.onChange(stamp)
     })
   }

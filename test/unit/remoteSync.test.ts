@@ -648,6 +648,35 @@ describe('a path watched again', () => {
     expect(seen).toEqual(['1.0 3'])
   })
 
+  it('by a watcher that keeps its stamp still reports a change made while unwatched when a plain watcher of the same path came back first', async () => {
+    watch(true)
+    sync.start()
+    await tick(1)
+    sync.unwatch('devbox', dir)
+    stamp = '2.0 4'
+    await tick(2000)
+    watch(false)
+    await tick(2000)
+    watch(true)
+    await tick(2000)
+    expect(seen).toEqual(['2.0 4'])
+  })
+
+  it('by a watcher that keeps its stamp asks an idle machine at once, not at its next idle round', async () => {
+    target = { ...target, busy: false, hasTabs: false }
+    watch(true)
+    sync.start()
+    await tick(1)
+    sync.unwatch('devbox', dir)
+    stamp = '2.0 4'
+    await tick(60_000)
+    const idle = runs.length
+    watch(true)
+    await tick(1)
+    expect(runs.length).toBe(idle + 1)
+    expect(seen).toEqual(['2.0 4'])
+  })
+
   it('by a plain watcher takes its first stamp as the baseline, whatever moved while it was unwatched', async () => {
     watch(false)
     sync.start()
