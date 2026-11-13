@@ -1,21 +1,20 @@
 import { execFile } from 'child_process'
+import { psEnvironment } from './processTable'
 
 export interface TaggedProcess {
   pid: number
   ppid: number
   rssBytes: number
-  cpuPercent: number
+  started: string
   agent: boolean
   tab?: string
-  vm: boolean
 }
 
-const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.,]+)\s(.*)$/
-const TAB_TAG = /(?:^|\s)KOLOFT_(?:TAB_ID|HOLD_TAB)=(\S+)/
+// PLATFORM§3
+const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d{1,2}\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.*)$/
+const TAB_TAG = /(?:^|\s)KOLOFT_TAB_ID=(\S+)/
 export const AGENT_PROGRAM =
   /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|muse|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|muse|agy)(?:\s|$))/
-// PLATFORM§59
-const SHARED_VM = /com\.apple\.Virtualization\.VirtualMachine/
 const PS_DEADLINE_MS = 5_000
 
 export function parseTaggedTable(stdout: string): TaggedProcess[] {
@@ -28,22 +27,16 @@ export function parseTaggedTable(stdout: string): TaggedProcess[] {
       pid: Number(m[1]),
       ppid: Number(m[2]),
       rssBytes: Number(m[3]) * 1024,
-      cpuPercent: Number(m[4].replace(',', '.')),
+      started: m[4].replace(/\s+/g, ' '),
       agent: AGENT_PROGRAM.test(text),
-      tab: TAB_TAG.exec(text)?.[1],
-      vm: SHARED_VM.test(text)
+      tab: TAB_TAG.exec(text)?.[1]
     })
   }
   return out
 }
 
-export interface Trees {
-  members: Map<string, TaggedProcess[]>
-  sharedVmBytes: number
-}
-
 // PLATFORM§59
-export function treesByTab(rows: TaggedProcess[]): Trees {
+export function treesByTab(rows: TaggedProcess[]): Map<string, TaggedProcess[]> {
   const kids = new Map<number, TaggedProcess[]>()
   for (const r of rows) {
     const list = kids.get(r.ppid)
@@ -65,16 +58,38 @@ export function treesByTab(rows: TaggedProcess[]): Trees {
       stack.push(...(kids.get(p.pid) ?? []).filter((k) => !k.tab || k.tab === root.tab))
     }
   }
-  const sharedVmBytes = rows.filter((r) => r.vm).reduce((sum, r) => sum + r.rssBytes, 0)
-  return { members, sharedVmBytes }
+  return members
+}
+
+// ADR-0042
+export function toolsOf(members: TaggedProcess[], koloftPid: number): TaggedProcess[] {
+  return members.filter((p) => !p.agent && p.ppid !== koloftPid)
+}
+
+export function withDescendants(rows: TaggedProcess[], roots: Set<number>): number[] {
+  const kids = new Map<number, number[]>()
+  for (const r of rows) {
+    const list = kids.get(r.ppid)
+    if (list) list.push(r.pid)
+    else kids.set(r.ppid, [r.pid])
+  }
+  const out = new Set<number>()
+  const stack = [...roots]
+  while (stack.length) {
+    const pid = stack.pop() as number
+    if (out.has(pid)) continue
+    out.add(pid)
+    stack.push(...(kids.get(pid) ?? []))
+  }
+  return [...out]
 }
 
 export function readTaggedTable(): Promise<TaggedProcess[]> {
   return new Promise((resolve) => {
     execFile(
       'ps',
-      ['-axEww', '-o', 'pid=,ppid=,rss=,pcpu=,command='],
-      { maxBuffer: 64 * 1024 * 1024, timeout: PS_DEADLINE_MS },
+      ['-axEww', '-o', 'pid=,ppid=,rss=,lstart=,command='],
+      { env: psEnvironment(), maxBuffer: 64 * 1024 * 1024, timeout: PS_DEADLINE_MS },
       (err, stdout) => resolve(err ? [] : parseTaggedTable(String(stdout)))
     )
   })

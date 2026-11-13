@@ -1407,13 +1407,41 @@ inferred, not checked.
   `startOnLoad`, `maxTextSize`, `suppressErrorRendering` and `maxEdges` but not
   `htmlLabels` or `themeCSS`, so a document's own `%%{init}%%` can set those two. With
   `htmlLabels` on, labels go in `<foreignObject>`, which DOMPurify strips; in mermaid 11
-  the root key wins, but the flowchart renderer still reads `flowchart.htmlLabels`
-  directly in two places. A document's `%%{init}%%` is applied to the process-wide
-  config at the start of `render()`, so two renders at once can leak settings. Labels
-  are measured with `getBBox`, which needs a laid-out node; with no container argument
-  mermaid adds its own scratch `<div>` to `<body>`. `fontFamily` lands in SVG
-  presentation attributes while widths are measured, and a CSS `var()` there is not
-  reliably honoured.
+  and 12 the root key wins, but the flowchart renderer still reads
+  `flowchart.htmlLabels` directly in two places. A document's `%%{init}%%` is applied
+  to the process-wide config at the start of `render()`, so two renders at once can
+  leak settings. Labels are measured with `getBBox`, which needs a laid-out node; with
+  no container argument mermaid adds its own scratch `<div>` to `<body>`. `fontFamily`
+  lands in SVG presentation attributes while widths are measured, and a CSS `var()`
+  there is not reliably honoured. (All of the above re-read in mermaid 12.3.0's
+  `dist`, 2026-11-12.)
+- **mermaid 12 changed how diagrams look by default** (12.3.0 against 11.17.0,
+  2026-11-12: both default configs dumped from `mermaidAPI.defaultConfig` and diffed,
+  then 34 samples drawn in the built app on each). The root `layout` went from `dagre`
+  to `elk`; the sections `flowchart`, `class`, `state`, `er`, `requirement`,
+  `sequence`, `venn` and `swimlane`, and the new kinds `usecase` and `agentflow`, each
+  got a `look: 'neo'` and a `theme: 'redux-color'` of their own (the root `theme` and
+  `look` stayed `default` and `classic`), and `state` a `layout: 'elk'`;
+  `flowchart.wrappingWidth` went from 200 to 120, and `flowchart`
+  and `state` gained `minNodeWidth: 120` (state labels wrapped at
+  `flowchart.wrappingWidth` in 11, at `state.wrappingWidth` in 12). `theme`, `look` and
+  `layout` are resolved per diagram (`resolveAppearance` in `config.ts`): the
+  document's own directives first, then what `initialize` was given, then the
+  defaults, and inside each of those the diagram's own section beats the root key. So
+  a root `theme` and `look` given to `initialize` beat every section default. A root
+  `layout` given to `initialize` would too, but it also reaches mindmaps, which
+  otherwise draw with `cose-bilkent`: it turns a radial mindmap into a top-down tree,
+  so `layout` is set in each section that draws with it. `flowchart-elk` draws with
+  dagre under that setting, as it did in 11, which shipped no ELK. With all of this
+  set, a top-down state diagram whose edges carry labels is still drawn wider than in
+  11 (the labels of one rank sit side by side in one row, where 11 staggered them),
+  flowchart circles are about 4 px larger, a mindmap's branches land a few px
+  elsewhere, and a swimlane is laid out anew in the same colours; no setting found
+  that undoes these. A document that asks for `layout: elk` itself now gets ELK, where
+  11 fell back to dagre. In Koloft's build ELK is a 3.4 MB chunk of its own, loaded
+  the first time a diagram is laid out with it: one that asks for it, or one of the
+  kinds new in 12 (`usecase`, `agentflow`), which read the root `layout` (read from
+  `dist`, not drawn).
 - **KaTeX**: when it refuses a formula, the `.katex-error` element's text is a
   ParseError message with combining marks stitched through the source; the untouched
   source is in its `title` attribute. Its default `maxSize` is Infinity, so an untrusted
@@ -3288,8 +3316,28 @@ server unless a line says so.
   `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
   lowers a `-a` program while its app is not frontmost or the screen is locked.
 
+- **`-b -p` moves only that process; what it starts afterwards starts lowered, and
+  lifting it does not lift them.** `/bin/sh -c 'sleep A & sleep 3; sleep B & wait'`,
+  priorities read with `ps -M`: after `taskpolicy -b -p <sh>` the shell read 4 and the
+  already running `sleep A` stayed at 31; `sleep B`, started 3 s later, read 4. After
+  `taskpolicy -B -p <sh>` the shell read 31 and `sleep B` still 4; `-B -p` on `sleep B`
+  itself put it at 31.
+- **A lowered shell that then `exec`s a program through `taskpolicy -a` leaves the
+  program lowered.** `/bin/sh -c 'sleep 2; exec /usr/sbin/taskpolicy -a sleep N'`,
+  lowered with `-b -p` during the first two seconds: after the `exec` the same pid ran
+  `sleep N` at priority 4, not 46; `-B -p` then put it at 46.
+- Both measured 2026-11-12 on the same Mac (macOS 27.0, Darwin 27.0.0), one run each, by
+  a node script from a Koloft Claude Code tab; nothing but `sleep` was lowered.
+- Inferred, not checked: that macOS takes the memory of a `-b` process first when memory
+  is short. Three short runs on 2026-11-11 saw its pages on the background queue twice
+  and compressed no sooner than an unlowered process's once; no run was made under real
+  memory pressure.
+
 Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
-program on this Mac through `taskpolicy -a` (ADR-0042).
+program on this Mac through `taskpolicy -a`; `ResourceGuard` in
+`src/main/resourceGuard.ts`, which while memory pressure stays at 4 lowers the tools of
+the agent tabs nobody looks at with `-b -p`, never a process Koloft itself started, and
+lifts by reading the process table again (ADR-0042).
 
 ## §60 Electron: is someone at the Mac
 
@@ -3551,4 +3599,55 @@ Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-writ
 in a `.koloft-writes` folder inside the target's folder and moves it into place off the
 main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
-save's last check and its rename together on the main thread.
+save's last check and its rename together on the main thread; `signalLog`
+(`machineRoom.ts`) appends to and trims its log through `fs.promises`; `saveSettings`
+writes `settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and
+git-freshness sweeps' "is the workspace folder still there" and the timed look at Muse's
+registry folders stat them through `fs.promises`.
+
+## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
+
+- **While the main process's JavaScript is busy, no key press and no wheel turn reaches
+  a window**, wherever the terminal behind it lives. Electron's own docs (Performance,
+  "Blocking the main process", read 2026-11-12) say the main process "also houses the
+  UI thread" and that blocking it freezes the whole app; Chromium's
+  `render_widget_host_view_cocoa.mm` takes `keyEvent:` and `scrollWheel:` in the
+  browser process's window view before handing them to the renderer, and an input
+  method's text goes the same way. So moving node-pty out of the main process cannot
+  keep typing or scrolling going while the main thread stalls: only a main thread that
+  does not stall can.
+- **What a throwaway Electron 43.8.6 app showed** (hidden window, a `cat` in a node-pty,
+  the main process busy-waiting 1 s): node-pty loads in a `utilityProcess` — from a
+  plain folder and from an `app.asar` with node-pty in `app.asar.unpacked` — and a
+  `MessageChannelMain` port reaches the renderer's preload with context isolation on.
+  Text the page itself wrote over that port came back from the pty with p99 1–8.8 ms
+  during the stall (the same path through the main process: 980–990 ms), and the
+  renderer drew 160 frames in that second. Keys and wheel turns sent through CDP's
+  `Input.dispatchKeyEvent` / `Input.dispatchMouseEvent` reached the page only after
+  the stall (keys p99 938–942 ms over two rounds, wheel p99 946 ms with 16 of 30
+  arriving), but so did a plain `Runtime.evaluate` (896–899 ms): every CDP command
+  waits for the main thread, so these numbers agree with the source above without
+  proving it. Not measured: a real keyboard (it needs a focused window), and whether
+  the frames drawn during the stall reach the screen.
+- **The rest of that app**: the `utilityProcess`'s main thread read priority 47 under
+  `ps -M` (the main process 46, both libuv pools 31). Killing it with SIGKILL gave the
+  main process its `exit` event; a program in its pty died of the hangup, one that
+  ignored SIGHUP lived on with parent 1, and a new fork started fine. Killing the main
+  process with SIGKILL ended the `utilityProcess` too.
+- **Timing the main thread from inside costs little and tells waiting from working.**
+  In a hidden Electron 43.8.6 window (Node 24.22.1), a `setInterval` every 25 ms that
+  reads `performance.now()` and `process.threadCpuUsage()` added 52–56 ms of process
+  CPU per 10 s over three runs (every 10 ms: about 105 ms); the app alone used about
+  10 ms. A 200 ms busy loop showed as a 203–213 ms gap with 197–200 ms of main-thread CPU, a 200 ms
+  `Atomics.wait` as a 212–228 ms gap with under 1 ms of CPU, and 60 s with nothing
+  to do showed no gap over 75 ms. `perf_hooks.monitorEventLoopDelay` at a 10 ms
+  resolution, read every second, reported the wait but not the busy loop in one run.
+- Measured 2026-11-12 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, with
+  `NSApplicationActivationPolicyAccessory` and the window never shown, one or two runs
+  each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
+  app with a Dock icon whose window stays covered for long.
+
+Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
+and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
+`userData` whenever the main thread took no new work for 75 ms or more, with how much
+of that it spent on the CPU.

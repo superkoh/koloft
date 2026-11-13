@@ -31,8 +31,6 @@ import {
   AGY_START_ENV,
   agyLogLine,
   koloftHookEntry,
-  localAgyHold,
-  machineAgyHold,
   runWithSh,
   sessionStartOutput,
   writeAgyScripts,
@@ -89,10 +87,9 @@ import {
   type AgyMachinePlan,
   type RemoteAgyConfig
 } from './remote/agyTab'
-import { remoteMachineDir } from './remote/paths'
 import { keepSkillsIn } from './agentPlugin'
 import { seedAssistMemory } from './assistMemory'
-import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
+import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
@@ -673,12 +670,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       playwrightServers: ownersPlaywrightMcp(gemini),
       workbenchBrowser: !!endpoint
     })
-    const hold = this.deps.holdScript
-    mergeAgyHooks(
-      pick.home,
-      gemini,
-      koloftHookEntry(runWithSh(scripts.hook), hold && localAgyHold(hold))
-    )
+    mergeAgyHooks(pick.home, gemini, koloftHookEntry(runWithSh(scripts.hook)))
     let bound: AgyRun | undefined
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -727,8 +719,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
           // AGY§30
-          ...browserControlEnv(tabId, endpoint),
-          ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
+          ...browserControlEnv(tabId, endpoint)
         },
         resumeSessionId: opts.resumeSessionId,
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
@@ -811,7 +802,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
-      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
+      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
     )
     const instructions = [
       ...(agentTools ? [koloftPrompt('agy')] : []),
@@ -825,8 +816,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
-        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
-        ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
+        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {})
       },
       program: agyTab({
         tabId,
