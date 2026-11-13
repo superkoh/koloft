@@ -69,6 +69,16 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   PostCompact, more tool calls, Stop. At the start of a prompt: UserPromptSubmit, then
   PreCompact, SessionStart `compact`, PostCompact, the reply, Stop. Every hook carries the
   turn's `prompt_id`, and the turn's own Stop ends it.
+- **A subagent that compacts fires the same three hooks under the main session's id,
+  and from 2.1.323 they say which agent it was.** 2026-11-13, CC 2.1.323 beside 2.1.322
+  (darwin-arm64, `claude -p` with a stand-in Messages API that reported 990,000 input
+  tokens on the subagent's request, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=5`, a background
+  general-purpose subagent; one run each): on both, PreCompact, SessionStart `compact`
+  and PostCompact fired with the **main** session's `session_id` and `transcript_path`;
+  only 2.1.323 adds `agent_id` and `agent_type: "general-purpose"` to all three (the
+  changelog: "Fixed `PreCompact`, `PostCompact` and post-compaction `SessionStart` hooks
+  not receiving `agent_id` and `agent_type` when a subagent compacts"). So up to 2.1.322
+  a subagent's compaction cannot be told from the main session's by the hook payload.
 - **Claude also compacts while idle, with no prompt and no Stop around it.** Seen in two
   real sessions (2026-10-08/09, CC 2.1.29x, Koloft's hook log and the transcript): Stop,
   the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
@@ -990,6 +1000,21 @@ starts a new conversation when it is set back to the tool's own.
   now English; and `-w` creation and reuse run with `GIT_NO_LAZY_FETCH=1` after a
   partial clone's missing objects are fetched ahead (inferred from the code). Koloft
   matches only the start and `Worktree removed` lines, so neither change reaches it.
+- Rechecked 2026-11-13 on CC 2.1.323 beside 2.1.322 (darwin-arm64, python pty with
+  `pyte`, 120 columns, scratch `HOME` and `CLAUDE_CONFIG_DIR`, a stand-in Messages API
+  and an `apiKeyHelper` key, a one-commit throwaway repo; one run each): a `-w` session
+  with one turn, then `/exit`, wrote the same bytes on both — the empty title, the two dim
+  lines `Resume this session with:` / `claude --resume <id>` (119 bytes), `Removing
+  worktree…`, `Worktree removed (no changes)`. On 2.1.323 alone: with `--settings <path
+  without spaces> --model haiku` at 400 columns the second line was `claude --settings
+  <path> --model haiku --resume <id>` (272 bytes), and a session outside a worktree still
+  printed `claude --resume <id>`. **2.1.323 adds `CLAUDE_CODE_RESUME_HINT_COMMAND`**
+  ("which a program that starts Claude Code can set to have the exit hint name its own
+  resume command"): set to `koloft`, the same `-w` exit printed `koloft --resume <id>` —
+  no launch flags and no worktree flag — so the second line no longer starts with
+  `claude`; set to a value with a space (`koloft resume`), it was ignored and the line
+  stayed `claude --resume <id>` (the binary checks the value against `^\w[\w-]*$`, read
+  with `strings`). Whether the variable reaches CC on a remote machine was not probed.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -1986,6 +2011,17 @@ other bullets of §9 were not re-measured on this build.
   cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
   the 30-day default; that the skip holds in a run long enough to sweep, and what a
   managed `cleanupPeriodDays` does there, is not probed.
+- **Since 2.1.323 a long hook adds lines to `-p`'s stream-json, not to its text or json
+  output.** 2026-11-13, darwin-arm64, a stand-in Messages API, a `UserPromptSubmit` hook
+  that sleeps: with `--output-format stream-json --verbose` and a 70 s hook, 2.1.323
+  wrote one line at 30 s and one at 60 s, `{"type":"tool_progress","tool_use_id":
+  "hook-UserPromptSubmit-<id>-heartbeat-<n>","tool_name":"UserPromptSubmit",
+  "parent_tool_use_id":…,"elapsed_time_seconds":30,"heartbeat":true,"uuid":…,
+  "session_id":…}`, **before** the `system` / `init` line, so the first line is no longer
+  always `init`; 2.1.322 wrote `init` first, at 70.4 s. The transcript got no such
+  record. With a 35 s hook, 2.1.323's text output was the reply alone on stdout and
+  nothing on stderr, and its `--output-format json` one result line. Other hook events
+  were not run.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer
@@ -3072,7 +3108,16 @@ below was one run.
   `--dangerously-skip-permissions`, an `AskUserQuestion` answered `2` showed "→ Green" and
   "Allowed by PermissionRequest hook"; with `--permission-mode default`, a `Bash` dialog
   answered `yes` (`allow` with `updatedInput` set to the `tool_input` unchanged) ran the
-  command. Both hooks removed their files on the way out.
+  command. Both hooks removed their files on the way out. Rechecked 2026-11-13 on
+  2.1.323 beside 2.1.322 (darwin-arm64, python pty, scratch `HOME`, a stand-in Messages
+  API, `--permission-mode default`, a hook answering in the same two shapes): the
+  `AskUserQuestion` answer (`{...tool_input, answers}`) reached `PostToolUse` as
+  `answers: {"Pick a colour?": "Green"}` with "→ Green" on screen, and the `Bash` `touch`
+  answered `allow` with `updatedInput` unchanged made its file with "Allowed by
+  PermissionRequest hook"; each call fired `PermissionRequest` once on both builds, so
+  2.1.323's "a permission check that fails on input a `PermissionRequest` hook rewrote now
+  asks again" did not show for an unchanged input. A check that fails was not made to
+  happen.
 - **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
   `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
   nothing):
