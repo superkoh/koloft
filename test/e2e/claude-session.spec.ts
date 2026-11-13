@@ -13,9 +13,11 @@ import {
   openPicker,
   readCalls,
   runIn,
+  sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   terminalText,
   transcriptFile,
+  TWO_LINE_PROMPT,
   waitBooted,
   waitStartupTurnOver,
   wsRows
@@ -29,6 +31,19 @@ import {
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
 const RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S = 1
+
+function claudePrompts(home: string): unknown[] {
+  const projects = path.join(home, '.claude', 'projects')
+  if (!fs.existsSync(projects)) return []
+  return fs
+    .readdirSync(projects, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.jsonl'))
+    .flatMap((file) => fs.readFileSync(path.join(projects, file), 'utf8').split('\n'))
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((record) => record.type === 'user')
+    .map((record) => record.message?.content)
+}
 
 for (const remote of [false, true]) {
   test(`what a person types into a new ${remote ? 'remote ' : ''}Claude Code tab while its shell is still starting waits for Koloft's launch line: the session binds and the agent takes it as its first prompt`, async ({
@@ -102,22 +117,12 @@ for (const remote of [false, true]) {
       if (remote) await addRemoteWorkspace(page, env)
       const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
       await startSessionIn(page, workspace, { remote })
-      const tabId = (await wsRows(page, workspace).first().getAttribute('data-tab-id'))!
 
-      await centerTerm(page).click()
-      await page.keyboard.type('probe-a')
-      await page.keyboard.press('Shift+Enter')
-      await page.keyboard.type('probe-b')
-      await page.keyboard.press('Enter')
-      await page.keyboard.type('/answer after the two lines')
-      await page.keyboard.press('Enter')
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
 
       await expect
-        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
-        .toContain('[fake-claude] answered: after the two lines')
-      const text = await terminalText(page, tabId)
-      expect(text).toMatch(/\[fake-claude\] handled: probe-a\n *probe-b\n/)
-      expect(text).not.toContain('handled: probe-b')
+        .poll(() => claudePrompts(remote ? machineHome(env) : env.home), { timeout: 60_000 })
+        .toContain(TWO_LINE_PROMPT)
     } finally {
       await quitAndClose(app)
     }
