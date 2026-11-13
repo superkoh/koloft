@@ -849,7 +849,7 @@ tracker.heldTabs = () => {
       butler?.channelOfTab(s.tabId) ||
       roomOfTab(s.tabId) ||
       workspaceMgr?.isResident(s.sessionId) ||
-      cronRunner?.waitsToCloseItself(s.tabId)
+      cronRunner?.holdsOpenRunThatClosesItself(s.tabId)
     )
       held.add(s.tabId)
   return held
