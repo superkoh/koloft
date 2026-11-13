@@ -32,6 +32,7 @@ export interface ClaudeCall {
   firstPrompt?: string | null
   ts: number
   oauthToken: string | null
+  disable1mContext?: string | null
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null

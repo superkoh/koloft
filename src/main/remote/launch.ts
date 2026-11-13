@@ -23,6 +23,11 @@ export const CLAUDE_AUTH_ENV_VARS = [
   'ANTHROPIC_AUTH_TOKEN'
 ]
 
+// CC§7
+export function claudeCodeGuessesWindowOf(model: string): boolean {
+  return !/claude/i.test(model) && !/\[1m\]$/i.test(model)
+}
+
 export function accountEnv(
   kind: AccountKind,
   name: string,
@@ -47,6 +52,7 @@ export function accountEnv(
         env[k] = endpoint.model
       }
       env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1'
+      if (claudeCodeGuessesWindowOf(endpoint.model)) env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1'
     }
   } else env.CLAUDE_CODE_OAUTH_TOKEN = secret
   return env

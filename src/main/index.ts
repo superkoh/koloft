@@ -187,6 +187,7 @@ import {
   UTIL_BIN_DIR,
   utilShellLine,
   CLAUDE_AUTH_ENV_VARS,
+  claudeCodeGuessesWindowOf,
   type MachinePackage
 } from './remote/launch'
 import {
@@ -2306,6 +2307,7 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
+  if (endpoint?.model && claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
