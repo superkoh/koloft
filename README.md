@@ -65,10 +65,8 @@ shell.
   folder with no pick keeps your own git and gh setup.
 - **⌘P** — type what a session should do and ⏎ starts it where Assist picks; the same
   box jumps to any session and searches every chat.
-- **Assist** — Koloft's own AI. It is always on and runs on your accounts; in
-  `Settings ▸ Assist` each of its jobs can pick its own agent. It does small jobs for
-  Koloft, such as picking where a ⌘P session starts, each for about a cent or less of
-  that account's plan.
+- **Assist** — Koloft's own AI. It is always on and runs on your accounts. It does small
+  jobs for Koloft, such as picking where a ⌘P session starts.
 - **Discord** — a bot of your own on your Discord server, so you can talk to Koloft's
   butler (Koloft's own AI session, the first row of the sessions list) from your phone:
   it answers you in its channel and reaches your sessions for you. Set up in
