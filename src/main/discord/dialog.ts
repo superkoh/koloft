@@ -506,7 +506,7 @@ function museUntickAll(q: Asked): string[] | undefined {
   const only = q.questions[0]!
   return [
     museSubmitRow(only),
-    ...keysFor(['Up', 'Enter', museNoneOfTheAboveRow(only), 'Space', '1'])
+    ...keysFor(['Down', 'Down', 'Enter', museNoneOfTheAboveRow(only), 'Space', '1'])
   ]
 }
 

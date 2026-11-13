@@ -1116,7 +1116,7 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
   describe('a Muse question that takes several picks, alone in its dialog, whose ticks Koloft pressed but the session did not take', () => {
     const tick = (n: string): string[] => [n, ' ']
     const submitThenReview = ['5', '\r', '\r']
-    const untickAll = ['5', '\x1b[A', '\r', ...tick('4'), '1']
+    const untickAll = ['5', '\x1b[B', '\x1b[B', '\r', ...tick('4'), '1']
 
     function museAsking() {
       const s = codexAsking({
