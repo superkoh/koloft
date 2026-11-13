@@ -493,15 +493,20 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§5
   trustsFolder(dir: string): boolean | Promise<boolean> {
-    const picked = this.deps.pickHome(undefined, true)
     const key = parseRemoteKey(dir)
-    if (!key)
-      return agyTrustsFolder(this.gemini, dir) || (!!picked && agyTrustsFolder(picked.home, dir))
+    if (!key && this.trustedHere(undefined, dir)) return true
+    const picked = this.deps.pickHome(undefined, true)
     if (!picked) return false
+    if (!key) return this.trustedHere(picked.home, dir)
     return this.deps.remote
       .machine(key.host)
       .readAgyConfig(picked.account)
       .then((config) => trustsIn(key.path, config.ownSettings, config.ownersSettings))
+  }
+
+  // AGY§5
+  private trustedHere(accountHome: string | undefined, dir: string): boolean {
+    return [this.gemini, accountHome].some((home) => !!home && agyTrustsFolder(home, dir))
   }
 
   protected async listHistory(): Promise<HistoryListing<HistoryEntry>> {
@@ -658,7 +663,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
-      !!resource?.managed && [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
+      !!resource?.managed && this.trustedHere(pick.home, workspace)
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
