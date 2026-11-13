@@ -4,7 +4,7 @@ import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import type { SourceLines } from '../markdown/lines'
-import { cachedDiagram, MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import { cachedDiagram, MERMAID_MAX_TEXT_SIZE, renderDiagram, type Drawn } from '../mermaidRender'
 import { CommentBox, type CommentTarget } from './CommentBox'
 import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
 import { findInBlocks, linesOfRange, selectedRangeIn, swapMark, type DrawnBlock } from './mdPassage'
@@ -90,13 +90,20 @@ function settleDiagram(el: HTMLElement): void {
   el.setAttribute('aria-label', 'Zoom diagram')
 }
 
-function fillFromCache(el: HTMLElement): boolean {
-  const svg = cachedDiagram(codeOf(el), `d${++mermaidTempIdSeq}`)
-  if (svg === undefined) return false
-  el.innerHTML = svg
-  settleDiagram(el)
+function showDrawn(el: HTMLElement, drawn: Drawn, code: string): void {
+  if (!drawn.ok) fillError(el, drawn.message, code, TOKEN)
+  else {
+    el.innerHTML = drawn.svg
+    settleDiagram(el)
+  }
   el.dataset.state = 'done'
-  return true
+}
+
+function fillAtOnce(el: HTMLElement): boolean {
+  const code = codeOf(el)
+  const drawn = cachedDiagram(code, `d${++mermaidTempIdSeq}`)
+  if (drawn) showDrawn(el, drawn, code)
+  return !!drawn
 }
 
 function blockImage(img: HTMLImageElement): void {
@@ -245,7 +252,7 @@ export function PreviewViewer({
 
     const watch = (b: Shown): void => {
       for (const el of b.el.querySelectorAll<HTMLElement>('.mmd'))
-        if (el.dataset.k === TOKEN && !el.dataset.state && !fillFromCache(el))
+        if (el.dataset.k === TOKEN && !el.dataset.state && !fillAtOnce(el))
           diagrams.current.watch(el)
     }
 
@@ -314,13 +321,7 @@ export function PreviewViewer({
       }
       const res = await renderDiagram(code, `d${++mermaidTempIdSeq}`)
       if (disposed || !el.isConnected) return
-      if (res.ok) {
-        el.innerHTML = res.svg
-        settleDiagram(el)
-      } else {
-        fillError(el, res.message, code, TOKEN)
-      }
-      el.dataset.state = 'done'
+      showDrawn(el, res, code)
     }
 
     const io = new IntersectionObserver(
