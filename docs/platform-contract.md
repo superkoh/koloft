@@ -3702,7 +3702,9 @@ not read.
   "Connect additional browsers to the 1Password app"
   (https://support.1password.com/additional-browsers/, read 2026-11-13) gives the way:
   Settings ▸ Browser ▸ Add Browser, then "choose a browser that's code signed by Apple
-  in the Applications folder". The strings show each entry holds a bundle id and a
+  in the Applications folder". The same page warns that a connected browser "will
+  receive full access to the information saved in 1Password when the 1Password app is
+  unlocked". The strings show each entry holds a bundle id and a
   code-signing requirement string ("requirements string from user settings was
   corrupt"); that the stored string is the app's designated requirement is inferred,
   not checked. Ways an addition is refused: "The selected application was signed in an
