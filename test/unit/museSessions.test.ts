@@ -200,7 +200,7 @@ beforeEach(() => {
     assistOf: () => assist,
     skipPermissions: () => skipPermissions,
     serversAmong: async () => servers,
-    agent: { enabled: () => agentTools, answer: vi.fn(), rules: async () => undefined },
+    agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(tools, 'gh')

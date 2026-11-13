@@ -29,7 +29,7 @@ import {
 import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
 import { listSkills, type SkillFs } from '../skillList'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
@@ -93,7 +93,6 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
-  projectPrompt(root: string): Promise<string | undefined>
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   agentHomes(): { codexHome: string; configHome: string }
@@ -124,7 +123,8 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const agentPlugin = d.agentPlugin()
   const prompt =
     agentPlugin && !conductor
-      ? ((await d.projectPrompt(spec.root)) ?? path.join(agentPlugin, AGENT_PROMPT_FILE))
+      ? (spec.projectRules && projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
+        path.join(agentPlugin, AGENT_PROMPT_FILE)
       : undefined
   return {
     ok: true,

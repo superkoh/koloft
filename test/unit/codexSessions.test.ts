@@ -226,12 +226,7 @@ beforeEach(() => {
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
     docsSkillsFolder: () => '/koloft/docs-plugin/skills',
-    agent: {
-      enabled: () => false,
-      answer: vi.fn(),
-      skillsFolder: () => '/koloft/plugin/skills',
-      rules: async () => undefined
-    },
+    agent: { enabled: () => false, answer: vi.fn(), skillsFolder: () => '/koloft/plugin/skills' },
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(directory, 'shim', 'gh')
@@ -1191,12 +1186,7 @@ describe('CodexSessions', () => {
   // CODEX§17
   it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, is given Koloft's skills folder, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
-    deps.agent = {
-      enabled: () => true,
-      answer,
-      skillsFolder: () => '/koloft/plugin/skills',
-      rules: async () => undefined
-    }
+    deps.agent = { enabled: () => true, answer, skillsFolder: () => '/koloft/plugin/skills' }
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
@@ -1244,12 +1234,7 @@ describe('CodexSessions', () => {
 
   // ADR-0029
   it('a conductor with agent tools on is told its role but never the helper rules, which would have it do work itself', async () => {
-    deps.agent = {
-      enabled: () => true,
-      answer: vi.fn(),
-      skillsFolder: () => undefined,
-      rules: async () => undefined
-    }
+    deps.agent = { enabled: () => true, answer: vi.fn(), skillsFolder: () => undefined }
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, role: 'ROLE-TEXT' })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')

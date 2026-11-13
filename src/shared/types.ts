@@ -414,7 +414,7 @@ export interface ButlerSession {
   lastSessionKey?: string
   knowsTodo?: string[]
   // CC§3 CODEX§11
-  carried?: { model?: string; effort?: CronEffort }
+  carried?: OwnPick
 }
 
 export interface DiscordChannel {

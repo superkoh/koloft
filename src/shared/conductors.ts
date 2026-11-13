@@ -6,8 +6,8 @@ import type {
   DiscordSettings,
   SessionRoom
 } from './types'
-import { DEFAULT_BUTLER_NAME, isCronEffort } from './types'
-import { isValidModelName } from './cronNames'
+import { DEFAULT_BUTLER_NAME } from './types'
+import { cleanOwnPick } from './sessionPicks'
 import { basename } from './preview'
 import { parseRemoteKey } from './remoteKey'
 import { isRecord } from './workbenchState'
@@ -135,20 +135,13 @@ function legacyBindings(rawDiscord: unknown): LegacyBinding[] {
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
   const knowsTodo = strings(raw.knowsTodo)
-  const carried = cleanCarried(raw.carried)
+  const carried = cleanOwnPick(raw.carried)
   return {
     sessionIds: strings(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
     ...(knowsTodo.length ? { knowsTodo } : {}),
     ...(carried ? { carried } : {})
   }
-}
-
-function cleanCarried(raw: unknown): ButlerSession['carried'] {
-  if (!isRecord(raw)) return undefined
-  const model = typeof raw.model === 'string' && isValidModelName(raw.model) ? raw.model : undefined
-  const effort = isCronEffort(raw.effort) ? raw.effort : undefined
-  return model || effort ? { ...(model && { model }), ...(effort && { effort }) } : undefined
 }
 
 function mergedSessions(sessions: ButlerSession[]): ButlerSession {

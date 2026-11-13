@@ -12,13 +12,12 @@ import {
   type WorktreeInfo
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
-import { resolvePick, tierModelOf, type PickFacts } from '@shared/sessionPicks'
+import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
 import {
   BUTLER_SAYS_OPENING,
   DISCORD_PREFIX,
   PICK_FOR_THE_TASK,
   ownerSays,
-  tiersOf,
   withProjectRules
 } from '@shared/agentGuide'
 import {
@@ -518,17 +517,18 @@ const hasNoName = (backend: BackendId): string =>
 
 function modelAndEffortRefusal(
   backend: BackendId,
-  args: NewSessionArgs,
-  rules: string | undefined
-): string | null {
+  args: NewSessionArgs
+): ((rules: string | undefined) => string) | null {
   const modelNeeded = needsModel(backend)
   if ((modelNeeded && !args.model) || !args.effort)
-    return `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
+    return (rules) =>
+      `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
   const owner = SESSION_BACKENDS.find(
     (b) => b !== backend && (namedModel(b, args.model) || tierModelOf(b, args.model))
   )
   return owner
-    ? `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models. ${withProjectRules(rules, `${tiersOf(backend)}.`)}`
+    ? (rules) =>
+        `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models. ${withProjectRules(rules, `${tiersOf(backend)}.`)}`
     : null
 }
 
@@ -1427,11 +1427,14 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (!place.ok) return place.reply
       const { workspace, conductorTab, helperRole } = place
       const { model, effort } = parsed.value
-      if (modelAndEffortRefusal(backend, parsed.value, undefined) || !effort) {
-        const rules = await d.projectRules(workspace)
-        const unpicked = modelAndEffortRefusal(backend, parsed.value, rules)
-        return refused(unpicked ?? 'koloft session new: --effort is missing.', EXIT_USAGE)
-      }
+      const unpicked = modelAndEffortRefusal(backend, parsed.value)
+      if (unpicked || !effort)
+        return refused(
+          unpicked
+            ? unpicked(await d.projectRules(workspace))
+            : 'koloft session new: --effort is missing.',
+          EXIT_USAGE
+        )
       const resolved = d.turnedOff(backend)
         ? undefined
         : resolvePick(backend, { model, effort }, await d.pickFacts(backend))

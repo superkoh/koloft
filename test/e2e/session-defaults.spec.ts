@@ -24,6 +24,7 @@ import {
   readCalls,
   sendShortcut,
   waitBooted,
+  waitForCalls,
   wsRows,
   type AgentName,
   type ClaudeCall
@@ -103,8 +104,7 @@ function promptOf(call: ClaudeCall, home = ''): string {
 }
 
 async function newClaudeCall(env: E2EEnv, before: number): Promise<ClaudeCall> {
-  await expect.poll(() => readCalls(env).length, { timeout: 60_000 }).toBeGreaterThan(before)
-  return readCalls(env)[before]
+  return (await waitForCalls(env, before + 1, 60_000))[before]
 }
 
 async function tabOf(row: Locator): Promise<string> {
@@ -269,24 +269,13 @@ test.describe("a workspace's session defaults: the model and thinking its own se
         path.join(env.home, 'fake-claude-assist-reply'),
         JSON.stringify({ hand: 'assist', workspace: 1, title: 'Ask ws-a' })
       )
-      await sendShortcut(app, 'shortcut:command-palette')
-      const box = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
-      await expect(box).toBeFocused()
-      await box.fill('ask ws-a about the release')
-      await box.press('Enter')
-      await expect
-        .poll(
-          () =>
-            readAllCalls(env).find((c) =>
-              (c.argv[c.argv.indexOf('--') + 1] ?? '').includes('ask ws-a about the release')
-            ),
-          { timeout: 60_000 }
-        )
-        .toBeTruthy()
-      const helper = readAllCalls(env).find((c) =>
-        (c.argv[c.argv.indexOf('--') + 1] ?? '').includes('ask ws-a about the release')
-      )!
-      const handed = helper.argv[helper.argv.indexOf('--') + 1]
+      await askPalette(app, page, 'ask ws-a about the release')
+      const firstMessage = (c: ClaudeCall): string => c.argv[c.argv.indexOf('--') + 1] ?? ''
+      const helperCall = (): ClaudeCall | undefined =>
+        readAllCalls(env).find((c) => firstMessage(c).includes('ask ws-a about the release'))
+      await expect.poll(helperCall, { timeout: 60_000 }).toBeTruthy()
+      const helper = helperCall()!
+      const handed = firstMessage(helper)
       expect(handed).toMatch(
         /The owner wrote rules for the model and effort of a session started in the workspace \S*ws-a/
       )
@@ -355,6 +344,10 @@ async function askMuse(app: ElectronApplication, page: Page, text: string): Prom
       }
     })
   )
+  await askPalette(app, page, text)
+}
+
+async function askPalette(app: ElectronApplication, page: Page, text: string): Promise<void> {
   await sendShortcut(app, 'shortcut:command-palette')
   const box = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
   await expect(box).toBeFocused()

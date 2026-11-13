@@ -1,8 +1,7 @@
-import { isCronEffort, type BackendId, type OwnPick, type SessionDefaults } from './types'
+import type { BackendId, OwnPick, SessionDefaults } from './types'
 import { SESSION_BACKENDS } from './sessionBackend'
 import { NAMED_MODELS, type NamedModel } from './cronModels'
-import { isValidModelName } from './cronNames'
-import { TASK_TIERS, TIER_PICKS } from './sessionPicks'
+import { TASK_TIERS, TIER_PICKS, cleanOwnPick, ownPickOf } from './sessionPicks'
 import { isRecord } from './workbenchState'
 
 export const NO_DEFAULTS: SessionDefaults = { picks: {} }
@@ -17,19 +16,12 @@ export function ownPickModels(backend: BackendId): NamedModel[] {
   })
 }
 
-function sanitizePick(raw: unknown): OwnPick | undefined {
-  if (!isRecord(raw)) return undefined
-  const model = typeof raw.model === 'string' && isValidModelName(raw.model) ? raw.model : undefined
-  const effort = isCronEffort(raw.effort) ? raw.effort : undefined
-  return model || effort ? { ...(model && { model }), ...(effort && { effort }) } : undefined
-}
-
 export function sanitizeDefaults(raw: unknown): SessionDefaults | undefined {
   if (!isRecord(raw)) return undefined
   const picksIn = isRecord(raw.picks) ? raw.picks : {}
   const picks = Object.fromEntries(
     SESSION_BACKENDS.flatMap((b) => {
-      const pick = sanitizePick(picksIn[b])
+      const pick = cleanOwnPick(picksIn[b])
       return pick ? [[b, pick]] : []
     })
   )
@@ -58,9 +50,8 @@ export function cronPickFor(
   backend: BackendId,
   job: OwnPick,
   defaults: SessionDefaults | undefined
-): OwnPick {
+): OwnPick | undefined {
   const own = defaults?.picks[backend]
-  const model = job.model ?? own?.model
-  const effort = job.effort ?? own?.effort
-  return { ...(model && { model }), ...(effort && { effort }) }
+  const fills = (!job.model && own?.model) || (!job.effort && own?.effort)
+  return fills ? ownPickOf(job.model ?? own?.model, job.effort ?? own?.effort) : undefined
 }

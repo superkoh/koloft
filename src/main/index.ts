@@ -517,7 +517,7 @@ import {
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { butlerHelperRole, koloftPrompt, projectRulesForTheButler } from '@shared/agentGuide'
+import { butlerHelperRole, projectRulesForTheButler } from '@shared/agentGuide'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
@@ -651,8 +651,7 @@ import {
   pluginSkills,
   docsPluginFiles,
   writeAgentPlugin,
-  writeDocsPlugin,
-  writeProjectPrompt
+  writeDocsPlugin
 } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
@@ -1952,6 +1951,8 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   return listed
 }
 
+const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
+
 const defaultsOfProjects = projectDefaults({
   rootOf: (dir) => projectInfoOnHost(dir).root,
   reachable: (root) => {
@@ -1960,11 +1961,12 @@ const defaultsOfProjects = projectDefaults({
   },
   repoOf: (root, fresh) => hosts.of(root).github.ownerSlashName(root, fresh),
   saved: () => loadSettings().sessionDefaults,
-  save: (sessionDefaults) => commitSettings({ sessionDefaults })
+  save: (sessionDefaults) => commitSettings({ sessionDefaults }),
+  now: Date.now
 })
 
 async function rulesOf(workspace: string): Promise<string | undefined> {
-  return (await defaultsOfProjects.of(workspace).catch(() => undefined))?.rules
+  return (await defaultsOfProjects.of(workspace))?.rules
 }
 
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
@@ -1977,7 +1979,7 @@ async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResol
 async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions> {
   const backend = backendIdOf(opts.kind)
   if (!backend || typeof opts.cwd !== 'string' || !takesOwnDefaults(opts)) return opts
-  const asked = (await defaultsOfProjects.of(opts.cwd).catch(() => undefined))?.picks[backend]
+  const asked = (await defaultsOfProjects.of(opts.cwd))?.picks[backend]
   return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
 }
 
@@ -3613,6 +3615,7 @@ app.whenReady().then(() => {
     pty: ptyMgr,
     runtime: tracker,
     projectInfo: projectInfoOnHost,
+    projectRules: rulesOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
@@ -3671,8 +3674,7 @@ app.whenReady().then(() => {
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
-        skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin),
-        rules: rulesOf
+        skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -3699,8 +3701,7 @@ app.whenReady().then(() => {
       gitBin: gitFirstBin,
       agent: {
         enabled: (remote) => agentToolsFor('muse', remote ? 'ssh' : 'local'),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
-        rules: rulesOf
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -3742,8 +3743,7 @@ app.whenReady().then(() => {
       gitBin: gitFirstBin,
       agent: {
         enabled: (remote) => agentToolsFor('agy', remote ? 'ssh' : 'local'),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
-        rules: rulesOf
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -6417,15 +6417,11 @@ function butlerTarget(ref: string): Target | undefined {
 
 async function cronPick(req: LaunchRequest): Promise<OwnPick> {
   const job = { model: req.model, effort: req.effort }
-  if (job.model && job.effort) return job
-  const filled = cronPickFor(
-    req.backend,
-    job,
-    await defaultsOfProjects.of(req.cwd).catch(() => undefined)
-  )
-  return filled.model === job.model && filled.effort === job.effort
-    ? job
-    : (await ownPick(req.backend, filled)).pick
+  const filled =
+    job.model && job.effort
+      ? undefined
+      : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
+  return filled ? (await ownPick(req.backend, filled)).pick : job
 }
 
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
@@ -6517,10 +6513,6 @@ const hosts = new Hosts(
   localHost(new GithubLookup(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
-    projectPrompt: async (root) => {
-      const rules = await rulesOf(root)
-      return rules ? writeProjectPrompt(app.getPath('userData'), rules) : undefined
-    },
     docsPlugin: () => claudeDocsPlugin,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
@@ -6565,10 +6557,6 @@ const hosts = new Hosts(
           pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
         noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
-        projectPrompt: async (root) => {
-          const rules = await rulesOf(root)
-          return rules && `${koloftPrompt('claude', rules)}\n`
-        },
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(
             tabId,
@@ -6587,6 +6575,7 @@ const claudeBackend = new ClaudeBackend({
   hosts,
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
+  projectRules: rulesOf,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
@@ -6829,7 +6818,14 @@ function registerIpc(): void {
       try {
         const [defaults, listed] = await Promise.all([
           defaultsOfProjects.read(workspacePath),
-          loadSettings().sessionMethods.enabled.agy ? listedModels('agy') : undefined
+          loadSettings().sessionMethods.enabled.agy
+            ? Promise.race([
+                listedModels('agy'),
+                new Promise<undefined>((done) =>
+                  setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+                )
+              ])
+            : undefined
         ])
         return { ok: true, defaults, familyEfforts: familyEfforts('agy', listed) }
       } catch (error) {

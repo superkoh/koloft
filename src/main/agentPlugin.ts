@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
+import { writePrivateAtomically } from './privateFile'
 import DOCS_SKILL_MD from './docsSkill/SKILL.md?raw'
 import CORE_MD from './docsSkill/references/core.md?raw'
 import DIAGRAMS_MD from './docsSkill/references/diagrams.md?raw'
@@ -118,17 +119,22 @@ export function docsPluginFiles(): Files {
   )
 }
 
-export function writeProjectPrompt(userData: string, rules: string): string {
-  const text = `${koloftPrompt('claude', rules)}\n`
+export const claudeProjectPrompt = (rules: string): string => `${koloftPrompt('claude', rules)}\n`
+
+export function projectPromptFile(userData: string, rules: string): string | undefined {
+  const text = claudeProjectPrompt(rules)
   const name = crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)
   const file = path.join(userData, 'agent-prompts', `${name}.md`)
-  if (!fs.existsSync(file)) {
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    const part = `${file}.${process.pid}.part`
-    fs.writeFileSync(part, text)
-    fs.renameSync(part, file)
+  try {
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      writePrivateAtomically(file, text)
+    }
+    return file
+  } catch (err) {
+    console.error('[koloft] could not write the project prompt', err)
+    return undefined
   }
-  return file
 }
 
 export function writeAgentPlugin(userData: string): string {

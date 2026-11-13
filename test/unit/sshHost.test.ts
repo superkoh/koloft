@@ -51,7 +51,6 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
     github: {},
     claude: {
       userData: home,
-      projectPrompt: async () => undefined,
       controlDir: home,
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
@@ -775,7 +774,6 @@ describe('accounts for remote launches started together', () => {
       github: {},
       claude: {
         userData: home,
-        projectPrompt: async () => undefined,
         controlDir: home,
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set(),
@@ -847,7 +845,6 @@ describe('accounts for remote launches started together', () => {
       github: {},
       claude: {
         userData: home,
-        projectPrompt: async () => undefined,
         controlDir: home,
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set([live]),

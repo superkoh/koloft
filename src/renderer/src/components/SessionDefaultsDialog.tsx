@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaults } from '@shared/types'
 import { basename } from '@shared/preview'
-import { BACKEND_LABEL, SESSION_BACKENDS, byBackend } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, byBackend, kindsOf } from '@shared/sessionBackend'
 import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
-import { kindsOf, tiersOf } from '@shared/agentGuide'
+import { ownPickOf, tiersOf } from '@shared/sessionPicks'
 import { ownPickModels } from '@shared/sessionDefaults'
+import { modelValue } from '../cronForm'
 import { useStore } from '../store'
 import { ModelAndThinking, OTHER_MODEL, effortLabel, useFieldFocus } from './ModelAndThinking'
 import '../cronJobs.css'
@@ -40,8 +41,7 @@ function fieldsOf(backend: BackendId, pick: OwnPick | undefined): PickFields {
   }
 }
 
-const modelOf = (f: PickFields): string | undefined =>
-  f.model === OTHER_MODEL ? f.modelOther.trim() || undefined : f.model || undefined
+const modelOf = (f: PickFields): string | undefined => modelValue(f) || undefined
 
 export function SessionDefaultsDialog({
   wsPath,
@@ -52,9 +52,7 @@ export function SessionDefaultsDialog({
 }): JSX.Element {
   const enabled = useStore((s) => s.settings.sessionMethods.enabled)
   const backends = SESSION_BACKENDS.filter((b) => enabled[b])
-  const [loaded, setLoaded] = useState<{
-    familyEfforts: Record<string, CronEffort[]>
-  } | null>(null)
+  const [familyEfforts, setFamilyEfforts] = useState<Record<string, CronEffort[]> | null>(null)
   const [error, setError] = useState('')
   const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
   const [rules, setRules] = useState('')
@@ -69,7 +67,7 @@ export function SessionDefaultsDialog({
         if (!r.ok) return setError(r.error)
         setPicks(byBackend((b) => fieldsOf(b, r.defaults.picks[b])))
         setRules(r.defaults.rules ?? '')
-        setLoaded({ familyEfforts: r.familyEfforts })
+        setFamilyEfforts(r.familyEfforts)
       },
       (e: unknown) => live && setError(String(e))
     )
@@ -90,14 +88,14 @@ export function SessionDefaultsDialog({
   })
 
   const effortsOf = (b: BackendId, m: string | undefined): readonly CronEffort[] =>
-    (b === 'agy' && m && loaded?.familyEfforts[m]) || effortsFor(b, m)
+    (b === 'agy' && m && familyEfforts?.[m]) || effortsFor(b, m)
   const pickOf = (b: BackendId): OwnPick | undefined => {
     const m = modelOf(picks[b])
     const e = picks[b].effort
     const typed = picks[b].model === OTHER_MODEL
-    const taken = e && (typed || effortsOf(b, m).includes(e)) ? e : undefined
-    return m || taken ? { ...(m && { model: m }), ...(taken && { effort: taken }) } : undefined
+    return ownPickOf(m, e && (typed || effortsOf(b, m).includes(e)) ? e : undefined)
   }
+  const picked = backends.map((b) => ({ b, pick: pickOf(b) }))
 
   const fields = picks[shown]
   const label = BACKEND_LABEL[shown]
@@ -110,8 +108,7 @@ export function SessionDefaultsDialog({
   })
 
   const summary = (): string => {
-    const set = backends.flatMap((b) => {
-      const pick = pickOf(b)
+    const set = picked.flatMap(({ b, pick }) => {
       if (!pick) return []
       const name = ownPickModels(b).find((m) => m.id === pick.model)?.label ?? pick.model
       return [
@@ -120,7 +117,7 @@ export function SessionDefaultsDialog({
           .join(' · ')
       ]
     })
-    const unset = backends.filter((b) => !pickOf(b))
+    const unset = picked.filter(({ pick }) => !pick).map(({ b }) => b)
     if (!set.length) return 'Set now: nothing. Every agent starts as it does today.'
     const rest =
       unset.length === 0
@@ -160,7 +157,7 @@ export function SessionDefaultsDialog({
         </div>
         <div className="modal-body">
           {error && <p className="field-hint bad">{error}</p>}
-          {loaded && (
+          {familyEfforts && (
             <div className="fgrid">
               <span className="flabel">When you start one</span>
               <div className="fcol">
@@ -225,7 +222,7 @@ export function SessionDefaultsDialog({
           </button>
           <button
             className="btn-primary"
-            disabled={!loaded || !!badModel}
+            disabled={!familyEfforts || !!badModel}
             onClick={() => void save()}
           >
             Save

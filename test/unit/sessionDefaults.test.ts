@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { CronEffort, SessionDefaults } from '../../src/shared/types'
 import { cronPickFor, takesOwnDefaults } from '../../src/shared/sessionDefaults'
 import { familyEfforts, resolveOwnPick } from '../../src/shared/sessionPicks'
-import { projectDefaults, SET_ONCE_CONNECTED } from '../../src/main/projectDefaults'
+import {
+  A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS,
+  projectDefaults,
+  SET_ONCE_CONNECTED
+} from '../../src/main/projectDefaults'
 
 const LMH: CronEffort[] = ['low', 'medium', 'high']
 
@@ -21,7 +25,8 @@ describe('which launches take the workspace’s own model and thinking', () => {
       model: 'gpt-6-luna',
       effort: 'high'
     })
-    expect(cronPickFor('claude', {}, defaults)).toEqual({})
+    expect(cronPickFor('claude', {}, defaults)).toBeUndefined()
+    expect(cronPickFor('codex', { model: 'x', effort: 'low' }, defaults)).toBeUndefined()
   })
 })
 
@@ -84,7 +89,8 @@ describe('where a workspace’s session defaults are kept', () => {
       saved: () => saved,
       save: (all) => {
         saved = all
-      }
+      },
+      now: () => 0
     })
     return { store, saved: () => saved }
   }
@@ -106,27 +112,56 @@ describe('where a workspace’s session defaults are kept', () => {
     expect(saved()).toEqual({})
   })
 
-  it('asks git again when the repository lookup it kept said none, so a lookup that failed for a moment does not hide what was saved', async () => {
-    let lookups: (string | null)[] = []
-    let saved: Record<string, SessionDefaults> = {}
+  it('asks git afresh, at most once in a while per folder, when the lookup it kept says no repository, so a lookup that failed for a moment does not hide what was saved', async () => {
+    let lookups: string[] = []
+    let now = 0
+    const saved: Record<string, SessionDefaults> = {
+      'octo/app': { picks: { codex: { model: 'sol' } } }
+    }
     const store = projectDefaults({
       rootOf: (dir) => dir,
       reachable: async () => {},
-      repoOf: async (_root, fresh) => {
-        lookups = [...lookups, fresh ? 'fresh' : 'kept']
-        return fresh ? 'octo/app' : null
+      repoOf: async (root, fresh) => {
+        lookups = [...lookups, `${fresh ? 'fresh' : 'kept'} ${root}`]
+        return fresh && root === '/work/app' ? 'octo/app' : null
       },
       saved: () => saved,
-      save: (all) => {
-        saved = all
-      }
+      save: () => {},
+      now: () => now
+    })
+    expect(await store.of('/work/app')).toEqual({ picks: { codex: { model: 'sol' } } })
+    expect(await store.of('/work/app')).toEqual({ picks: { codex: { model: 'sol' } } })
+    expect(await store.of('/work/notes')).toBeUndefined()
+    expect(await store.of('/work/notes')).toBeUndefined()
+    expect(lookups).toEqual([
+      'kept /work/app',
+      'fresh /work/app',
+      'kept /work/app',
+      'kept /work/notes',
+      'fresh /work/notes',
+      'kept /work/notes'
+    ])
+    lookups = []
+    now = A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS
+    await store.of('/work/notes')
+    expect(lookups).toEqual(['kept /work/notes', 'fresh /work/notes'])
+  })
+
+  it('asks nothing at all while no workspace has defaults', async () => {
+    let lookups = 0
+    const store = projectDefaults({
+      rootOf: (dir) => dir,
+      reachable: async () => {},
+      repoOf: async () => {
+        lookups++
+        return null
+      },
+      saved: () => ({}),
+      save: () => {},
+      now: () => 0
     })
     expect(await store.of('/work/app')).toBeUndefined()
-    expect(lookups).toEqual([])
-    await store.write('/work/app', { picks: { codex: { model: 'sol' } } })
-    lookups = []
-    expect(await store.of('/work/app')).toEqual({ picks: { codex: { model: 'sol' } } })
-    expect(lookups).toEqual(['kept', 'fresh'])
+    expect(lookups).toBe(0)
   })
 
   it('refuses to read or save while the machine cannot be reached, so nothing lands under the folder of a repository', async () => {

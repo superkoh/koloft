@@ -113,7 +113,6 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
-    rules(workspace: string): Promise<string | undefined>
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & { ghWrapper: string }
   remote?: MuseRemoteDeps
@@ -621,14 +620,13 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     ctx: StartContext,
     { account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const { opts, cwd, workspace, resource, freshWorktree } = ctx
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     const remote = this.deps.remote
     const host = hostOfPath(cwd)
     if (!remote || !host) throw new Error('Koloft cannot reach this machine.')
     const permission = this.permissionOf(opts)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
     const agentTools = this.deps.agent.enabled(true)
-    const rules = agentTools ? await this.deps.agent.rules(workspace) : undefined
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const plan = await remote.machine(host).launchMuse({
       cwd,
@@ -698,7 +696,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     ctx: StartContext,
     { binary, account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const { opts, cwd, workspace, resource, freshWorktree } = ctx
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
     // ADR-0029 MUSE§22
@@ -716,7 +714,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
-    const rules = agent && (await agent.rules(workspace))
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
       ...(role ? [role] : [])

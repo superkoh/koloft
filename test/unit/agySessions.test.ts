@@ -238,7 +238,7 @@ beforeEach(() => {
     builtInStatusLine: () => undefined,
     skipPermissions: () => skipPermissions,
     assistOf: () => assist,
-    agent: { enabled: () => agentTools, answer: vi.fn(), rules: async () => undefined },
+    agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
       machine: () => ({

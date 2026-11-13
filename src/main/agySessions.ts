@@ -143,7 +143,6 @@ export interface AgySessionDeps extends StoredSessionDeps {
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
-    rules(workspace: string): Promise<string | undefined>
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & { ghWrapper: string }
   remote: AgyRemoteDeps
@@ -632,7 +631,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private async startLocalRun(
-    { opts, cwd, workspace, resource, freshWorktree }: StartContext,
+    { opts, cwd, workspace, resource, freshWorktree, rules }: StartContext,
     { binary, pick, env }: AgyLaunch
   ): Promise<AgyRun> {
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
@@ -648,7 +647,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    const rules = agent && (await agent.rules(workspace))
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('agy', rules)] : []),
       ...(role ? [role] : [])
@@ -773,7 +771,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private async startRemoteRun(
-    { opts, cwd, workspace, resource, freshWorktree }: StartContext,
+    { opts, cwd, workspace, resource, freshWorktree, rules }: StartContext,
     { pick }: AgyLaunch,
     where: RemoteKey
   ): Promise<AgyRun> {
@@ -816,7 +814,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
-    const rules = agentTools ? await this.deps.agent.rules(workspace) : undefined
     const instructions = [
       ...(agentTools ? [koloftPrompt('agy', rules)] : []),
       ...(opts.role ? [opts.role] : [])

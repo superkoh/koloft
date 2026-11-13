@@ -1,14 +1,14 @@
 import type { BackendId } from './types'
-import { BACKEND_LABEL, SESSION_BACKENDS, messagingOf, namedAtLaunch } from './sessionBackend'
+import {
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  kindsOf,
+  messagingOf,
+  namedAtLaunch
+} from './sessionBackend'
 import { needsModel } from './cronModels'
-import { tierPicksOf } from './sessionPicks'
+import { tiersOf } from './sessionPicks'
 
-export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
-  const labels = backends.map((b) => BACKEND_LABEL[b])
-  return labels.length < 2
-    ? labels.join('')
-    : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
-}
 const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
 const KINDS_BUT_CLAUDE = kindsOf(
@@ -55,9 +55,6 @@ const watchedSessionRule = (backend: BackendId): string =>
 
 export const PICK_FOR_THE_TASK =
   "Sort the task first. Very simple: do as told, with nothing to decide (fix a typo, change a line of copy, rename something, run a command and report, read a few files and answer). Normal: ordinary work with a clear goal (a small feature, a bug that can be reproduced, tests, a few files). Very hard: work that needs judgment or has no clear shape (a plan or a design, a review, a bug with no known cause, a change that reaches many places, anything the owner will decide on). When unsure, take the harder one. Then use that kind's model and effort; pick another only when the owner or the project's instructions name one."
-
-export const tiersOf = (backend: BackendId): string =>
-  `${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}`
 
 const PROJECT_RULES_LEAD =
   "The owner wrote this project's own rules for the model and effort of a session started in it. They come first; Koloft's own way, after them, covers only what they leave out."

@@ -297,7 +297,6 @@ export interface CodexSessionDeps extends StoredSessionDeps {
     enabled(host: HostId): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
     skillsFolder(): string | undefined
-    rules(workspace: string): Promise<string | undefined>
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & {
     ghWrapper: string
@@ -838,7 +837,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   protected async startRun(
-    { opts, cwd, resource, freshWorktree, workspace }: StartContext,
+    { opts, cwd, resource, freshWorktree, workspace, rules }: StartContext,
     { picked, binary, processEnv }: CodexLaunch
   ): Promise<CodexRun> {
     const home = picked.home
@@ -896,7 +895,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       )
     }
     const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
-    const rules = agent && (await agent.rules(workspace))
     const openShim = machine
       ? undefined
       : this.startOpenShim(

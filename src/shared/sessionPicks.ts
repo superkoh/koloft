@@ -1,6 +1,8 @@
 import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort, type OwnPick } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
-import { NAMED_MODELS, effortsFor } from './cronModels'
+import { NAMED_MODELS, effortsFor, takenEffort } from './cronModels'
+import { isValidModelName } from './cronNames'
+import { isRecord } from './workbenchState'
 
 export interface Pick {
   model?: string
@@ -44,6 +46,9 @@ export const tierModelOf = (backend: BackendId, model: string | undefined): bool
 
 export const tierPicksOf = (backend: BackendId): string =>
   TASK_TIERS.map((tier) => `${tier}: ${pickFlags(TIER_PICKS[backend][tier])}`).join('; ')
+
+export const tiersOf = (backend: BackendId): string =>
+  `${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}`
 
 export interface ListedModel {
   id: string
@@ -117,15 +122,29 @@ export function newestOf(family: string, listed: ListedModel[]): ListedModel | u
 
 function runsOn(
   backend: BackendId,
-  family: string,
+  wanted: string,
   listed: ListedModel[]
-): ListedModel | undefined {
+): { model?: ListedModel; fellBack: boolean } {
+  const found = listed.find((m) => m.id === wanted) ?? newestOf(wanted, listed)
+  if (found) return { model: found, fellBack: false }
   const stand = TIER_PICKS[backend].normal.model
-  return (
-    newestOf(family, listed) ??
-    (family === TIER_PICKS[backend]['very hard'].model && stand
-      ? newestOf(stand, listed)
-      : undefined)
+  const hard = TIER_PICKS[backend]['very hard'].model
+  return { model: wanted === hard && stand ? newestOf(stand, listed) : undefined, fellBack: true }
+}
+
+const runsInstead = (read: boolean, wanted: string, instead: string): string =>
+  read
+    ? `This account has no ${wanted} model, so it runs on ${instead}.`
+    : `Koloft could not read this account's models, so it runs on ${instead}.`
+
+export const ownPickOf = (model?: string, effort?: CronEffort): OwnPick | undefined =>
+  model || effort ? { ...(model && { model }), ...(effort && { effort }) } : undefined
+
+export function cleanOwnPick(raw: unknown): OwnPick | undefined {
+  if (!isRecord(raw)) return undefined
+  return ownPickOf(
+    typeof raw.model === 'string' && isValidModelName(raw.model) ? raw.model : undefined,
+    isCronEffort(raw.effort) ? raw.effort : undefined
   )
 }
 
@@ -137,7 +156,7 @@ export function familyEfforts(
   return Object.fromEntries(
     TASK_TIERS.flatMap((tier) => {
       const family = TIER_PICKS[backend][tier].model
-      const model = family && runsOn(backend, family, list)
+      const model = family && runsOn(backend, family, list).model
       return family && model ? [[family, model.efforts]] : []
     })
   )
@@ -156,25 +175,20 @@ export function resolveOwnPick(
   listed: ListedModel[] | undefined
 ): OwnPickResolved {
   const named = asked.model
-  const keptEffort = (model: string | undefined, efforts?: CronEffort[]): OwnPick => {
-    const effort =
-      asked.effort && (efforts ?? effortsFor(backend, model)).includes(asked.effort)
-        ? asked.effort
-        : undefined
-    return { ...(model && { model }), ...(effort && { effort }) }
-  }
   if (!named || !listsModels(backend) || !tierModelOf(backend, named))
-    return { pick: keptEffort(named) }
+    return { pick: ownPickOf(named, takenEffort(backend, named, asked.effort)) ?? {} }
   const read = !!listed?.length
-  const list = read ? listed! : lastKnown(backend)
-  const model = runsOn(backend, named, list)
-  if (model?.id.endsWith(`-${named}`)) return { pick: keptEffort(model.id, model.efforts) }
-  const instead = model ? model.id : `${BACKEND_LABEL[backend]}'s own model`
+  const { model, fellBack } = runsOn(backend, named, read ? listed! : lastKnown(backend))
+  const effort = model
+    ? asked.effort && model.efforts.includes(asked.effort)
+      ? asked.effort
+      : undefined
+    : takenEffort(backend, undefined, asked.effort)
+  const pick = ownPickOf(model?.id, effort) ?? {}
+  if (!fellBack) return { pick }
   return {
-    pick: model ? keptEffort(model.id, model.efforts) : keptEffort(undefined),
-    note: read
-      ? `This account has no ${named} model, so it runs on ${instead}.`
-      : `Koloft could not read this account's models, so it runs on ${instead}.`
+    pick,
+    note: runsInstead(read, named, model?.id ?? `${BACKEND_LABEL[backend]}'s own model`)
   }
 }
 
@@ -201,10 +215,7 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
   const wanted = asked.model.endsWith(namesItsEffort)
     ? asked.model.slice(0, -namesItsEffort.length)
     : asked.model
-  const exact = listed.find((m) => m.id === wanted)
-  const found = exact ?? newestOf(wanted, listed)
-  const stand = TIER_PICKS[backend].normal.model
-  const model = found ?? (wanted === hard.model && stand ? newestOf(stand, listed) : undefined)
+  const { model, fellBack } = runsOn(backend, wanted, listed)
   if (!model)
     return {
       ok: false,
@@ -218,12 +229,6 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
   return {
     ok: true,
     pick: { model: model.id, effort: asked.effort },
-    ...(found
-      ? {}
-      : {
-          note: read
-            ? `This account has no ${wanted} model, so it runs on ${model.id}.`
-            : `Koloft could not read this account's models, so it runs on ${model.id}.`
-        })
+    ...(fellBack && { note: runsInstead(read, wanted, model.id) })
   }
 }

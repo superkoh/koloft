@@ -122,7 +122,6 @@ async function claudeTab(
       localHost(new GithubLookup(), {
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
-        projectPrompt: async () => undefined,
         docsPlugin: () => '/koloft/docs-plugin',
         assistOf: () => undefined,
         agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' })
@@ -136,7 +135,6 @@ async function claudeTab(
           github: {},
           claude: {
             userData,
-            projectPrompt: async () => undefined,
             controlDir: path.join(home, 'ssh-control'),
             machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
             alive: () => new Set(),
@@ -228,12 +226,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     openShimRoot: path.join(home, 'codex-open'),
     playwrightBin: path.join(home, 'commands', 'bin'),
     docsSkillsFolder: () => '/koloft/docs-plugin/skills',
-    agent: {
-      enabled: () => true,
-      answer: () => {},
-      skillsFolder: () => undefined,
-      rules: async () => undefined
-    },
+    agent: { enabled: () => true, answer: () => {}, skillsFolder: () => undefined },
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(home, 'shim', 'gh')
@@ -265,7 +258,10 @@ type Kind = keyof typeof KINDS
 
 type Landing = { handed: string[]; dropped?: string[] } | { takesNothing: string }
 
-type LaunchFeature = Exclude<keyof ClaudeLaunch, 'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId'>
+type LaunchFeature = Exclude<
+  keyof ClaudeLaunch,
+  'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId' | 'projectRules'
+>
 
 const CONDUCTORS_RUN_ON_THIS_MAC: Landing = {
   takesNothing: 'a conductor always runs on this Mac, in a folder under Koloft’s data'
