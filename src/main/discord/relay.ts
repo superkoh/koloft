@@ -202,7 +202,7 @@ export class DiscordRelay {
   private codexAsks = new Map<string, string | number>()
   private codexTyped = new Map<string, KeysTyped>()
   private ticksPressed = new Map<string, string>()
-  private quietReplies = new Set<string>()
+  private quietRepliesLeft = new Map<string, number>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
   private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
@@ -520,14 +520,20 @@ export class DiscordRelay {
     return `(attached file: ${JSON.stringify(file)})`
   }
 
+  private countQuietReply(text: string, by: 1 | -1): void {
+    const left = (this.quietRepliesLeft.get(text) ?? 0) + by
+    if (left > 0) this.quietRepliesLeft.set(text, left)
+    else this.quietRepliesLeft.delete(text)
+  }
+
   tellQuietly(dest: Destination, text: string): Promise<boolean> {
-    this.quietReplies.add(text)
+    this.countQuietReply(text, 1)
     return new Promise((resolve) =>
       this.tell(
         dest,
         text,
         (told) => {
-          if (!told) this.quietReplies.delete(text)
+          if (!told) this.countQuietReply(text, -1)
           resolve(told)
         },
         true
@@ -541,11 +547,11 @@ export class DiscordRelay {
     const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
     const reaches = answers || this.reaches(tabId)
     if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
-    const quiet = [...this.quietReplies].find(
+    const quiet = [...this.quietRepliesLeft.keys()].find(
       (q) => turn.said.length > 0 && turn.said.every((l) => l.text.includes(q))
     )
     if (quiet !== undefined) {
-      this.quietReplies.delete(quiet)
+      this.countQuietReply(quiet, -1)
       return
     }
     const channelId = this.d.replyChannelOf(tabId)
