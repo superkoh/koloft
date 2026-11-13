@@ -1141,7 +1141,7 @@ describe('U-ENV-1: what a tab sends about the account', () => {
     ).toEqual(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANT_ACCOUNT'])
   })
 
-  it('caps the context at 200k for exactly the pinned names CC 2.1.323 guesses a 1M window for: no "claude" in them and no [1m] the owner asked for', () => {
+  it('caps the context at 200k for pinned names CC 2.1.323 guesses a 1M window for that have no "claude" in them and no [1m] the owner asked for, and never for a name CC knows', () => {
     const guessed = [
       'glm-4.6',
       'deepseek-chat',
