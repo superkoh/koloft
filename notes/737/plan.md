@@ -51,6 +51,7 @@ stand-ins, named in the last column (`windowing.probe.ts`).
 | ---------------------------------- | ------------------------- | ------------------------- | ---------------------------------------------------------- |
 | Open the diff: long tasks          | 300–308 ms (two ~150 ms)  | none over 50 ms           | a 562-row diff opened whole                                |
 | Width step (4 px), forced relayout | 34–74 ms, mostly ~40 ms   | 3.7–6.5 ms                | the 4,500-row diff with 16 chunks swapped by hand          |
+| Real divider drag (60 mouse steps), frame gaps | avg 23–27 ms, worst 119–335 ms, 56–61 frames over 50 ms | avg 6.3–6.4 ms, worst 12–21 ms, none over 50 ms | the same hand-swapped diff (`divider-drag.probe.ts`, 4 drags each) |
 | A change on disk                   | 155–183 ms                | not measured              | (it re-renders only the drawn chunks; inferred ≈ open)     |
 | Type a ⌘F query, 4,500 matches     | 125–264 ms                | none over 50 ms           | the hand-swapped diff                                      |
 | ⌘F open, one more chunk draws      | (nothing draws today)     | none over 50 ms           | the hand-swapped diff                                      |
@@ -63,16 +64,18 @@ on the real build and reports the real After.
 
 The October numbers in the issue (0.9–1.1 s to open) are now about 0.3 s, because
 coloring moved to a worker (#1569, #1585). What is left is two React renders of every
-row. While the Workbench divider is dragged, a width step comes about once per
-frame, and ~40 ms per step makes the drag stutter. I judge it still worth doing.
+row. Dragging the Workbench divider with that diff open measurably stutters today
+(about a third of the frames take over 50 ms). On the hand-swapped stand-in, no frame
+did. The stand-in has no React re-render and no height re-estimate per step; the
+first build step re-measures on the real build. I judge it still worth doing.
 Option B of the Question on the issue is to leave it.
 
 ## What a user sees change
 
 | Case                                             | Today                          | After                                                                 |
 | ------------------------------------------------ | ------------------------------ | --------------------------------------------------------------------- |
-| Open a 4,500-row diff                            | ~0.3 s freeze                  | no freeze                                                             |
-| Drag the Workbench divider with that diff open   | ~40 ms per step (stutters)     | ~5 ms per step                                                        |
+| Open a 4,500-row diff                            | two ~150 ms stalls             | none over 50 ms (on a 562-row stand-in)                               |
+| Drag the Workbench divider with that diff open   | a third of frames over 50 ms   | none over 50 ms (on the hand-swapped stand-in)                        |
 | ⌘F: count, order, Enter / ⇧Enter                 | all matches, in order          | the same (4,499 = 4,499 on the stand-in)                              |
 | ⌘F: jump to a match far below                    | one jump, lands on the match   | the same, by design: the chunk is drawn before the scroll (see Find; not probed yet) |
 | ⌘F open, then scroll away by hand (long diff)    | stays where you scroll         | the same (needs the #1870 fix, below)                                 |
@@ -226,7 +229,9 @@ put into the DOM, built from the diff data, as one hidden text node per chunk.
     - the active range has a real box (on screen already, or just scrolled to);
     - there are no matches;
     - the user's own `wheel`, `pointerdown` or `keydown` reaches the find root (they
-      took over the scroll);
+      took over the scroll). The find bar is outside that root (`WorkbenchFind` is
+      rendered after `.wb-body`, `WorkbenchPane.tsx`), so Enter or a click on the
+      bar's arrows does not end the jump it starts;
     - a backstop: the 8th scroll that actually moved `scrollTop`. A scroll that
       leaves `scrollTop` unchanged is not counted, so in Changes (which does not
       handle `find-reveal`) repeated scrolls to the same empty block box while
@@ -276,9 +281,12 @@ are in the DOM before ⌘C runs.
 
 - **Go to line (`line` prop, file tab):** today it is `querySelector` on
   `[data-newno]` in an effect. After: the chunk holding `line` is part of the drawn
-  set during render (derived from `line` and `parsed.rows`), so the effect of that
-  same commit finds the row in the DOM and calls `scrollIntoView` as today. No
-  `flushSync` (it would do nothing inside an effect). One jump.
+  set during render (derived from `line` and `parsed.rows`). The effect that
+  scrolls to it reruns on `line`, on colors arriving (as today) and on "width known,
+  boxes in". Opening a file at a line is the case with no known width yet, so the
+  first commit draws no boxes; the next commit draws them, and that commit's
+  effect finds the row and calls `scrollIntoView` as today. No `flushSync` (it
+  would do nothing inside an effect). One jump.
 - **Scroll restore (`ArtifactPane`):** see Heights. Measured heights come back from
   the cache, so the layout matches the one the saved `scrollTop` was taken from.
   - Every chunk box exists from the first render, so the full height is there at
@@ -369,6 +377,11 @@ for remote.
   loading (PLATFORM§66).
 - **⌘A on a 4,500-row diff:** costs one full draw (~150 ms). While the selection
   holds, a width change is as slow as today.
+- **The #1870 fix on other ⌘F screens (not probed yet):** the row "the view stays on a
+  change on disk" assumes each screen keeps its own `scrollTop` when its DOM is
+  rebuilt. PLATFORM§25 records a rebuild that reset the scroll, and today the find
+  observer's re-scroll would hide such a reset while ⌘F is open. The build reruns
+  the Markdown and source reload cases with ⌘F open.
 
 ## Out of scope
 
