@@ -1485,6 +1485,27 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   - Other wordings (`Unsupported beta: effort-2025-11-24`, a bare `Bad Request`, `system
     role is not supported in messages…`) failed on both builds.
   Not run: the interactive TUI; which real gateways answer which wording.
+- **Since 2.1.323 a model name CC does not know gets a 1M context window, not 200k.**
+  2026-11-13, CC 2.1.322 and 2.1.323 darwin-arm64, the interactive TUI in a python pty
+  (140×50), scratch `HOME` and `CLAUDE_CONFIG_DIR`, a stand-in Messages API behind
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, every model slot and
+  `CLAUDE_CODE_SUBAGENT_MODEL` pinned to one name, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`,
+  one turn, then `/context`, a statusLine command logging its stdin; one run each:
+
+  | Build, model | statusLine `context_window_size` | `/context` | Start-up line |
+  |---|---|---|---|
+  | 2.1.322, `glm-4.6` | 200000 | `2.1k/200k tokens`, autocompact buffer 33k (16.5%), "Auto-compact window: 200k tokens (default for an unrecognized model)" | `⚠ Model "glm-4.6" isn't recognized · context assumed to be 200k tokens` |
+  | 2.1.323, `glm-4.6` | 1000000 | `2.2k/1m tokens`, buffer 33k (3.3%), "Auto-compact window: 1m tokens (default for an unrecognized model)" | `… context assumed to be 1m tokens` |
+  | 2.1.323, `glm-4.6`, `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` | 200000 | as 2.1.322 | `… assumed to be 200k tokens` |
+  | 2.1.322 and 2.1.323, `claude-sonnet-4-5` | 200000 | `…/200k tokens`, no "unrecognized" line | none |
+
+  So on 2.1.323 such a session compacts on its own only near 967k tokens. The changelog:
+  "Changed the context window assumed for a model ID that Claude Code doesn't recognize
+  from 200K to 1M … sessions on other vendors' models with a smaller window: once full,
+  they can fail every turn until `/clear`, so set `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
+  before they fill". That a real endpoint with a smaller window then fails every turn is
+  the changelog's, **inferred, not checked** (the stand-in API refuses nothing). Not run:
+  linux-arm64, `-p`.
 - **CC's safety classifier can silently swap the model**: a blocked fable request is
   re-run on Opus and the session pinned there, so the model a session was launched
   with is not always the model it runs; the status JSON names the model in use.
