@@ -88,6 +88,40 @@ for (const remote of [false, true]) {
       await quitAndClose(app)
     }
   })
+
+  // CC§12
+  test(`⇧⏎ in a ${remote ? 'remote ' : ''}Claude Code tab starts a new line in the prompt, and only ⏎ sends it, both lines as one prompt`, async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, workspace, { remote })
+      const tabId = (await wsRows(page, workspace).first().getAttribute('data-tab-id'))!
+
+      await centerTerm(page).click()
+      await page.keyboard.type('probe-a')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.type('probe-b')
+      await page.keyboard.press('Enter')
+      await page.keyboard.type('/answer after the two lines')
+      await page.keyboard.press('Enter')
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+        .toContain('[fake-claude] answered: after the two lines')
+      const text = await terminalText(page, tabId)
+      expect(text).toContain('[fake-claude] handled: probe-a')
+      expect(text).not.toContain('handled: probe-b')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 }
 
 for (const remote of [false, true]) {

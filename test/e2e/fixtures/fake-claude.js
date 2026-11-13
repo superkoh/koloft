@@ -2,7 +2,6 @@
 const fs = require('fs')
 const path = require('path')
 const cp = require('child_process')
-const readline = require('readline')
 
 const FAKE_CLAUDE_VERSION = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
@@ -772,35 +771,31 @@ process.on('exit', () => {
 })
 
 const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
-const typedLines = new (require('stream').PassThrough)()
 let dialogKey = null
 const ESC = /\x1b/g
 // CC§12
 const STATUS_REPLY = /\x1b\]7501;\?[^\x07\x1b]*(?:\x07|\x1b\\)/
-const STATUS_QUERY_WAITS_MS = 1000
 const statusQueried = !!process.env.KOLOFT_FAKE_PROGRAM_STATUS && process.stdin.isTTY
 let reportsState = false
 const reportState = (body) => {
   if (reportsState) process.stdout.write(`\x1b]7501;${body}:app=claude-code\x07`)
 }
-const stopStatusQuery = () => {
-  if (!dialogKey) process.stdin.setRawMode(false)
-}
-if (statusQueried) {
-  process.stdin.setRawMode(true)
-  process.stdout.write('\x1b]7501;?\x07')
-  setTimeout(stopStatusQuery, STATUS_QUERY_WAITS_MS)
-}
+if (process.stdin.isTTY) process.stdin.setRawMode(true)
+// PLATFORM§35
+if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+  fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
+// CC§12 CC§18
+process.stdout.write('\x1b[?2004h')
+if (statusQueried) process.stdout.write('\x1b]7501;?\x07')
 process.stdin.on('data', (chunk) => {
-  if (statusQueried && STATUS_REPLY.test(String(chunk))) {
+  chunk = String(chunk)
+  if (statusQueried && STATUS_REPLY.test(chunk)) {
     reportsState = true
-    stopStatusQuery()
-    chunk = String(chunk).replace(STATUS_REPLY, '')
-    if (!chunk) return
+    chunk = chunk.replace(STATUS_REPLY, '')
   }
-  dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
+  takeKeys(chunk)
 })
-process.stdin.on('end', () => typedLines.end())
+process.stdin.on('end', () => shutdown('other'))
 const ESC_ALONE = '\x1b'
 const INTERRUPTED = Symbol('interrupted')
 // CC§2 CC§13 CC§14
@@ -835,11 +830,7 @@ function keysOnTheDialog(
   answerOnceDone,
   { shownState = 'state=blocked:kind=permission', escEndsTheTurn = false } = {}
 ) {
-  const paneRaw = process.env.KOLOFT_FAKE_TMUX_RAW_MARK
   return new Promise((resolve) => {
-    if (process.stdin.isTTY) process.stdin.setRawMode(true)
-    // PLATFORM§35
-    if (paneRaw) fs.writeFileSync(paneRaw, '')
     reportState(shownState)
     const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
@@ -847,8 +838,6 @@ function keysOnTheDialog(
       const answer = escEndsTheTurn && key === ESC_ALONE ? INTERRUPTED : answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null
-      if (process.stdin.isTTY) process.stdin.setRawMode(false)
-      if (paneRaw) fs.rmSync(paneRaw, { force: true })
       reportState(answer === INTERRUPTED ? 'state=idle' : 'state=working')
       resolve(answer)
     }
@@ -953,19 +942,48 @@ function questionDialogKeys(questions) {
     return at === questions.length && !reviewPage ? answers() : undefined
   }
 }
-const rl = readline.createInterface({ input: typedLines })
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
-let pasted = null
-// CC§18
-rl.on('line', (line) => {
-  if (pasted === null && !line.includes(PASTE_START)) return handleLine(line)
-  pasted = pasted === null ? line.replace(PASTE_START, '') : pasted + '\n' + line
-  if (!pasted.includes(PASTE_END)) return
-  const whole = pasted.replace(PASTE_END, '')
-  pasted = null
-  handleLine(whole)
-})
+const ERASE_KEYS = ['\x7f', '\b']
+const CTRL_C = '\x03'
+const CTRL_D = '\x04'
+const CLEAR_THE_LINE = '\x15'
+let typed = ''
+let pasting = false
+// CC§12 CC§18
+function takeKeys(chunk) {
+  let rest = chunk
+  while (rest) {
+    if (dialogKey) return dialogKey(rest)
+    const marker = [PASTE_START, PASTE_END].find((m) => rest.startsWith(m))
+    if (marker) {
+      pasting = marker === PASTE_START
+      rest = rest.slice(marker.length)
+      continue
+    }
+    const key = String.fromCodePoint(rest.codePointAt(0))
+    rest = rest.slice(key.length)
+    if (pasting) typed += key === '\r' ? '\n' : key
+    else if (key === '\r') {
+      const line = typed
+      typed = ''
+      process.stdout.write('\r\n')
+      handleLine(line)
+    } else if (key === '\n') {
+      typed += key
+      process.stdout.write('\r\n')
+    } else if (ERASE_KEYS.includes(key)) {
+      if (typed) process.stdout.write('\b \b')
+      typed = typed.slice(0, -1)
+    } else if (key === CLEAR_THE_LINE) typed = ''
+    else if (key === CTRL_C) process.kill(process.pid, 'SIGINT')
+    else if (key === CTRL_D && !typed) shutdown('other')
+    else if (key >= ' ' || key === '\t' || key === ESC_ALONE) {
+      typed += key
+      if (key !== ESC_ALONE) process.stdout.write(key)
+    }
+  }
+}
 // CC§1
 function compact(trigger, firstRecord, lastRecord) {
   fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
@@ -1866,8 +1884,6 @@ function handleLine(line) {
   fireHook('stop', { hook_event_name: 'Stop' })
   process.stdout.write(`[fake-claude] handled: ${text}\r\n> `)
 }
-// CC§1
-rl.on('close', () => shutdown('other'))
 // CC§12
 function shutdownBySignal() {
   process.stdout.write(`\r\nResume this session with:\r\nclaude --resume ${sessionId}\r\n`)
