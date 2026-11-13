@@ -1324,8 +1324,9 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
           .toBe('Done — not closed: Changes not committed')
         await closeCron(page)
 
-        await startSessionIn(page, 'ws-b')
-        await startSessionIn(page, 'ws-a')
+        const plain = agent ? { method: 'Claude' as const } : {}
+        await startSessionIn(page, 'ws-b', plain)
+        await startSessionIn(page, 'ws-a', plain)
         const wsB = fs.realpathSync(env.workspaces.b)
         const idlePlainTab = (): ClaudeCall | undefined =>
           readCalls(env).find((c) => fs.realpathSync(c.cwd) === wsB)
