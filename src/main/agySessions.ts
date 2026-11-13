@@ -494,9 +494,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§5
   trustsFolder(dir: string): boolean | Promise<boolean> {
     const picked = this.deps.pickHome(undefined, true)
-    if (!picked) return false
     const key = parseRemoteKey(dir)
-    if (!key) return agyTrustsFolder(picked.home, dir)
+    if (!key)
+      return agyTrustsFolder(this.gemini, dir) || (!!picked && agyTrustsFolder(picked.home, dir))
+    if (!picked) return false
     return this.deps.remote
       .machine(key.host)
       .readAgyConfig(picked.account)
