@@ -49,7 +49,7 @@ interface DirWatch {
   count: number
   timer: ReturnType<typeof setTimeout> | null
   changed: Set<string> | null
-  folderId: string
+  folderId: string | undefined
 }
 const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
@@ -101,13 +101,27 @@ function forget(root: string, entry: DirWatch): void {
   noLongerKept(root)
 }
 
-function folderIdOf(root: string): string | undefined {
+// PLATFORM§69
+async function folderIdOf(root: string): Promise<string | undefined> {
   try {
-    const st = fs.statSync(root)
+    const st = await fs.promises.stat(root)
     return `${st.dev}:${st.ino}`
   } catch {
     return undefined
   }
+}
+
+const stepsOfAFolder = new Map<string, Promise<unknown>>()
+let timesAllWereClosed = 0
+
+function inOrderFor<T>(root: string, step: () => T | Promise<T>): Promise<T> {
+  const run = (stepsOfAFolder.get(root) ?? Promise.resolve()).then(step)
+  const settled = run.catch(() => undefined)
+  stepsOfAFolder.set(root, settled)
+  void settled.then(() => {
+    if (stepsOfAFolder.get(root) === settled) stepsOfAFolder.delete(root)
+  })
+  return run
 }
 
 function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
@@ -123,6 +137,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
+    if (dirWatchers.get(root) !== entry) return void closeWatcher(entry)
     if (entry.count === 0) {
       forget(root, entry)
       return
@@ -133,7 +148,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     } catch {}
     try {
       entry.watcher = fs.watch(root, { recursive: true })
-      entry.folderId = folderIdOf(root) ?? entry.folderId
+      entry.folderId = undefined
       attachWatcher(root, entry, onChange)
     } catch {
       if (entry.timer) clearTimeout(entry.timer)
@@ -142,17 +157,33 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
   })
 }
 
-export function watchDir(root: string, onChange: DirChangeListener): boolean {
-  const existing = dirWatchers.get(root)
-  const keptForAFolderSinceReplaced =
-    existing?.count === 0 && folderIdOf(root) !== existing.folderId
-  if (existing && keptForAFolderSinceReplaced) forget(root, existing)
-  else if (existing) {
-    if (existing.count === 0) noLongerKept(root)
-    existing.count++
+export function watchDir(root: string, onChange: DirChangeListener): Promise<boolean> {
+  const closedSoFar = timesAllWereClosed
+  return inOrderFor(root, () => watchDirNow(root, onChange, closedSoFar))
+}
+
+async function watchDirNow(
+  root: string,
+  onChange: DirChangeListener,
+  closedSoFar: number
+): Promise<boolean> {
+  if (timesAllWereClosed !== closedSoFar) return false
+  const watched = dirWatchers.get(root)
+  if (watched && watched.count > 0) {
+    watched.count++
     return true
   }
-  const folderId = folderIdOf(root)
+  const folderId = await folderIdOf(root)
+  if (timesAllWereClosed !== closedSoFar) return false
+  const kept = dirWatchers.get(root)
+  const rebuiltOnTheFolderAsItIsNow = kept?.folderId === undefined
+  if (kept && !rebuiltOnTheFolderAsItIsNow && folderId !== kept.folderId) forget(root, kept)
+  else if (kept) {
+    kept.folderId ??= folderId
+    noLongerKept(root)
+    kept.count++
+    return true
+  }
   if (folderId === undefined) return false
   let watcher: fs.FSWatcher
   try {
@@ -173,6 +204,10 @@ export function watchDir(root: string, onChange: DirChangeListener): boolean {
 }
 
 export function unwatchDir(root: string): void {
+  void inOrderFor(root, () => unwatchDirNow(root)).catch(() => {})
+}
+
+function unwatchDirNow(root: string): void {
   const entry = dirWatchers.get(root)
   if (!entry) return
   if (entry.count === 0 || --entry.count > 0) return
@@ -189,6 +224,7 @@ export function unwatchDir(root: string): void {
 }
 
 export function closeAllDirWatchers(): void {
+  timesAllWereClosed++
   for (const entry of dirWatchers.values()) closeWatcher(entry)
   dirWatchers.clear()
   keptWithNoViewerOldestFirst.length = 0

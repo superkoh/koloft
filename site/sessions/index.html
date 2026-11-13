@@ -244,9 +244,9 @@
             when it ends while the session waits on other work Koloft can see (a session it started
             or wrote to that is still busy, or a background job it left running), or when its last
             line is a set phrase saying nothing is left for you, such as
-            <code>Next for you: nothing.</code> That works with Assist off too. With Assist on, it
-            also counts when Assist reads the reply as asking you for nothing. Hover the dot: it
-            says "just letting you know".
+            <code>Next for you: nothing.</code> Koloft spots that phrase itself, with no AI. It also
+            counts when Assist reads the reply as asking you for nothing. Hover the dot: it says
+            "just letting you know".
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
@@ -305,10 +305,10 @@
                 <td>ends its turn and needs you</td>
                 <td>
                   <code>“…” finished and waits for you</code>, with the end of what it said and a
-                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it. With
-                  Assist on, when one pick could answer it, Assist writes a short question and 2 to
-                  4 replies in place of the box. Pick one to send it along with the question, or
-                  type your own in the <code>Type your own answer… (Enter sends it)</code> box.
+                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it. When one
+                  pick could answer it, Assist writes a short question and 2 to 4 replies in place
+                  of the box. Pick one to send it along with the question, or type your own in the
+                  <code>Type your own answer… (Enter sends it)</code> box.
                 </td>
               </tr>
               <tr>
@@ -480,27 +480,28 @@
             in; <kbd>Esc</kbd> puts the list away and keeps your words. A folder on another machine
             is named like <code>host:name</code>. With a folder named, <kbd>⏎</kbd> starts the
             session there, with the rest of your words as its first message (if the folder's branch
-            is behind, Koloft first asks whether to pull). Assist is skipped, so the button reads as
-            it does with Assist off (see below). Name two different folders and the button is off;
-            the tip reads <code>Name one workspace · Esc</code>.
+            is behind, Koloft first asks whether to pull). Assist is skipped, so the button reads
+            <code>Start a session</code>; with more than one agent it names your default one, like
+            <code>Start · Claude</code>. Name two different folders and the button is off; the tip
+            reads <code>Name one workspace · Esc</code>.
           </li>
           <li>
             Not everything you type starts a session. "open settings" or "check for updates" just
             does it. Ask for a session by what it was doing ("go to the session that was fixing
-            login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. With Koloft Assist on, what
-            <kbd>⌘P</kbd> cannot do by itself (words about Koloft itself like "set up Discord", "ask
-            tidewatch …" with the folder named in plain words, a question, or work that fits more
-            than one folder like "fix the tests") goes to a helper of your
-            <a href="../accounts/#butler">butler</a>: a new session in the butler's own folder,
-            under its row. The screen moves there. If the butler is closed, it opens first. The
-            helper runs on the agent you picked (the one on the button, or one from the ▾ list or
-            <kbd>⌘⏎</kbd>), does the job and reports back to your butler. "Set up Discord" works its
-            own way (see <a href="../discord/#set-up">discord</a>).
+            login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. What <kbd>⌘P</kbd> cannot do
+            by itself (words about Koloft itself like "set up Discord", "ask tidewatch …" with the
+            folder named in plain words, a question, or work that fits more than one folder like
+            "fix the tests") goes to a helper of your <a href="../accounts/#butler">butler</a>: a
+            new session in the butler's own folder, under its row. The screen moves there. If the
+            butler is closed, it opens first. The helper runs on the agent you picked (the one on
+            the button, or one from the ▾ list or <kbd>⌘⏎</kbd>), does the job and reports back to
+            your butler. "Set up Discord" works its own way (see
+            <a href="../discord/#set-up">discord</a>).
           </li>
           <li>
-            With Assist off, the button reads <code>Start a session</code> (with more than one
-            agent, <code>Start</code> plus your default one, like <code>Start · Claude</code>) and
-            <kbd>⏎</kbd> opens the folder picker instead.
+            When none of your accounts can run <a href="../accounts/#assist">Assist</a>, the button
+            still reads <code>Ask AI</code>, but <kbd>⏎</kbd> opens the folder picker instead, with
+            your words kept.
           </li>
           <li>
             If Assist says the words call for a brand-new project, Koloft makes the folder, adds it

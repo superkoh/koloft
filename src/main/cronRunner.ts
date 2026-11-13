@@ -50,7 +50,6 @@ import {
   type Due
 } from './cronScheduler'
 import type { TidyResult } from './sessionClose'
-import type { LaunchOutcome } from './launchQueue'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -88,8 +87,7 @@ export async function worktreeNameFor(
   return withSuffix(base, `-${randomBytes(2).toString('hex')}`)
 }
 
-export type LaunchResult =
-  { ok: true; tabId: string; startsLater?: Promise<LaunchOutcome> } | { ok: false }
+export type LaunchResult = { ok: true; tabId: string } | { ok: false }
 
 export interface LeftTab {
   treeRoot?: string
@@ -514,17 +512,14 @@ export class CronRunner {
       const run: LiveRun = {
         jobId: job.id,
         tabId: res.tabId,
-        state: res.startsLater ? 'queued' : 'launching',
+        state: 'launching',
         startedAt: this.d.now(),
         dueAt,
         ...(worktree ? { worktree } : {}),
         ...mark
       }
       this.live.set(res.tabId, run)
-      if (res.startsLater) {
-        this.d.toast(`⏰ ${job.name} queued: it starts in turn, once the machine has room`)
-        void res.startsLater.then((outcome) => this.leftTheQueue(run, outcome))
-      } else this.launched(job, run)
+      this.launched(job, run)
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -585,32 +580,6 @@ export class CronRunner {
   private launched(job: CronJob, run: LiveRun): void {
     this.d.toast(`⏰ ${job.name} started`)
     this.armTimer(run.tabId, this.d.bindDeadlineMs, () => this.onDeadline(run.tabId))
-  }
-
-  private leftTheQueue(run: LiveRun, outcome: LaunchOutcome): void {
-    if (this.live.get(run.tabId) !== run || run.state !== 'queued') return
-    const job = this.byId(run.jobId)
-    if (outcome === 'started') {
-      run.state = 'launching'
-      if (job) this.launched(job, run)
-      this.push()
-      return
-    }
-    this.dropRun(run)
-    this.refreshFolders()
-    if (!job) return this.push()
-    if (outcome === 'failed')
-      return this.fail(
-        job,
-        run.dueAt,
-        run.manual ? MANUAL : {},
-        `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
-      )
-    this.writeHistory(job, {
-      ...lineOf(run),
-      state: 'closed',
-      note: 'taken off the queue before it started'
-    })
   }
 
   private onDeadline(tabId: string): void {

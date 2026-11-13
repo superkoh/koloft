@@ -131,6 +131,7 @@ async function butlerMenu(page: Page): Promise<string[]> {
 }
 
 async function butlerTabId(page: Page, env: E2EEnv): Promise<string> {
+  await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length ?? 0).toBeGreaterThan(0)
   const sessions = await page.evaluate(() => window.api.sessions.list())
   const keys = butlerSessionOnDisk(env)?.sessionIds ?? []
   const live = sessions.find((s) => s.alive && keys.includes(s.sessionId))
@@ -289,11 +290,13 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await channelRow(dlg, CHANNEL_A).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).channel).toEqual({
-        guildId: '111',
-        channelId: '222',
-        name: CHANNEL_A
-      })
+      await expect
+        .poll(() => discordOnDisk(env)?.channel)
+        .toEqual({
+          guildId: '111',
+          channelId: '222',
+          name: CHANNEL_A
+        })
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText(`#${CHANNEL_A}`)
       expect(await butlerMenu(page)).toEqual([
         'Open↩',
@@ -700,9 +703,9 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(await koloftSays(page, 'todo note ws-a -- "Issues assigned to me."')).toContain(
         'Saved the to-do note'
       )
-      expect(Object.values(settingsOnDisk(env).todoNotes as Record<string, string>)).toEqual([
-        'Issues assigned to me.'
-      ])
+      await expect
+        .poll(() => Object.values((settingsOnDisk(env).todoNotes ?? {}) as Record<string, string>))
+        .toEqual(['Issues assigned to me.'])
       expect(await koloftSays(page, 'todo note ws-a')).toContain('Issues assigned to me.')
 
       await switchToRow(page, wsRows(page, 'ws-a'))

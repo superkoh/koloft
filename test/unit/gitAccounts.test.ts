@@ -23,6 +23,7 @@ import {
   upsertGitAccount
 } from '../../src/main/gitAccounts'
 import { rereadSettingsOnNextLoad } from '../../src/main/settings'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import type { GitAccount } from '../../src/shared/types'
 
 const userData = app.getPath('userData')
@@ -46,7 +47,8 @@ const defaults = (): string[] =>
     .filter((a) => a.default)
     .map((a) => a.id)
 
-beforeEach(() => {
+beforeEach(async () => {
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(path.join(userData, 'settings.json'), { force: true })
   rereadSettingsOnNextLoad()
 })

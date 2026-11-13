@@ -155,7 +155,7 @@ describe('WORKBENCH_GIT against the freshness engine’s real spawns', () => {
 
     const local = new LocalRunner()
     const engine = new GitFreshnessEngine({
-      workspaces: () => [{ path: work, missing: false }],
+      workspaces: async () => [{ path: work, missing: false }],
       autoFetch: () => true,
       onChange: () => {},
       runner: () => local

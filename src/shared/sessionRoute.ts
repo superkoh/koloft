@@ -112,16 +112,34 @@ Reply with that one JSON object and nothing else, adding to it:
   return { system: ROUTE_SYSTEM, prompt }
 }
 
-function jsonIn(reply: string): Record<string, unknown> | null {
-  const start = reply.indexOf('{')
-  const end = reply.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
+function jsonObject(text: string): Record<string, unknown> | null {
   try {
-    const v: unknown = JSON.parse(reply.slice(start, end + 1))
+    const v: unknown = JSON.parse(text)
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
   } catch {
     return null
   }
+}
+
+function topLevelObjects(reply: string): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = []
+  let depth = 0
+  let start = 0
+  let inString = false
+  for (let i = 0; i < reply.length; i++) {
+    const c = reply[i]
+    if (inString) {
+      if (c === '\\') i++
+      else if (c === '"') inString = false
+    } else if (c === '{') {
+      if (depth++ === 0) start = i
+    } else if (depth > 0 && c === '"') inString = true
+    else if (depth > 0 && c === '}' && --depth === 0) {
+      const o = jsonObject(reply.slice(start, i + 1))
+      if (o) found.push(o)
+    }
+  }
+  return found
 }
 
 function text(v: unknown, max = TITLE_MAX_CHARS): string {
@@ -162,7 +180,7 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  const o = reply ? jsonIn(reply) : null
+  const o = reply ? topLevelObjects(reply).at(-1) : undefined
   if (!o) return null
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }

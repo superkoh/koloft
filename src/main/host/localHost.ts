@@ -204,7 +204,7 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     readBytes: (p) => fs.promises.readFile(p),
     openForEdit: (p) => openForEdit(p),
     writeText: (p, text, expect, opts) => writeText(p, text, expect, opts),
-    createFile: async (dir, name) => createFile(dir, name),
+    createFile,
     watchDir,
     unwatchDir,
     watchFile: (p, onChange) =>

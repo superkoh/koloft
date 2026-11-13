@@ -7,6 +7,10 @@ type MermaidApi = (typeof import('mermaid'))['default']
 // PLATFORM§26
 export const MERMAID_MAX_TEXT_SIZE = 50000
 
+// PLATFORM§26
+const DAGRE = { layout: 'dagre' } as const
+const NODE_WIDTHS_OF_11 = { wrappingWidth: 200, minNodeWidth: 0 } as const
+
 const CACHE_LIMIT = 50
 
 export function hashCode(s: string): string {
@@ -76,8 +80,13 @@ function getMermaid(): Promise<MermaidApi> {
         ],
         // PLATFORM§26
         htmlLabels: false,
-        flowchart: { htmlLabels: false },
-        class: { htmlLabels: false },
+        theme: 'default',
+        look: 'classic',
+        flowchart: { htmlLabels: false, ...DAGRE, ...NODE_WIDTHS_OF_11 },
+        class: { htmlLabels: false, ...DAGRE },
+        state: { ...DAGRE, ...NODE_WIDTHS_OF_11 },
+        er: DAGRE,
+        requirement: DAGRE,
         fontFamily: appFontFamily()
       })
       return mermaid

@@ -140,16 +140,16 @@ describe('watchDir (recursive dir watcher)', () => {
     vi.restoreAllMocks()
   })
 
-  it('answers true when the recursive watch starts', () => {
-    expect(watchDir(dir, () => {})).toBe(true)
+  it('answers true when the recursive watch starts', async () => {
+    expect(await watchDir(dir, () => {})).toBe(true)
   })
 
-  it('answers false when fs.watch throws, and a later call on the same root tries again', () => {
+  it('answers false when fs.watch throws, and a later call on the same root tries again', async () => {
     const spy = vi.spyOn(fs, 'watch').mockImplementation(() => {
       throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' })
     })
-    expect(watchDir(dir, () => {})).toBe(false)
-    expect(watchDir(dir, () => {})).toBe(false)
+    expect(await watchDir(dir, () => {})).toBe(false)
+    expect(await watchDir(dir, () => {})).toBe(false)
     expect(spy).toHaveBeenCalledTimes(2)
   })
 
@@ -158,7 +158,7 @@ describe('watchDir (recursive dir watcher)', () => {
     fs.mkdirSync(gitDir)
     fs.writeFileSync(path.join(gitDir, 'index'), 'a')
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
     await sleep(700)
     roots.length = 0
 
@@ -176,7 +176,7 @@ describe('watchDir (recursive dir watcher)', () => {
     const logs = path.join(dir, '.system_generated', 'logs')
     fs.mkdirSync(logs, { recursive: true })
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
     await sleep(700)
     roots.length = 0
 
@@ -192,7 +192,7 @@ describe('watchDir (recursive dir watcher)', () => {
     const sub = path.join(dir, 'a', 'b')
     fs.mkdirSync(sub, { recursive: true })
     const reports: (DirChanges | undefined)[] = []
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
 
@@ -207,7 +207,7 @@ describe('watchDir (recursive dir watcher)', () => {
     fs.mkdirSync(path.join(staged, 'assets'), { recursive: true })
     fs.writeFileSync(path.join(staged, 'assets', 'a.js'), 'x')
     const reports: (DirChanges | undefined)[] = []
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
 
@@ -222,7 +222,7 @@ describe('watchDir (recursive dir watcher)', () => {
     fs.mkdirSync(sub)
     fs.writeFileSync(path.join(sub, '.gitignore'), 'a\n')
     const reports: (DirChanges | undefined)[] = []
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
 
@@ -233,9 +233,9 @@ describe('watchDir (recursive dir watcher)', () => {
   it('a folder viewed again after its last viewer left opens no second watcher, and reports its changes again', async () => {
     const spy = vi.spyOn(fs, 'watch')
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
     unwatchDir(dir)
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
     expect(spy).toHaveBeenCalledTimes(1)
 
     await sleep(700)
@@ -246,7 +246,7 @@ describe('watchDir (recursive dir watcher)', () => {
 
   it('reports nothing about a folder nobody views, though its watcher is kept', async () => {
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
     await sleep(700)
     roots.length = 0
     unwatchDir(dir)
@@ -258,14 +258,14 @@ describe('watchDir (recursive dir watcher)', () => {
 
   it('tells a returning viewer nothing about changes made while nobody viewed the folder, since every viewer reads the folder itself as it starts watching and a report would make it read twice', async () => {
     const reports: (DirChanges | undefined)[] = []
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     unwatchDir(dir)
     reports.length = 0
     fs.appendFileSync(file, 'two\n')
     await sleep(700)
 
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     expect(reports).toEqual([])
 
@@ -275,7 +275,7 @@ describe('watchDir (recursive dir watcher)', () => {
 
   it('drops a change still waiting to be reported when the last viewer left, rather than reporting it to the next viewer', async () => {
     const reports: (DirChanges | undefined)[] = []
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
     fs.appendFileSync(file, 'two\n')
@@ -283,7 +283,7 @@ describe('watchDir (recursive dir watcher)', () => {
     unwatchDir(dir)
     await sleep(500)
 
-    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     expect(reports).toEqual([])
 
@@ -291,24 +291,42 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(await until(() => reports.length > 0)).toBe(true)
   })
 
-  it('opens a new watcher for a folder deleted and made again while nobody viewed it', () => {
+  it('opens a new watcher for a folder deleted and made again while nobody viewed it', async () => {
     const folder = path.join(dir, 'worktree')
     fs.mkdirSync(folder)
     const spy = vi.spyOn(fs, 'watch')
-    expect(watchDir(folder, () => {})).toBe(true)
+    expect(await watchDir(folder, () => {})).toBe(true)
     unwatchDir(folder)
     fs.rmSync(folder, { recursive: true })
     fs.mkdirSync(path.join(dir, 'takes-the-freed-inode-number'))
     fs.mkdirSync(folder)
 
-    expect(watchDir(folder, () => {})).toBe(true)
+    expect(await watchDir(folder, () => {})).toBe(true)
     expect(spy).toHaveBeenCalledTimes(2)
     unwatchDir(folder)
     fs.rmSync(folder, { recursive: true })
-    expect(watchDir(folder, () => {})).toBe(false)
+    expect(await watchDir(folder, () => {})).toBe(false)
   })
 
-  it('keeps the watchers of only the 8 folders left most recently, so a ninth closes the one left longest ago', () => {
+  it('a watch and an unwatch of one folder take effect in the order they were asked, though the watch waits on the disk', async () => {
+    const spy = vi.spyOn(fs, 'watch')
+    const first = watchDir(dir, () => {})
+    unwatchDir(dir)
+    const again = watchDir(dir, () => {})
+    expect(await first).toBe(true)
+    expect(await again).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a watch still waiting on the disk when every watcher is closed opens none', async () => {
+    const spy = vi.spyOn(fs, 'watch')
+    const pending = watchDir(dir, () => {})
+    closeAllDirWatchers()
+    expect(await pending).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('keeps the watchers of only the 8 folders left most recently, so a ninth closes the one left longest ago', async () => {
     const folders = Array.from({ length: 9 }, (_, i) => {
       const folder = path.join(dir, `ws-${i}`)
       fs.mkdirSync(folder)
@@ -316,14 +334,14 @@ describe('watchDir (recursive dir watcher)', () => {
     })
     const spy = vi.spyOn(fs, 'watch')
     for (const folder of folders) {
-      expect(watchDir(folder, () => {})).toBe(true)
+      expect(await watchDir(folder, () => {})).toBe(true)
       unwatchDir(folder)
     }
     expect(spy).toHaveBeenCalledTimes(9)
 
-    watchDir(folders[8], () => {})
+    await watchDir(folders[8], () => {})
     expect(spy).toHaveBeenCalledTimes(9)
-    watchDir(folders[0], () => {})
+    await watchDir(folders[0], () => {})
     expect(spy).toHaveBeenCalledTimes(10)
   })
 
@@ -338,8 +356,8 @@ describe('watchDir (recursive dir watcher)', () => {
       return w
     }) as typeof fs.watch)
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
 
     watchers[0].emit('error', new Error('FSEvents stream died'))
     expect(spy).toHaveBeenCalledTimes(2)
