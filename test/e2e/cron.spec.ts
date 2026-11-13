@@ -1299,7 +1299,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   ]
   for (const { agent, setUp, runPid } of IDLE_RUNS) {
-    test(`BB-M18 while idle${agent ? ` in ${agent}` : ''}: a "Close it" run held open by a file not committed keeps its tab awake while an idle plain tab goes to sleep, so it stays the open run and is not written closed`, async ({
+    test(`while idle${agent ? ` in ${agent}` : ''}, a "Close it" run held open by a file not committed keeps its tab awake while an idle plain tab goes to sleep, so it stays the open run and is not written closed`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -1327,8 +1327,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         await startSessionIn(page, 'ws-b')
         await startSessionIn(page, 'ws-a')
         const wsB = fs.realpathSync(env.workspaces.b)
-        const idlePlainTab = readCalls(env).find((c) => fs.realpathSync(c.cwd) === wsB)!
-        await expect.poll(() => processAlive(idlePlainTab.pid), { timeout: 30_000 }).toBe(false)
+        const idlePlainTab = (): ClaudeCall | undefined =>
+          readCalls(env).find((c) => fs.realpathSync(c.cwd) === wsB)
+        await expect.poll(() => idlePlainTab(), { timeout: 30_000 }).toBeTruthy()
+        await expect.poll(() => processAlive(idlePlainTab()!.pid), { timeout: 30_000 }).toBe(false)
         await page.waitForTimeout(ANOTHER_ROUND_OF_IDLE_SLEEP_MS)
 
         expect(processAlive(run)).toBe(true)

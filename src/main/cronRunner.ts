@@ -782,7 +782,7 @@ export class CronRunner {
 
   holdsOpenRunThatClosesItself(tabId: string): boolean {
     const run = this.live.get(tabId)
-    return !!run && this.runStartedIn(tabId) && !!this.byId(run.jobId)?.autoClose
+    return !!run && this.runStarted(run) && !!this.byId(run.jobId)?.autoClose
   }
 
   private runStarted(run: LiveRun): boolean {
