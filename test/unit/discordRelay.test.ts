@@ -1113,41 +1113,49 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     })
 
   // MUSE§11
-  it('a Muse question that takes several picks, alone in its dialog, whose ticks Koloft pressed but the session did not take, is answered again by first unticking every option through its None of the above row, each later time too', async () => {
-    const { relay, writes, session } = codexAsking({
-      backendOf: () => 'muse',
-      pendingQuestion: () => ({
-        id: 'hook:1',
-        questions: [{ ...FRUITS_TAKING_SEVERAL, ownWords: true }]
-      })
-    })
-    const pressed = (): string[] => writes.splice(0).map((w) => w.data)
-    const answer = async (reply: string): Promise<string | undefined> => {
-      const answered = relay.answerSession(TAB, reply)
-      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
-      return answered
-    }
+  describe('a Muse question that takes several picks, alone in its dialog, whose ticks Koloft pressed but the session did not take', () => {
     const tick = (n: string): string[] => [n, ' ']
     const submitThenReview = ['5', '\r', '\r']
     const untickAll = ['5', '\x1b[A', '\r', ...tick('4'), '1']
 
-    expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
-    expect(pressed()).toEqual([...tick('1'), ...tick('3'), ...submitThenReview])
-    expect(await answer('2')).toBe(ANSWER_NOT_TAKEN)
-    expect(pressed()).toEqual([...untickAll, ...tick('2'), ...submitThenReview])
+    function museAsking() {
+      const s = codexAsking({
+        backendOf: () => 'muse',
+        pendingQuestion: () => ({
+          id: 'hook:1',
+          questions: [{ ...FRUITS_TAKING_SEVERAL, ownWords: true }]
+        })
+      })
+      const pressed = (): string[] => s.writes.splice(0).map((w) => w.data)
+      const answer = async (reply: string): Promise<string | undefined> => {
+        const answered = s.relay.answerSession(TAB, reply)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
+        return answered
+      }
+      return { ...s, pressed, answer }
+    }
 
-    session.takesKeys = true
-    expect(await answer('Mango')).toBeUndefined()
-    expect(pressed()).toEqual([
-      ...untickAll,
-      '\x1b[B',
-      '\x1b[B',
-      '\x1b[B',
-      '\t',
-      'Mango',
-      '\r',
-      '\r'
-    ])
+    it('is answered again by first unticking every option through its None of the above row, once: if that is not taken either, a third answer is left to the owner', async () => {
+      const { answer, pressed } = museAsking()
+      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
+      expect(pressed()).toEqual([...tick('1'), ...tick('3'), ...submitThenReview])
+      expect(await answer('2')).toBe(ANSWER_NOT_TAKEN)
+      expect(pressed()).toEqual([...untickAll, ...tick('2'), ...submitThenReview])
+      expect(await answer('2')).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(pressed()).toEqual([])
+    })
+
+    it('is answered again in the owner’s own words after the same unticking', async () => {
+      const { answer, pressed, session } = museAsking()
+      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
+      pressed()
+      session.takesKeys = true
+      expect(await answer('Mango')).toBeUndefined()
+      expect(pressed()).toEqual([
+        ...untickAll,
+        ...['\x1b[B', '\x1b[B', '\x1b[B', '\t', 'Mango', '\r', '\r']
+      ])
+    })
   })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {

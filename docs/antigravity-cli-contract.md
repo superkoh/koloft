@@ -905,8 +905,7 @@ only downloaded the public release.
   Apple only and Enter then sent `A1: Cherry`. The options have no "none" row that
   unticks the rest, as Muse's has (MUSE§11), and Esc on the list skips the question. With
   the same two ticked on screen, `HandleCascadeUserInteraction` with `selectedOptionIds:
-  ["2"]` sent `A1: Banana`. So Koloft answers such a question again only through the
-  API; where it would have to press keys, it leaves the question to the owner.
+  ["2"]` sent `A1: Banana`.
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake

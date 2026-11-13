@@ -705,10 +705,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
     the review page up; the "Nothing is checked" warning up; Apple ticked by a lone
     Enter; the run done twice in a row (11 cases, all as asked on both versions, and on
     1.4.11 run inside tmux 3.3a as a remote tab runs it, `tmux -u -f /dev/null`). On
-    1.4.11, the run without its last `1` did the same from each start of Koloft's `1`
-    Space `3` Space `5` Enter Enter with the rest lost, from those keys with `3`, `5` or
-    the first Enter lost, and with `min_selections: 2` (14 runs); with `max_selections:
-    2` and two ticked, `N+1` Space unticked both (1 run). Losing Koloft's `1` still sent
+    1.4.18 inside that tmux, with `max_selections: 2` and two ticked, from the question
+    and from the review page, `2` and `3` were sent; Apple and Cherry ticked and the
+    review page sent `2` (4 runs). On 1.4.11, the run without its last `1` did the same
+    from each start of Koloft's `1` Space `3` Space `5` Enter Enter with the rest lost,
+    from those keys with `3`, `5` or the first Enter lost, and with `min_selections: 2`
+    (14 runs). The run twice in a row was tried only from Apple and Cherry ticked; from
+    the middle of a run of its own whose rest was lost, not tried. Losing Koloft's `1` still sent
     Apple and Cherry (Space ticked the highlighted row 1); losing its first Space sent
     `["Cherry"]`, its second `["Apple"]` — answers taken, so no second answer follows.
   - With two questions, ← and → switch question and wrap (← on question 1 goes to the

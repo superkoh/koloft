@@ -487,9 +487,12 @@ const noteUnderNoneOfTheAbove = (q: Question, text: string): string[] => [
 ]
 
 // MUSE§11
+const museNoneOfTheAboveRow = (q: Question): string => String(q.options.length + 1)
+const museSubmitRow = (q: Question): string => String(q.options.length + 2)
+
+// MUSE§11
 function museTicks(q: Question, picks: number[]): string[] {
-  const submitRow = q.options.length + 2
-  return [...picks.flatMap((n) => [String(n), ...keysFor(['Space'])]), String(submitRow), '\r']
+  return [...picks.flatMap((n) => [String(n), ...keysFor(['Space'])]), museSubmitRow(q), '\r']
 }
 
 // MUSE§11
@@ -500,10 +503,11 @@ function museReviewKeys(answers: QuestionAnswer[]): string[] {
 // MUSE§11
 function museUntickAll(q: Asked): string[] | undefined {
   if (q.questions.length !== 1) return undefined
-  const options = q.questions[0]!.options.length
-  const noneOfTheAbove = String(options + 1)
-  const submitRow = String(options + 2)
-  return [submitRow, ...keysFor(['Up', 'Enter', noneOfTheAbove, 'Space', '1'])]
+  const only = q.questions[0]!
+  return [
+    museSubmitRow(only),
+    ...keysFor(['Up', 'Enter', museNoneOfTheAboveRow(only), 'Space', '1'])
+  ]
 }
 
 // AGY§14
