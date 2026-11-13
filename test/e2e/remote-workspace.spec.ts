@@ -118,9 +118,11 @@ const NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST = 'mac-only.localhost'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
 
+const heartbeats = (env: E2EEnv): string[] =>
+  sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls'))
+
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
-  sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls') && c.includes(`'${bare}'`))
-    .length
+  heartbeats(env).filter((c) => c.includes(`'${bare}'`)).length
 
 async function untilTheMachineHasStamped(env: E2EEnv, bare: string): Promise<void> {
   const before = heartbeatsStamping(env, bare)
@@ -129,21 +131,16 @@ async function untilTheMachineHasStamped(env: E2EEnv, bare: string): Promise<voi
     .toBeGreaterThanOrEqual(before + 2)
 }
 
-const heartbeats = (env: E2EEnv): string[] =>
-  sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls'))
-
 async function untilTwoHeartbeatsLeaveOut(env: E2EEnv, bare: string): Promise<void> {
-  let since = heartbeats(env).length
   await expect
     .poll(
       () => {
-        const beats = heartbeats(env)
-        if (beats.slice(since).some((c) => c.includes(`'${bare}'`))) since = beats.length
-        return beats.length - since
+        const lastTwo = heartbeats(env).slice(-2)
+        return lastTwo.length === 2 && lastTwo.every((c) => !c.includes(`'${bare}'`))
       },
       { timeout: 60_000 }
     )
-    .toBeGreaterThanOrEqual(2)
+    .toBe(true)
 }
 
 async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void> {

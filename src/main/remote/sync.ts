@@ -104,8 +104,11 @@ interface HostState {
 interface Watch {
   count: number
   stamp?: string
+  keepsStampAcrossUnwatch: boolean
   onChange: (stamp: string) => void
 }
+
+const UNWATCHED_BEFORE_ITS_FIRST_STAMP = '\0'
 
 function gitKey(git: Map<string, RemoteGitInfo>): string {
   return JSON.stringify([...git])
@@ -155,17 +158,28 @@ export class RemoteSync {
     return this.hosts.get(host)?.problem
   }
 
-  watch(host: string, path: string, onChange: (stamp: string) => void): void {
+  watch(
+    host: string,
+    path: string,
+    onChange: (stamp: string) => void,
+    reportsWhatChangedWhileUnwatched = false
+  ): void {
     let paths = this.watches.get(host)
     if (!paths) this.watches.set(host, (paths = new Map()))
     const w = paths.get(path)
     if (w) {
       w.count++
+      w.keepsStampAcrossUnwatch ||= reportsWhatChangedWhileUnwatched
       return
     }
-    const seenBeforeUnwatch = this.stampsOfUnwatched.get(host)
-    paths.set(path, { count: 1, stamp: seenBeforeUnwatch?.get(path), onChange })
-    seenBeforeUnwatch?.delete(path)
+    const kept = this.stampsOfUnwatched.get(host)
+    paths.set(path, {
+      count: 1,
+      stamp: reportsWhatChangedWhileUnwatched ? kept?.get(path) : undefined,
+      keepsStampAcrossUnwatch: reportsWhatChangedWhileUnwatched,
+      onChange
+    })
+    kept?.delete(path)
   }
 
   unwatch(host: string, path: string): void {
@@ -173,10 +187,10 @@ export class RemoteSync {
     const w = paths?.get(path)
     if (!paths || !w || --w.count > 0) return
     paths.delete(path)
-    if (w.stamp === undefined) return
-    let seen = this.stampsOfUnwatched.get(host)
-    if (!seen) this.stampsOfUnwatched.set(host, (seen = new Map()))
-    seen.set(path, w.stamp)
+    if (!w.keepsStampAcrossUnwatch) return
+    let kept = this.stampsOfUnwatched.get(host)
+    if (!kept) this.stampsOfUnwatched.set(host, (kept = new Map()))
+    kept.set(path, w.stamp ?? UNWATCHED_BEFORE_ITS_FIRST_STAMP)
   }
 
   unwatchAll(): void {
@@ -317,6 +331,7 @@ export class RemoteSync {
         this.silenceBell(st)
         this.roundOver(st)
         this.hosts.delete(host)
+        this.stampsOfUnwatched.delete(host)
       }
       for (const host of hosts) {
         const st = this.state(host)

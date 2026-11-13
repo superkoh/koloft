@@ -604,32 +604,61 @@ it('a watched path is stamped on every heartbeat: the first stamp is only the ba
   expect(scriptSent(runsFull[runsFull.length - 1])).not.toContain(file)
 })
 
-it('a path watched again reports a change once when its stamp moved while it was unwatched, and nothing when it did not', async () => {
+describe('a path watched again', () => {
   const dir = '/home/koh/api/src'
   let stamp = '1.0 3'
-  answerWhenQueueEmpty = () => {
-    const asked = scriptSent(runsFull[runsFull.length - 1]).includes(dir)
-    return Promise.resolve(ok(asked ? `stamp ${stamp}\nk-aaa\n` : 'k-aaa\n'))
-  }
   const seen: string[] = []
-  sync.watch('devbox', dir, (s) => seen.push(s))
-  sync.start()
-  await tick(1)
-  sync.unwatch('devbox', dir)
-  await tick(2000)
+  const watch = (keep: boolean): void => sync.watch('devbox', dir, (s) => seen.push(s), keep)
+  beforeEach(() => {
+    stamp = '1.0 3'
+    seen.length = 0
+    answerWhenQueueEmpty = () => {
+      const asked = scriptSent(runsFull[runsFull.length - 1]).includes(dir)
+      return Promise.resolve(ok(asked ? `stamp ${stamp}\nk-aaa\n` : 'k-aaa\n'))
+    }
+  })
 
-  sync.watch('devbox', dir, (s) => seen.push(s))
-  await tick(2000)
-  expect(seen).toEqual([])
-  sync.unwatch('devbox', dir)
+  it('by a watcher that keeps its stamp reports a change once when the stamp moved while unwatched, and nothing when it did not', async () => {
+    watch(true)
+    sync.start()
+    await tick(1)
+    sync.unwatch('devbox', dir)
+    await tick(2000)
+    watch(true)
+    await tick(2000)
+    expect(seen).toEqual([])
+    sync.unwatch('devbox', dir)
 
-  stamp = '2.0 4'
-  await tick(2000)
-  sync.watch('devbox', dir, (s) => seen.push(s))
-  await tick(2000)
-  expect(seen).toEqual(['2.0 4'])
-  await tick(2000)
-  expect(seen).toEqual(['2.0 4'])
+    stamp = '2.0 4'
+    await tick(2000)
+    watch(true)
+    await tick(2000)
+    expect(seen).toEqual(['2.0 4'])
+    await tick(2000)
+    expect(seen).toEqual(['2.0 4'])
+  })
+
+  it('by a watcher that keeps its stamp reports a change once even when it was unwatched before its first stamp', async () => {
+    watch(true)
+    sync.unwatch('devbox', dir)
+    sync.start()
+    await tick(1)
+    watch(true)
+    await tick(2000)
+    expect(seen).toEqual(['1.0 3'])
+  })
+
+  it('by a plain watcher takes its first stamp as the baseline, whatever moved while it was unwatched', async () => {
+    watch(false)
+    sync.start()
+    await tick(1)
+    sync.unwatch('devbox', dir)
+    stamp = '2.0 4'
+    await tick(2000)
+    watch(false)
+    await tick(2000)
+    expect(seen).toEqual([])
+  })
 })
 
 it('unwatchAll drops every watched path at once, however many times each was watched, so a reloaded window leaves none stamped', async () => {

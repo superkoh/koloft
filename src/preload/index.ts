@@ -403,7 +403,8 @@ const api: KoloftApi = {
     search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
     gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
     gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),
-    watchDir: (root) => ipcRenderer.invoke(CH.fs.watchDir, root),
+    watchDir: (root, reportsWhatChangedWhileUnwatched) =>
+      ipcRenderer.invoke(CH.fs.watchDir, root, reportsWhatChangedWhileUnwatched),
     unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
     onDirChange: (cb) => {
       const handler = (_e: unknown, root: string, changes?: DirChanges): void => cb(root, changes)

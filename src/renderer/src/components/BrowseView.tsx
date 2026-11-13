@@ -110,6 +110,7 @@ const SEC_BOOKMARKS = '__bookmarks__'
 const SEC_RECENTS = '__recents__'
 const SEC_OUTSIDE = '__external__'
 const SCRATCHPAD_RELIST_THROTTLE_MS = 600
+const CATCH_UP_ON_WHAT_CHANGED_WHILE_HIDDEN = true
 
 function createRefusal(failure: string): string {
   if (failure.includes('KOLOFT_EXISTS')) return 'That name is taken.'
@@ -347,7 +348,7 @@ export function BrowseView({
     }
     for (const d of want) {
       if (watchedDirs.current.has(d)) continue
-      void window.api.fs.watchDir(d).then((live) => {
+      void window.api.fs.watchDir(d, CATCH_UP_ON_WHAT_CHANGED_WHILE_HIDDEN).then((live) => {
         if (live) relist(d)
       })
       watchedDirs.current.add(d)

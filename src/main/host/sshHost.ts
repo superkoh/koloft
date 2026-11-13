@@ -147,7 +147,11 @@ export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
-  watch(path: string, onChange: (stamp: string) => void): void
+  watch(
+    path: string,
+    onChange: (stamp: string) => void,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): void
   unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
@@ -914,8 +918,16 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  async watchDir(dir: string, onChange: DirChangeListener): Promise<boolean> {
-    this.deps.watch(this.bare(dir), () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }))
+  async watchDir(
+    dir: string,
+    onChange: DirChangeListener,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): Promise<boolean> {
+    this.deps.watch(
+      this.bare(dir),
+      () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }),
+      reportsWhatChangedWhileUnwatched
+    )
     return false
   }
 
