@@ -1585,7 +1585,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-62: a file made on the machine inside an open Browse folder while the Workbench is collapsed shows once the Workbench opens again', async ({
+  test('E-RW-63: a file made on the machine inside an open Browse folder while the Workbench is collapsed shows once the Workbench opens again', async ({
     env
   }) => {
     test.setTimeout(300_000)
