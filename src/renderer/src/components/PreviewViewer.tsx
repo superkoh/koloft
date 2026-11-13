@@ -4,7 +4,7 @@ import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import type { SourceLines } from '../markdown/lines'
-import { cachedDiagram, MERMAID_MAX_TEXT_SIZE, renderDiagram, type Drawn } from '../mermaidRender'
+import { cachedDiagram, MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
 import { CommentBox, type CommentTarget } from './CommentBox'
 import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
 import { findInBlocks, linesOfRange, selectedRangeIn, swapMark, type DrawnBlock } from './mdPassage'
@@ -26,6 +26,7 @@ const COMMENT_BUTTON_H_PX = 26
 const COMMENT_BUTTON_GAP_PX = 4
 
 type DrawnDoc = RenderedDoc & { text: string }
+type Drawn = Awaited<ReturnType<typeof renderDiagram>>
 
 const UNREADABLE: DrawnDoc = {
   blocks: ['<p>Failed to read file.</p>'],
@@ -101,9 +102,9 @@ function showDrawn(el: HTMLElement, drawn: Drawn, code: string): void {
 
 function fillAtOnce(el: HTMLElement): boolean {
   const code = codeOf(el)
-  const drawn = cachedDiagram(code, `d${++mermaidTempIdSeq}`)
-  if (drawn) showDrawn(el, drawn, code)
-  return !!drawn
+  const svg = cachedDiagram(code, `d${++mermaidTempIdSeq}`)
+  if (svg !== undefined) showDrawn(el, { ok: true, svg }, code)
+  return svg !== undefined
 }
 
 function blockImage(img: HTMLImageElement): void {

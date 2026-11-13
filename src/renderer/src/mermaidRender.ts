@@ -48,7 +48,6 @@ export function makeCache(limit: number = CACHE_LIMIT): DiagramCache {
 }
 
 const cache = makeCache()
-const failures = makeCache()
 
 // PLATFORM§26
 function appFontFamily(): string {
@@ -117,14 +116,12 @@ function messageOf(err: unknown): string {
   return raw.trim() || 'The diagram could not be rendered.'
 }
 
-export type Drawn = Awaited<ReturnType<typeof renderDiagram>>
+function svgFromCache(key: string, id: string): string | undefined {
+  return cache.get(key)?.split(ID_SLOT).join(selectorSafeId(id))
+}
 
-export function cachedDiagram(code: string, id: string): Drawn | undefined {
-  const key = hashCode(code.trim())
-  const svg = cache.get(key)
-  if (svg !== undefined) return { ok: true, svg: svg.split(ID_SLOT).join(selectorSafeId(id)) }
-  const message = failures.get(key)
-  return message === undefined ? undefined : { ok: false, message }
+export function cachedDiagram(code: string, id: string): string | undefined {
+  return svgFromCache(hashCode(code.trim()), id)
 }
 
 export async function renderDiagram(
@@ -141,8 +138,8 @@ export async function renderDiagram(
   }
 
   const key = hashCode(src)
-  const cached = cachedDiagram(src, id)
-  if (cached) return cached
+  const cached = svgFromCache(key, id)
+  if (cached !== undefined) return { ok: true, svg: cached }
 
   let mermaid: MermaidApi
   try {
@@ -164,9 +161,7 @@ export async function renderDiagram(
     cache.set(key, clean.split(selectorSafeId(id)).join(ID_SLOT))
     return { ok: true, svg: clean }
   } catch (err) {
-    const message = messageOf(err)
-    failures.set(key, message)
-    return { ok: false, message }
+    return { ok: false, message: messageOf(err) }
   } finally {
     host.remove()
   }
