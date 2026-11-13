@@ -124,7 +124,9 @@ export function writeProjectPrompt(userData: string, rules: string): string {
   const file = path.join(userData, 'agent-prompts', `${name}.md`)
   if (!fs.existsSync(file)) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, text)
+    const part = `${file}.${process.pid}.part`
+    fs.writeFileSync(part, text)
+    fs.renameSync(part, file)
   }
   return file
 }

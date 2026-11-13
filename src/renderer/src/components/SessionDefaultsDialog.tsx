@@ -5,10 +5,10 @@ import { basename } from '@shared/preview'
 import { BACKEND_LABEL, SESSION_BACKENDS, byBackend } from '@shared/sessionBackend'
 import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
-import { tiersOf } from '@shared/agentGuide'
+import { kindsOf, tiersOf } from '@shared/agentGuide'
 import { ownPickModels } from '@shared/sessionDefaults'
 import { useStore } from '../store'
-import { ModelAndThinking, OTHER_MODEL, effortLabel } from './ModelAndThinking'
+import { ModelAndThinking, OTHER_MODEL, effortLabel, useFieldFocus } from './ModelAndThinking'
 import '../cronJobs.css'
 
 interface PickFields {
@@ -43,12 +43,6 @@ function fieldsOf(backend: BackendId, pick: OwnPick | undefined): PickFields {
 const modelOf = (f: PickFields): string | undefined =>
   f.model === OTHER_MODEL ? f.modelOther.trim() || undefined : f.model || undefined
 
-function joined(words: string[]): string {
-  return words.length < 2
-    ? words.join('')
-    : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
-}
-
 export function SessionDefaultsDialog({
   wsPath,
   onClose
@@ -65,7 +59,7 @@ export function SessionDefaultsDialog({
   const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
   const [rules, setRules] = useState('')
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
-  const [focused, setFocused] = useState('')
+  const { inputCls, focusProps } = useFieldFocus()
 
   useEffect(() => {
     let live = true
@@ -100,7 +94,8 @@ export function SessionDefaultsDialog({
   const pickOf = (b: BackendId): OwnPick | undefined => {
     const m = modelOf(picks[b])
     const e = picks[b].effort
-    const taken = e && effortsOf(b, m).includes(e) ? e : undefined
+    const typed = picks[b].model === OTHER_MODEL
+    const taken = e && (typed || effortsOf(b, m).includes(e)) ? e : undefined
     return m || taken ? { ...(m && { model: m }), ...(taken && { effort: taken }) } : undefined
   }
 
@@ -125,9 +120,13 @@ export function SessionDefaultsDialog({
           .join(' · ')
       ]
     })
-    const unset = backends.filter((b) => !pickOf(b)).map((b) => BACKEND_LABEL[b])
+    const unset = backends.filter((b) => !pickOf(b))
     if (!set.length) return 'Set now: nothing. Every agent starts as it does today.'
-    return `Set now: ${set.join('; ')}.${unset.length ? ` ${joined(unset)} start${unset.length === 1 ? 's' : ''} as ${unset.length === 1 ? 'it does' : 'they do'} today.` : ''}`
+    const rest =
+      unset.length === 0
+        ? ''
+        : ` ${kindsOf(unset, 'and')} ${unset.length === 1 ? 'starts as it does' : 'start as they do'} today.`
+    return `Set now: ${set.join('; ')}.${rest}`
   }
 
   const save = async (): Promise<void> => {
@@ -144,12 +143,6 @@ export function SessionDefaultsDialog({
     if (r.ok) onClose()
     else setError(r.error ?? 'Koloft could not save these.')
   }
-
-  const inputCls = (key: string): string => 'cb-input' + (focused === key ? ' focus' : '')
-  const focusProps = (key: string): { onFocus: () => void; onBlur: () => void } => ({
-    onFocus: () => setFocused(key),
-    onBlur: () => setFocused((k) => (k === key ? '' : k))
-  })
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

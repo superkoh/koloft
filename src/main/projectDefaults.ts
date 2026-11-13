@@ -19,18 +19,26 @@ export interface ProjectDefaults {
 }
 
 export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
-  const keyOf = async (dir: string, fresh: boolean): Promise<string> => {
-    const root = d.rootOf(dir)
-    return (await d.repoOf(root, fresh).catch(() => null)) ?? root
-  }
+  const repoOf = (root: string, fresh: boolean): Promise<string | null> =>
+    d.repoOf(root, fresh).catch(() => null)
   const checkedKeyOf = async (dir: string): Promise<string> => {
-    await d.reachable(d.rootOf(dir)).catch(() => {
+    const root = d.rootOf(dir)
+    await d.reachable(root).catch(() => {
       throw new Error(SET_ONCE_CONNECTED)
     })
-    return keyOf(dir, true)
+    return (await repoOf(root, true)) ?? root
   }
   return {
-    of: async (dir) => d.saved()[await keyOf(dir, false)],
+    of: async (dir) => {
+      const saved = d.saved()
+      if (Object.keys(saved).length === 0) return undefined
+      const root = d.rootOf(dir)
+      const repo = await repoOf(root, false)
+      if (repo) return saved[repo]
+      if (saved[root]) return saved[root]
+      const fresh = await repoOf(root, true)
+      return fresh ? saved[fresh] : undefined
+    },
     read: async (dir) => d.saved()[await checkedKeyOf(dir)] ?? NO_DEFAULTS,
     write: async (dir, raw) => {
       const key = await checkedKeyOf(dir)

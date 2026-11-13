@@ -1426,10 +1426,12 @@ export function sessionVerb(d: SessionVerbDeps): {
       const place = newSessionPlace(d, parsed.value, caller.tabId, ws, butler)
       if (!place.ok) return place.reply
       const { workspace, conductorTab, helperRole } = place
-      const unpicked = modelAndEffortRefusal(backend, parsed.value, await d.projectRules(workspace))
       const { model, effort } = parsed.value
-      if (unpicked || !effort)
+      if (modelAndEffortRefusal(backend, parsed.value, undefined) || !effort) {
+        const rules = await d.projectRules(workspace)
+        const unpicked = modelAndEffortRefusal(backend, parsed.value, rules)
         return refused(unpicked ?? 'koloft session new: --effort is missing.', EXIT_USAGE)
+      }
       const resolved = d.turnedOff(backend)
         ? undefined
         : resolvePick(backend, { model, effort }, await d.pickFacts(backend))

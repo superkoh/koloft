@@ -3,7 +3,7 @@ import { BACKEND_LABEL, SESSION_BACKENDS, messagingOf, namedAtLaunch } from './s
 import { needsModel } from './cronModels'
 import { tierPicksOf } from './sessionPicks'
 
-const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
+export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
   return labels.length < 2
     ? labels.join('')

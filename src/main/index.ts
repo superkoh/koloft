@@ -511,17 +511,13 @@ import {
   AgentRequests,
   answered,
   errorText,
+  helpVerb,
   refused,
   tabSpokenFor,
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import {
-  agentGuide,
-  butlerHelperRole,
-  koloftPrompt,
-  projectRulesForTheButler
-} from '@shared/agentGuide'
+import { butlerHelperRole, koloftPrompt, projectRulesForTheButler } from '@shared/agentGuide'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
@@ -1989,7 +1985,7 @@ const sessionDeps: SessionVerbDeps = {
   projectRules: rulesOf,
   pickFacts: async (backend) => ({
     fableLeft: picker.fableLeft(),
-    ...((backend === 'codex' || backend === 'agy') && { listed: await listedModels(backend) })
+    ...(listsModels(backend) && { listed: await listedModels(backend) })
   }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
@@ -2178,10 +2174,10 @@ async function answerSession(tabId: string, reply: string): Promise<string | und
 
 const agentRequests = new AgentRequests({
   verbs: {
-    help: async (_args, caller) => {
-      const workspace = sessionBackends.workspaceOfTab(caller.tabId)
-      return answered(agentGuide(workspace && (await rulesOf(workspace))))
-    },
+    help: helpVerb(async (tabId) => {
+      const workspace = sessionBackends.workspaceOfTab(tabId)
+      return workspace && rulesOf(workspace)
+    }),
     cron: cronVerb({
       runner: () => cronRunner,
       pinnedWorkspaceOf: pinnedWorkspaceOfTab,

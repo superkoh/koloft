@@ -106,6 +106,29 @@ describe('where a workspace’s session defaults are kept', () => {
     expect(saved()).toEqual({})
   })
 
+  it('asks git again when the repository lookup it kept said none, so a lookup that failed for a moment does not hide what was saved', async () => {
+    let lookups: (string | null)[] = []
+    let saved: Record<string, SessionDefaults> = {}
+    const store = projectDefaults({
+      rootOf: (dir) => dir,
+      reachable: async () => {},
+      repoOf: async (_root, fresh) => {
+        lookups = [...lookups, fresh ? 'fresh' : 'kept']
+        return fresh ? 'octo/app' : null
+      },
+      saved: () => saved,
+      save: (all) => {
+        saved = all
+      }
+    })
+    expect(await store.of('/work/app')).toBeUndefined()
+    expect(lookups).toEqual([])
+    await store.write('/work/app', { picks: { codex: { model: 'sol' } } })
+    lookups = []
+    expect(await store.of('/work/app')).toEqual({ picks: { codex: { model: 'sol' } } })
+    expect(lookups).toEqual(['kept', 'fresh'])
+  })
+
   it('refuses to read or save while the machine cannot be reached, so nothing lands under the folder of a repository', async () => {
     const { store, saved } = keeper(null, false)
     await expect(store.read('ssh://box/srv/api')).rejects.toThrow(SET_ONCE_CONNECTED)
