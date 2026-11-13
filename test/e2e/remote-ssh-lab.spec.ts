@@ -849,6 +849,53 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-52: after every ssh connection to the machine drops and Koloft connects again, koloft help in a session that ran on there is answered again', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const tabId = await wsRows(page, 'kt-key').first().getAttribute('data-tab-id')
+      const answered = async (): Promise<string[]> =>
+        [...(await terminalText(page, tabId!)).matchAll(/koloft exit=(\d+)/g)].map((m) => m[1])
+      await runIn(page, centerTerm(page), '/koloft help')
+      await expect
+        .poll(answered, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+        .toEqual(['0'])
+
+      runOnTarget(
+        lab,
+        'kuser',
+        "mv .ssh/authorized_keys .ssh/authorized_keys.off && pkill -u kuser -f '^sshd(-session)?: kuser' || true"
+      )
+      await expect
+        .poll(() => terminalText(page, tabId!), { timeout: 30_000 })
+        .toContain('connection lost, reconnecting')
+      await expect(dot(page, 'kt-key')).not.toHaveClass(/\bon\b/, { timeout: 60_000 })
+      runOnTarget(
+        lab,
+        'kuser',
+        `tmux -L koloft send-keys '/sh koloft help >/dev/null 2>&1; echo "during=$?" > "$HOME/during.txt"' Enter`
+      )
+      await expect
+        .poll(() => runOnTarget(lab, 'kuser', 'cat during.txt 2>/dev/null || true'), {
+          timeout: 60_000
+        })
+        .toContain('during=1')
+      await page.waitForTimeout(60_000)
+      runOnTarget(lab, 'kuser', 'mv .ssh/authorized_keys.off .ssh/authorized_keys')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: 120_000 })
+      await page.waitForTimeout(A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS)
+
+      await runIn(page, centerTerm(page), '/sh koloft help >/dev/null; echo "after-reconnect=$?"')
+      await expect
+        .poll(() => terminalText(page, tabId!), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        .toContain('after-reconnect=0')
+    })
+  })
+
   test('E-SSH-14: koloft open, run inside a session on the machine, shows a file there in that session’s Workbench, and a file the machine does not have is refused', async ({
     env
   }) => {

@@ -386,6 +386,47 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
     }
   })
 
+  test('E-RW-64: after the link of a remote Claude tab drops and Koloft reconnects it, koloft in that tab is answered again', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect
+        .poll(() => boundSessionId(page, tabId), { timeout: 60_000 })
+        .toBe(first.sessionId)
+      const answered = async (): Promise<string[]> =>
+        [...(await terminalText(page, tabId!)).matchAll(/koloft exit=(\d+)/g)].map((m) => m[1])
+      await runIn(page, centerTerm(page), '/koloft help')
+      await expect.poll(answered, { timeout: 60_000 }).toEqual(['0'])
+
+      const tmuxName = `k-${first.sessionId}`
+      const [clientBefore] = tmuxClientsOf(tmuxName)
+      breakConnection(env)
+      dropTabLinkWhileItsSessionLives(env, tmuxName)
+      await expect
+        .poll(() => tmuxClientsOf(tmuxName).filter((pid) => pid !== clientBefore), {
+          timeout: 30_000
+        })
+        .toHaveLength(1)
+      await page.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
+      await runIn(page, centerTerm(page), '/koloft help')
+      await expect.poll(answered, { timeout: 60_000 }).toEqual(['0', '1'])
+
+      healConnection(env)
+      await page.waitForTimeout(SEVERAL_FAILED_2S_HEARTBEATS_MS)
+      await runIn(page, centerTerm(page), '/koloft help')
+      await expect.poll(answered, { timeout: 60_000 }).toEqual(['0', '1', '0'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
     const there = ON_THE_MACHINE[agent.label]
 
