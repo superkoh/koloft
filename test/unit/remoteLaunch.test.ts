@@ -26,6 +26,9 @@ import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
+const PYTHON_WITH_PTY = spawnSync('python3', ['-c', 'import pty, termios']).status === 0
+const TASKPOLICY = '/usr/sbin/taskpolicy'
+const TASKPOLICY_HERE = fs.existsSync(TASKPOLICY)
 const tmpRoots: string[] = []
 const mkroot = (tag: string): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), `koloft-${tag}-`))
@@ -603,7 +606,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§12 AGY§29 PLATFORM§35
-  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0).each([
+  it.skipIf(!PYTHON_WITH_PTY).each([
     { agent: 'claude', boxed: (): Box => box(spec()), arg: [0, '--settings'] as const },
     {
       agent: 'agy',
@@ -648,25 +651,31 @@ describe('U-TAB-*: the tab script on the machine', () => {
   )
 
   // ADR-0042 PLATFORM§59 PLATFORM§72
-  it.skipIf(!fs.existsSync('/usr/sbin/taskpolicy'))(
-    'on a Mac machine the agent sits above the tools it starts, through the status relay and without it',
-    () => {
-      const priorities = (b: Box): string[] => {
-        fs.writeFileSync(
-          path.join(b.home, '.local', 'bin', 'claude'),
-          `#!/bin/sh\nps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'agent'))}\n/bin/sh -c 'ps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'tool'))}; :'\n`,
-          { mode: 0o755 }
-        )
-        expect(b.run().status).toBe(0)
-        return ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
-      }
-      const stub = box(spec())
-      fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
-        mode: 0o755
-      })
-      expect(priorities(stub)).toEqual(['46', '31'])
-      if (spawnSync('python3', ['-c', 'import pty, termios']).status === 0)
-        expect(priorities(box(spec()))).toEqual(['46', '31'])
+  it.for([
+    {
+      through: 'through the status relay',
+      relayed: true,
+      runs: TASKPOLICY_HERE && PYTHON_WITH_PTY
+    },
+    { through: 'started on its own', relayed: false, runs: TASKPOLICY_HERE }
+  ])(
+    'on a Mac machine the agent sits above the tools it starts, $through',
+    ({ relayed, runs }, ctx) => {
+      if (!runs) ctx.skip()
+      const b = box(spec())
+      if (!relayed)
+        fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+          mode: 0o755
+        })
+      fs.writeFileSync(
+        path.join(b.home, '.local', 'bin', 'claude'),
+        `#!/bin/sh\nps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'agent'))}\n/bin/sh -c 'ps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'tool'))}; :'\n`,
+        { mode: 0o755 }
+      )
+      expect(b.run().status).toBe(0)
+      expect(
+        ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
+      ).toEqual(['46', '31'])
     }
   )
 
@@ -734,7 +743,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       `${b.home}/.koloft/hook-sessions`,
       'T',
       '--',
-      ...(fs.existsSync('/usr/sbin/taskpolicy') ? ['/usr/sbin/taskpolicy', '-a'] : []),
+      ...(TASKPOLICY_HERE ? [TASKPOLICY, '-a'] : []),
       'muse',
       '--approval-judge',
       'off',

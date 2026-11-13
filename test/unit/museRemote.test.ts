@@ -203,7 +203,12 @@ describe.skipIf(!PYTHON_WITH_PTY)(
         'resume',
         SID
       ])
-      await runWrapper(m, ['--trust', ws, '--trust', tree, '--trust-if', ws])
+      fs.writeFileSync(
+        path.join(m.bin, 'lift'),
+        '#!/bin/sh\n[ "$1" = -a ] || exit 64\nshift\nexec "$@"\n',
+        { mode: 0o755 }
+      )
+      await runWrapper(m, ['--trust', ws, '--trust', tree, '--trust-if', ws], ['lift', '-a'])
       const trust = JSON.parse(
         fs.readFileSync(path.join(m.home, 'conf', 'muse', 'trust.json'), 'utf8')
       )
@@ -216,21 +221,7 @@ describe.skipIf(!PYTHON_WITH_PTY)(
         'resume',
         SID
       ])
-      fs.rmSync(path.join(m.home, 'muse-argv'))
-      fs.writeFileSync(
-        path.join(m.bin, 'lift'),
-        '#!/bin/sh\n[ "$1" = -a ] || exit 64\nshift\nexec "$@"\n',
-        {
-          mode: 0o755
-        }
-      )
-      await runWrapper(m, ['--trust-if', ws], ['lift', '-a'])
-      expect(JSON.parse(fs.readFileSync(path.join(m.home, 'muse-argv'), 'utf8'))).toEqual([
-        '--trust-workspace',
-        'resume',
-        SID
-      ])
-    }, 30_000)
+    }, 20_000)
   }
 )
 

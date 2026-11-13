@@ -51,6 +51,7 @@ import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
+import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
 import { trustCodexFolder } from '../../src/main/backends/codex'
 import { BackgroundFile } from '../../src/main/backgroundFile'
@@ -427,7 +428,7 @@ it('tells a Claude Code tab on this Mac to wrap every frame in synchronized outp
 
 it('starts the agent program above its tools wherever that program runs on this Mac — Claude Code here, and the Codex screen of a tab here or over SSH — and on the machine where a remote tab runs it, and never the ssh that carries a tab to another machine', async () => {
   const lift = '/usr/sbin/taskpolicy'
-  const onTheMachine = `[ -x ${lift} ] && set -- ${lift} -a "$@"`
+  const onTheMachine = ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE
   const onThisMac = (handed: string): string => handed.split('\n')[0]
   expect(await claudeTab(repo, {})).toContain(`exec ${lift} -a claude`)
   const claudeThere = await claudeTab(`ssh://${MACHINE}${repo}`, {})
