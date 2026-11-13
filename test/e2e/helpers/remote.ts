@@ -9,6 +9,7 @@ import {
   installAgy,
   installCodex,
   installMuse,
+  killEveryProcessNaming,
   type AgyApiCall,
   type AgyCall,
   type E2EEnv
@@ -431,15 +432,5 @@ export async function launchWithRemote(
 }
 
 export function killFakeRemote(env: E2EEnv): void {
-  const thisRunStateDir = stateDir(env)
-  for (const line of execFileSync('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' }).split(
-    '\n'
-  )) {
-    if (!line.includes(thisRunStateDir)) continue
-    const pid = Number(line.trim().split(/\s+/)[0])
-    if (!pid || pid === process.pid) continue
-    try {
-      process.kill(pid, 'SIGKILL')
-    } catch {}
-  }
+  killEveryProcessNaming(stateDir(env))
 }

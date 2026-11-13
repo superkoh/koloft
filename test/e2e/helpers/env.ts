@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -212,7 +213,19 @@ export function setupE2EEnv(): E2EEnv {
     claudeLazyFile: path.join(home, 'fake-claude-lazy'),
     workspaces,
     launchEnv,
-    cleanup: () => fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    cleanup: () => {
+      killEveryProcessNaming(home)
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    }
+  }
+}
+
+export function killEveryProcessNaming(pathFragment: string): void {
+  const found = spawnSync('pgrep', ['-f', pathFragment], { encoding: 'utf8' }).stdout ?? ''
+  for (const pid of found.split('\n').filter(Boolean)) {
+    try {
+      process.kill(Number(pid), 'SIGKILL')
+    } catch {}
   }
 }
 

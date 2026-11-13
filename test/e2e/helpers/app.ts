@@ -4,7 +4,6 @@ import fs from 'fs'
 import path from 'path'
 import { setupE2EEnv, type E2EEnv } from './env'
 import type { AttentionEvent, OsOutletsSeenByTests } from '../../../src/shared/types'
-import { execFileSync } from 'child_process'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out', 'main', 'index.js')
@@ -23,7 +22,6 @@ export const test = base.extend<Fixtures>({
     if (testInfo.status !== testInfo.expectedStatus && fs.existsSync(sshLog)) {
       fs.copyFileSync(sshLog, testInfo.outputPath('fake-ssh-log.jsonl'))
     }
-    endEveryProcessNamingTheHome(env)
     env.cleanup()
   },
   app: async ({ env }, use) => {
@@ -39,18 +37,6 @@ export const test = base.extend<Fixtures>({
 })
 
 export { expect }
-
-function endEveryProcessNamingTheHome(env: E2EEnv): void {
-  const processes = execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' })
-  for (const line of processes.split('\n')) {
-    if (!line.includes(env.home)) continue
-    const pid = Number(line.trim().split(/\s+/)[0])
-    if (pid === process.pid) continue
-    try {
-      process.kill(pid, 'SIGKILL')
-    } catch {}
-  }
-}
 
 export async function quitAndClose(app: ElectronApplication): Promise<void> {
   const win = app.windows()[0]
