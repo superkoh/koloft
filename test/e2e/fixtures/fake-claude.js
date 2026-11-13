@@ -1852,13 +1852,9 @@ function handleLine(line) {
     )
   }
   if (text.startsWith('/plan ')) {
-    const approved = 'Plan approved'
-    return ask(
-      'ExitPlanMode',
-      { plan: text.slice('/plan '.length) },
-      () => approved,
-      () => approved,
-      (key) => (key.includes(BACK_A_TAB) ? key : undefined)
+    const approved = () => 'Plan approved'
+    return ask('ExitPlanMode', { plan: text.slice('/plan '.length) }, approved, approved, (key) =>
+      key.includes(BACK_A_TAB) ? key : undefined
     )
   }
   if (text === '/need-approval') {

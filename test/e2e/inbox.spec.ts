@@ -934,7 +934,6 @@ const AGY_API = (env: E2EEnv): string => fileText(path.join(env.home, 'fake-agy-
 const PLAN_ASKERS = [
   {
     name: 'Claude Code',
-    install: () => {},
     ask: async (page: Page) => {
       await startSessionIn(page, 'ws-a')
       await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, {
@@ -942,8 +941,7 @@ const PLAN_ASKERS = [
       })
       await runIn(page, centerTerm(page), `/plan ${CLAUDE_PLAN}`)
     },
-    beforeRelaunch: (env: E2EEnv) =>
-      fs.writeFileSync(path.join(env.home, 'fake-claude-no-status'), ''),
+    beforeRelaunch: (env: E2EEnv) => fs.writeFileSync(env.claudeNoStatusFile, ''),
     plan: CLAUDE_PLAN,
     told: (env: E2EEnv) => peerMessages(env),
     approved: async (_env: E2EEnv, page: Page, tabId: string) =>
@@ -960,7 +958,6 @@ const PLAN_ASKERS = [
       await agyReady(page)
       await runIn(page, centerTerm(page), '/plan')
     },
-    beforeRelaunch: () => {},
     plan: '1. Do the thing.',
     told: AGY_API,
     approved: async (env: E2EEnv) => AGY_API(env).includes('[Approved] implementation_plan.md')
@@ -972,7 +969,7 @@ for (const agent of PLAN_ASKERS) {
     env
   }) => {
     test.setTimeout(180_000)
-    agent.install(env)
+    agent.install?.(env)
     let app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -987,7 +984,7 @@ for (const agent of PLAN_ASKERS) {
       await quitAndClose(app)
     }
 
-    agent.beforeRelaunch(env)
+    agent.beforeRelaunch?.(env)
     app = await launchApp(env)
     try {
       const page = await app.firstWindow()
