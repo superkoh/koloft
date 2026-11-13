@@ -1,0 +1,12 @@
+decision rule: pays only if the round median with 30 ms added round-trip is >= 30% shorter together, and nothing fails at the default MaxSessions
+local rsync: openrsync: protocol version 29
+local ssh: OpenSSH_10.3p1, LibreSSL 3.3.6
+pulls per round: transcripts, hooks, agy brain; lab user kuser
+lab rsync: rsync  version 3.2.7  protocol version 32
+{"rttMs":0,"user":"kuser","pulls":3,"rounds":15,"lastTranscriptInSync":true,"errors":[],"sequential":{"roundMedianMs":67,"pullsMedianMs":55,"roundMs":[70,69,85,71,78,74,76,67,61,63,60,62,61,61,63]},"together":{"roundMedianMs":49,"pullsMedianMs":37,"roundMs":[54,50,56,49,51,52,50,50,48,44,45,43,45,44,43]},"roundShorterBy":"27%"}
+{"rttMs":30,"user":"kuser","pulls":3,"rounds":15,"lastTranscriptInSync":true,"errors":[],"sequential":{"roundMedianMs":999,"pullsMedianMs":913,"roundMs":[959,1023,956,981,999,1003,1009,1046,990,1029,1020,958,983,1002,998]},"together":{"roundMedianMs":693,"pullsMedianMs":606,"roundMs":[683,722,675,685,680,666,700,693,688,694,725,685,709,697,695]},"roundShorterBy":"31%"}
+{"rttMs":100,"user":"kuser","pulls":3,"rounds":15,"lastTranscriptInSync":true,"errors":[],"sequential":{"roundMedianMs":2841,"pullsMedianMs":2610,"roundMs":[2849,2908,2841,2886,2850,2780,2836,2855,2818,2820,2879,2838,2831,2819,2857]},"together":{"roundMedianMs":1959,"pullsMedianMs":1728,"roundMs":[1959,2001,1983,1984,1921,1933,1952,1990,1936,1961,1960,1947,1968,1930,1922]},"roundShorterBy":"31%"}
+summary
++0 ms rtt, 3 pulls, kuser: round median one-after-another 67 ms, together 49 ms (27% shorter); pulls alone 55 -> 37 ms; failed commands 0; mirror in sync true
++30 ms rtt, 3 pulls, kuser: round median one-after-another 999 ms, together 693 ms (31% shorter); pulls alone 913 -> 606 ms; failed commands 0; mirror in sync true
++100 ms rtt, 3 pulls, kuser: round median one-after-another 2841 ms, together 1959 ms (31% shorter); pulls alone 2610 -> 1728 ms; failed commands 0; mirror in sync true

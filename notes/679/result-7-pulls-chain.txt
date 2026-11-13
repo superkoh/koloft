@@ -1,0 +1,10 @@
+decision rule: pays only if the round median with 30 ms added round-trip is >= 30% shorter together, and nothing fails at the default MaxSessions
+local rsync: openrsync: protocol version 29
+local ssh: OpenSSH_10.3p1, LibreSSL 3.3.6
+pulls per round: transcripts, hooks, agy brain, codex sessions, codex archived, muse sessions, agy conversations; lab user kuser
+lab rsync: rsync  version 3.2.7  protocol version 32
+{"rttMs":0,"user":"kuser","pulls":7,"rounds":10,"lastTranscriptInSync":true,"errors":[],"sequential":{"roundMedianMs":160,"pullsMedianMs":145,"roundMs":[165,167,204,167,154,152,155,161,157,158]},"together":{"roundMedianMs":83,"pullsMedianMs":69,"roundMs":[99,85,102,78,87,76,89,76,82,76]},"roundShorterBy":"48%"}
+{"rttMs":30,"user":"kuser","pulls":7,"rounds":10,"lastTranscriptInSync":true,"errors":[],"sequential":{"roundMedianMs":2216,"pullsMedianMs":2134,"roundMs":[2321,2174,2205,2233,2210,2210,2250,2222,2245,2169]},"together":{"roundMedianMs":1008,"pullsMedianMs":926,"roundMs":[1010,1020,990,994,1040,1007,1018,975,1015,1001]},"roundShorterBy":"55%"}
+summary
++0 ms rtt, 7 pulls, kuser: round median one-after-another 160 ms, together 83 ms (48% shorter); pulls alone 145 -> 69 ms; failed commands 0; mirror in sync true
++30 ms rtt, 7 pulls, kuser: round median one-after-another 2216 ms, together 1008 ms (55% shorter); pulls alone 2134 -> 926 ms; failed commands 0; mirror in sync true
