@@ -29,7 +29,8 @@ function isOpenTab(v: unknown): v is OpenTab {
     typeof t.title === 'string' &&
     typeof t.cwd === 'string' &&
     (t.tabIds === undefined ||
-      (Array.isArray(t.tabIds) && t.tabIds.every((id) => typeof id === 'string')))
+      (Array.isArray(t.tabIds) &&
+        t.tabIds.every((id) => typeof id === 'string' && /^\S+$/.test(id))))
   )
 }
 

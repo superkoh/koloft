@@ -3,6 +3,7 @@ import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
+  type E2EEnv,
   installAgy,
   installCodex,
   installMuse,
@@ -70,7 +71,11 @@ async function agentOpen(page: Page, target: string): Promise<void> {
 }
 
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
-const OPEN_TABS_SAVE_SETTLE_MS = 3000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+
+const serverWithPidFile = (env: E2EEnv, port: number, pidFile: string): string =>
+  `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${env.home} >/dev/null 2>&1 & echo $! > ${pidFile}`
 
 test.describe('Workbench tab lifecycle: an open forks by target (a web url lands a tab, a file lands none) and by source (agent, or the user’s own shell)', () => {
   test('WB-T02: an agent web open lands in front of its own session, read and loaded, and the caret stays in the terminal', async ({
@@ -793,15 +798,14 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         await waitBooted(page)
         await startSessionIn(page, 'ws-a')
         before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
-        await agentShell(
-          page,
-          before,
-          30_000
-        )(
-          `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${env.home} >/dev/null 2>&1 & echo $! > ${pidFile}`
-        )
+        await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
         await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
-        await page.waitForTimeout(OPEN_TABS_SAVE_SETTLE_MS)
+        await expect
+          .poll(() => {
+            const file = path.join(env.userData, 'open-tabs.json')
+            return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+          })
+          .toContain(`"tabIds":["${before}"]`)
       } finally {
         await quitAndClose(app)
       }
@@ -820,6 +824,44 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         await quitAndClose(app2)
       }
     } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+    }
+  })
+
+  test('WB-T31: a local session that went to sleep for being idle wakes under a new tab id, and its ports still list the server it started before it slept', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const row = wsRows(page, 'ws-a').first()
+      const before = (await row.getAttribute('data-tab-id'))!
+      await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
+      await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+
+      await startSessionIn(page, 'ws-b')
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.tabId === before && s.alive
+            ),
+          { timeout: 40_000 }
+        )
+        .toBe(false)
+      await row.click()
+      await expect.poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 }).not.toBe(before)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+      const after = (await row.getAttribute('data-tab-id'))!
+      await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
+    } finally {
+      await quitAndClose(app)
       if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
     }
   })

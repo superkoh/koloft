@@ -970,14 +970,11 @@ let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
-const TAB_IDS_KEPT_PER_SESSION = 8
-const tabIdsOfSession = new Map<string, string[]>()
+const TAB_IDS_KEPT_PER_TAB = 8
+const earlierTabIds = new Map<string, string[]>()
 
-function tabIdsOf(sessionId: string, tabId: string): string[] {
-  const ids = [...new Set([tabId, ...(tabIdsOfSession.get(sessionId) ?? [])])]
-  tabIdsOfSession.set(sessionId, ids.slice(0, TAB_IDS_KEPT_PER_SESSION))
-  return tabIdsOfSession.get(sessionId)!
-}
+const tabIdsOf = (tabId: string): string[] =>
+  [tabId, ...(earlierTabIds.get(tabId) ?? [])].slice(0, TAB_IDS_KEPT_PER_TAB)
 
 function openTabOf(s: SessionInfo): OpenTab {
   return {
@@ -985,7 +982,7 @@ function openTabOf(s: SessionInfo): OpenTab {
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
     cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
-    tabIds: tabIdsOf(s.sessionId, s.tabId)
+    tabIds: tabIdsOf(s.tabId)
   }
 }
 
@@ -1000,7 +997,7 @@ function rememberOpenTabs(all = allSessions()): void {
       kind,
       title: '',
       cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd,
-      tabIds: tabIdsOf(h.resumeSessionId, h.id)
+      tabIds: tabIdsOf(h.id)
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -1061,7 +1058,10 @@ function forgetSleeper(tabId: string): void {
 
 function settleWokenSleepers(all: SessionInfo[]): void {
   const woken = sleepers.settle(all)
-  for (const { oldId, newId } of woken) attention.rehome(oldId, newId)
+  for (const { oldId, newId, tab } of woken) {
+    attention.rehome(oldId, newId)
+    if (tab.tabIds) earlierTabIds.set(newId, tab.tabIds)
+  }
   if (woken.length) tabLifecycle.emit('woken')
 }
 
@@ -3441,6 +3441,7 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
+    earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
@@ -3542,7 +3543,6 @@ app.whenReady().then(() => {
   const droppedSessionsLog = signalLog(path.join(userData, 'dropped-sessions.log'))
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
-  for (const t of savedOpenTabs.tabs) if (t.tabIds) tabIdsOfSession.set(t.sessionId, t.tabIds)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
   const storedDeps = {
@@ -5815,6 +5815,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
       if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
     }
+    const ranUnder = savedOpenTabs.tabs.find((t) => t.sessionId === id)?.tabIds
+    if (ranUnder) earlierTabIds.set(resumed.tabId, ranUnder)
     if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
@@ -7096,10 +7098,8 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.leftovers, () => leftovers)
   ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
     if (typeof tabId !== 'string') return null
-    const sessionId = sessionOfTab(tabId)?.sessionId
     const tags = [
-      tabId,
-      ...((sessionId && tabIdsOfSession.get(sessionId)) || []),
+      ...tabIdsOf(tabId),
       ...ptyMgr
         .list()
         .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
