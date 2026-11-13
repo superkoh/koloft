@@ -116,6 +116,10 @@ function messageOf(err: unknown): string {
   return raw.trim() || 'The diagram could not be rendered.'
 }
 
+export function cachedDiagram(code: string, id: string): string | undefined {
+  return cache.get(hashCode(code.trim()))?.split(ID_SLOT).join(selectorSafeId(id))
+}
+
 export async function renderDiagram(
   code: string,
   id: string
@@ -129,9 +133,8 @@ export async function renderDiagram(
     }
   }
 
-  const key = hashCode(src)
-  const cached = cache.get(key)
-  if (cached !== undefined) return { ok: true, svg: cached.split(ID_SLOT).join(selectorSafeId(id)) }
+  const cached = cachedDiagram(src, id)
+  if (cached !== undefined) return { ok: true, svg: cached }
 
   let mermaid: MermaidApi
   try {
@@ -150,7 +153,7 @@ export async function renderDiagram(
   try {
     const { svg } = await serialized(() => mermaid.render(selectorSafeId(id), src, host))
     const clean = DOMPurify.sanitize(svg)
-    cache.set(key, clean.split(selectorSafeId(id)).join(ID_SLOT))
+    cache.set(hashCode(src), clean.split(selectorSafeId(id)).join(ID_SLOT))
     return { ok: true, svg: clean }
   } catch (err) {
     return { ok: false, message: messageOf(err) }
