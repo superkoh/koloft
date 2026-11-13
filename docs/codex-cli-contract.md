@@ -3311,7 +3311,8 @@ home where one app-server had already started and stopped first.
   skills: … (os error 66)`. 0.168.0 carries "Make SQLite schema migrations safe for
   concurrent startup" (openai/codex#59015), so the race is likely fixed there, but it has
   come and gone before (0.166.0: 0 of 6 one day, 2 of 6 another), so that it is gone for
-  good is **inferred, not checked**; the oldest Codex Koloft runs (0.161.0) still has it.
+  good is **inferred, not checked**, and every build measured here from 0.162.0 to
+  0.167.2 had it.
 
 ## 29. Git credentials from inside the sandbox
 
