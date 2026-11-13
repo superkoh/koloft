@@ -15,7 +15,7 @@ import {
   machineHome,
   type OtherAgentName
 } from './helpers/remote'
-import { ASKED_BEFORE_IT_STOPPED } from '../../src/main/koloftInbox'
+import { ASKED_BEFORE_IT_STOPPED, SHOW_PLAN_AGAIN } from '../../src/main/koloftInbox'
 
 test.setTimeout(240_000)
 test.afterEach(({ env }) => killFakeRemote(env))
@@ -254,3 +254,46 @@ for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
       }
     })
 }
+
+test('a plan a remote Antigravity session still shows after a Koloft restart keeps its Approve, since agy lives on in tmux on the machine; Approve there reaches agy on the machine, which is never told to show the plan again', async ({
+  env
+}) => {
+  const agy = OTHER_AGENTS_ON_THE_MACHINE.find((a) => a.label === 'Antigravity')!
+  const agyGot = (): string => JSON.stringify(machineAgyApiCalls(env))
+  const plan = '1. Do the thing.'
+  const first = await launchWith(env, agy)
+  try {
+    const { row, tabId } = await startOnTheMachine(first.page, env, agy)
+    await typeInto(first.page, tabId, '/plan')
+    await expect(row).toHaveClass(/\bst-approval\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+    await openInbox(first.page)
+    await expect(
+      inboxCard(first.page, 'asks you to approve a plan').locator('.ibx-quote')
+    ).toContainText(plan, { timeout: A_CARD_SHOWS_WITHIN_MS })
+  } finally {
+    await quitAndClose(first.app)
+  }
+
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-approval\b/, {
+      timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
+    })
+    await openInbox(page)
+    const card = inboxCard(page, 'asks you to approve a plan')
+    await expect(card.locator('.ibx-quote')).toContainText(plan, {
+      timeout: A_CARD_SHOWS_WITHIN_MS
+    })
+    await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+    await expect
+      .poll(agyGot, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      .toContain('[Approved] implementation_plan.md')
+    expect(agyGot()).not.toContain(SHOW_PLAN_AGAIN)
+    await showDone(page)
+    await expect(card.locator('.ibx-dstat')).toContainText('Answered')
+  } finally {
+    await quitAndClose(app)
+  }
+})

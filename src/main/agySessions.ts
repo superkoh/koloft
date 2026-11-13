@@ -1012,13 +1012,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§11 AGY§12
   private showLastState(run: AgyRun, earlierLog: string): void {
     let last: ProgramStatus | undefined
+    let reviewing = false
     for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
       if (!read) continue
       if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      if ('title' in read) reviewing = read.title.agentState === 'reviewing'
       last = remoteStatus(run, read) ?? last
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
+    // AGY§19
+    if (reviewing) void this.readPlan(run)
     this.replayTasks(run)
   }
 

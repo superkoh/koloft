@@ -463,7 +463,7 @@ const startCwd = resumeId ? launchCwd : cwd
 
 function startupTurn() {
   if (noStatus()) {
-    fs.writeFileSync(transcript, '')
+    fs.appendFileSync(transcript, '')
     fireHook('start', {
       session_id: sessionId,
       transcript_path: transcript,
@@ -727,8 +727,26 @@ function hookContext(output) {
     return []
   }
 }
+const ASKED_FOR_THE_PLAN_AGAIN = 'approve the same plan again'
+function lastPlanAsked() {
+  return fs
+    .readFileSync(transcript, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        return JSON.parse(line).message.content
+      } catch {
+        return []
+      }
+    })
+    .filter((c) => c?.type === 'tool_use' && c.name === 'ExitPlanMode')
+    .map((c) => c.input.plan)
+    .at(-1)
+}
 // CC§13
 function peerTurn(content) {
+  const plan = content.includes(ASKED_FOR_THE_PLAN_AGAIN) ? lastPlanAsked() : undefined
+  if (plan !== undefined) return handleLine(`/plan ${plan}`)
   const context = hookContext(
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
   )
@@ -1830,6 +1848,16 @@ function handleLine(line) {
       { command, description: 'A command' },
       () => ran,
       (key) => (key === '1' ? runs() : `Denied: key ${JSON.stringify(key)}`)
+    )
+  }
+  if (text.startsWith('/plan ')) {
+    const approved = 'Plan approved'
+    return ask(
+      'ExitPlanMode',
+      { plan: text.slice('/plan '.length) },
+      () => approved,
+      () => approved,
+      (key) => (key.includes(BACK_A_TAB) ? key : undefined)
     )
   }
   if (text === '/need-approval') {
