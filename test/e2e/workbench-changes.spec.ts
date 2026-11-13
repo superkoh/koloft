@@ -962,6 +962,14 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await page.keyboard.type('part6rewritten_')
     await expect(bar.locator('.find-count')).toHaveText(/^1\/900$/)
     await expect.poll(() => far.locator(CV.diffRow).count(), { timeout: 30_000 }).toBe(farRows)
+    const firstHit = far.locator(CV.diffRow, { hasText: /part6rewritten_/ }).first()
+    await expect
+      .poll(async () => {
+        const view = await stream(page).boundingBox()
+        const hit = await firstHit.boundingBox()
+        return !!view && !!hit && hit.y >= view.y && hit.y + hit.height <= view.y + view.height
+      })
+      .toBe(true)
 
     const top = await blockTop(page, 'bulk/part-6.ts')
     await stream(page).evaluate((el, y) => {
