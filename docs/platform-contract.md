@@ -769,18 +769,21 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   not load.
 - **A content script with `run_at: document_start` can run before
   `document.documentElement` exists.**
-- **Native messaging (read 2026-11-13 in electron-chrome-extensions 4.9's
-  `dist/cjs/index.js`):** on macOS the library looks for `<host>.json` in
+- **Native messaging (read 2026-11-13 in electron-chrome-extensions 4.9.0's
+  `dist/cjs/index.js`):** on macOS the library reads `<host>.json` from
   `/Library/Google/Chrome/NativeMessagingHosts`, then
   `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`, then
-  `NativeMessagingHosts` in the app's `userData`, and spawns the host from the main
-  process with the extension origin as its one argument — so the host's parent is the
-  app itself. Two differences from Chrome, not yet seen to break anything: `receive`
-  reads one message per stdout `data` chunk (a message split over two chunks fails
-  `JSON.parse`; a second message in the same chunk is dropped), and `send` writes
-  `message.length` (UTF-16 units, not bytes) as the length, so a message with non-ASCII
-  text is cut short. On a Mac without Chrome, whether a host's installer writes to any of
-  those folders is not probed.
+  `NativeMessagingHosts` in the app's `userData`, and takes the first file that reads
+  and has a valid shape; a missing or broken one is skipped with only a debug line. It
+  spawns the host from the main process with the extension origin as its one argument —
+  so the host's parent is the app itself. Two differences from Chrome, not yet seen
+  happening: `receive`, a stdout `data` listener in the main process with no
+  `try`, reads one message per chunk, so a message split over two chunks (or a chunk
+  under 4 bytes) throws there, an uncaught exception in the main process, and a second
+  message in the same chunk is dropped; `send` writes `message.length` (UTF-16 units,
+  not bytes) as the length, so a message with non-ASCII text is cut short. On a Mac
+  without Chrome, whether a host's installer writes to any of those folders is not
+  probed.
 
 ## §16 CDP through `webContents.debugger`
 
@@ -3669,8 +3672,9 @@ of that it spent on the CPU.
 How established: read 2026-11-13 on 1Password for Mac 8.12.44, macOS 27.0 (Darwin
 27.0.0), with `strings` on the host binary `1Password-BrowserSupport` (inside
 `1Password Browser Helper.app`, under the app's `Contents/Library/LoginItems`) and on
-`Contents/Frameworks/index.node`, plus `ps`, `pgrep` and `log show`. 1Password was not
-opened, and its settings, data and logs were not read.
+`Contents/Frameworks/index.node`, plus `ps`, `pgrep` and the macOS unified log
+(`log show`). 1Password was not opened, and its settings, data and own log files were
+not read.
 
 - **The extension talks to the app through a native messaging host.** 1Password puts a
   `com.1password.1password.json` host file in each browser's `NativeMessagingHosts`
@@ -3715,7 +3719,8 @@ opened, and its settings, data and logs were not read.
   "waiting for potential partner browser authorization from B5X". `Partner` is the only
   variant found. Which browsers count as partners, and whether an unknown browser is
   ever offered this way, is not probed.
-- **A browser off both lists, as seen 2026-11-13 with Koloft 0.71.0** and the 1Password
+- **A browser off both lists, as seen 2026-11-13 with Koloft 0.71.0** (the Developer
+  ID-signed, notarized release in `/Applications`) and the 1Password
   Nightly extension installed in its Workbench browser: Koloft's main process starts
   `1Password-BrowserSupport chrome-extension://gejiddohjgogedgjnonbofjigllpkmbf/`
   (caught with `pgrep -P <Koloft pid>`), the same parent shape as Chrome. `log show`
@@ -3723,7 +3728,7 @@ opened, and its settings, data and logs were not read.
   after its first log line, which is about checking a code signature
   (`SecTrustEvaluateIfNecessary`; whose signature, not checked). That it exits because
   Koloft is on neither list is inferred, not checked: the other early exits above were
-  not ruled out, since the host's own log was not read. Not probed: whether Add Browser
+  not ruled out, since 1Password's own log files were not read. Not probed: whether Add Browser
   takes Koloft, and what the extension shows once the host stays up.
 
 Koloft dependents: the Workbench browser's extensions (`extensionManager.ts`) reach
