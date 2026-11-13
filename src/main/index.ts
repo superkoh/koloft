@@ -974,7 +974,16 @@ const TAB_IDS_KEPT_PER_TAB = 8
 const earlierTabIds = new Map<string, string[]>()
 
 const tabIdsOf = (tabId: string): string[] =>
-  [tabId, ...(earlierTabIds.get(tabId) ?? [])].slice(0, TAB_IDS_KEPT_PER_TAB)
+  [tabId, ...(earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])].slice(
+    0,
+    TAB_IDS_KEPT_PER_TAB
+  )
+
+function carryTabIds(newId: string, ids: string[]): void {
+  const merged = new Set([...(earlierTabIds.get(newId) ?? []), ...ids])
+  merged.delete(newId)
+  earlierTabIds.set(newId, [...merged].slice(0, TAB_IDS_KEPT_PER_TAB - 1))
+}
 
 function openTabOf(s: SessionInfo): OpenTab {
   return {
@@ -1060,7 +1069,7 @@ function settleWokenSleepers(all: SessionInfo[]): void {
   const woken = sleepers.settle(all)
   for (const { oldId, newId, tab } of woken) {
     attention.rehome(oldId, newId)
-    if (tab.tabIds) earlierTabIds.set(newId, tab.tabIds)
+    if (tab.tabIds) carryTabIds(newId, tab.tabIds)
   }
   if (woken.length) tabLifecycle.emit('woken')
 }
@@ -3441,7 +3450,7 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
-    earlierTabIds.delete(e.id)
+    if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
@@ -5816,7 +5825,7 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
       return
     }
     const ranUnder = savedOpenTabs.tabs.find((t) => t.sessionId === id)?.tabIds
-    if (ranUnder) earlierTabIds.set(resumed.tabId, ranUnder)
+    if (ranUnder && reopenedTab) carryTabIds(reopenedTab, ranUnder)
     if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
@@ -6566,6 +6575,10 @@ function registerIpc(): void {
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
+    if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
+      carryTabIds(newTabId, tabIdsOf(oldTabId))
+      earlierTabIds.delete(oldTabId)
+    }
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())

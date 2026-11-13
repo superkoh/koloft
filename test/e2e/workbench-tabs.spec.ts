@@ -803,9 +803,13 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         await expect
           .poll(() => {
             const file = path.join(env.userData, 'open-tabs.json')
-            return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+            if (!fs.existsSync(file)) return []
+            const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+              tabs: { tabIds?: string[] }[]
+            }
+            return saved.tabs.flatMap((t) => t.tabIds ?? [])
           })
-          .toContain(`"tabIds":["${before}"]`)
+          .toContain(before)
       } finally {
         await quitAndClose(app)
       }
@@ -823,6 +827,31 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
       } finally {
         await quitAndClose(app2)
       }
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+    }
+  })
+
+  test('WB-T32: a session restarted in its tab comes back under a new tab id, and its ports still list the server it started before the restart', async ({
+    app,
+    page,
+    env
+  }) => {
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    try {
+      await startSessionIn(page, 'ws-a')
+      const row = wsRows(page, 'ws-a').first()
+      const before = (await row.getAttribute('data-tab-id'))!
+      await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
+      await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+      await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
+      )
+      await expect.poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 }).not.toBe(before)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+      const after = (await row.getAttribute('data-tab-id'))!
+      await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
     } finally {
       if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
     }
