@@ -116,7 +116,7 @@ for (const remote of [false, true]) {
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
         .toContain('[fake-claude] answered: after the two lines')
       const text = await terminalText(page, tabId)
-      expect(text).toContain('[fake-claude] handled: probe-a')
+      expect(text).toMatch(/\[fake-claude\] handled: probe-a\n *probe-b\n/)
       expect(text).not.toContain('handled: probe-b')
     } finally {
       await quitAndClose(app)

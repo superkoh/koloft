@@ -544,15 +544,30 @@ function startupTurn() {
   process.stdout.write(`\r\n[fake-claude] session ${sessionId} ready in ${cwd}\r\n> `)
 }
 
+// CC§12 CC§18
+const INPUT_BOX_TAKES_PASTES = '\x1b[?2004h'
+const INPUT_BOX_GONE = '\x1b[?2004l'
+function startThenShowTheInputBox() {
+  startupTurn()
+  process.stdout.write(INPUT_BOX_TAKES_PASTES)
+}
+
 function startAfterDelay() {
   const startDelay = delayMs()
   if (startDelay > 0) {
     process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
-    setTimeout(startupTurn, startDelay)
+    setTimeout(startThenShowTheInputBox, startDelay)
   } else {
-    startupTurn()
+    startThenShowTheInputBox()
   }
 }
+
+// CC§12
+if (process.stdin.isTTY) process.stdin.setRawMode(true)
+// PLATFORM§35
+if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+  fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
+process.on('exit', () => process.stdout.write(INPUT_BOX_GONE))
 
 // CC§9
 async function askTrustThenStart(question) {
@@ -780,15 +795,9 @@ let reportsState = false
 const reportState = (body) => {
   if (reportsState) process.stdout.write(`\x1b]7501;${body}:app=claude-code\x07`)
 }
-if (process.stdin.isTTY) process.stdin.setRawMode(true)
-// PLATFORM§35
-if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
-  fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
-// CC§12 CC§18
-process.stdout.write('\x1b[?2004h')
 if (statusQueried) process.stdout.write('\x1b]7501;?\x07')
+process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => {
-  chunk = String(chunk)
   if (statusQueried && STATUS_REPLY.test(chunk)) {
     reportsState = true
     chunk = chunk.replace(STATUS_REPLY, '')
@@ -944,27 +953,46 @@ function questionDialogKeys(questions) {
 }
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
+const PASTE_MARKERS = [PASTE_START, PASTE_END]
+const ESCAPE_SEQUENCE = /^\x1b(?:\[[0-9;?]*[ -/]*[@-~]|O.)?/
 const ERASE_KEYS = ['\x7f', '\b']
-const CTRL_C = '\x03'
-const CTRL_D = '\x04'
 const CLEAR_THE_LINE = '\x15'
+const QUIT_KEYS = ['\x03', '\x04']
+const SECOND_QUIT_PRESS_WITHIN_MS = 800
 let typed = ''
 let pasting = false
+let unread = ''
+let quitPressed = null
+const clearTheLine = () => {
+  typed = ''
+  process.stdout.write('\r\x1b[K')
+}
 // CC§12 CC§18
 function takeKeys(chunk) {
-  let rest = chunk
+  let rest = unread + chunk
+  unread = ''
   while (rest) {
     if (dialogKey) return dialogKey(rest)
-    const marker = [PASTE_START, PASTE_END].find((m) => rest.startsWith(m))
+    const marker = PASTE_MARKERS.find((m) => rest.startsWith(m))
     if (marker) {
       pasting = marker === PASTE_START
       rest = rest.slice(marker.length)
       continue
     }
+    if (rest !== ESC_ALONE && PASTE_MARKERS.some((m) => m.startsWith(rest))) {
+      unread = rest
+      return
+    }
+    if (rest[0] === ESC_ALONE && !pasting) {
+      rest = rest.slice(rest.match(ESCAPE_SEQUENCE)[0].length)
+      continue
+    }
     const key = String.fromCodePoint(rest.codePointAt(0))
     rest = rest.slice(key.length)
-    if (pasting) typed += key === '\r' ? '\n' : key
-    else if (key === '\r') {
+    if (pasting) {
+      typed += key === '\r' ? '\n' : key
+      process.stdout.write(key === '\r' || key === '\n' ? '\r\n' : key)
+    } else if (key === '\r') {
       const line = typed
       typed = ''
       process.stdout.write('\r\n')
@@ -974,13 +1002,20 @@ function takeKeys(chunk) {
       process.stdout.write('\r\n')
     } else if (ERASE_KEYS.includes(key)) {
       if (typed) process.stdout.write('\b \b')
-      typed = typed.slice(0, -1)
-    } else if (key === CLEAR_THE_LINE) typed = ''
-    else if (key === CTRL_C) process.kill(process.pid, 'SIGINT')
-    else if (key === CTRL_D && !typed) shutdown('other')
-    else if (key >= ' ' || key === '\t' || key === ESC_ALONE) {
+      typed = Array.from(typed).slice(0, -1).join('')
+    } else if (key === CLEAR_THE_LINE) clearTheLine()
+    else if (QUIT_KEYS.includes(key)) {
+      if (typed) {
+        if (key === QUIT_KEYS[0]) clearTheLine()
+        continue
+      }
+      const again =
+        quitPressed?.key === key && Date.now() - quitPressed.at < SECOND_QUIT_PRESS_WITHIN_MS
+      if (again) shutdown('prompt_input_exit')
+      quitPressed = { key, at: Date.now() }
+    } else if (key >= ' ' || key === '\t') {
       typed += key
-      if (key !== ESC_ALONE) process.stdout.write(key)
+      process.stdout.write(key)
     }
   }
 }

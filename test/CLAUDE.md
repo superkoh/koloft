@@ -134,10 +134,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
-    the real one does, and says so with `ESC[?2004h` at start: Enter (`\r`) sends the line,
-    Shift+Enter (`\n`) adds a new line to it, and it echoes, erases (Backspace, Ctrl+U)
-    and ends on Ctrl+C or Ctrl+D on an empty line itself. Esc keystrokes are dropped from
-    a typed line. A bracketed paste
+    the real one does, and writes `ESC[?2004h` once its input box is up: Enter (`\r`)
+    sends the line, Shift+Enter (`\n`) adds a new line to it, Backspace and Ctrl+U erase,
+    Ctrl+C empties a line, and Ctrl+C or Ctrl+D pressed twice within 0.8 s on an empty
+    line ends it with SessionEnd `prompt_input_exit` (CC§12). Esc and escape sequences
+    (arrows, focus reports) are dropped. A bracketed paste
     (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
     it, and is then one prompt together with what was typed after it; fake-codex
     keeps one in its composer the same way.
