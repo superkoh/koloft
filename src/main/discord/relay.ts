@@ -541,15 +541,15 @@ export class DiscordRelay {
     const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
     const reaches = answers || this.reaches(tabId)
     if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
-    let left = this.quietTexts.get(tabId) ?? []
-    const quiet =
-      turn.said.length > 0 &&
-      turn.said.every((l) => {
-        const q = left.find((t) => l.text.includes(t))
-        if (q !== undefined) left = withoutOne(left, q)
-        return q !== undefined
-      })
-    if (quiet) return void this.quietTexts.set(tabId, left)
+    const left = [...(this.quietTexts.get(tabId) ?? [])]
+    let quiet = turn.said.length > 0
+    for (const line of turn.said) {
+      const i = left.findIndex((t) => line.text.includes(t))
+      if (i < 0) quiet = false
+      else left.splice(i, 1)
+    }
+    this.quietTexts.set(tabId, left)
+    if (quiet) return
     const channelId = this.d.replyChannelOf(tabId)
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }

@@ -1375,7 +1375,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts[1].text).toContain('Delete the branch?')
   })
 
-  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', async () => {
+  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is, and uses that notice up', async () => {
     const { relay, posts, conductor } = setup()
     await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
@@ -1386,17 +1386,18 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       reply: 'Two things.',
       at: 1
     })
+    await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE about koloft todo', at: 1 }],
       reply: 'Noted.',
       at: 1
     })
     relay.turnEnded(TAB, {
-      said: [{ who: 'owner', text: '[Discord] hi', at: 2 }],
-      reply: 'Hello.',
+      said: [{ who: 'owner', text: '[Discord] is "NOTICE about koloft todo" done?', at: 2 }],
+      reply: 'Yes.',
       at: 2
     })
-    expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Hello.'])
+    expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Yes.'])
   })
 
   it('the same quiet notice told twice before the first answer to it ends keeps both answers off Discord', async () => {
