@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -220,11 +220,38 @@ export function setupE2EEnv(): E2EEnv {
   }
 }
 
+function thisProcessAndItsParents(): Set<number> {
+  const parentOf = new Map(
+    execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
+  )
+  const chain = new Set<number>()
+  for (let pid: number | undefined = process.pid; pid && !chain.has(pid); pid = parentOf.get(pid))
+    chain.add(pid)
+  return chain
+}
+
+const asLiteralRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+export function processesNaming(pathFragment: string): number[] {
+  const mine = thisProcessAndItsParents()
+  try {
+    return execFileSync('pgrep', ['-f', asLiteralRegex(pathFragment)], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map(Number)
+      .filter((pid) => pid && !mine.has(pid))
+  } catch {
+    return []
+  }
+}
+
 export function killEveryProcessNaming(pathFragment: string): void {
-  const found = spawnSync('pgrep', ['-f', pathFragment], { encoding: 'utf8' }).stdout ?? ''
-  for (const pid of found.split('\n').filter(Boolean)) {
+  for (const pid of processesNaming(pathFragment)) {
     try {
-      process.kill(Number(pid), 'SIGKILL')
+      process.kill(pid, 'SIGKILL')
     } catch {}
   }
 }
