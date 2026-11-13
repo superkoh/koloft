@@ -62,6 +62,7 @@ let created: {
 }[]
 let started: number
 let agentTools: boolean
+let projectRules: string | undefined
 let endpoint: string
 let picked: { account: string; env: Record<string, string>; notice?: string } | undefined
 let shown: string[]
@@ -201,6 +202,7 @@ beforeEach(() => {
     skipPermissions: () => skipPermissions,
     serversAmong: async () => servers,
     agent: { enabled: () => agentTools, answer: vi.fn() },
+    projectRules: async () => projectRules,
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(tools, 'gh')
@@ -346,14 +348,17 @@ describe('MuseSessions launch', () => {
       expect(fs.existsSync(path.join(first, tool))).toBe(true)
   })
 
-  it("hands muse Koloft's instructions at every session start only when agent tools are on", async () => {
+  it("hands muse Koloft's instructions, with its workspace's own rules for picking a model, at every session start only when agent tools are on", async () => {
     agentTools = true
+    projectRules = 'Code: high.'
     const on = await launch()
+    projectRules = undefined
     agentTools = false
     const off = await launch()
     const told = JSON.parse(hook(on.id, 'SessionStart', { session_id: A, source: 'clear' }))
     expect(told.hookSpecificOutput).toMatchObject({ hookEventName: 'SessionStart' })
     expect(told.hookSpecificOutput.additionalContext).toContain('koloft help')
+    expect(told.hookSpecificOutput.additionalContext).toContain('    Code: high.')
     expect(hook(off.id, 'SessionStart', { session_id: B, source: 'startup' })).toBe('')
     const first = created[0].env.PATH!.split(':')[0]
     expect(fs.existsSync(path.join(first, 'koloft'))).toBe(true)

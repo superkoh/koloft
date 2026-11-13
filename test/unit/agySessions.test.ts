@@ -60,6 +60,7 @@ let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<type
 let runtime: SessionRuntime
 let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
 let agentTools: boolean
+let projectRules: string | undefined
 let browserEndpoint: string
 let picked: AgyHomePick | undefined
 let apiKey: string | undefined
@@ -239,6 +240,7 @@ beforeEach(() => {
     skipPermissions: () => skipPermissions,
     assistOf: () => assist,
     agent: { enabled: () => agentTools, answer: vi.fn() },
+    projectRules: async () => projectRules,
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
       machine: () => ({
@@ -481,13 +483,16 @@ describe('AgySessions launch', () => {
     expect(after).toContain(trusted)
   })
 
-  it("hands agy Koloft's instructions when a conversation starts only when agent tools are on", async () => {
+  it("hands agy Koloft's instructions, with its workspace's own rules for picking a model, when a conversation starts only when agent tools are on", async () => {
     agentTools = true
+    projectRules = 'Code: high.'
     const on = await launch()
+    projectRules = undefined
     agentTools = false
     const off = await launch()
     const told = JSON.parse(hook(on.id, 'SessionStart'))
     expect(told.injectSteps[0].systemMessage.systemMessage).toContain('koloft help')
+    expect(told.injectSteps[0].systemMessage.systemMessage).toContain('    Code: high.')
     expect(hook(off.id, 'SessionStart')).toBe('')
   })
 
