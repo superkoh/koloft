@@ -387,31 +387,25 @@ export class RemoteSync {
           return r
         }
         const slugs = slugsNow()
-        const transcripts = await pull(
-          'transcripts',
-          mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
-          REMOTE_CLAUDE_PROJECTS,
-          target.mirrorProjectsRoot,
-          projectFlags(slugs)
-        )
-        const hooks = await pull(
-          'hooks',
-          mirrors.hooks,
-          '.koloft/hook-sessions',
-          target.mirrorHookDir,
-          HOOK_FLAGS
-        )
-        const pulls = [transcripts, hooks]
-        for (const [i, extra] of extras.entries()) {
-          const r = await pull(
-            `extra ${extra.from}`,
-            mirrors.extras[i],
-            extra.from,
-            extra.to,
-            extra.flags
+        // PLATFORM§34
+        const [transcripts, hooks, ...extraResults] = await Promise.all([
+          pull(
+            'transcripts',
+            mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
+            REMOTE_CLAUDE_PROJECTS,
+            target.mirrorProjectsRoot,
+            projectFlags(slugs)
+          ),
+          pull('hooks', mirrors.hooks, '.koloft/hook-sessions', target.mirrorHookDir, HOOK_FLAGS),
+          ...extras.map((extra, i) =>
+            pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
           )
-          if (!extra.failsQuietly) pulls.push(r)
-        }
+        ])
+        const pulls = [
+          transcripts,
+          hooks,
+          ...extraResults.filter((_, i) => !extras[i].failsQuietly)
+        ]
         const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
         if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)

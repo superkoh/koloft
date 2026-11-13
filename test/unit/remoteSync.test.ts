@@ -522,6 +522,37 @@ it('pulls an extra folder (agy’s brain) only when its own stamp changed, with 
   expect(await pulledInRound()).toEqual(['devbox .gemini/brain'])
 })
 
+it('copies the transcripts, the hooks and every extra folder of a round at the same time, and follows the copies only once all of them have ended', async () => {
+  sync.stop()
+  const started: string[] = []
+  const finish = new Map<string, () => void>()
+  const followed: string[] = []
+  sync = new RemoteSync({
+    run: () => Promise.resolve(ok('transcripts 1 10\nhooks 7 70\nextra 5 50\nk-aaa\n')),
+    rsync: (_host, remoteDir) => {
+      started.push(remoteDir)
+      return new Promise((done) => finish.set(remoteDir, () => done(ok(''))))
+    },
+    listen: () => () => {},
+    targets: () => [target],
+    onChange: () => {},
+    onHooksPulled: (host) => followed.push(host)
+  })
+  target.extraPulls = [{ from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] }]
+  sync.start()
+  await tick(1)
+  expect(started).toEqual(['.claude/projects', '.koloft/hook-sessions', '.gemini/brain'])
+
+  finish.get('.koloft/hook-sessions')?.()
+  finish.get('.gemini/brain')?.()
+  await tick(1)
+  expect(followed).toEqual([])
+
+  finish.get('.claude/projects')?.()
+  await tick(1)
+  expect(followed).toEqual(['devbox'])
+})
+
 it('pulls the transcripts again when the pinned path resolves to another folder, even if the stamp matches', async () => {
   let real = '/home/koh/api'
   answerWhenQueueEmpty = () =>
