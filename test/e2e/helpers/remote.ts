@@ -292,6 +292,11 @@ export async function agyReady(page: Page): Promise<void> {
     .toBe(true)
 }
 
+const itsFirstTurnHasEndedOnItsRow = (page: Page, tabId: string): Promise<void> =>
+  expect(page.locator(`.ws .ws-tab[data-tab-id="${tabId}"] .ws-tab-unread`)).toHaveCount(1, {
+    timeout: 60_000
+  })
+
 export async function boundRemoteSession(
   page: Page,
   backend: BackendId
@@ -403,7 +408,9 @@ export const OTHER_AGENTS_ON_THE_MACHINE: {
     bound: async (page) => {
       await agyReady(page)
       await runIn(page, centerTerm(page), 'first words')
-      return boundRemoteSession(page, 'agy')
+      const bound = await boundRemoteSession(page, 'agy')
+      await itsFirstTurnHasEndedOnItsRow(page, bound.tabId)
+      return bound
     }
   }
 ]
