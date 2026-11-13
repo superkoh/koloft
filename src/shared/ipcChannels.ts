@@ -82,6 +82,10 @@ export const CH = {
     state: 'cron:state',
     toast: 'cron:toast'
   },
+  sessionDefaults: {
+    read: 'sessionDefaults:read',
+    write: 'sessionDefaults:write'
+  },
   machine: {
     state: 'machine:state',
     now: 'machine:now',

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
@@ -115,6 +116,17 @@ export function docsPluginFiles(): Files {
     'How this session writes documents for its owner.',
     DOCS_SKILL_FILES
   )
+}
+
+export function writeProjectPrompt(userData: string, rules: string): string {
+  const text = `${koloftPrompt('claude', rules)}\n`
+  const name = crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)
+  const file = path.join(userData, 'agent-prompts', `${name}.md`)
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, text)
+  }
+  return file
 }
 
 export function writeAgentPlugin(userData: string): string {

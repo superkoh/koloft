@@ -116,6 +116,7 @@ export interface MachineClaudeDeps {
   realPath(p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
+  projectPrompt(root: string): Promise<string | undefined>
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   noAccountMessage(): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
@@ -1237,6 +1238,7 @@ export class SshHost implements Host {
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
+    const projectPrompt = agentTools ? await d.projectPrompt(spec.root) : undefined
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -1262,6 +1264,7 @@ export class SshHost implements Host {
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              projectPrompt,
               claudeArgs,
               trustFolder: spec.trustFolder
             }

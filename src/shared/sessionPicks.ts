@@ -1,4 +1,4 @@
-import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort } from './types'
+import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort, type OwnPick } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 import { NAMED_MODELS, effortsFor } from './cronModels'
 
@@ -113,6 +113,69 @@ export function newestOf(family: string, listed: ListedModel[]): ListedModel | u
       (best, m) => (!best || newer(m.id, best.id) ? m : best),
       undefined
     )
+}
+
+function runsOn(
+  backend: BackendId,
+  family: string,
+  listed: ListedModel[]
+): ListedModel | undefined {
+  const stand = TIER_PICKS[backend].normal.model
+  return (
+    newestOf(family, listed) ??
+    (family === TIER_PICKS[backend]['very hard'].model && stand
+      ? newestOf(stand, listed)
+      : undefined)
+  )
+}
+
+export function familyEfforts(
+  backend: BackendId,
+  listed: ListedModel[] | undefined
+): Record<string, CronEffort[]> {
+  const list = listed?.length ? listed : lastKnown(backend)
+  return Object.fromEntries(
+    TASK_TIERS.flatMap((tier) => {
+      const family = TIER_PICKS[backend][tier].model
+      const model = family && runsOn(backend, family, list)
+      return family && model ? [[family, model.efforts]] : []
+    })
+  )
+}
+
+export interface OwnPickResolved {
+  pick: OwnPick
+  note?: string
+}
+
+export const listsModels = (backend: BackendId): boolean => backend === 'codex' || backend === 'agy'
+
+export function resolveOwnPick(
+  backend: BackendId,
+  asked: OwnPick,
+  listed: ListedModel[] | undefined
+): OwnPickResolved {
+  const named = asked.model
+  const keptEffort = (model: string | undefined, efforts?: CronEffort[]): OwnPick => {
+    const effort =
+      asked.effort && (efforts ?? effortsFor(backend, model)).includes(asked.effort)
+        ? asked.effort
+        : undefined
+    return { ...(model && { model }), ...(effort && { effort }) }
+  }
+  if (!named || !listsModels(backend) || !tierModelOf(backend, named))
+    return { pick: keptEffort(named) }
+  const read = !!listed?.length
+  const list = read ? listed! : lastKnown(backend)
+  const model = runsOn(backend, named, list)
+  if (model?.id.endsWith(`-${named}`)) return { pick: keptEffort(model.id, model.efforts) }
+  const instead = model ? model.id : `${BACKEND_LABEL[backend]}'s own model`
+  return {
+    pick: model ? keptEffort(model.id, model.efforts) : keptEffort(undefined),
+    note: read
+      ? `This account has no ${named} model, so it runs on ${instead}.`
+      : `Koloft could not read this account's models, so it runs on ${instead}.`
+  }
 }
 
 export type ResolvedPick = { ok: true; pick: Pick; note?: string } | { ok: false; error: string }

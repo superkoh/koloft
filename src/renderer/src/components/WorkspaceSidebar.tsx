@@ -616,6 +616,7 @@ function SidebarFloating({
   onNewSession,
   onNewWorktreeSession,
   onRestoreSession,
+  onSessionDefaults,
   onScheduledJobs,
   onRemoveWorkspace
 }: {
@@ -624,6 +625,7 @@ function SidebarFloating({
   onNewSession: (wsPath: string, backend?: BackendId) => void
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
+  onSessionDefaults: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
   onRemoveWorkspace: (wsPath: string) => void
 }): JSX.Element {
@@ -881,6 +883,15 @@ function SidebarFloating({
                 className="mi"
                 onClick={() => {
                   setMenu(null)
+                  onSessionDefaults(target.wsPath)
+                }}
+              >
+                Session defaults…
+              </div>
+              <div
+                className="mi"
+                onClick={() => {
+                  setMenu(null)
                   onScheduledJobs(target.wsPath)
                 }}
               >
@@ -1118,12 +1129,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   launchable,
   onNewWorktreeSession,
   onRestoreSession,
+  onSessionDefaults,
   onScheduledJobs
 }: {
   onNewSession: (wsPath: string, backend?: BackendId) => void
   launchable: Record<HostId, LaunchMenu>
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
+  onSessionDefaults: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
 }): JSX.Element {
   const listedRows = useStore((s) => s.workspaceRows)
@@ -1604,6 +1617,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             onNewSession={onNewSession}
             onNewWorktreeSession={onNewWorktreeSession}
             onRestoreSession={onRestoreSession}
+            onSessionDefaults={onSessionDefaults}
             onScheduledJobs={onScheduledJobs}
             onRemoveWorkspace={(path) => void removeWorkspace(path)}
           />

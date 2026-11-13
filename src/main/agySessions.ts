@@ -143,6 +143,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+    rules(workspace: string): Promise<string | undefined>
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & { ghWrapper: string }
   remote: AgyRemoteDeps
@@ -647,8 +648,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
+    const rules = agent && (await agent.rules(workspace))
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('agy')] : []),
+      ...(agent && !conductor ? [koloftPrompt('agy', rules)] : []),
       ...(role ? [role] : [])
     ].join('\n\n')
     const scripts = writeAgyScripts(this.deps.scriptsDir)
@@ -685,7 +687,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       {
         backend: 'agy',
         open: (target) => this.deps.events(tabId, { type: 'open', target }),
-        agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
+        agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
+        rules
       }
     )
     const dir = tools.shim.shimDir
@@ -813,8 +816,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
+    const rules = agentTools ? await this.deps.agent.rules(workspace) : undefined
     const instructions = [
-      ...(agentTools ? [koloftPrompt('agy')] : []),
+      ...(agentTools ? [koloftPrompt('agy', rules)] : []),
       ...(opts.role ? [opts.role] : [])
     ].join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)

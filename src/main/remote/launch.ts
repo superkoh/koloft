@@ -143,6 +143,7 @@ export interface TabProgram {
 export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
+  projectPrompt?: string
   claudeArgs: string[]
   trustFolder?: boolean
 }
@@ -163,7 +164,9 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
     beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
-      [`${tab.tabId}.tmux`]: tab.tmuxName
+      [`${tab.tabId}.tmux`]: tab.tmuxName,
+      ...(c.agentPlugin &&
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt })
     }
   }
 })
@@ -187,11 +190,16 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
+const PROJECT_PROMPT_SUFFIX = '.prompt.md'
+
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
+  const prompt = c.projectPrompt
+    ? `${T}${PROJECT_PROMPT_SUFFIX}`
+    : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 

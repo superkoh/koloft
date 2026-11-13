@@ -122,6 +122,7 @@ async function claudeTab(
       localHost(new GithubLookup(), {
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
+        projectPrompt: async () => undefined,
         docsPlugin: () => '/koloft/docs-plugin',
         assistOf: () => undefined,
         agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' })
@@ -135,6 +136,7 @@ async function claudeTab(
           github: {},
           claude: {
             userData,
+            projectPrompt: async () => undefined,
             controlDir: path.join(home, 'ssh-control'),
             machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
             alive: () => new Set(),
@@ -226,7 +228,12 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     openShimRoot: path.join(home, 'codex-open'),
     playwrightBin: path.join(home, 'commands', 'bin'),
     docsSkillsFolder: () => '/koloft/docs-plugin/skills',
-    agent: { enabled: () => true, answer: () => {}, skillsFolder: () => undefined },
+    agent: {
+      enabled: () => true,
+      answer: () => {},
+      skillsFolder: () => undefined,
+      rules: async () => undefined
+    },
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(home, 'shim', 'gh')

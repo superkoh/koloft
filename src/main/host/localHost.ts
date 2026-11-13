@@ -93,6 +93,7 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
+  projectPrompt(root: string): Promise<string | undefined>
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   agentHomes(): { codexHome: string; configHome: string }
@@ -121,6 +122,10 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
   const agentPlugin = d.agentPlugin()
+  const prompt =
+    agentPlugin && !conductor
+      ? ((await d.projectPrompt(spec.root)) ?? path.join(agentPlugin, AGENT_PROMPT_FILE))
+      : undefined
   return {
     ok: true,
     spawnCwd: cwd,
@@ -145,7 +150,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
+            KOLOFT_AGENT_PROMPT: prompt
           }
         : {})
     }

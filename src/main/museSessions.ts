@@ -113,6 +113,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+    rules(workspace: string): Promise<string | undefined>
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & { ghWrapper: string }
   remote?: MuseRemoteDeps
@@ -627,6 +628,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const permission = this.permissionOf(opts)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
     const agentTools = this.deps.agent.enabled(true)
+    const rules = agentTools ? await this.deps.agent.rules(workspace) : undefined
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const plan = await remote.machine(host).launchMuse({
       cwd,
@@ -638,7 +640,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
-      context: agentTools ? koloftPrompt('muse') : undefined,
+      context: agentTools ? koloftPrompt('muse', rules) : undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords,
@@ -714,8 +716,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
+    const rules = agent && (await agent.rules(workspace))
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('muse')] : []),
+      ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
@@ -727,7 +730,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
       hold && { ...hold, tabId },
-      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined
+      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined,
+      rules
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -778,7 +782,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     context: string | undefined,
     ownerWords: string | undefined,
     hold: MuseHold | undefined,
-    relay: MuseRelayFiles | undefined
+    relay: MuseRelayFiles | undefined,
+    rules: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -786,6 +791,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         backend: 'muse',
         open,
         agent,
+        rules,
         drop: (name) =>
           name.startsWith(HOOK_DROP_PREFIX)
             ? (obj, full): void => {

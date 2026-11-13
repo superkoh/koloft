@@ -91,8 +91,7 @@ export async function dispatchAgent(
   argv: string[],
   caller: AgentCaller
 ): Promise<AgentReply> {
-  if (asksForHelp(argv)) return answered(AGENT_GUIDE)
-  const [verb = 'help', ...rest] = argv
+  const [verb = 'help', ...rest] = asksForHelp(argv) ? ['help'] : argv
   const run = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
   if (!run)
     return refused(

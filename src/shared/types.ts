@@ -366,7 +366,26 @@ export interface Settings {
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
   todoNotes: Record<string, string>
+  sessionDefaults: Record<string, SessionDefaults>
 }
+
+export interface OwnPick {
+  model?: string
+  effort?: CronEffort
+}
+
+export interface SessionDefaults {
+  picks: Partial<Record<BackendId, OwnPick>>
+  rules?: string
+}
+
+export type SessionDefaultsRead =
+  | {
+      ok: true
+      defaults: SessionDefaults
+      familyEfforts: Record<string, CronEffort[]>
+    }
+  | { ok: false; error: string }
 
 export const ASSIST_JOBS = ['title', 'handover', 'turn', 'docs', 'route'] as const
 export type AssistJobId = (typeof ASSIST_JOBS)[number]
@@ -513,7 +532,8 @@ export const DEFAULT_SETTINGS: Settings = {
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  todoNotes: {}
+  todoNotes: {},
+  sessionDefaults: {}
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
@@ -1481,6 +1501,13 @@ export interface KoloftApi {
     trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
+  }
+  sessionDefaults: {
+    read(workspacePath: string): Promise<SessionDefaultsRead>
+    write(
+      workspacePath: string,
+      defaults: SessionDefaults
+    ): Promise<{ ok: boolean; error?: string }>
   }
   machine: {
     onState(cb: (s: MachineState) => void): () => void

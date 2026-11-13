@@ -297,6 +297,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
     enabled(host: HostId): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
     skillsFolder(): string | undefined
+    rules(workspace: string): Promise<string | undefined>
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & {
     ghWrapper: string
@@ -895,12 +896,14 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       )
     }
     const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
+    const rules = agent && (await agent.rules(workspace))
     const openShim = machine
       ? undefined
       : this.startOpenShim(
           processEnv?.ZDOTDIR,
           (target) => observe({ type: 'open', target }),
-          agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
+          agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
+          rules
         )
     const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')
@@ -917,7 +920,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         : undefined
     )
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('codex')] : []),
+      ...(agent && !conductor ? [koloftPrompt('codex', rules)] : []),
       ...(role ? [role] : [])
     ]
     const permission = this.permissionOf(opts)
@@ -1178,11 +1181,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   private startOpenShim(
     userZdotdir: string | undefined,
     open: (target: string) => void,
-    agent?: (dir: string, name: string, raw: unknown) => void
+    agent?: (dir: string, name: string, raw: unknown) => void,
+    rules?: string
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { backend: 'codex', userZdotdir, open, agent }
+      { backend: 'codex', userZdotdir, open, agent, rules }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }
