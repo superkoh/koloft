@@ -18,7 +18,9 @@ import {
   focusOwner,
   gitCommitAll,
   gitInit,
+  killSession,
   landsOnTheButler,
+  listeningPortsOf,
   newSessionInWith,
   openSessionTerminal,
   panelTerm,
@@ -68,6 +70,7 @@ async function agentOpen(page: Page, target: string): Promise<void> {
 }
 
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
+const OPEN_TABS_SAVE_SETTLE_MS = 3000
 
 test.describe('Workbench tab lifecycle: an open forks by target (a web url lands a tab, a file lands none) and by source (agent, or the user’s own shell)', () => {
   test('WB-T02: an agent web open lands in front of its own session, read and loaded, and the caret stays in the terminal', async ({
@@ -774,6 +777,50 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
       )
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  test('WB-T30: after a Koloft restart a local session comes back under a new tab id, and its ports still list the server it started before the restart', async ({
+    env
+  }) => {
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    let before = ''
+    try {
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a')
+        before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+        await agentShell(
+          page,
+          before,
+          30_000
+        )(
+          `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${env.home} >/dev/null 2>&1 & echo $! > ${pidFile}`
+        )
+        await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+        await page.waitForTimeout(OPEN_TABS_SAVE_SETTLE_MS)
+      } finally {
+        await quitAndClose(app)
+      }
+
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await waitBooted(page2)
+        const row = wsRows(page2, 'ws-a').first()
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+        const after = (await row.getAttribute('data-tab-id'))!
+        expect(after).not.toBe(before)
+        await expect.poll(() => answers(port)).toBe(true)
+        await expect.poll(() => listeningPortsOf(page2, after), { timeout: 30_000 }).toEqual([port])
+      } finally {
+        await quitAndClose(app2)
+      }
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
     }
   })
 })

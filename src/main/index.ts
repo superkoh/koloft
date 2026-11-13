@@ -970,13 +970,22 @@ let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
+const TAB_IDS_KEPT_PER_SESSION = 8
+const tabIdsOfSession = new Map<string, string[]>()
+
+function tabIdsOf(sessionId: string, tabId: string): string[] {
+  const ids = [...new Set([tabId, ...(tabIdsOfSession.get(sessionId) ?? [])])]
+  tabIdsOfSession.set(sessionId, ids.slice(0, TAB_IDS_KEPT_PER_SESSION))
+  return tabIdsOfSession.get(sessionId)!
+}
 
 function openTabOf(s: SessionInfo): OpenTab {
   return {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
+    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
+    tabIds: tabIdsOf(s.sessionId, s.tabId)
   }
 }
 
@@ -990,7 +999,8 @@ function rememberOpenTabs(all = allSessions()): void {
       sessionId: h.resumeSessionId,
       kind,
       title: '',
-      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd
+      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd,
+      tabIds: tabIdsOf(h.resumeSessionId, h.id)
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -3532,6 +3542,7 @@ app.whenReady().then(() => {
   const droppedSessionsLog = signalLog(path.join(userData, 'dropped-sessions.log'))
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
+  for (const t of savedOpenTabs.tabs) if (t.tabIds) tabIdsOfSession.set(t.sessionId, t.tabIds)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
   const storedDeps = {
@@ -7085,8 +7096,10 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.leftovers, () => leftovers)
   ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
     if (typeof tabId !== 'string') return null
+    const sessionId = sessionOfTab(tabId)?.sessionId
     const tags = [
       tabId,
+      ...((sessionId && tabIdsOfSession.get(sessionId)) || []),
       ...ptyMgr
         .list()
         .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
