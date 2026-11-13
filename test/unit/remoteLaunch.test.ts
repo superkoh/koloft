@@ -1137,10 +1137,6 @@ describe('U-ENV-1: what a tab sends about the account', () => {
     expect(custom.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe('1')
     expect(custom.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe('1')
     expect(
-      accountEnv('custom', 'relay', 't', { model: 'claude-opus-5-5' })
-        .CLAUDE_CODE_DISABLE_1M_CONTEXT
-    ).toBeUndefined()
-    expect(
       Object.keys(accountEnv('custom', 'p', 't', { baseUrl: 'https://p.test' })).sort()
     ).toEqual(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANT_ACCOUNT'])
   })

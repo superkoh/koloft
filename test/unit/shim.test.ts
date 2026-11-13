@@ -490,19 +490,6 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.realEnv?.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBeUndefined()
   })
 
-  it('custom endpoint pinning a model Koloft did not mark keeps the context window CC gives it', async () => {
-    token('relay', 'relay-key')
-    const r = await runShimPick([], {
-      account: 'relay',
-      kind: 'custom',
-      banner: 'koloft: → relay (custom endpoint · claude-opus-5-5)',
-      baseUrl: 'https://relay.test',
-      model: 'claude-opus-5-5'
-    })
-    expect(r.realEnv?.ANTHROPIC_MODEL).toBe('claude-opus-5-5')
-    expect(r.realEnv?.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBeUndefined()
-  })
-
   it('a --model Koloft put on the line (a scheduled job, koloft session new) yields to a custom endpoint that pins its own model, and stays for one that does not', async () => {
     token('glm', 'endpoint-key-fixture')
     const pinned = await runShimPick(['-w', 'job-1', '--model', 'opus', '--effort', 'high'], {

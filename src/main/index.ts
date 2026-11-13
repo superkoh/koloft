@@ -2306,8 +2306,10 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
-  if (endpoint?.model) payload.model = endpoint.model
-  if (endpoint?.model && claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
+  if (endpoint?.model) {
+    payload.model = endpoint.model
+    if (claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
+  }
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
