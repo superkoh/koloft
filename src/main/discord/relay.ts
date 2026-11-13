@@ -814,12 +814,15 @@ export class DiscordRelay {
       const ticks = question.questions.some((q) => q.multiSelect)
         ? JSON.stringify(question.questions)
         : undefined
-      if (ticks !== undefined && this.ticksPressed.get(tab) === ticks)
-        return { error: PICKS_MAY_STILL_BE_TICKED }
+      const untick =
+        ticks !== undefined && this.ticksPressed.get(tab) === ticks
+          ? answerKeysFor.untickAll?.(question)
+          : []
+      if (!untick) return { error: PICKS_MAY_STILL_BE_TICKED }
       if (ticks !== undefined && answers.some((a) => 'picks' in a))
         this.ticksPressed.set(tab, ticks)
       this.d.answered(tab, reply)
-      const keys = answerKeys(answerKeysFor, question, answers)
+      const keys = [...untick, ...answerKeys(answerKeysFor, question, answers)]
       if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
       this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
       return { error: STARTED_IN_THE_TERMINAL }

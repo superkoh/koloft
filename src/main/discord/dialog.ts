@@ -476,6 +476,7 @@ export interface AnswerKeys {
   ticks(q: Question, picks: number[]): string[]
   words(q: Question, text: string): string[]
   submit(answers: QuestionAnswer[]): string[]
+  untickAll?(q: Asked): string[] | undefined
 }
 
 // CODEX§20 MUSE§11
@@ -496,6 +497,15 @@ function museReviewKeys(answers: QuestionAnswer[]): string[] {
   return answers.length > 1 || answers.some((a) => 'words' in a || 'picks' in a) ? ['\r'] : []
 }
 
+// MUSE§11
+function museUntickAll(q: Asked): string[] | undefined {
+  if (q.questions.length !== 1) return undefined
+  const options = q.questions[0]!.options.length
+  const noneOfTheAbove = String(options + 1)
+  const submitRow = String(options + 2)
+  return [submitRow, ...keysFor(['Up', 'Enter', noneOfTheAbove, 'Space', '1'])]
+}
+
 // AGY§14
 const agyTicks = (_q: Question, picks: number[]): string[] => [...picks.map(String), '\r']
 
@@ -514,7 +524,8 @@ export const ANSWER_KEYS: Record<Exclude<BackendId, 'claude'>, AnswerKeys> = {
     pick: (n) => [String(n), '\r'],
     ticks: museTicks,
     words: noteUnderNoneOfTheAbove,
-    submit: museReviewKeys
+    submit: museReviewKeys,
+    untickAll: museUntickAll
   },
   agy: {
     pick: (n) => [String(n)],
