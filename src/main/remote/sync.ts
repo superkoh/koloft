@@ -44,6 +44,20 @@ const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
 const ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS = 300
 const A_WORKING_BELL_LIVES_AT_LEAST_MS = 10_000
 const BELL_TRIED_AGAIN_AFTER_A_QUICK_END_MS = 60_000
+const PULLS_AT_ONCE = 3
+
+async function atMostAtOnce<T>(limit: number, jobs: (() => Promise<T>)[]): Promise<T[]> {
+  const results: T[] = []
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < jobs.length) {
+      const i = next++
+      results[i] = await jobs[i]()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker))
+  return results
+}
 
 export interface ExtraPull {
   from: string
@@ -382,23 +396,28 @@ export class RemoteSync {
         ): Promise<RunResult | undefined> => {
           if (stamp === NO_FILES_THERE) return undefined
           if (stamp !== undefined && st.pulled[which] === stamp) return undefined
-          const r = await this.deps.rsync(host, remoteDir, localDir, flags)
+          const r = await this.deps
+            .rsync(host, remoteDir, localDir, flags)
+            .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
           st.pulled[which] = r.code === 0 ? stamp : undefined
           return r
         }
         const slugs = slugsNow()
-        // PLATFORM§34
-        const [transcripts, hooks, ...extraResults] = await Promise.all([
-          pull(
-            'transcripts',
-            mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
-            REMOTE_CLAUDE_PROJECTS,
-            target.mirrorProjectsRoot,
-            projectFlags(slugs)
-          ),
-          pull('hooks', mirrors.hooks, '.koloft/hook-sessions', target.mirrorHookDir, HOOK_FLAGS),
-          ...extras.map((extra, i) =>
-            pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
+        // PLATFORM§33 PLATFORM§34
+        const [transcripts, hooks, ...extraResults] = await atMostAtOnce(PULLS_AT_ONCE, [
+          () =>
+            pull(
+              'transcripts',
+              mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
+              REMOTE_CLAUDE_PROJECTS,
+              target.mirrorProjectsRoot,
+              projectFlags(slugs)
+            ),
+          () =>
+            pull('hooks', mirrors.hooks, '.koloft/hook-sessions', target.mirrorHookDir, HOOK_FLAGS),
+          ...extras.map(
+            (extra, i) => () =>
+              pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
           )
         ])
         const pulls = [

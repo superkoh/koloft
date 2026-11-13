@@ -4,8 +4,9 @@ import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { fileURLToPath } from 'url'
 
-const HERE = path.dirname(new URL(import.meta.url).pathname)
+const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..')
 const FIXTURES = path.join(REPO, 'test', 'e2e', 'fixtures')
 
@@ -20,6 +21,7 @@ const WARMUP = 2
 const RTTS = arg('rtt-list', '0,30,100').split(',').map(Number)
 const USER = arg('user', 'kuser')
 const PULL_COUNT = Number(arg('pulls', '3'))
+const AT_ONCE = Number(arg('at-once', '7'))
 const HEARTBEAT = fs.readFileSync(path.join(HERE, 'heartbeat.sh'), 'utf8')
 const BELL = fs.readFileSync(path.join(HERE, 'bell.sh'), 'utf8')
 
@@ -294,7 +296,15 @@ async function main() {
             rs = []
             for (const p of PULLS) rs.push(await rsync(p))
           } else {
-            rs = await Promise.all(PULLS.map((p) => rsync(p)))
+            rs = []
+            let next = 0
+            const worker = async () => {
+              while (next < PULLS.length) {
+                const k = next++
+                rs[k] = await rsync(PULLS[k])
+              }
+            }
+            await Promise.all(Array.from({ length: Math.min(AT_ONCE, PULLS.length) }, worker))
           }
           const t2 = performance.now()
           const named = [['heartbeat', hb], ...PULLS.map((p, k) => [p.name, rs[k]])]

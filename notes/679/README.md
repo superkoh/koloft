@@ -12,7 +12,7 @@ in the container.
 668a5d18, written out by a throwaway vitest file.
 
 Run: `node notes/679/measure-pulls.mjs [--docker-host <socket>] [--rtt-list 0,30,100]
-[--rounds 15] [--pulls 3|7] [--user kuser|muser]`
+[--rounds 15] [--pulls 3|7] [--at-once 7|3] [--user kuser|muser]`
 
-Results: `result-3-pulls.txt`, `result-7-pulls.txt`, `result-maxsessions-2.txt`
-(`muser` has `MaxSessions 2` in the image).
+Results: `result-3-pulls.txt`, `result-7-pulls.txt`, `result-7-pulls-3-at-once.txt`,
+`result-maxsessions-2.txt` (`muser` has `MaxSessions 2` in the image).

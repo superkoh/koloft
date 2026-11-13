@@ -2063,11 +2063,14 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   one after another 66 ms → together 35 ms with no added delay, 978 → 389 ms with 30 ms
   added round trip, 2877 → 1111 ms with 100 ms. With all seven pulls a round can carry
   (adding Codex `sessions` and `archived_sessions`, Muse `sessions`, agy
-  `conversations`; 10 rounds), 2327 → 411 ms at 30 ms. Every pull exited 0 and the
-  mirrored transcript matched the machine's size. On a login with `MaxSessions 2` (the
-  hook bell plus three pulls is four sessions) nothing failed either: the pulls past the
-  limit made their own logins (§33), and the round took longer together than one after
-  another (77 → 136 ms with no added delay). (2026-11-13: this Mac's openrsync and
+  `conversations`; 10 rounds), 2327 → 411 ms at 30 ms all seven at once, 2198 → 984 ms
+  at most three at once. Every pull exited 0 and the mirrored transcript matched the
+  machine's size. Each pull at once is one more session on the master (§33): on a
+  publickey login with `MaxSessions 2` (the hook bell plus three pulls is four
+  sessions) nothing failed, the pulls past the limit made their own logins, and the
+  round took longer together than one after another (77 → 136 ms with no added delay).
+  A password login was not tried; by §33 its pulls past the limit cannot log in again.
+  (2026-11-13: this Mac's openrsync and
   OpenSSH_10.3p1 to rsync 3.2.7 in the e2e sshd image, reached directly on a published
   port with Koloft's own ssh options, delay added with `tc netem` in the container; a
   scratch node script.)

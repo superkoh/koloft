@@ -522,28 +522,39 @@ it('pulls an extra folder (agy’s brain) only when its own stamp changed, with 
   expect(await pulledInRound()).toEqual(['devbox .gemini/brain'])
 })
 
-it('copies the transcripts, the hooks and every extra folder of a round at the same time, and follows the copies only once all of them have ended', async () => {
+it('copies the folders of a round three at a time, the next starting as one ends, and follows the copies only once all of them have ended, a copy that threw included', async () => {
   sync.stop()
   const started: string[] = []
   const finish = new Map<string, () => void>()
   const followed: string[] = []
   sync = new RemoteSync({
-    run: () => Promise.resolve(ok('transcripts 1 10\nhooks 7 70\nextra 5 50\nk-aaa\n')),
+    run: () => Promise.resolve(ok('transcripts 1 10\nhooks 7 70\nextra 5 50\nextra 6 60\nk-aaa\n')),
     rsync: (_host, remoteDir) => {
       started.push(remoteDir)
-      return new Promise((done) => finish.set(remoteDir, () => done(ok(''))))
+      return new Promise((done, fail) =>
+        finish.set(remoteDir, () =>
+          remoteDir === '.muse/sessions' ? fail(new Error('EACCES: mkdir')) : done(ok(''))
+        )
+      )
     },
     listen: () => () => {},
     targets: () => [target],
     onChange: () => {},
     onHooksPulled: (host) => followed.push(host)
   })
-  target.extraPulls = [{ from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] }]
+  target.extraPulls = [
+    { from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] },
+    { from: '.muse/sessions', to: '/ud/remote/devbox/muse', flags: [] }
+  ]
   sync.start()
   await tick(1)
   expect(started).toEqual(['.claude/projects', '.koloft/hook-sessions', '.gemini/brain'])
 
   finish.get('.koloft/hook-sessions')?.()
+  await tick(1)
+  expect(started.at(-1)).toBe('.muse/sessions')
+
+  finish.get('.muse/sessions')?.()
   finish.get('.gemini/brain')?.()
   await tick(1)
   expect(followed).toEqual([])
@@ -551,6 +562,7 @@ it('copies the transcripts, the hooks and every extra folder of a round at the s
   finish.get('.claude/projects')?.()
   await tick(1)
   expect(followed).toEqual(['devbox'])
+  expect(sync.problem('devbox')).toContain('EACCES')
 })
 
 it('pulls the transcripts again when the pinned path resolves to another folder, even if the stamp matches', async () => {
