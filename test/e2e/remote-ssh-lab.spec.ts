@@ -849,16 +849,18 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-52: after every ssh connection to the machine drops and Koloft connects again, koloft help in a session that ran on there is answered again', async ({
+  test('E-SSH-52: after every ssh connection to the machine drops for a minute and Koloft connects again, koloft open of a page there, run from a session that opened it before the drop, is answered again', async ({
     env
   }) => {
+    const free = await portFreeOnTheMac()
     await withLab(env, async ({ page, lab }) => {
+      servePageOnTarget(lab, free, '<title>kept</title><body>page on the machine</body>')
       await addMachine(page, 'kt-key', 'kuser')
       await startSessionIn(page, 'kt-key', { remote: true })
       const tabId = await wsRows(page, 'kt-key').first().getAttribute('data-tab-id')
       const answered = async (): Promise<string[]> =>
         [...(await terminalText(page, tabId!)).matchAll(/koloft exit=(\d+)/g)].map((m) => m[1])
-      await runIn(page, centerTerm(page), '/koloft help')
+      await runIn(page, centerTerm(page), `/koloft open http://localhost:${free}/`)
       await expect
         .poll(answered, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
         .toEqual(['0'])
@@ -887,7 +889,11 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: 120_000 })
       await page.waitForTimeout(A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS)
 
-      await runIn(page, centerTerm(page), '/sh koloft help >/dev/null; echo "after-reconnect=$?"')
+      await runIn(
+        page,
+        centerTerm(page),
+        `/sh koloft open http://localhost:${free}/ >/dev/null; echo "after-reconnect=$?"`
+      )
       await expect
         .poll(() => terminalText(page, tabId!), {
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
