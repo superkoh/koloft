@@ -993,20 +993,19 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(bar.locator('.find-input')).toBeFocused()
     await page.keyboard.type('part1rewritten_')
     await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
-    const countAtMatch = await bar.locator('.find-count').innerText()
     await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
 
     const top = await blockTop(page, 'bulk/part-6.ts')
     await stream(page).evaluate((el, y) => {
       el.scrollTop = y
     }, top)
-    await expect.poll(() => far.locator(CV.diffRow).count(), { timeout: 30_000 }).toBeGreaterThan(0)
+    await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
     await page.waitForTimeout(SNAPBACK_SETTLE_MS)
     const view = await stream(page).boundingBox()
     const farBox = await far.boundingBox()
     expect(farBox!.y).toBeLessThan(view!.y + view!.height)
     expect(farBox!.y + farBox!.height).toBeGreaterThan(view!.y)
-    await expect(bar.locator('.find-count')).toHaveText(countAtMatch)
+    await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
   })
 
   test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({

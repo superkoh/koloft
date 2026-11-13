@@ -112,9 +112,15 @@ function shownBoxOf(range: Range): DOMRect {
   return el ? el.getBoundingClientRect() : r
 }
 
+function landedInView(range: Range, container: HTMLElement): boolean {
+  const r = range.getBoundingClientRect()
+  const c = container.getBoundingClientRect()
+  return hasOwnBox(r) && r.top >= c.top && r.bottom <= c.bottom
+}
+
 function scrollRangeIntoView(range: Range, container: HTMLElement): void {
   const r = shownBoxOf(range)
-  if (r.height === 0 && r.width === 0) return
+  if (!hasOwnBox(r)) return
   const c = container.getBoundingClientRect()
   if (r.top < c.top || r.bottom > c.bottom) {
     const top = r.top - c.top + container.scrollTop - container.clientHeight / 2 + r.height / 2
@@ -131,7 +137,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const activeRef = useRef(0)
   const queryRef = useRef('')
   const jumpPendingRef = useRef(false)
-  const observerRef = useRef<MutationObserver | null>(null)
+  const detachRef = useRef<(() => void) | null>(null)
   const [count, setCount] = useState<FindCount>({ current: 0, total: 0 })
 
   const setCountIfChanged = useCallback((current: number, total: number) => {
@@ -164,8 +170,9 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     if (!jumpPendingRef.current) return
     const root = getRoot()
     const scroller = root ? nearestVerticalScroller(ranges[active], root) : null
-    if (scroller) scrollRangeIntoView(ranges[active], scroller)
-    if (hasOwnBox(ranges[active].getBoundingClientRect())) jumpPendingRef.current = false
+    if (!scroller) return
+    scrollRangeIntoView(ranges[active], scroller)
+    if (landedInView(ranges[active], scroller)) jumpPendingRef.current = false
   }, [getRoot, setCountIfChanged])
 
   const recompute = useCallback(() => {
@@ -179,13 +186,22 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
       queryRef.current = query
       activeRef.current = 0
       jumpPendingRef.current = true
-      observerRef.current?.disconnect()
-      observerRef.current = null
+      detachRef.current?.()
+      detachRef.current = null
       const root = getRoot()
       if (root && query) {
         const obs = new MutationObserver(() => recompute())
         obs.observe(root, { childList: true, subtree: true, characterData: true })
-        observerRef.current = obs
+        const userMovesOn = (): void => {
+          jumpPendingRef.current = false
+        }
+        root.addEventListener('wheel', userMovesOn, { passive: true })
+        root.addEventListener('pointerdown', userMovesOn)
+        detachRef.current = () => {
+          obs.disconnect()
+          root.removeEventListener('wheel', userMovesOn)
+          root.removeEventListener('pointerdown', userMovesOn)
+        }
       }
       recompute()
     },
@@ -207,8 +223,8 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const prev = useCallback(() => step(-1), [step])
 
   const clear = useCallback(() => {
-    observerRef.current?.disconnect()
-    observerRef.current = null
+    detachRef.current?.()
+    detachRef.current = null
     rangesRef.current = []
     activeRef.current = 0
     queryRef.current = ''
