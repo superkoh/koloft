@@ -937,7 +937,9 @@ const PLAN_ASKERS = [
     install: () => {},
     ask: async (page: Page) => {
       await startSessionIn(page, 'ws-a')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, {
+        timeout: 30_000
+      })
       await runIn(page, centerTerm(page), `/plan ${CLAUDE_PLAN}`)
     },
     beforeRelaunch: (env: E2EEnv) =>
@@ -976,7 +978,7 @@ for (const agent of PLAN_ASKERS) {
       const page = await app.firstWindow()
       await waitBooted(page)
       await agent.ask(page)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
       await openInbox(page)
       await expect(inboxCard(page, PLAN_TITLE).locator('.ibx-quote')).toContainText(agent.plan, {
         timeout: 15_000
@@ -1003,7 +1005,7 @@ for (const agent of PLAN_ASKERS) {
         timeout: 30_000
       })
       await shownAgain.locator('.ibx-btn', { hasText: 'Approve' }).click()
-      const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id')) as string
+      const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) as string
       await expect
         .poll(() => agent.approved(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
         .toBe(true)
@@ -1024,7 +1026,7 @@ test('a plan a remote Claude Code session still shows after a Koloft restart kee
     await waitBooted(page)
     await addRemoteWorkspace(page, env)
     await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-    const asker = wsRows(page, REMOTE_WS_NAME)
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
     await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
     await runIn(page, centerTerm(page), `/plan ${CLAUDE_PLAN}`)
     await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
@@ -1040,7 +1042,7 @@ test('a plan a remote Claude Code session still shows after a Koloft restart kee
   try {
     const page = await app.firstWindow()
     await waitBooted(page)
-    const asker = wsRows(page, REMOTE_WS_NAME)
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
     await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
     const tabId = (await asker.getAttribute('data-tab-id')) as string
     await openInbox(page)

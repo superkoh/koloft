@@ -278,7 +278,7 @@ test('a plan a remote Antigravity session still shows after a Koloft restart kee
   try {
     const page = await app.firstWindow()
     await waitBooted(page)
-    await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-approval\b/, {
+    await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-approval\b/, {
       timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
     })
     await openInbox(page)

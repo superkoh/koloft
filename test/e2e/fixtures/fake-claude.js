@@ -729,6 +729,7 @@ function hookContext(output) {
 }
 const ASKED_FOR_THE_PLAN_AGAIN = 'approve the same plan again'
 function lastPlanAsked() {
+  if (!fs.existsSync(transcript)) return undefined
   return fs
     .readFileSync(transcript, 'utf8')
     .split('\n')
