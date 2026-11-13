@@ -100,9 +100,13 @@ function nearestVerticalScroller(range: Range, root: HTMLElement): HTMLElement |
   return null
 }
 
+function hasOwnBox(r: DOMRect): boolean {
+  return r.height !== 0 || r.width !== 0
+}
+
 function shownBoxOf(range: Range): DOMRect {
   const r = range.getBoundingClientRect()
-  if (r.height !== 0 || r.width !== 0) return r
+  if (hasOwnBox(r)) return r
   let el = range.startContainer.parentElement
   while (el && el.getClientRects().length === 0) el = el.parentElement
   return el ? el.getBoundingClientRect() : r
@@ -126,6 +130,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const rangesRef = useRef<Range[]>([])
   const activeRef = useRef(0)
   const queryRef = useRef('')
+  const jumpPendingRef = useRef(false)
   const observerRef = useRef<MutationObserver | null>(null)
   const [count, setCount] = useState<FindCount>({ current: 0, total: 0 })
 
@@ -156,9 +161,11 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     CSS.highlights.set(HL_ACTIVE, hot)
 
     setCountIfChanged(active + 1, ranges.length)
+    if (!jumpPendingRef.current) return
     const root = getRoot()
     const scroller = root ? nearestVerticalScroller(ranges[active], root) : null
     if (scroller) scrollRangeIntoView(ranges[active], scroller)
+    if (hasOwnBox(ranges[active].getBoundingClientRect())) jumpPendingRef.current = false
   }, [getRoot, setCountIfChanged])
 
   const recompute = useCallback(() => {
@@ -171,6 +178,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     (query: string) => {
       queryRef.current = query
       activeRef.current = 0
+      jumpPendingRef.current = true
       observerRef.current?.disconnect()
       observerRef.current = null
       const root = getRoot()
@@ -189,6 +197,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
       const n = rangesRef.current.length
       if (!n) return
       activeRef.current = (activeRef.current + delta + n) % n
+      jumpPendingRef.current = true
       render()
     },
     [render]
@@ -203,6 +212,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     rangesRef.current = []
     activeRef.current = 0
     queryRef.current = ''
+    jumpPendingRef.current = false
     CSS.highlights.delete(HL_ALL)
     CSS.highlights.delete(HL_ACTIVE)
     setCount({ current: 0, total: 0 })
