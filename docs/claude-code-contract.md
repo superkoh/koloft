@@ -1506,6 +1506,21 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   before they fill". That a real endpoint with a smaller window then fails every turn is
   the changelog's, **inferred, not checked** (the stand-in API refuses nothing). Not run:
   linux-arm64, `-p`.
+  **Which names 2.1.323 knows, and what `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` does to
+  them.** Same day and setup on 2.1.323, every slot pinned to the one name:
+
+  | Pinned name | Start-up warning | Window | With `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` |
+  |---|---|---|---|
+  | `glm-4.6`, `deepseek-chat`, `kimi-k2-0905-preview`, `qwen3-coder-plus`, `openai/gpt-5` | isn't recognized · 1m | 1000000 | `glm-4.6`: 200000 |
+  | `opus`, `sonnet`, `haiku` (the alias itself in every slot) | isn't recognized · 1m | 1000000 | not run |
+  | `claude-foo-9`, `claude-sonnet-9-9` | isn't recognized · 1m | 1000000 | `claude-foo-9`: 200000 |
+  | `claude-sonnet-4-5`, `Claude-Sonnet-4-5`, `claude-sonnet-4.5`, `anthropic/claude-sonnet-4.5`, `anthropic/claude-sonnet-4`, `us.anthropic.claude-sonnet-4-5-20250929-v1:0`, `claude-3-5-sonnet-20241022`, `claude-opus-4-1` | none | 200000 | 200000 (those tried) |
+  | `claude-opus-5-5`, `claude-fable-5-2` | none | 1000000 | 200000 |
+  | `claude-sonnet-4-5[1m]`, `opus[1m]`, `glm-4.6[1m]` | none | 1000000 | 200000 |
+
+  So the variable also cuts a known 1M model, and a name ending in `[1m]`, to 200k; every
+  name 2.1.323 knew holds `claude`, but not every name holding `claude` is known. On
+  2.1.322 `glm-4.6` with the variable gave 200000, the same as without it.
 - **CC's safety classifier can silently swap the model**: a blocked fable request is
   re-run on Opus and the session pinned there, so the model a session was launched
   with is not always the model it runs; the status JSON names the model in use.
