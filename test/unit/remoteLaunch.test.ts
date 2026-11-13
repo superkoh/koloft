@@ -647,6 +647,29 @@ describe('U-TAB-*: the tab script on the machine', () => {
     }
   )
 
+  // ADR-0042 PLATFORM§59 PLATFORM§72
+  it.skipIf(!fs.existsSync('/usr/sbin/taskpolicy'))(
+    'on a Mac machine the agent sits above the tools it starts, through the status relay and without it',
+    () => {
+      const priorities = (b: Box): string[] => {
+        fs.writeFileSync(
+          path.join(b.home, '.local', 'bin', 'claude'),
+          `#!/bin/sh\nps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'agent'))}\n/bin/sh -c 'ps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'tool'))}; :'\n`,
+          { mode: 0o755 }
+        )
+        expect(b.run().status).toBe(0)
+        return ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
+      }
+      const stub = box(spec())
+      fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+        mode: 0o755
+      })
+      expect(priorities(stub)).toEqual(['46', '31'])
+      if (spawnSync('python3', ['-c', 'import pty, termios']).status === 0)
+        expect(priorities(box(spec()))).toEqual(['46', '31'])
+    }
+  )
+
   it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
     const b = box(
       spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'], portOffset: 42 })
@@ -711,6 +734,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       `${b.home}/.koloft/hook-sessions`,
       'T',
       '--',
+      ...(fs.existsSync('/usr/sbin/taskpolicy') ? ['/usr/sbin/taskpolicy', '-a'] : []),
       'muse',
       '--approval-judge',
       'off',

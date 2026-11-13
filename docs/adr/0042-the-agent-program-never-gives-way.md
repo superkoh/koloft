@@ -15,7 +15,11 @@ time, mostly at night, when every scheduled run and helper session is a tab nobo
 at and nobody is there to lift one; "critical" showed twice in 15 days of the log.
 **Decision**: Koloft starts every agent program that runs on this Mac through
 `taskpolicy -a` — `claude`, `muse`, `agy`, and the Codex screen of a tab here or on
-another machine — so it sits above whatever it starts. Only while memory pressure reads
+another machine — so it sits above whatever it starts. On another machine the agent
+program there — `claude`, `muse`, `agy`, the Codex server — starts the same way when
+that machine has `/usr/sbin/taskpolicy`; a Linux machine lets its user lift nothing, and
+only lower a tool for good (PLATFORM§72), so there both start as they are, and nothing
+there is ever lowered. Only while memory pressure reads
 critical twice in a row does Koloft lower anything: in each agent tab on this Mac that is
 not the one last on screen, the processes under the agent — its builds, test runners,
 browsers. It never lowers a process whose parent is Koloft (the tab's own terminal
