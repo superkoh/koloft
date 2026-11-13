@@ -36,7 +36,7 @@ const LIST: RouteWorkspace[] = [
   }
 ]
 
-const reply = (o: object): string => `Sure:\n${JSON.stringify({ rule: 6, ...o })}\n`
+const reply = (o: object): string => `Sure:\n${JSON.stringify(o)}\n`
 
 describe('routeJob: what Koloft Assist is told', () => {
   it('names each workspace by its folder alone, never its full path, and names the machines', () => {
@@ -178,7 +178,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     const answer = reply({ hand: 'koloft', title: 'Resume', rule: 5 })
     expect(parseRoute(`${answer}(not rule 6})`, LIST)).toEqual({ kind: 'koloft', title: 'Resume' })
     expect(
-      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9' })}`, LIST)
+      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9', rule: 4 })}`, LIST)
     ).toBeNull()
     expect(
       parseRoute(
@@ -199,12 +199,15 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
-  it('takes only an object that names its rule as the answer: an example object written after the answer is passed over, and a reply with no rule in it is no answer', () => {
+  it('takes the last object that names its rule as the answer, passing over an example object written after it; a reply that names no rule anywhere is read by its last object', () => {
     const answer = '{"hand": "koloft", "title": "Resume", "rule": 5}'
     expect(
       parseRoute(`${answer}\n\nFor a new session it would have been {"workspace": 1}.`, LIST)
     ).toEqual({ kind: 'koloft', title: 'Resume' })
-    expect(parseRoute('{"hand": "koloft", "title": "Resume"}', LIST)).toBeNull()
+    expect(parseRoute('{"workspace": 3} or {"hand": "koloft", "title": "Resume"}', LIST)).toEqual({
+      kind: 'koloft',
+      title: 'Resume'
+    })
   })
 
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {

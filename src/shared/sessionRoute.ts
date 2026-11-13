@@ -180,7 +180,8 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  const o = reply ? topLevelObjects(reply).findLast((answer) => 'rule' in answer) : undefined
+  const written = reply ? topLevelObjects(reply) : []
+  const o = written.findLast((answer) => 'rule' in answer) ?? written.at(-1)
   if (!o) return null
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }

@@ -59,7 +59,7 @@ const askBox = (page: Page): Locator => palette(page).getByRole('textbox', { nam
 function assistAnswers(env: E2EEnv, answer: object | string, waitMs?: number): void {
   fs.writeFileSync(
     path.join(env.home, 'fake-claude-assist-reply'),
-    typeof answer === 'string' ? answer : JSON.stringify({ rule: 6, ...answer })
+    typeof answer === 'string' ? answer : JSON.stringify(answer)
   )
   const wait = path.join(env.home, 'fake-claude-assist-ms')
   if (waitMs) fs.writeFileSync(wait, String(waitMs))

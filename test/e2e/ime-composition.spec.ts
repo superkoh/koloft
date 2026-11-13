@@ -112,7 +112,7 @@ test.describe('Chinese input method: an Enter pressed while a word is still bein
     gitInit(env.workspaces.a)
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
-      JSON.stringify({ workspace: 1, worktree: 'main', title: 'IME', rule: 6 })
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'IME', sure: true, why: 'ws-a' })
     )
     const app = await launchApp(env)
     try {
