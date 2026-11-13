@@ -16,11 +16,12 @@ at and nobody is there to lift one; "critical" showed twice in 15 days of the lo
 **Decision**: Koloft starts every agent program that runs on this Mac through
 `taskpolicy -a` — `claude`, `muse`, `agy`, and the Codex screen of a tab here or on
 another machine — so it sits above whatever it starts. On another machine the agent
-program there — `claude`, `muse`, `agy`, the Codex server — starts the same way when
+program there — `claude`, `muse`, `agy` — starts the same way when
 that machine has `/usr/sbin/taskpolicy`; a Linux machine lets its user lift nothing, and
 only lower a tool for good (PLATFORM§72), so there both start as they are, and nothing
 there is ever lowered. What only carries the keys and the screen on the machine — sshd,
-tmux, the status relay, Muse's wrapper, the Codex proxy — is left as it starts: a short
+tmux, the status relay, Muse's wrapper, the Codex server and its proxy, as the Codex
+server on this Mac is — is left as it starts: a short
 reply from a process at normal priority beside 40 busy ones took 37 ms (PLATFORM§59),
 while the agent's own work is what stalls. Only while memory pressure reads
 critical twice in a row does Koloft lower anything: in each agent tab on this Mac that is

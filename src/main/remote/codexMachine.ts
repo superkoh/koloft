@@ -4,7 +4,6 @@ import type { ChildProcessWithoutNullStreams } from 'child_process'
 import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
-import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import {
   CODEX_FIRST_ON_PATH,
   REMOTE_ENV_LINES,
@@ -146,10 +145,8 @@ ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
   export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV} ${CODEX_SHELL_WROTE_ENV}
   ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}=${s.tabId}; export ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}
-  set -- ${serve}
-  ${ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE}
-  command -v setsid >/dev/null 2>&1 && exec setsid nohup "$@"
-  exec nohup "$@"
+  command -v setsid >/dev/null 2>&1 && exec setsid nohup ${serve}
+  exec nohup ${serve}
 ) </dev/null >"$S.log" 2>&1 &
 echo $! > "$S.pid"
 i=0

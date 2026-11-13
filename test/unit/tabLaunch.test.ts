@@ -426,22 +426,19 @@ it('tells a Claude Code tab on this Mac to wrap every frame in synchronized outp
   expect(remote).not.toContain('CLAUDE_CODE_DECSTBM')
 })
 
-it('starts the agent program above its tools wherever that program runs on this Mac — Claude Code here, and the Codex screen of a tab here or over SSH — and on the machine where a remote tab runs it, and never the ssh that carries a tab to another machine', async () => {
+it('starts the agent program above its tools wherever that program runs — Claude Code here and on the machine of a remote tab, and the Codex screen of a tab here or over SSH — and never the ssh that carries a tab to another machine, nor the Codex server behind a tab', async () => {
   const lift = '/usr/sbin/taskpolicy'
-  const onTheMachine = ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE
-  const onThisMac = (handed: string): string => handed.split('\n')[0]
   expect(await claudeTab(repo, {})).toContain(`exec ${lift} -a claude`)
   const claudeThere = await claudeTab(`ssh://${MACHINE}${repo}`, {})
-  expect(onThisMac(claudeThere)).not.toContain(lift)
-  expect(claudeThere).toContain(onTheMachine)
+  expect(claudeThere.split('\n')[0]).not.toContain(lift)
+  expect(claudeThere).toContain(ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE)
   const codexHere = await codexTab(repo, {})
   expect(codexHere).toContain('"aboveItsTools":[true]')
   expect(codexHere).not.toContain(lift)
   const codexThere = await codexTab(`ssh://${MACHINE}${repo}`, {})
-  expect(onThisMac(codexThere)).toContain('"aboveItsTools":[false]')
-  expect(onThisMac(codexThere)).toContain(`clear; exec '${lift}' '-a' '/fixture/codex'`)
-  expect(onThisMac(codexThere).split(lift)).toHaveLength(2)
-  expect(codexThere).toContain(onTheMachine)
+  expect(codexThere).toContain('"aboveItsTools":[false]')
+  expect(codexThere).toContain(`clear; exec '${lift}' '-a' '/fixture/codex'`)
+  expect(codexThere.split(lift)).toHaveLength(2)
 })
 
 it("hands a Claude Code tab on this Mac the koloft-docs plugin with agent tools on and off, and Koloft's plugin only with them on", async () => {
