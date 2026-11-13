@@ -178,7 +178,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     const answer = reply({ hand: 'koloft', title: 'Resume', rule: 5 })
     expect(parseRoute(`${answer}(not rule 6})`, LIST)).toEqual({ kind: 'koloft', title: 'Resume' })
     expect(
-      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9' })}`, LIST)
+      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9', rule: 4 })}`, LIST)
     ).toBeNull()
     expect(
       parseRoute(
@@ -196,6 +196,17 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
       path: '/Users/me/code/app',
       title: 'Fix login',
       worktree: { kind: 'new', name: 'safari-login' }
+    })
+  })
+
+  it('takes the last object that names its rule as the answer, passing over an example object written after it; a reply that names no rule anywhere is read by its last object', () => {
+    const answer = '{"hand": "koloft", "title": "Resume", "rule": 5}'
+    expect(
+      parseRoute(`${answer}\n\nFor a new session it would have been {"workspace": 1}.`, LIST)
+    ).toEqual({ kind: 'koloft', title: 'Resume' })
+    expect(parseRoute('{"workspace": 3} or {"hand": "koloft", "title": "Resume"}', LIST)).toEqual({
+      kind: 'koloft',
+      title: 'Resume'
     })
   })
 

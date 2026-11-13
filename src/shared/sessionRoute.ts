@@ -106,8 +106,8 @@ ${NEW_PROJECT_RULE}. It wants something new built (a new program, tool or projec
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
- "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
- "why" (rule ${NEW_PROJECT_RULE} only, leave it out for every other rule): <one short sentence in the language of the message>,
+ "title": <a very short title, at most 6 words, or 16 characters in a language written without spaces, in the language of the text the person typed between <<< and >>>, even when the session titles and examples above are in another language>,
+ "why" (rule ${NEW_PROJECT_RULE} only, leave it out for every other rule): <one short sentence in that same language>,
  "rule": <the number of the rule you took>`
   return { system: ROUTE_SYSTEM, prompt }
 }
@@ -180,7 +180,8 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  const o = reply ? topLevelObjects(reply).at(-1) : undefined
+  const written = reply ? topLevelObjects(reply) : []
+  const o = written.findLast((answer) => 'rule' in answer) ?? written.at(-1)
   if (!o) return null
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
