@@ -1440,7 +1440,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!id) return
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
-    if (this.runs.get(run.tabId) !== run || run.explicitStop) return
+    const stillThere = this.runs.get(run.tabId) === run && !run.explicitStop && !run.stopping
+    if (!stillThere || run.info?.nativeSessionId !== id) return
     const brain = path.join(agyBrain(this.geminiOf(run.cwd)), id)
     let names: string[] = []
     try {
@@ -1452,8 +1453,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!waiting) return
     const plan = waiting.n.replace(/\.metadata\.json$/, '')
     const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
-    const text = readText(path.join(brain, plan))?.trim()
     if (run.waiting?.approval?.id === askId) return
+    const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,
       approval: { id: askId, command: plan, ...(text && { reason: text }), plan: true }
