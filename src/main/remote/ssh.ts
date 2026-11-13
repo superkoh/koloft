@@ -89,6 +89,7 @@ export function problemOf(r: { code: number | null; stderr: string }): string {
 }
 
 export const ANSWER_STARTS = 'koloft-answer-starts-here'
+export const ECHO_THE_MARK = `echo ${ANSWER_STARTS}; `
 
 // PLATFORM§33
 export function answerOf(remoteCmd: string, stdout: Buffer): Buffer {
@@ -197,7 +198,7 @@ export function runSshBytes(
 
 // PLATFORM§33
 function markedFirst(remoteCmd: string): string {
-  return remoteCmd.includes(ANSWER_STARTS) ? remoteCmd : `echo ${ANSWER_STARTS}; ${remoteCmd}`
+  return remoteCmd.includes(ECHO_THE_MARK) ? remoteCmd : `${ECHO_THE_MARK}${remoteCmd}`
 }
 
 const STDERR_TAIL_KEPT = 4096
@@ -209,11 +210,16 @@ export function listenOverSsh(
   onLine: (line: string) => void,
   onEnd: () => void
 ): () => void {
-  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, remoteCmd], {
+  const sent = markedFirst(remoteCmd)
+  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, sent], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
   let stderr = ''
-  readline.createInterface({ input: child.stdout }).on('line', onLine)
+  let answering = false
+  readline.createInterface({ input: child.stdout }).on('line', (line) => {
+    if (answering) onLine(line)
+    else answering = line.endsWith(ANSWER_STARTS)
+  })
   child.stderr
     .setEncoding('utf8')
     .on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-STDERR_TAIL_KEPT)))

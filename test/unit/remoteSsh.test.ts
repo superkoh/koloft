@@ -210,17 +210,17 @@ describe('a machine whose shell prints a greeting and a title escape as it start
     expect(r).toMatchObject({ code: 3, stdout: 'typed text' })
   })
 
-  it('a live stream gets every line the machine printed and no mark of its own in between', async () => {
+  it('a live stream loses the greeting too, even a title escape with no newline after it, and gets every line its command printed', async () => {
     const lines: string[] = []
     await new Promise<void>((ended) =>
       listenOverSsh(
         'host',
-        remoteShCommand("echo 'hooks changed'"),
+        remoteShCommand("echo 'hooks changed'; echo 'still here'"),
         { controlDir: tmp },
         (line) => lines.push(line),
         ended
       )
     )
-    expect(lines).toEqual(['Welcome to the box', '\x1b]0;box\x07hooks changed'])
+    expect(lines).toEqual(['hooks changed', 'still here'])
   })
 })
