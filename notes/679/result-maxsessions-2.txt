@@ -1,8 +1,0 @@
-decision rule: pays only if the round median with 30 ms added round-trip is >= 30% shorter together, and nothing fails at the default MaxSessions
-local rsync: openrsync: protocol version 29
-local ssh: OpenSSH_10.3p1, LibreSSL 3.3.6
-pulls per round: transcripts, hooks, agy brain; lab user muser
-lab rsync: rsync  version 3.2.7  protocol version 32
-{"rttMs":0,"user":"muser","pulls":3,"rounds":4,"lastTranscriptInSync":true,"errors":[],"sequential":{"roundMedianMs":77,"pullsMedianMs":65,"roundMs":[79,75,80,73]},"together":{"roundMedianMs":136,"pullsMedianMs":124,"roundMs":[134,139,132,144]},"roundShorterBy":"-77%"}
-summary
-+0 ms rtt, 3 pulls, muser: round median one-after-another 77 ms, together 136 ms (-77% shorter); pulls alone 65 -> 124 ms; failed commands 0; mirror in sync true
