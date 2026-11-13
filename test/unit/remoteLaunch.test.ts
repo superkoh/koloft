@@ -652,16 +652,21 @@ describe('U-TAB-*: the tab script on the machine', () => {
 
   // ADR-0042 PLATFORM§59 PLATFORM§72
   it.for([
-    {
-      through: 'through the status relay',
-      relayed: true,
-      runs: TASKPOLICY_HERE && PYTHON_WITH_PTY
-    },
-    { through: 'started on its own', relayed: false, runs: TASKPOLICY_HERE }
+    { through: 'through the status relay', relayed: true, runs: PYTHON_WITH_PTY },
+    { through: 'started on its own', relayed: false, runs: true }
   ])(
-    'on a Mac machine the agent sits above the tools it starts, $through',
+    'on a Mac machine the agent sits above the tools it starts, as taskpolicy -a puts a program there, $through',
     ({ relayed, runs }, ctx) => {
-      if (!runs) ctx.skip()
+      const asTaskpolicyLiftsHere = TASKPOLICY_HERE
+        ? spawnSync(
+            TASKPOLICY,
+            ['-a', '/bin/sh', '-c', `ps -o pri= -p $$; /bin/sh -c 'ps -o pri= -p $$; :'`],
+            { encoding: 'utf8' }
+          )
+            .stdout.trim()
+            .split(/\s+/)
+        : []
+      if (!runs || asTaskpolicyLiftsHere[0] === asTaskpolicyLiftsHere[1]) ctx.skip()
       const b = box(spec())
       if (!relayed)
         fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
@@ -675,7 +680,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       expect(b.run().status).toBe(0)
       expect(
         ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
-      ).toEqual(['46', '31'])
+      ).toEqual(asTaskpolicyLiftsHere)
     }
   )
 
