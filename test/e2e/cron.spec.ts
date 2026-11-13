@@ -1279,6 +1279,44 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
+  test('BB-M08 with a question: a "Close it" run still asking a question at quit comes back as the open run after a relaunch, not closed', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    gitInit(env.workspaces.a)
+    const app1 = await launchApp(env)
+    try {
+      const page = await app1.firstWindow()
+      await waitBooted(page)
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Colour check', task: '/ask Which colour?|Red|Green' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Colour check')
+      await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app1)
+    }
+    expect(readStore(env)?.jobs[0].history[0]).toMatchObject({ state: 'ended' })
+
+    fs.writeFileSync(path.join(env.home, 'fake-claude-no-status'), '')
+    const app2 = await launchApp(env)
+    try {
+      const page = await app2.firstWindow()
+      await waitBooted(page)
+      await expect(cronRows(page, 'ws-a')).toHaveCount(1, { timeout: 60_000 })
+      await page.waitForTimeout(A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS)
+      await expect(cronRows(page, 'ws-a')).toHaveCount(1)
+      await openCron(page, 'ws-a')
+      await clickRunNow(page, 'Colour check')
+      await expect(toastMsg(page)).toHaveText('⏰ Colour check skipped: the last run is still open')
+      expect((await histLines(page)).map((l) => l.state)).not.toContain('Closed by you')
+    } finally {
+      await quitAndClose(app2)
+    }
+  })
+
   test('BB-M09: switching a job off is shown; on again counts from now', async ({ env }) => {
     test.setTimeout(300_000)
     const now = new Date()
