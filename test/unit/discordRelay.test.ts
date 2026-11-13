@@ -1375,9 +1375,9 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts[1].text).toContain('Delete the branch?')
   })
 
-  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', () => {
+  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', async () => {
     const { relay, posts, conductor } = setup()
-    void relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
       said: [
         { who: 'owner', text: '[Discord] what is new?', at: 1 },
@@ -1413,6 +1413,27 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       at: 2
     })
     expect(posts.map((p) => p.text)).toEqual(['Hello.'])
+  })
+
+  it('two copies of a quiet notice that land in one turn are both used up, so a later turn of the owner’s that quotes the notice is still posted', async () => {
+    const { relay, posts, conductor } = setup()
+    const notice = 'NOTICE: the same away digest'
+    await relay.tellQuietly(conductor, notice)
+    await relay.tellQuietly(conductor, notice)
+    relay.turnEnded(TAB, {
+      said: [
+        { who: 'owner', text: notice, at: 1 },
+        { who: 'owner', text: notice, at: 1 }
+      ],
+      reply: 'Nothing to tell.',
+      at: 1
+    })
+    relay.turnEnded(TAB, {
+      said: [{ who: 'owner', text: `[Discord] what does "${notice}" mean?`, at: 2 }],
+      reply: 'It lists what changed.',
+      at: 2
+    })
+    expect(posts.map((p) => p.text)).toEqual(['It lists what changed.'])
   })
 
   it('the turn that took Koloft’s quiet notice counts as quiet, so no typing shows in Discord, until that turn ends', async () => {
