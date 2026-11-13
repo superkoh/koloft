@@ -133,8 +133,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop, its UserPromptSubmit hook given the line as `prompt`. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
-    so an Esc Koloft presses lands inside the next one). A bracketed paste
+    Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
+    the real one does, and says so with `ESC[?2004h` at start: Enter (`\r`) sends the line,
+    Shift+Enter (`\n`) adds a new line to it, and it echoes, erases (Backspace, Ctrl+U)
+    and ends on Ctrl+C or Ctrl+D on an empty line itself. Esc keystrokes are dropped from
+    a typed line. A bracketed paste
     (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
     it, and is then one prompt together with what was typed after it; fake-codex
     keeps one in its composer the same way.
