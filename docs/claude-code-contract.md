@@ -1092,6 +1092,29 @@ moment its CC starts removing, and on this Mac finishes the removal if Koloft qu
     claimed-spare <jobId> (slash)`), whose control socket is
     `/tmp/cc-daemon-<uid>/<hash>/control.sock`, one per `HOME`. `claude daemon stop
     --any` ended it and the copy (`bg settled <jobId> (killed)`).
+- **A background session runs on the credential of the process that started the
+  background service, not its own; 2.1.323 refuses only some of those.** 2026-11-13,
+  CC 2.1.322 and 2.1.323 linux-arm64 in a Docker container with no network, a stand-in
+  Messages API behind `ANTHROPIC_BASE_URL` that logged each request's `Authorization`
+  and `x-api-key`, one scratch `HOME`: session A ran `claude --bg <prompt>` with
+  credential A (which started the service), then session B ran `claude --bg <prompt>`
+  with credential B, for each of `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` (pre-approved
+  in `customApiKeyResponses`) and `CLAUDE_CODE_OAUTH_TOKEN`. On 2.1.322, B's requests
+  carried A's credential in all three cases. On 2.1.323 the same, as long as
+  `ANTHROPIC_BASE_URL` is not Anthropic's own; with the internal
+  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1` standing in for Anthropic's address, B's
+  `--bg` exited 1 with `Couldn't start a background session: the background service
+  doesn't have this session's API key, token or workload identity. Add it to the env
+  section of your settings. Or, unless the service was set up with claude daemon install,
+  run claude daemon stop --any, which stops background sessions, and try again from this
+  terminal.` for the auth token and the API key, and still used A's for the OAuth token
+  (the changelog: "… from its shell (not a setup token) … now stops and says so";
+  `strings`: the check skips `env-oauth` and runs only for Anthropic's own address and
+  while the server flag `tengu_steady_anchor` is on). 2.1.323's `jobs/<id>/state.json`
+  gains `providerEnv: {CLAUDE_BG_SESSION_CREDENTIAL: "env-token" | "env-key" |
+  "env-oauth"}`. Only `--bg` was run; that `/fork`, `/background` and the Left-arrow move
+  go the same way is **inferred, not checked**, as is the refusal against Anthropic's
+  real address.
 - **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
   CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
   new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
@@ -1200,6 +1223,11 @@ never wrote a transcript.
   resets_at } }` and `prompt_cache: { warm, caching_observed, ttl: '5m' | '1h',
   expires_at, requests, misses, expected_rebuilds, hit_ratio, cache_write_tokens,
   miss_recache_tokens, last_miss_at, last_miss_cause: { causes: [] } }`.
+- **The status JSON is built the same way in 2.1.323 as in 2.1.322**, apart from
+  minified names (`cost`, `context_window`, `exceeds_200k_tokens`, `effort`,
+  `rate_limits`, `worktree` and the rest), and the `subagentStatusLine` key is still in
+  the settings schema, described as "Deprecated: no longer has any effect" (the
+  changelog: "Removed the `subagentStatusLine` setting"). (`strings`, 2026-11-13.)
 
 Evidence: binary reading, the CLI reference and two local experiments, 2026-08-07, CC
 2.1.224; render latency measured in live testing (date and CC version not recorded).
@@ -2268,16 +2296,26 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   For 2.1.322: darwin-arm64 111.9 MB with `zstd` / 323.7 MB without, darwin-x64 119.1 /
   338.4 MB, linux-arm64 123.3 / 341.5 MB, linux-x64 124.5 / 341.9 MB (its manifests,
   2026-11-10).
-- **On macOS the `claude install` step then downloads the whole binary again, in
+- **Up to 2.1.322, on macOS the `claude install` step then downloads the binary again, in
   silence.** After "Installing Claude Code native build latest..." it fetches the
-  uncompressed build into `~/.cache/claude/staging` even with `zstd` on the Mac, 323.7 MB
-  on arm64, and the terminal gets no byte meanwhile: at 2 Mbit/s a second silent stretch
-  of about 22 minutes. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
+  build into `~/.cache/claude/staging` even with `zstd` on the Mac, and the terminal gets
+  no byte meanwhile. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
   script serving 2.1.322: three darwin-arm64 installs in a Python pty with a scratch
   `HOME`, `/opt/homebrew/bin/zstd` on the login PATH, 41.7, 52.6 and 46.3 s of no output
-  while the staging file grew to 323.7 MB; one in `node:22-bookworm`. Inferred, not
-  checked: the same on x64 (338.4 MB uncompressed, per the manifest), on a Mac without
-  `zstd`, and on 2.1.316.)
+  while the staging file grew to 323.7 MB; one in `node:22-bookworm`.) What crossed the
+  network was smaller than the staging file: `claude install 2.1.322` run through a
+  local byte-counting proxy pulled 112,154,446 bytes from `downloads.claude.ai`, about
+  7.5 minutes at 2 Mbit/s (2026-11-13, scratch `HOME`, darwin-arm64). **2.1.323 no longer
+  downloads it twice** (its changelog: "the latest version is no longer downloaded
+  twice"): through the same proxy `claude install 2.1.323` pulled 26,076 bytes and
+  `claude install latest` 32,965; the whole `install.sh` run took 6.06 s and exited 0,
+  the staging file reaching 344 MB 0.5 s after "Installing Claude Code native build
+  latest..." (2026-11-13, a Python pty, scratch `HOME`, `PATH=/usr/bin:/bin:/usr/sbin:
+  /sbin:/opt/homebrew/bin`). 2.1.323's manifests: darwin-arm64 118.8 MB with `zstd` /
+  344.4 MB without, darwin-x64 126.3 / 359.1 MB, linux-arm64 129.5 / 362.2 MB, linux-x64
+  130.8 / 362.4 MB. So the one silent stretch left is the script's own download: at
+  2 Mbit/s up to about 24 minutes (darwin-x64 without `zstd`). Not checked: x64, and a
+  Mac without `zstd`.
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -2362,9 +2400,9 @@ onboarding flag and runs `claude -p ok --max-turns 1` once when
 in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
 Claude sign-in stops an install that prints nothing for 30 minutes (`src/main/index.ts`:
 while the installer runs, the timer starts over at every byte it prints, so it has to
-outlast only the longer of the two silent downloads above — 338.4 MB on darwin-x64 by
-the manifest, about 22.6 minutes at 2 Mbit/s; that x64 fetches that file in the second
-step is inferred, not checked, the measured arm64 one is 323.7 MB, about 21.6 minutes),
+outlast only the longest silent download above — up to 2.1.322 the second step's (the
+measured arm64 one 112 MB over the wire), from 2.1.323 only the script's own, at most
+359.1 MB on darwin-x64 without `zstd` by the manifest, about 24 minutes at 2 Mbit/s),
 and
 `launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
 warm-up, per the 2.1.296 bullet above).
@@ -2887,7 +2925,17 @@ sessions.
     the receiver's limits read `bucketCapacity:30, refillPerSecond:0.5,
     dedupWindowMs:30000, maxSelfHops:10, maxChainLength:28, maxTrackedSenders:256`, the
     same as 2.1.296 (`strings`, 2026-10-14). Still on in 2.1.309, with the same
-    pattern, wrap text and limits (`strings`, 2026-10-23).
+    pattern, wrap text and limits (`strings`, 2026-10-23). The receiver's limits are the
+    same in 2.1.323 (`strings`, 2026-11-13).
+  - **The sender's side has a cap, raised in 2.1.323.** Its changelog: "Changed how
+    many messages each of your sessions on the same machine can send the others without
+    a prompt from you, from about 20 to 100,000". The 2.1.323 binary holds
+    `maxLocalRelays:1e5, maxDesktopForwards:1e5, countLocalHops:false` behind the
+    server flag `tengu_harbor_kite_limits`, falling back to `{maxDesktopForwards:20,
+    maxLocalRelays:20, countLocalHops:true}` when the flag's value does not parse; past
+    the cap a send answers `Not delivered: this session keeps answering other sessions …
+    paused until your user's next prompt`. In 2.1.322 only a desktop-forward count
+    (`forwardsSincePrompt`) was found (`strings`, 2026-11-13, not run).
   - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
     tried.
 - **A message reaches a receiver whose turn ended with background work still running.**
