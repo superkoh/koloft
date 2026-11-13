@@ -461,7 +461,7 @@ function adoptExistingGuests(ses: Session): void {
   }
 }
 
-// PLATFORM§15
+// PLATFORM§15 PLATFORM§71
 export function setupExtensions(extensionHost: ExtensionHost): void {
   const ses = browserSession()
   const store = extensionsPath()
