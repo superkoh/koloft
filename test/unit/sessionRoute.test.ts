@@ -36,7 +36,7 @@ const LIST: RouteWorkspace[] = [
   }
 ]
 
-const reply = (o: object): string => `Sure:\n${JSON.stringify(o)}\n`
+const reply = (o: object): string => `Sure:\n${JSON.stringify({ rule: 6, ...o })}\n`
 
 describe('routeJob: what Koloft Assist is told', () => {
   it('names each workspace by its folder alone, never its full path, and names the machines', () => {
@@ -197,6 +197,14 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
       title: 'Fix login',
       worktree: { kind: 'new', name: 'safari-login' }
     })
+  })
+
+  it('takes only an object that names its rule as the answer: an example object written after the answer is passed over, and a reply with no rule in it is no answer', () => {
+    const answer = '{"hand": "koloft", "title": "Resume", "rule": 5}'
+    expect(
+      parseRoute(`${answer}\n\nFor a new session it would have been {"workspace": 1}.`, LIST)
+    ).toEqual({ kind: 'koloft', title: 'Resume' })
+    expect(parseRoute('{"hand": "koloft", "title": "Resume"}', LIST)).toBeNull()
   })
 
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {

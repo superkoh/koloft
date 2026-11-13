@@ -1313,7 +1313,13 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     installCodexSignedInForTheLab(env)
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
-      JSON.stringify({ workspace: null, machine: 'kt-key', newFolder: 'crawler', title: 'Crawler' })
+      JSON.stringify({
+        workspace: null,
+        machine: 'kt-key',
+        newFolder: 'crawler',
+        title: 'Crawler',
+        rule: 7
+      })
     )
     await withLab(
       env,

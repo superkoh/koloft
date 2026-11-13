@@ -196,7 +196,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     seedSettings(env, { hintsOff: true, assist: { backend: 'claude' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
-      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Agy readme', why: 'ws-a.' })
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Agy readme', rule: 6 })
     )
     fs.writeFileSync(path.join(env.home, 'fake-agy-delay'), TURN_LONG_ENOUGH_TO_SEE_WORKING_MS)
     const app = await launchApp(env)
@@ -1318,7 +1318,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     seedSettings(env, { hintsOff: true, assist: { backend: 'agy' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-agy-assist-reply'),
-      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', why: 'ws-a.' })
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', rule: 6 })
     )
     const app = await launchApp(env)
     try {
