@@ -7,6 +7,7 @@ import path from 'path'
 import {
   defaultControlDir,
   ensureControlDir,
+  listenOverSsh,
   problemOf,
   runSsh,
   runSshBytes,
@@ -196,8 +197,30 @@ describe('a machine whose shell prints a greeting and a title escape as it start
     expect(r.stdout).toEqual(Buffer.concat([Buffer.from(ANSWER), Buffer.from([0, 0xff])]))
   })
 
-  it('a command Koloft did not mark keeps all it printed, even a line that reads like the mark', async () => {
-    const r = await runSsh('host', remoteShCommand(`printf '${ANSWER}'`), { controlDir: tmp })
-    expect(r.stdout).toBe(`Welcome to the box\n\x1b]0;box\x07${ANSWER}`)
+  it('a read built without the mark loses the greeting too, so a new read cannot forget it', async () => {
+    const r = await runSsh('host', remoteShCommand("printf 'README.md\\n'"), { controlDir: tmp })
+    expect(r.stdout).toBe('README.md\n')
+  })
+
+  it('a command fed input that only reports its exit code gets all its input and keeps its exit code', async () => {
+    const r = await runSsh('host', remoteShCommand('cat; exit 3'), {
+      controlDir: tmp,
+      input: Buffer.from('typed text')
+    })
+    expect(r).toMatchObject({ code: 3, stdout: 'typed text' })
+  })
+
+  it('a live stream gets every line the machine printed and no mark of its own in between', async () => {
+    const lines: string[] = []
+    await new Promise<void>((ended) =>
+      listenOverSsh(
+        'host',
+        remoteShCommand("echo 'hooks changed'"),
+        { controlDir: tmp },
+        (line) => lines.push(line),
+        ended
+      )
+    )
+    expect(lines).toEqual(['Welcome to the box', '\x1b]0;box\x07hooks changed'])
   })
 })

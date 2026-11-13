@@ -181,17 +181,23 @@ export function runSshBytes(
   remoteCmd: string,
   opts: { controlDir: string; timeoutMs?: number; input?: Buffer; maxBuffer?: number }
 ): Promise<BytesResult> {
+  const sent = markedFirst(remoteCmd)
   const args = [
     ...(opts.input ? [] : ['-n']),
     ...backgroundOptions(host, opts.controlDir),
     host,
-    remoteCmd
+    sent
   ]
   return runBytes('ssh', args, {
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(remoteCmd, r.stdout) }))
+  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(sent, r.stdout) }))
+}
+
+// PLATFORM§33
+function markedFirst(remoteCmd: string): string {
+  return remoteCmd.includes(ANSWER_STARTS) ? remoteCmd : `echo ${ANSWER_STARTS}; ${remoteCmd}`
 }
 
 const STDERR_TAIL_KEPT = 4096
