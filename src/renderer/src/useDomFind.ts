@@ -112,15 +112,10 @@ function shownBoxOf(range: Range): DOMRect {
   return el ? el.getBoundingClientRect() : r
 }
 
-function landedInView(range: Range, container: HTMLElement): boolean {
-  const r = range.getBoundingClientRect()
-  const c = container.getBoundingClientRect()
-  return hasOwnBox(r) && r.top >= c.top && r.bottom <= c.bottom
-}
-
-function scrollRangeIntoView(range: Range, container: HTMLElement): void {
-  const r = shownBoxOf(range)
-  if (!hasOwnBox(r)) return
+function scrollRangeIntoViewLanding(range: Range, container: HTMLElement): boolean {
+  const own = range.getBoundingClientRect()
+  const r = hasOwnBox(own) ? own : shownBoxOf(range)
+  if (!hasOwnBox(r)) return false
   const c = container.getBoundingClientRect()
   if (r.top < c.top || r.bottom > c.bottom) {
     const top = r.top - c.top + container.scrollTop - container.clientHeight / 2 + r.height / 2
@@ -130,6 +125,7 @@ function scrollRangeIntoView(range: Range, container: HTMLElement): void {
     const left = r.left - c.left + container.scrollLeft - container.clientWidth / 2 + r.width / 2
     container.scrollLeft = Math.max(0, left)
   }
+  return r === own && r.height <= container.clientHeight
 }
 
 export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
@@ -137,7 +133,8 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const activeRef = useRef(0)
   const queryRef = useRef('')
   const jumpPendingRef = useRef(false)
-  const detachRef = useRef<(() => void) | null>(null)
+  const lastScrollRef = useRef<{ el: HTMLElement; top: number } | null>(null)
+  const observerRef = useRef<MutationObserver | null>(null)
   const [count, setCount] = useState<FindCount>({ current: 0, total: 0 })
 
   const setCountIfChanged = useCallback((current: number, total: number) => {
@@ -171,9 +168,19 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     const root = getRoot()
     const scroller = root ? nearestVerticalScroller(ranges[active], root) : null
     if (!scroller) return
-    scrollRangeIntoView(ranges[active], scroller)
-    if (landedInView(ranges[active], scroller)) jumpPendingRef.current = false
+    const last = lastScrollRef.current
+    if (last?.el === scroller && last.top !== scroller.scrollTop) {
+      jumpPendingRef.current = false
+      return
+    }
+    if (scrollRangeIntoViewLanding(ranges[active], scroller)) jumpPendingRef.current = false
+    lastScrollRef.current = { el: scroller, top: scroller.scrollTop }
   }, [getRoot, setCountIfChanged])
+
+  const armJump = useCallback(() => {
+    jumpPendingRef.current = true
+    lastScrollRef.current = null
+  }, [])
 
   const recompute = useCallback(() => {
     const root = getRoot()
@@ -185,27 +192,18 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     (query: string) => {
       queryRef.current = query
       activeRef.current = 0
-      jumpPendingRef.current = true
-      detachRef.current?.()
-      detachRef.current = null
+      armJump()
+      observerRef.current?.disconnect()
+      observerRef.current = null
       const root = getRoot()
       if (root && query) {
         const obs = new MutationObserver(() => recompute())
         obs.observe(root, { childList: true, subtree: true, characterData: true })
-        const userMovesOn = (): void => {
-          jumpPendingRef.current = false
-        }
-        root.addEventListener('wheel', userMovesOn, { passive: true })
-        root.addEventListener('pointerdown', userMovesOn)
-        detachRef.current = () => {
-          obs.disconnect()
-          root.removeEventListener('wheel', userMovesOn)
-          root.removeEventListener('pointerdown', userMovesOn)
-        }
+        observerRef.current = obs
       }
       recompute()
     },
-    [getRoot, recompute]
+    [getRoot, recompute, armJump]
   )
 
   const step = useCallback(
@@ -213,18 +211,18 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
       const n = rangesRef.current.length
       if (!n) return
       activeRef.current = (activeRef.current + delta + n) % n
-      jumpPendingRef.current = true
+      armJump()
       render()
     },
-    [render]
+    [render, armJump]
   )
 
   const next = useCallback(() => step(1), [step])
   const prev = useCallback(() => step(-1), [step])
 
   const clear = useCallback(() => {
-    detachRef.current?.()
-    detachRef.current = null
+    observerRef.current?.disconnect()
+    observerRef.current = null
     rangesRef.current = []
     activeRef.current = 0
     queryRef.current = ''
