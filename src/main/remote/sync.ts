@@ -114,6 +114,7 @@ function gitKey(git: Map<string, RemoteGitInfo>): string {
 export class RemoteSync {
   private hosts = new Map<string, HostState>()
   private watches = new Map<string, Map<string, Watch>>()
+  private stampsOfUnwatched = new Map<string, Map<string, string>>()
   private stopped = true
 
   constructor(private deps: RemoteSyncDeps) {}
@@ -158,18 +159,29 @@ export class RemoteSync {
     let paths = this.watches.get(host)
     if (!paths) this.watches.set(host, (paths = new Map()))
     const w = paths.get(path)
-    if (w) w.count++
-    else paths.set(path, { count: 1, onChange })
+    if (w) {
+      w.count++
+      return
+    }
+    const seenBeforeUnwatch = this.stampsOfUnwatched.get(host)
+    paths.set(path, { count: 1, stamp: seenBeforeUnwatch?.get(path), onChange })
+    seenBeforeUnwatch?.delete(path)
   }
 
   unwatch(host: string, path: string): void {
     const paths = this.watches.get(host)
     const w = paths?.get(path)
-    if (paths && w && --w.count <= 0) paths.delete(path)
+    if (!paths || !w || --w.count > 0) return
+    paths.delete(path)
+    if (w.stamp === undefined) return
+    let seen = this.stampsOfUnwatched.get(host)
+    if (!seen) this.stampsOfUnwatched.set(host, (seen = new Map()))
+    seen.set(path, w.stamp)
   }
 
   unwatchAll(): void {
     this.watches.clear()
+    this.stampsOfUnwatched.clear()
   }
 
   private noticeStamps(host: string, asked: string[], stamps: string[]): void {
