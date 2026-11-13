@@ -43,6 +43,7 @@ import {
   menuItemTexts,
   openMenu,
   openWorktreeSession,
+  processAlive,
   readCalls,
   resumedId,
   sendShortcut,
@@ -225,6 +226,8 @@ const CLOSE_RECHECK_MS = 2_000
 const TUI_GIVES_UP_ON_A_QUESTION_MS = 1_500
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
 const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -1279,41 +1282,44 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
-  test('BB-M08 with a question: a "Close it" run still asking a question at quit comes back as the open run after a relaunch, not closed', async ({
+  test('BB-M18 while idle: a "Close it" run held open by a file not committed keeps its tab awake while an idle plain tab goes to sleep, so it stays the open run and is not written closed', async ({
     env
   }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)
-    const app1 = await launchApp(env)
+    seedSettings(env, { hintsOff: true })
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const app = await launchApp(env)
     try {
-      const page = await app1.firstWindow()
+      const page = await app.firstWindow()
       await waitBooted(page)
       const dlg = await openCron(page, 'ws-a')
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
-      await fillForm(dlg, { name: 'Colour check', task: '/ask Which colour?|Red|Green' })
+      await fillForm(dlg, { name: 'Nightly report', task: '/write report.md' })
       await dlg.locator('.chip', { hasText: 'Close it' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
-      await clickRunNow(page, 'Colour check')
-      await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
-    } finally {
-      await quitAndClose(app1)
-    }
-    expect(readStore(env)?.jobs[0].history[0]).toMatchObject({ state: 'ended' })
+      await clickRunNow(page, 'Nightly report')
+      const run = await waitNewCall(env, 0)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — not closed: Changes not committed')
+      await closeCron(page)
 
-    fs.writeFileSync(path.join(env.home, 'fake-claude-no-status'), '')
-    const app2 = await launchApp(env)
-    try {
-      const page = await app2.firstWindow()
-      await waitBooted(page)
-      await expect(cronRows(page, 'ws-a')).toHaveCount(1, { timeout: 60_000 })
-      await page.waitForTimeout(A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS)
-      await expect(cronRows(page, 'ws-a')).toHaveCount(1)
+      await startSessionIn(page, 'ws-b')
+      await startSessionIn(page, 'ws-a')
+      const [, idlePlainTab] = await waitForCalls(env, 3)
+      await expect.poll(() => processAlive(idlePlainTab.pid), { timeout: 30_000 }).toBe(false)
+
+      expect(processAlive(run.pid)).toBe(true)
       await openCron(page, 'ws-a')
-      await clickRunNow(page, 'Colour check')
-      await expect(toastMsg(page)).toHaveText('⏰ Colour check skipped: the last run is still open')
-      expect((await histLines(page)).map((l) => l.state)).not.toContain('Closed by you')
+      expect((await histLines(page))[0]?.state).toBe('Done — not closed: Changes not committed')
+      await clickRunNow(page, 'Nightly report')
+      await expect(toastMsg(page)).toHaveText(
+        '⏰ Nightly report skipped: the last run is still open'
+      )
     } finally {
-      await quitAndClose(app2)
+      await quitAndClose(app)
     }
   })
 
