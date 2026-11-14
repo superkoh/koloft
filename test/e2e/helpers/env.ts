@@ -349,6 +349,7 @@ export interface AgyCall {
   pid: number
   argv: string[]
   cwd: string
+  cols: number | null
   env: Record<string, string | boolean | undefined> & { GEMINI_API_KEY: boolean }
   geminiDir: string
 }
@@ -428,6 +429,7 @@ export interface MuseCall {
   argv: string[]
   cwd: string
   sessionId: string
+  cols: number | null
   pathHead: string
   configHome: string | null
   credentials: string | null

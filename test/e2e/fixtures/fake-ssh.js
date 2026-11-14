@@ -19,7 +19,7 @@ function log(rec) {
   } catch {}
 }
 
-log({ argv, phase: 'start' })
+log({ argv, phase: 'start', cols: process.stdout.columns ?? null })
 
 function done(code) {
   log({ argv, phase: 'end', exit: code })
