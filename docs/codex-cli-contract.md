@@ -37,7 +37,8 @@ Schema availability is distinguished from behavior actually seen on the wire.
   createdAt, updatedAt, recencyAt, status, path, cwd, cliVersion, originator, source,
   canAcceptDirectInput, threadSource, agentNickname, agentRole, gitInfo, name,
   daybreakEnabled, turns`; `status {type: "notLoaded"}`, `turns []`, `historyMode
-  "paginated"`); a rollout the full-screen TUI wrote has `source: "vscode"`, one `codex
+  "paginated"`; 0.169.0 under `experimentalApi` adds `attachedToThreadId`, 33 keys,
+  2026-11-14); a rollout the full-screen TUI wrote has `source: "vscode"`, one `codex
   exec` wrote has `source: "exec"` and is left out by that list; `initialize` now also
   brings a `remoteControl/status/changed` notification. **0.163.0 adds `readStates` to
   the `thread/list` result** (a map from thread id to `{firstUnread: {type: "turn",
@@ -447,7 +448,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2 or 0.168.0. Koloft
+0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0 or 0.169.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -634,9 +635,83 @@ the slash popup (§21); the pane keys of `tui_workspace` (§25), off by default;
 sandbox changes (#59009, #59530, #59711; §26, §29); the default of the new
 `tui.notification_method` (#59256), read only from the change; a turn's notification
 kinds, not rerun; and `turn/steer` (#58877, #58998), which Koloft does not send.
+
+On 0.169.0 (2026-11-14, against 0.168.0, each probe in its own throwaway `CODEX_HOME`;
+every turn ran against a stand-in Responses server, not a real model, so the
+notification lists compare the two builds with each other only, not with earlier
+rounds): the `--help` of every subcommand and sub-subcommand is byte-identical to
+0.168.0's except `exec` (and its `resume`, `fork` and `review`) and `review`, which add
+`--trust` (openai/codex#60041), and the new hidden `git-credential` command (#60746),
+which `codex --help` does not list. `features list` turns on `code_mode_host_grpc`,
+`code_mode_host_output_truncation` and `untrusted_as_tool_output` (#60487); adds, off:
+`daybreak_program_propagation`, `gateway_setup_wizard` and `mcp_lazy_stdio_startup`;
+lists `incremental_tools_legacy` (stable false) and `incremental_tools_legacy_gcp`
+(stable true) again; marks `plugin_discovery_prefetch` removed. `app-server
+generate-json-schema` only adds: the client method `account/securitySetup/read` (and,
+experimental, `thread/prepareApprovedPlan`, #60763), `userId` beside `account` in
+`account/read`'s answer (#60004, a `user-…` string for a ChatGPT login), `moderation` on
+`ThreadItem` (null in every turn seen), `modelProvider` on `ModelListParams`,
+`responsesapiClientMetadata` on queued submissions, an `inferenceHookDenied`
+`CodexErrorInfo`, a `file_id` audio output and, experimental, `attachedToThreadId` on
+`Thread` and `includeAttachedThreads` on `ThreadListParams` and `ThreadSearchParams`;
+no server notification or request is added and nothing is removed. Measured again:
+sections 1 (`initialize` keys and `thread/list` keys unchanged; under
+`experimentalApi` 33 keys per thread, `attachedToThreadId` the new one; `thread/search`
+keys and row keys unchanged; a text turn, an interrupted turn and a background-terminal
+turn sent the same notifications in the same order on both builds), 4 and 19 (a turn
+whose command keeps running past `yield_time_ms` ends `turn/completed: completed`
+first, its `outputDelta` and `item/completed` following, on both; an interrupted turn
+ends `thread/status/changed idle` then `turn/completed: interrupted` on both; a second
+`turn/interrupt` for that turn now answers at once `-32600 "no active turn to
+interrupt"` where 0.168.0 answered `{}` 6.1 s later as the next turn started, #60700),
+8 (the status line in a 120-column pty: an item list too long for one row now wraps onto
+a second footer row, `current-dir` moving down, where 0.168.0 cut the row with `…`,
+#60682; seen items `context-used`, `codex-version`, `model-with-reasoning`,
+`current-dir`, the others having no data against the stand-in), 13/14 (`model/list` the
+same eight models and effort levels, all priced, default `gpt-6.1-sol`), 15
+(`account/read` as above, `account`'s keys unchanged; Assist's exact one-shot argv
+against a stand-in provider given with `-c`: exit 0, the same stdout on both,
+`config.toml` untouched, 0.169.0 adding one stderr `ERROR` line about an empty models
+cache from the stand-in's empty `/models`), 16 (as a non-root user in the e2e lab image,
+`npm install -g --prefix ~/.koloft/codex-cli @openai/codex@0.169.0` printed
+`codex-cli 0.169.0`; `app-server --stdio` answered `initialize` in 92 ms with the same
+keys, then `thread/list` and `config/read`; one `codex` process plus a curated-plugins
+`git ls-remote` child; the missing-bubblewrap ERROR is the same), 26 (a TUI over
+`--remote` through a websocket relay to `app-server --stdio`, with the TUI flags and
+status-line `-c` of a tab: with one `CODEX_HOME` both builds finish the first turn,
+write OSC 7501 `idle` → `working` → `done`, then stop redrawing; with an MCP server only
+in the TUI's own `config.toml` — the shape of a remote tab, whose Mac config differs from
+the machine's — 0.168.0 stays at `state=working`, redraws every 100 ms, sends
+`turn/interrupt` on Ctrl+C, and its title thread's `thread/start` fails with `invalid
+transport in mcp_servers.localonly`, while 0.169.0 settles at `done` and reads the
+server's MCP list with `config/read`, #60280, #60622; both start an ephemeral
+`threadSource: "thread_title"` thread after the first turn; an MCP tool call through
+the relay was not made, the server being offered only as a deferred `mcp__probe` behind
+`tool_search`) and 27 (a SessionStart and a UserPromptSubmit hook's `additionalContext`
+reach the model as developer messages, the request bodies the same on both but for ids,
+`untrusted_as_tool_output` notwithstanding), and the same e2e specs passed, the remote
+ones (E-SSH-23/24/25) too; that the lab machine in them ran 0.169.0 is **inferred, not
+checked**, as for 0.168.0, so on the remote side the measurement is section 16's
+install and handshake above. Attached threads (`attachedToThreadId`, the saved side
+chats of the opt-in terminal workspace): openai/codex#60574 says title and content
+searches leave them out and adds `includeAttachedThreads` to ask for them, which on
+`thread/list` needs a non-empty `searchTerm`; so a plain `thread/list` does not list
+them (read from the change, not probed). No other section was probed by hand on 0.169.0: sections 3,
+5, 18 (but its `--help`), 20–25, 30 and 34, and 15's login parts, stand on 0.167.0's
+measurements above and on those specs; 11 stands on 0.166.0's. Not reached on 0.169.0:
+"clear context and implement" (#60763) — read from the change: the TUI starts the fresh
+thread (not ephemeral) before `thread/prepareApprovedPlan`, switches to it on success,
+and on a failed handoff unsubscribes it and stays on the old thread (**inferred, not
+checked**); `thread/searchOccurrences`, paging a forked history (#59793, #60559),
+`thread/queue/add` (§17, §33), `git-credential get` (§29; it is off until someone sets
+it up, and a run left no `.gitconfig` in the scratch home), a real-model turn and
+compaction (§21 stays **inferred, not checked**).
+
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
-approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
+approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4 (but how
+an interrupted turn and a turn that leaves a background terminal running end, rechecked
+on 0.169.0), 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
 `app-server --help`, `exec --help` and `resume --help` are byte-identical on 0.161.0,
 0.162.1 and 0.163.0 (2026-10-16). On 0.164.0 (2026-10-23) `--help` adds
@@ -678,10 +753,16 @@ unless marked.
   `CODEX_HOME` listing `hostname` and the app-server's (another `CODEX_HOME`) listing
   `codex-version`, the footer showed the hostname; with no list in the TUI's home it
   showed the default, whatever the app-server's home said.
-- The footer is one line. Long content ends in an ellipsis at every width tried;
-  shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`, `separator`
-  and `spacer` each produce an "Ignored invalid status line items" warning (F2). The
-  native configuration cannot reproduce a three-line footer.
+- The footer is one line up to 0.168.0. Long content ends in an ellipsis at every width
+  tried; shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`,
+  `separator` and `spacer` each produce an "Ignored invalid status line items" warning
+  (F2). The native configuration cannot reproduce a three-line footer.
+- **0.169.0 wraps an item list too long for one row onto a second footer row**
+  (openai/codex#60682). 2026-11-14, pyte at 120 columns against a stand-in provider:
+  `current-dir` moved to the second row where 0.168.0 cut the row with `…`. Only
+  `context-used`, `codex-version`, `model-with-reasoning` and `current-dir` had data
+  there, so Koloft's full list with a real login's limits, a branch and a pull request
+  was not seen on 0.169.0; the separator items above were not rerun.
 - No item runs a user command or reads a file: `custom-command`, `command` and `custom`
   are rejected, and a picker search for "command" returns no matches.
 - The `/statusline` picker offers 31 IDs: `model`, `model-with-reasoning`, `reasoning`,
@@ -1903,6 +1984,9 @@ line. The stand-in turn, SIGTERM and stale-socket checks above were not rerun. T
 remote e2e specs passed with the Mac on 0.168.0 (the machine on 0.168.0 **inferred, not
 checked**, §7).
 
+**Rechecked in part on 0.169.0** (2026-11-14, the same image, user and npm line; what it
+showed is in the 0.169.0 paragraph of §7).
+
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
@@ -2910,6 +2994,15 @@ the one before, the screen read back through `pyte`.
   `CODEX_HOME` with an API-key `auth.json`.
 
 ## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
+
+**Up to 0.168.0 a TUI whose own `config.toml` names an MCP server its app-server lacks
+never settles after a turn.** 2026-11-14, 0.168.0 and 0.169.0, a TUI over `--remote`
+through a websocket relay to `app-server --stdio` in another `CODEX_HOME` (a remote
+tab's shape), one stdio MCP server only in the TUI's home: on 0.168.0 the answer came,
+but OSC 7501 stayed `state=working`, the screen redrew every 100 ms, Ctrl+C sent
+`turn/interrupt`, and the title thread's `thread/start` failed with `invalid transport
+in mcp_servers.localonly`; 0.169.0 reads the server's MCP list with `config/read` and
+settles at `done` (openai/codex#60280, #60622). The other runs of that recheck are in §7.
 
 **A command in the sandbox cannot reach 127.0.0.1; an MCP server can.** Checked
 2026-10-04 with Codex CLI 0.159.3, Node 24.13.0, a fresh temporary `CODEX_HOME` and `HOME`
