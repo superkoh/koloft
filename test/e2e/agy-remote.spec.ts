@@ -511,6 +511,56 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  test('/exit typed in a remote Antigravity tab closes the tab, and its row leaves the list', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'keep remote')
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'keep remote' })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+
+      await runIn(page, centerTerm(page), '/exit')
+
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 60_000 })
+      await expect.poll(() => termIds(page)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a remote Antigravity that dies before its session starts says so with its exit code, and keeps its tab, row and last screen, with no key pressed', async ({
+    env
+  }) => {
+    setUp(env)
+    fs.writeFileSync(path.join(machineHome(env), 'fake-agy-exit'), '3')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Antigravity closed before the session started (exit code 3)',
+        { timeout: 60_000 }
+      )
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveCount(1)
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 3)')
+      await expect.poll(() => termIds(page)).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await expect
+        .poll(() => terminalText(page, tabId))
+        .toContain('Antigravity fixture startup failure')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§8
   test('⇧⌘R on a remote Antigravity tab before its first prompt restarts nothing and says there is nothing to restart yet; agy there keeps taking prompts', async ({
     env
