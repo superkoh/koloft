@@ -3526,6 +3526,13 @@ and which `mermaidRender` waits on before its first diagram.
   string`), so a list goes to awk on standard input.
 - **Antigravity's `agy` itself listens on two 127.0.0.1 ports** (its own service), so
   a list of a session's servers leaves out the agent programs' own sockets.
+- **Any variable carries the same way.** A process may carry a second one,
+  `KOLOFT_HOLD_TAB`, naming the session tab it belongs to when `KOLOFT_TAB_ID` names
+  something else (a remote Codex app-server, a Workbench shell); the scan reads both.
+  Measured 2026-11-14 on macOS 27.0 and through the e2e fake remote: a
+  `nohup python3 -m http.server … &` started in a Workbench shell carried the shell's
+  `KOLOFT_HOLD_TAB` after the shell and Koloft quit, and the restarted Koloft's scan
+  for the session listed it.
 - Measured 2026-11-06 on macOS 27.0 (Darwin 27.0.0) and in `koloft-e2e-sshd` (Debian,
   as root, with and without `lsof` on `PATH`): three `python3 -m http.server` listeners
   started with two different `KOLOFT_TAB_ID` values, one through `nohup` (macOS) or
@@ -3545,7 +3552,8 @@ and which `mermaidRender` waits on before its first diagram.
   none, and a third server with another tab's id was never listed.
 
 Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
-menu's listening ports).
+menu's listening ports); `OWNING_TAB_ENV` in `src/main/owningTabEnv.ts`, set by
+`ptyManager.ts` and `remote/launch.ts` (Workbench shells) and `remote/codexMachine.ts`.
 
 ## §68 The text of a selection: `Selection.toString()` against `Range.toString()`
 

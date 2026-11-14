@@ -91,7 +91,7 @@ describe('PtyManager per-tab environment', () => {
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
   })
 
-  it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a shell for a tab not running here carries none", () => {
+  it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a placeholder id such as a sleeping tab's asleep-1, which later runs hand out again, is never carried", () => {
     const mgr = new PtyManager()
     const session = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     const envOf = (ownerTabId: string): Record<string, string> => {
