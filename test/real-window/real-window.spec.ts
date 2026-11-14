@@ -52,7 +52,7 @@ import {
   selectInputSource,
   windowBounds
 } from './helpers/macInput'
-import { recordTyping } from './helpers/typingRecorder'
+import { recordTyping, type TypingRecording } from './helpers/typingRecorder'
 
 const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>({
   shown: async ({ env }, use, testInfo) => {
@@ -84,6 +84,14 @@ test.beforeAll(() => {
     accessibilityTrusted(),
     'macOS drops every posted key and click unless the process running the tests has Accessibility'
   ).toBe(true)
+})
+
+let typingRecording: TypingRecording | undefined
+
+test.afterEach(async ({}, testInfo) => {
+  if (typingRecording && testInfo.status !== testInfo.expectedStatus)
+    await typingRecording.save(testInfo.outputPath('typing.jsonl'))
+  typingRecording = undefined
 })
 
 // PLATFORM§52
@@ -310,24 +318,15 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       selectInputSource(PINYIN_SIMPLIFIED)
       await comeBackThroughTheDock(app)
       await clickIntoTerminal(app, page)
-      const recording = await recordTyping(app, page, tabId)
-      try {
-        typeNihao()
-        realKey(KEY_RETURN)
-        await expect
-          .poll(async () => (await terminalText(page, tabId)).trimEnd())
-          .toMatch(/> nihao$/)
-        typeNihao()
-        realKey(KEY_SPACE)
-        await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
-        realKey(KEY_RETURN)
-        await expect
-          .poll(() => promptsStartingWith(env, page, tabId, 'nihao'))
-          .toEqual(['nihao你好'])
-      } catch (failed) {
-        await recording.save(testInfo.outputPath('typing.jsonl'))
-        throw failed
-      }
+      typingRecording = await recordTyping(app, page, tabId)
+      typeNihao()
+      realKey(KEY_RETURN)
+      await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/> nihao$/)
+      typeNihao()
+      realKey(KEY_SPACE)
+      await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
+      realKey(KEY_RETURN)
+      await expect.poll(() => promptsStartingWith(env, page, tabId, 'nihao')).toEqual(['nihao你好'])
       screenshot(testInfo.outputPath('pinyin-sent.png'))
     } finally {
       selectInputSource(ABC_LAYOUT)

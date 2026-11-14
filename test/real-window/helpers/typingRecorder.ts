@@ -21,8 +21,9 @@ type RecordingWindow = {
   __koloftTerms: Record<
     string,
     {
+      textarea?: HTMLTextAreaElement
       onData(listener: (data: string) => void): void
-      _core: { _compositionHelper: { _isComposing: boolean; _isSendingComposition: boolean } }
+      _core?: { _compositionHelper?: { _isComposing: boolean; _isSendingComposition: boolean } }
     }
   >
 }
@@ -43,15 +44,14 @@ export async function recordTyping(
       const w = window as unknown as RecordingWindow
       w.__typingRecord = []
       const term = w.__koloftTerms[id]
-      const helper = term._core._compositionHelper
-      const textarea = document.activeElement as HTMLTextAreaElement
+      const helper = term._core?._compositionHelper
       const note = (fields: Record<string, unknown>): void => {
         w.__typingRecord.push({
           at: Date.now(),
           where: 'renderer',
-          textarea: textarea.value,
-          xtermComposing: helper._isComposing,
-          xtermSendingComposition: helper._isSendingComposition,
+          textarea: term.textarea?.value,
+          xtermComposing: helper?._isComposing,
+          xtermSendingComposition: helper?._isSendingComposition,
           ...fields
         })
       }
@@ -88,10 +88,17 @@ export async function recordTyping(
   )
   return {
     async save(file) {
-      const typed = await page.evaluate(() => (window as unknown as RecordingWindow).__typingRecord)
-      const written = await app.evaluate(() => (globalThis as RecordingMain).__ptyWritesRecord)
-      const all = [...typed, ...written].sort((a, b) => a.at - b.at)
-      fs.writeFileSync(file, all.map((r) => JSON.stringify(r)).join('\n') + '\n')
+      const halves = await Promise.allSettled([
+        page.evaluate(() => (window as unknown as RecordingWindow).__typingRecord),
+        app.evaluate(() => (globalThis as RecordingMain).__ptyWritesRecord)
+      ])
+      const lines = halves.flatMap((half) =>
+        half.status === 'fulfilled'
+          ? half.value
+          : [{ at: 0, unreadable: String(half.reason) } as Recorded]
+      )
+      lines.sort((a, b) => a.at - b.at)
+      fs.writeFileSync(file, lines.map((r) => JSON.stringify(r)).join('\n') + '\n')
     }
   }
 }
