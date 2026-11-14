@@ -150,6 +150,10 @@ export function dropTabLinkWhileItsSessionLives(env: E2EEnv, tmuxName: string): 
   for (const pid of tmuxClientsOf(tmuxName)) process.kill(pid, 'SIGKILL')
 }
 
+export function holdMirrorPullsBack(env: E2EEnv): void {
+  fs.writeFileSync(path.join(stateDir(env), 'mirror-hold'), '')
+}
+
 export function healConnection(env: E2EEnv): void {
   fs.rmSync(path.join(stateDir(env), 'hb-fail'), { force: true })
 }

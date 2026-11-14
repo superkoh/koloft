@@ -8,6 +8,7 @@ import {
   REMOTE_ENV_LINES,
   TMUX_PASSES_THE_PANE_TITLE_ON,
   onATerminalEvenWhenSshGaveNone,
+  remoteAnswerCommand,
   remoteShCommand
 } from './install'
 import { remotePtsFile } from './paths'
@@ -270,7 +271,7 @@ exited() {
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen"
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
 ${program.beforeTmux}${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
@@ -387,11 +388,24 @@ export function resizeStandInCmd(tabId: string, cols: number, rows: number): str
 }
 
 // ADR-0044
-export function killSessionCmd(tmuxName: string, nameIfARenameLandedFirst?: string): string {
+export function killSessionCmd(
+  tmuxName: string,
+  nameIfARenameLandedFirst?: string,
+  tabWhoseNameFileToTryLast?: string
+): string {
   const names = nameIfARenameLandedFirst ? [tmuxName, nameIfARenameLandedFirst] : [tmuxName]
   assertSafeNames(...names)
-  return remoteShCommand(
-    names.map((name) => `tmux -L koloft kill-session -t ${name}`).join(' 2>/dev/null || ')
+  const tries = names.map(
+    (name) => `tmux -L koloft kill-session -t ${name} 2>/dev/null && { printf %s ${name}; exit 0; }`
+  )
+  if (tabWhoseNameFileToTryLast)
+    tries.push(
+      `n="$(cat "${tabPath('$1')}.tmux" 2>/dev/null)"`,
+      `case "$n" in k-?*) tmux -L koloft kill-session -t "$n" 2>/dev/null && { printf %s "$n"; exit 0; } ;; esac`
+    )
+  return remoteAnswerCommand(
+    [...tries, 'exit 1'].join('\n'),
+    tabWhoseNameFileToTryLast ? [tabWhoseNameFileToTryLast] : []
   )
 }
 

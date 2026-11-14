@@ -14,6 +14,7 @@ import {
   addRemoteWorkspace,
   breakConnection,
   dropTabLinkWhileItsSessionDies,
+  holdMirrorPullsBack,
   killFakeRemote,
   killLines,
   launchWithRemote,
@@ -391,6 +392,30 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       expect(readCalls(env).every((c) => c.cwd.includes('/fake-ssh/machine/'))).toBe(true)
       const starts = sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))
       expect(starts.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-62: ⌘W right after /clear, before Koloft has pulled the new tmux name from the machine, still ends the renamed tmux session there', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await rows.first().click()
+      const [beforeClear] = liveTmuxSessions(env)
+
+      holdMirrorPullsBack(env)
+      await runIn(page, centerTerm(page), '/clear')
+      await expect.poll(() => liveTmuxSessions(env)[0], { timeout: 30_000 }).not.toBe(beforeClear)
+      await sendShortcut(app, 'shortcut:close-tab')
+
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
     } finally {
       await quitAndClose(app)
     }
