@@ -17,14 +17,14 @@ export function hashCode(s: string): string {
   return `${fnv1a32(s).toString(36)}-${s.length.toString(36)}`
 }
 
-export interface DiagramCache {
-  get(key: string): string | undefined
-  set(key: string, value: string): void
+export interface DiagramCache<T = string> {
+  get(key: string): T | undefined
+  set(key: string, value: T): void
   readonly size: number
 }
 
-export function makeCache(limit: number = CACHE_LIMIT): DiagramCache {
-  const entries = new Map<string, string>()
+export function makeCache<T = string>(limit: number = CACHE_LIMIT): DiagramCache<T> {
+  const entries = new Map<string, T>()
   return {
     get(key) {
       const svg = entries.get(key)

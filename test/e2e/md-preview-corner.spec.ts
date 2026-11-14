@@ -1076,13 +1076,13 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page)).toContainText('marker-C20')
   })
 
-  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back showing the same text, with every diagram drawn before already at its full height', async ({
+  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back showing the same text, with every diagram drawn or failed before already at its full height', async ({
     page,
     env
   }) => {
     test.setTimeout(600_000)
     const ws = env.workspaces.a
-    const parts: string[] = ['# C25', '']
+    const parts: string[] = ['# C25', '', fence('mermaid', 'notADiagram C25bad'), '']
     for (let i = 1; i <= 3; i++) {
       parts.push(fence('mermaid', flow(`C25n${i}`)), '')
       for (let j = 0; j < 20; j++) parts.push(`para ${i}-${j} filler-body-C25`, '')
@@ -1092,7 +1092,8 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 20_000 })
     await startSessionIn(page, 'ws-a')
     await openDoc(page, env, 'c25.md')
-    await expect(mdBody(page).locator('.mmd')).toHaveCount(3, { timeout: 30_000 })
+    await expect(mdBody(page).locator('.mmd')).toHaveCount(4, { timeout: 30_000 })
+    await expect(mdBody(page).locator('.mmd-error')).toHaveCount(1, { timeout: 60_000 })
     await scrollToBottom(page)
     await expect(diagrams(page)).toHaveCount(3, { timeout: 180_000 })
 
@@ -1137,7 +1138,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
       )
       .toEqual({ text: onScreen.text, movedOverAPixel: false })
     await setScrollTop(page, 0)
-    await expect(mdBody(page).locator('.mmd').first().locator('svg')).toHaveCount(1, {
+    await expect(mdBody(page).locator('.mmd').nth(1).locator('svg')).toHaveCount(1, {
       timeout: 60_000
     })
     await scrollToBottom(page)

@@ -4,7 +4,13 @@ import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import type { SourceLines } from '../markdown/lines'
-import { cachedDiagram, MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import {
+  cachedDiagram,
+  hashCode,
+  makeCache,
+  MERMAID_MAX_TEXT_SIZE,
+  renderDiagram
+} from '../mermaidRender'
 import { CommentBox, type CommentTarget } from './CommentBox'
 import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
 import { findInBlocks, linesOfRange, selectedRangeIn, swapMark, type DrawnBlock } from './mdPassage'
@@ -36,6 +42,10 @@ const UNREADABLE: DrawnDoc = {
 }
 
 let mermaidTempIdSeq = 0
+
+const DIAGRAM_HEIGHTS_KEPT = 1000
+const drawnHeights = makeCache<number>(DIAGRAM_HEIGHTS_KEPT)
+const heightKey = (code: string): string => hashCode(code.trim())
 
 interface Shown extends DrawnBlock {
   html: string
@@ -252,9 +262,12 @@ export function PreviewViewer({
     }
 
     const watch = (b: Shown): void => {
-      for (const el of b.el.querySelectorAll<HTMLElement>('.mmd'))
-        if (el.dataset.k === TOKEN && !el.dataset.state && !fillAtOnce(el))
-          diagrams.current.watch(el)
+      for (const el of b.el.querySelectorAll<HTMLElement>('.mmd')) {
+        if (el.dataset.k !== TOKEN || el.dataset.state || fillAtOnce(el)) continue
+        const was = drawnHeights.get(heightKey(codeOf(el)))
+        if (was) el.style.minHeight = `${was}px`
+        diagrams.current.watch(el)
+      }
     }
 
     const painted = (): void => {
@@ -318,11 +331,13 @@ export function PreviewViewer({
       if (code.trim().length > MERMAID_MAX_TEXT_SIZE) {
         fillTooBig(el, code)
         el.dataset.state = 'done'
-        return
+      } else {
+        const res = await renderDiagram(code, `d${++mermaidTempIdSeq}`)
+        if (disposed || !el.isConnected) return
+        showDrawn(el, res, code)
       }
-      const res = await renderDiagram(code, `d${++mermaidTempIdSeq}`)
-      if (disposed || !el.isConnected) return
-      showDrawn(el, res, code)
+      el.style.minHeight = ''
+      if (el.offsetHeight) drawnHeights.set(heightKey(code), el.offsetHeight)
     }
 
     const io = new IntersectionObserver(
