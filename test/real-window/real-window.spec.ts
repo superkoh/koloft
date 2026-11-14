@@ -52,6 +52,7 @@ import {
   selectInputSource,
   windowBounds
 } from './helpers/macInput'
+import { recordTyping } from './helpers/typingRecorder'
 
 const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>({
   shown: async ({ env }, use, testInfo) => {
@@ -309,14 +310,24 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       selectInputSource(PINYIN_SIMPLIFIED)
       await comeBackThroughTheDock(app)
       await clickIntoTerminal(app, page)
-      typeNihao()
-      realKey(KEY_RETURN)
-      await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/> nihao$/)
-      typeNihao()
-      realKey(KEY_SPACE)
-      await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
-      realKey(KEY_RETURN)
-      await expect.poll(() => promptsStartingWith(env, page, tabId, 'nihao')).toEqual(['nihao你好'])
+      const recording = await recordTyping(app, page, tabId)
+      try {
+        typeNihao()
+        realKey(KEY_RETURN)
+        await expect
+          .poll(async () => (await terminalText(page, tabId)).trimEnd())
+          .toMatch(/> nihao$/)
+        typeNihao()
+        realKey(KEY_SPACE)
+        await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
+        realKey(KEY_RETURN)
+        await expect
+          .poll(() => promptsStartingWith(env, page, tabId, 'nihao'))
+          .toEqual(['nihao你好'])
+      } catch (failed) {
+        await recording.save(testInfo.outputPath('typing.jsonl'))
+        throw failed
+      }
       screenshot(testInfo.outputPath('pinyin-sent.png'))
     } finally {
       selectInputSource(ABC_LAYOUT)
