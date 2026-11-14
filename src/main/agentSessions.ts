@@ -1435,6 +1435,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       inboxOwed.delete(oldTabId)
       inboxOwed.set(newTabId, inbox)
     }
+    const senders = messagedBy.get(oldTabId)
+    if (senders) {
+      messagedBy.delete(oldTabId)
+      messagedBy.set(newTabId, senders)
+    }
   }
 
   const targetOf = (ref: string): Target | undefined => {

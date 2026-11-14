@@ -360,10 +360,11 @@ session_taking_messages() {
     p="\${f##*/}"
     kill -0 "\${p%.json}" 2>/dev/null || continue
     grep -qF -- "$1" "$f" 2>/dev/null || continue
-    [ -n "$hit" ] && return 0
-    hit="$f"
+    s="$(sed -n 's/.*"sessionId"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$f" | tr -cd 'A-Za-z0-9-')"
+    [ -n "$hit" ] && [ "$s" != "$hit" ] && return 0
+    hit="$s"
   done
-  [ -n "$hit" ] && sed -n 's/.*"sessionId"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$hit" | tr -cd 'A-Za-z0-9-'
+  printf '%s' "$hit"
 }
 ${QUOTE_PROMPT_FN}
 ${STALE_PR_STATUS_FN}
@@ -434,7 +435,7 @@ case "$event" in
       *'"tool_response":{"success":true'*) ;;
       *) exit 0 ;;
     esac
-    to="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*[{,]"to":"([^"\\\\]*)".*/\\1/p')"
+    to="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*"tool_input":\\{([^{}]*,)?"to":"([^"\\\\]*)".*/\\2/p')"
     to="\${to% \\[*\\]}"
     case "$to" in
       '') exit 0 ;;

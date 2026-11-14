@@ -255,13 +255,19 @@ describe('injected hook script', () => {
       ])
     })
 
-    it('a SendMessage that reached another running session, named bare, with its [ref] or by the from address it replies to, reports which session it went to; one to a name two sessions share, to no session, or that failed reports nothing', () => {
+    it('a SendMessage that reached another running session, named bare, with its [ref] or by the from address it replies to, reports which session it went to, even when that session has a second live entry; one to a name two sessions share, to no session, or that failed reports nothing, and a "to" outside what was sent is never read', () => {
       register(process.pid, TARGET, 'test-runner')
+      const second = spawn('sleep', ['30'])
+      register(second.pid!, TARGET, 'test-runner')
       register(gonePid(), GONE, 'gone')
       register(process.ppid, SENDER, 'twin')
       const twin = spawn('sleep', ['30'])
       register(twin.pid!, GONE, 'twin')
-      const sent = (to: string, success = true): void =>
+      const sent = (
+        to: string,
+        success = true,
+        input: Record<string, string> = { to, summary: 'tests', message: 'Run the tests' }
+      ): void =>
         void fire(
           'tabS',
           'sent',
@@ -269,21 +275,24 @@ describe('injected hook script', () => {
             session_id: SENDER,
             hook_event_name: 'PostToolUse',
             tool_name: 'SendMessage',
-            tool_input: { to, summary: 'tests', message: 'Run the tests' },
-            tool_response: { success, message: `"tests" → ${to}` }
+            tool_input: input,
+            tool_response: { success, message: `"tests" → ${to}`, to: 'test-runner' }
           },
           { HOME: home }
         )
       sent('test-runner')
       sent('test-runner [3fa9c1]')
       sent(`uds:${socketOf(process.pid)}`)
+      sent('test-runner', true, { summary: 'tests', to: 'test-runner', message: 'Run' })
       sent('test-runner', false)
       sent('gone')
       sent('main')
       sent('twin')
+      sent('', true, { summary: 'tests', message: 'Run' })
       twin.kill()
+      second.kill()
       expect(readStatusLog('tabS')).toEqual(
-        Array(3).fill({
+        Array(4).fill({
           tabId: 'tabS',
           event: 'sent',
           sessionId: SENDER,
