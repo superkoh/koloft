@@ -111,6 +111,7 @@ function writeCallLog(effCwd) {
         cols: process.stdout.columns ?? null,
         oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
         apiKey: process.env.ANTHROPIC_API_KEY || null,
+        disable1mContext: process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
         playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null,

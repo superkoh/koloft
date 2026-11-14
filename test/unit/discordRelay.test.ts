@@ -1681,6 +1681,41 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       `${butlerAsks('Assist')} Which 2?`
     ])
   })
+
+  it('a card asked while a copy koloft open reported as still sending is on its way waits until that copy is sent, even when a later copy fails first', async () => {
+    const open: CodexQuestion = {
+      id: 'q1',
+      questions: [{ question: 'Which 1?', options: [{ label: 'A' }] }]
+    }
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    let sent!: () => void
+    relay.cardsWaitFor(
+      TAB,
+      new Promise<void>((done) => (sent = done)).then(() => void posts.push({ text: 'page.png' }))
+    )
+    relay.cardsWaitFor(TAB, Promise.reject(new Error('the upload broke')))
+    relay.codexAsked(TAB, open)
+    const A_CARD_NOT_HELD_POSTS_WITHIN_MS = 20
+    await new Promise((settle) => setTimeout(settle, A_CARD_NOT_HELD_POSTS_WITHIN_MS))
+    expect(posts).toEqual([])
+    sent()
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts.map((p) => p.text.split('\n').slice(0, 2).join(' '))).toEqual([
+      'page.png',
+      `${butlerAsks('Assist')} Which 1?`
+    ])
+  })
+
+  it('a copy that fails while a card waits for it does not keep that card or the next one from being posted', async () => {
+    let open: CodexQuestion | undefined
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    relay.cardsWaitFor(TAB, Promise.reject(new Error('the upload broke')))
+    for (const n of [1, 2]) {
+      open = { id: `q${n}`, questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }] }
+      relay.codexAsked(TAB, open)
+      await vi.waitFor(() => expect(posts).toHaveLength(n))
+    }
+  })
 })
 
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {

@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'child_process'
 
 import {
   accountEnv,
+  claudeCodeGuessesWindowOf,
   buildMachinePackage,
   claudeTabSpec,
   killSessionCmd,
@@ -960,18 +961,23 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
   })
 
-  it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {
+  it("clears the tab's leftover hook reports and tmux name before starting, since tab ids are reused across Koloft runs and a close ends the session that name file names, but not on a reconnect", () => {
     const b = box(spec())
     const hooks = path.join(b.home, '.koloft', 'hook-sessions')
     fs.mkdirSync(hooks, { recursive: true })
-    const stale = [path.join(hooks, 'T.json'), path.join(hooks, 'T.status.jsonl')]
+    fs.mkdirSync(path.join(b.home, '.koloft', 'tabs'), { recursive: true })
+    const stale = [
+      path.join(hooks, 'T.json'),
+      path.join(hooks, 'T.status.jsonl'),
+      path.join(b.home, '.koloft', 'tabs', 'T.tmux')
+    ]
     for (const f of stale) fs.writeFileSync(f, '{"event":"end"}\n')
     expect(b.run().status).toBe(0)
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false, false])
 
     for (const f of stale) fs.writeFileSync(f, '{"event":"start"}\n')
     b.run('attach')
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true, true])
   })
 
   // CC§10
@@ -1166,14 +1172,46 @@ describe('U-ENV-1: what a tab sends about the account', () => {
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
       'ANTHROPIC_MODEL',
       'ANT_ACCOUNT',
+      'CLAUDE_CODE_DISABLE_1M_CONTEXT',
       'CLAUDE_CODE_SUBAGENT_MODEL',
       'CLAUDE_CODE_SUBAGENT_MODEL_FORCE'
     ])
     expect(custom.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5.2')
     expect(custom.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe('1')
+    expect(custom.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe('1')
     expect(
       Object.keys(accountEnv('custom', 'p', 't', { baseUrl: 'https://p.test' })).sort()
     ).toEqual(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANT_ACCOUNT'])
+  })
+
+  it('caps the context at 200k for pinned names CC 2.1.323 guesses a 1M window for that have no "claude" in them and no [1m] the owner asked for, and never for a name CC knows', () => {
+    const guessed = [
+      'glm-4.6',
+      'deepseek-chat',
+      'kimi-k2-0905-preview',
+      'qwen3-coder-plus',
+      'openai/gpt-5',
+      'opus',
+      'sonnet',
+      'haiku'
+    ]
+    const ownWindow = [
+      'claude-sonnet-4-5',
+      'Claude-Sonnet-4-5',
+      'claude-sonnet-4.5',
+      'anthropic/claude-sonnet-4.5',
+      'anthropic/claude-sonnet-4',
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'claude-3-5-sonnet-20241022',
+      'claude-opus-4-1',
+      'claude-opus-5-5',
+      'claude-fable-5-2',
+      'claude-sonnet-4-5[1m]',
+      'opus[1m]',
+      'glm-4.6[1m]'
+    ]
+    expect(guessed.filter((m) => !claudeCodeGuessesWindowOf(m))).toEqual([])
+    expect(ownWindow.filter(claudeCodeGuessesWindowOf)).toEqual([])
   })
 
   it('lands on disk readable by nobody else, quotes and all', () => {

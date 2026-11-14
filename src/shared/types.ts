@@ -293,6 +293,7 @@ export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
   quota?: QuotaBucket[]
+  quotaAt?: number
   probeError?: ProbeErrorKind
   apiKey?: true
 }
@@ -721,6 +722,7 @@ export interface AttentionEvent extends AttentionSubject {
   at: number
   fyi?: boolean
   wasAsking?: boolean
+  stoppedByRestart?: boolean
 }
 
 export interface OsOutletsSeenByTests {

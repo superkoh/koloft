@@ -447,7 +447,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0, 0.166.0, 0.167.0 or 0.167.1. Koloft
+0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2 or 0.168.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -567,7 +567,73 @@ probed by hand on 0.167.1: sections 3, 5, 16, 17, 18, 20–28, 30 and 34, and 15
 parts, stand on 0.167.0's measurements above and on those specs; 11 stands on 0.166.0's.
 Not reached on 0.167.1: compaction, whose upstream code (`compact_remote_v2_attempt.rs`)
 changed, so §21's auto-compaction, last measured on 0.162.x, is **inferred, not
-checked** for 0.167.1; and a web search tool in a turn (§15).
+checked** for 0.167.1; and a web search tool in a turn (§15). On 0.167.2 (2026-11-12,
+the same way against 0.167.1, two `gpt-6-luna` turns each, `approvalPolicy: never`,
+read-only sandbox): `codex --help` and the `--help` of `app-server`, `exec`, `resume`,
+`queue`, `doctor`, `update` and `agents` are byte-identical to 0.167.1's; `features list`
+differs in two lines: `incremental_tools_legacy` moved from `under development false` to
+`stable false`, and `incremental_tools_legacy_gcp stable true` is new (§15);
+`app-server generate-json-schema` (plain and `--experimental`) is byte-identical;
+sections 1 (`initialize` keys, `thread/start` keys, `thread/list` keys and 32 keys per
+thread; the same 10 kinds of notification in a one-word second turn as on 0.167.1 above,
+the same kinds and counts on both in the first turn, and no request from the server),
+13/14 (`model/list` the same eight models, default `gpt-6.1-sol`; the token-usage fields
+and the rollout record types and counts of two turns) and, of 15, the rollout and its
+`additional_tools` record were measured again: the record the same on both once ids and
+times are taken out, the first turn's rollout 164 B larger on 0.167.2 for four more
+lines inside one developer message (§15). The same e2e specs passed with 0.167.2 as the
+Mac's codex, the remote ones (E-SSH-23/24/25) too. That the Linux lab machine ran
+0.167.2 is **inferred, not checked**, the same way as for 0.167.1 above. No other section
+was probed by hand on 0.167.2: sections 3, 5, 16, 17, 18, 20–28, 30 and 34, and 15's
+login parts, stand on 0.167.0's measurements above and on those specs; 11 stands on
+0.166.0's. Not reached on 0.167.2: a Google Cloud (Vertex AI) or Amazon Bedrock provider,
+the only ones the two changed flags act on, and then only for a model without
+`use_responses_lite`, which no cached model is (read from the upstream change,
+**inferred, not checked**, §15); compaction (upstream changed only a test,
+`compact_remote.rs`), so §21's auto-compaction stays **inferred, not checked**; and a web
+search tool in a turn (§15).
+On 0.168.0 (2026-11-13, the same way against 0.167.2, `gpt-6-luna`, each probe in its
+own throwaway `CODEX_HOME` holding a copied `auth.json`): `codex --help` and the `--help`
+of `app-server`, `exec`, `resume`, `queue`, `doctor`, `update` and `agents` are
+byte-identical to 0.167.2's. `features list` adds, off: `cli_resume_account_check`
+(§15), `tui_workspace`, `agent_message_board_mcp`, `async_compaction_root_only`,
+`command_sessions_world_state`, `guardian_denial_reconsideration`,
+`hosted_search_policy` and `image_generation_animation`; adds, on:
+`guardian_include_additional_context`; turns on `retain_client_tool_outputs` and
+`unified_image_budget`; drops `incremental_tools_legacy` and
+`incremental_tools_legacy_gcp`; marks `multi_agent` deprecated (openai/codex#59479,
+which warns when it is set); `daemon_auto_start` reads `stable true` on both (#58940
+dropped it, #59447 put it back). `app-server generate-json-schema` (plain and
+`--experimental`) only adds, and removes nothing: the client methods
+`modelProvider/list` and `modelProvider/config/write`, `currentAccountOnly` on
+`ThreadListParams` and `ThreadSearchParams` (§15), `contentTokenCount` on
+`ItemCompletedNotification`'s params (beside the item, not inside it; #59041),
+`deferOutput` on `ThreadItemsListParams` (with an `outputDeferred` on the experimental
+side), `_meta` on `McpResourceReadParams` and `client_search_provider` in
+`ConfigReadResponse`; one description in `ThreadGuardianReviewResponse` is reworded; no
+server notification or request is added. Measured again: sections 1 (`initialize` keys
+and `thread/list` keys unchanged), 13/14 (`model/list` the same eight models with the
+same effort levels, all priced, default `gpt-6.1-sol`; the rollout record types and
+counts of a turn and the `token_count` fields unchanged; a real TUI started with
+`--remote … -C <folder> -m gpt-6-luna -c model_reasoning_effort="high" "<first line>"`
+wrote `model: gpt-6-luna, effort: high` in `turn_context` on both and finished its turn —
+openai/codex#59510's server model defaults did not override it), 15 (which login made
+a thread, there), 16 (in the e2e lab image as a non-root user, `npm install -g --prefix
+… @openai/codex@0.168.0` printed `codex-cli 0.168.0`; `app-server --stdio` answered
+`initialize` in 103 ms with the same keys, and `thread/list` and `config/read`; one
+`codex` process plus a `git fetch` child syncing curated plugins, which was not compared
+with 0.167.2; `--listen unix://<sock>` made its socket; the missing-bubblewrap ERROR is
+the same), 17 (a message queued mid-turn with `thread/queue/add` started the next turn
+8 ms after the first ended, `clientId` kept; 0.167.2 10 ms) and 28 (not seen on 0.168.0,
+there), and the same e2e specs passed, the remote ones (E-SSH-23/24/25) too. That the
+lab machine in those specs ran 0.168.0 is **inferred, not checked**, the same way as for
+0.167.1 above. No other section was probed by hand on 0.168.0: sections 3, 5, 18 (but
+its `--help` and flag), 20–27, 30 and 34, and 15's login parts, stand on 0.167.0's
+measurements above and on those specs; 11 stands on 0.166.0's. Not reached on 0.168.0:
+the slash popup (§21); the pane keys of `tui_workspace` (§25), off by default; the
+sandbox changes (#59009, #59530, #59711; §26, §29); the default of the new
+`tui.notification_method` (#59256), read only from the change; a turn's notification
+kinds, not rerun; and `turn/steer` (#58877, #58998), which Koloft does not send.
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
@@ -1415,6 +1481,38 @@ rollout touch only that file. So a watch on the default home's `sessions/` that 
 when a rollout file appears or goes sees every new or deleted session, and a turn
 appended to a known rollout needs no listing.
 
+**0.168.0 marks which login made a thread, and can hide or refuse the others' — only
+when asked.** Checked 2026-11-13 with codex-cli 0.168.0 against 0.167.2, a Node client
+on `codex app-server` in throwaway `CODEX_HOME`s, and a real TUI (`codex --remote ws://…
+-C <folder> resume <id>`) in a Python pty:
+
+- **A new thread's rollout records its login.** The first line of a 0.168.0 rollout
+  carries `account_scoped: true`; 0.167.2 writes `creator_account_id` and
+  `creator_user_id` there too, but no `account_scoped`.
+- **`thread/list` and `thread/search` take a new `currentAccountOnly` (default `false`).**
+  Without it 0.168.0 lists every thread in the home, whichever login made it: three
+  threads (two made on 0.168.0, one on 0.167.2) were all listed under the real login, a
+  made-up other ChatGPT account in `auth.json`, a made-up API key, and no `auth.json`
+  at all. With `currentAccountOnly: true` under the made-up account only the 0.167.2
+  thread stayed; with no `auth.json` the two 0.168.0 threads were hidden too; with an
+  API key all three stayed. `thread/read` and a `thread/resume` from a client named
+  `koloft` read the other login's thread back (one turn) under the made-up account.
+- **The TUI's own history and `/resume` picker turn that filter on** (openai/codex#58918,
+  read from the change, not drawn on screen: **inferred, not checked**), so in a tab on
+  login B the picker would leave out threads login A made on 0.168.0.
+- **Resuming another login's thread can be refused, behind a flag that is off.** The new
+  feature `cli_resume_account_check` (`features list`: `under development false`,
+  openai/codex#58890). Off, `codex resume <id>` of a thread whose rollout names another
+  account opened it and showed its turns. With `-c
+  features.cli_resume_account_check=true` on the app-server, the TUI showed "This thread
+  was created with a different ChatGPT account or workspace. Sign in with the original
+  account to resume it.", and `thread/resume` answered error -32600 with the same text to
+  clients named `codex-tui` and `codex_exec`, but let one named `koloft` through. A
+  0.167.2 thread (creator ids, no `account_scoped`) was refused the same way; only a
+  thread with no creator ids at all would pass. Which client name the app-server sees
+  for a TUI behind Koloft's relay (the TUI's own `codex-tui`, by the relayed
+  `initialize`) is **inferred, not checked**.
+
 **But "ok" above means no error, not the turns: a home reads a thread's turns only
 once its own sqlite has loaded that thread.** Checked 2026-10-11 on Codex CLI 0.162.1
 and 0.161.0 alike (so not a change of 0.162): in the layout Koloft makes (a default
@@ -1543,6 +1641,30 @@ tool declarations on only for an Amazon Bedrock provider, and that 0.167.1 keeps
 search tool in the request's top-level tools instead of the history's, are read from the
 upstream change — **inferred, not checked**: no `web_search` appeared in either build's
 rollout, even with `-c web_search="live"`.
+
+**Nearly the same on 0.167.1 and 0.167.2.** 2026-11-12, the same way, one run per build
+with 0.167.1 run first.
+
+- Sizes: a first turn wrote 102,890 B on 0.167.1 and 103,054 B on 0.167.2; the
+  `additional_tools` record was 39,546 B on both, and the same once ids and times are
+  taken out; a second turn added about 50.9 KB on both; the record types and counts
+  were the same.
+- The 164 B are four more lines (Figma, Finances, GitHub and Gmail, each
+  `@openai-curated-remote`) inside the first turn's `<recommended_plugins>` developer
+  message on 0.167.2, not an extra record. After both runs `plugin/list` answered those
+  four as installed in both homes, and the homes' `cache/` and `plugins/` folders were
+  the same. That the four lines come from when the plugin catalog arrived at start, not
+  from the version, is **inferred, not checked** (one run each).
+- This 0.167.1 is off its own 2026-11-11 figures above (about 103 KB against 107 KB for
+  the first turn, 50.9 KB against 48 KB for the second). That a rollout's size drifts
+  from run to run by a few KB is **inferred, not checked**: one run on each day.
+- The flags, read from the upstream change (`step_context.rs`), **inferred, not
+  checked**, as neither provider was run: a model with `use_responses_lite` (every
+  model in both homes' cache) is governed by `incremental_tools` alone, whatever the
+  provider. Only for a model without it does the new `incremental_tools_legacy_gcp`
+  (`stable true`, so on by default) send tool declarations step by step for a Google
+  Cloud (Vertex AI) provider, and `incremental_tools_legacy` (moved from `under
+  development` to `stable`, still off by default) for Amazon Bedrock.
 
 **The rate-limit reply also carries the credit balance and saved limit resets; one can be
 spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
@@ -1768,7 +1890,18 @@ two-turn case with a `codex-code-mode` child measured below, which was not rerun
 Linux, `codex --help` lacks only the Mac's `app` line, and `app-server --help` is the
 same as the Mac's. On 0.167.1 (2026-11-11) none of this was probed by hand; only the
 remote e2e specs ran, and passed, with the Mac on 0.167.1 (that the machine ran 0.167.1
-too is **inferred, not checked**, §7).
+too is **inferred, not checked**, §7). The same holds for 0.167.2 on 2026-11-12: the Mac
+on 0.167.2, the machine on 0.167.2 **inferred, not checked**.
+
+**Rechecked in part on 0.168.0.** 2026-11-13, the e2e lab's sshd image (Docker, arm64)
+as its non-root user, installed with the same npm line: `codex --version` prints
+`codex-cli 0.168.0`; `app-server --stdio` answered `initialize` in 103 ms with the same
+keys, and `thread/list` and `config/read`; `--listen unix://<sock>` made its socket; one
+`codex` process, plus a short `git fetch` child that syncs the curated plugins (whether
+0.167.2 starts one too was not compared); with no bubblewrap it still prints its ERROR
+line. The stand-in turn, SIGTERM and stale-socket checks above were not rerun. The
+remote e2e specs passed with the Mac on 0.168.0 (the machine on 0.168.0 **inferred, not
+checked**, §7).
 
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
@@ -3171,6 +3304,15 @@ home where one app-server had already started and stopped first.
   with the same error, exit 1, 71–85 ms after start (0.166.0 the same day: 0 of 6, so the
   race comes and goes); a home used once before, 0 of 6 on both. Rounds where both
   answered still logged `failed to install system skills: … (os error 66)` on both.
+- **Not seen on 0.168.0** (2026-11-13, the same method, run twice, so 12 fresh-home rounds
+  per build, each fresh home holding a copied `auth.json`): 0.167.2 lost one app-server in
+  8 of 12, exit 1, 48–71 ms after start, with the same error; 0.168.0 in 0 of 12. A home
+  used once before: 0 of 12 on both. 0.168.0 rounds still log `failed to install system
+  skills: … (os error 66)`. 0.168.0 carries "Make SQLite schema migrations safe for
+  concurrent startup" (openai/codex#59015), so the race is likely fixed there, but it has
+  come and gone before (0.166.0: 0 of 6 one day, 2 of 6 another), so that it is gone for
+  good is **inferred, not checked**, and every build measured here from 0.162.0 to
+  0.167.2 had it.
 
 ## 29. Git credentials from inside the sandbox
 
@@ -3504,3 +3646,37 @@ and once with `-c disable_paste_burst=true` on the TUI's command line, in a fres
 Koloft dependents: `EVERY_KEY_SHOWS_AT_ONCE` in `src/main/codexLaunchConfig.ts`, passed
 to the TUI of every Codex tab; a remote tab's TUI runs on the Mac too (§16).
 
+## 37. What the TUI asks the terminal
+
+**Every question the TUI asks its terminal is one Koloft's off-screen batching lets
+through at once.** Measured 2026-11-12 on codex-cli 0.166.0
+(`~/.codex/packages/standalone/current/bin/codex`) and 0.167.2 (npm, in a scratch
+folder): a python pty at 120×40 that answered as Koloft's terminal does (DA1, DA2, cursor
+position, DECRQM, OSC 4 and 10–12, `?996n`) and left unanswered what it leaves
+unanswered (XTVERSION, whose reply Koloft masks, CC§12; `?u`, which xterm.js answers only
+with its kitty-keyboard extension on, and Koloft leaves it off), a throwaway `HOME` and
+`CODEX_HOME` whose `config.toml` points at a fake Responses server (§35),
+`TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Apple_Terminal`. Both launch
+shapes on both versions, one run each: `codex --no-daemon`, and Koloft's own launch,
+`codex --remote unix://<sock> -C <dir>` with Koloft's `-c` settings (status line, no
+update notice, `disable_paste_burst`) on an `app-server --listen` of its own started with
+`features.default_mode_request_user_input`. Each run: start, one typed prompt whose
+answer asked to run `touch` outside the sandbox (the approval question, `y`), a resize
+to 100×30, `/clear`, a second prompt, Ctrl+C twice. An earlier round with `?u` answered
+(`?0u`) and no `-c` settings asked exactly the same.
+
+- At start, in one read: `ESC[?u`, `ESC[c`, `ESC[6n`, `ESC]10;?ESC\`, `ESC]11;?ESC\`.
+- After the resize: `ESC[6n` again. At exit: `ESC[c` again.
+- Nothing else: no XTVERSION, no DECRQM, no OSC 4, no DCS or APC question, and nothing
+  new during the turn, the approval question or `/clear`. Every run, both versions and
+  both shapes, the same.
+- Each run's reads, replayed in order and at their recorded times into Koloft's
+  `TerminalOutput` for a tab off screen, sent all 3 reads holding a question at once;
+  the same replay counting reads that hold `ESC[?25l` (no question) found every one of
+  them held back (42–44 per run).
+- Of these only `ESC[?u` gets no answer in a Koloft tab, so nothing waits on whether it
+  goes out early.
+
+A remote tab's TUI runs on the Mac (§16), so it asks the same.
+
+Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
