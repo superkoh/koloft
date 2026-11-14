@@ -139,7 +139,8 @@
             in that tab. It stays awake while you look at it, while it waits for your OK, or while a
             shell tab or an unsaved file is open in it. A red dot stays on it while it sleeps. A
             session marked Keep running never sleeps (see <a href="#keep-running">below</a>). Nor
-            does an open <a href="../scheduled/#when-done">scheduled run</a> set to Close it.
+            does a <a href="../scheduled/#when-done">scheduled run</a> set to Close it, from the
+            time it starts until it closes.
           </li>
           <li>
             Quit Koloft and open it again, and every session comes back the way it was: the ones
@@ -351,17 +352,16 @@
           </li>
           <li>A card that waits on you stays after you quit and reopen Koloft.</li>
           <li>
-            If a session stops while it asks, the question leaves its tab, but the card keeps its
-            buttons: the options with a box for your own words, or
+            If you quit Koloft while a session on your Mac asks, or restart a session's tab
+            (<kbd>⇧⌘R</kbd>) while it asks, on your Mac or on a remote folder, the question leaves
+            its tab. But the card keeps its buttons: the options with a box for your own words, or
             <code>Allow</code> and <code>Deny</code>. It says
             <code
               >Its session stopped after asking, so its tab no longer shows this. Your answer
               reaches it as a message.</code
             >
             Answer there, and Koloft sends your answer, waking the session first if it
-            <a href="#sleep">sleeps</a>. A session stops like this when you quit Koloft and it is on
-            your Mac, or when you restart its tab (<kbd>⇧⌘R</kbd>), on your Mac or on a remote
-            folder.
+            <a href="#sleep">sleeps</a>.
           </li>
           <li>
             A plan left waiting like that gets a card that says
@@ -377,8 +377,7 @@
             On a <a href="../remote/">remote folder</a>, Claude, Muse and Antigravity keep running
             while Koloft is closed and still show their question, so once the tab is back, the card
             answers it there as before. A remote Codex session stops with Koloft: once its tab is
-            back, its card answers it with a message, as on your Mac. Restarting a remote tab is
-            different: it stops the session, as above.
+            back, its card answers it with a message, as on your Mac.
           </li>
           <li>
             No card for: a turn that only reports (its dot says "just letting you know"), a turn in
