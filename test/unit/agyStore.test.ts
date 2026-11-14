@@ -246,17 +246,16 @@ describe('the transcript (AGY§8)', () => {
     expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['two'])
   })
 
-  it('the last turn while agy still runs it does not come out yet, and comes out at the read after it ends', async () => {
-    const follower = new TranscriptFollower(transcript)
+  it('a resumed conversation whose transcript was not there to read when it was opened gives only its last turn at the first read, not its history', async () => {
+    const follower = new TranscriptFollower(transcript, Promise.resolve())
+    expect((await follower.catchUp()).turns).toEqual([])
     appendTranscript(transcript, [
-      { type: 'USER_INPUT', content: ownerTyped('first') },
-      { type: 'PLANNER_RESPONSE', content: 'one' },
-      { type: 'USER_INPUT', content: ownerTyped('second') },
-      { type: 'PLANNER_RESPONSE', content: 'part of two' }
+      { type: 'USER_INPUT', content: ownerTyped('long ago') },
+      { type: 'PLANNER_RESPONSE', content: 'old answer' },
+      { type: 'USER_INPUT', content: ownerTyped('just now') },
+      { type: 'PLANNER_RESPONSE', content: 'new answer' }
     ])
-    const stillRunning = true
-    expect((await follower.catchUp(stillRunning)).turns.map((t) => t.reply)).toEqual(['one'])
-    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['part of two'])
+    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['new answer'])
   })
 
   it('a last line whose newline is not written yet comes out once, not again when its newline lands', async () => {

@@ -279,31 +279,30 @@ export class TranscriptFollower {
   private turns: Turn[] = []
   private tokens: TokenTotals = { input: 0, output: 0, cacheRead: 0 }
   private toldReply = new WeakMap<Turn, string>()
+  private historyUnread: boolean
   private reading: Promise<unknown>
 
   constructor(
     readonly file: string,
     historyReadable?: Promise<void>
   ) {
+    this.historyUnread = !!historyReadable
     this.reading = historyReadable
-      ? historyReadable.then(() => this.readWhatWasAdded({ asHistory: true })).catch(() => {})
+      ? historyReadable.then(() => this.readWhatWasAdded(true)).catch(() => {})
       : Promise.resolve()
   }
 
-  catchUp(lastTurnStillRunning = false): Promise<TurnsAndTokens> {
-    const read = this.reading.then(() => this.readWhatWasAdded({ lastTurnStillRunning }))
+  catchUp(): Promise<TurnsAndTokens> {
+    const read = this.reading.then(() => this.readWhatWasAdded(false))
     this.reading = read.catch(() => undefined)
     return read
   }
 
-  private async readWhatWasAdded(how: {
-    asHistory?: boolean
-    lastTurnStillRunning?: boolean
-  }): Promise<TurnsAndTokens> {
+  private async readWhatWasAdded(asHistory: boolean): Promise<TurnsAndTokens> {
     const unreadable = { turns: [], tokens: { ...this.tokens } }
     const size = (await fs.promises.stat(this.file).catch(() => undefined))?.size
-    if (size === undefined) return unreadable
-    let endedTurnsAreHistory = !!how.asHistory
+    if (size === undefined || (asHistory && size === 0)) return unreadable
+    let endedTurnsAreHistory = this.historyUnread
     if (size < this.cursor.offset) {
       this.cursor = { offset: 0, tail: [] }
       this.turns = []
@@ -328,9 +327,10 @@ export class TranscriptFollower {
       this.cursor.tail = []
     }
     const [last] = this.turns
-    const history = [...(endedTurnsAreHistory ? ended : []), ...(how.asHistory ? this.turns : [])]
+    const history = [...(endedTurnsAreHistory ? ended : []), ...(asHistory ? this.turns : [])]
     for (const turn of history) this.toldReply.set(turn, turn.reply)
-    const due = how.lastTurnStillRunning || !last ? ended : [...ended, last]
+    this.historyUnread = false
+    const due = last ? [...ended, last] : ended
     const turns = due.filter((turn) => this.toldReply.get(turn) !== turn.reply)
     for (const turn of turns) this.toldReply.set(turn, turn.reply)
     return {

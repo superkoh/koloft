@@ -216,7 +216,6 @@ interface AgyRun extends StoredRun {
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
   transcript?: TranscriptFollower
-  turnRunning?: boolean
 }
 
 function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): ProgramStatus[] {
@@ -1271,7 +1270,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private emitState(run: AgyRun, status: ProgramStatus): void {
     if (status.state === 'blocked' && status.kind !== 'auth') void this.readAsk(run, status)
     else if (!run.waiting?.plan) run.waiting = undefined
-    run.turnRunning = status.state === 'working' || status.state === 'blocked'
     if (status.state === 'working') this.turnStarted(run)
     if (status.state === 'done') void this.turnDone(run)
     const event = statusEvent(status)
@@ -1288,7 +1286,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!chasing) void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     if (!run.transcript || run.info?.nativeSessionId !== id) return
-    const read = await run.transcript.catchUp(run.turnRunning).catch(() => undefined)
+    const read = await run.transcript.catchUp().catch(() => undefined)
     if (!read) return
     const { turns, tokens: t } = read
     for (const turn of turns)
