@@ -3,7 +3,15 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
+import { ATTENTION_REASON } from '../../src/shared/types'
 import { codexRows, startCodex } from './helpers/codex'
+import {
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  machineHome
+} from './helpers/remote'
 import {
   centerTerm,
   FAKE_SESSION_TITLE,
@@ -29,6 +37,66 @@ async function lookAtTheWindow(app: ElectronApplication): Promise<void> {
 
 const markOn = async (page: Page, tabId: string) =>
   (await pendingAttention(page)).find((e) => e.tabId === tabId)
+
+const activeTab = async (page: Page): Promise<string> =>
+  (await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id'))!
+
+async function messageSocketOf(page: Page, home: string, tabId: string): Promise<string> {
+  const registry = path.join(home, '.claude', 'sessions')
+  let socket: string | undefined
+  await expect
+    .poll(
+      async () => {
+        const s = (await page.evaluate(() => window.api.sessions.list())).find(
+          (x) => x.tabId === tabId
+        )
+        const id = s?.nativeSessionId ?? s?.sessionId
+        socket = (fs.existsSync(registry) ? fs.readdirSync(registry) : [])
+          .filter((f) => f.endsWith('.json'))
+          .map((f) => JSON.parse(fs.readFileSync(path.join(registry, f), 'utf8')))
+          .find((e) => id && e.sessionId === id)?.messagingSocketPath
+        return socket
+      },
+      { timeout: 60_000 }
+    )
+    .toBeTruthy()
+  return socket!
+}
+
+const RECEIVERS = ['busy', 'idle'] as const
+
+async function sendingIsOnlyNews(
+  app: ElectronApplication,
+  page: Page,
+  home: string,
+  sender: string,
+  receiver: string,
+  receiverWas: (typeof RECEIVERS)[number]
+): Promise<void> {
+  const type = (tab: string, line: string): Promise<void> =>
+    page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+  const receiverSocket = await messageSocketOf(page, home, receiver)
+  await expect.poll(() => markOn(page, receiver), { timeout: 60_000 }).toBeTruthy()
+  await expect.poll(() => markOn(page, sender), { timeout: 60_000 }).toBeTruthy()
+  const before = (await markOn(page, sender))!.at
+  if (receiverWas === 'busy') {
+    await type(receiver, '/hold')
+    await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(
+      /\bst-working\b/,
+      { timeout: 30_000 }
+    )
+  } else fs.writeFileSync(path.join(home, 'fake-claude-peer-turn-held'), '')
+  const notices = (await osOutlets(app)).notifications.length
+  await type(sender, `/send-message uds:${receiverSocket} Run the tests`)
+  await expect
+    .poll(async () => (await markOn(page, sender))?.at ?? before, { timeout: 30_000 })
+    .toBeGreaterThan(before)
+  expect((await markOn(page, sender))?.fyi).toBe(true)
+  expect(
+    (await osOutlets(app)).notifications.slice(notices).map((n) => n.body.split(' · ')[0])
+  ).not.toContain(ATTENTION_REASON['turn-done'])
+  await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(/\bst-working\b/)
+}
 
 test.describe('attention markers come from real session-status transitions (shim → hooks → tracker → attention set)', () => {
   test('a finished turn pends attention and a red dot on its row, visiting the tab keeps both, and only the session working again clears them', async ({
@@ -171,6 +239,48 @@ test.describe('attention markers come from real session-status transitions (shim
       await quitAndClose(app)
     }
   })
+
+  for (const receiverWas of RECEIVERS) {
+    // CC§13
+    test(`a turn that ends after sending another Claude session a message with SendMessage, which that ${receiverWas} session works on, is only news from the start, told by code alone`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a')
+        const sender = await activeTab(page)
+        await startSessionIn(page, 'ws-b')
+        const receiver = await activeTab(page)
+        await sendingIsOnlyNews(app, page, env.home, sender, receiver, receiverWas)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    // CC§13
+    test(`on a remote machine too, a turn that ends after sending another Claude session there a message with SendMessage, which that ${receiverWas} session works on, is only news from the start`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+        const sender = await activeTab(page)
+        await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+        const receiver = await activeTab(page)
+        await sendingIsOnlyNews(app, page, machineHome(env), sender, receiver, receiverWas)
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 
   test('with Assist on, a finished turn the Assist reads as a report is only news: looking at it clears the dot', async ({
     env

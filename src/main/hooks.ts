@@ -311,6 +311,9 @@ export function seedHandedOverOwnerWords(said: string, ownerWords: string): void
 }
 
 export const START_IN_STATUS_LOG = 'inStatusLog'
+export const FROM_SESSION_FIELD = 'fromSession'
+export const TO_SESSION_FIELD = 'toSession'
+export const SENT_TO_A_SESSION_EVENT = 'sent'
 export const STATUS_LOG_SUFFIX = '.status.jsonl'
 
 export function statusLogOf(regDir: string, tabId: string): string {
@@ -349,6 +352,19 @@ session_id() {
     head -1 |
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
+}
+# CC§11 CC§13
+session_taking_messages() {
+  hit=""
+  for f in "$HOME"/.claude/sessions/*.json; do
+    p="\${f##*/}"
+    kill -0 "\${p%.json}" 2>/dev/null || continue
+    grep -qF -- "$1" "$f" 2>/dev/null || continue
+    s="$(sed -n 's/.*"sessionId"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$f" | tr -cd 'A-Za-z0-9-')"
+    [ -n "$hit" ] && [ "$s" != "$hit" ] && return 0
+    hit="$s"
+  done
+  printf '%s' "$hit"
 }
 ${QUOTE_PROMPT_FN}
 ${STALE_PR_STATUS_FN}
@@ -413,6 +429,22 @@ case "$event" in
     log_ask
     ;;
   posttool) stale_pr_status "$input" ;;
+  ${SENT_TO_A_SESSION_EVENT})
+    # CC§13
+    case "$input" in
+      *'"tool_response":{"success":true'*) ;;
+      *) exit 0 ;;
+    esac
+    to="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*"tool_input":\\{([^{}]*,)?"to":"([^"\\\\]*)".*/\\2/p')"
+    to="\${to% \\[*\\]}"
+    case "$to" in
+      '') exit 0 ;;
+      uds:*) key="\\"messagingSocketPath\\":\\"\${to#uds:}\\"" ;;
+      *) key="\\"name\\":\\"$to\\"" ;;
+    esac
+    target="$(session_taking_messages "$key")"
+    [ -n "$target" ] && printf '{"tabId":"%s","event":"${SENT_TO_A_SESSION_EVENT}","sessionId":"%s","tmux":"%s","${TO_SESSION_FIELD}":"%s"}\\n' "$tab" "$(session_id)" "$tm" "$target" >> "$log"
+    ;;
   shell-before) ${shellCall('tool_use_id')}; shell_before "$where" "$key" ;;
   shell-after)
     ${shellCall('tool_use_id')}
@@ -484,7 +516,16 @@ case "$event" in
       *'"session_crons":[]'*) wake=',"wake":0' ;;
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$log"
+    # CC§13
+    from=""
+    case "$input" in
+      *'"prompt":"<cross-session-message from=\\"uds:'*)
+        sock="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*"prompt":"<cross-session-message from=."uds:([^"\\\\]+).".*/\\1/p')"
+        from="$(session_taking_messages "\\"messagingSocketPath\\":\\"$sock\\"")"
+        [ -n "$from" ] && from=',"${FROM_SESSION_FIELD}":"'"$from"'"'
+        ;;
+    esac
+    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" "$from" >> "$log"
     if [ "$event" = "prompt" ]; then
       # CC§13 CC§19 ADR-0028
       flag=""
@@ -626,6 +667,11 @@ export function hookSettings(
       PostToolUse: [
         { matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] },
         shellAfter,
+        // CC§13
+        {
+          matcher: 'SendMessage',
+          hooks: [{ type: 'command', command: cmd(SENT_TO_A_SESSION_EVENT) }]
+        },
         ...(statusLine
           ? [{ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }]
           : [])

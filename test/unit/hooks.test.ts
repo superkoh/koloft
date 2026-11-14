@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -212,6 +212,95 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')).toEqual([
       { tabId: 'tabH', event: 'stop', message: '', sessionId: '', tmux: '' }
     ])
+  })
+
+  // CC§11 CC§13
+  describe('sessions messaging each other with SendMessage', () => {
+    const SENDER = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
+    const TARGET = '424b6fd0-a45c-489b-a221-8346f11d37ed'
+    const GONE = '9b7f2a3e-0c4d-4e8f-a1b2-c3d4e5f60718'
+    let home: string
+    const socketOf = (pid: number): string => `/tmp/cc-socks/${pid}.sock`
+    const register = (pid: number, sessionId: string, name: string): void =>
+      fs.writeFileSync(
+        path.join(home, '.claude', 'sessions', `${pid}.json`),
+        JSON.stringify({ pid, sessionId, messagingSocketPath: socketOf(pid), name })
+      )
+    const gonePid = (): number => spawnSync('true').pid!
+    beforeEach(() => {
+      home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-home-'))
+      fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true })
+    })
+    afterEach(() => fs.rmSync(home, { recursive: true, force: true }))
+
+    it('a message from another Claude session names the running session behind the socket it came from in the prompt report; one Koloft wrote, one from a socket only a hard-killed claude held, and a typed prompt name none', () => {
+      register(process.pid, SENDER, 'issue-6')
+      const dead = gonePid()
+      register(dead, GONE, 'old')
+      const fromASession = (head: string): string =>
+        `<cross-session-message ${head} from-mode="bypass">\nRun the tests\n</cross-session-message>`
+      const prompts = [
+        fromASession(`from="uds:${socketOf(process.pid)}" from-name="issue-6"`),
+        fromASession(`from="uds:${socketOf(dead)}" from-name="old"`),
+        fromASession(''),
+        `say <cross-session-message from="uds:${socketOf(process.pid)}">`
+      ]
+      for (const prompt of prompts)
+        fire('tabP', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt }, { HOME: home })
+      expect(readStatusLog('tabP').map((r) => r.fromSession)).toEqual([
+        SENDER,
+        undefined,
+        undefined,
+        undefined
+      ])
+    })
+
+    it('a SendMessage that reached another running session, named bare, with its [ref] or by the from address it replies to, reports which session it went to, even when that session has a second live entry; one to a name two sessions share, to no session, or that failed reports nothing, and a "to" outside what was sent is never read', () => {
+      register(process.pid, TARGET, 'test-runner')
+      const second = spawn('sleep', ['30'])
+      register(second.pid!, TARGET, 'test-runner')
+      register(gonePid(), GONE, 'gone')
+      register(process.ppid, SENDER, 'twin')
+      const twin = spawn('sleep', ['30'])
+      register(twin.pid!, GONE, 'twin')
+      const sent = (
+        to: string,
+        success = true,
+        input: Record<string, string> = { to, summary: 'tests', message: 'Run the tests' }
+      ): void =>
+        void fire(
+          'tabS',
+          'sent',
+          {
+            session_id: SENDER,
+            hook_event_name: 'PostToolUse',
+            tool_name: 'SendMessage',
+            tool_input: input,
+            tool_response: { success, message: `"tests" → ${to}`, to: 'test-runner' }
+          },
+          { HOME: home }
+        )
+      sent('test-runner')
+      sent('test-runner [3fa9c1]')
+      sent(`uds:${socketOf(process.pid)}`)
+      sent('test-runner', true, { summary: 'tests', to: 'test-runner', message: 'Run' })
+      sent('test-runner', false)
+      sent('gone')
+      sent('main')
+      sent('twin')
+      sent('', true, { summary: 'tests', message: 'Run' })
+      twin.kill()
+      second.kill()
+      expect(readStatusLog('tabS')).toEqual(
+        Array(4).fill({
+          tabId: 'tabS',
+          event: 'sent',
+          sessionId: SENDER,
+          tmux: '',
+          toSession: TARGET
+        })
+      )
+    })
   })
 
   // CC§21
@@ -978,8 +1067,8 @@ describe('injected hook script', () => {
     })
   })
 
-  // CC§19
-  it('every tool call fires the reply-language hook and every Bash call the look at the folder after it; the Bash-matched status-line one rides along only with the statusline', () => {
+  // CC§13 CC§19
+  it('every tool call fires the reply-language hook, every Bash call the look at the folder after it and every SendMessage the note of who it reached; the Bash-matched status-line one rides along only with the statusline', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
     const postToolUse = (file: string): { matcher: string; hooks: { command: string }[] }[] =>
       JSON.parse(fs.readFileSync(file, 'utf8')).hooks.PostToolUse
@@ -988,11 +1077,13 @@ describe('injected hook script', () => {
     expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl))).toEqual([
       '* tool',
       'Bash shell-after',
+      'SendMessage sent',
       'Bash posttool'
     ])
     expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual([
       '* tool',
-      'Bash shell-after'
+      'Bash shell-after',
+      'SendMessage sent'
     ])
   })
 

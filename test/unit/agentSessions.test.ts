@@ -804,6 +804,18 @@ describe('koloft session send', () => {
     expect(waitsOnAnother(me)).toBe(false)
   })
 
+  it('the sender still waits on the session it wrote to after that session’s tab moves to a new id', async () => {
+    const all = sessions()
+    const cx = all.find((s) => s.tabId === 'cx')!
+    cx.status = 'working'
+    const me = all.find((s) => s.tabId === 'me')!.sessionId
+    const { verb, waitsOnAnother, moveTab } = harness(all)
+    expect((await verb(['send', 'cx', 'Run', 'the tests'], from('me'))).exit).toBe(0)
+    cx.tabId = 'cx-moved'
+    moveTab('cx', 'cx-moved')
+    expect(waitsOnAnother(me)).toBe(true)
+  })
+
   it('a Muse session reaches an open Muse or Codex session: typed into a Muse one once it is idle, queued on a Codex one, both marked with who sent it', async () => {
     const { verb, pressed, queued } = harness([
       session('me', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' }),

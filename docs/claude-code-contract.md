@@ -3031,6 +3031,35 @@ sessions.
     message started its own turn; Enter pressed after that turn sent the half-typed line
     whole, as a prompt of its own. The same check while the receiver was busy was run but
     its result was not kept.
+- **A SendMessage names its sender in the receiver's UserPromptSubmit, and a busy receiver
+  takes it only at its next tool round.** 2026-11-14, CC 2.1.325 (linux-arm64), Docker
+  `node:22-bookworm --network none`, two interactive `--dangerously-skip-permissions`
+  sessions started `-n recv` and `-n send` in one `HOME`, a fake Messages API (an
+  `apiKeyHelper` key) that had the sender call ToolSearch `select:SendMessage` (SendMessage
+  is a deferred tool) and then SendMessage `{to:"recv"}`, and a hook logging every
+  UserPromptSubmit and Stop input with a timestamp; 3 runs.
+  - The receiver's `prompt` was `<cross-session-message from="uds:/tmp/cc-socks/<pid>.sock"
+    from-name="send" from-mode="bypass">\n<body>\n</cross-session-message>`. The path is the
+    `messagingSocketPath` of the sender's registry entry (§11), which also names its
+    `sessionId`. A receiver's transcript on this Mac (CC 2.1.323, 2026-11-13) held the same
+    envelope, with `origin: {kind:"peer", from:"uds:…", verifiedPeerPid, msg_id, name}`.
+  - Idle receiver: its UserPromptSubmit fired 0.1 s before the sender's Stop (2 of 2), with
+    a fake model that answered at once.
+  - Receiver running a 15 s Bash call: the message waited for that call to end and joined
+    the same turn (the same `prompt_id` as the typed prompt, no Stop of its own); its
+    UserPromptSubmit fired 11 s after the sender's Stop. The tool's own text says messages
+    "drain at the receiver's next tool round".
+  - The sender's tool result names the target only as typed: `{"success":true,"message":
+    "“probe” → recv (another Claude session on this machine; in that session's inbox, not
+    yet read by its Claude …"}`. Its `to` may be a bare name, `name [ref]`, or a `from`
+    attribute copied back (the tool's own text).
+  - The sender's PostToolUse fires for it, a deferred tool, through a hook with
+    `matcher: "SendMessage"` (2 of 2; ToolSearch did not fire that hook), before the
+    sender's Stop, and carries `tool_name: "SendMessage"`, `tool_input: {to, summary,
+    message}` and `tool_response: {success: true, message, display, msg_id}`. Run with
+    and without the matcher, the same fields.
+  - Not probed: what `tool_response` holds for a send to an in-process agent (a subagent,
+    `main`, a teammate), and what a `[ref]` is made of.
 - **Esc that interrupts a running turn fires no `Stop` hook.** 2026-10-11, CC 2.1.296,
   model haiku, temp HOME, a `Stop` hook that appends to a file: a typed turn running
   `ping -c 30 127.0.0.1` was interrupted with Esc 6 s in; the session went `idle` and the

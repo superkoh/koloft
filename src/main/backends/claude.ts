@@ -44,12 +44,15 @@ import {
 } from '../remote/paths'
 import {
   hookSettings,
+  FROM_SESSION_FIELD,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  SENT_TO_A_SESSION_EVENT,
   SHELL_WROTE_EVENT,
   START_IN_STATUS_LOG,
   STATUS_LOG_SUFFIX,
-  statusLogOf
+  statusLogOf,
+  TO_SESSION_FIELD
 } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
@@ -108,6 +111,7 @@ export interface ClaudeBackendDeps {
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
+  messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
@@ -662,6 +666,21 @@ export class ClaudeBackend implements SessionBackend {
     if (obj.event === SHELL_WROTE_EVENT) return this.d.tracker.noteShellWrites(obj.tabId, obj.wrote)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
+    this.noteSessionMessaged(obj.tabId, obj)
+  }
+
+  // CC§13
+  private noteSessionMessaged(
+    tabId: string,
+    report: HookReport & { [FROM_SESSION_FIELD]?: unknown; [TO_SESSION_FIELD]?: unknown }
+  ): void {
+    const from = report[FROM_SESSION_FIELD]
+    if (report.event === 'prompt' && typeof from === 'string') this.d.messaged(tabId, from)
+    const to = report[TO_SESSION_FIELD]
+    if (report.event !== SENT_TO_A_SESSION_EVENT || typeof to !== 'string' || !report.sessionId)
+      return
+    const target = this.d.tracker.list().find((s) => s.alive && s.sessionId === to)
+    if (target) this.d.messaged(target.tabId, report.sessionId)
   }
 
   // CC§5
