@@ -218,6 +218,7 @@ const CODEX_SCREEN_ON_THIS_MAC: StartWidths = {
 async function boundOnScreen(page: Page): Promise<void> {
   const row = page.locator('.ws .ws-tab.active')
   await expect.poll(() => sessionInRow(page, row), { timeout: 60_000 }).toBeTruthy()
+  await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
 }
 
 interface SessionTabKind {
