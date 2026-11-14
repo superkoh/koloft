@@ -3814,6 +3814,15 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   element? Answer with the word only." typed after it and a CR: claude ran `Read` on the
   PNG and answered `ZEBRA`. The run was in bypass-permissions mode, so whether default
   mode asks before reading a picture outside the session's folder was not measured.
+- **The same holds for a picture path at the end of the first prompt given as an
+  argument.** Measured 2026-11-14, CC 2.1.325 (Sonnet 5.5) in Koloft's hand-test
+  sandbox, 1 run: ⌘P with the words "What word is in this picture? Answer with the
+  word only." and a pasted PNG of the word ZEBRA, so claude started with `-- "<words>\n\n
+  Picture: <userData>/palette-pictures/<uuid>.png"` in a fresh worktree. The input box
+  showed the path as typed (no `[Image #1]`), claude ran `Read` on the PNG and answered
+  `ZEBRA`; the row's title was the one claude made ("Word identification from picture"),
+  not the path. Bypass-permissions mode again, so the default-mode ask is still not
+  measured.
 
 ## §19 The PostToolUse hook adds text after every tool result
 
