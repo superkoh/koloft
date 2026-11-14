@@ -43,7 +43,8 @@ import {
 import {
   ALLOW_AFTER_STOP,
   ANSWER_NOT_TAKEN_ON_A_CARD,
-  ASKED_BEFORE_IT_STOPPED
+  ASKED_BEFORE_IT_STOPPED,
+  SHOW_PLAN_AGAIN
 } from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
@@ -1027,3 +1028,132 @@ for (const agent of OTHER_AGENTS) {
     }
   })
 }
+
+const PLAN_TITLE = 'asks you to approve a plan'
+const CLAUDE_PLAN = 'Ship the login fix'
+const AGY_API = (env: E2EEnv): string => fileText(path.join(env.home, 'fake-agy-api.jsonl'))
+
+const PLAN_ASKERS = [
+  {
+    name: 'Claude Code',
+    ask: async (page: Page) => {
+      await startSessionIn(page, 'ws-a')
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, {
+        timeout: 30_000
+      })
+      await runIn(page, centerTerm(page), `/plan ${CLAUDE_PLAN}`)
+    },
+    beforeRelaunch: (env: E2EEnv) => fs.writeFileSync(env.claudeNoStatusFile, ''),
+    plan: CLAUDE_PLAN,
+    told: (env: E2EEnv) => peerMessages(env),
+    approved: async (_env: E2EEnv, page: Page, tabId: string) =>
+      (await terminalText(page, tabId)).includes('Plan approved')
+  },
+  {
+    name: 'Antigravity',
+    install: (env: E2EEnv) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    ask: async (page: Page) => {
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), '/plan')
+    },
+    plan: '1. Do the thing.',
+    told: AGY_API,
+    approved: async (env: E2EEnv) => AGY_API(env).includes('[Approved] implementation_plan.md')
+  }
+]
+
+for (const agent of PLAN_ASKERS) {
+  test(`a plan still waiting on the owner when Koloft quits is asked for once more as soon as its ${agent.name} session runs again: the card moves to Done as Asked to show it again, the session is told to show the plan again, and the plan it shows again is a new card whose Approve reaches the session`, async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    agent.install?.(env)
+    let app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await agent.ask(page)
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await openInbox(page)
+      await expect(inboxCard(page, PLAN_TITLE).locator('.ibx-quote')).toContainText(agent.plan, {
+        timeout: 15_000
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+
+    agent.beforeRelaunch?.(env)
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openInbox(page)
+      await expect(await doneStatus(page, PLAN_TITLE)).toContainText('Asked to show it again', {
+        timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
+      })
+      await expect
+        .poll(() => agent.told(env), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
+        .toContain(SHOW_PLAN_AGAIN)
+      await page.locator('.ibx-seg button[data-tab="needs-you"]').click()
+      const shownAgain = inboxCard(page, PLAN_TITLE)
+      await expect(shownAgain.locator('.ibx-quote')).toContainText(agent.plan, {
+        timeout: 30_000
+      })
+      await shownAgain.locator('.ibx-btn', { hasText: 'Approve' }).click()
+      const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) as string
+      await expect
+        .poll(() => agent.approved(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
+test('a plan a remote Claude Code session still shows after a Koloft restart keeps its Approve, since the session lives on in tmux on the machine; Approve there reaches that session, which is never told to show the plan again', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  installFakeRemote(env)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await addRemoteWorkspace(page, env)
+    await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), `/plan ${CLAUDE_PLAN}`)
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await expect(inboxCard(page, PLAN_TITLE).locator('.ibx-quote')).toContainText(CLAUDE_PLAN, {
+      timeout: 15_000
+    })
+  } finally {
+    await quitAndClose(app)
+  }
+
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+    const tabId = (await asker.getAttribute('data-tab-id')) as string
+    await openInbox(page)
+    const card = inboxCard(page, PLAN_TITLE)
+    await expect(card.locator('.ibx-quote')).toContainText(CLAUDE_PLAN, { timeout: 15_000 })
+    await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+    await expect
+      .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      .toContain('Plan approved')
+    expect(peerMessages(env, machineHome(env))).not.toContain(SHOW_PLAN_AGAIN)
+  } finally {
+    await quitAndClose(app)
+    killFakeRemote(env)
+  }
+})

@@ -76,6 +76,12 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   )
 }
 
+function ownerTypesInAnotherField(): boolean {
+  const at = document.activeElement
+  if (!(at instanceof HTMLElement) || at.closest('.xterm')) return false
+  return at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || at.isContentEditable
+}
+
 function LiveTerminal({
   fontFamily,
   id,
@@ -97,6 +103,7 @@ function LiveTerminal({
   const onOutputRef = useRef(onOutput)
   onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
+  const firstShow = useRef(true)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const repaintedRef = useRef(false)
@@ -512,6 +519,7 @@ function LiveTerminal({
 
   // PLATFORM§21
   useEffect(() => {
+    if (!active) firstShow.current = false
     if (active) {
       showWebgl(id)
       let inner = 0
@@ -519,8 +527,10 @@ function LiveTerminal({
         const term = termRef.current
         if (!term) return
         safeFit()
+        const leaveTheOwnerTyping = firstShow.current && ownerTypesInAnotherField()
+        firstShow.current = false
         try {
-          if (autoFocus) term.focus()
+          if (autoFocus && !leaveTheOwnerTyping) term.focus()
         } catch {}
         inner = requestAnimationFrame(() => {
           forceRepaint()

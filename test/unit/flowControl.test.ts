@@ -462,12 +462,17 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
   })
 
   it('a program asking the terminal a question off screen is not kept waiting for the batch', () => {
+    // PLATFORM§35 CODEX§37 MUSE§23 AGY§33
     for (const question of [
       '\x1b[6n',
       '\x1b[c',
+      '\x1b[>c',
       '\x1b[>q',
+      '\x1b[?996n',
       '\x1b[?2026$p',
       '\x1b]11;?\x07',
+      '\x1b]10;?\x1b\\',
+      '\x1b]4;15;?\x07',
       '\x1b[14;2t'
     ]) {
       const { out, sent } = offScreenTab()
@@ -487,6 +492,16 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
     out.push('t', '11;')
     out.push('t', '?\x07')
     expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b]11;?\x07'])
+  })
+
+  it('the longest question an agent was seen to ask the terminal, cut before its last character, is not kept waiting', () => {
+    // MUSE§23
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b\x1b]4;15;?')
+    out.push('t', '\x07')
+    expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b]4;15;?\x07'])
   })
 
   it('output after a question that went out waits for the batch again', () => {
@@ -519,9 +534,13 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
     expect(sent.map((s) => s.data)).toEqual(['a'])
   })
 
-  it('a link or a cursor move is not a question', () => {
+  it('a link, a cursor move or a mode an agent sets is not a question', () => {
     expect(asksTheTerminal('\x1b]8;;https://x.test/?q=1\x07link\x1b]8;;\x07')).toBe(false)
     expect(asksTheTerminal('\x1b[u\x1b[2 q\x1b[22;0t')).toBe(false)
+    // CODEX§37 MUSE§23 AGY§33
+    expect(
+      asksTheTerminal('\x1b[?25l\x1b[>7u\x1b[>5u\x1b[=5;1u\x1b[<1u\x1b[?5W\x1b[>4;2m\x1b[23;0t')
+    ).toBe(false)
   })
 
   it('a large backlog off screen does not wait for the batch', () => {

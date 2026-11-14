@@ -1,4 +1,10 @@
-import { test as base, expect, type ElectronApplication, type Page } from '@playwright/test'
+import {
+  test as base,
+  expect,
+  type ElectronApplication,
+  type Locator,
+  type Page
+} from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import fs from 'fs'
 import path from 'path'
@@ -71,6 +77,12 @@ export async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<voi
     expect(await page.locator('.toast').count()).toBe(0)
     await page.waitForTimeout(200)
   }
+}
+
+export async function fillsItsTrack(bar: Locator): Promise<boolean> {
+  return bar.evaluate(
+    (el) => Math.abs(el.getBoundingClientRect().width - el.parentElement!.clientWidth) < 1
+  )
 }
 
 export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {

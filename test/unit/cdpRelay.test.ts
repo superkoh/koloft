@@ -115,7 +115,8 @@ function makeDeps(): Harness {
     close: vi.fn(async () => {}),
     stage: vi.fn(async () => {}),
     setAttached: vi.fn(),
-    cameThroughAForward: vi.fn((guestId: number) => guestId === GUEST_ON_A_FORWARD)
+    cameThroughAForward: vi.fn((guestId: number) => guestId === GUEST_ON_A_FORWARD),
+    anotherLiveKoloftOwns: () => false
   } as unknown as Harness
   return h
 }
@@ -207,6 +208,28 @@ afterEach(() => {
   for (const ws of sockets.splice(0)) ws.close()
   relay.setRelayEnabled(false, [])
   fs.rmSync(userData, { recursive: true, force: true })
+})
+
+describe('the file each tab reads its relay address from', () => {
+  it('a Koloft starting beside one still running leaves that one’s tab files alone, and clears the files of one that has quit', async () => {
+    const dir = path.join(userData, 'cdp')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'pty-running-1'), 'ws://running')
+    fs.writeFileSync(path.join(dir, 'pty-quit-1'), 'ws://quit')
+    vi.resetModules()
+    const starting = await import('../../src/main/cdpRelay')
+    starting.startRelay({ ...deps, anotherLiveKoloftOwns: (tabId) => tabId === 'pty-running-1' })
+    starting.writeRelayEnv([])
+    expect(fs.readdirSync(dir)).toEqual(['pty-running-1'])
+  })
+
+  it('writes the file of a tab whose address changed, and leaves the others as they are', () => {
+    const file = path.join(userData, 'cdp', TAB)
+    expect(fs.readFileSync(file, 'utf8')).toBe(relay.relayEndpoint(TAB))
+    fs.writeFileSync(file, 'untouched')
+    relay.writeRelayEnv([TAB])
+    expect(fs.readFileSync(file, 'utf8')).toBe('untouched')
+  })
 })
 
 describe('one client per endpoint (D8)', () => {

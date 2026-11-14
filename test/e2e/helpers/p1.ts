@@ -32,6 +32,7 @@ export interface ClaudeCall {
   firstPrompt?: string | null
   ts: number
   oauthToken: string | null
+  disable1mContext?: string | null
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
@@ -491,6 +492,10 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 
 export function notesIsland(page: Page): Locator {
   return page.locator('.isl-notes')
+}
+
+export function notesGutter(page: Page): Locator {
+  return page.locator('.gutter-h:has(+ .isl-notes)')
 }
 
 export function notesArea(page: Page): Locator {

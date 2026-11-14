@@ -43,7 +43,6 @@ import {
   tabPackageDir
 } from '../remote/paths'
 import {
-  HOLD_FILE,
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
@@ -1169,8 +1168,7 @@ export function machineHookSettings(
   tabId: string,
   machineDir: string,
   statusline: boolean,
-  allowKoloft: boolean,
-  holdWhileBusy = false
+  allowKoloft: boolean
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
@@ -1178,8 +1176,7 @@ export function machineHookSettings(
   const settings = hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, {
     statusLine: remoteStatusLine,
     quote: dq,
-    dialogs: 'record-only',
-    hold: holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
+    dialogs: 'record-only'
   })
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE

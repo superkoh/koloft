@@ -69,6 +69,16 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   PostCompact, more tool calls, Stop. At the start of a prompt: UserPromptSubmit, then
   PreCompact, SessionStart `compact`, PostCompact, the reply, Stop. Every hook carries the
   turn's `prompt_id`, and the turn's own Stop ends it.
+- **A subagent that compacts fires the same three hooks under the main session's id,
+  and from 2.1.323 they say which agent it was.** 2026-11-13, CC 2.1.323 beside 2.1.322
+  (darwin-arm64, `claude -p` with a stand-in Messages API that reported 990,000 input
+  tokens on the subagent's request, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=5`, a background
+  general-purpose subagent; one run each): on both, PreCompact, SessionStart `compact`
+  and PostCompact fired with the **main** session's `session_id` and `transcript_path`;
+  only 2.1.323 adds `agent_id` and `agent_type: "general-purpose"` to all three (the
+  changelog: "Fixed `PreCompact`, `PostCompact` and post-compaction `SessionStart` hooks
+  not receiving `agent_id` and `agent_type` when a subagent compacts"). So up to 2.1.322
+  a subagent's compaction cannot be told from the main session's by the hook payload.
 - **Claude also compacts while idle, with no prompt and no Stop around it.** Seen in two
   real sessions (2026-10-08/09, CC 2.1.29x, Koloft's hook log and the transcript): Stop,
   the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
@@ -990,6 +1000,21 @@ starts a new conversation when it is set back to the tool's own.
   now English; and `-w` creation and reuse run with `GIT_NO_LAZY_FETCH=1` after a
   partial clone's missing objects are fetched ahead (inferred from the code). Koloft
   matches only the start and `Worktree removed` lines, so neither change reaches it.
+- Rechecked 2026-11-13 on CC 2.1.323 beside 2.1.322 (darwin-arm64, python pty with
+  `pyte`, 120 columns, scratch `HOME` and `CLAUDE_CONFIG_DIR`, a stand-in Messages API
+  and an `apiKeyHelper` key, a one-commit throwaway repo; one run each): a `-w` session
+  with one turn, then `/exit`, wrote the same bytes on both — the empty title, the two dim
+  lines `Resume this session with:` / `claude --resume <id>` (119 bytes), `Removing
+  worktree…`, `Worktree removed (no changes)`. On 2.1.323 alone: with `--settings <path
+  without spaces> --model haiku` at 400 columns the second line was `claude --settings
+  <path> --model haiku --resume <id>` (272 bytes), and a session outside a worktree still
+  printed `claude --resume <id>`. **2.1.323 adds `CLAUDE_CODE_RESUME_HINT_COMMAND`**
+  ("which a program that starts Claude Code can set to have the exit hint name its own
+  resume command"): set to `koloft`, the same `-w` exit printed `koloft --resume <id>` —
+  no launch flags and no worktree flag — so the second line no longer starts with
+  `claude`; set to a value with a space (`koloft resume`), it was ignored and the line
+  stayed `claude --resume <id>` (the binary checks the value against `^\w[\w-]*$`, read
+  with `strings`). Whether the variable reaches CC on a remote machine was not probed.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -1067,6 +1092,29 @@ moment its CC starts removing, and on this Mac finishes the removal if Koloft qu
     claimed-spare <jobId> (slash)`), whose control socket is
     `/tmp/cc-daemon-<uid>/<hash>/control.sock`, one per `HOME`. `claude daemon stop
     --any` ended it and the copy (`bg settled <jobId> (killed)`).
+- **A background session runs on the credential of the process that started the
+  background service, not its own; 2.1.323 refuses only some of those.** 2026-11-13,
+  CC 2.1.322 and 2.1.323 linux-arm64 in a Docker container with no network, a stand-in
+  Messages API behind `ANTHROPIC_BASE_URL` that logged each request's `Authorization`
+  and `x-api-key`, one scratch `HOME`: session A ran `claude --bg <prompt>` with
+  credential A (which started the service), then session B ran `claude --bg <prompt>`
+  with credential B, for each of `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` (pre-approved
+  in `customApiKeyResponses`) and `CLAUDE_CODE_OAUTH_TOKEN`. On 2.1.322, B's requests
+  carried A's credential in all three cases. On 2.1.323 the same, as long as
+  `ANTHROPIC_BASE_URL` is not Anthropic's own; with the internal
+  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1` standing in for Anthropic's address, B's
+  `--bg` exited 1 with `Couldn't start a background session: the background service
+  doesn't have this session's API key, token or workload identity. Add it to the env
+  section of your settings. Or, unless the service was set up with claude daemon install,
+  run claude daemon stop --any, which stops background sessions, and try again from this
+  terminal.` for the auth token and the API key, and still used A's for the OAuth token
+  (the changelog: "… from its shell (not a setup token) … now stops and says so";
+  `strings`: the check skips `env-oauth` and runs only for Anthropic's own address and
+  while the server flag `tengu_steady_anchor` is on). 2.1.323's `jobs/<id>/state.json`
+  gains `providerEnv: {CLAUDE_BG_SESSION_CREDENTIAL: "env-token" | "env-key" |
+  "env-oauth"}`. Only `--bg` was run; that `/fork`, `/background` and the Left-arrow move
+  go the same way is **inferred, not checked**, as is the refusal against Anthropic's
+  real address.
 - **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
   CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
   new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
@@ -1175,6 +1223,11 @@ never wrote a transcript.
   resets_at } }` and `prompt_cache: { warm, caching_observed, ttl: '5m' | '1h',
   expires_at, requests, misses, expected_rebuilds, hit_ratio, cache_write_tokens,
   miss_recache_tokens, last_miss_at, last_miss_cause: { causes: [] } }`.
+- **The status JSON is built the same way in 2.1.323 as in 2.1.322**, apart from
+  minified names (`cost`, `context_window`, `exceeds_200k_tokens`, `effort`,
+  `rate_limits`, `worktree` and the rest), and the `subagentStatusLine` key is still in
+  the settings schema, described as "Deprecated: no longer has any effect" (the
+  changelog: "Removed the `subagentStatusLine` setting"). (`strings`, 2026-11-13.)
 
 Evidence: binary reading, the CLI reference and two local experiments, 2026-08-07, CC
 2.1.224; render latency measured in live testing (date and CC version not recorded).
@@ -1432,6 +1485,42 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   - Other wordings (`Unsupported beta: effort-2025-11-24`, a bare `Bad Request`, `system
     role is not supported in messages…`) failed on both builds.
   Not run: the interactive TUI; which real gateways answer which wording.
+- **Since 2.1.323 a model name CC does not know gets a 1M context window, not 200k.**
+  2026-11-13, CC 2.1.322 and 2.1.323 darwin-arm64, the interactive TUI in a python pty
+  (140×50), scratch `HOME` and `CLAUDE_CONFIG_DIR`, a stand-in Messages API behind
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, every model slot and
+  `CLAUDE_CODE_SUBAGENT_MODEL` pinned to one name, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`,
+  one turn, then `/context`, a statusLine command logging its stdin; one run each:
+
+  | Build, model | statusLine `context_window_size` | `/context` | Start-up line |
+  |---|---|---|---|
+  | 2.1.322, `glm-4.6` | 200000 | `2.1k/200k tokens`, autocompact buffer 33k (16.5%), "Auto-compact window: 200k tokens (default for an unrecognized model)" | `⚠ Model "glm-4.6" isn't recognized · context assumed to be 200k tokens` |
+  | 2.1.323, `glm-4.6` | 1000000 | `2.2k/1m tokens`, buffer 33k (3.3%), "Auto-compact window: 1m tokens (default for an unrecognized model)" | `… context assumed to be 1m tokens` |
+  | 2.1.323, `glm-4.6`, `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` | 200000 | as 2.1.322 | `… assumed to be 200k tokens` |
+  | 2.1.322 and 2.1.323, `claude-sonnet-4-5` | 200000 | `…/200k tokens`, no "unrecognized" line | none |
+
+  So on 2.1.323 such a session compacts on its own only near 967k tokens. The changelog:
+  "Changed the context window assumed for a model ID that Claude Code doesn't recognize
+  from 200K to 1M … sessions on other vendors' models with a smaller window: once full,
+  they can fail every turn until `/clear`, so set `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
+  before they fill". That a real endpoint with a smaller window then fails every turn is
+  the changelog's, **inferred, not checked** (the stand-in API refuses nothing). Not run:
+  linux-arm64, `-p`.
+  **Which names 2.1.323 knows, and what `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` does to
+  them.** Same day and setup on 2.1.323, every slot pinned to the one name:
+
+  | Pinned name | Start-up warning | Window | With `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` |
+  |---|---|---|---|
+  | `glm-4.6`, `deepseek-chat`, `kimi-k2-0905-preview`, `qwen3-coder-plus`, `openai/gpt-5` | isn't recognized · 1m | 1000000 | `glm-4.6`: 200000 |
+  | `opus`, `sonnet`, `haiku` (the alias itself in every slot) | isn't recognized · 1m | 1000000 | not run |
+  | `claude-foo-9`, `claude-sonnet-9-9` | isn't recognized · 1m | 1000000 | `claude-foo-9`: 200000 |
+  | `claude-sonnet-4-5`, `Claude-Sonnet-4-5`, `claude-sonnet-4.5`, `anthropic/claude-sonnet-4.5`, `anthropic/claude-sonnet-4`, `us.anthropic.claude-sonnet-4-5-20250929-v1:0`, `claude-3-5-sonnet-20241022`, `claude-opus-4-1` | none | 200000 | 200000 (those tried) |
+  | `claude-opus-5-5`, `claude-fable-5-2` | none | 1000000 | 200000 |
+  | `claude-sonnet-4-5[1m]`, `opus[1m]`, `glm-4.6[1m]` | none | 1000000 | 200000 |
+
+  So the variable also cuts a known 1M model, and a name ending in `[1m]`, to 200k; every
+  name 2.1.323 knew holds `claude`, but not every name holding `claude` is known. On
+  2.1.322 `glm-4.6` with the variable gave 200000, the same as without it.
 - **CC's safety classifier can silently swap the model**: a blocked fable request is
   re-run on Opus and the session pinned there, so the model a session was launched
   with is not always the model it runs; the status JSON names the model in use.
@@ -1986,6 +2075,17 @@ other bullets of §9 were not re-measured on this build.
   cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
   the 30-day default; that the skip holds in a run long enough to sweep, and what a
   managed `cleanupPeriodDays` does there, is not probed.
+- **Since 2.1.323 a long hook adds lines to `-p`'s stream-json, not to its text or json
+  output.** 2026-11-13, darwin-arm64, a stand-in Messages API, a `UserPromptSubmit` hook
+  that sleeps: with `--output-format stream-json --verbose` and a 70 s hook, 2.1.323
+  wrote one line at 30 s and one at 60 s, `{"type":"tool_progress","tool_use_id":
+  "hook-UserPromptSubmit-<id>-heartbeat-<n>","tool_name":"UserPromptSubmit",
+  "parent_tool_use_id":…,"elapsed_time_seconds":30,"heartbeat":true,"uuid":…,
+  "session_id":…}`, **before** the `system` / `init` line, so the first line is no longer
+  always `init`; 2.1.322 wrote `init` first, at 70.4 s. The transcript got no such
+  record. With a 35 s hook, 2.1.323's text output was the reply alone on stdout and
+  nothing on stderr, and its `--output-format json` one result line. Other hook events
+  were not run.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer
@@ -2232,16 +2332,26 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   For 2.1.322: darwin-arm64 111.9 MB with `zstd` / 323.7 MB without, darwin-x64 119.1 /
   338.4 MB, linux-arm64 123.3 / 341.5 MB, linux-x64 124.5 / 341.9 MB (its manifests,
   2026-11-10).
-- **On macOS the `claude install` step then downloads the whole binary again, in
+- **Up to 2.1.322, on macOS the `claude install` step then downloads the binary again, in
   silence.** After "Installing Claude Code native build latest..." it fetches the
-  uncompressed build into `~/.cache/claude/staging` even with `zstd` on the Mac, 323.7 MB
-  on arm64, and the terminal gets no byte meanwhile: at 2 Mbit/s a second silent stretch
-  of about 22 minutes. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
+  build into `~/.cache/claude/staging` even with `zstd` on the Mac, and the terminal gets
+  no byte meanwhile. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
   script serving 2.1.322: three darwin-arm64 installs in a Python pty with a scratch
   `HOME`, `/opt/homebrew/bin/zstd` on the login PATH, 41.7, 52.6 and 46.3 s of no output
-  while the staging file grew to 323.7 MB; one in `node:22-bookworm`. Inferred, not
-  checked: the same on x64 (338.4 MB uncompressed, per the manifest), on a Mac without
-  `zstd`, and on 2.1.316.)
+  while the staging file grew to 323.7 MB; one in `node:22-bookworm`.) What crossed the
+  network was smaller than the staging file: `claude install 2.1.322` run through a
+  local byte-counting proxy pulled 112,154,446 bytes from `downloads.claude.ai`, about
+  7.5 minutes at 2 Mbit/s (2026-11-13, scratch `HOME`, darwin-arm64). **2.1.323 no longer
+  downloads it twice** (its changelog: "the latest version is no longer downloaded
+  twice"): through the same proxy `claude install 2.1.323` pulled 26,076 bytes and
+  `claude install latest` 32,965; the whole `install.sh` run took 6.06 s and exited 0,
+  the staging file reaching 344 MB 0.5 s after "Installing Claude Code native build
+  latest..." (2026-11-13, a Python pty, scratch `HOME`, `PATH=/usr/bin:/bin:/usr/sbin:
+  /sbin:/opt/homebrew/bin`). 2.1.323's manifests: darwin-arm64 118.8 MB with `zstd` /
+  344.4 MB without, darwin-x64 126.3 / 359.1 MB, linux-arm64 129.5 / 362.2 MB, linux-x64
+  130.8 / 362.4 MB. So the one silent stretch left is the script's own download: at
+  2 Mbit/s up to about 24 minutes (darwin-x64 without `zstd`). Not checked: x64, and a
+  Mac without `zstd`.
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -2326,9 +2436,10 @@ onboarding flag and runs `claude -p ok --max-turns 1` once when
 in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
 Claude sign-in stops an install that prints nothing for 30 minutes (`src/main/index.ts`:
 while the installer runs, the timer starts over at every byte it prints, so it has to
-outlast only the longer of the two silent downloads above — 338.4 MB on darwin-x64 by
-the manifest, about 22.6 minutes at 2 Mbit/s; that x64 fetches that file in the second
-step is inferred, not checked, the measured arm64 one is 323.7 MB, about 21.6 minutes),
+outlast only the longest silent download above — the script's own, at most 338.4 MB
+on 2.1.322 and 359.1 MB on 2.1.323 for darwin-x64 without `zstd` by the manifests, about
+22.6 and 24 minutes at 2 Mbit/s; up to 2.1.322 a second, shorter one follows it (the
+measured arm64 one 112 MB over the wire)),
 and
 `launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
 warm-up, per the 2.1.296 bullet above).
@@ -2851,7 +2962,17 @@ sessions.
     the receiver's limits read `bucketCapacity:30, refillPerSecond:0.5,
     dedupWindowMs:30000, maxSelfHops:10, maxChainLength:28, maxTrackedSenders:256`, the
     same as 2.1.296 (`strings`, 2026-10-14). Still on in 2.1.309, with the same
-    pattern, wrap text and limits (`strings`, 2026-10-23).
+    pattern, wrap text and limits (`strings`, 2026-10-23). The receiver's limits are the
+    same in 2.1.323 (`strings`, 2026-11-13).
+  - **The sender's side has a cap, raised in 2.1.323.** Its changelog: "Changed how
+    many messages each of your sessions on the same machine can send the others without
+    a prompt from you, from about 20 to 100,000". The 2.1.323 binary holds
+    `maxLocalRelays:1e5, maxDesktopForwards:1e5, countLocalHops:false` behind the
+    server flag `tengu_harbor_kite_limits`, falling back to `{maxDesktopForwards:20,
+    maxLocalRelays:20, countLocalHops:true}` when the flag's value does not parse; past
+    the cap a send answers `Not delivered: this session keeps answering other sessions …
+    paused until your user's next prompt`. In 2.1.322 only a desktop-forward count
+    (`forwardsSincePrompt`) was found (`strings`, 2026-11-13, not run).
   - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
     tried.
 - **A message reaches a receiver whose turn ended with background work still running.**
@@ -3072,7 +3193,16 @@ below was one run.
   `--dangerously-skip-permissions`, an `AskUserQuestion` answered `2` showed "→ Green" and
   "Allowed by PermissionRequest hook"; with `--permission-mode default`, a `Bash` dialog
   answered `yes` (`allow` with `updatedInput` set to the `tool_input` unchanged) ran the
-  command. Both hooks removed their files on the way out.
+  command. Both hooks removed their files on the way out. Rechecked 2026-11-13 on
+  2.1.323 beside 2.1.322 (darwin-arm64, python pty, scratch `HOME`, a stand-in Messages
+  API, `--permission-mode default`, a hook answering in the same two shapes): the
+  `AskUserQuestion` answer (`{...tool_input, answers}`) reached `PostToolUse` as
+  `answers: {"Pick a colour?": "Green"}` with "→ Green" on screen, and the `Bash` `touch`
+  answered `allow` with `updatedInput` unchanged made its file with "Allowed by
+  PermissionRequest hook"; each call fired `PermissionRequest` once on both builds, so
+  2.1.323's "a permission check that fails on input a `PermissionRequest` hook rewrote now
+  asks again" did not show for an unchanged input. A check that fails was not made to
+  happen.
 - **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
   `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
   nothing):
@@ -3394,12 +3524,8 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   hook still sees `Monitor`. A deny stops it, reported as `PreToolUse:Monitor hook
   error: <reason>`; an allow under `--permission-mode default` is ignored (the call
   still needed approval); an 8 s sleep started the monitor 8 s late, then it ran.
-  `PostToolUse` on `Bash` still does not fire for Monitor. Koloft's hold hook matches
-  `"tool_name":"Bash"` and reads `tool_input.command`, so on a busy machine it should
-  now hold a background tab's Monitor start the way it holds a Bash call, and list its
-  command as held (inferred from these runs and the hook's text; the hold hook itself
-  was not run). `stale_pr_status` never sees a Monitor. Not run: the interactive TUI, a
-  subagent's Monitor.
+  `PostToolUse` on `Bash` still does not fire for Monitor. `stale_pr_status` never sees
+  a Monitor. Not run: the interactive TUI, a subagent's Monitor.
 - **The transcript record of a call a `PreToolUse` hook denied is unchanged on
   2.1.314**: a `tool_result` `{type, content: "PreToolUse:<tool> hook error: <reason>",
   is_error: true, tool_use_id}` with `toolDenialKind: "permission-rule"` beside it, the

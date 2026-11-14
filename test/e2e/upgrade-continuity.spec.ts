@@ -129,7 +129,7 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
         })
         .toEqual([last])
       await answersOnDiscord(fake, 'hello after the upgrade')
-      expect(butlerSessionOnDisk(env)?.lastSessionKey).toBe(last)
+      await expect.poll(() => butlerSessionOnDisk(env)?.lastSessionKey).toBe(last)
       expect(discordOnDisk(env).channel).toEqual(CHANNEL)
       await quitAndClose(first.app)
 
@@ -168,7 +168,7 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
           .toEqual([undefined])
         await answersOnDiscord(fake, 'hello after the upgrade')
         expect(assistCalls(env, scope)).toEqual([])
-        expect(discordOnDisk(env).channel).toEqual(CHANNEL)
+        await expect.poll(() => discordOnDisk(env)?.channel).toEqual(CHANNEL)
         expect(butlerSessionOnDisk(env)?.sessionIds ?? []).not.toContain(last)
         await quitAndClose(first.app)
       } finally {
@@ -271,7 +271,7 @@ test.describe('Upgrade continuity: what v0.51.0 left on disk keeps working after
         .poll(() => fake.posted.filter((p) => p.content === OFFLINE_REPLY).map((p) => p.replyTo))
         .toEqual(['101'])
       await answersOnDiscord(fake, 'hello after the upgrade')
-      expect(discordOnDisk(env).channel).toEqual(CHANNEL)
+      await expect.poll(() => discordOnDisk(env)?.channel).toEqual(CHANNEL)
       expect(discordOnDisk(env)).not.toHaveProperty('bindings')
       expect(butlerSessionOnDisk(env)?.lastSessionKey).toBe(last)
       expect(butlerSessionOnDisk(env)?.sessionIds).toContain(last)

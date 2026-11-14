@@ -112,7 +112,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
     digit picks that option and `1` runs the command; a command starting `slow ` runs on
     only once `<home>/go-run` exists; a lone Esc on it ends the turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
-    tool use]`, no Stop, CC§2), `/busy` (a turn held open ~30 s), `/hold` (a turn held
+    tool use]`, no Stop, CC§2), `/plan <text>` (asks to approve `<text>` as a plan, the
+    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s), `/hold` (a turn held
     open until a lone Esc, which ends it with `[Request interrupted by user]` and no
     Stop), `/need-approval`,
     `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
@@ -153,7 +154,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (its UserPromptSubmit hook
     gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
     transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
-    Stop). A `--name` shows as its registry name.
+    Stop), except one asking it to approve the same plan again, which asks its transcript's
+    last plan once more, as `/plan` does. A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
@@ -303,10 +305,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_AGY_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`, and `KOLOFT_TEST_MACHINE_FILE` (JSON
-  `{pressure, load1, backgroundWork}` read in place of the Mac's own numbers) pointing at a
-  roomy `<home>/machine-reading.json`, so the developer Mac's own load never reaches a
-  test; a spec wanting a busy Mac points it at a file of its own (machine-room). The
-  hand-test sandbox drops it and reads the real Mac.
+  `{pressure}`, the memory pressure level 1, 2 or 4, read in place of the Mac's own) pointing
+  at a roomy `<home>/machine-reading.json`, so the developer Mac's own memory never reaches a
+  test; a spec wanting memory at warning or critical rewrites that file (machine-room,
+  memory-drops-hidden-pages). The hand-test sandbox drops it and reads the real Mac.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,

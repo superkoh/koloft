@@ -12,6 +12,7 @@ import {
 } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
+import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
@@ -22,6 +23,11 @@ export const CLAUDE_AUTH_ENV_VARS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN'
 ]
+
+// CC§7
+export function claudeCodeGuessesWindowOf(model: string): boolean {
+  return !/claude/i.test(model) && !/\[1m\]$/i.test(model)
+}
 
 export function accountEnv(
   kind: AccountKind,
@@ -47,6 +53,7 @@ export function accountEnv(
         env[k] = endpoint.model
       }
       env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1'
+      if (claudeCodeGuessesWindowOf(endpoint.model)) env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1'
     }
   } else env.CLAUDE_CODE_OAUTH_TOKEN = secret
   return env
@@ -197,6 +204,7 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
 
 // PLATFORM§35
 export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
+  ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE,
   `${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"`,
   'exec "$@"'
 ]
