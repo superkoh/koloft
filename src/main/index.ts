@@ -374,6 +374,7 @@ import {
   type RelayDeps
 } from './cdpRelay'
 import { pickElement, pickText, stopPick } from './elementPick'
+import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -1504,11 +1505,53 @@ function elementPicksDir(): string {
   return path.join(app.getPath('userData'), 'element-picks')
 }
 
-async function savePickOnThisMac(png: Buffer): Promise<string> {
-  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
-  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
-  await fs.promises.writeFile(file, png)
+async function savePictureIn(dir: string, extension: string, picture: Buffer): Promise<string> {
+  await fs.promises.mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${crypto.randomUUID()}.${extension}`)
+  await fs.promises.writeFile(file, picture)
   return file
+}
+
+function savePickOnThisMac(png: Buffer): Promise<string> {
+  return savePictureIn(elementPicksDir(), 'png', png)
+}
+
+const PASTED_PICTURES_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const PASTED_PICTURES_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+
+function pastedPicturesDir(): string {
+  return path.join(app.getPath('userData'), 'palette-pictures')
+}
+
+async function savePastedPicture(dataUrl: string): Promise<string | null> {
+  const [, mime, picture] = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl) ?? []
+  if (!Object.hasOwn(PASTED_PICTURE_EXTENSIONS, mime ?? '')) return null
+  return savePictureIn(
+    pastedPicturesDir(),
+    PASTED_PICTURE_EXTENSIONS[mime],
+    Buffer.from(picture, 'base64')
+  )
+}
+
+async function withPastedPicturesOnItsMachine(
+  options: CreateTabOptions
+): Promise<CreateTabOptions> {
+  const machine = typeof options.cwd === 'string' ? parseRemoteKey(options.cwd)?.host : undefined
+  if (!machine || !options.firstPrompt) return options
+  let firstPrompt = options.firstPrompt
+  await Promise.all(
+    pastedPicturesIn(firstPrompt, pastedPicturesDir()).map(async (file) => {
+      try {
+        const picture = await fs.promises.readFile(file)
+        const there = await hosts.machine(machine).savePick(path.basename(file), picture)
+        firstPrompt = firstPrompt.replaceAll(file, there)
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
+      }
+    })
+  )
+  return { ...options, firstPrompt }
 }
 
 // CODEX§3 CODEX§20 MUSE§5
@@ -3328,6 +3371,10 @@ app.whenReady().then(() => {
   const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
   pruneElementPicks()
   setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
+  const prunePastedPictures = (): void =>
+    pruneStale(pastedPicturesDir(), PASTED_PICTURES_KEPT_MS, true)
+  prunePastedPictures()
+  setInterval(prunePastedPictures, PASTED_PICTURES_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -5785,7 +5832,7 @@ async function launchQuietTab(
   title: string,
   more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
-  const r = await sessionBackends.create(options)
+  const r = await sessionBackends.create(await withPastedPicturesOnItsMachine(options))
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
   sendToRenderer(CH.terminal.spawned, spawned)
@@ -6285,11 +6332,11 @@ function commandIntoButler(text: string): string {
   return commandInto(butlerDestination(), text)
 }
 
-function fromPalette({ words, backend, about, at }: PaletteRequest): string {
+function fromPalette({ words, pictures, backend, about, at }: PaletteRequest): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
   const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
-  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
+  return withPictures(`The owner typed this in ⌘P: ${words}${where}${routed}${agent}`, pictures)
 }
 
 async function startHelper(
@@ -6513,7 +6560,8 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (opts.kind !== 'shell') return sessionBackends.create(opts)
+      if (opts.kind !== 'shell')
+        return sessionBackends.create(await withPastedPicturesOnItsMachine(opts))
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
@@ -7277,6 +7325,9 @@ function registerIpc(): void {
       : null
     return pickText(picked, picture)
   })
+  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
+  )
   ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
     if (typeof id === 'number') stopPick(id)
   })

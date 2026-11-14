@@ -96,6 +96,9 @@ export const CH = {
     startFresh: 'conductors:startFresh',
     fromPalette: 'conductors:fromPalette'
   },
+  palette: {
+    savePicture: 'palette:savePicture'
+  },
   discord: {
     status: 'discord:status',
     pair: 'discord:pair',

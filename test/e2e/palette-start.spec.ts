@@ -924,3 +924,216 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 })
+
+const ONE_PIXEL_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+const PICTURE_LINE = 'Picture: '
+
+const COPIED_FROM_A_SPREADSHEET = {
+  'text/html': '<table><tr><td>a</td></tr></table>',
+  'text/plain': 'a'
+}
+const COPIED_WITH_COPY_IMAGE_IN_A_BROWSER = { 'text/html': '<img src="https://example.com/a.png">' }
+
+async function pastePicture(page: Page, alongside: Record<string, string> = {}): Promise<void> {
+  await askBox(page).evaluate(
+    (box, [png, texts]) => {
+      const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
+      const carried = new DataTransfer()
+      carried.items.add(new File([bytes], 'shot.png', { type: 'image/png' }))
+      for (const [type, text] of Object.entries(texts)) carried.setData(type, text)
+      box.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: carried, bubbles: true, cancelable: true })
+      )
+    },
+    [ONE_PIXEL_PNG, alongside] as const
+  )
+}
+
+const pastedPictures = (within: Locator): Locator =>
+  within.getByRole('list', { name: 'Pasted pictures' }).getByRole('listitem')
+
+async function askWithPicture(app: ElectronApplication, page: Page, text: string): Promise<void> {
+  await ask(app, page, text)
+  await pastePicture(page)
+  await expect(pastedPictures(palette(page))).toHaveCount(1)
+}
+
+function picturesNamedIn(prompt: string): string[] {
+  return [...prompt.matchAll(/^Picture: (\S+\.png)/gm)].map((found) => found[1])
+}
+
+function expectThePastedPictureUnder(folder: string, prompt: string): void {
+  const [file, ...more] = new Set(picturesNamedIn(prompt))
+  expect(more).toHaveLength(0)
+  expect(path.dirname(file)).toBe(fs.realpathSync(folder))
+  expect(fs.readFileSync(file).toString('base64')).toBe(ONE_PIXEL_PNG)
+}
+
+const picturesOnThisMac = (env: E2EEnv): string => path.join(env.userData, 'palette-pictures')
+const picturesOnTheMachine = (env: E2EEnv): string =>
+  path.join(machineHome(env), '.koloft', 'element-picks')
+
+test.describe('a picture pasted in ⌘P goes with the words to the session that takes them', () => {
+  test('local Claude: each pasted picture shows under the words, also one copied with a browser’s Copy Image, while cells copied with their text stay a text paste; × takes one away; a picture with no words cannot start; ⏎ sends the words with a "Picture:" line naming the saved file, and Assist is asked about the words only', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    assistAnswers(env, { workspace: 2, worktree: 'main', title: 'Bravo work', why: 'ws-b.' })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ask(app, page, '')
+      await pastePicture(page, COPIED_FROM_A_SPREADSHEET)
+      await pastePicture(page)
+      await pastePicture(page, COPIED_WITH_COPY_IMAGE_IN_A_BROWSER)
+      const shown = pastedPictures(palette(page))
+      await expect(shown).toHaveCount(2)
+      await expect(palette(page).locator('.pal-tips')).toHaveText(
+        'Say what to do with the picture · Esc'
+      )
+      await expect(palette(page).locator('.pal-pill', { hasText: 'Ask AI' })).toBeDisabled()
+      await shown.first().getByRole('button', { name: 'Remove picture' }).click()
+      await expect(shown).toHaveCount(1)
+
+      await askBox(page).fill(PROMPT)
+      await page.keyboard.press('Enter')
+      const [call] = await waitForAllCalls(env, 1, 30_000)
+      const sent = textAfterDashes(call)
+      expect(sent.startsWith(`${PROMPT}\n\n${PICTURE_LINE}`)).toBe(true)
+      expectThePastedPictureUnder(picturesOnThisMac(env), sent)
+      expect(assistWasAsked(env)).toContain(PROMPT)
+      expect(assistWasAsked(env)).not.toContain(PICTURE_LINE)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  for (const { backend, install, launches, firstPrompt } of OTHER_AGENTS_HERE) {
+    test(`local ${BACKEND_LABEL[backend]}: its first prompt ends with the "Picture:" line of the file saved on this Mac`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      install(env)
+      gitInit(env.workspaces.a)
+      assistAnswers(env, {
+        workspace: 1,
+        worktree: { new: 'palette-search' },
+        title: 'Palette search',
+        sure: true,
+        why: 'The palette lives in ws-a.'
+      })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await makeDefaultAgent(page, backend)
+        await askWithPicture(app, page, PROMPT)
+        await page.keyboard.press('Enter')
+        await expect.poll(() => launches(env).length, { timeout: 40_000 }).toBe(1)
+        const sent = firstPrompt(launches(env)[0].argv) ?? ''
+        expect(sent.startsWith(`${PROMPT}\n\n${PICTURE_LINE}`)).toBe(true)
+        expectThePastedPictureUnder(picturesOnThisMac(env), sent)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  test('the butler’s helper gets the picture with the words it is handed', async ({ env }) => {
+    test.setTimeout(240_000)
+    assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await askWithPicture(app, page, 'make it look like this')
+      await page.keyboard.press('Enter')
+      const handed = (): string =>
+        readAllCalls(env)
+          .map(textAfterDashes)
+          .find((text) => text.includes('The owner typed this in ⌘P: make it look like this')) ?? ''
+      await expect.poll(handed, { timeout: 60_000 }).not.toBe('')
+      expectThePastedPictureUnder(picturesOnThisMac(env), handed())
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('the New Project dialog shows the pasted picture under the words and starts the session with it', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const parent = fs.realpathSync(fs.mkdtempSync(path.join(env.home, 'projects-')))
+    assistAnswers(env, { workspace: null, machine: 'local', newFolder: 'ledger', title: 'Ledger' })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await askWithPicture(app, page, 'start a new bookkeeping site')
+      await page.keyboard.press('Enter')
+      const dlg = page.getByRole('dialog', { name: 'New Project' })
+      await expect(pastedPictures(dlg)).toHaveCount(1, { timeout: 30_000 })
+      answerFileDialog(env, parent)
+      await dlg.getByRole('button', { name: 'Choose folder…' }).click()
+      await expect(dlg.locator('.modal-foot .btn-primary')).toBeEnabled()
+      await dlg.getByRole('textbox', { name: 'Folder name' }).press('Enter')
+      const [call] = await waitForAllCalls(env, 1)
+      expectThePastedPictureUnder(picturesOnThisMac(env), textAfterDashes(call))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test.describe('remote', () => {
+    test('remote Claude: the picture is copied to the machine, and the first prompt names the copy there', async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      seedRemoteWorkspace(env)
+      assistAnswers(env, { workspace: 3, worktree: 'main', title: 'Deploy check', why: 'proj' })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await askWithPicture(app, page, 'check the deploy script')
+        await page.keyboard.press('Enter')
+        const [onRemote] = await waitForAllCalls(env, 1, 90_000)
+        expect(onRemote.cwd).toBe(remoteDir(env))
+        expectThePastedPictureUnder(picturesOnTheMachine(env), textAfterDashes(onRemote))
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+      const { backend, launches, firstPrompt } = ON_THE_MACHINE[agent.label]
+      test(`remote ${agent.label}: the picture is copied to the machine, and the first prompt names the copy there`, async ({
+        env
+      }) => {
+        test.setTimeout(300_000)
+        installFakeRemote(env)
+        agent.install(env)
+        seedRemoteWorkspace(env)
+        assistAnswers(env, { workspace: 3, worktree: 'main', title: 'Deploy check', why: 'proj' })
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await makeDefaultAgent(page, backend)
+          await askWithPicture(app, page, 'check the deploy script')
+          await page.keyboard.press('Enter')
+          await expect.poll(() => launches(env).length, { timeout: 90_000 }).toBe(1)
+          expectThePastedPictureUnder(
+            picturesOnTheMachine(env),
+            firstPrompt(launches(env)[0].argv) ?? ''
+          )
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+    }
+  })
+})
