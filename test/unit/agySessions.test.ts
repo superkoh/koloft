@@ -31,6 +31,7 @@ const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
 const LISTED_TITLE_READ_SETTLES_MS = 300
+const TITLE_LANDS_AFTER_THE_TURN_MS = 1500
 const STANDING_CRON = {
   name: 'schedule',
   args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
@@ -751,6 +752,23 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     say(id, state('done'))
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
     expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
+  it('takes the title agy makes up even when it reaches agy’s list a few seconds after a short turn ends', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Tidy the readme',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'), {
+      timeout: 3000
+    })
   })
 
   // AGY§16
