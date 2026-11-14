@@ -107,6 +107,13 @@ export async function messagingSocketOf(
   return (await liveEntryOf(sessionId, dir, startOf))?.messagingSocketPath ?? null
 }
 
+// CC§13
+export function sessionTakingMessagesAt(socket: string, dir = REGISTRY_DIR): string | null {
+  for (const [sessionId, entries] of readRegistry(dir))
+    if (entries.some((e) => e.messagingSocketPath === socket)) return sessionId
+  return null
+}
+
 // CC§11
 function panelFromStatus(status: string | undefined): boolean | undefined {
   return status === undefined ? undefined : status === 'waiting'
@@ -156,17 +163,30 @@ interface EntryOnMachine {
   status?: unknown
 }
 
-// CC§5 CC§11
-function tabEntriesOnMachine(liveRegistry: string, sessionId: string): EntryOnMachine[] {
+function entriesOnMachine(liveRegistry: string): EntryOnMachine[] {
   return liveRegistry.split('\0').flatMap((text) => {
-    let entry: EntryOnMachine
     try {
-      entry = JSON.parse(text)
+      return [JSON.parse(text) as EntryOnMachine]
     } catch {
       return []
     }
-    return entry.sessionId === sessionId && entry.kind !== 'bg' ? [entry] : []
   })
+}
+
+// CC§5 CC§11
+function tabEntriesOnMachine(liveRegistry: string, sessionId: string): EntryOnMachine[] {
+  return entriesOnMachine(liveRegistry).filter(
+    (entry) => entry.sessionId === sessionId && entry.kind !== 'bg'
+  )
+}
+
+// CC§13
+export function sessionTakingMessagesAtOnMachine(
+  liveRegistry: string,
+  socket: string
+): string | null {
+  const entry = entriesOnMachine(liveRegistry).find((e) => e.messagingSocketPath === socket)
+  return typeof entry?.sessionId === 'string' ? entry.sessionId : null
 }
 
 export function tabSocketOnMachine(liveRegistry: string, sessionId: string): string | null {

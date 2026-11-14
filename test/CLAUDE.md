@@ -154,7 +154,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (its UserPromptSubmit hook
     gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
     transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
-    Stop), except one asking it to approve the same plan again, which asks its transcript's
+    Stop; during a `/hold` turn it is taken into that turn instead, as CC's is: the hook
+    fires and a `queued_command` attachment lands, with no reply and no Stop), except one asking it to approve the same plan again, which asks its transcript's
     last plan once more, as `/plan` does. A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.

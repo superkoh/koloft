@@ -311,6 +311,7 @@ export function seedHandedOverOwnerWords(said: string, ownerWords: string): void
 }
 
 export const START_IN_STATUS_LOG = 'inStatusLog'
+export const PEER_SOCKET_FIELD = 'fromSocket'
 export const STATUS_LOG_SUFFIX = '.status.jsonl'
 
 export function statusLogOf(regDir: string, tabId: string): string {
@@ -484,7 +485,14 @@ case "$event" in
       *'"session_crons":[]'*) wake=',"wake":0' ;;
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$log"
+    # CC§13
+    peer=""
+    case "$input" in
+      *'"prompt":"<cross-session-message from=\\"uds:'*)
+        peer="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*"prompt":"<cross-session-message from=."uds:([A-Za-z0-9/._-]+).".*/,"${PEER_SOCKET_FIELD}":"\\1"/p')"
+        ;;
+    esac
+    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" "$peer" >> "$log"
     if [ "$event" = "prompt" ]; then
       # CC§13 CC§19 ADR-0028
       flag=""

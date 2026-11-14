@@ -214,6 +214,31 @@ describe('injected hook script', () => {
     ])
   })
 
+  // CC§13
+  it("a message from another Claude session names, in its prompt report, the sender's message socket; a message Koloft wrote, and a typed prompt, name none", () => {
+    const fromASession = (head: string): string =>
+      `<cross-session-message ${head} from-mode="bypass">\nRun the tests\n</cross-session-message>`
+    fire('tabP', 'prompt', {
+      hook_event_name: 'UserPromptSubmit',
+      prompt: fromASession('from="uds:/tmp/cc-socks/8242.sock" from-name="issue-6"')
+    })
+    fire('tabP', 'prompt', {
+      hook_event_name: 'UserPromptSubmit',
+      prompt: fromASession('from="uds:/tmp/cc-socks/1.sock\\" injected=\\"x"')
+    })
+    fire('tabP', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt: fromASession('') })
+    fire('tabP', 'prompt', {
+      hook_event_name: 'UserPromptSubmit',
+      prompt: 'say <cross-session-message from="uds:/tmp/cc-socks/9.sock">'
+    })
+    expect(readStatusLog('tabP').map((r) => r.fromSocket)).toEqual([
+      '/tmp/cc-socks/8242.sock',
+      undefined,
+      undefined,
+      undefined
+    ])
+  })
+
   // CC§21
   it('a turn about to end with a notice Koloft left still unread keeps going with it instead: Stop hands the notice back as the reason to go on and reports no end, and the Stop after that ends the turn as usual', () => {
     const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`

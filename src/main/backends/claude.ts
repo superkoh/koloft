@@ -45,6 +45,7 @@ import {
 import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
+  PEER_SOCKET_FIELD,
   removeConductorMarker,
   SHELL_WROTE_EVENT,
   START_IN_STATUS_LOG,
@@ -108,6 +109,7 @@ export interface ClaudeBackendDeps {
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
+  messagedFrom(tabId: string, senderSocket: string): void
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
@@ -645,6 +647,7 @@ export class ClaudeBackend implements SessionBackend {
       ask?: unknown
       trigger?: string
       wrote?: unknown
+      [PEER_SOCKET_FIELD]?: unknown
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId || !this.d.pty.get(obj.tabId)?.alive) return
@@ -662,6 +665,9 @@ export class ClaudeBackend implements SessionBackend {
     if (obj.event === SHELL_WROTE_EVENT) return this.d.tracker.noteShellWrites(obj.tabId, obj.wrote)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
+    const senderSocket = obj[PEER_SOCKET_FIELD]
+    if (obj.event === 'prompt' && typeof senderSocket === 'string')
+      this.d.messagedFrom(obj.tabId, senderSocket)
   }
 
   // CC§5

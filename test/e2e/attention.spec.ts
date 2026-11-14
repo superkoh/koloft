@@ -1,4 +1,5 @@
 import fs from 'fs'
+import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
@@ -167,6 +168,63 @@ test.describe('attention markers come from real session-status transitions (shim
       expect(await markOn(page, parentTab)).toBeTruthy()
       await lookAtTheWindow(app)
       await expect.poll(() => markOn(page, parentTab)).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§13
+  test('a turn that ended after messaging another Claude session with SendMessage is only news once that session takes the message into its running turn, told by code alone', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedSettings(env, { hintsOff: true })
+    const registry = path.join(env.home, '.claude', 'sessions')
+    const sockets = (): string[] =>
+      (fs.existsSync(registry) ? fs.readdirSync(registry) : [])
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => JSON.parse(fs.readFileSync(path.join(registry, f), 'utf8')).messagingSocketPath)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const type = (tab: string, line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+      const activeTab = async (): Promise<string> =>
+        (await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id'))!
+      await startSessionIn(page, 'ws-a')
+      const sender = await activeTab()
+      await expect.poll(sockets, { timeout: 25_000 }).toHaveLength(1)
+      const [senderSocket] = sockets()
+      await startSessionIn(page, 'ws-b')
+      const receiver = await activeTab()
+      await expect.poll(sockets, { timeout: 25_000 }).toHaveLength(2)
+      const receiverSocket = sockets().find((s) => s !== senderSocket)!
+      await type(receiver, '/hold')
+      await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(
+        /\bst-working\b/,
+        { timeout: 20_000 }
+      )
+
+      await expect.poll(() => markOn(page, sender), { timeout: 25_000 }).toBeTruthy()
+      const before = (await markOn(page, sender))!.at
+      await type(sender, 'reporting back')
+      await expect
+        .poll(async () => (await markOn(page, sender))?.at ?? before, { timeout: 20_000 })
+        .toBeGreaterThan(before)
+      expect((await markOn(page, sender))?.fyi).toBeFalsy()
+
+      const content = `<cross-session-message from="uds:${senderSocket}" from-name="sender" from-mode="bypass">\nRun the tests\n</cross-session-message>`
+      await new Promise<void>((resolve, reject) => {
+        const c = net.createConnection(receiverSocket, () =>
+          c.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n')
+        )
+        c.on('close', () => resolve())
+        c.on('error', reject)
+      })
+      await expect
+        .poll(async () => (await markOn(page, sender))?.fyi, { timeout: 20_000 })
+        .toBe(true)
     } finally {
       await quitAndClose(app)
     }

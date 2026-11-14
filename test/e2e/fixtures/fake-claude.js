@@ -746,8 +746,22 @@ function lastPlanAsked() {
     .map((c) => c.input.plan)
     .at(-1)
 }
+let turnHeld = false
 // CC§13
 function peerTurn(content) {
+  if (turnHeld) {
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
+    append([
+      {
+        type: 'attachment',
+        attachment: { type: 'queued_command', prompt: content, origin: { kind: 'peer' } },
+        isMeta: true,
+        cwd
+      }
+    ])
+    process.stdout.write('[fake-claude] took a peer message into the running turn\r\n')
+    return
+  }
   const plan = content.includes(ASKED_FOR_THE_PLAN_AGAIN) ? lastPlanAsked() : undefined
   if (plan !== undefined) return handleLine(`/plan ${plan}`)
   const context = hookContext(
@@ -1699,10 +1713,14 @@ function handleLine(line) {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
     process.stdout.write('[fake-claude] holding the turn until Esc\r\n')
+    turnHeld = true
     return void keysOnTheDialog(() => undefined, {
       shownState: 'state=working',
       escEndsTheTurn: true
-    }).then(() => interruptTheTurn())
+    }).then(() => {
+      turnHeld = false
+      interruptTheTurn()
+    })
   }
   if (text.startsWith('/answer ')) {
     const question = text.slice('/answer '.length)
