@@ -293,6 +293,7 @@ export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
   quota?: QuotaBucket[]
+  quotaAt?: number
   probeError?: ProbeErrorKind
   apiKey?: true
 }
@@ -542,6 +543,11 @@ export interface SessionMethods {
 }
 export type TabKind = 'shell' | BackendId
 
+export interface ScreenSize {
+  cols: number
+  rows: number
+}
+
 export interface BackendAvailability {
   id: BackendId
   available: boolean
@@ -577,30 +583,10 @@ export interface CreateTabOptions {
   trustFolder?: boolean
 }
 
-export interface QueuedLaunch {
-  tabId: string
-  kind: BackendId
-  cwd: string
-  title: string
-  jobId?: string
-  since: number
-}
-
-export interface HeldCommand {
-  since: number
-  command: string
-}
-
 export interface MachineState {
-  busy: boolean
-  pressure: number | null
-  load1: number
-  cores: number
-  queued: QueuedLaunch[]
-  held: Record<string, HeldCommand>
-  background: string[]
+  critical: boolean
+  slowed: string[]
   memory: Record<string, number>
-  sharedVmBytes: number
 }
 
 export type CreateTabResult =
@@ -736,6 +722,7 @@ export interface AttentionEvent extends AttentionSubject {
   at: number
   fyi?: boolean
   wasAsking?: boolean
+  stoppedByRestart?: boolean
 }
 
 export interface OsOutletsSeenByTests {
@@ -1158,7 +1145,7 @@ export interface KoloftApi {
     attach(id: string): void
     onScreen(id: string, onScreen: boolean): void
     flowStats(): Promise<FlowStats[]>
-    resize(id: string, cols: number, rows: number): void
+    resize(id: string, cols: number, rows: number, sessionScreen: boolean): void
     kill(id: string, restarting?: boolean): void
     onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
@@ -1238,6 +1225,7 @@ export interface KoloftApi {
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number
+  sessionScreenAtLoad: ScreenSize | null
   browserTabCap: number
   browser: {
     onOpenRequest(cb: (r: BrowserOpenRequest) => void): () => void
@@ -1486,7 +1474,6 @@ export interface KoloftApi {
     onState(cb: (s: MachineState) => void): () => void
     now(): Promise<MachineState | null>
     free(tabId: string): Promise<boolean>
-    drop(tabId: string): Promise<boolean>
   }
   conductors: {
     bind(channel: DiscordChannel): Promise<ConductorSaveResult>
@@ -1559,7 +1546,7 @@ export interface CronFile {
   jobs: CronJob[]
 }
 
-export type LiveState = 'queued' | 'launching' | 'running' | 'done'
+export type LiveState = 'launching' | 'running' | 'done'
 
 export interface LiveRun {
   jobId: string

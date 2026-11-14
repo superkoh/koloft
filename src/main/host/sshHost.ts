@@ -74,7 +74,6 @@ import { MACHINE_CONFIG_HOME, MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } fr
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import {
   discordSaidLine,
-  HOLD_FILE,
   NOTICE_THIS_TURN,
   noticeLine,
   OWNER_ASLEEP_FILE,
@@ -135,7 +134,6 @@ export interface MuseMachineLaunch {
   koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
-  holdWhileBusy?: boolean
 }
 
 export interface MuseMachinePlan {
@@ -916,7 +914,7 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  watchDir(dir: string, onChange: DirChangeListener): boolean {
+  async watchDir(dir: string, onChange: DirChangeListener): Promise<boolean> {
     this.deps.watch(this.bare(dir), () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }))
     return false
   }
@@ -947,13 +945,17 @@ export class SshHost implements Host {
   osOpen(): void {}
 
   // ADR-0044
-  endTmuxSession(tmuxName: string): Promise<string | undefined> {
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined> {
     const renamingTo = this.renamesOnTheWire.get(tmuxName)
     const namesItMayHave = renamingTo ? [tmuxName, renamingTo] : [tmuxName]
     const killedIds = namesItMayHave.flatMap((name) => sessionIdOfTmux(name) ?? [])
-    const kill = this.deps.run(killSessionCmd(tmuxName, renamingTo)).then((r) => {
+    const kill = this.deps.run(killSessionCmd(tmuxName, renamingTo, tabId)).then((r) => {
       for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
-      if (!sshLinkBroke(r)) return undefined
+      if (!sshLinkBroke(r)) {
+        const killedOnTheMachine = sessionIdOfTmux(r.stdout.toString().trim())
+        if (killedOnTheMachine) this.killedSessions.add(killedOnTheMachine)
+        return undefined
+      }
       for (const id of killedIds) this.killedSessions.delete(id)
       return problemOf(r)
     })
@@ -1047,12 +1049,7 @@ export class SshHost implements Host {
         const tabDir = tabPackageDir(d.userData, tabId)
         const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(
-            hookScript,
-            tabId,
-            contextFile,
-            spec.holdWhileBusy ? `${remoteMachineDir(pkg.name)}/${HOLD_FILE}` : undefined
-          )
+          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
@@ -1091,9 +1088,11 @@ export class SshHost implements Host {
     ensureControlDir(this.deps.claude.controlDir)
   }
 
-  // PLATFORM§35
+  // PLATFORM§35 ADR-0044
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
     await this.deps.claude.firstHeartbeatDone()
+    while (this.kills.size && this.deps.claude.alive().has(sid))
+      await Promise.all(this.kills.values())
     const mode = launchMode({
       alive: this.deps.claude.alive(),
       killed: this.killedSessions,

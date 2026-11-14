@@ -4,7 +4,7 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { TabKind } from '@shared/types'
+import type { ScreenSize, TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
@@ -186,6 +186,7 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
+  sessionScreen?: ScreenSize
 
   private ptys = new Map<string, PtyHandle>()
   private running = new Set<pty.IPty>()
@@ -291,10 +292,11 @@ export class PtyManager extends EventEmitter {
       ? [args.executable, ...(args.argv ?? [])]
       : [shell, ...login.args]
     const [file, ...fileArgs] = args.aboveItsTools ? aboveItsTools(program) : program
+    const screen = args.util ? undefined : this.sessionScreen
     const proc = pty.spawn(file, fileArgs, {
       name: 'xterm-256color',
-      cols: args.cols ?? 80,
-      rows: args.rows ?? 24,
+      cols: args.cols ?? screen?.cols ?? 80,
+      rows: args.rows ?? screen?.rows ?? 24,
       cwd: args.cwd,
       env
     })

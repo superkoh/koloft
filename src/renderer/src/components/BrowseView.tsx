@@ -347,10 +347,12 @@ export function BrowseView({
     }
     for (const d of want) {
       if (watchedDirs.current.has(d)) continue
-      window.api.fs.watchDir(d)
+      void window.api.fs.watchDir(d).then((live) => {
+        if (live) relist(d)
+      })
       watchedDirs.current.add(d)
     }
-  }, [active, treeLive, expanded, root])
+  }, [active, treeLive, expanded, root, relist])
   useEffect(() => {
     const watched = watchedDirs.current
     const off = window.api.fs.onDirChange((changed) => {
@@ -411,11 +413,11 @@ export function BrowseView({
     const relistWithScratch = (alreadyRelisted: readonly string[] = []): void => {
       for (const d of [dir, agyScratch]) if (d && !alreadyRelisted.includes(d)) relist(d)
     }
-    relistWithScratch()
+    const everythingUnderTheScratchpad = { listsChanged: [], replacedTrees: [dir] }
+    relistWithScratch(relistChanged(everythingUnderTheScratchpad))
     window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed, changes) => {
-      if (changed === dir)
-        relistWithScratch(relistChanged(changes ?? { listsChanged: [], replacedTrees: [dir] }))
+      if (changed === dir) relistWithScratch(relistChanged(changes ?? everythingUnderTheScratchpad))
     })
     return () => {
       off()

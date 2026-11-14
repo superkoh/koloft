@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -132,7 +133,7 @@ export function setupE2EEnv(): E2EEnv {
   const fileDialogFile = path.join(home, 'file-dialog-answers')
 
   const roomyMachineNotTheDevMacsOwnLoad = path.join(home, 'machine-reading.json')
-  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1, load1: 0 }))
+  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1 }))
 
   const workspaces = {
     a: makeWorkspace(home, 'ws-a', {
@@ -212,7 +213,46 @@ export function setupE2EEnv(): E2EEnv {
     claudeLazyFile: path.join(home, 'fake-claude-lazy'),
     workspaces,
     launchEnv,
-    cleanup: () => fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    cleanup: () => {
+      killEveryProcessNaming(home)
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    }
+  }
+}
+
+function thisProcessAndItsParents(): Set<number> {
+  const parentOf = new Map(
+    execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
+  )
+  const chain = new Set<number>()
+  for (let pid: number | undefined = process.pid; pid && !chain.has(pid); pid = parentOf.get(pid))
+    chain.add(pid)
+  return chain
+}
+
+const asLiteralRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+export function processesNaming(pathFragment: string): number[] {
+  const mine = thisProcessAndItsParents()
+  try {
+    return execFileSync('pgrep', ['-f', asLiteralRegex(pathFragment)], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map(Number)
+      .filter((pid) => pid && !mine.has(pid))
+  } catch {
+    return []
+  }
+}
+
+export function killEveryProcessNaming(pathFragment: string): void {
+  for (const pid of processesNaming(pathFragment)) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
   }
 }
 
@@ -361,6 +401,16 @@ export function agyTranscriptOf(
     'transcript.jsonl'
   )
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+}
+
+// PLATFORM§59
+export function memoryPressure(env: E2EEnv, pressure: 1 | 2 | 4): void {
+  fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure }))
+}
+
+export function koloftReadMemoryPressure(env: E2EEnv, pressure: 1 | 2 | 4): boolean {
+  const log = path.join(env.userData, 'machine.log')
+  return fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes(`memory pressure ${pressure}`)
 }
 
 // AGY§4 AGY§5

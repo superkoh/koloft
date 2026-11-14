@@ -782,44 +782,6 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.jobs[0].history[0]).toMatchObject({ state: 'failed', note: 'Claude did not start' })
   })
 
-  it('a run queued for a busy machine has no start deadline until it really starts', async () => {
-    let start!: (o: 'started' | 'dropped' | 'failed') => void
-    const startsLater = new Promise<'started' | 'dropped' | 'failed'>((r) => (start = r))
-    const h = makeHarness([makeJob()], {
-      bindDeadlineMs: 5 * SEC,
-      launch: vi.fn(() => ({ ok: true, tabId: 'tab-1', startsLater }) as LaunchResult)
-    })
-    await h.runner.runNow('j1')
-    expect(h.runner.state().live[0].state).toBe('queued')
-    await h.fireTimers(T0 + 60 * SEC)
-    expect(h.killTab).not.toHaveBeenCalled()
-    start('started')
-    await startsLater
-    await Promise.resolve()
-    expect(h.runner.state().live[0].state).toBe('launching')
-    await h.fireTimers(T0 + 70 * SEC)
-    expect(h.killTab).toHaveBeenCalledTimes(1)
-  })
-
-  it('a queued run taken off the queue reads closed; one whose launch then failed reads failed', async () => {
-    for (const [outcome, line] of [
-      ['dropped', { state: 'closed', note: 'taken off the queue before it started' }],
-      ['failed', { state: 'failed', note: 'Claude exited before it started' }]
-    ] as const) {
-      const h = makeHarness([makeJob()], {
-        launch: vi.fn(
-          () =>
-            ({ ok: true, tabId: 'tab-1', startsLater: Promise.resolve(outcome) }) as LaunchResult
-        )
-      })
-      await h.runner.runNow('j1')
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(h.jobs[0].history[0], outcome).toMatchObject(line)
-      expect(h.runner.state().live).toEqual([])
-    }
-  })
-
   it('a new turn after done goes back to running', async () => {
     const h = await started()
     h.runner.onBound('tab-1', 'sess-1')
@@ -1353,6 +1315,24 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     expect(h.jobs[0].history[0]).toMatchObject({ state: 'closed', removed: true })
   })
 
+  it('a bound run’s folder is the run’s own to tidy while it runs and once its History line names it, so the tab’s close leaves it alone; a run that never bound is not claimed', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(true)
+    h.tidied.set(RUN, REMOVED)
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(true)
+    await flush()
+    expect(h.jobs[0].history[0]).toMatchObject({ removed: true })
+
+    const unbound = makeHarness([makeJob()])
+    await unbound.runner.runNow('j1')
+    expect(unbound.runner.tidiesFolder(folderOf(RUN))).toBe(false)
+    unbound.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN) })
+    expect(unbound.runner.tidiesFolder(folderOf(RUN))).toBe(false)
+  })
+
   it('a folder that would lose work stays and its line says why; once a later sweep removes it, the reason goes', async () => {
     const h = makeHarness([makeJob()])
     await h.runner.runNow('j1')
@@ -1546,12 +1526,8 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
       expect(h.jobs[0].history).toHaveLength(1)
     })
 
-    it('a queued run whose process dies never started, so it holds nothing', async () => {
-      const h = makeHarness([makeJob()], {
-        launch: vi.fn(
-          () => ({ ok: true, tabId: 'tab-1', startsLater: new Promise(() => {}) }) as LaunchResult
-        )
-      })
+    it('a run whose process dies before its session begins never started, so it holds nothing', async () => {
+      const h = makeHarness([makeJob()])
       h.runner.onRendererReady()
       await h.runner.runNow('j1')
       h.tidied.set(RUN, REMOVED)

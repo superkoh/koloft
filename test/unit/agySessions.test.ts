@@ -2,7 +2,7 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { execFileSync, spawn, spawnSync } from 'child_process'
+import { execFileSync, spawnSync } from 'child_process'
 import { pathToFileURL } from 'url'
 import { EventEmitter } from 'events'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,8 +17,6 @@ import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
-import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
-import { BUSY_MARKER } from '../../src/main/machineRoom'
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 
@@ -33,6 +31,7 @@ const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
 const LISTED_TITLE_READ_SETTLES_MS = 300
+const TITLE_LANDS_AFTER_THE_TURN_MS = 1500
 const STANDING_CRON = {
   name: 'schedule',
   args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
@@ -423,6 +422,16 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(true)
   })
 
+  // AGY§5
+  it('counts a folder the owner’s own agy settings trust as trusted before any launch, as a launch does', () => {
+    fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'antigravity-cli', 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    expect(sessions.trustsFolder(repo)).toBe(true)
+  })
+
   // AGY§32
   it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
     const memory = path.join(repo, 'AGENTS.md')
@@ -569,49 +578,6 @@ describe('AgySessions launch', () => {
     fs.writeFileSync(path.join(home, 'lock-holders'), '')
     await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
     expect(created[0].argv).toContain(`--conversation=${A}`)
-  })
-})
-
-describe('a background Antigravity tab while the Mac is busy (ADR-0043 AGY§12)', () => {
-  it("holds the background tab's next run_command, here and on a remote machine, and never an owner's tab, though both share the account's hooks file", async () => {
-    const reg = path.join(home, 'reg')
-    fs.mkdirSync(reg)
-    const file = path.join(home, 'hold.sh')
-    fs.writeFileSync(file, HOLD_SCRIPT)
-    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
-    sessions['deps'].holdScript = { file, regDir: reg }
-    sessions['deps'].holdWhileBusy = (tabId) => tabId.endsWith('-bg')
-    const owner = await launch()
-    const background = await launch({ tabId: 'pty-bg' })
-    const hooks = JSON.parse(
-      fs.readFileSync(path.join(picked!.home, 'config', 'hooks.json'), 'utf8')
-    )
-    const [, hold] = hooks.koloft.PreToolUse[0].hooks
-    const input = JSON.stringify({
-      conversationId: A,
-      toolCall: { name: 'run_command', args: { CommandLine: 'npm test' } }
-    })
-    const owners = spawnSync('/bin/sh', ['-c', hold.command], {
-      input,
-      encoding: 'utf8',
-      env: tabEnv(owner.id),
-      timeout: 3000
-    })
-    expect(owners).toMatchObject({ status: 0, stdout: '' })
-    const kid = spawn('/bin/sh', ['-c', hold.command], { env: tabEnv(background.id) })
-    kid.stdin.end(input)
-    await vi.waitFor(
-      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
-      { timeout: 3000 }
-    )
-    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
-    await new Promise((resolve) => kid.on('exit', resolve))
-
-    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r-bg' })
-    const [spec] = machine.launches
-    expect(spec.env.KOLOFT_HOLD_TAB).toBe('pty-r-bg')
-    const there = JSON.parse(spec.program.files['pty-r-bg.hooks.json'])
-    expect(there.koloft.PreToolUse[0].hooks[1].command).toMatch(/ hold-self$/)
   })
 })
 
@@ -796,6 +762,23 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     say(id, state('done'))
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
     expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
+  it('takes the title agy makes up even when it reaches agy’s list a few seconds after a short turn ends', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Tidy the readme',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'), {
+      timeout: 3000
+    })
   })
 
   // AGY§16
