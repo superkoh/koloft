@@ -681,6 +681,43 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   puts it up: `1` Space `3` Space `5` Enter, `2` Enter, Enter sent `selected_labels`
   then `selected_label: "Blue"`, the same for the reverse order and for a note on either
   question. Keys in one write (`"1 3 5\r\r"`) were all taken (2 runs).
+- **A one-question several-pick dialog left half-answered goes back to nothing ticked
+  with `N+2`, Down, Down, Enter, `N+1`, Space, then `1`.** Measured 2026-11-13 on `Muse Code
+  1.4.11 (1.4.11-R6667.1)` (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`, Docker
+  `--network none`) and on `Muse Code 1.4.18 (1.4.18-R8587.1)` (the same image's
+  launcher updating itself, network on), a python3 pty 160×50 answering the cursor,
+  colour and 7501 queries, the screen read through `pyte`, the fake `/responses` model
+  above asking one `request_user_input` question with `selection: {"mode":"multiple"}`
+  and three options, a fresh `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run, keys 300 ms
+  apart from 2.5 s after `blocked`; one run per case.
+  - The review page lists one row per question, then `Submit answers` (highlighted) and
+    `Interrupt turn`. There digits, Space, ← and Shift+Tab do nothing; ↑/↓ move and wrap
+    (↑ from the top row lands on `Interrupt turn`, ↓ from `Interrupt turn` on the top
+    row); Enter on a question's row goes back to that question with its ticks kept and
+    the highlight on its Submit row; Esc goes back to the last question. A question's
+    own footer says Esc interrupts.
+  - So `N+2` (review page: nothing; question: the highlight to Submit), Down, Down (to
+    the question's row / around to row 2), Enter (back to the question / row 2 toggled),
+    `N+1` Space leave only None of the above ticked (it unticks the rest), and `1` puts
+    the highlight on row 1, as on a fresh question. Koloft's usual keys after the run
+    sent just what was asked (`selected_labels: ["Banana"]`, `["Banana","Cherry"]`, or
+    `{"free_text":"None of the above","note":"Mango"}`) from: nothing pressed; Apple and
+    Cherry ticked; None of the above ticked; the review page up; the "Nothing is
+    checked" warning up; Apple ticked by a lone Enter; Koloft's `1` Space `3` Space `5`
+    Enter Enter cut after its 1st, 3rd or 5th key; the same with its `3` lost and the
+    last Enter cut, or its `5` and last Enter lost; `max_selections: 2` with two ticked, on the question and on the review
+    page; `min_selections: 2` (18 cases, each as asked on 1.4.18, again on 1.4.18 inside
+    tmux 3.3a as a remote tab runs it, `tmux -u -f /dev/null`, and on 1.4.11). Losing Koloft's `1` still sent Apple and Cherry (Space ticked the
+    highlighted row 1); losing its first Space sent `["Cherry"]`, its second
+    `["Apple"]` — answers taken, so no second answer follows.
+  - The same run with Up in place of the two Downs did as well from such states (36 runs
+    on 1.4.11, 11 of them in tmux; 15 on 1.4.18), but pressed after the question had closed, in the empty
+    input box, Up brought back the last prompt and Enter sent it to the model again (2
+    of 2). With the two Downs the box sent `5` as a message instead (1 of 1), and the
+    rest of the run then sent `4 12 5`.
+  - Not tried: the run from the middle of a run of its own whose rest was lost.
+  - With two questions, ← and → switch question and wrap (← on question 1 goes to the
+    last one), so no key run was found that reaches question 1 from every page.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting

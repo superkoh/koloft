@@ -1056,39 +1056,49 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
       })
 
   // MUSE§11 AGY§14
-  for (const backend of ['muse', 'agy'] as const)
-    it(`a ${backend} question that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual`, async () => {
+  const FRUITS_TAKING_SEVERAL = {
+    question: 'Which fruits?',
+    options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+    multiSelect: true as const
+  }
+
+  const leftToTheOwner: [string, 'agy' | 'muse', CodexQuestion['questions'], string, string][] = [
+    ['an Antigravity question', 'agy', [], '1, 3', '2'],
+    [
+      'a Muse dialog with a second question after it',
+      'muse',
+      [{ question: 'Which size?', options: [{ label: 'Small' }, { label: 'Large' }] }],
+      '1, 3\n2',
+      '2\n1'
+    ]
+  ]
+  for (const [what, backend, after, first, again] of leftToTheOwner)
+    it(`${what} that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual`, async () => {
       const several = (question: string, id: string): CodexQuestion => ({
         id,
-        questions: [
-          {
-            question,
-            options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
-            multiSelect: true
-          }
-        ]
+        questions: [{ ...FRUITS_TAKING_SEVERAL, question }, ...after]
       })
       let asked = several('Which fruits?', 'hook:1')
       const { relay, writes, session } = codexAsking({
         backendOf: () => backend,
         pendingQuestion: () => asked
       })
-      const first = relay.answerSession(TAB, '1, 3')
+      const answering = relay.answerSession(TAB, first)
       await vi.advanceTimersByTimeAsync(0)
-      expect(await relay.answerSession(TAB, '2')).toBe(ANSWER_ON_ITS_WAY)
+      expect(await relay.answerSession(TAB, again)).toBe(ANSWER_ON_ITS_WAY)
       await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
-      expect(await first).toBe(ANSWER_NOT_TAKEN)
+      expect(await answering).toBe(ANSWER_NOT_TAKEN)
       const pressedOnce = writes.length
       expect(pressedOnce).toBeGreaterThan(0)
 
       asked = several('Which fruits?', 'traj:4')
-      expect(await relay.answerSession(TAB, '1, 3')).toBe(PICKS_MAY_STILL_BE_TICKED)
-      expect(await relay.answerSession(TAB, '2')).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(await relay.answerSession(TAB, first)).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(await relay.answerSession(TAB, again)).toBe(PICKS_MAY_STILL_BE_TICKED)
       expect(writes).toHaveLength(pressedOnce)
 
       session.takesKeys = true
       const taken = async (): Promise<string | undefined> => {
-        const answered = relay.answerSession(TAB, '2')
+        const answered = relay.answerSession(TAB, again)
         await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
         return answered
       }
@@ -1101,6 +1111,52 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
       expect(await taken()).toBeUndefined()
       expect(writes.length).toBeGreaterThan(pressedTwice)
     })
+
+  // MUSE§11
+  describe('a Muse question that takes several picks, alone in its dialog, whose ticks Koloft pressed but the session did not take', () => {
+    const tick = (n: string): string[] => [n, ' ']
+    const submitThenReview = ['5', '\r', '\r']
+    const untickAll = ['5', '\x1b[B', '\x1b[B', '\r', ...tick('4'), '1']
+
+    function museAsking() {
+      const s = codexAsking({
+        backendOf: () => 'muse',
+        pendingQuestion: () => ({
+          id: 'hook:1',
+          questions: [{ ...FRUITS_TAKING_SEVERAL, ownWords: true }]
+        })
+      })
+      const pressed = (): string[] => s.writes.splice(0).map((w) => w.data)
+      const answer = async (reply: string): Promise<string | undefined> => {
+        const answered = s.relay.answerSession(TAB, reply)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
+        return answered
+      }
+      return { ...s, pressed, answer }
+    }
+
+    it('is answered again by first unticking every option through its None of the above row, once: if that is not taken either, a third answer is left to the owner', async () => {
+      const { answer, pressed } = museAsking()
+      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
+      expect(pressed()).toEqual([...tick('1'), ...tick('3'), ...submitThenReview])
+      expect(await answer('2')).toBe(ANSWER_NOT_TAKEN)
+      expect(pressed()).toEqual([...untickAll, ...tick('2'), ...submitThenReview])
+      expect(await answer('2')).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(pressed()).toEqual([])
+    })
+
+    it('is answered again in the owner’s own words after the same unticking', async () => {
+      const { answer, pressed, session } = museAsking()
+      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
+      pressed()
+      session.takesKeys = true
+      expect(await answer('Mango')).toBeUndefined()
+      expect(pressed()).toEqual([
+        ...untickAll,
+        ...['\x1b[B', '\x1b[B', '\x1b[B', '\t', 'Mango', '\r', '\r']
+      ])
+    })
+  })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
     const { relay } = codexAsking()

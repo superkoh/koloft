@@ -893,6 +893,19 @@ only downloaded the public release.
   Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
   time. An option whose own text holds a comma runs into the next one (`Red, dark` and
   `Blue` sent `A1: Red, dark, Blue`).
+- **No key unticks a several-pick question's options at once, so keys cannot redo an
+  answer whose ticks went in but were not sent; the Connect API can.** agy 1.5.8 (build
+  `1.5.8-4602374149505024`, Linux arm64 from the manifest, sha512 checked), Docker
+  `--network none` (`agy-a-img`, tmux 3.3a, 160×50), a fresh `--gemini_dir`, a fake
+  Gemini server answering with `ask_question` (`is_multi_select: true`, Apple / Banana
+  / Cherry), keys by `tmux send-keys` 300 ms apart from 1.5 s after `blocked`,
+  2026-11-13; one run per line. With Apple and Cherry ticked, Ctrl+U, Backspace,
+  Delete, Tab, ←, →, Home, `0` and Ctrl+A changed nothing; `4` opened "Your answer:"
+  with the ticks kept and Esc went back to the list with them still kept; `1` unticked
+  Apple only and Enter then sent `A1: Cherry`. The options have no "none" row that
+  unticks the rest, as Muse's has (MUSE§11), and Esc on the list skips the question. With
+  the same two ticked on screen, `HandleCascadeUserInteraction` with `selectedOptionIds:
+  ["2"]` sent `A1: Banana`.
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
