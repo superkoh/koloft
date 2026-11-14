@@ -12,6 +12,7 @@ import {
 } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
+import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
@@ -197,6 +198,7 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
 
 // PLATFORM§35
 export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
+  ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE,
   `${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"`,
   'exec "$@"'
 ]

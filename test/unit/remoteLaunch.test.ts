@@ -26,6 +26,9 @@ import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
+const PYTHON_WITH_PTY = spawnSync('python3', ['-c', 'import pty, termios']).status === 0
+const TASKPOLICY = '/usr/sbin/taskpolicy'
+const TASKPOLICY_HERE = fs.existsSync(TASKPOLICY)
 const tmpRoots: string[] = []
 const mkroot = (tag: string): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), `koloft-${tag}-`))
@@ -603,7 +606,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§12 AGY§29 PLATFORM§35
-  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0).each([
+  it.skipIf(!PYTHON_WITH_PTY).each([
     { agent: 'claude', boxed: (): Box => box(spec()), arg: [0, '--settings'] as const },
     {
       agent: 'agy',
@@ -644,6 +647,40 @@ describe('U-TAB-*: the tab script on the machine', () => {
       expect(stub.run().status).toBe(0)
       expect(stub.onATerminal()).toBe(false)
       expect(stub.argv()[at]).toBe(expected)
+    }
+  )
+
+  // ADR-0042 PLATFORM§59 PLATFORM§72
+  it.for([
+    { through: 'through the status relay', relayed: true, runs: PYTHON_WITH_PTY },
+    { through: 'started on its own', relayed: false, runs: true }
+  ])(
+    'on a Mac machine the agent sits above the tools it starts, as taskpolicy -a puts a program there, $through',
+    ({ relayed, runs }, ctx) => {
+      const asTaskpolicyLiftsHere = TASKPOLICY_HERE
+        ? spawnSync(
+            TASKPOLICY,
+            ['-a', '/bin/sh', '-c', `ps -o pri= -p $$; /bin/sh -c 'ps -o pri= -p $$; :'`],
+            { encoding: 'utf8' }
+          )
+            .stdout.trim()
+            .split(/\s+/)
+        : []
+      if (!runs || asTaskpolicyLiftsHere[0] === asTaskpolicyLiftsHere[1]) ctx.skip()
+      const b = box(spec())
+      if (!relayed)
+        fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+          mode: 0o755
+        })
+      fs.writeFileSync(
+        path.join(b.home, '.local', 'bin', 'claude'),
+        `#!/bin/sh\nps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'agent'))}\n/bin/sh -c 'ps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'tool'))}; :'\n`,
+        { mode: 0o755 }
+      )
+      expect(b.run().status).toBe(0)
+      expect(
+        ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
+      ).toEqual(asTaskpolicyLiftsHere)
     }
   )
 
@@ -711,6 +748,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       `${b.home}/.koloft/hook-sessions`,
       'T',
       '--',
+      ...(TASKPOLICY_HERE ? [TASKPOLICY, '-a'] : []),
       'muse',
       '--approval-judge',
       'off',

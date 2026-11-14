@@ -51,6 +51,7 @@ import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
+import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
 import { trustCodexFolder } from '../../src/main/backends/codex'
 import { BackgroundFile } from '../../src/main/backgroundFile'
@@ -425,10 +426,12 @@ it('tells a Claude Code tab on this Mac to wrap every frame in synchronized outp
   expect(remote).not.toContain('CLAUDE_CODE_DECSTBM')
 })
 
-it('starts the agent program above its tools wherever that program runs on this Mac — Claude Code here, and the Codex screen of a tab here or over SSH — and never the ssh that carries a tab to another machine', async () => {
+it('starts the agent program above its tools wherever that program runs — Claude Code here and on the machine of a remote tab, and the Codex screen of a tab here or over SSH — and never the ssh that carries a tab to another machine, nor the Codex server behind a tab', async () => {
   const lift = '/usr/sbin/taskpolicy'
   expect(await claudeTab(repo, {})).toContain(`exec ${lift} -a claude`)
-  expect(await claudeTab(`ssh://${MACHINE}${repo}`, {})).not.toContain(lift)
+  const claudeThere = await claudeTab(`ssh://${MACHINE}${repo}`, {})
+  expect(claudeThere.split('\n')[0]).not.toContain(lift)
+  expect(claudeThere).toContain(ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE)
   const codexHere = await codexTab(repo, {})
   expect(codexHere).toContain('"aboveItsTools":[true]')
   expect(codexHere).not.toContain(lift)
