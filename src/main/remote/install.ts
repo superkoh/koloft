@@ -1,7 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
-import { ANSWER_STARTS } from './ssh'
+import { ECHO_THE_MARK } from './ssh'
 import {
   ENSURE_AGY_MINIMUM_FN,
   ENSURE_CLAUDE_MINIMUM_FN,
@@ -75,7 +75,7 @@ export function remoteShCommand(script: string, args: string[] = [], first = '')
 
 // PLATFORM§33
 export function remoteAnswerCommand(script: string, args: string[] = []): string {
-  return remoteShCommand(script, args, `echo ${ANSWER_STARTS}; `)
+  return remoteShCommand(script, args, ECHO_THE_MARK)
 }
 
 const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }

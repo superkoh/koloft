@@ -79,7 +79,7 @@ export function sshCalls(env: E2EEnv): SshCall[] {
 }
 
 const SCRIPT_SENT_AS_BASE64 =
-  /^sh -c '(?:echo [a-z-]+; )?eval "\$\(printf %s "\$0" \| base64 -d\)"' ([A-Za-z0-9+/=]+)$/
+  /^(?:echo [a-z-]+; )?sh -c '(?:echo [a-z-]+; )?eval "\$\(printf %s "\$0" \| base64 -d\)"' ([A-Za-z0-9+/=]+)$/
 
 export function remoteCommandText(argv: string[]): string {
   const sent = argv[argv.length - 1] ?? ''
