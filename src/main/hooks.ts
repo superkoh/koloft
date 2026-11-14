@@ -370,8 +370,12 @@ case "$event" in
     acct="$(printf '%s' "$ANT_ACCOUNT" | tr -d '"\\\\[:cntrl:]')"
     if [ "$event" = "start" ] && [ "$KOLOFT_TMUX_FOLLOW" = "1" ] && [ -n "$TMUX" ] && [ -n "$sid" ]; then
       # ADR-0044
-      printf 'k-%s' "$sid" > "$HOME/.koloft/tabs/$tab.tmux"
-      tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null || { [ -n "$tm" ] && printf '%s' "$tm" > "$HOME/.koloft/tabs/$tab.tmux"; }
+      nf="$HOME/.koloft/tabs/$tab.tmux"
+      was="$(cat "$nf" 2>/dev/null)"
+      printf 'k-%s' "$sid" > "$nf"
+      if ! tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null; then
+        if [ -n "$was" ]; then printf '%s' "$was" > "$nf"; else rm -f "$nf"; fi
+      fi
     fi
     logged=""
     [ "$event" = "start" ] && logged=',"${START_IN_STATUS_LOG}":true'

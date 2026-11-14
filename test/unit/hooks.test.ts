@@ -238,10 +238,14 @@ esac
       expect(fs.readFileSync(nameFile('tabN1'), 'utf8')).toBe('k-sess-new')
     })
 
-    it("Claude Code's hook puts the old name back when the rename fails, so a reconnect attaches to the session under the name it still has", () => {
+    it("Claude Code's hook leaves the name file as it found it when the rename fails, so a reconnect attaches to the session under the name it still has", () => {
       tmuxStub(1)
+      fs.writeFileSync(nameFile('tabN2'), 'k-sess-before')
       fire('tabN2', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
-      expect(fs.readFileSync(nameFile('tabN2'), 'utf8')).toBe('k-sess-old')
+      expect(fs.readFileSync(nameFile('tabN2'), 'utf8')).toBe('k-sess-before')
+
+      fire('tabN4', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
+      expect(fs.existsSync(nameFile('tabN4'))).toBe(false)
     })
 
     it("Antigravity's title script, once the conversation has its id", () => {

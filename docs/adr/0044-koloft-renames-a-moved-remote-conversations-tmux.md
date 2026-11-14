@@ -22,16 +22,18 @@ back failed (the link drops, the name file cannot be written).
 A `/clear`'s rename is the hook's, on the machine, and reaches the tracker only one mirror
 pull later, so a tab's kill then tries, last, the name in the tab's `tabs/<tab>.tmux`, never
 an empty one (tmux would pick a session itself: another tab's), and prints the name it
-ended. Every hook (Claude Code's, Antigravity's, Muse's) writes the new name to that file
-before it renames the session, so a kill landing between the two finds the session under
-the old name or under the file's; a Claude Code rename that fails puts the old name back,
-so a reconnect still attaches. Koloft books that session as ended by it, and a launch of a
+ended. Whatever renames on the machine (Claude Code's hook, Antigravity's title script,
+the Muse relay) writes the new name to that file before it renames the session, so a kill
+landing between the two finds the session under the old name or under the file's; when
+Claude Code's rename fails its hook leaves the file as it found it, so a reconnect still
+attaches. Koloft books that session as ended by it, and a launch of a
 conversation the machine still lists waits for every kill on the wire there (any one of
 them may be ending it under its new name) before choosing between attach and start. A
 tab's start deletes the file, so a name left by an earlier run of that tab id never
-reaches a kill. Muse and Antigravity tabs read the file in a separate ssh call first, so
-the books name the session it held then, and pass their tab as well, so the kill reads the
-file again in case a rename landed after that read.
+reaches a kill. Muse and Antigravity tabs read the file in a separate ssh call first and
+kill under that name, so a launch of the conversation it names waits for the kill; they
+pass their tab as well, so the kill reads the file again in case a rename landed after
+that read.
 **Rejected**: renaming in the hook script on any report whose session id differs from the
 tmux name (as the Antigravity hook does). A fork's Stop would then rename the parent tab's
 tmux session to the fork's id whenever the fork's hook runs with the tab's `TMUX` (not
