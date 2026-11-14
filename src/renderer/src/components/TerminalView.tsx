@@ -5,7 +5,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { consumeAdoptedNudge, useStore } from '../store'
-import { activateTerminalLink } from '../termLinks'
+import { activateTerminalLink, fileLinkProvider, type FileLinkOwner } from '../termLinks'
 import { suppressXtversionReply } from '../xtversionMask'
 import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
@@ -54,6 +54,7 @@ type TerminalViewProps = {
   onOutput?: () => void
   maxCols?: number
   copiesToClipboard?: boolean
+  fileLinksFrom?: FileLinkOwner
 }
 
 // PLATFORM§66
@@ -95,9 +96,12 @@ function LiveTerminal({
   onRepainted,
   onOutput,
   maxCols,
-  copiesToClipboard = false
+  copiesToClipboard = false,
+  fileLinksFrom
 }: TerminalViewProps & { fontFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
+  const fileLinksFromRef = useRef(fileLinksFrom)
+  fileLinksFromRef.current = fileLinksFrom
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
   const onRepaintedRef = useRef(onRepainted)
@@ -241,6 +245,7 @@ function LiveTerminal({
     term.loadAddon(new Unicode11Addon())
     term.unicode.activeVersion = '11'
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
+    term.registerLinkProvider(fileLinkProvider(term, () => fileLinksFromRef.current))
     // CC§12
     suppressXtversionReply(term)
     if (copiesToClipboard) copyOsc52ToClipboard(term, window.api.terminal.copy)

@@ -3595,6 +3595,18 @@ the machine. That a click on `doc 1` then opens the link in a Koloft Codex tab i
 inferred, not checked: the click in a built Koloft was not driven for Codex; it goes
 through the one terminal link handler every tab shares, which AGY§27 drove.
 
+**A file path is never a link, whatever `file_opener` says.** The prompt Codex sends
+tells the model to write a file reference as `[label](/abs/path:line)` and not as a
+`file://` or `vscode://` address, and the default config has `file_opener = "vscode"`
+(both read from the 0.166.0 binary's strings). With that default, a reply holding
+`src/util.ts:7`, a bare `src/app.ts`, `[app.ts](<abs>/src/app.ts:42)`,
+`[util](src/util.ts:7)` and a long relative and absolute path wrote 0 OSC 8 links. A
+markdown file link shows as `app.ts (src/app.ts:42)`: the label, then the target in
+brackets, made relative to the session folder. A path wider than the line is broken at
+a `/` and goes on with `ESC[<row>;3H`, so the terminal holds two unwrapped lines.
+2026-11-14, codex-cli 0.166.0, `codex --no-daemon -C <ws>` in a python pty at 100×40,
+the setup above with no `TERM_PROGRAM`; 1 run.
+
 ## 36. The TUI holds fast keys back to tell a paste from typing (`disable_paste_burst`)
 
 How established: 2026-11-11, codex-cli 0.166.0 (this Mac's standalone install) and

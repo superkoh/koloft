@@ -189,6 +189,7 @@ export const CH = {
   fs: {
     listDir: 'fs:listDir',
     dirExists: 'fs:dirExists',
+    fileExists: 'fs:fileExists',
     search: 'fs:search',
     gitChanges: 'fs:gitChanges',
     gitHeadLog: 'fs:gitHeadLog',

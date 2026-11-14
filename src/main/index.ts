@@ -7421,6 +7421,9 @@ function registerIpc(): void {
   ipcMain.handle(CH.fs.dirExists, (_e, p: string) =>
     typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
+  ipcMain.handle(CH.fs.fileExists, (_e, p: string) =>
+    typeof p === 'string' && p ? hosts.of(p).fileExists(p) : false
+  )
   ipcMain.handle(CH.fs.search, (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)
   )

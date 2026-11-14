@@ -180,6 +180,11 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     listDir,
     dirExists,
     dirExistsOrThrow: dirExists,
+    fileExists: (file) =>
+      fs.promises.stat(file).then(
+        (st) => st.isFile(),
+        () => false
+      ),
     makeDir: (dir) =>
       fs.promises.mkdir(dir).then(
         () => true,

@@ -2841,6 +2841,17 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   (`ESC DEL`) deleted one word. 2026-11-09, CC 2.1.319, a python pty read back through
   `pyte`, scratch `CLAUDE_CONFIG_DIR`, an `apiKeyHelper` key, one key per write 0.4 s
   apart.
+- **A file path in a reply is plain text, and a line longer than the terminal is broken
+  by claude itself.** With the env a Koloft tab gives claude (`TERM_PROGRAM` unset, no
+  XTVERSION answer), a reply holding `src/util.ts:7`, a bare `src/app.ts`, markdown
+  links `[app.ts](<abs>/src/app.ts:42)` and `[util](src/util.ts:7)`, and a long relative
+  and absolute path wrote 0 OSC 8 links. A markdown file link shows as
+  `app.ts (<abs>/src/app.ts:42)`. A Read call shows as `Read 1 file (ctrl+o to expand)`,
+  with no path. A path wider than the line went on the next row after
+  `CR ESC[2C ESC[1B`, so the terminal holds the two parts as two lines that are not
+  marked as wrapped. 2026-11-14, CC 2.1.325, a python pty at 100×40 answering CPR, DA1,
+  DA2, `?u`, OSC 10/11 and DECRQM 2026, scratch `HOME` and `CLAUDE_CONFIG_DIR`, an
+  `apiKeyHelper` key, a fake Messages API that answered one Read then the reply; 1 run.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 

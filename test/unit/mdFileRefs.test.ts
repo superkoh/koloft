@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
-import { fileRefs } from '../../src/renderer/src/markdown/fileRefs'
+import { fileRefs, findFilePaths } from '../../src/renderer/src/markdown/fileRefs'
 
 const md = new MarkdownIt().use(fileRefs)
 const linkifyingAsThePreviewRuns = new MarkdownIt({ linkify: true }).use(fileRefs)
@@ -97,5 +97,43 @@ describe('fileRefs', () => {
 
   it('emits no href, so a click on a missing file is a no-op rather than a navigation', () => {
     expect(md.render('sample.ts:12\n')).not.toContain('href')
+  })
+
+  it('links a path:line that ends a sentence, and leaves a path with no line unlinked', () => {
+    const html = md.render('edited src/app.ts and src/b.ts:3.\n')
+    expect(html).toContain('>src/b.ts:3</a>.')
+    expect(html).not.toContain('data-path="src/app.ts"')
+  })
+
+  it('takes the first line of a line range', () => {
+    expect(md.render('see src/a.ts:10-20\n')).toContain('data-line="10"')
+  })
+})
+
+describe('findFilePaths, for paths an agent prints in its terminal', () => {
+  const paths = (text: string): [string, string][] =>
+    findFilePaths(text).map((r) => [r.path, r.line])
+
+  it("finds the path in an agent's tool line, which carries no line number", () => {
+    expect(paths('⏺ Update(src/main/index.ts)')).toEqual([['src/main/index.ts', '']])
+  })
+
+  it('finds the path:line Codex shows after the label of a markdown file link, and the label as a path of its own', () => {
+    expect(paths('Markdown link app.ts (src/app.ts:42) and util (src/util.ts:7).')).toEqual([
+      ['app.ts', ''],
+      ['src/app.ts', '42'],
+      ['src/util.ts', '7']
+    ])
+  })
+
+  it('keeps the full stop that ends a sentence out of the path', () => {
+    expect(paths('Changed src/app.ts. Then /abs/x/b.ts:3.')).toEqual([
+      ['src/app.ts', ''],
+      ['/abs/x/b.ts', '3']
+    ])
+  })
+
+  it('skips a version number, a backup copy and a path inside a web address', () => {
+    expect(paths('v0.13.1 src/app.ts.bak http://localhost:3000/app.ts')).toEqual([])
   })
 })
