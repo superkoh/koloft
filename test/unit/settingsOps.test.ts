@@ -74,6 +74,11 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
     })
   })
 
+  it('strips the session defaults, which only the main process writes, since only it knows which repository a folder is', () => {
+    const patch = { sessionDefaults: { '/x': { picks: {} } }, fontSize: 20 } as never
+    expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
+  })
+
   it('strips the Discord block, which only the main process writes', () => {
     const patch = { discord: { bindings: [] }, fontSize: 20 } as never
     expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
@@ -239,6 +244,37 @@ describe('sanitizeLoadedSettings and the "skip permission prompts" answer Koloft
     expect(sanitizeLoadedSettings(saved).skipPermissionsAgreed).toBe(false)
     expect(sanitizeLoadedSettings({ skipPermissionsAgreed: true }).skipPermissionsAgreed).toBe(true)
     expect(buildResetPatch()).not.toHaveProperty('skipPermissionsAgreed')
+  })
+})
+
+describe('sanitizeLoadedSettings and the session defaults of each repository', () => {
+  it('keeps a pick with a model name a command line takes and a known effort, the trimmed rules, and drops what is left empty', () => {
+    expect(
+      sanitizeLoadedSettings({
+        sessionDefaults: {
+          'octo/app': {
+            picks: {
+              claude: { model: 'opus', effort: 'high' },
+              codex: { model: 'sol; rm -rf', effort: 'ultra' },
+              agy: { effort: 'low' },
+              nobody: { model: 'x' }
+            },
+            rules: '  Docs: sonnet, low.  '
+          },
+          '/work/empty': { picks: { claude: {} }, rules: '   ' },
+          '/work/junk': 3
+        } as never
+      }).sessionDefaults
+    ).toEqual({
+      'octo/app': {
+        picks: { claude: { model: 'opus', effort: 'high' }, agy: { effort: 'low' } },
+        rules: 'Docs: sonnet, low.'
+      }
+    })
+  })
+
+  it('About ▸ Reset leaves them alone, like the to-do notes', () => {
+    expect(buildResetPatch()).not.toHaveProperty('sessionDefaults')
   })
 })
 

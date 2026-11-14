@@ -47,6 +47,7 @@ export interface ClaudeLaunch {
   role?: string
   conductor?: boolean
   trustFolder?: boolean
+  projectRules?: string
 }
 
 export interface MachineTab {

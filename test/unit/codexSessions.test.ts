@@ -1181,11 +1181,13 @@ describe('CodexSessions', () => {
   it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, is given Koloft's skills folder, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
     deps.agent = { enabled: () => true, answer, skillsFolder: () => '/koloft/plugin/skills' }
+    deps.projectRules = async () => 'Code: high.'
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
     )
     expect(hint).toContain('koloft help')
+    expect(hint).toContain('Code: high.')
     expect(hint).toContain('koloft session new -w')
     expect(transports[0].options.skillRoots).toEqual([
       '/koloft/plugin/skills',

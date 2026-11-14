@@ -22,7 +22,7 @@ import {
 } from '../../src/main/agentRequests'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
-import { AGENT_GUIDE } from '../../src/shared/agentGuide'
+import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
@@ -268,6 +268,14 @@ describe('koloft command in a Codex session', () => {
       expect(guide.status).toBe(0)
       expect(guide.stdout).toBe(AGENT_GUIDE + '\n')
     }
+  })
+
+  it("prints the guide with its project's own rules for picking a model, quotes and $ kept as written", async () => {
+    const rules = 'Code: "opus", high — not $HOME or `whoami`.'
+    writeAgentShim(shimDir, requestDir, 'codex', rules)
+    const guide = await run(path.join(shimDir, 'koloft'), ['help'], {})
+    expect(guide.stdout).toBe(agentGuide(rules) + '\n')
+    expect(guide.stdout).toContain(rules)
   })
 })
 

@@ -194,6 +194,11 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.cron.toast, handler)
     }
   },
+  sessionDefaults: {
+    read: (workspacePath) => ipcRenderer.invoke(CH.sessionDefaults.read, workspacePath),
+    write: (workspacePath, defaults) =>
+      ipcRenderer.invoke(CH.sessionDefaults.write, workspacePath, defaults)
+  },
   machine: {
     onState: (cb) => {
       const handler = (_e: unknown, s: MachineState): void => cb(s)

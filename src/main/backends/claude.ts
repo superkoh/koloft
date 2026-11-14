@@ -111,6 +111,7 @@ export interface ClaudeBackendDeps {
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
+  projectRules?(workspace: string): Promise<string | undefined>
 }
 
 // PLATFORM§28
@@ -1065,7 +1066,8 @@ export class ClaudeBackend implements SessionBackend {
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,
-      fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined
+      fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
+      projectRules: await this.d.projectRules?.(spec.root)
     })
     if (!plan.ok) return plan
     const machine = plan.machine

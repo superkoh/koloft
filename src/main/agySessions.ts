@@ -628,7 +628,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private async startLocalRun(
-    { opts, cwd, workspace, resource, freshWorktree }: StartContext,
+    { opts, cwd, workspace, resource, freshWorktree, rules }: StartContext,
     { binary, pick, env }: AgyLaunch
   ): Promise<AgyRun> {
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
@@ -645,7 +645,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('agy')] : []),
+      ...(agent && !conductor ? [koloftPrompt('agy', rules)] : []),
       ...(role ? [role] : [])
     ].join('\n\n')
     const scripts = writeAgyScripts(this.deps.scriptsDir)
@@ -677,7 +677,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       {
         backend: 'agy',
         open: (target) => this.deps.events(tabId, { type: 'open', target }),
-        agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
+        agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
+        rules
       }
     )
     const dir = tools.shim.shimDir
@@ -761,7 +762,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private async startRemoteRun(
-    { opts, cwd, workspace, resource, freshWorktree }: StartContext,
+    { opts, cwd, workspace, resource, freshWorktree, rules }: StartContext,
     { pick }: AgyLaunch,
     where: RemoteKey
   ): Promise<AgyRun> {
@@ -805,7 +806,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
     )
     const instructions = [
-      ...(agentTools ? [koloftPrompt('agy')] : []),
+      ...(agentTools ? [koloftPrompt('agy', rules)] : []),
       ...(opts.role ? [opts.role] : [])
     ].join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)

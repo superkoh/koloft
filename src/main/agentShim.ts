@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { AGENT_GUIDE } from '@shared/agentGuide'
+import { agentGuide } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
 import { ASSIST_ANSWERS_WITHIN_MS } from './assist'
@@ -121,9 +121,14 @@ unwritable="${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
-export function writeAgentShim(shimDir: string, requestDir: string, backend: BackendId): void {
+export function writeAgentShim(
+  shimDir: string,
+  requestDir: string,
+  backend: BackendId,
+  rules?: string
+): void {
   const guide = path.join(shimDir, 'koloft-guide.txt')
-  fs.writeFileSync(guide, AGENT_GUIDE + '\n')
+  fs.writeFileSync(guide, agentGuide(rules) + '\n')
   fs.writeFileSync(path.join(shimDir, 'koloft'), folderAgentShim(backend, requestDir, guide), {
     mode: 0o755
   })

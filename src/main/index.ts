@@ -98,7 +98,13 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import type { ListedModel } from '@shared/sessionPicks'
+import {
+  familyEfforts,
+  resolveOwnPick,
+  listsModels,
+  type ListedModel,
+  type OwnPickResolved
+} from '@shared/sessionPicks'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
@@ -503,14 +509,17 @@ import { copyWorktreeIncludes } from './sessionWorktrees'
 import {
   AgentRequests,
   answered,
-  BUILTIN_VERBS,
   errorText,
+  helpVerb,
   refused,
   tabSpokenFor,
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { butlerHelperRole } from '@shared/agentGuide'
+import { butlerHelperRole, projectRulesForTheButler } from '@shared/agentGuide'
+import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
+import type { OwnPick, SessionDefaultsRead } from '@shared/types'
+import { projectDefaults } from './projectDefaults'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import {
@@ -1941,10 +1950,43 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   return listed
 }
 
+const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
+
+const defaultsOfProjects = projectDefaults({
+  rootOf: (dir) => projectInfoOnHost(dir).root,
+  reachable: (root) => {
+    const remote = parseRemoteKey(root)
+    return remote ? hosts.machine(remote.host).reachOrThrow() : Promise.resolve()
+  },
+  repoOf: (root, fresh) => hosts.of(root).github.ownerSlashName(root, fresh),
+  saved: () => loadSettings().sessionDefaults,
+  save: (sessionDefaults) => commitSettings({ sessionDefaults }),
+  now: Date.now
+})
+
+async function rulesOf(workspace: string): Promise<string | undefined> {
+  return (await defaultsOfProjects.of(workspace))?.rules
+}
+
+async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
+  const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
+  const resolved = resolveOwnPick(backend, asked, listed)
+  if (resolved.note) sendToRenderer(CH.cron.toast, resolved.note)
+  return resolved
+}
+
+async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions> {
+  const backend = backendIdOf(opts.kind)
+  if (!backend || typeof opts.cwd !== 'string' || !takesOwnDefaults(opts)) return opts
+  const asked = (await defaultsOfProjects.of(opts.cwd))?.picks[backend]
+  return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
+}
+
 const sessionDeps: SessionVerbDeps = {
+  projectRules: rulesOf,
   pickFacts: async (backend) => ({
     fableLeft: picker.fableLeft(),
-    ...((backend === 'codex' || backend === 'agy') && { listed: await listedModels(backend) })
+    ...(listsModels(backend) && { listed: await listedModels(backend) })
   }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
@@ -2127,7 +2169,10 @@ async function answerSession(tabId: string, reply: string): Promise<string | und
 
 const agentRequests = new AgentRequests({
   verbs: {
-    ...BUILTIN_VERBS,
+    help: helpVerb(async (tabId) => {
+      const workspace = sessionBackends.workspaceOfTab(tabId)
+      return workspace && rulesOf(workspace)
+    }),
     cron: cronVerb({
       runner: () => cronRunner,
       pinnedWorkspaceOf: pinnedWorkspaceOfTab,
@@ -3568,6 +3613,7 @@ app.whenReady().then(() => {
     pty: ptyMgr,
     runtime: tracker,
     projectInfo: projectInfoOnHost,
+    projectRules: rulesOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
@@ -6277,11 +6323,15 @@ function commandIntoButler(text: string): string {
   return commandInto(butlerDestination(), text)
 }
 
-function fromPalette({ words, backend, about, at }: PaletteRequest): string {
+function fromPalette(
+  { words, backend, about, at }: PaletteRequest,
+  rules: string | undefined
+): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
   const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
-  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
+  const picks = about && rules ? projectRulesForTheButler(about, rules) : ''
+  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}${picks}`
 }
 
 async function startHelper(
@@ -6299,9 +6349,10 @@ async function startHelper(
   return tabId ? { ok: true, tabId } : { ok: false, error: 'Koloft could not start a helper.' }
 }
 
-function handFromPalette(request: PaletteRequest): Promise<ConductorOpenResult> {
+async function handFromPalette(request: PaletteRequest): Promise<ConductorOpenResult> {
+  const prompt = fromPalette(request, request.about && (await rulesOf(request.about)))
   return startHelper(() => ({
-    prompt: fromPalette(request),
+    prompt,
     name: request.title,
     ownerWords: request.words,
     backend: request.backend
@@ -6328,14 +6379,22 @@ function butlerTarget(ref: string): Target | undefined {
   }
 }
 
+async function cronPick(req: LaunchRequest): Promise<OwnPick> {
+  const job = { model: req.model, effort: req.effort }
+  const filled =
+    job.model && job.effort
+      ? undefined
+      : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
+  return filled ? (await ownPick(req.backend, filled)).pick : job
+}
+
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
     const options: CreateTabOptions & { kind: BackendId } = {
       kind: req.backend,
       cwd: req.cwd,
       worktree: req.worktree,
-      model: req.model,
-      effort: req.effort,
+      ...(await cronPick(req)),
       permission: req.permission,
       firstPrompt: req.firstPrompt,
       name: req.name,
@@ -6474,6 +6533,7 @@ const claudeBackend = new ClaudeBackend({
   hosts,
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
+  projectRules: rulesOf,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
@@ -6505,7 +6565,7 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (opts.kind !== 'shell') return sessionBackends.create(opts)
+      if (opts.kind !== 'shell') return sessionBackends.create(await withOwnDefaults(opts))
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
@@ -6713,6 +6773,33 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
+  )
+  ipcMain.handle(
+    CH.sessionDefaults.read,
+    async (_e, workspacePath: string): Promise<SessionDefaultsRead> => {
+      try {
+        const [defaults, listed] = await Promise.all([
+          defaultsOfProjects.read(workspacePath),
+          loadSettings().sessionMethods.enabled.agy
+            ? Promise.race([
+                listedModels('agy'),
+                new Promise<undefined>((done) =>
+                  setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+                )
+              ])
+            : undefined
+        ])
+        return { ok: true, defaults, familyEfforts: familyEfforts('agy', listed) }
+      } catch (error) {
+        return { ok: false, error: errorText(error) }
+      }
+    }
+  )
+  ipcMain.handle(CH.sessionDefaults.write, async (_e, workspacePath: string, raw: unknown) =>
+    defaultsOfProjects.write(workspacePath, raw).then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ ok: false, error: errorText(error) })
+    )
   )
 
   ipcMain.handle(CH.update.check, () => checkForUpdates())

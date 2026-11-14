@@ -94,6 +94,7 @@ interface Conducting {
   removalsNeverEnd?: boolean
   turnedOff?: BackendId[]
   pickFacts?: PickFacts
+  rules?: Record<string, string>
   rooms?: Record<string, string>
   answeringDiscord?: string[]
 }
@@ -153,6 +154,7 @@ function harness(
         peerNames[sessionId] ?? null,
     turnedOff: (backend) =>
       conducting.turnedOff?.includes(backend) ? turnedOffLine(backend) : null,
+    projectRules: async (workspace) => conducting.rules?.[workspace],
     pickFacts: async () =>
       conducting.pickFacts ?? {
         fableLeft: true,
@@ -493,6 +495,29 @@ describe('koloft session new: the starter picks the model and effort', () => {
     }
     const codex = await verb(['new', '--backend', 'codex', '--', 'go'], from('me'))
     expect(codex.text).toContain('very hard: --model astra --effort high')
+    expect(launched).toEqual([])
+  })
+
+  it('refuses with the rules the owner wrote for the workspace the session would start in, ahead of Koloft’s own, and with only Koloft’s own where none are written', async () => {
+    const { verb, launched } = harness([session('me', 'claude')], {}, [], {
+      rules: { [OTHER_WS]: 'Docs: sonnet, low.\nCode: opus, high.' }
+    })
+    const there = await verb(['new', '--workspace', OTHER_WS, '--', 'go'], from('me'))
+    expect(there.text).toContain("this project's own rules")
+    expect(there.exit).toBe(EXIT_USAGE)
+    expect(there.text).toContain('Docs: sonnet, low.\n    Code: opus, high.')
+    expect(there.text.indexOf('Docs: sonnet, low.\n    Code: opus, high.')).toBeLessThan(
+      there.text.indexOf("Koloft's own way: Sort the task first.")
+    )
+    const here = await verb(['new', '--', 'go'], from('me'))
+    expect(here.text).not.toContain('Docs: sonnet')
+    expect(here.text).toContain('Claude: very simple: --model sonnet --effort low')
+    const otherAgents = await verb(
+      ['new', '--workspace', OTHER_WS, '--model', 'astra', '--effort', 'high', '--', 'go'],
+      from('me')
+    )
+    expect(otherAgents.text).toContain("astra is one of Codex's models")
+    expect(otherAgents.text).toContain('Docs: sonnet, low.')
     expect(launched).toEqual([])
   })
 

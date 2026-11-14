@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { SessionInfo } from '@shared/types'
-import { AGENT_GUIDE } from '@shared/agentGuide'
+import { agentGuide } from '@shared/agentGuide'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
 
@@ -58,9 +58,10 @@ export function splitAtDashes(args: string[]): { before: string[]; after: string
   }
 }
 
-export const BUILTIN_VERBS: AgentVerbs = {
-  help: () => answered(AGENT_GUIDE)
-}
+export const helpVerb =
+  (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>
+  async (_args, caller) =>
+    answered(agentGuide(await rulesOfTab(caller.tabId)))
 
 export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 
@@ -91,8 +92,7 @@ export async function dispatchAgent(
   argv: string[],
   caller: AgentCaller
 ): Promise<AgentReply> {
-  if (asksForHelp(argv)) return answered(AGENT_GUIDE)
-  const [verb = 'help', ...rest] = argv
+  const [verb = 'help', ...rest] = asksForHelp(argv) ? ['help'] : argv
   const run = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
   if (!run)
     return refused(

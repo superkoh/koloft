@@ -25,6 +25,13 @@ export const BACKEND_PRODUCT: Record<BackendId, string> = {
 
 export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
 
+export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
+  const labels = backends.map((b) => BACKEND_LABEL[b])
+  return labels.length < 2
+    ? labels.join('')
+    : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
+}
+
 // CC§9 CODEX§17 MUSE§16 AGY§31
 export const SKILL_PREFIX: Record<BackendId, string> = {
   claude: '/',

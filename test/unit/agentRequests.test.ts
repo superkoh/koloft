@@ -5,12 +5,12 @@ import path from 'path'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { AGENT_GUIDE } from '../../src/shared/agentGuide'
+import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
 import {
   AGENT_TOOLS_OFF,
   AgentRequests,
-  BUILTIN_VERBS,
   answered,
+  helpVerb,
   type AgentCaller,
   type AgentRequestDeps,
   type TabFacts
@@ -24,11 +24,12 @@ let dir: string
 let calls: { args: string[]; caller: AgentCaller }[]
 let tabs: Map<string, TabFacts>
 let on: boolean
+let rulesOf: Map<string, string>
 
 function requests(extra: Partial<AgentRequestDeps> = {}): AgentRequests {
   return new AgentRequests({
     verbs: {
-      ...BUILTIN_VERBS,
+      help: helpVerb(async (tabId) => rulesOf.get(tabId)),
       echo: (args, caller) => {
         calls.push({ args, caller })
         return answered(args.join(' '))
@@ -70,6 +71,7 @@ beforeEach(() => {
   calls = []
   tabs = new Map([[tabOf(process.pid, 1), { util: false }]])
   on = true
+  rulesOf = new Map()
 })
 
 afterEach(() => {
@@ -84,6 +86,16 @@ describe('koloft requests from a session', () => {
     await r.answer(dir, 'req-b.json', { tabId, argv: [], cwd: '/w' })
     expect(reply('a')).toEqual({ exit: 0, text: AGENT_GUIDE })
     expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
+  })
+
+  it('help in a session of a workspace with its own rules for picking a model answers with the guide that carries them, --help too', async () => {
+    const r = requests()
+    const tabId = tabOf(process.pid, 1)
+    rulesOf.set(tabId, 'Code: opus, high.')
+    await r.answer(dir, 'req-a.json', { tabId, argv: ['help'], cwd: '/w' })
+    await r.answer(dir, 'req-b.json', { tabId, argv: ['--help'], cwd: '/w' })
+    expect(reply('a')).toEqual({ exit: 0, text: agentGuide('Code: opus, high.') })
+    expect(reply('b')).toEqual({ exit: 0, text: agentGuide('Code: opus, high.') })
   })
 
   it('a --help among the words answers with the guide and runs nothing, so it is never taken as an answer or a message; after -- it is a word', async () => {

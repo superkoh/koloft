@@ -52,6 +52,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
   mirrorProjectsRoot,
@@ -1230,6 +1231,7 @@ export class SshHost implements Host {
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
+    const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -1255,6 +1257,7 @@ export class SshHost implements Host {
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              projectPrompt,
               claudeArgs,
               trustFolder: spec.trustFolder
             }
