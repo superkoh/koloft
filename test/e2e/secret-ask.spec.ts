@@ -115,58 +115,60 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
     }
   })
 
-  test('koloft secret url from a session that is not on screen marks its row, opens the sign-in in its own Workbench with a bar above it; once that sign-in, after its redirects, lands on its 127.0.0.1 address the session hears it finished, without the address and its code', async ({
-    env
-  }) => {
-    ownerAtTheMac(env)
-    seedSettings(env, { hintsOff: true })
-    const server = await startEchoServer()
-    const cli = await startEchoServer()
-    env.extraArgs.push(`--host-resolver-rules=MAP ${SIGN_IN_HOST} 127.0.0.1`)
-    const app = await launchApp(env)
-    try {
-      cli.route('/auth/callback', (_q, res) => {
-        res.writeHead(200)
-        res.end('signed in')
-      })
-      const callback = `http://localhost:${cli.port}/auth/callback?code=${SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN}`
-      server.route('/authorize', (_q, res) => {
-        res.writeHead(302, { location: '/sign-in' })
-        res.end()
-      })
-      server.page(
-        '/sign-in',
-        `<!doctype html><title>sign in</title><a id="go" href="${callback}">Continue</a>`
-      )
-      const page = await app.firstWindow()
-      const tab = await sessionTab(page, env)
-      await startSessionIn(page, 'ws-a')
-      await waitForCalls(env, 2)
-      await type(page, tab, `/koloft secret url "${server.hostUrl(SIGN_IN_HOST, '/authorize')}"`)
-      const row = page.locator(`.ws-tab[data-tab-id="${tab}"]`)
-      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
-      await switchToRow(page, row)
-      const signIn = await guestByUrl(app, '/sign-in')
-      await expect(page.locator(SECRET_BAR)).toContainText('finish this sign-in here')
-      await signIn.locator('#go').click()
-      await expect
-        .poll(() => cli.requestsFor('/auth/callback').map((r) => r.search))
-        .toEqual([`?code=${SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN}`])
-      await expect
-        .poll(async () => unwrapped(await terminalText(page, tab)))
-        .toContain(unwrapped('finished the sign-in in this session'))
-      await expect
-        .poll(async () => unwrapped(await terminalText(page, tab)))
-        .toContain(unwrapped('koloft exit=0'))
-      await expect(page.locator(SECRET_BAR)).toHaveCount(0)
-      const heard = unwrapped(await terminalText(page, tab))
-      expect(heard).not.toContain(SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN)
-      expect(heard).not.toContain('/auth/callback')
-      expect(heard).not.toMatch(new RegExp(`:${cli.port}(?!\\d)`))
-    } finally {
-      await quitAndClose(app)
-      await server.close()
-      await cli.close()
-    }
-  })
+  for (const callbackHost of ['localhost', '127.0.0.1']) {
+    test(`koloft secret url from a session that is not on screen marks its row, opens the sign-in in its own Workbench with a bar above it; once that sign-in, after its redirects, lands on its ${callbackHost} address the session hears it finished, without the address and its code`, async ({
+      env
+    }) => {
+      ownerAtTheMac(env)
+      seedSettings(env, { hintsOff: true })
+      const server = await startEchoServer()
+      const cli = await startEchoServer()
+      env.extraArgs.push(`--host-resolver-rules=MAP ${SIGN_IN_HOST} 127.0.0.1`)
+      const app = await launchApp(env)
+      try {
+        cli.route('/auth/callback', (_q, res) => {
+          res.writeHead(200)
+          res.end('signed in')
+        })
+        const callback = `http://${callbackHost}:${cli.port}/auth/callback?code=${SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN}`
+        server.route('/authorize', (_q, res) => {
+          res.writeHead(302, { location: '/sign-in' })
+          res.end()
+        })
+        server.page(
+          '/sign-in',
+          `<!doctype html><title>sign in</title><a id="go" href="${callback}">Continue</a>`
+        )
+        const page = await app.firstWindow()
+        const tab = await sessionTab(page, env)
+        await startSessionIn(page, 'ws-a')
+        await waitForCalls(env, 2)
+        await type(page, tab, `/koloft secret url "${server.hostUrl(SIGN_IN_HOST, '/authorize')}"`)
+        const row = page.locator(`.ws-tab[data-tab-id="${tab}"]`)
+        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+        await switchToRow(page, row)
+        const signIn = await guestByUrl(app, '/sign-in')
+        await expect(page.locator(SECRET_BAR)).toContainText('finish this sign-in here')
+        await signIn.locator('#go').click()
+        await expect
+          .poll(() => cli.requestsFor('/auth/callback').map((r) => r.search))
+          .toEqual([`?code=${SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN}`])
+        await expect
+          .poll(async () => unwrapped(await terminalText(page, tab)))
+          .toContain(unwrapped('finished the sign-in in this session'))
+        await expect
+          .poll(async () => unwrapped(await terminalText(page, tab)))
+          .toContain(unwrapped('koloft exit=0'))
+        await expect(page.locator(SECRET_BAR)).toHaveCount(0)
+        const heard = unwrapped(await terminalText(page, tab))
+        expect(heard).not.toContain(SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN)
+        expect(heard).not.toContain('/auth/callback')
+        expect(heard).not.toMatch(new RegExp(`:${cli.port}(?!\\d)`))
+      } finally {
+        await quitAndClose(app)
+        await server.close()
+        await cli.close()
+      }
+    })
+  }
 })
