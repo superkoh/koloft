@@ -1051,14 +1051,15 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     fs.writeFileSync(parts[0], part1 + 'export const morerewritten_7 = 7\n')
     await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '5/7', line: userIsOn })
 
-    fs.writeFileSync(
-      parts[3],
-      'export const firstrewritten_7 = 0\n' + fs.readFileSync(parts[3], 'utf8')
-    )
+    const part4 = fs.readFileSync(parts[3], 'utf8')
+    fs.writeFileSync(parts[3], 'export const firstrewritten_7 = 0\n' + part4)
     await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '6/8', line: userIsOn })
 
-    fs.writeFileSync(parts[0], part1)
+    fs.writeFileSync(parts[3], part4)
     await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '5/7', line: userIsOn })
+
+    fs.writeFileSync(parts[0], part1)
+    await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '4/6', line: userIsOn })
   })
 
   test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({
