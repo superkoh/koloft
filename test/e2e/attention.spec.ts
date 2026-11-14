@@ -64,6 +64,32 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(0)
   })
 
+  test('a session’s OS notification leaves Notification Center once its tab is on screen in a focused window — the window coming to the front or a switch to the tab — while its red dot stays', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    await startSessionIn(page, 'ws-b')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+    const rowIn = (ws: string) => wsGroup(page, ws).locator('.ws-tab')
+    const aTab = (await rowIn('ws-a').getAttribute('data-tab-id'))!
+    const bTab = (await rowIn('ws-b').getAttribute('data-tab-id'))!
+    const listed = async () => (await osOutlets(app)).tabsInNotificationCenter.sort()
+    await expect.poll(listed).toEqual([aTab, bTab].sort())
+    await expect(rowIn('ws-b')).toHaveClass(/\bactive\b/)
+
+    await lookAtTheWindow(app)
+    await expect.poll(listed).toEqual([aTab])
+    expect(await pendingAttention(page)).toHaveLength(2)
+
+    await rowIn('ws-a').click()
+    await expect.poll(listed).toEqual([])
+    expect(await pendingAttention(page)).toHaveLength(2)
+    await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(2)
+  })
+
   test('the bell counts the waiting sessions and walks them longest wait first, round and round, unfolding the workspace it lands in; ⌘J does the same, and only an answer takes one off', async ({
     app,
     page

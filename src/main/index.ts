@@ -1177,6 +1177,9 @@ function projectFolderName(event: AttentionEvent): string | undefined {
 
 const osOutletsSeenByTests: OsOutletsSeenByTests = {
   notifications: [],
+  get tabsInNotificationCenter() {
+    return [...osNotifications.keys()]
+  },
   dockBadge: '',
   windowHidden: false
 }
@@ -1250,17 +1253,24 @@ function activateTabFromNotification(tabId: string): void {
 }
 
 // PLATFORM§4
-const osNotifications = new Map<string, Notification>()
+const osNotifications = new Map<string, Notification | null>()
+
+function withdrawOsNotification(tabId: string): void {
+  const n = osNotifications.get(tabId)
+  osNotifications.delete(tabId)
+  try {
+    n?.close()
+  } catch {}
+}
 
 function retractStaleOsNotifications(pending: AttentionEvent[]): void {
-  for (const [tabId, n] of osNotifications) {
-    if (!pending.some((ev) => ev.tabId === tabId)) {
-      try {
-        n.close()
-      } catch {}
-      osNotifications.delete(tabId)
-    }
-  }
+  for (const tabId of osNotifications.keys())
+    if (!pending.some((ev) => ev.tabId === tabId)) withdrawOsNotification(tabId)
+}
+
+function ownerSees(tabId: string): void {
+  attention.seen(tabId)
+  withdrawOsNotification(tabId)
 }
 
 function osNotificationText(event: AttentionEvent): { title: string; body: string } {
@@ -1282,19 +1292,14 @@ function osNotification(text: { title: string; body: string }): Notification | n
 
 function showOsNotification(event: AttentionEvent): void {
   const n = osNotification(osNotificationText(event))
+  withdrawOsNotification(event.tabId)
+  osNotifications.set(event.tabId, n)
   if (!n) return
   n.on('click', () => {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
   })
   n.on('close', () => osNotifications.delete(event.tabId))
-  const prev = osNotifications.get(event.tabId)
-  if (prev) {
-    try {
-      prev.close()
-    } catch {}
-  }
-  osNotifications.set(event.tabId, n)
   n.show()
 }
 
@@ -3238,7 +3243,7 @@ function createWindow(): void {
     sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
-    if (uiActiveTabId) attention.seen(uiActiveTabId)
+    if (uiActiveTabId) ownerSees(uiActiveTabId)
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
@@ -6707,7 +6712,7 @@ function registerIpc(): void {
     lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
     guard?.lookedAtChanged()
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
+    if (uiActiveTabId && windowFocused()) ownerSees(uiActiveTabId)
     rememberOpenTabs()
   })
 

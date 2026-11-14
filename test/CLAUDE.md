@@ -226,7 +226,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   only the session working again clears it — looking at the tab clears only a mark that
   is only news (`fyi`). No OS
   notification or Dock badge is ever shown; what one would have said is recorded
-  instead and read with `osOutlets(app)` (helpers/app.ts). A case about what a user
+  instead and read with `osOutlets(app)` (helpers/app.ts), and its
+  `tabsInNotificationCenter` names the tabs whose notification main still holds (has
+  not withdrawn). A case about what a user
   watching the tab is spared (the sound, the notification) calls
   `pretendWindowFocused(app)`: main then reads its window as focused.
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
