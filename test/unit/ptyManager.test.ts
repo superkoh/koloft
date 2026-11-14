@@ -638,21 +638,20 @@ describe('PtyManager opens a session tab at the size the session screen was last
     return { cols, rows }
   }
 
-  it("every agent's tab starts at the last fitted session screen, a plain terminal still at 80 by 24, and a plain terminal's own fit is never taken for the session screen", () => {
+  it("every agent's tab and a plain terminal tab start at the last fitted session screen, a Workbench terminal still at 80 by 24, and all of them at 80 by 24 before any fit", () => {
     const mgr = new PtyManager()
-    const shown = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(sizeOfSpawn(0)).toEqual({ cols: 80, rows: 24 })
 
-    mgr.fittedToItsScreen(shown.id, 140, 49)
-    const panelShell = mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })
+    mgr.sessionScreen = { cols: 140, rows: 49 }
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     expect(sizeOfSpawn(1)).toEqual({ cols: 80, rows: 24 })
-    mgr.fittedToItsScreen(panelShell.id, 61, 12)
 
     mocks.spawn.mockClear()
-    for (const kind of ['claude', 'codex', 'muse', 'agy'] as const)
+    for (const kind of ['claude', 'codex', 'muse', 'agy', 'shell'] as const)
       mgr.create({ kind, koloftShim: SHIM, cwd: os.tmpdir() })
     expect(mocks.spawn.mock.calls.map((_, call) => sizeOfSpawn(call))).toEqual(
-      Array(4).fill({ cols: 140, rows: 49 })
+      Array(5).fill({ cols: 140, rows: 49 })
     )
   })
 })

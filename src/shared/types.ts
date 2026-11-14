@@ -542,6 +542,11 @@ export interface SessionMethods {
 }
 export type TabKind = 'shell' | BackendId
 
+export interface ScreenSize {
+  cols: number
+  rows: number
+}
+
 export interface BackendAvailability {
   id: BackendId
   available: boolean
@@ -1138,8 +1143,7 @@ export interface KoloftApi {
     attach(id: string): void
     onScreen(id: string, onScreen: boolean): void
     flowStats(): Promise<FlowStats[]>
-    resize(id: string, cols: number, rows: number): void
-    size(id: string): { cols: number; rows: number } | null
+    resize(id: string, cols: number, rows: number, sessionScreen: boolean): void
     kill(id: string, restarting?: boolean): void
     onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
@@ -1219,6 +1223,7 @@ export interface KoloftApi {
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number
+  sessionScreenAtLoad: ScreenSize | null
   browserTabCap: number
   browser: {
     onOpenRequest(cb: (r: BrowserOpenRequest) => void): () => void

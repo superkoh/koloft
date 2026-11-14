@@ -1,4 +1,5 @@
 import { WORKBENCH_WIDTH_FLOOR } from '@shared/settingsOps'
+import type { ScreenSize } from '@shared/types'
 
 export interface WinBounds {
   x: number
@@ -11,10 +12,10 @@ export interface SavedWindowState {
   bounds?: WinBounds
   maximized?: boolean
   fullScreen?: boolean
-  sessionScreen?: { cols: number; rows: number }
+  sessionScreen?: ScreenSize
 }
 
-export function usableSessionScreen(raw: unknown): { cols: number; rows: number } | undefined {
+export function usableSessionScreen(raw: unknown): ScreenSize | undefined {
   const { cols, rows } = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const cells = (n: unknown): n is number => Number.isInteger(n) && (n as number) > 0
   return cells(cols) && cells(rows) ? { cols, rows } : undefined

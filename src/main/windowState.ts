@@ -38,7 +38,7 @@ export function restoredWindowGeometry(): {
     bounds: bounds ?? DEFAULT_SIZE,
     maximized: st.maximized === true,
     fullScreen: st.fullScreen === true,
-    sessionScreen: usableSessionScreen(st.sessionScreen)
+    sessionScreen: bounds ? usableSessionScreen(st.sessionScreen) : undefined
   }
 }
 

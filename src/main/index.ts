@@ -6538,11 +6538,15 @@ function registerIpc(): void {
       terminalOutput.onScreen(id, onScreen)
   })
   ipcMain.handle(CH.terminal.flowStats, () => terminalOutput.stats())
-  ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
-    ptyMgr.fittedToItsScreen(id, cols, rows)
+  ipcMain.on(
+    CH.terminal.resize,
+    (_e, id: string, cols: number, rows: number, sessionScreen: unknown) => {
+      ptyMgr.resize(id, cols, rows)
+      if (sessionScreen === true) ptyMgr.sessionScreen = { cols, rows }
+    }
   )
-  ipcMain.on(CH.terminal.size, (e, id: string) => {
-    e.returnValue = ptyMgr.sizeOf(id)
+  ipcMain.on(CH.terminal.sessionScreen, (e) => {
+    e.returnValue = ptyMgr.sessionScreen ?? null
   })
   ipcMain.on(
     CH.terminal.kill,
