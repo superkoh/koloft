@@ -15,6 +15,7 @@ import {
   type BaseWindow,
   type WebContents
 } from 'electron'
+import { EventEmitter } from 'events'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -1177,9 +1178,7 @@ function projectFolderName(event: AttentionEvent): string | undefined {
 
 const osOutletsSeenByTests: OsOutletsSeenByTests = {
   notifications: [],
-  get tabsInNotificationCenter() {
-    return [...osNotifications.keys()]
-  },
+  inNotificationCenter: [],
   dockBadge: '',
   windowHidden: false
 }
@@ -1253,7 +1252,7 @@ function activateTabFromNotification(tabId: string): void {
 }
 
 // PLATFORM§4
-const osNotifications = new Map<string, Notification | null>()
+const osNotifications = new Map<string, Notification>()
 
 function withdrawOsNotification(tabId: string): void {
   const n = osNotifications.get(tabId)
@@ -1282,24 +1281,40 @@ function osNotificationText(event: AttentionEvent): { title: string; body: strin
   }
 }
 
-function osNotification(text: { title: string; body: string }): Notification | null {
-  if (OFF_SCREEN_TEST) {
-    osOutletsSeenByTests.notifications.push(text)
-    return null
+class NotificationSeenByTests extends EventEmitter {
+  constructor(private readonly text: { title: string; body: string }) {
+    super()
   }
+
+  show(): void {
+    osOutletsSeenByTests.notifications.push(this.text)
+    osOutletsSeenByTests.inNotificationCenter.push(this.text)
+  }
+
+  // PLATFORM§4
+  close(): void {
+    osOutletsSeenByTests.inNotificationCenter = osOutletsSeenByTests.inNotificationCenter.filter(
+      (t) => t !== this.text
+    )
+    this.emit('close')
+  }
+}
+
+function osNotification(text: { title: string; body: string }): Notification | null {
+  if (OFF_SCREEN_TEST) return new NotificationSeenByTests(text) as unknown as Notification
   return Notification.isSupported() ? new Notification(text) : null
 }
 
 function showOsNotification(event: AttentionEvent): void {
   const n = osNotification(osNotificationText(event))
-  withdrawOsNotification(event.tabId)
-  osNotifications.set(event.tabId, n)
   if (!n) return
   n.on('click', () => {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
   })
   n.on('close', () => osNotifications.delete(event.tabId))
+  withdrawOsNotification(event.tabId)
+  osNotifications.set(event.tabId, n)
   n.show()
 }
 

@@ -13,7 +13,8 @@ import {
   startSessionIn,
   waitBooted,
   waitForCalls,
-  wsGroup
+  wsGroup,
+  wsRows
 } from './helpers/p1'
 
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
@@ -73,18 +74,16 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
     await startSessionIn(page, 'ws-b')
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
-    const rowIn = (ws: string) => wsGroup(page, ws).locator('.ws-tab')
-    const aTab = (await rowIn('ws-a').getAttribute('data-tab-id'))!
-    const bTab = (await rowIn('ws-b').getAttribute('data-tab-id'))!
-    const listed = async () => (await osOutlets(app)).tabsInNotificationCenter.sort()
-    await expect.poll(listed).toEqual([aTab, bTab].sort())
-    await expect(rowIn('ws-b')).toHaveClass(/\bactive\b/)
+    const listed = async () =>
+      (await osOutlets(app)).inNotificationCenter.map((n) => n.body.split(' · ')[1]).sort()
+    await expect.poll(listed).toEqual(['ws-a', 'ws-b'])
+    await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
 
     await lookAtTheWindow(app)
-    await expect.poll(listed).toEqual([aTab])
+    await expect.poll(listed).toEqual(['ws-a'])
     expect(await pendingAttention(page)).toHaveLength(2)
 
-    await rowIn('ws-a').click()
+    await wsRows(page, 'ws-a').click()
     await expect.poll(listed).toEqual([])
     expect(await pendingAttention(page)).toHaveLength(2)
     await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(2)
