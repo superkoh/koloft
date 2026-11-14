@@ -90,7 +90,8 @@ export function firedHints(prev: HintSnapshot, next: HintSnapshot): HintFire[] {
       const was = before.rows.find((b) => b.id === r.id)
       return !was?.running && !was?.pending
     })
-    if (started && before.rows.some((b) => b.id !== started.id && b.running)) {
+    const stillThere = (id: string): boolean => ws.rows.some((r) => r.id === id)
+    if (started && before.rows.some((b) => b.id !== started.id && b.running && stillThere(b.id))) {
       out.push({ id: 'worktree', selector: rowSelector(rowTabId(next, started.id)) })
       break
     }
