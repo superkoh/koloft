@@ -348,7 +348,7 @@ describe('the Workbench shell of a remote session', () => {
       sshOptions: ['-o', 'ControlPath=/tmp/koloft-1/%C'],
       machine: buildMachinePackage(path.join(r.dir, 'pkg'), {
         'util.sh':
-          'echo "shell up in $1 for $2"\nexit "$(cat "$HOME/shell-exit" 2>/dev/null || echo 0)"\n'
+          'echo "shell up in $1 for $2, owned by $KOLOFT_HOLD_TAB"\nexit "$(cat "$HOME/shell-exit" 2>/dev/null || echo 0)"\n'
       }),
       tabId: 'W',
       dir: "/srv/it's here"
@@ -366,6 +366,13 @@ describe('the Workbench shell of a remote session', () => {
     expect(again.status).toBe(0)
     expect(again.stdout).toContain("shell up in /srv/it's here for W")
     expect(r.calls()).toBe(5)
+  })
+
+  it("hands the machine the session tab's id this Mac gave the shell, so a server started there still counts as the session's after a Koloft restart", () => {
+    const r = remote()
+    typeLine(r, shellLine(r))
+    const res = typeLine(r, `KOLOFT_HOLD_TAB=pty-owner-1\n${shellLine(r)}`)
+    expect(res.stdout).toContain('for W, owned by pty-owner-1')
   })
 
   it('a shell the owner ends with the same code Koloft uses for a missing package just ends, with nothing sent and no second shell', () => {

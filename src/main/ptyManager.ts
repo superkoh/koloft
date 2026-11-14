@@ -9,6 +9,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
+import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
@@ -246,6 +247,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AGENT_PROMPT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
+        key === OWNING_TAB_ENV ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -253,6 +255,8 @@ export class PtyManager extends EventEmitter {
       }
     }
     if (args.util) env.KOLOFT_UTIL = '1'
+    if (args.util && args.ownerTabId && this.ptys.has(args.ownerTabId))
+      env[OWNING_TAB_ENV] = args.ownerTabId
     if (this.regDir && !args.util) env.KOLOFT_SESSION_DIR = this.regDir
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir

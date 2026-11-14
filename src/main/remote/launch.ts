@@ -12,6 +12,7 @@ import {
   remoteShCommand
 } from './install'
 import { remotePtsFile } from './paths'
+import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
@@ -369,9 +370,10 @@ const NO_MACHINE_PACKAGE_EXIT = 97
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
   const m = `"$HOME/.koloft/${s.machine.name}"`
-  const run = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
+  const untilOwningTab = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; env ${OWNING_TAB_ENV}=`
+  const afterOwningTab = ` sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
   const ssh = `${s.sshOptions.join(' ')} ${shq(s.host)}`
-  const shell = `ssh -t ${ssh} ${shq(run)}" $COLUMNS $LINES"`
+  const shell = `ssh -t ${ssh} ${shq(untilOwningTab)}"$${OWNING_TAB_ENV}"${shq(afterOwningTab)}" $COLUMNS $LINES"`
   const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
     `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
