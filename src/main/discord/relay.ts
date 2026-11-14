@@ -618,6 +618,13 @@ export class DiscordRelay {
     this.shownNotSent.set(tab, [...(this.shownNotSent.get(tab) ?? []), send])
   }
 
+  cardsWaitFor(tab: string, step: Promise<unknown>): void {
+    const done: Promise<void> = Promise.allSettled([this.sending.get(tab), step]).then(() => {
+      if (this.sending.get(tab) === done) this.sending.delete(tab)
+    })
+    this.sending.set(tab, done)
+  }
+
   private afterShownNotSent(
     tab: string,
     channelId: string,
@@ -628,16 +635,17 @@ export class DiscordRelay {
     const before = this.sending.get(tab)
     if (!before && !sends.length) return post()
     this.shownNotSent.delete(tab)
-    const done = sends
-      .reduce(
-        (sent, send) => sent.then(() => send(channelId)).catch(() => undefined),
-        before ?? Promise.resolve()
-      )
-      .then(() => {
-        if (this.sending.get(tab) === done) this.sending.delete(tab)
-        if (stillAsked()) post()
-      })
-    this.sending.set(tab, done)
+    this.cardsWaitFor(
+      tab,
+      sends
+        .reduce(
+          (sent, send) => sent.then(() => send(channelId)).catch(() => undefined),
+          before ?? Promise.resolve()
+        )
+        .then(() => {
+          if (stillAsked()) post()
+        })
+    )
   }
 
   private postAsk(tab: string, channelId: string, card: Card, stillAsked: () => boolean): void {
