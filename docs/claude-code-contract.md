@@ -238,7 +238,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   sources `startup`, `resume`, `clear`, `compact`, `fork`), and on 2.1.318, darwin-arm64
   and linux-arm64 (`strings`, 2026-11-04: the same 33 names in the same order, the same
   reasons and sources), and on 2.1.319, darwin-arm64 and linux-arm64 (`strings`,
-  2026-11-07: the same again).
+  2026-11-07: the same again), and on 2.1.325, darwin-arm64 and linux-arm64 (`strings`,
+  2026-11-14, beside 2.1.323: the same 33 names, reasons and sources).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -632,6 +633,14 @@ Unless a bullet below says more, it is inferred, not checked.
   "the tool ran" is a `tool_result` that is not that rejection. Checked 2026-10-28: the
   sentence is in the CC 2.1.312 binary (`grep -a`), and a real transcript from
   2026-10-20 holds such a rejected `tool_result`.
+- **A `-p` turn killed as its reply ends is lost the same way on 2.1.323 and 2.1.325.**
+  2026-11-14, CC 2.1.323 and 2.1.325 linux-arm64 in Docker with no network, a stand-in
+  Messages API: `claude -p --resume <id>` sent `SIGKILL` as the reply ended lost that
+  turn's user and assistant rows on both builds alike, and a later `--resume` worked on
+  both, with the same record types in the same order (later kills came after `-p` had
+  already exited). The 2.1.325 changelog's "Fixed recent turns sometimes going missing
+  from a resumed session after Claude Code stopped without a clean exit" was not
+  reproduced; the interactive TUI under `kill -9` was not probed.
 
 Evidence: full census of 535 on-disk transcripts, 2026-08-10 (CC 2.1.220–227), plus
 controlled experiment E2; lazy write verified live 2026-08-24. The five mid-conversation
@@ -1015,6 +1024,11 @@ starts a new conversation when it is set back to the tool's own.
   `claude`; set to a value with a space (`koloft resume`), it was ignored and the line
   stayed `claude --resume <id>` (the binary checks the value against `^\w[\w-]*$`, read
   with `strings`). Whether the variable reaches CC on a remote machine was not probed.
+- Rechecked 2026-11-14 on CC 2.1.325 beside 2.1.323 (same setup, one run each): a `-w`
+  session with one turn, then `/exit`, wrote the same bytes on both — the empty title,
+  the two dim resume-hint lines (119 bytes), `Removing worktree…`, `Worktree removed (no
+  changes)`; the spinner line above them reads `Cleaning up worktree (no pending
+  changes)…` on both.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -1115,6 +1129,24 @@ moment its CC starts removing, and on this Mac finishes the removal if Koloft qu
   "env-oauth"}`. Only `--bg` was run; that `/fork`, `/background` and the Left-arrow move
   go the same way is **inferred, not checked**, as is the refusal against Anthropic's
   real address.
+  2026-11-14, CC 2.1.325 linux-arm64, the same probe with 2.1.323 rerun beside it as the
+  control (it gave the rows above again), each case in a fresh `HOME`, with and without
+  the first-party switch: the same credential outcome in all six cases — A's credential
+  for B with a non-Anthropic `ANTHROPIC_BASE_URL`; with the switch a refusal (exit 1)
+  for the auth token and the API key, A's OAuth token still used. Only the refusal text
+  changed, to `Couldn't start a background session: the background service doesn't have
+  this session's API key, token or workload identity, so run it in this terminal. Or,
+  unless the service was set up with claude daemon install, run claude daemon stop
+  --any, which stops every project's background sessions, and try again from here; other
+  background sessions may then use this key, token or identity instead of their own
+  sign-in`. `providerEnv` values are unchanged. `strings` add the credential kinds
+  `env-setup` (taken only when `CLAUDE_CODE_OAUTH_TOKEN` comes with an explicit
+  `ANTHROPIC_PROFILE`; not run) and `env-login`, and the notices "CLAUDE_CODE_OAUTH_TOKEN
+  wouldn't reach a background session…" and "Can't move this session to the cloud: it
+  runs on an API key, a token or a Console or ant profile…". `/fork`, `/background`, the
+  Left-arrow move and the exit dialog's second Enter (the 2.1.325 changelog: "Fixed a
+  second Enter in the exit dialog stopping background work after the move to the
+  background was refused") were not probed.
 - **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
   CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
   new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
@@ -1228,6 +1260,8 @@ never wrote a transcript.
   `rate_limits`, `worktree` and the rest), and the `subagentStatusLine` key is still in
   the settings schema, described as "Deprecated: no longer has any effect" (the
   changelog: "Removed the `subagentStatusLine` setting"). (`strings`, 2026-11-13.)
+  2.1.325's builder is the same as 2.1.323's apart from the version stamp (`strings`,
+  darwin-arm64, 2026-11-14; not run).
 
 Evidence: binary reading, the CLI reference and two local experiments, 2026-08-07, CC
 2.1.224; render latency measured in live testing (date and CC version not recorded).
@@ -1521,6 +1555,18 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   So the variable also cuts a known 1M model, and a name ending in `[1m]`, to 200k; every
   name 2.1.323 knew holds `claude`, but not every name holding `claude` is known. On
   2.1.322 `glm-4.6` with the variable gave 200000, the same as without it.
+  **2.1.325 lets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` set the window of an unknown `claude-`
+  name.** 2026-11-14, 2.1.325 beside 2.1.323, darwin-arm64, every slot pinned to one
+  name, `ANTHROPIC_AUTH_TOKEN`, a stand-in API, `claude -p -- /context` (one run each —
+  not the TUI and statusLine reading above): with `CLAUDE_CODE_MAX_CONTEXT_TOKENS=128000`,
+  `claude-foo-9` and `claude-sonnet-latest` got `/ 128k` on 2.1.325 and `/ 1m` on 2.1.323,
+  and lost the "doesn't recognize" line; with it and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
+  together `claude-foo-9` got 128k (2.1.323: 200k). `glm-4.6` took 128k on both; known
+  names (`claude-sonnet-4-5` and `anthropic/claude-sonnet-4.5` at 200k, `claude-opus-5-5`
+  at 1m) ignored it on both. Without the variable, `glm-4.6`, `claude-foo-9` (1m, 200k
+  with `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`), `claude-sonnet-latest` (1m), `claude-opus-5-5`,
+  `claude-sonnet-4-5[1m]` and `opus` came out on 2.1.325 as on 2.1.323. Not run:
+  linux-arm64, the TUI.
 - **CC's safety classifier can silently swap the model**: a blocked fable request is
   re-run on Opus and the session pinned there, so the model a session was launched
   with is not always the model it runs; the status JSON names the model in use.
@@ -1624,6 +1670,11 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   `workflow`, `MCP task`, `cloud session`, `dream`, `auto-mode scan`. Nothing in the
   payload says whether a task is idle or ambient — the SDK stream's `ambient` flag
   ("hosts should exclude them from activity indicators") is not forwarded to hooks.
+  The `background_tasks` builder in 2.1.325 is the same as 2.1.323's once short names
+  are evened out (`strings`, 2026-11-14, darwin-arm64 and linux-arm64); the 2.1.325
+  changelog's "Fixed sessions showing as waiting for input when a finished pull request
+  only needed your own review or merge" was not found in this payload (not located in
+  `strings`; not probed with a real pull request).
 - **A `/loop` wakeup shows up in `session_crons`.** Measured 2026-09-23 on CC 2.1.281,
   in a tmux run with a Stop hook that saved its input. `/loop <prompt>` ended its turn
   with `"session_crons":[{"id":"8044b6e3","schedule":"4 15 * * *","recurring":false,
@@ -2048,6 +2099,13 @@ other bullets of §9 were not re-measured on this build.
   from ant auth login …" line (`strings`) needs an ended claude.ai login plus an
   `ant auth login` profile under `~/.config/anthropic/`; that case, and whether the line
   goes to stdout (which Assist reads as the answer) or stderr, are not probed yet.
+  On 2.1.325 Assist's exact argv reached a stand-in Messages API 0.58–0.64 s after
+  spawn in a never-used config dir and 0.33–0.42 s in a reused one with
+  `ANTHROPIC_API_KEY` (2.1.323: 0.69–0.97 / 0.37–0.39), and 0.71–1.31 s with a made-up
+  `CLAUDE_CODE_OAUTH_TOKEN` (2.1.323: 0.64–0.80); no account-data request reached the
+  stand-in (2026-11-14, darwin-arm64, 2–3 runs per cell). So the 2.1.325 changelog's
+  "`claude -p` with no cached account data … wait for that data before its first
+  request" did not show offline; how long it waits with a real OAuth token is not probed.
 - **The one-shot takes any model alias and `--effort`; only `max` outlasts 15 s.**
   2026-11-11, CC 2.1.322, through Koloft's shim on real accounts, Assist's argv with
   `--model <alias>` and `--effort <level>` after `-p`. A 9.5 KB prompt, three runs each
@@ -2478,8 +2536,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   2026-11-04, the 2.1.318 code, darwin-arm64 and linux-arm64, identical to 2.1.317's the
   same way, 23 keys; 2026-11-07, the 2.1.319 code, darwin-arm64 and linux-arm64, writes
   the same keys and differs only in no longer touching a `.fleetview-heartbeat` file in
-  the same folder, which Koloft's reader skips as it lists only `<digits>.json`), not
-  from a run: inferred, not checked. A daemon-hosted
+  the same folder, which Koloft's reader skips as it lists only `<digits>.json`;
+  2026-11-14, the 2.1.325 code, darwin-arm64 and linux-arm64, identical to 2.1.323's
+  apart from the version stamp, `status` still `busy`, `shell`, `idle` or `waiting`),
+  not from a run: inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2891,6 +2951,33 @@ sessions.
   in `--permission-mode default`**; without it the same call was denied ("This command
   requires approval") in `-p`. A command with arguments (`koloft note append "hello
   world"`) matched too.
+- **Since 2.1.325 a `for` loop around an allowed command asks.** 2026-11-14, CC 2.1.325
+  beside 2.1.323, darwin-arm64, `claude -p --output-format stream-json` with a
+  `--settings` file holding `permissions.allow: ["Bash(koloft *)"]` and logging hooks, a
+  stand-in Messages API returning one Bash `tool_use`, a stub `koloft` on `PATH`, from a
+  `-w` worktree and from a folder outside git: `for i in 1 2; do koloft session list;
+  done` ran on 2.1.323, and on 2.1.325 fired `PermissionRequest` and was denied ("A
+  variable set in this command can't be checked before it runs") in `default` and
+  `acceptEdits`; the 2.1.325 TUI drew `1. Yes / 2. Yes, and switch to auto mode … / 3.
+  No`. It ran on both with `--dangerously-skip-permissions`. The changelog: "Fixed a gap
+  in Bash permission checks where some compound commands could run without asking; these
+  now ask for permission". Of 79 other shapes none changed: `|`, `&&`, `||`, `;`, `2>&1`,
+  `2>/dev/null`, a quoted multi-line argument, a `$(cat <<'EOF' …)` argument, `if … fi`,
+  `while false`, `nohup`, `command`, `\koloft` and `"koloft"` ran on both; a loop that
+  uses its variable (`for s in a b; do koloft … "$s"; done`), `| while read`, `$(printf
+  …)`, a variable assignment, `X=1 koloft`, `( … )`, `cd` or `>` outside the working
+  folders, `./koloft`, an absolute path, `env`, `exec` and a trailing `&` asked on both.
+  Auto mode, remote tabs and server-fetched flags were not probed.
+- **Read-only git aimed at another checkout asks on 2.1.323 and 2.1.325 alike.**
+  2026-11-14, the same `-p` setup in `default` and `acceptEdits`: from a `-w` worktree,
+  `git -C <main checkout> status|log`, `git -C <other repo>` (trusted in `.claude.json`
+  or not, with `--add-dir <it>` or `permissions.additionalDirectories`), `cd <other
+  repo> && git status`, and `git -C sub` for a repo nested in the worktree each asked
+  ("This command requires approval"; the `cd` form "…changes directory before running a
+  version-control command…"); `git status` and `git log` in the session's own repo ran.
+  The shape the 2.1.325 changelog's "Changed read-only git commands to ask first in a
+  repository that isn't the project's or one you trusted" changes was not found; two
+  separate calls (`cd sub`, then a bare `git status`) were not tried.
 - **Sessions on one machine can message each other.** A second interactive claude
   started with `-n <name>` showed up in another session's `ListAgents` under that name,
   and `SendMessage` reached it. With no context, the receiver would not act on the
@@ -3215,7 +3302,11 @@ below was one run.
   PermissionRequest hook"; each call fired `PermissionRequest` once on both builds, so
   2.1.323's "a permission check that fails on input a `PermissionRequest` hook rewrote now
   asks again" did not show for an unchanged input. A check that fails was not made to
-  happen.
+  happen. On 2.1.325 (2026-11-14, python pty, scratch `HOME`, a stand-in API,
+  `--permission-mode default`) a hook answering `allow` with `updatedInput` set to the
+  `tool_input` unchanged, 4 s after `PermissionRequest`, ran a Bash call that 2.1.325
+  newly asks for (`for i in 1 2; do koloft …; done`, §13); the `AskUserQuestion` shape
+  was not rerun.
 - **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
   `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
   nothing):
@@ -3594,7 +3685,16 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.318's; `self-hosted-runner --help` adds "Refuses to start unless --capacity is 1,
   git is 2.32 or newer, …" under `--use-anthropic-git-proxy` and "Refuses to start if
   git cannot be run or reports a version older than 2.34" under `--configure-git`, no
-  flag added or gone).
+  flag added or gone) and 2.1.325 (`2.1.325 (Claude Code)`, 2026-11-14; its `--help`,
+  `--help-all` and every listed subcommand's `--help` byte-identical to 2.1.323's, run
+  in a scratch `HOME`, the same subcommands `agents attach auth auto-mode doctor gateway
+  import install logs mcp plugin purge respawn rm setup-token stop ultrareview update`;
+  the only new command is the hidden `worktree-hook` — "Run the WorktreeCreate or
+  WorktreeRemove hooks for the current directory and report as JSON (used by Claude
+  Desktop)", flags `--json --event create|remove --name --path --trusted-folder`,
+  refusing with `stdout_is_tty` or `spawned_by_session` — the `.command("…")` names in
+  `strings` going from 57 to 58 on darwin-arm64 and linux-arm64; 2.1.324 has no
+  changelog section and was not downloaded).
   The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
   refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
   `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
