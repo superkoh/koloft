@@ -692,9 +692,11 @@ reach the model as developer messages, the request bodies the same on both but f
 `untrusted_as_tool_output` notwithstanding), and the same e2e specs passed, the remote
 ones (E-SSH-23/24/25) too; that the lab machine in them ran 0.169.0 is **inferred, not
 checked**, as for 0.168.0, so on the remote side the measurement is section 16's
-install and handshake above. Attached threads (`attachedToThreadId`): the schema says
-`includeAttachedThreads` adds them "when searching by title", so a title search leaves
-them out unless asked; whether a plain `thread/list` lists them was not probed. No other section was probed by hand on 0.169.0: sections 3,
+install and handshake above. Attached threads (`attachedToThreadId`, the saved side
+chats of the opt-in terminal workspace): openai/codex#60574 says title and content
+searches leave them out and adds `includeAttachedThreads` to ask for them, which on
+`thread/list` needs a non-empty `searchTerm`; so a plain `thread/list` does not list
+them (read from the change, not probed). No other section was probed by hand on 0.169.0: sections 3,
 5, 18 (but its `--help`), 20–25, 30 and 34, and 15's login parts, stand on 0.167.0's
 measurements above and on those specs; 11 stands on 0.166.0's. Not reached on 0.169.0:
 "clear context and implement" (#60763) — read from the change: the TUI starts the fresh
@@ -708,7 +710,8 @@ compaction (§21 stays **inferred, not checked**).
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4 (but how
-a turn that leaves a background terminal running ends, rechecked on 0.169.0), 9 (the trust question before connecting), 12 (`fileChange` /
+an interrupted turn and a turn that leaves a background terminal running end, rechecked
+on 0.169.0), 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
 `app-server --help`, `exec --help` and `resume --help` are byte-identical on 0.161.0,
 0.162.1 and 0.163.0 (2026-10-16). On 0.164.0 (2026-10-23) `--help` adds
@@ -750,15 +753,16 @@ unless marked.
   `CODEX_HOME` listing `hostname` and the app-server's (another `CODEX_HOME`) listing
   `codex-version`, the footer showed the hostname; with no list in the TUI's home it
   showed the default, whatever the app-server's home said.
-- Up to 0.168.0 the footer is one line. Long content ends in an ellipsis at every width
-  tried; shrinking the terminal does not wrap it. **0.169.0 wraps an item list too long
-  for one row onto a second footer row** (openai/codex#60682): 2026-11-14, pyte at 120
-  columns against a stand-in provider, `current-dir` moved to the second row where
-  0.168.0 cut the row with `…`; only `context-used`, `codex-version`,
-  `model-with-reasoning` and `current-dir` had data there, so Koloft's full list with a
-  real login's limits, a branch and a pull request was not seen on 0.169.0. `"\n"`, `newline`, `line-break`, `separator`
-  and `spacer` each produce an "Ignored invalid status line items" warning (F2). The
-  native configuration cannot reproduce a three-line footer.
+- The footer is one line up to 0.168.0. Long content ends in an ellipsis at every width
+  tried; shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`,
+  `separator` and `spacer` each produce an "Ignored invalid status line items" warning
+  (F2). The native configuration cannot reproduce a three-line footer.
+- **0.169.0 wraps an item list too long for one row onto a second footer row**
+  (openai/codex#60682). 2026-11-14, pyte at 120 columns against a stand-in provider:
+  `current-dir` moved to the second row where 0.168.0 cut the row with `…`. Only
+  `context-used`, `codex-version`, `model-with-reasoning` and `current-dir` had data
+  there, so Koloft's full list with a real login's limits, a branch and a pull request
+  was not seen on 0.169.0; the separator items above were not rerun.
 - No item runs a user command or reads a file: `custom-command`, `command` and `custom`
   are rejected, and a picker search for "command" returns no matches.
 - The `/statusline` picker offers 31 IDs: `model`, `model-with-reasoning`, `reasoning`,
