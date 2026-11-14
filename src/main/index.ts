@@ -15,7 +15,6 @@ import {
   type BaseWindow,
   type WebContents
 } from 'electron'
-import { EventEmitter } from 'events'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -1251,8 +1250,14 @@ function activateTabFromNotification(tabId: string): void {
   app.focus({ steal: true })
 }
 
+interface OsNotification {
+  show(): void
+  close(): void
+  on(event: 'click', listener: () => void): unknown
+}
+
 // PLATFORM§4
-const osNotifications = new Map<string, Notification>()
+const osNotifications = new Map<string, OsNotification>()
 
 function withdrawOsNotification(tabId: string): void {
   const n = osNotifications.get(tabId)
@@ -1281,10 +1286,8 @@ function osNotificationText(event: AttentionEvent): { title: string; body: strin
   }
 }
 
-class NotificationSeenByTests extends EventEmitter {
-  constructor(private readonly text: { title: string; body: string }) {
-    super()
-  }
+class NotificationSeenByTests implements OsNotification {
+  constructor(private readonly text: { title: string; body: string }) {}
 
   show(): void {
     osOutletsSeenByTests.notifications.push(this.text)
@@ -1296,12 +1299,15 @@ class NotificationSeenByTests extends EventEmitter {
     osOutletsSeenByTests.inNotificationCenter = osOutletsSeenByTests.inNotificationCenter.filter(
       (t) => t !== this.text
     )
-    this.emit('close')
+  }
+
+  on(): this {
+    return this
   }
 }
 
-function osNotification(text: { title: string; body: string }): Notification | null {
-  if (OFF_SCREEN_TEST) return new NotificationSeenByTests(text) as unknown as Notification
+function osNotification(text: { title: string; body: string }): OsNotification | null {
+  if (OFF_SCREEN_TEST) return new NotificationSeenByTests(text)
   return Notification.isSupported() ? new Notification(text) : null
 }
 
@@ -1312,7 +1318,6 @@ function showOsNotification(event: AttentionEvent): void {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
   })
-  n.on('close', () => osNotifications.delete(event.tabId))
   withdrawOsNotification(event.tabId)
   osNotifications.set(event.tabId, n)
   n.show()

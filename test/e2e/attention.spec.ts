@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { ATTENTION_REASON } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
 import { codexRows, startCodex } from './helpers/codex'
@@ -74,13 +75,17 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
     await startSessionIn(page, 'ws-b')
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+    const turnDoneIn = (ws: string) => `${ATTENTION_REASON['turn-done']} · ${ws}`
     const listed = async () =>
-      (await osOutlets(app)).inNotificationCenter.map((n) => n.body.split(' · ')[1]).sort()
-    await expect.poll(listed).toEqual(['ws-a', 'ws-b'])
+      (await osOutlets(app)).inNotificationCenter
+        .map((n) => n.body)
+        .filter((body) => body.startsWith(ATTENTION_REASON['turn-done']))
+        .sort()
+    await expect.poll(listed).toEqual([turnDoneIn('ws-a'), turnDoneIn('ws-b')])
     await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
 
     await lookAtTheWindow(app)
-    await expect.poll(listed).toEqual(['ws-a'])
+    await expect.poll(listed).toEqual([turnDoneIn('ws-a')])
     expect(await pendingAttention(page)).toHaveLength(2)
 
     await wsRows(page, 'ws-a').click()
