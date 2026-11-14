@@ -104,8 +104,12 @@ interface HostState {
 interface Watch {
   count: number
   stamp?: string
+  keepsStampAcrossUnwatch: boolean
+  catchUpFrom?: string
   onChange: (stamp: string) => void
 }
+
+const UNWATCHED_BEFORE_ITS_FIRST_STAMP = '\0'
 
 function gitKey(git: Map<string, RemoteGitInfo>): string {
   return JSON.stringify([...git])
@@ -114,6 +118,7 @@ function gitKey(git: Map<string, RemoteGitInfo>): string {
 export class RemoteSync {
   private hosts = new Map<string, HostState>()
   private watches = new Map<string, Map<string, Watch>>()
+  private stampsOfUnwatched = new Map<string, Map<string, string>>()
   private stopped = true
 
   constructor(private deps: RemoteSyncDeps) {}
@@ -154,22 +159,51 @@ export class RemoteSync {
     return this.hosts.get(host)?.problem
   }
 
-  watch(host: string, path: string, onChange: (stamp: string) => void): void {
+  watch(
+    host: string,
+    path: string,
+    onChange: (stamp: string) => void,
+    reportsWhatChangedWhileUnwatched = false
+  ): void {
     let paths = this.watches.get(host)
     if (!paths) this.watches.set(host, (paths = new Map()))
-    const w = paths.get(path)
-    if (w) w.count++
-    else paths.set(path, { count: 1, onChange })
+    let w = paths.get(path)
+    if (w) {
+      w.count++
+      w.keepsStampAcrossUnwatch ||= reportsWhatChangedWhileUnwatched
+    } else {
+      w = { count: 1, keepsStampAcrossUnwatch: reportsWhatChangedWhileUnwatched, onChange }
+      paths.set(path, w)
+    }
+    if (!reportsWhatChangedWhileUnwatched) return
+    const kept = this.stampsOfUnwatched.get(host)
+    const stampWhenUnwatched = kept?.get(path)
+    if (stampWhenUnwatched === undefined) return
+    kept?.delete(path)
+    w.catchUpFrom = stampWhenUnwatched
+    this.askSoon(host)
   }
 
   unwatch(host: string, path: string): void {
     const paths = this.watches.get(host)
     const w = paths?.get(path)
-    if (paths && w && --w.count <= 0) paths.delete(path)
+    if (!paths || !w || --w.count > 0) return
+    paths.delete(path)
+    if (!w.keepsStampAcrossUnwatch) return
+    let kept = this.stampsOfUnwatched.get(host)
+    if (!kept) this.stampsOfUnwatched.set(host, (kept = new Map()))
+    kept.set(path, w.catchUpFrom ?? w.stamp ?? UNWATCHED_BEFORE_ITS_FIRST_STAMP)
+  }
+
+  private askSoon(host: string): void {
+    const st = this.hosts.get(host)
+    if (this.stopped || !st || st.running || st.failures) return
+    if (st.dueAt - Date.now() > FAST_INTERVAL_MS) this.next(host, st, 0)
   }
 
   unwatchAll(): void {
     this.watches.clear()
+    this.stampsOfUnwatched.clear()
   }
 
   private noticeStamps(host: string, asked: string[], stamps: string[]): void {
@@ -178,8 +212,9 @@ export class RemoteSync {
       const w = paths?.get(path)
       const stamp = stamps[i]
       if (!w || stamp === undefined) return
-      const before = w.stamp
+      const before = w.catchUpFrom ?? w.stamp
       w.stamp = stamp
+      w.catchUpFrom = undefined
       if (before !== undefined && before !== stamp) w.onChange(stamp)
     })
   }
@@ -305,6 +340,7 @@ export class RemoteSync {
         this.silenceBell(st)
         this.roundOver(st)
         this.hosts.delete(host)
+        this.stampsOfUnwatched.delete(host)
       }
       for (const host of hosts) {
         const st = this.state(host)
