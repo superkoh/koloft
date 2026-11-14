@@ -1,6 +1,7 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
 import { spawn } from 'child_process'
+import { randomInt } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -179,6 +180,13 @@ export function foregroundName(reported: unknown): string | null {
   return name === '' ? null : name
 }
 
+const RUN_PART_LENGTH = 4
+
+const randomRunPart = (): string =>
+  randomInt(36 ** RUN_PART_LENGTH)
+    .toString(36)
+    .padStart(RUN_PART_LENGTH, '0')
+
 export class PtyManager extends EventEmitter {
   shimDir?: string
   regDir?: string
@@ -194,7 +202,7 @@ export class PtyManager extends EventEmitter {
   private typing = new Map<string, Promise<void>>()
   private linesToType = new WeakMap<PtyHandle, LinesToType>()
   private counter = 0
-  private instanceTag = process.pid.toString(36)
+  private instanceTag = `${process.pid.toString(36)}-${randomRunPart()}`
 
   nextId(): string {
     return `pty-${this.instanceTag}-${++this.counter}`
