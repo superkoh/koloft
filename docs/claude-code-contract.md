@@ -3031,6 +3031,21 @@ sessions.
     message started its own turn; Enter pressed after that turn sent the half-typed line
     whole, as a prompt of its own. The same check while the receiver was busy was run but
     its result was not kept.
+- **A receiver closes its end of the connection once it has taken the line, a
+  just-resumed one too — when nothing else holds it up.** 2026-11-14, CC 2.1.322 and
+  2.1.325, an interactive `--dangerously-skip-permissions` receiver in a python pty, a
+  scratch `CLAUDE_CONFIG_DIR`, a fake `apiKeyHelper` key and a local fake Messages API, no
+  MCP servers and no hooks. One `bypass` line per connection, the writer's half closed
+  right after the write (as `socket.end(line)` does), on a fresh session after 4 s and on
+  the same session `--resume`d three times, written the moment its registry entry (§11)
+  named the socket (~0.17 s after spawn): every write finished at once, the receiver
+  closed its end 0.007–0.009 s after it on the fresh session and 0.041–0.055 s after it on
+  each resume (8 of 8), and the line's `user` record carried a timestamp ~0.02 s after the
+  write. Inside Koloft, with its hooks and a real account (2026-11-10, CC 2.1.322, the
+  hand-test sandbox, 2 of 3 runs), a just-resumed receiver did not close within 3 s, yet
+  the line reached its transcript — read late by a receiver still busy starting up
+  (inferred, not checked). So a line the socket took whole is counted as taken; one still
+  waiting to be written when the wait ends is not.
 - **Esc that interrupts a running turn fires no `Stop` hook.** 2026-10-11, CC 2.1.296,
   model haiku, temp HOME, a `Stop` hook that appends to a file: a typed turn running
   `ping -c 30 127.0.0.1` was interrupted with Esc 6 s in; the session went `idle` and the

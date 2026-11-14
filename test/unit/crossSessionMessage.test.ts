@@ -84,6 +84,21 @@ describe('a message to another Claude session, the way Claude sessions send one'
     }
   }, 10_000)
 
+  it('still fails when the session reads nothing and the line never fits in the socket, so that one can be retried', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kx-'))
+    const sock = path.join(dir, 's.sock')
+    let held: net.Socket | undefined
+    server = net.createServer({ allowHalfOpen: true, pauseOnConnect: true }, (c) => (held = c))
+    await new Promise<void>((resolve) => server!.listen(sock, resolve))
+    try {
+      await expect(
+        writeLine(sock, crossSessionLine('bypass', 'x'.repeat(4 * 1024 * 1024), 'k-1'))
+      ).rejects.toThrow('did not take the message in time')
+    } finally {
+      held?.destroy()
+    }
+  }, 10_000)
+
   it('fails when nothing listens on the socket', async () => {
     await expect(writeLine(path.join(os.tmpdir(), 'kx-nobody.sock'), 'x\n')).rejects.toThrow()
   })
