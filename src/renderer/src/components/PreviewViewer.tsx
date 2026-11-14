@@ -6,7 +6,7 @@ import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import type { SourceLines } from '../markdown/lines'
 import {
   cachedDiagram,
-  hashCode,
+  diagramKey,
   makeCache,
   MERMAID_MAX_TEXT_SIZE,
   renderDiagram
@@ -44,8 +44,7 @@ const UNREADABLE: DrawnDoc = {
 let mermaidTempIdSeq = 0
 
 const DIAGRAM_HEIGHTS_KEPT = 1000
-const drawnHeights = makeCache<number>(DIAGRAM_HEIGHTS_KEPT)
-const heightKey = (code: string): string => hashCode(code.trim())
+const drawnHeights = makeCache<{ height: number; bodyWidth: number }>(DIAGRAM_HEIGHTS_KEPT)
 
 interface Shown extends DrawnBlock {
   html: string
@@ -60,7 +59,10 @@ interface OpenComment {
 interface Diagrams {
   watch: (el: HTMLElement) => void
   forgetRemoved: () => void
+  keepHeight: (el: HTMLElement) => void
 }
+
+const NO_DIAGRAMS: Diagrams = { watch: () => {}, forgetRemoved: () => {}, keepHeight: () => {} }
 
 function decodeAttr(raw: string | undefined): string {
   if (!raw) return ''
@@ -208,7 +210,7 @@ export function PreviewViewer({
   const mark = useRef<Range | null>(null)
   const openRef = useRef(open)
   openRef.current = open
-  const diagrams = useRef<Diagrams>({ watch: () => {}, forgetRemoved: () => {} })
+  const diagrams = useRef<Diagrams>(NO_DIAGRAMS)
   const zoomFrom = useRef<HTMLElement | null>(null)
   const pipeline = useRef({ busy: false, again: false, read: () => {} })
   const tellHeadings = useRef(onHeadings)
@@ -261,11 +263,16 @@ export function PreviewViewer({
       drawnText.current = doc.text
     }
 
+    const bodyWidth = body.offsetWidth
     const watch = (b: Shown): void => {
       for (const el of b.el.querySelectorAll<HTMLElement>('.mmd')) {
-        if (el.dataset.k !== TOKEN || el.dataset.state || fillAtOnce(el)) continue
-        const was = drawnHeights.get(heightKey(codeOf(el)))
-        if (was) el.style.minHeight = `${was}px`
+        if (el.dataset.k !== TOKEN || el.dataset.state === 'busy') continue
+        if (el.dataset.state === 'done' || fillAtOnce(el)) {
+          diagrams.current.keepHeight(el)
+          continue
+        }
+        const kept = drawnHeights.get(diagramKey(codeOf(el)))
+        if (kept?.bodyWidth === bodyWidth) el.style.minHeight = `${kept.height}px`
         diagrams.current.watch(el)
       }
     }
@@ -337,8 +344,18 @@ export function PreviewViewer({
         showDrawn(el, res, code)
       }
       el.style.minHeight = ''
-      if (el.offsetHeight) drawnHeights.set(heightKey(code), el.offsetHeight)
+      sizes.observe(el)
     }
+
+    const sizes = new ResizeObserver((entries) => {
+      const bodyWidth = body.offsetWidth
+      for (const e of entries) {
+        const el = e.target as HTMLElement
+        if (!el.isConnected) sizes.unobserve(el)
+        const height = e.borderBoxSize[0]?.blockSize
+        if (height && bodyWidth) drawnHeights.set(diagramKey(codeOf(el)), { height, bodyWidth })
+      }
+    })
 
     const io = new IntersectionObserver(
       (entries) => {
@@ -361,7 +378,8 @@ export function PreviewViewer({
           pending.delete(el)
           io.unobserve(el)
         }
-      }
+      },
+      keepHeight: (el) => sizes.observe(el)
     }
 
     const ro = new ResizeObserver(() => {
@@ -384,7 +402,8 @@ export function PreviewViewer({
       disposed = true
       io.disconnect()
       ro.disconnect()
-      diagrams.current = { watch: () => {}, forgetRemoved: () => {} }
+      sizes.disconnect()
+      diagrams.current = NO_DIAGRAMS
     }
   }, [item.kind])
 

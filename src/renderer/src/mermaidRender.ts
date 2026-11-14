@@ -17,21 +17,25 @@ export function hashCode(s: string): string {
   return `${fnv1a32(s).toString(36)}-${s.length.toString(36)}`
 }
 
-export interface DiagramCache<T = string> {
+export function diagramKey(code: string): string {
+  return hashCode(code.trim())
+}
+
+export interface LruCache<T> {
   get(key: string): T | undefined
   set(key: string, value: T): void
   readonly size: number
 }
 
-export function makeCache<T = string>(limit: number = CACHE_LIMIT): DiagramCache<T> {
+export function makeCache<T = string>(limit: number = CACHE_LIMIT): LruCache<T> {
   const entries = new Map<string, T>()
   return {
     get(key) {
-      const svg = entries.get(key)
-      if (svg === undefined) return undefined
+      const value = entries.get(key)
+      if (value === undefined) return undefined
       entries.delete(key)
-      entries.set(key, svg)
-      return svg
+      entries.set(key, value)
+      return value
     },
     set(key, value) {
       entries.delete(key)
@@ -121,7 +125,7 @@ function svgFromCache(key: string, id: string): string | undefined {
 }
 
 export function cachedDiagram(code: string, id: string): string | undefined {
-  return svgFromCache(hashCode(code.trim()), id)
+  return svgFromCache(diagramKey(code), id)
 }
 
 export async function renderDiagram(
@@ -137,7 +141,7 @@ export async function renderDiagram(
     }
   }
 
-  const key = hashCode(src)
+  const key = diagramKey(src)
   const cached = svgFromCache(key, id)
   if (cached !== undefined) return { ok: true, svg: cached }
 
