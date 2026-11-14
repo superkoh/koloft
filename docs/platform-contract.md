@@ -2056,6 +2056,26 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   macOS, and on Debian 12 under bash, tcsh and fish. (2026-09-30: this Mac's openrsync
   through a stand-in ssh that logs its argv; Debian 12 `node:22-bookworm-slim`
   containers.)
+- **Each rsync over a ControlMaster costs several round trips, so pulls run at once end
+  far sooner than the same pulls one after another**, and nothing broke with them
+  together. A sync round (the real heartbeat, then the transcript, hook and agy-brain
+  pulls, each with one file appended so all three were due; 15 rounds a way, medians),
+  one after another against all at once: 66 → 35 ms with no added delay, 978 → 389 ms
+  with 30 ms added round trip, 2877 → 1111 ms with 100 ms. Against the transcripts and
+  then the hooks in turn, with the brain beside them: 67 → 49, 999 → 693, 2841 →
+  1959 ms. With all seven pulls a round can carry (adding Codex `sessions` and
+  `archived_sessions`, Muse `sessions`, agy `conversations`; 10 rounds, 30 ms): 2327 →
+  411 ms all at once, 2216 → 1008 ms with the transcripts then the hooks in turn and
+  the extras two at a time beside them. Every pull exited 0 and the mirrored transcript
+  matched the machine's size. Each pull at once is one more session on the master (§33): on a
+  publickey login with `MaxSessions 2` (the hook bell plus three pulls is four
+  sessions) nothing failed, the pulls past the limit made their own logins, and the
+  round took longer together than one after another (77 → 136 ms with no added delay).
+  A password login was not tried; by §33 its pulls past the limit cannot log in again.
+  (2026-11-13: this Mac's openrsync and
+  OpenSSH_10.3p1 to rsync 3.2.7 in the e2e sshd image, reached directly on a published
+  port with Koloft's own ssh options, delay added with `tc netem` in the container; a
+  scratch node script.)
 
 ## §35 tmux
 
