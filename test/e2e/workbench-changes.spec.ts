@@ -1016,7 +1016,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
   })
 
-  test('with ⌘F on a match in a lower block, a change that adds a match above it keeps the same match current', async ({
+  test('with ⌘F on a match in a lower block, a change that adds or removes matches above it, in another file or in its own, keeps the same match current', async ({
     app,
     page,
     env
@@ -1037,21 +1037,28 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     for (let i = 0; i < 3; i++) await page.keyboard.press('Enter')
     await expect(bar.locator('.find-count')).toHaveText('4/6')
 
-    const activeBlock = (): Promise<string | null> =>
-      page.evaluate(() => {
+    const current = async (): Promise<{ count: string; line: string | null }> => ({
+      count: (await bar.locator('.find-count').textContent()) ?? '',
+      line: await page.evaluate(() => {
         const r = [...(CSS.highlights.get('find-active') ?? [])][0] as Range | undefined
-        const at = r?.startContainer.parentElement?.closest<HTMLElement>('.cv-blk')
-        return at?.dataset.path ?? null
+        return r?.startContainer.parentElement?.closest('.idiff-code')?.textContent ?? null
       })
-    await expect.poll(activeBlock).toBe('bulk/part-4.ts')
-    await expect
-      .poll(() => blockOf(page, 'bulk/part-4.ts').locator(CV.token).count(), { timeout: 60_000 })
-      .toBeGreaterThan(0)
+    })
+    const userIsOn = 'export const part4rewritten_7 = 7'
+    await expect.poll(current).toEqual({ count: '4/6', line: userIsOn })
 
-    fs.appendFileSync(parts[0], 'export const morerewritten_7 = 7\n')
-    await expect(bar.locator('.find-count')).toHaveText(/\/7$/, { timeout: 30_000 })
-    expect(await activeBlock()).toBe('bulk/part-4.ts')
-    await expect(bar.locator('.find-count')).toHaveText('5/7')
+    const part1 = fs.readFileSync(parts[0], 'utf8')
+    fs.writeFileSync(parts[0], part1 + 'export const morerewritten_7 = 7\n')
+    await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '5/7', line: userIsOn })
+
+    fs.writeFileSync(
+      parts[3],
+      'export const firstrewritten_7 = 0\n' + fs.readFileSync(parts[3], 'utf8')
+    )
+    await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '6/8', line: userIsOn })
+
+    fs.writeFileSync(parts[0], part1)
+    await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '5/7', line: userIsOn })
   })
 
   test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({

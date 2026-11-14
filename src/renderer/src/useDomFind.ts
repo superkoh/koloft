@@ -128,6 +128,18 @@ function scrollRangeIntoViewLanding(range: Range, container: HTMLElement): boole
   return r === own && r.height <= container.clientHeight
 }
 
+function samePlaceIn(ranges: Range[], old: Range[], oldIndex: number): number {
+  const at = old[oldIndex].startContainer
+  const holder = at.nodeType === Node.ELEMENT_NODE ? at : at.parentNode
+  if (!holder?.parentNode) return oldIndex
+  const edge = document.createRange()
+  edge.setStartBefore(holder)
+  const before = (list: Range[]): number =>
+    list.filter((r) => r.compareBoundaryPoints(Range.START_TO_START, edge) < 0).length
+  const insideHolder = Math.max(0, oldIndex - before(old))
+  return Math.min(before(ranges) + insideHolder, Math.max(0, ranges.length - 1))
+}
+
 export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const rangesRef = useRef<Range[]>([])
   const activeRef = useRef(0)
@@ -186,12 +198,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     const root = getRoot()
     const was = rangesRef.current[activeRef.current]
     const ranges = root ? computeMatchRanges(root, queryRef.current) : []
-    const same = was
-      ? ranges.findIndex(
-          (r) => r.startContainer === was.startContainer && r.startOffset === was.startOffset
-        )
-      : -1
-    if (same !== -1) activeRef.current = same
+    if (was) activeRef.current = samePlaceIn(ranges, rangesRef.current, activeRef.current)
     rangesRef.current = ranges
     render()
   }, [getRoot, render])
