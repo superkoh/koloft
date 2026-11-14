@@ -174,6 +174,21 @@ describe('firedHints — worktree', () => {
     expect(firedHints(prev, next)).toEqual([])
   })
 
+  it('stays quiet when a lone tab swaps its session, as /clear or a resume does', () => {
+    const prev = snap({ rows: [ws('/a', [running('s1')])] })
+    const next = snap({ rows: [ws('/a', [running('s2'), cold('s1')])] })
+    expect(firedHints(prev, next)).toEqual([])
+  })
+
+  it('fires for a second launch that lands in the same update in which the first launch row gives way to its session', () => {
+    const starting = { id: 'pty-1', worktree: 'main', running: true, pending: true }
+    const prev = snap({ rows: [ws('/a', [starting])] })
+    const next = snap({
+      rows: [ws('/a', [{ ...starting, id: 'pty-2' }, running('muse:devbox:s1')])]
+    })
+    expect(firedHints(prev, next)).toEqual([{ id: 'worktree', selector: rowSelector('pty-2') }])
+  })
+
   it('stays quiet when nothing else in that workspace is running', () => {
     const prev = snap({ rows: [ws('/a', [cold('s1')])] })
     const next = snap({

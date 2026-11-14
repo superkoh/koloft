@@ -1,15 +1,7 @@
 import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgentFor, seedSettings, type E2EEnv } from './helpers/env'
 import {
   type AgentName,
   centerTerm,
@@ -53,26 +45,16 @@ const ASKS_FOR_APPROVAL: Record<AgentName, string> = {
 }
 
 const TABS_BEYOND_LOCAL_CLAUDE: TabKind[] = [
-  { kind: 'local Codex', agent: 'Codex', remote: false, install: (env) => installCodex(env) },
-  {
-    kind: 'local Muse',
-    agent: 'Muse',
+  ...(['Codex', 'Muse', 'Antigravity'] as const).map((agent) => ({
+    kind: `local ${agent}`,
+    agent,
     remote: false,
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    }
-  },
-  {
-    kind: 'local Antigravity',
-    agent: 'Antigravity',
-    remote: false,
-    install: (env) => {
-      installAgy(env)
-      trustInAgy(env, env.workspaces.a)
-    },
-    bound: (page) => runIn(page, centerTerm(page), 'first words')
-  },
+    install: (env: E2EEnv) => installAgentFor(env, agent, env.workspaces.a),
+    bound:
+      agent === 'Antigravity'
+        ? (page: Page) => runIn(page, centerTerm(page), 'first words')
+        : undefined
+  })),
   { kind: 'remote Claude', agent: 'Claude', remote: true, install: () => {} },
   ...OTHER_AGENTS_ON_THE_MACHINE.map((a) => ({
     kind: `remote ${a.label}`,
@@ -83,8 +65,8 @@ const TABS_BEYOND_LOCAL_CLAUDE: TabKind[] = [
   }))
 ]
 
-const TABS_WITHOUT_THESE_HINTS_COVERED = TABS_BEYOND_LOCAL_CLAUDE.filter(
-  (t) => t.kind !== 'local Codex'
+const TABS_CODEX_SESSION_SPEC_LEAVES_OUT = TABS_BEYOND_LOCAL_CLAUDE.filter(
+  (t) => t.remote || t.agent !== 'Codex'
 )
 
 async function toggleWorkbenchWithoutClicking(app: ElectronApplication, page: Page): Promise<void> {
@@ -570,7 +552,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     })
   }
 
-  for (const tab of TABS_WITHOUT_THESE_HINTS_COVERED) {
+  for (const tab of TABS_CODEX_SESSION_SPEC_LEAVES_OUT) {
     test(`a ${tab.kind} row that waits for an OK while another tab is on screen raises the approval hint at its row`, async ({
       env
     }) => {

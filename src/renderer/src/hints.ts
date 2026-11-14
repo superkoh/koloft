@@ -50,6 +50,10 @@ export function selectorOf(h: HintFire, panelShown: boolean, sidebarHidden: bool
   return h.selector
 }
 
+function runningCount(rows: HintSnapshot['rows'][number]['rows']): number {
+  return rows.filter((r) => r.running || r.pending).length
+}
+
 function rowTabId(s: HintSnapshot, rowId: string): string {
   return s.sessions.find((x) => x.sessionId === rowId && x.alive)?.tabId ?? rowId
 }
@@ -90,8 +94,8 @@ export function firedHints(prev: HintSnapshot, next: HintSnapshot): HintFire[] {
       const was = before.rows.find((b) => b.id === r.id)
       return !was?.running && !was?.pending
     })
-    const stillThere = (id: string): boolean => ws.rows.some((r) => r.id === id)
-    if (started && before.rows.some((b) => b.id !== started.id && b.running && stillThere(b.id))) {
+    const runningBefore = runningCount(before.rows)
+    if (started && runningBefore > 0 && runningCount(ws.rows) > runningBefore) {
       out.push({ id: 'worktree', selector: rowSelector(rowTabId(next, started.id)) })
       break
     }
