@@ -10,6 +10,7 @@ export const CH = {
     onScreen: 'terminal:on-screen',
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
+    sessionScreen: 'terminal:session-screen',
     kill: 'terminal:kill',
     exit: 'terminal:exit',
     processTitle: 'terminal:processTitle',
@@ -85,8 +86,7 @@ export const CH = {
   machine: {
     state: 'machine:state',
     now: 'machine:now',
-    free: 'machine:free',
-    drop: 'machine:drop'
+    free: 'machine:free'
   },
   conductors: {
     bind: 'conductors:bind',

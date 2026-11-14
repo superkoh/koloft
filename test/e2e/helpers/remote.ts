@@ -9,6 +9,7 @@ import {
   installAgy,
   installCodex,
   installMuse,
+  killEveryProcessNaming,
   type AgyApiCall,
   type AgyCall,
   type E2EEnv
@@ -78,7 +79,7 @@ export function sshCalls(env: E2EEnv): SshCall[] {
 }
 
 const SCRIPT_SENT_AS_BASE64 =
-  /^sh -c '(?:echo [a-z-]+; )?eval "\$\(printf %s "\$0" \| base64 -d\)"' ([A-Za-z0-9+/=]+)$/
+  /^(?:echo [a-z-]+; )?sh -c '(?:echo [a-z-]+; )?eval "\$\(printf %s "\$0" \| base64 -d\)"' ([A-Za-z0-9+/=]+)$/
 
 export function remoteCommandText(argv: string[]): string {
   const sent = argv[argv.length - 1] ?? ''
@@ -90,6 +91,14 @@ export function sshCommands(env: E2EEnv, phase: 'start' | 'end' = 'start'): stri
   return sshCalls(env)
     .filter((c) => c.phase === phase)
     .map((c) => remoteCommandText(c.argv))
+}
+
+export function tmuxName(id: string): string {
+  return `k-${id}`
+}
+
+export function killLines(env: E2EEnv, id: string): string[] {
+  return sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmuxName(id)}`))
 }
 
 export function rsyncCalls(env: E2EEnv): string[][] {
@@ -139,6 +148,10 @@ export function tmuxClientsOf(tmuxName: string): number[] {
 export function dropTabLinkWhileItsSessionLives(env: E2EEnv, tmuxName: string): void {
   fs.writeFileSync(path.join(stateDir(env), 'tab-link-drop'), '')
   for (const pid of tmuxClientsOf(tmuxName)) process.kill(pid, 'SIGKILL')
+}
+
+export function holdMirrorPullsBack(env: E2EEnv): void {
+  fs.writeFileSync(path.join(stateDir(env), 'mirror-hold'), '')
 }
 
 export function healConnection(env: E2EEnv): void {
@@ -292,6 +305,11 @@ export async function agyReady(page: Page): Promise<void> {
     .toBe(true)
 }
 
+const itsFirstTurnHasEndedOnItsRow = (page: Page, tabId: string): Promise<void> =>
+  expect(page.locator(`.ws .ws-tab[data-tab-id="${tabId}"] .ws-tab-unread`)).toHaveCount(1, {
+    timeout: 60_000
+  })
+
 export async function boundRemoteSession(
   page: Page,
   backend: BackendId
@@ -403,7 +421,9 @@ export const OTHER_AGENTS_ON_THE_MACHINE: {
     bound: async (page) => {
       await agyReady(page)
       await runIn(page, centerTerm(page), 'first words')
-      return boundRemoteSession(page, 'agy')
+      const bound = await boundRemoteSession(page, 'agy')
+      await itsFirstTurnHasEndedOnItsRow(page, bound.tabId)
+      return bound
     }
   }
 ]
@@ -424,15 +444,5 @@ export async function launchWithRemote(
 }
 
 export function killFakeRemote(env: E2EEnv): void {
-  const thisRunStateDir = stateDir(env)
-  for (const line of execFileSync('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' }).split(
-    '\n'
-  )) {
-    if (!line.includes(thisRunStateDir)) continue
-    const pid = Number(line.trim().split(/\s+/)[0])
-    if (!pid || pid === process.pid) continue
-    try {
-      process.kill(pid, 'SIGKILL')
-    } catch {}
-  }
+  killEveryProcessNaming(stateDir(env))
 }

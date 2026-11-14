@@ -102,6 +102,30 @@ async function setScrollTop(page: Page, top: number): Promise<void> {
   }, top)
 }
 
+async function lineAtTop(page: Page): Promise<{ text: string; offset: number }> {
+  const h = await scroller(page)
+  return h.evaluate((el) => {
+    const top = el.getBoundingClientRect().top
+    const first = Array.from(el.querySelectorAll('p')).find(
+      (p) => p.getBoundingClientRect().bottom > top
+    )
+    return {
+      text: first?.textContent ?? '',
+      offset: Math.round((first?.getBoundingClientRect().top ?? top) - top)
+    }
+  })
+}
+
+async function drawnDiagramsAboveView(page: Page): Promise<number> {
+  const h = await scroller(page)
+  return h.evaluate((el) => {
+    const top = el.getBoundingClientRect().top
+    return Array.from(el.querySelectorAll('.mmd svg')).filter(
+      (svg) => svg.getBoundingClientRect().bottom < top
+    ).length
+  })
+}
+
 async function scrollStep(page: Page): Promise<boolean> {
   const h = await scroller(page)
   return h.evaluate((el) => {
@@ -857,6 +881,61 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page).locator('.md-alert .mmd svg')).toHaveCount(1)
   })
 
+  test('BB-C39 a flowchart and a state diagram that ask for nothing are drawn like ones that ask for mermaid 11’s own settings: dagre layout, default theme, classic look, labels wrapping at 200 with no minimum box width', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const ws = env.workspaces.a
+    const asksForThe11Look = (section: string): string =>
+      [
+        '---',
+        'config:',
+        '  theme: default',
+        '  look: classic',
+        '  layout: dagre',
+        `  ${section}:`,
+        '    wrappingWidth: 200',
+        '    minNodeWidth: 0',
+        '---'
+      ].join('\n')
+    const flowSrc =
+      'flowchart TD\n  C39a[C39 a label long enough that it has to wrap onto a second line] --> C39b[b]'
+    const stateSrc =
+      'stateDiagram-v2\n  state "C39 a state label long enough that it has to wrap onto a second line" as C39idle\n  C39idle --> C39busy: go'
+    write(
+      ws,
+      'c39.md',
+      [
+        '# C39',
+        '',
+        fence('mermaid', flowSrc),
+        '',
+        fence('mermaid', `${asksForThe11Look('flowchart')}\n${flowSrc}`),
+        '',
+        fence('mermaid', stateSrc),
+        '',
+        fence('mermaid', `${asksForThe11Look('state')}\n${stateSrc}`),
+        ''
+      ].join('\n')
+    )
+
+    await putSessionOnScreen(page)
+    await openDoc(page, env, 'c39.md')
+    await scrollToBottom(page)
+
+    await expect(diagrams(page)).toHaveCount(4, { timeout: 120_000 })
+    const drawn = await diagrams(page).evaluateAll((svgs) =>
+      svgs.map((svg) => {
+        const box = svg.querySelector('.node rect')
+        return `${svg.getAttribute('viewBox')} ${box ? getComputedStyle(box).fill : 'no box'}`
+      })
+    )
+    expect(drawn.join('|')).not.toContain('no box')
+    expect(drawn[0], 'flowchart').toBe(drawn[1])
+    expect(drawn[2], 'state diagram').toBe(drawn[3])
+  })
+
   test('BB-C18 all diagrams show even when their count exceeds the cache size', async ({
     app,
     page,
@@ -997,7 +1076,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page)).toContainText('marker-C20')
   })
 
-  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back at the same scroll position and draws every diagram again', async ({
+  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back showing the same text, with every diagram drawn before already at its full height', async ({
     page,
     env
   }) => {
@@ -1034,6 +1113,12 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     expect(kept.join('|')).toContain('C25n2')
     expect(kept.join('|')).toContain('C25n3')
     await expect.poll(() => scrollTopOf(page), { timeout: 15_000 }).toBe(before)
+    expect(
+      await drawnDiagramsAboveView(page),
+      'a drawn diagram sits above the view'
+    ).toBeGreaterThan(0)
+    const onScreen = await lineAtTop(page)
+    expect(onScreen.text).toContain('filler-body-C25')
 
     await startSessionIn(page, 'ws-b')
     await page.waitForTimeout(4000)
@@ -1042,6 +1127,15 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(artifactTitle(page)).toHaveText('c25.md', { timeout: 30_000 })
     await expect(mdBody(page)).toBeVisible({ timeout: 30_000 })
     await expect.poll(() => scrollTopOf(page), { timeout: 15_000 }).toBe(before)
+    await expect
+      .poll(
+        async () => {
+          const now = await lineAtTop(page)
+          return { text: now.text, movedOverAPixel: Math.abs(now.offset - onScreen.offset) > 1 }
+        },
+        { timeout: 15_000 }
+      )
+      .toEqual({ text: onScreen.text, movedOverAPixel: false })
     await setScrollTop(page, 0)
     await expect(mdBody(page).locator('.mmd').first().locator('svg')).toHaveCount(1, {
       timeout: 60_000

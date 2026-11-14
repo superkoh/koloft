@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { koloftReadMemoryPressure, memoryPressure, seedSettings } from './helpers/env'
 import { centerTerm, runIn, startSessionIn, switchToRow, waitBooted, wsRows } from './helpers/p1'
 import { BROWSER, cdpEndpointOf, connectCdp, guestByUrl, guestContents } from './helpers/browser'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
@@ -21,10 +21,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await server?.close()
 })
-
-function memoryPressure(env: E2EEnv, pressure: 1 | 2 | 4): void {
-  fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure, load1: 0 }))
-}
 
 function pageNamed(name: string, body = ''): string {
   return server.page(`/${name}`, `<!doctype html><title>${name}</title><p>${name}</p>${body}`)
@@ -102,7 +98,7 @@ test.describe('when memory turns critical, Koloft lets go of the Workbench web p
 
     memoryPressure(env, 2)
     await expect
-      .poll(() => page.evaluate(() => window.api.machine.now().then((s) => s?.busy)), {
+      .poll(() => koloftReadMemoryPressure(env, 2), {
         timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS
       })
       .toBe(true)

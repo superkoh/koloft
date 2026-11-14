@@ -17,6 +17,7 @@ import {
 } from './helpers/remote'
 import {
   agyConversationOnceFirstTurnEnded,
+  type AgentName,
   centerTerm,
   ENDED_ROW_NOTE,
   gitCommitAll,
@@ -131,6 +132,80 @@ async function launchCollapsed(env: E2EEnv) {
   await waitBooted(page)
   return { app, page }
 }
+
+const BINDS_LATE_FILE: Record<AgentName, string> = {
+  Claude: 'fake-claude-delay',
+  Codex: 'fake-codex-delay',
+  Muse: 'fake-muse-bind-delay',
+  Antigravity: 'fake-agy-open-ms'
+}
+
+function bindLate(home: string, agent: AgentName): void {
+  fs.writeFileSync(
+    path.join(home, BINDS_LATE_FILE[agent]),
+    String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
+  )
+}
+
+function newSessionMenuItem(agent: AgentName): string {
+  return agent === 'Claude' ? 'New session' : `New ${agent} session`
+}
+
+async function untilTheRowsTabIsBound(page: Page, row: Locator): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const tabId = await row.getAttribute('data-tab-id')
+        const all = await page.evaluate(() => window.api.sessions.list())
+        return all.some((s) => s.tabId === tabId && s.alive && !!s.nativeSessionId)
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true)
+}
+
+async function startBound(page: Page, wsName: string, agent: AgentName): Promise<void> {
+  if (agent === 'Claude') {
+    await startSessionIn(page, wsName, { remote: wsName === REMOTE_WS_NAME })
+    await expect(wsRows(page, wsName).first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    return
+  }
+  await newSessionInWith(page, wsName, agent)
+  if (agent === 'Antigravity') {
+    await agyReady(page)
+    await runIn(page, centerTerm(page), 'first words')
+    await agyConversationOnceFirstTurnEnded(page)
+  }
+  await waitPanelAttached(page)
+  await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+}
+
+const TAB_KINDS = (['Claude', ...OTHER_AGENTS] as AgentName[]).flatMap((agent) => {
+  const shown = agent === 'Claude' ? 'Claude Code' : agent
+  return [
+    {
+      kind: `a local ${shown}`,
+      agent,
+      remote: false,
+      open: async (env: E2EEnv) => {
+        installAgentFor(env, agent, env.workspaces.a)
+        return { ...(await launchCollapsed(env)), wsName: 'ws-a', home: env.home }
+      }
+    },
+    {
+      kind: `a remote (ssh) ${shown}`,
+      agent,
+      remote: true,
+      open: async (env: E2EEnv) => {
+        collapsedWithoutTips(env)
+        OTHER_AGENTS_ON_THE_MACHINE.find((a) => a.label === agent)?.install(env)
+        const { app, page } = await launchWithRemote(env)
+        await addRemoteWorkspace(page, env)
+        return { app, page, wsName: REMOTE_WS_NAME, home: machineHome(env) }
+      }
+    }
+  ]
+})
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -255,56 +330,26 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     })
   }
 
-  for (const tab of [
-    {
-      kind: 'a local Claude Code tab',
-      menuItem: 'New session',
-      open: async (env: E2EEnv) => {
-        fs.writeFileSync(env.claudeDelayFile, String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS))
-        return { ...(await launchCollapsed(env)), wsName: 'ws-a' }
-      }
-    },
-    {
-      kind: 'a local Codex tab',
-      menuItem: 'New Codex session',
-      open: async (env: E2EEnv) => {
-        installCodex(env)
-        fs.writeFileSync(
-          path.join(env.home, 'fake-codex-delay'),
-          String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
-        )
-        return { ...(await launchCollapsed(env)), wsName: 'ws-a' }
-      }
-    },
-    {
-      kind: 'a remote (ssh) Claude Code tab',
-      menuItem: 'New session',
-      open: async (env: E2EEnv) => {
-        collapsedWithoutTips(env)
-        const { app, page } = await launchWithRemote(env)
-        await addRemoteWorkspace(page, env)
-        fs.writeFileSync(
-          path.join(machineHome(env), 'fake-claude-delay'),
-          String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
-        )
-        return { app, page, wsName: REMOTE_WS_NAME }
-      }
-    }
-  ]) {
-    test(`WB-P08: in ${tab.kind}, the card has its place beside the terminal from the start, so binding neither moves the terminal nor costs it columns`, async ({
+  for (const tab of TAB_KINDS) {
+    test(`WB-P08: in ${tab.kind} tab, the card has its place beside the terminal from the start, so binding neither moves the terminal nor costs it columns`, async ({
       env
     }) => {
-      test.setTimeout(180_000)
-      const { app, page, wsName } = await tab.open(env)
+      test.setTimeout(300_000)
+      const { app, page, wsName, home } = await tab.open(env)
       try {
+        if (tab.agent !== 'Antigravity') bindLate(home, tab.agent)
         await setWindowWidth(app, WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX)
         await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
-        await page.locator('.menu .mi', { hasText: tab.menuItem }).click()
+        await page.locator('.menu .mi', { hasText: newSessionMenuItem(tab.agent) }).click()
         await expect.poll(() => shownCenterTerm(page), { timeout: 20_000 }).toBeDefined()
         await expect(page.locator('.terminals > .empty')).toHaveCount(0, { timeout: 20_000 })
         await page.waitForTimeout(FIT_SETTLE_MS)
         await recordShownTermEveryFrame(page)
         await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1)
+        if (tab.agent === 'Antigravity') {
+          await agyReady(page)
+          await runIn(page, centerTerm(page), 'first words')
+        }
 
         await expect(card(page)).toBeVisible({ timeout: 60_000 })
         await page.waitForTimeout(FIT_SETTLE_MS)
@@ -317,40 +362,35 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
 
   for (const tab of [
     {
-      kind: 'a Claude Code session',
+      kind: 'a local Claude Code',
       coldRow: async (env: E2EEnv) => {
         const id = seedJsonl(env, env.workspaces.a, { summary: 'Resumed beside the card' })
         seedWorkbench(env, id, { open: false, tabs: [] })
-        fs.writeFileSync(env.claudeDelayFile, String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS))
+        bindLate(env.home, 'Claude')
         const { app, page } = await launchCollapsed(env)
         const row = page.locator('.ws .ws-tab', { hasText: 'Resumed beside the card' })
         await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
         return { app, page, row }
       }
     },
-    {
-      kind: 'a Codex session',
+    ...TAB_KINDS.filter((t) => t.agent !== 'Claude' || t.remote).map((t) => ({
+      kind: t.kind,
       coldRow: async (env: E2EEnv) => {
-        installCodex(env)
-        const { app, page } = await launchCollapsed(env)
-        await newSessionInWith(page, 'ws-a', 'Codex')
-        await waitPanelAttached(page)
-        const row = wsRows(page, 'ws-a').first()
+        const { app, page, wsName, home } = await t.open(env)
+        await startBound(page, wsName, t.agent)
+        const row = wsRows(page, wsName).first()
         await openMenu(page, row)
         await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
         await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-        fs.writeFileSync(
-          path.join(env.home, 'fake-codex-delay'),
-          String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
-        )
+        bindLate(home, t.agent)
         return { app, page, row }
       }
-    }
+    }))
   ]) {
-    test(`WB-P10: resuming ${tab.kind} whose Workbench was left collapsed, the terminal shows where it stays once the card shows`, async ({
+    test(`WB-P10: resuming ${tab.kind} session whose Workbench was left collapsed, the terminal shows where it stays once the card shows`, async ({
       env
     }) => {
-      test.setTimeout(180_000)
+      test.setTimeout(300_000)
       const { app, page, row } = await tab.coldRow(env)
       try {
         await setWindowWidth(app, WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX)
@@ -359,6 +399,8 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
         await row.click()
 
         await expect(card(page)).toBeVisible({ timeout: 60_000 })
+        await untilTheRowsTabIsBound(page, row)
+        await expect(row).not.toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
         await expect(page.locator('.term-island .empty')).toHaveCount(0)
         await page.waitForTimeout(FIT_SETTLE_MS)
         expect(await recordedTermFrames(page)).toHaveLength(1)

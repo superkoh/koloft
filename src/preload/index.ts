@@ -24,6 +24,7 @@ import type {
   TerminalExit,
   TerminalCwd,
   ScreenRequest,
+  ScreenSize,
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
@@ -78,7 +79,8 @@ const api: KoloftApi = {
     attach: (id) => ipcRenderer.send(CH.terminal.attach, id),
     onScreen: (id, onScreen) => ipcRenderer.send(CH.terminal.onScreen, id, onScreen),
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
-    resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
+    resize: (id, cols, rows, sessionScreen) =>
+      ipcRenderer.send(CH.terminal.resize, id, cols, rows, sessionScreen),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),
     onData: (id, cb) => terminalDataSinks.listen(id, cb),
     onExit: (cb) => {
@@ -201,8 +203,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.machine.state, handler)
     },
     now: () => ipcRenderer.invoke(CH.machine.now),
-    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId),
-    drop: (tabId) => ipcRenderer.invoke(CH.machine.drop, tabId)
+    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId)
   },
   conductors: {
     bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),
@@ -276,6 +277,7 @@ const api: KoloftApi = {
     }
   },
   browserGuestLimit: ipcRenderer.sendSync(CH.browser.guestLimit) as number,
+  sessionScreenAtLoad: ipcRenderer.sendSync(CH.terminal.sessionScreen) as ScreenSize | null,
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
   browser: {
     onOpenRequest: (cb) => {

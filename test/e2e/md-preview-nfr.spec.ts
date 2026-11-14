@@ -443,7 +443,7 @@ test.describe('Markdown preview non-functional discipline: inert, self-contained
     expect(firstScreenMs).toBeLessThan(FIRST_SCREEN_BUDGET_MS)
     await page.waitForTimeout(2000)
 
-    expect(urls.filter((u) => /mermaid|katex/i.test(u))).toEqual([])
+    expect(urls.filter((u) => /mermaid|katex/i.test(path.basename(u)))).toEqual([])
 
     const before = new Set(urls.filter(isScript))
     await openSample(page, env, 'nfr-n06-offline.md')

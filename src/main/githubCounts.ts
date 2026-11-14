@@ -6,7 +6,7 @@ const ONE_SWEEP_AT_A_TIME = 'github-counts-sweep'
 const STARTUP_DELAY_MS = 3_000
 
 export interface GithubCountsDeps {
-  workspaces(): { path: string; missing: boolean }[]
+  workspaces(): Promise<{ path: string; missing: boolean }[]>
   openCounts(wsPath: string): Promise<WorkspaceGithub | null>
   onChange(): void
 }
@@ -33,7 +33,7 @@ export class GithubCountsSweep {
   }
 
   private async sweepOnce(): Promise<void> {
-    const live = this.deps.workspaces().filter((ws) => !ws.missing)
+    const live = (await this.deps.workspaces()).filter((ws) => !ws.missing)
     const answers = await Promise.all(
       live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
     )

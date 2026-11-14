@@ -893,6 +893,19 @@ only downloaded the public release.
   Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
   time. An option whose own text holds a comma runs into the next one (`Red, dark` and
   `Blue` sent `A1: Red, dark, Blue`).
+- **No key unticks a several-pick question's options at once, so keys cannot redo an
+  answer whose ticks went in but were not sent; the Connect API can.** agy 1.5.8 (build
+  `1.5.8-4602374149505024`, Linux arm64 from the manifest, sha512 checked), Docker
+  `--network none` (`agy-a-img`, tmux 3.3a, 160×50), a fresh `--gemini_dir`, a fake
+  Gemini server answering with `ask_question` (`is_multi_select: true`, Apple / Banana
+  / Cherry), keys by `tmux send-keys` 300 ms apart from 1.5 s after `blocked`,
+  2026-11-13; one run per line. With Apple and Cherry ticked, Ctrl+U, Backspace,
+  Delete, Tab, ←, →, Home, `0` and Ctrl+A changed nothing; `4` opened "Your answer:"
+  with the ticks kept and Esc went back to the list with them still kept; `1` unticked
+  Apple only and Enter then sent `A1: Cherry`. The options have no "none" row that
+  unticks the rest, as Muse's has (MUSE§11), and Esc on the list skips the question. With
+  the same two ticked on screen, `HandleCascadeUserInteraction` with `selectedOptionIds:
+  ["2"]` sent `A1: Banana`.
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
@@ -1842,3 +1855,32 @@ repository, like the butler's.
 
 Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
 starts, as a Codex one does (`src/main/assistMemory.ts`).
+
+## §33 What agy asks the terminal
+
+**Every question agy asks its terminal is one Koloft's off-screen batching lets through
+at once.** Measured 2026-11-12 on agy 1.5.7 (Linux arm64 from the manifest, sha512
+checked) in Docker with no network: a python pty at 120×40 that answered as Koloft's
+terminal does (DA1, DA2, cursor position, DECRQM with 2026 known and 2027 not, OSC 4 and
+10–12, `?996n`, OSC 7501 with Koloft's reply) and left XTVERSION and `?u` unanswered as
+Koloft does (CODEX§37), a temp `HOME` with `modelProvider` and
+`onboarding.json` seeded (§5), a made-up `GEMINI_API_KEY` and the fake Gemini server
+answering a `run_command` (`touch`) and then text, `TERM_PROGRAM` unset as in a Koloft
+tab (§27). One run: the trust question (Enter), one prompt, Enter on the run, a resize
+to 100×30, `/clear`, Ctrl+C twice. An earlier run that answered `?u` (`?0u`) and every
+DECRQM as known asked exactly the same.
+
+- At start: `ESC[>q`, `ESC[c`, `ESC[?2026$p`, `ESC[?2027$p`, `ESC]7501;?BEL`,
+  `ESC]11;?BEL`, `ESC[?u`.
+- `ESC[?u` again when the prompt first draws, after the resize and after `/clear`.
+- Nothing else: no OSC 10 or OSC 4, no DCS or APC question, and nothing new during the
+  turn. `ESC[?5W`, `ESC[=5;1u`, `ESC[>5u` and `ESC[>4;2m` set modes and ask nothing.
+- The run's reads, replayed in order and at their recorded times into Koloft's
+  `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
+- The OSC 7501 question is answered by Koloft's main process straight from the pty
+  output (§10), and `ESC[?u` gets no answer in a Koloft tab, so the batching delays
+  neither; the rest are answered by the terminal and need the early send.
+
+Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
+
+Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.

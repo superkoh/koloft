@@ -43,7 +43,6 @@ import {
   tabPackageDir
 } from '../remote/paths'
 import {
-  HOLD_FILE,
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
@@ -310,19 +309,19 @@ export class ClaudeBackend implements SessionBackend {
   stop(tabId: string): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (remote) {
-      this.endRemoteTmux(remote.host, remote.tmuxName)
+      this.endRemoteTmux(remote.host, remote.tmuxName, tabId)
       fs.rmSync(tabPackageDir(this.d.userData(), tabId), { recursive: true, force: true })
     }
     this.d.pty.kill(tabId)
     this.d.tracker.untrack(tabId)
   }
 
-  endRemoteTmux(machine: string, tmuxName: string): void {
+  endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {
     const id = sessionIdOfTmux(tmuxName)
     const title = id && this.d.workspaces()?.findRow(id)?.title
     void this.d.hosts
       .machine(machine)
-      .endTmuxSession(tmuxName)
+      .endTmuxSession(tmuxName, tabId)
       .then((problem) => {
         if (problem) {
           const which = title ? `“${title}”` : 'a session'
@@ -1169,8 +1168,7 @@ export function machineHookSettings(
   tabId: string,
   machineDir: string,
   statusline: boolean,
-  allowKoloft: boolean,
-  holdWhileBusy = false
+  allowKoloft: boolean
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
@@ -1178,8 +1176,7 @@ export function machineHookSettings(
   const settings = hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, {
     statusLine: remoteStatusLine,
     quote: dq,
-    dialogs: 'record-only',
-    hold: holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
+    dialogs: 'record-only'
   })
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE

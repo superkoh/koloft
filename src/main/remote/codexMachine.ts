@@ -24,17 +24,14 @@ import {
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
 import {
-  CODEX_HOLD_REG_ENV,
-  CODEX_HOLD_SCRIPT_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_SAID_ENV,
   CODEX_SHELL_WROTE_ENV,
   handedOverOwnerWordsFiles,
-  HOLD_FILE,
-  HOLD_TAB_ENV,
   NOTICE_ENV,
   remoteNoticeFile,
-  SHELL_WROTE_SUFFIX
+  SHELL_WROTE_SUFFIX,
+  TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV
 } from '../hooks'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
@@ -147,8 +144,7 @@ ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"
   ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
   export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV} ${CODEX_SHELL_WROTE_ENV}
-  ${CODEX_HOLD_SCRIPT_ENV}="$M/${HOLD_FILE}"; ${CODEX_HOLD_REG_ENV}="${REMOTE_HOOK_DIR}"; ${HOLD_TAB_ENV}=${s.tabId}
-  export ${CODEX_HOLD_SCRIPT_ENV} ${CODEX_HOLD_REG_ENV} ${HOLD_TAB_ENV}
+  ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}=${s.tabId}; export ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}
   command -v setsid >/dev/null 2>&1 && exec setsid nohup ${serve}
   exec nohup ${serve}
 ) </dev/null >"$S.log" 2>&1 &

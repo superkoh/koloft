@@ -124,7 +124,6 @@ import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
-  HOLD_FILE,
   HOOK_SCRIPT,
   forgetAssistMarkers,
   noteDiscordId,
@@ -188,6 +187,7 @@ import {
   UTIL_BIN_DIR,
   utilShellLine,
   CLAUDE_AUTH_ENV_VARS,
+  claudeCodeGuessesWindowOf,
   type MachinePackage
 } from './remote/launch'
 import {
@@ -197,7 +197,6 @@ import {
   mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
   remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
@@ -245,7 +244,7 @@ import {
   setQuitAsk
 } from './quitGuard'
 import { mutedWhileHidden } from './mutedWhileHidden'
-import { loadSettings, saveSettings } from './settings'
+import { flushSettings, loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
   keychainRead,
@@ -303,7 +302,7 @@ import {
   type LeftTab,
   type RunLeftovers
 } from './cronRunner'
-import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
+import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
@@ -328,7 +327,7 @@ import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from '.
 import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
-import { fullscreenOption, windowMinWidth } from './windowBounds'
+import { fullscreenOption, usableSessionScreen, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
@@ -850,7 +849,8 @@ tracker.heldTabs = () => {
     if (
       butler?.channelOfTab(s.tabId) ||
       roomOfTab(s.tabId) ||
-      workspaceMgr?.isResident(s.sessionId)
+      workspaceMgr?.isResident(s.sessionId) ||
+      cronRunner?.holdsOpenRunThatClosesItself(s.tabId)
     )
       held.add(s.tabId)
   return held
@@ -937,6 +937,11 @@ const attention = new AttentionTracker((pending, event) => {
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
+// ADR-0039
+attention.outlivesKoloft = (tabId) => {
+  const s = sessionOfTab(tabId)
+  return !!s?.remote && s.backendId !== 'codex'
+}
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (
@@ -950,6 +955,7 @@ attention.waitsOnAnother = (tabId) => {
   )
 }
 let uiActiveTabId: string | null = null
+let lastTabTheOwnerLookedAt: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
@@ -971,13 +977,28 @@ let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
+const TAB_IDS_KEPT_PER_TAB = 8
+const earlierTabIds = new Map<string, string[]>()
+
+const tabIdsOf = (tabId: string): string[] =>
+  [tabId, ...(earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])].slice(
+    0,
+    TAB_IDS_KEPT_PER_TAB
+  )
+
+function carryTabIds(newId: string, ids: string[]): void {
+  const merged = new Set([...(earlierTabIds.get(newId) ?? []), ...ids])
+  merged.delete(newId)
+  earlierTabIds.set(newId, [...merged].slice(0, TAB_IDS_KEPT_PER_TAB - 1))
+}
 
 function openTabOf(s: SessionInfo): OpenTab {
   return {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
+    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
+    tabIds: tabIdsOf(s.tabId)
   }
 }
 
@@ -991,7 +1012,8 @@ function rememberOpenTabs(all = allSessions()): void {
       sessionId: h.resumeSessionId,
       kind,
       title: '',
-      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd
+      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd,
+      tabIds: tabIdsOf(h.id)
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -1052,7 +1074,10 @@ function forgetSleeper(tabId: string): void {
 
 function settleWokenSleepers(all: SessionInfo[]): void {
   const woken = sleepers.settle(all)
-  for (const { oldId, newId } of woken) attention.rehome(oldId, newId)
+  for (const { oldId, newId, tab } of woken) {
+    attention.rehome(oldId, newId)
+    if (tab.tabIds) carryTabIds(newId, tab.tabIds)
+  }
   if (woken.length) tabLifecycle.emit('woken')
 }
 
@@ -1397,7 +1422,6 @@ function machinePackage(): MachinePackage {
     [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
     ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
-    [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
@@ -1586,7 +1610,7 @@ function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
 function pushHomeAccount(name: string, kind: SignInFolderKind): void {
   const key = viewKey(name, kind)
   if (findAccount(name, kind)?.status === 'ok')
-    saveHomeUsage(savedHomeUsage, key, usageViews.get(key), Date.now())
+    saveHomeUsage(savedHomeUsage, key, usageViews.get(key))
   pushAccounts()
 }
 
@@ -1694,7 +1718,7 @@ function butlerSide(tabId: string): boolean {
 
 async function mcpServersNow(): Promise<McpServer[]> {
   const folders = [
-    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
   const walks = await Promise.all(
@@ -1928,12 +1952,6 @@ const sessionDeps: SessionVerbDeps = {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
   },
-  waiting: {
-    list: () => guard?.queue.list() ?? [],
-    notStartedYet: () => guard?.queue.notStartedYet() ?? [],
-    hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
-    drop: (tabId) => !!guard?.queue.drop(tabId)
-  },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
@@ -2166,7 +2184,7 @@ const agentRequests = new AgentRequests({
         await loginEnvReady()
         const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
         if (!workspace) {
-          const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+          const pinned = workspaceMgr?.pinnedPathList() ?? []
           return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
         }
         const remote = parseRemoteKey(workspace)
@@ -2313,7 +2331,10 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
-  if (endpoint?.model) payload.model = endpoint.model
+  if (endpoint?.model) {
+    payload.model = endpoint.model
+    if (claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
+  }
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -2927,7 +2948,10 @@ async function probeAgyAccount(name: string): Promise<void> {
   if (apiKey) usageViews.set(key, { apiKey: true })
   else if (signedIn) {
     const quota = await agyUsage(home)
-    usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
+    usageViews.set(
+      key,
+      quota ? { quota, quotaAt: Date.now() } : { ...usageViews.get(key), probeError: 'network' }
+    )
   }
   pushHomeAccount(name, 'agy-home')
 }
@@ -3172,7 +3196,8 @@ function createWindow(): void {
   trackWindowState(
     mainWindow,
     OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined,
-    () => hiddenFromFullScreen
+    () => hiddenFromFullScreen,
+    () => ptyMgr.sessionScreen
   )
 
   // PLATFORM§5
@@ -3235,6 +3260,7 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
   const stalls = new StallWatchWhileFocused(
     signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
   )
@@ -3361,20 +3387,19 @@ app.whenReady().then(() => {
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
       allowKoloft,
       conductor,
-      !!guard?.isBackground(tabId),
       playwrightServers
     )
   hookRegDir = hookPaths.regDir
   guard = new ResourceGuard({
-    regDir: hookPaths.regDir,
-    cores: os.cpus().length,
+    koloftPid: process.pid,
     read: readTheMachine,
-    now: Date.now,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
     memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
-    heldDirs: () => remoteHookMirrors(),
-    freeOnMachine: freeOnMachine,
-    isRemote: (tabId) => !!machineOfTab(tabId),
+    agentTabsOnThisMac: () =>
+      allSessions()
+        .map((s) => s.tabId)
+        .filter((tabId) => !machineOfTab(tabId)),
+    lookedAt: () => lastTabTheOwnerLookedAt && sleepers.liveTabOf(lastTabTheOwnerLookedAt),
     changed: (state) => sendToRenderer(CH.machine.state, state),
     readTrees: readTaggedTable,
     giveWay: process.platform === 'darwin' ? giveWay : async () => {}
@@ -3440,13 +3465,13 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
+    if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
     awayDigest?.forget(e.id)
-    forgetFreeOnMachine(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
@@ -3560,8 +3585,6 @@ app.whenReady().then(() => {
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.cron.toast, message),
     noAccountMessage: noAccountNow,
-    holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
-    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
     hookRegDir: hookPaths.regDir
   }
   try {
@@ -4178,8 +4201,10 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
+  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
+    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
-    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
@@ -4193,7 +4218,7 @@ app.whenReady().then(() => {
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
-    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    workspaces: pinnedPathsChecked,
     openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
     onChange: () => workspaceMgr?.restampLive()
   })
@@ -4214,7 +4239,7 @@ app.whenReady().then(() => {
     bootTime: BOOT_TIME,
     store: {
       load: () => {
-        const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+        const pinned = workspaceMgr?.pinnedPathList() ?? []
         return loadCron(cronFs, cronFile, pinned)
       },
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
@@ -4392,6 +4417,7 @@ app.on('before-quit', (e) => {
     pageForwards.cancelOnQuit()
   }
   quitCommitted = true
+  guard?.liftAllBeforeQuitting()
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
     if (!storedQuitPending) {
@@ -4422,6 +4448,7 @@ app.on('before-quit', (e) => {
   butler?.flush()
   workspaceMgr?.dispose()
   flushLayout()
+  flushSettings()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
@@ -5002,6 +5029,7 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
+    anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
     sessionForTab: (tabId) =>
       claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
@@ -5500,7 +5528,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  tabLifecycle.emit('stopping', tabId)
+  tabLifecycle.emit('stopping', tabId, restarting)
   boundSessions.delete(tabId)
   return stopped.then(
     () => true,
@@ -5658,7 +5686,7 @@ async function removeUntouchedWorktree(
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.holdsFolder(tree)) return
+  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
@@ -5764,36 +5792,6 @@ async function launchQuietTab(
   return r.id
 }
 
-function remoteHookMirrors(): string[] {
-  const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
-  return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
-}
-
-const freedOnMachine = new Map<string, string>()
-
-async function freeOnMachine(tabId: string): Promise<void> {
-  const host = machineOfTab(tabId)
-  if (!host) return
-  await loginEnvReady()
-  await runSsh(
-    host,
-    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [
-      tabId
-    ]),
-    { controlDir: remoteControlDir }
-  )
-  freedOnMachine.set(tabId, host)
-}
-
-function forgetFreeOnMachine(tabId: string): void {
-  const host = freedOnMachine.get(tabId)
-  if (!host) return
-  freedOnMachine.delete(tabId)
-  void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
-    controlDir: remoteControlDir
-  }).catch(() => undefined)
-}
-
 function forgetShellOnMachine(host: string, tabId: string): void {
   void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
     controlDir: remoteControlDir
@@ -5841,6 +5839,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
       if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
     }
+    const ranUnder = savedOpenTabs.tabs.find((t) => t.sessionId === id)?.tabIds
+    if (ranUnder && reopenedTab) carryTabIds(reopenedTab, ranUnder)
     if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
@@ -6061,7 +6061,8 @@ async function copyToPhone(
           throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
         }),
     fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-    send: (files, parts) => relay.sendParts(channelId, files, parts)
+    send: (files, parts) => relay.sendParts(channelId, files, parts),
+    cardsWaitFor: (copy) => relay.cardsWaitFor(tabId, copy)
   })
   if (!relay.reaches(tabId)) {
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
@@ -6470,13 +6471,7 @@ const hosts = new Hosts(
         noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(
-            tabId,
-            dir,
-            loadSettings().statuslineBuiltin,
-            allowKoloft,
-            !!guard?.isBackground(tabId)
-          )
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
       }
     })
 )
@@ -6543,18 +6538,20 @@ function registerIpc(): void {
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
     const live = sleepers.liveTabOf(id)
-    if (guard?.isBackground(live) && ownerTyped(data)) void guard.free(live)
+    if (ownerTyped(data)) void guard?.free(live)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(live)
     if (touchesADialog(id, data)) ownerTouchedTheScreen(live)
     sleepers.write(id, data)
   })
-  ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
+  ipcMain.handle(
+    CH.machine.free,
+    (_e, tabId: string) => guard?.free(sleepers.liveTabOf(tabId)) ?? false
+  )
   ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
-  ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     const live = sleepers.liveTabOf(id)
-    if (guard?.isBackground(live)) void guard.free(live)
+    void guard?.free(live)
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(live)
     ownerTouchedTheScreen(live)
@@ -6577,9 +6574,17 @@ function registerIpc(): void {
       terminalOutput.onScreen(id, onScreen)
   })
   ipcMain.handle(CH.terminal.flowStats, () => terminalOutput.stats())
-  ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
-    ptyMgr.resize(id, cols, rows)
+  ipcMain.on(
+    CH.terminal.resize,
+    (_e, id: string, cols: number, rows: number, sessionScreen: unknown) => {
+      ptyMgr.resize(id, cols, rows)
+      const fitted = sessionScreen === true && usableSessionScreen({ cols, rows })
+      if (fitted) ptyMgr.sessionScreen = fitted
+    }
   )
+  ipcMain.on(CH.terminal.sessionScreen, (e) => {
+    e.returnValue = ptyMgr.sessionScreen ?? null
+  })
   ipcMain.on(
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
@@ -6594,6 +6599,10 @@ function registerIpc(): void {
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
+    if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
+      carryTabIds(newTabId, tabIdsOf(oldTabId))
+      earlierTabIds.delete(oldTabId)
+    }
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
@@ -6695,6 +6704,8 @@ function registerIpc(): void {
   })
   ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     uiActiveTabId = typeof id === 'string' && id ? id : null
+    lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
+    guard?.lookedAtChanged()
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
     if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()
@@ -7060,7 +7071,7 @@ function registerIpc(): void {
 
   const sessionSearch = new SessionSearch({
     candidates: () => {
-      const pins = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+      const pins = workspaceMgr?.pinnedPathList() ?? []
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
         ...storedSessions().flatMap((s) => s.searchable(pins))
@@ -7125,7 +7136,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
     if (typeof tabId !== 'string') return null
     const tags = [
-      tabId,
+      ...tabIdsOf(tabId),
       ...ptyMgr
         .list()
         .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
