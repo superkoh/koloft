@@ -1144,6 +1144,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (!run.host || !run.tmuxName || this.shuttingDown) return
     const machine = this.deps.remote?.machine(run.host)
     const runId = run.mirror?.runId
+    // ADR-0044
     const named = runId && (await machine?.runScript(TAB_TMUX_NAME_SH, [runId]))
     const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName, runId)
     if (problem)

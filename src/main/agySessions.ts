@@ -902,6 +902,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run.remote || this.shuttingDown) return
     const { host, tmuxName } = run.remote
     const machine = this.deps.remote.machine(host)
+    // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
     const problem = await machine.endTmuxSession(named?.trim() || tmuxName, run.tabId)
     if (problem)

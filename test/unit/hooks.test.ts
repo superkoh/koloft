@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -37,7 +37,7 @@ import {
 import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
-import { AGY_HOOK_SCRIPT } from '../../src/main/agyHooks'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../src/main/agyHooks'
 import { museHookScript } from '../../src/main/museHooks'
 
 let hookScript: string
@@ -200,6 +200,68 @@ describe('injected hook script', () => {
     )
     expect(readStatusLog('tabT2')[1]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
+  })
+
+  // ADR-0044
+  describe("a tab's name file already holds the new tmux name when the session is renamed, so a close landing between the two still finds the session", () => {
+    let home: string
+    const nameFile = (tab: string): string => path.join(home, '.koloft', 'tabs', `${tab}.tmux`)
+    const tmuxStub = (renameExit: number): string => {
+      const seen = path.join(stubBin, 'name-file-at-rename')
+      fs.rmSync(seen, { force: true })
+      fs.writeFileSync(
+        path.join(stubBin, 'tmux'),
+        `#!/bin/sh
+case "$1" in
+  display-message) echo k-sess-old ;;
+  rename-session) cat "$HOME/.koloft/tabs/"*.tmux > ${JSON.stringify(seen)}; exit ${renameExit} ;;
+esac
+`,
+        { mode: 0o755 }
+      )
+      return seen
+    }
+    const inTmuxOnTheMachine = { KOLOFT_TMUX_FOLLOW: '1', TMUX: '/tmp/s,1,0', TMUX_PANE: '%3' }
+    beforeEach(() => {
+      home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-home-'))
+      fs.mkdirSync(path.join(home, '.koloft', 'tabs'), { recursive: true })
+    })
+    afterEach(() => {
+      fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
+      fs.rmSync(home, { recursive: true, force: true })
+    })
+
+    it("Claude Code's hook, after a /clear", () => {
+      const seen = tmuxStub(0)
+      fire('tabN1', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
+      expect(fs.readFileSync(seen, 'utf8')).toBe('k-sess-new')
+      expect(fs.readFileSync(nameFile('tabN1'), 'utf8')).toBe('k-sess-new')
+    })
+
+    it("Claude Code's hook puts the old name back when the rename fails, so a reconnect attaches to the session under the name it still has", () => {
+      tmuxStub(1)
+      fire('tabN2', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
+      expect(fs.readFileSync(nameFile('tabN2'), 'utf8')).toBe('k-sess-old')
+    })
+
+    it("Antigravity's title script, once the conversation has its id", () => {
+      const seen = tmuxStub(0)
+      const script = path.join(home, 'agy-title.sh')
+      fs.writeFileSync(script, AGY_TITLE_SCRIPT)
+      const res = spawnSync('sh', [script], {
+        input: JSON.stringify({ conversation_id: 'abc-123' }),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...inTmuxOnTheMachine,
+          HOME: home,
+          KOLOFT_TAB_ID: 'tabN3',
+          PATH: `${stubBin}:${process.env.PATH}`
+        }
+      })
+      expect(res.status).toBe(0)
+      expect(fs.readFileSync(seen, 'utf8')).toBe('k-abc-123')
+    })
   })
 
   it('SessionEnd carries the exit reason (drives the revert-to-terminal decision)', () => {
