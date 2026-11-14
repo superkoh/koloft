@@ -138,7 +138,9 @@
             they were. Click the row, or let something send it a message, and the same session wakes
             in that tab. It stays awake while you look at it, while it waits for your OK, or while a
             shell tab or an unsaved file is open in it. A red dot stays on it while it sleeps. A
-            session marked Keep running never sleeps (see <a href="#keep-running">below</a>).
+            session marked Keep running never sleeps (see <a href="#keep-running">below</a>), and
+            neither does a <a href="../scheduled/">scheduled run</a> set to Close it while it is
+            still open.
           </li>
           <li>
             Quit Koloft and open it again, and every session comes back the way it was: the ones
@@ -350,8 +352,10 @@
           </li>
           <li>A card that waits on you stays after you quit and reopen Koloft.</li>
           <li>
-            If you quit Koloft while a session on your Mac asks, the question leaves its tab, but
-            the card keeps its buttons: the options with a box for your own words, or
+            If you quit Koloft while a session on your Mac asks, or restart a session's tab
+            (<kbd>⇧⌘R</kbd>) while it asks you a question or wants to run a command, the question
+            leaves its tab, but the card keeps its buttons: the options with a box for your own
+            words, or
             <code>Allow</code> and <code>Deny</code>. It says
             <code
               >Its session stopped after asking, so its tab no longer shows this. Your answer
@@ -361,7 +365,7 @@
             <a href="#sleep">sleeps</a>.
           </li>
           <li>
-            A plan left waiting like that gets a card that says
+            A plan left waiting when you quit Koloft gets a card that says
             <code
               >Its session stopped after asking, so its tab no longer shows the plan. “Show it
               again” asks it for the plan once more.</code
