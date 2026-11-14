@@ -691,7 +691,10 @@ the relay was not made, the server being offered only as a deferred `mcp__probe`
 reach the model as developer messages, the request bodies the same on both but for ids,
 `untrusted_as_tool_output` notwithstanding), and the same e2e specs passed, the remote
 ones (E-SSH-23/24/25) too; that the lab machine in them ran 0.169.0 is **inferred, not
-checked**, as for 0.168.0. No other section was probed by hand on 0.169.0: sections 3,
+checked**, as for 0.168.0, so on the remote side the measurement is section 16's
+install and handshake above. Attached threads (`attachedToThreadId`): the schema says
+`includeAttachedThreads` adds them "when searching by title", so a title search leaves
+them out unless asked; whether a plain `thread/list` lists them was not probed. No other section was probed by hand on 0.169.0: sections 3,
 5, 18 (but its `--help`), 20–25, 30 and 34, and 15's login parts, stand on 0.167.0's
 measurements above and on those specs; 11 stands on 0.166.0's. Not reached on 0.169.0:
 "clear context and implement" (#60763) — read from the change: the TUI starts the fresh
@@ -704,7 +707,8 @@ compaction (§21 stays **inferred, not checked**).
 
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
-approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
+approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4 (but how
+a turn that leaves a background terminal running ends, rechecked on 0.169.0), 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
 `app-server --help`, `exec --help` and `resume --help` are byte-identical on 0.161.0,
 0.162.1 and 0.163.0 (2026-10-16). On 0.164.0 (2026-10-23) `--help` adds
@@ -746,8 +750,13 @@ unless marked.
   `CODEX_HOME` listing `hostname` and the app-server's (another `CODEX_HOME`) listing
   `codex-version`, the footer showed the hostname; with no list in the TUI's home it
   showed the default, whatever the app-server's home said.
-- The footer is one line. Long content ends in an ellipsis at every width tried;
-  shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`, `separator`
+- Up to 0.168.0 the footer is one line. Long content ends in an ellipsis at every width
+  tried; shrinking the terminal does not wrap it. **0.169.0 wraps an item list too long
+  for one row onto a second footer row** (openai/codex#60682): 2026-11-14, pyte at 120
+  columns against a stand-in provider, `current-dir` moved to the second row where
+  0.168.0 cut the row with `…`; only `context-used`, `codex-version`,
+  `model-with-reasoning` and `current-dir` had data there, so Koloft's full list with a
+  real login's limits, a branch and a pull request was not seen on 0.169.0. `"\n"`, `newline`, `line-break`, `separator`
   and `spacer` each produce an "Ignored invalid status line items" warning (F2). The
   native configuration cannot reproduce a three-line footer.
 - No item runs a user command or reads a file: `custom-command`, `command` and `custom`
@@ -1971,13 +1980,8 @@ line. The stand-in turn, SIGTERM and stale-socket checks above were not rerun. T
 remote e2e specs passed with the Mac on 0.168.0 (the machine on 0.168.0 **inferred, not
 checked**, §7).
 
-**Rechecked in part on 0.169.0.** 2026-11-14, the same image and user and npm line:
-`codex-cli 0.169.0`; `app-server --stdio` answered `initialize` in 92 ms with the same
-keys, then `thread/list` and `config/read`; one `codex` process plus a curated-plugins
-`git ls-remote` child; the missing-bubblewrap ERROR line is the same. A TUI whose own
-`config.toml` names an MCP server the machine's app-server lacks no longer stays
-"working" after its turn (§7). The remote e2e specs passed with the Mac on 0.169.0 (the
-machine on 0.169.0 **inferred, not checked**).
+**Rechecked in part on 0.169.0** (2026-11-14, the same image, user and npm line; what it
+showed is in the 0.169.0 paragraph of §7).
 
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
@@ -2986,6 +2990,15 @@ the one before, the screen read back through `pyte`.
   `CODEX_HOME` with an API-key `auth.json`.
 
 ## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
+
+**Up to 0.168.0 a TUI whose own `config.toml` names an MCP server its app-server lacks
+never settles after a turn.** 2026-11-14, 0.168.0 and 0.169.0, a TUI over `--remote`
+through a websocket relay to `app-server --stdio` in another `CODEX_HOME` (a remote
+tab's shape), one stdio MCP server only in the TUI's home: on 0.168.0 the answer came,
+but OSC 7501 stayed `state=working`, the screen redrew every 100 ms, Ctrl+C sent
+`turn/interrupt`, and the title thread's `thread/start` failed with `invalid transport
+in mcp_servers.localonly`; 0.169.0 reads the server's MCP list with `config/read` and
+settles at `done` (openai/codex#60280, #60622). The other runs of that recheck are in §7.
 
 **A command in the sandbox cannot reach 127.0.0.1; an MCP server can.** Checked
 2026-10-04 with Codex CLI 0.159.3, Node 24.13.0, a fresh temporary `CODEX_HOME` and `HOME`

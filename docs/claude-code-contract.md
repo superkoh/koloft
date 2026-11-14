@@ -1560,7 +1560,9 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   name, `ANTHROPIC_AUTH_TOKEN`, a stand-in API, `claude -p -- /context` (one run each —
   not the TUI and statusLine reading above): with `CLAUDE_CODE_MAX_CONTEXT_TOKENS=128000`,
   `claude-foo-9` and `claude-sonnet-latest` got `/ 128k` on 2.1.325 and `/ 1m` on 2.1.323,
-  and lost the "doesn't recognize" line; with it and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
+  and lost the line `/context` prints for an unknown name (`Claude Code doesn't
+  recognize the model "<name>", so it assumes a context window of 1m tokens. …`, worded
+  differently from the TUI's start-up warning above); with it and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
   together `claude-foo-9` got 128k (2.1.323: 200k). `glm-4.6` took 128k on both; known
   names (`claude-sonnet-4-5` and `anthropic/claude-sonnet-4.5` at 200k, `claude-opus-5-5`
   at 1m) ignored it on both. Without the variable, `glm-4.6`, `claude-foo-9` (1m, 200k
