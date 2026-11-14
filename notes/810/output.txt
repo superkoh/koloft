@@ -1,0 +1,46 @@
+node notes/810/probe.mjs <scratch dir> <path to the real codex binary>
+(third run of three; the first two gave the same env results, memory within the ranges in docs/codex-cli-contract.md section 38)
+
+codex codex-cli 0.166.0
+hooks trusted: trusted
+
+[memory] S idle, no thread: 59.3 MB codex (59.3 MB with 0 other children)
+tools offered: exec_command,write_stdin,list_mcp_resources,list_mcp_resource_templates,read_mcp_resource,request_user_input,apply_patch,view_image,get_goal,create_goal,update_goal,tool_search,web_search
+
+[start] thread A (config A) ran: ["TAB=A ZD=z-A MARK=A SERVER=S OWNER=owner"]
+[start] thread B (config B) ran: ["TAB=B ZD=z-B MARK=B SERVER=S OWNER=owner"]
+[connections] B's connection saw about A: thread/started,thread/status/changed
+[connections] A's connection saw about B: thread/started,thread/status/changed
+[connections] admin saw about A: thread/started,thread/status/changed
+
+[memory] S with 2 threads after a turn each: 116.8 MB codex (205.9 MB with 2 other children)
+[start] thread C (no config) ran: ["TAB= ZD= MARK= SERVER=S OWNER=owner"]
+[memory] S with 3 threads after a turn each: 103.9 MB codex (211.2 MB with 3 other children)
+
+[resume, same server, thread still loaded, new config] A ran: ["TAB=A ZD=z-A MARK=A SERVER=S OWNER=owner"]
+[memory] T1, its own server, 1 thread after a turn: 95.1 MB codex (128.5 MB with 1 other children)
+[memory] T2, its own server, 1 thread after a turn: 97.8 MB codex (134.1 MB with 1 other children)
+[memory] T3, its own server, 1 thread after a turn: 87.8 MB codex (121.1 MB with 1 other children)
+
+[resume on a new server, new config] A ran: ["TAB=A-resumed ZD=z-Aresumed MARK=Aresumed SERVER=S2 OWNER=owner"]
+[resume on a new server, no config] B ran: ["TAB= ZD= MARK= SERVER=S2 OWNER=owner"]
+
+[hooks] {"event":"PostToolUse","session_id":"01a1da75-2e8f-7bf2-b5b2-132f2f7de897","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"S"}
+{"event":"PostToolUse","session_id":"01a1da75-2df1-73e0-8728-da63da3cc8eb","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"S"}
+{"event":"PostToolUse","session_id":"01a1da75-3b31-7443-8de4-75d6f191da0e","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"S"}
+{"event":"PostToolUse","session_id":"01a1da75-2df1-73e0-8728-da63da3cc8eb","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"S"}
+{"event":"PostToolUse","session_id":"01a1da75-4962-70a2-87a8-7262ccd1a736","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"T1"}
+{"event":"PostToolUse","session_id":"01a1da75-49ff-7f03-b00e-3ac54874d44a","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"T2"}
+{"event":"PostToolUse","session_id":"01a1da75-4aa2-7db0-ba1e-0969083c9a62","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"T3"}
+{"event":"PostToolUse","session_id":"01a1da75-2df1-73e0-8728-da63da3cc8eb","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"S2"}
+{"event":"PostToolUse","session_id":"01a1da75-2e8f-7bf2-b5b2-132f2f7de897","PROBE_TAB":null,"ZDOTDIR":null,"SERVER_TAG":"S2"}
+thread ids: A=01a1da75-2df1-73e0-8728-da63da3cc8eb B=01a1da75-2e8f-7bf2-b5b2-132f2f7de897 C=01a1da75-3b31-7443-8de4-75d6f191da0e
+
+[mcp starts] {"mcp":"thread-A","pid":66525,"PROBE_TAB":null,"MCP_TAB":"A"}
+{"mcp":"thread-B","pid":66527,"PROBE_TAB":null,"MCP_TAB":"B"}
+{"mcp":"server-level","pid":67055,"PROBE_TAB":null,"MCP_TAB":null}
+{"mcp":"thread-T1","pid":67365,"PROBE_TAB":null,"MCP_TAB":"T1"}
+{"mcp":"thread-T2","pid":67427,"PROBE_TAB":null,"MCP_TAB":"T2"}
+{"mcp":"thread-T3","pid":67510,"PROBE_TAB":null,"MCP_TAB":"T3"}
+{"mcp":"thread-A-resumed","pid":68718,"PROBE_TAB":null,"MCP_TAB":"A-resumed"}
+{"mcp":"server-level","pid":68808,"PROBE_TAB":null,"MCP_TAB":null}

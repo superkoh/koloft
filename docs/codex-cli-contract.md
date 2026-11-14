@@ -3680,3 +3680,56 @@ to 100×30, `/clear`, a second prompt, Ctrl+C twice. An earlier round with `?u` 
 A remote tab's TUI runs on the Mac (§16), so it asks the same.
 
 Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+
+## 38. One app-server, several threads, each with its own environment
+
+**Checked on 2026-11-14 with standalone Codex CLI 0.166.0 on macOS arm64, no account.** A
+Node client (`notes/810/probe.mjs` on branch `fix/810-one-codex-server`) started
+`codex app-server --listen unix://<sock>` in a throwaway `HOME` and `CODEX_HOME` whose
+`config.toml` pointed the model at a local stand-in Responses server, with a made-up API
+key in `auth.json`, `danger-full-access`, `approval_policy = "never"`, apps and plugins
+off, and `[shell_environment_policy] set = { OWNER_VAR = "owner" }`. The server env was
+only `HOME`, `CODEX_HOME`, `PATH`, `SHELL=/bin/zsh`, `USER`, `LANG`, `TMPDIR` and a tag
+naming the server. The stand-in answered each turn's first request with one
+`exec_command` that echoed `$PROBE_TAB`, `$ZDOTDIR`, `$ZMARK` (set only by a `.zshenv` in
+that `ZDOTDIR`), the server tag and `$OWNER_VAR`, then ended the turn. Three runs, the
+same results each time.
+
+- **`thread/start {config: {shell_environment_policy: {set: {…}}}}` gives that thread's
+  commands their own env.** Two clients, one per thread, on the same server, turns
+  running at the same moment: thread A's command printed `TAB=A`, its own `ZDOTDIR`, and
+  `MARK=A` (zsh read that `ZDOTDIR`'s `.zshenv`); thread B's printed B's. Both also printed
+  the owner's `OWNER_VAR`, so a thread's `set` adds to `config.toml`'s, not replaces it. A
+  third thread started with no `config` printed none of A's or B's values.
+- **A thread's env is not saved with it.** After the server was stopped, a new server
+  `thread/resume`d A with `config` naming new values, and A's command printed the new
+  ones; B resumed with no `config` printed none of its old values.
+- **A resume of a thread that is still loaded keeps the env it has.** A second client
+  on the same server sent `thread/resume {threadId: A, config: <new values>}` while A was
+  loaded; A's next command printed A's first values.
+- **Hooks run with the server's env, not the thread's.** A `-c hooks.PostToolUse=…` hook
+  (trusted, §27) saw the server tag and none of the thread's `set` values; its stdin's
+  `session_id` was the thread id.
+- **A thread's `config.mcp_servers` starts that thread's own MCP server with its own
+  `env`, and the server's `-c mcp_servers.*` entry does not start for that thread.**
+  Threads A and B each named an MCP server `thr` with `env: {MCP_TAB: …}`: two processes
+  started, each with its own value. The server's own `-c mcp_servers.srv` (with
+  `env_vars=["PROBE_TAB"]`) started only for the threads that sent no `mcp_servers`, and
+  its `PROBE_TAB` was empty there. Whether an `mcp_servers` table in the owner's
+  `config.toml` is dropped the same way is inferred, not checked.
+- **Each client sees the other threads start.** Every client got `thread/started` and
+  `thread/status/changed` for threads other clients started (as §16 saw over ssh), and
+  nothing else about them.
+- **Memory (RSS of the codex process, 3 s after the last turn ended; MCP children not
+  counted):** one server before any thread 59–60 MB; the same server holding 2 threads
+  after one turn each 115–117 MB, holding 3 threads 104–118 MB; a server of its own for
+  each of 3 threads, after one turn, 88–110 MB each. Turns were the stand-in's, so a real
+  model turn's size is not measured.
+- Read in the request list of the same build (`app-server generate-json-schema
+  --experimental`), not run: `thread/resume` takes the same free `config` object as
+  `thread/start`; `turn/interrupt`, `thread/backgroundTerminals/terminate`,
+  `thread/backgroundTerminals/clean`, `thread/unsubscribe` and `thread/settings/update`
+  act on one thread.
+- Not probed yet: a real TUI connected with `--remote` to a server other TUIs share,
+  sub-agent threads (whether a child thread gets its parent's `set`), and a real model
+  turn.
