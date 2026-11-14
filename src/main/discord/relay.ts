@@ -206,7 +206,7 @@ export class DiscordRelay {
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
   private codexTyped = new Map<string, KeysTyped>()
-  private ticksPressed = new Map<string, string>()
+  private ticksPressed = new Map<string, { ticks: string; untickedOnce: boolean }>()
   private quietTexts = new Map<string, string[]>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
@@ -620,6 +620,13 @@ export class DiscordRelay {
     this.shownNotSent.set(tab, [...(this.shownNotSent.get(tab) ?? []), send])
   }
 
+  cardsWaitFor(tab: string, step: Promise<unknown>): void {
+    const done: Promise<void> = Promise.allSettled([this.sending.get(tab), step]).then(() => {
+      if (this.sending.get(tab) === done) this.sending.delete(tab)
+    })
+    this.sending.set(tab, done)
+  }
+
   private afterShownNotSent(
     tab: string,
     channelId: string,
@@ -630,16 +637,17 @@ export class DiscordRelay {
     const before = this.sending.get(tab)
     if (!before && !sends.length) return post()
     this.shownNotSent.delete(tab)
-    const done = sends
-      .reduce(
-        (sent, send) => sent.then(() => send(channelId)).catch(() => undefined),
-        before ?? Promise.resolve()
-      )
-      .then(() => {
-        if (this.sending.get(tab) === done) this.sending.delete(tab)
-        if (stillAsked()) post()
-      })
-    this.sending.set(tab, done)
+    this.cardsWaitFor(
+      tab,
+      sends
+        .reduce(
+          (sent, send) => sent.then(() => send(channelId)).catch(() => undefined),
+          before ?? Promise.resolve()
+        )
+        .then(() => {
+          if (stillAsked()) post()
+        })
+    )
   }
 
   private postAsk(tab: string, channelId: string, card: Card, stillAsked: () => boolean): void {
@@ -816,12 +824,15 @@ export class DiscordRelay {
       const ticks = question.questions.some((q) => q.multiSelect)
         ? JSON.stringify(question.questions)
         : undefined
-      if (ticks !== undefined && this.ticksPressed.get(tab) === ticks)
-        return { error: PICKS_MAY_STILL_BE_TICKED }
-      if (ticks !== undefined && answers.some((a) => 'picks' in a))
-        this.ticksPressed.set(tab, ticks)
+      const before = ticks === undefined ? undefined : this.ticksPressed.get(tab)
+      const pressedBefore = before !== undefined && before.ticks === ticks
+      const untick =
+        pressedBefore && !before.untickedOnce ? answerKeysFor.untickAll?.(question) : undefined
+      if (pressedBefore && !untick) return { error: PICKS_MAY_STILL_BE_TICKED }
+      if (ticks !== undefined && (pressedBefore || answers.some((a) => 'picks' in a)))
+        this.ticksPressed.set(tab, { ticks, untickedOnce: pressedBefore })
       this.d.answered(tab, reply)
-      const keys = answerKeys(answerKeysFor, question, answers)
+      const keys = [...(untick ?? []), ...answerKeys(answerKeysFor, question, answers)]
       if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
       this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
       return { error: STARTED_IN_THE_TERMINAL }

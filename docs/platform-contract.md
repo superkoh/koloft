@@ -2223,6 +2223,20 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
   `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
   tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
+- **Under Koloft's tmux.conf, with agy or muse in the pane, tmux 3.3a asks the outer
+  terminal only `ESC[>c` (DA2) and `ESC[>q` (XTVERSION), once at attach; the bare
+  questions agy and muse ask in the pane never come out** (neither wraps one for
+  passthrough). With Claude Code in the pane it was not run; CC§12 has tmux answering
+  claude's own questions and claude wrapping only a mod's image for passthrough, so the
+  same is inferred, not checked. Started as Koloft starts a remote
+  tab (`tmux -L koloft -u -f <Koloft's conf> new-session -A -D -s <name> <agent>`) from a
+  python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
+  reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 run directly
+  in the pane (without Koloft's launcher script and status relay), each through start, trust question, a turn with a tool run, a resize,
+  `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
+  only questions the outer terminal got, both in Koloft's off-screen pass-through list
+  (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
+  3.3a, 1 run each).
 
 ## §36 ccstatusline
 
@@ -3328,13 +3342,27 @@ server unless a line says so.
   `sleep N` at priority 4, not 46; `-B -p` then put it at 46.
 - Both measured 2026-11-12 on the same Mac (macOS 27.0, Darwin 27.0.0), one run each, by
   a node script from a Koloft Claude Code tab; nothing but `sleep` was lowered.
+- **The same holds for a standard user logged in over SSH.** In a tart VM of macOS 27.0
+  (26A428, the `macos-golden-gate-vanilla` image), as a standard user made with
+  `sysadminctl -addUser` (not an admin) logged in with ssh: a script that did `set --
+  fakeagent --flag; [ -x /usr/sbin/taskpolicy ] && set -- /usr/sbin/taskpolicy -a "$@";
+  exec "$@"`, `fakeagent` a shell script found only on `PATH`, ran as that script at 46
+  and its two `sleep` children at 31. `taskpolicy -a /bin/sh -c 'exec /bin/sleep 20'`
+  left the `sleep` at 46 (the step outlives an `exec`). `( exec nohup /usr/sbin/taskpolicy
+  -a fakeserver ) </dev/null >log 2>&1 &` read 46 and, read from a new login after the
+  first one ended (its parent now 1), still 46 with its child at 31. The image has no
+  `setsid`, no `tmux`, and only the `python3` stub that asks for the developer tools.
+  On this Mac, a python `pty.fork()` child that `execvp`s `/usr/sbin/taskpolicy -a /bin/sh
+  -c '…'` read 46, its children 31 and the python 31. Measured 2026-11-13, one run each.
 - Inferred, not checked: that macOS takes the memory of a `-b` process first when memory
   is short. Three short runs on 2026-11-11 saw its pages on the background queue twice
   and compressed no sooner than an unlowered process's once; no run was made under real
   memory pressure.
 
 Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
-program on this Mac through `taskpolicy -a`; `ResourceGuard` in
+program on this Mac through `taskpolicy -a`, and `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE`
+beside it, which does the same on a machine that has `/usr/sbin/taskpolicy` (§72 for one
+that does not); `ResourceGuard` in
 `src/main/resourceGuard.ts`, which while memory pressure stays at 4 lowers the tools of
 the agent tabs nobody looks at with `-b -p`, never a process Koloft itself started, and
 lifts by reading the process table again (ADR-0042).
@@ -3651,3 +3679,41 @@ Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so Ap
 and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
 of that it spent on the CPU.
+
+## §72 Making work give way on a Linux machine, as the user logged in over SSH
+
+How measured: 2026-11-13, a container of the e2e sshd image (Debian 12 bookworm) under
+colima, whose VM runs Linux 6.8.0-117-generic (Ubuntu, `PREEMPT_DYNAMIC`), the container
+pinned to 4 cores (`--cpuset-cpus 0-3`). The user `kuser` (uid 1001, no sudo) logged in
+over ssh to the container's own sshd (PAM on) and ran a python script there. In it, an
+"agent" ran on a pty and echoed each byte typed into it; 20 single keys 300 ms apart
+measured the time from the write to the echo, and 4 times a fixed piece of work (230 ms
+on the idle machine) was asked for. Its "tools" were busy-loop children it forked before
+the measurement. One run per row, except where two are given.
+
+- **Nothing makes a program go above another.** `nice -n -1 true` printed "nice: cannot
+  set niceness: Permission denied"; `renice -n -1` on the user's own shell and
+  `chrt -r 1 true` were refused; writing `-1` to `/proc/self/autogroup` failed with an
+  I/O error. `/usr/sbin/taskpolicy` is macOS-only.
+- **Lowering is one way.** `renice -n 10` on the user's own `sleep` worked;
+  `renice -n 0` on it afterwards was refused (Permission denied). macOS's `taskpolicy -B -p`
+  has no counterpart here.
+- **A key reaches a busy machine's program at once anyway.** Key to echo, median /
+  worst: idle 0.3 / 0.3 ms; with 16 busy tools at the agent's own nice 0.1 / 3.0 ms; with
+  40, 0.1 / 3.0 ms. So the stall ADR-0042 guards against on macOS (two keys read
+  together, §59) did not show.
+- **Work the agent itself does is slowed, and lowering the tools gives it back.** The
+  230 ms piece, 4 runs: 16 busy tools at nice 0 → 810–1210 ms; at nice 10 → 213–383 ms;
+  at nice 19 → 214–228 ms; in a session of their own (`setsid`, autogroups on:
+  `sched_autogroup_enabled` read 1) → 880–979 ms. With 40 busy tools: nice 0 →
+  2499–3674 ms, nice 19 → 276–335 ms.
+- Inferred, not checked: that `setsid` made no difference because a container's tasks sit
+  in a cgroup of their own, and the kernel applies autogroups only to tasks in the root
+  task group (`/proc/self/cgroup` read `0::/`, the container's own namespace). Not probed:
+  a systemd host (where an SSH login sits in `user.slice`), a host whose
+  `/etc/security/limits.conf` gives the user a `nice` limit, the path through tmux and
+  Koloft's status relay (both at the agent's nice), and a real agent's redraw.
+
+Koloft dependents: `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE` in `src/main/agentLift.ts`
+lifts an agent program only on a machine with `/usr/sbin/taskpolicy` (§59); on a Linux
+machine it leaves the agent and its tools as they start.

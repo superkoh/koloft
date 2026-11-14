@@ -112,7 +112,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
     digit picks that option and `1` runs the command; a command starting `slow ` runs on
     only once `<home>/go-run` exists; a lone Esc on it ends the turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
-    tool use]`, no Stop, CC§2), `/busy` (a turn held open ~30 s), `/hold` (a turn held
+    tool use]`, no Stop, CC§2), `/plan <text>` (asks to approve `<text>` as a plan, the
+    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s), `/hold` (a turn held
     open until a lone Esc, which ends it with `[Request interrupted by user]` and no
     Stop), `/need-approval`,
     `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
@@ -139,7 +140,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     it, and is then one prompt together with what was typed after it; fake-codex
     keeps one in its composer the same way.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
-    injected auth) before any delay — except a `-p` Koloft runs itself (the title
+    injected auth, the terminal width it started at) before any delay — except a `-p` Koloft runs itself (the title
     call, task piped on stdin; the remote launch's first-run warm-up, output sent to
     /dev/null), which prints `<first line of the task> (titled)` and exits unlogged; a
     `-p` typed in a terminal is logged like any launch. Asked which docs are for the
@@ -153,7 +154,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (its UserPromptSubmit hook
     gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
     transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
-    Stop). A `--name` shows as its registry name.
+    Stop), except one asking it to approve the same plan again, which asks its transcript's
+    last plan once more, as `/plan` does. A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
