@@ -109,7 +109,6 @@ function writeCallLog(effCwd) {
         firstPrompt,
         ts: Date.now(),
         cols: process.stdout.columns ?? null,
-        rows: process.stdout.rows ?? null,
         oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         disable1mContext: process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT || null,

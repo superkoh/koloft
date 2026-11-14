@@ -11,7 +11,6 @@ import {
   layoutOnDisk,
   openSessionTerminal,
   panelTerm,
-  readCalls,
   runIn,
   sendShortcut,
   setNextSessionTitle,
@@ -63,7 +62,7 @@ async function waitColumnRiseInOver(page: Page): Promise<void> {
     .toBe(true)
 }
 
-async function waitTuiToldItsSizeBesideTheBoundPanel(page: Page, env: E2EEnv): Promise<void> {
+async function waitTuiToldItsSizeBesideTheBoundPanel(page: Page): Promise<void> {
   await expect.poll(() => layoutState(page)).toBe('T2')
   await expect
     .poll(async () => {
@@ -72,9 +71,7 @@ async function waitTuiToldItsSizeBesideTheBoundPanel(page: Page, env: E2EEnv): P
       const winches = (await terminalText(page, shown.id)).matchAll(
         /\[fake-claude\] winch (\d+x\d+)/g
       )
-      const launch = readCalls(env).at(-1)
-      const sizeTheTuiKnows = [...winches].at(-1)?.[1] ?? `${launch?.cols}x${launch?.rows}`
-      return sizeTheTuiKnows === `${shown.cols}x${shown.rows}`
+      return [...winches].at(-1)?.[1] === `${shown.cols}x${shown.rows}`
     })
     .toBe(true)
 }
@@ -310,7 +307,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
   }) => {
     test.setTimeout(180_000)
     await startSessionIn(page, 'ws-a')
-    await waitTuiToldItsSizeBesideTheBoundPanel(page, env)
+    await waitTuiToldItsSizeBesideTheBoundPanel(page)
 
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(e.message))

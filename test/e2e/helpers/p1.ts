@@ -32,7 +32,6 @@ export interface ClaudeCall {
   firstPrompt?: string | null
   ts: number
   cols?: number | null
-  rows?: number | null
   oauthToken: string | null
   disable1mContext?: string | null
   cdpEndpoint?: string | null
