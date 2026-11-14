@@ -73,6 +73,7 @@
   --r-lg: 12px;
   --shadow-lg: 0 18px 56px -16px rgba(0, 0, 0, 0.7);
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --unknown-length-bar-at-rest-opacity: 0.55;
   --switch-sm-w: 30px;
 
   --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
