@@ -582,6 +582,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       try {
         const first = await startTabAndLetItSettle(page, tab, ws)
         await stayAbsentPastPumpGap(page)
+        expect(settingsOnDisk(env).hintsSeen).not.toContain('worktree')
         await startTab(page, tab, ws)
         await expect(card(page, 'worktree')).toBeVisible({
           timeout: A_REMOTE_ROW_FOLLOWS_WITHIN_MS
