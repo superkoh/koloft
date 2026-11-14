@@ -43,6 +43,7 @@ import {
   shownCenterTerm,
   startSessionIn,
   waitBooted,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { seedWorkbenchDefault } from './helpers/workbench'
@@ -241,7 +242,10 @@ const EVERY_SESSION_TAB_KIND: SessionTabKind[] = [
     remote: false,
     startWidths: agentStart((env) => readCalls(env).map((c) => c.cols)),
     install: () => {},
-    startOnScreen: (page) => startSessionIn(page, 'ws-a')
+    startOnScreen: async (page) => {
+      await startSessionIn(page, 'ws-a')
+      await waitStartupTurnOver(page, 'ws-a')
+    }
   },
   {
     kind: 'local Codex',
@@ -284,7 +288,10 @@ const EVERY_SESSION_TAB_KIND: SessionTabKind[] = [
     remote: true,
     startWidths: TERMINAL_TO_THE_MACHINE,
     install: () => {},
-    startOnScreen: (page) => startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+    startOnScreen: async (page) => {
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitStartupTurnOver(page, REMOTE_WS_NAME)
+    }
   },
   ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
     kind: `remote ${agent.label}`,
