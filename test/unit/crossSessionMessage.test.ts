@@ -65,6 +65,25 @@ describe('a message to another Claude session, the way Claude sessions send one'
     expect(received).toBe(line)
   })
 
+  it('counts as taken once every byte is written, though the session keeps its end open past the wait, so a retry never sends it twice', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kx-'))
+    const sock = path.join(dir, 's.sock')
+    let received = ''
+    let held: net.Socket | undefined
+    server = net.createServer({ allowHalfOpen: true }, (c) => {
+      held = c
+      c.on('data', (b) => (received += b.toString()))
+    })
+    await new Promise<void>((resolve) => server!.listen(sock, resolve))
+    const line = crossSessionLine('bypass', 'show the plan again', 'k-1')
+    try {
+      await expect(writeLine(sock, line)).resolves.toBeUndefined()
+      expect(received).toBe(line)
+    } finally {
+      held?.destroy()
+    }
+  }, 10_000)
+
   it('fails when nothing listens on the socket', async () => {
     await expect(writeLine(path.join(os.tmpdir(), 'kx-nobody.sock'), 'x\n')).rejects.toThrow()
   })
