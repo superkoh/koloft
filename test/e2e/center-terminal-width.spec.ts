@@ -37,6 +37,7 @@ import {
   openSessionTerminal,
   readCalls,
   runIn,
+  sendShortcut,
   sessionInRow,
   setWindowWidth,
   shownCenterTerm,
@@ -508,8 +509,7 @@ test.describe('the center session terminal stops at 140 columns and sits centred
         await openMenu(first.page, row)
         await first.page.locator('.menu .mi', { hasText: 'Keep running' }).click()
         await expect(row.locator('.ws-tab-resident')).toBeVisible()
-        await openMenu(first.page, row)
-        await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await sendShortcut(first.app, 'shortcut:close-tab')
         await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
         before = tab.startWidths.read(env).length
       } finally {
