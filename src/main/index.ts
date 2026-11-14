@@ -992,6 +992,14 @@ function carryTabIds(newId: string, ids: string[]): void {
   earlierTabIds.set(newId, [...merged].slice(0, TAB_IDS_KEPT_PER_TAB - 1))
 }
 
+function countShellAsTab(ownerTabId: string, shellId: string): void {
+  earlierTabIds.set(
+    ownerTabId,
+    [shellId, ...(earlierTabIds.get(ownerTabId) ?? [])].slice(0, TAB_IDS_KEPT_PER_TAB - 1)
+  )
+  rememberOpenTabs()
+}
+
 function openTabOf(s: SessionInfo): OpenTab {
   return {
     sessionId: s.sessionId,
@@ -6531,6 +6539,7 @@ function registerIpc(): void {
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
       if (handle.utilMachine) remoteSync?.typedInto(handle.utilMachine)
+      if (handle.ownerTabId) countShellAsTab(handle.ownerTabId, handle.id)
       writeRelayEnv(ptyTabIds())
       return { ok: true, id: handle.id, cwd: launch.cwd }
     }

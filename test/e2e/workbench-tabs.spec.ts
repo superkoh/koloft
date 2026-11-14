@@ -699,6 +699,13 @@ async function newTabMenuPorts(page: Page): Promise<Locator> {
   return menu
 }
 
+function savedTabIds(env: E2EEnv): string[] {
+  const file = path.join(env.userData, 'open-tabs.json')
+  if (!fs.existsSync(file)) return []
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as { tabs: { tabIds?: string[] }[] }
+  return saved.tabs.flatMap((t) => t.tabIds ?? [])
+}
+
 async function openThePortItLists(
   app: ElectronApplication,
   page: Page,
@@ -800,16 +807,7 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
         await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
         await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
-        await expect
-          .poll(() => {
-            const file = path.join(env.userData, 'open-tabs.json')
-            if (!fs.existsSync(file)) return []
-            const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as {
-              tabs: { tabIds?: string[] }[]
-            }
-            return saved.tabs.flatMap((t) => t.tabIds ?? [])
-          })
-          .toContain(before)
+        await expect.poll(() => savedTabIds(env)).toContain(before)
       } finally {
         await quitAndClose(app)
       }
@@ -822,6 +820,43 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
         const after = (await row.getAttribute('data-tab-id'))!
         expect(after).not.toBe(before)
+        await expect.poll(() => answers(port)).toBe(true)
+        await expect.poll(() => listeningPortsOf(page2, after), { timeout: 30_000 }).toEqual([port])
+      } finally {
+        await quitAndClose(app2)
+      }
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+    }
+  })
+
+  test('WB-T33: after a Koloft restart a session’s ports still list the server started from its Workbench shell before the restart', async ({
+    env
+  }) => {
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    try {
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a')
+        const before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), serverWithPidFile(env, port, pidFile))
+        await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+        await expect.poll(() => savedTabIds(env)).toContain(before)
+      } finally {
+        await quitAndClose(app)
+      }
+
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await waitBooted(page2)
+        const row = wsRows(page2, 'ws-a').first()
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+        const after = (await row.getAttribute('data-tab-id'))!
         await expect.poll(() => answers(port)).toBe(true)
         await expect.poll(() => listeningPortsOf(page2, after), { timeout: 30_000 }).toEqual([port])
       } finally {
