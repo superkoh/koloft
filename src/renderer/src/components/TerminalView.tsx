@@ -21,6 +21,8 @@ import { registerScreen, screenSizedToPane } from '../terminalScreens'
 import { loadMonoFonts, monoFontsLoaded } from '../monoFonts'
 import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
 
+let sessionScreen = window.api.sessionScreenAtLoad
+
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
 const SYNC_FRAME_NEVER_CLOSED_AFTER_MS = 1000
@@ -186,7 +188,8 @@ function LiveTerminal({
         exitSyncWindow(term)
         term.resize(fits.cols, fits.rows)
       }
-      window.api.terminal.resize(id, term.cols, term.rows)
+      if (maxCols) sessionScreen = { cols: term.cols, rows: term.rows }
+      window.api.terminal.resize(id, term.cols, term.rows, !!maxCols)
       screenSizedToPane(id)
       // ADR-0007
       if (consumeAdoptedNudge(id)) {
@@ -201,6 +204,7 @@ function LiveTerminal({
   useEffect(() => {
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
+      ...(maxCols ? sessionScreen : null),
       fontSize: useStore.getState().settings.fontSize,
       fontFamily: fontFamilyRef.current,
       cursorBlink: true,

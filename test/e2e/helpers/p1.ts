@@ -31,6 +31,7 @@ export interface ClaudeCall {
   sessionId: string
   firstPrompt?: string | null
   ts: number
+  cols?: number | null
   oauthToken: string | null
   disable1mContext?: string | null
   cdpEndpoint?: string | null
