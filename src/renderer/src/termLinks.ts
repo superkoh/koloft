@@ -30,30 +30,6 @@ function fileThere(src: string): Promise<boolean> {
   return found
 }
 
-let commandHeld = false
-let commandKeyWatched = false
-let hoveredFileLink: ILink | undefined
-
-function showOnlyWhileCommandHeld(link: ILink | undefined): void {
-  if (!link?.decorations) return
-  link.decorations.underline = commandHeld
-  link.decorations.pointerCursor = commandHeld
-}
-
-function noteCommandKey(held: boolean): void {
-  if (commandHeld === held) return
-  commandHeld = held
-  showOnlyWhileCommandHeld(hoveredFileLink)
-}
-
-function watchCommandKey(): void {
-  if (commandKeyWatched) return
-  commandKeyWatched = true
-  window.addEventListener('keydown', (e) => noteCommandKey(e.metaKey), true)
-  window.addEventListener('keyup', (e) => noteCommandKey(e.metaKey), true)
-  window.addEventListener('blur', () => noteCommandKey(false))
-}
-
 function textWithCellColumns(line: IBufferLine): {
   text: string
   colOf: number[]
@@ -106,7 +82,6 @@ export function fileLinkProvider(
   term: Terminal,
   owner: () => FileLinkOwner | undefined
 ): ILinkProvider {
-  watchCommandKey()
   let asked = 0
   return {
     provideLinks(y, callback) {
@@ -128,21 +103,12 @@ export function fileLinkProvider(
           const src = resolveOnHost(`${from.cwd}/`, ref.path)
           if (!(await fileThere(src))) return null
           const last = colOf[ref.end - 1]
-          const link: ILink = {
+          return {
             range: {
               start: { x: colOf[ref.start] + 1, y },
               end: { x: last + widthAt[last], y }
             },
             text: ref.text,
-            decorations: { underline: commandHeld, pointerCursor: commandHeld },
-            hover: (event) => {
-              hoveredFileLink = link
-              commandHeld = event.metaKey
-              queueMicrotask(() => showOnlyWhileCommandHeld(link))
-            },
-            leave: () => {
-              if (hoveredFileLink === link) hoveredFileLink = undefined
-            },
             activate: (event) => {
               if (!event.metaKey) return
               useStore
@@ -153,7 +119,6 @@ export function fileLinkProvider(
                 )
             }
           }
-          return link
         })
       ).then((links) => {
         if (ask !== asked) return

@@ -26,6 +26,7 @@ import {
   runIn,
   startSessionIn,
   waitBooted,
+  waitStartupTurnOver,
   writeTo,
   wsRows
 } from './helpers/p1'
@@ -54,7 +55,6 @@ interface FoundLink {
   text: string
   startX: number
   endX: number
-  underlined: boolean
 }
 
 function linksOnLineWith(page: Page, tabId: string, marker: string): Promise<FoundLink[]> {
@@ -63,7 +63,6 @@ function linksOnLineWith(page: Page, tabId: string, marker: string): Promise<Fou
       interface Link {
         text: string
         range: { start: { x: number }; end: { x: number } }
-        decorations?: { underline: boolean }
       }
       interface Term {
         buffer: {
@@ -90,12 +89,9 @@ function linksOnLineWith(page: Page, tabId: string, marker: string): Promise<Fou
           (p) => new Promise<Link[]>((done) => p.provideLinks(y, (l) => done(l ?? [])))
         )
       )
-      return replies.flat().map((l) => ({
-        text: l.text,
-        startX: l.range.start.x,
-        endX: l.range.end.x,
-        underlined: l.decorations?.underline ?? true
-      }))
+      return replies
+        .flat()
+        .map((l) => ({ text: l.text, startX: l.range.start.x, endX: l.range.end.x }))
     },
     { id: tabId, marker }
   )
@@ -146,7 +142,7 @@ const LOCAL_OTHER_AGENTS: {
 ]
 
 test.describe('a file path an agent printed in its terminal opens in the Workbench on ⌘-click', () => {
-  test('a path that exists becomes a link, shown only while ⌘ is held; a missing one, a label naming the path after it and the rest of a path broken at the row above do not; a plain click opens nothing, ⌘-click opens the file at its line', async ({
+  test('a path that exists becomes a link; a missing one, a label naming the path after it and the rest of a path broken at the row above do not; a plain click opens nothing, ⌘-click opens the file at its line', async ({
     page,
     env
   }) => {
@@ -155,20 +151,21 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
     writeIn(env.workspaces.a, 'a.ts', numberedTs('tfroot'))
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
+    await waitStartupTurnOver(page, 'ws-a')
     const tabId = await shownTabId(page)
 
     await writeTo(
       page,
       tabId,
-      '\r\ntfl-mark 说明 src/a.ts:45 and nope/missing.ts:3 then a.ts (src/a.ts:7)\r\n' +
+      '\r\ntfl-mark 说明 src/a.ts:45 and nope/missing.ts:3\r\ntfl-label a.ts (src/a.ts:7)\r\n' +
         'tfl-plain row\r\nsrc/a.ts:8\r\ntfl-broken /some/where/\r\nsrc/a.ts:9\r\n'
     )
     await expect
       .poll(() => linksOnLineWith(page, tabId, 'tfl-mark'), { timeout: 20_000 })
-      .toEqual([
-        { text: 'src/a.ts:45', startX: 15, endX: 25, underlined: false },
-        { text: 'src/a.ts:7', startX: 60, endX: 69, underlined: false }
-      ])
+      .toEqual([{ text: 'src/a.ts:45', startX: 15, endX: 25 }])
+    expect(await linksOnLineWith(page, tabId, 'tfl-label')).toEqual([
+      { text: 'src/a.ts:7', startX: 17, endX: 26 }
+    ])
     expect(await linkTextsOnLineWith(page, tabId, 'src/a.ts:8')).toEqual(['src/a.ts:8'])
     expect(await linkTextsOnLineWith(page, tabId, 'src/a.ts:9')).toEqual([])
 
