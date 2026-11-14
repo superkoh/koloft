@@ -15,8 +15,8 @@ thread instead.
 | The Codex server crashes | that tab reconnects to a new server; other tabs untouched | **every local Codex tab sharing that server** reconnects at once to one new server; a turn running in any of them stops, as one tab's does today |
 | A tab's TUI drops its connection (sleep, a hang) | Koloft kills and restarts that tab's server (CODEX§34) | only that tab's connection is redone; the server and other tabs are untouched |
 | Close a Codex tab | its server and every process under it are killed at once | its turn is interrupted and its background commands end within ~2 s; its MCP processes go when Codex unloads the thread, up to a minute later; a process that left its process group (`nohup`, `setsid`) is found by its env and killed (below) |
-| Close a Codex tab, then open the same session in a new tab within a minute, while another tab of that account stays open | resumes at once | **waits until Codex has unloaded the thread (up to ~60 s)** before it resumes, so the session does not keep the closed tab's env |
-| Restart a Codex tab (same tab) | new server | resumes in the shared server; the tab id stays the same, so its env does too |
+| Restart a Codex tab (⇧⌘R), or close it and open the same session again within a minute, while another tab of that account stays open | new server, new env | resumes at once in the shared server, which still has the thread loaded with the old tab's env; Koloft answers that old tab id for the new tab until the thread unloads (below), so the shim, `koloft` and the Workbench browser still reach the right tab |
+| Type `/resume <id>` in a Codex tab for a session another live tab holds | the second server gets "open in another app" (writer lock, CODEX§5, §15) | both tabs show the thread; the second tab's commands run with the first tab's env |
 | Sign in again after a login expired | the next new tab gets a new server with the new login | the account's server is replaced after the new sign-in (open tabs reconnect, as on a crash) |
 | Koloft itself crashes | each orphan `--stdio` server exits on its own within ~14 s (CODEX§5) | the `--listen` server does not exit by itself (CODEX§16); the next Koloft start ends it and everything under it |
 | Codex is updated while tabs are open | each new tab starts a server of the new version | a new tab starts a new server for the new version; tabs on the old one keep it until they close |
@@ -74,13 +74,15 @@ TUI-2 ─ relay-2 ─ app-server-2                               version, server
 | Per tab today (server env or `-c`) | After |
 |---|---|
 | `KOLOFT_TAB_ID`, browser control env (`PLAYWRIGHT_CLI_SESSION`, `PLAYWRIGHT_MCP_OUTPUT_DIR`, `KOLOFT_BROWSER_CDP`, … — all keyed by the tab id), `KOLOFT_PORT_OFFSET` | thread `config`, `shell_environment_policy.set.<VAR>` — reaches commands (CODEX§38) |
-| `ZDOTDIR` (the open shim, a new folder per launch today) | the same key; the shim folder is kept per tab id across relaunches, so a restarted tab's thread still finds it |
+| `ZDOTDIR` (the open shim, a new folder per launch today) | the same key; a closed tab's shim folder stays while a later tab holds its still-loaded thread (the alias below) |
 | Reply-language / said / notice / Discord-said / shell-wrote file paths, read by the hook script | hooks see only the server's env (CODEX§38). The hook commands are the same for every tab, so they go on the server once; the script finds the tab's files from stdin `session_id` (= the thread id, CODEX§38; a sub-agent's tool calls carry the parent's, CODEX§27): Koloft writes `<hookRegDir>/<threadId>.codex-tab` holding those paths when the relay sees the opener's reply, before the TUI can start a turn |
 | `developer_instructions` (Koloft prompt, role) | `thread/start` `developerInstructions`. A resume takes no new instructions either way (CODEX§17), same as today |
 | `approval_policy` / `sandbox_mode` on a resumed tab | `thread/resume` params `approvalPolicy` / `sandbox` (in the schema; not run) |
 | Playwright MCP `env_vars` (forwarded the server env, which no longer holds the tab's values) | thread config `mcp_servers.<name>.env.<VAR>` = the tab's values; dotted keys keep the server's `-c` MCP entries and the owner's `config.toml` ones (CODEX§38) |
 | Status line, hooks and their trust, `network_access`, writable roots, `default_mode_request_user_input`, the Playwright MCP approval mode | the server's `-c`, part of the pool key |
 | `skills/extraRoots/set` after `initialized` | unchanged: sent per connection; the roots are the same for every tab |
+| The conductor gate and its allow file (named in the issue) | gone from `main` (no `KOLOFT_CODEX_GATE` in `src/`; the butler runs without it since ADR-0029) |
+| Sub-agent threads | get the parent thread's `set` (CODEX§38), as they get the server env today |
 
 ### Closing, the quick reopen, crashes, leftovers
 
@@ -94,11 +96,16 @@ TUI-2 ─ relay-2 ─ app-server-2                               version, server
   left the process group, as the per-tab tree kill does today. MCP processes go when
   Codex unloads the thread (CODEX§16). The worktree removal after close runs as today;
   the thread may still be loaded then, as a TUI's thread is today until its server dies.
-- **The quick reopen:** a resume of a thread the shared server still has loaded keeps
-  the env it was loaded with (CODEX§38), which would name a closed tab. So before it
-  forwards a `thread/resume`, the relay asks `thread/loaded/list`; if the thread is
-  there and no open tab holds it, it waits for Codex to unload it (30–60 s, CODEX§17)
-  and then forwards. A `/resume <id>` typed in a TUI goes through the same check.
+- **The quick reopen and the restart:** a resume of a thread the shared server still
+  has loaded keeps the env it was loaded with (CODEX§38). A restart always gets a new
+  pty id (`restartSession.test.ts`: `codex-restart` → `codex-restarted`), and a
+  reopen from history is a new tab, so that env names a tab that is gone. Koloft keeps,
+  per loaded thread, the tab id its env names; when another tab resumes that thread,
+  Koloft makes the old id an alias of the new tab (agent requests by `KOLOFT_TAB_ID`,
+  the browser endpoint keyed by tab id, the Playwright session and output folder), and
+  keeps the old open-shim folder, until the thread is unloaded (`thread/loaded/list`
+  no longer holds it; CODEX§17 saw it go 30–60 s after the last unsubscribe). The relay learns whether the thread is loaded with
+  `thread/loaded/list` before it forwards the resume.
 - **Koloft crash:** at start, Koloft ends every pool server left by an earlier run
   (`endCodexAppServersLeftByACrash` today matches only `app-server --stdio` and kills
   only the server) together with its process tree.
@@ -113,9 +120,7 @@ TUI-2 ─ relay-2 ─ app-server-2                               version, server
 
 ## Not probed yet — the first build steps
 
-1. Sub-agent threads: whether a child thread gets its parent's `set` (a real model
-   turn: the stand-in got no spawn tool). If not, the relay also sets the env on
-   threads the server starts for a child — or the feature waits.
+1. (Done: a sub-agent thread gets its parent's `set`, CODEX§38.)
 2. A real TUI over `--remote` on a shared server: a foreign `thread/started`, `/new`,
    `/resume`, a reconnect.
 3. `thread/fork` with `config`; `thread/resume` with `approvalPolicy` / `sandbox`.
@@ -147,15 +152,17 @@ needs anyway (CODEX§38).
 - **Fold the account's side server (#755) in too:** another ~60 MB per account, but
   the side server is `--stdio` with a different life; left out.
 - **Resume a still-loaded thread at once and accept the old env:** commands would
-  reach a closed tab's Workbench and shim; a wait of up to a minute in that one case
-  costs less.
+  reach a closed tab's Workbench and shim.
+- **Wait until Codex unloads the thread before resuming:** simpler than the alias, but
+  every ⇧⌘R of a Codex tab would wait 30–60 s while another tab of that account is
+  open.
 
 ## Size and tests
 
 - Runtime: a server pool and a WebSocket upstream (new), the opener rewrite and the
   loaded-thread wait in the relay, the split reconnect, launch changes in
   `codexSessions.ts`, the hook script's lookup by `session_id`, the per-tab process
-  sweep on close, the leftover sweep at start. Roughly +500 / −150 lines under
+  sweep on close, the leftover sweep at start, the tab-id alias. Roughly +550 / −150 lines under
   `src/`, guessed.
 - `fixtures/fake-codex.js` must learn `--listen` with several connections and the
   thread config before any e2e can show two tabs on one server.

@@ -28,7 +28,8 @@ const fake = http.createServer((req, res) => {
     } catch {}
     const tools = r.tools ?? []
     spawnTool ??= tools.find((t) => /spawn/.test(t.name ?? ''))
-    if (requests === 1) console.log(`tools: ${tools.map((t) => t.name ?? t.type).join(',')}`)
+    if (tools.length && !fs.existsSync(path.join(root, 'tools.json')))
+      fs.writeFileSync(path.join(root, 'tools.json'), JSON.stringify(tools, null, 1))
     const input = r.input ?? []
     const last = input.slice(-1)[0] ?? {}
     const text = JSON.stringify(input)
@@ -45,18 +46,47 @@ const fake = http.createServer((req, res) => {
     })
     const say = { type: 'message', role: 'assistant', id: `msg_${requests}`, content: [{ type: 'output_text', text: 'done' }] }
     let item = say
-    if (last.type !== 'function_call_output' && tools.some((t) => t.name === 'exec_command')) {
-      if (text.includes('ASK-APPROVAL'))
-        item = call('exec_command', {
-          cmd: 'echo approved-run',
-          sandbox_permissions: 'require_escalated',
-          justification: 'probe'
-        })
-      else if (text.includes('CHILD-RUN'))
+    const userText = JSON.stringify(input.filter((i) => i.role === 'user'))
+    const found = []
+    JSON.stringify(tools, (k, v) => {
+      if (v && typeof v === 'object' && typeof v.name === 'string' && /spawn/.test(v.name)) found.push(v)
+      return v
+    })
+    if (found.length) spawnTool = found[0]
+    const lastCall = input.filter((i) => i.type === 'function_call').slice(-1)[0]
+    if (userText.includes('CHILD-RUN')) {
+      if (last.type !== 'function_call_output')
         item = call('exec_command', { cmd: 'echo "child PROBE_TAB=$PROBE_TAB" > child-env.txt' })
-      else if (text.includes('PARENT-SPAWN') && spawnTool)
-        item = call(spawnTool.name, { message: 'CHILD-RUN: run the command' })
-    }
+    } else if (userText.includes('PARENT-SPAWN')) {
+      const walk = (v, ns, out) => {
+        if (Array.isArray(v)) v.forEach((x) => walk(x, ns, out))
+        else if (v && typeof v === 'object') {
+          if (typeof v.name === 'string' && /spawn/.test(v.name) && v.type !== 'namespace') out.push({ name: v.name, ns, v })
+          walk(v.tools, v.type === 'namespace' ? v.name : ns, out)
+        }
+        return out
+      }
+      if (last.type === 'tool_search_output') {
+        const hits = walk(last.tools, undefined, [])
+        console.log(`tool_search gave: ${JSON.stringify(hits.map((h) => [h.ns, h.name, h.v.parameters?.required]))}`)
+        if (hits.length)
+          item = { ...call(hits[0].name, { message: 'CHILD-RUN: run the command' }), ...(hits[0].ns && { namespace: hits[0].ns }) }
+      } else if (last.type !== 'function_call_output')
+        item = {
+          type: 'tool_search_call',
+          id: `ts_${requests}`,
+          call_id: `call_${requests}`,
+          status: 'completed',
+          execution: 'client',
+          arguments: { query: 'spawn sub-agent' }
+        }
+      else console.log(`after ${lastCall?.name}: ${JSON.stringify(last).slice(0, 400)}`)
+    } else if (last.type !== 'function_call_output' && text.includes('ASK-APPROVAL'))
+      item = call('exec_command', {
+        cmd: 'echo approved-run',
+        sandbox_permissions: 'require_escalated',
+        justification: 'probe'
+      })
     send('response.output_item.done', { item })
     send('response.completed', { response: { id, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } })
     res.end()

@@ -3747,8 +3747,18 @@ results each time.
   --experimental`), not run: `thread/resume` takes the same free `config` object as
   `thread/start`; `turn/interrupt`, `thread/backgroundTerminals/terminate {threadId,
   processId}` and `thread/settings/update` act on one thread.
+- **A sub-agent thread gets its parent's `set`.** `notes/810/probe-more.mjs`,
+  `features.multi_agent = true`, `model = "gpt-5.5"`: the spawn tool is not in the
+  request's `tools` but behind the `{type: "tool_search", execution: "client"}` entry
+  ("Multi-agent tools: Spawn and manage sub-agents"); a `function_call` to
+  `spawn_agent` without it was answered "unsupported call: spawn_agent". The stand-in
+  answered with an output item `{type: "tool_search_call", call_id, execution:
+  "client", arguments: {query}}`; the next request's last input was a
+  `tool_search_output` holding `spawn_agent` in namespace `multi_agent_v1`. A
+  `function_call` with that `namespace` and `{message}` answered `{agent_id,
+  nickname}`, and the child's own command, in a thread the parent had started with
+  `config: {"shell_environment_policy.set.PROBE_TAB": "C"}`, printed `PROBE_TAB=C`.
+  One run.
 - Not probed yet: a real TUI connected with `--remote` to a server other TUIs share;
-  sub-agent threads (whether a child thread gets its parent's `set`) — the stand-in got
-  no spawn tool with `model = "gpt-5.5"` and `features.multi_agent = true`, and with
-  `gpt-6.1-sol` its first request carried no tools at all; `thread/fork` with `config`;
+  `thread/fork` with `config`;
   whether an unloaded thread lets go of its writer lock (§15); a real model turn.
