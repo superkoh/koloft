@@ -396,11 +396,16 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
       await runningSession(page)
       const url = server.localhostUrl('/a')
 
+      const replies = centerTerm(page).locator('.xterm-rows > div', {
+        hasText: `handled: ${url}`
+      })
       await runIn(page, centerTerm(page), url)
+      await expect(replies).toHaveCount(1, { timeout: 30_000 })
       await clickTerminalLink(page, url)
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
 
       await runIn(page, centerTerm(page), url)
+      await expect(replies).toHaveCount(2, { timeout: 30_000 })
       await clickTerminalLink(page, url)
 
       await expect(openTabs(page)).toHaveCount(1)
