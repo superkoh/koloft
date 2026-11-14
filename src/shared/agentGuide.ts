@@ -1,5 +1,7 @@
 import type { BackendId } from './types'
 import { BACKEND_LABEL, SESSION_BACKENDS, messagingOf, namedAtLaunch } from './sessionBackend'
+import { needsModel } from './cronModels'
+import { tierPicksOf } from './sessionPicks'
 
 const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -40,8 +42,24 @@ export function ownerSays(text: string): string {
 const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =
   'Write the task you give a Koloft session, and every message you send one, in the language the owner writes to you, even though these instructions are in English.'
 
-const OWN_WORKTREE_RULE =
-  'The work needs a git worktree or branch of its own (a parallel change, an experiment, a fix that lands as its own pull request): start a Koloft session in its own worktree with koloft session new -w <short-name> -- "<task>". Do this instead of running git worktree add'
+const PICKED_FLAGS = '--model <model> --effort <effort>'
+
+const pickedFlagsOf = (backend: BackendId): string =>
+  needsModel(backend) ? PICKED_FLAGS : '--effort <effort>'
+
+const ownWorktreeRule = (backend: BackendId): string =>
+  `The work needs a git worktree or branch of its own (a parallel change, an experiment, a fix that lands as its own pull request): start a Koloft session in its own worktree with koloft session new -w <short-name> ${pickedFlagsOf(backend)} -- "<task>". Do this instead of running git worktree add`
+
+const watchedSessionRule = (backend: BackendId): string =>
+  `The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new ${pickedFlagsOf(backend)} -- "<task>".`
+
+export const PICK_FOR_THE_TASK =
+  "Sort the task first. Very simple: do as told, with nothing to decide (fix a typo, change a line of copy, rename something, run a command and report, read a few files and answer). Normal: ordinary work with a clear goal (a small feature, a bug that can be reproduced, tests, a few files). Very hard: work that needs judgment or has no clear shape (a plan or a design, a review, a bug with no known cause, a change that reaches many places, anything the owner will decide on). When unsure, take the harder one. Then use that kind's model and effort; pick another only when the owner or the project's instructions name one."
+
+const tiersOf = (backend: BackendId): string => `${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}`
+
+const pickModelAndEffort = (backend: BackendId): string =>
+  `Every Koloft session you start gets the model and effort that fit its task. ${PICK_FOR_THE_TASK} ${tiersOf(backend)}. koloft help lists the other agents'.`
 
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
@@ -51,27 +69,27 @@ const ONE_SESSION_PER_PULL_REQUEST =
 
 const HELPER_RULES: Record<BackendId, string[]> = {
   claude: [
-    `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    `${ownWorktreeRule('claude')}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    watchedSessionRule('claude'),
     'Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.',
     'A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.',
     'Anything else: do it yourself, in this session.'
   ],
   codex: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    `${ownWorktreeRule('codex')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    watchedSessionRule('codex'),
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ],
   muse: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    `${ownWorktreeRule('muse')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    watchedSessionRule('muse'),
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (subagent_spawn) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ],
   agy: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    `${ownWorktreeRule('agy')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    watchedSessionRule('agy'),
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (invoke_subagent) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ]
@@ -115,6 +133,8 @@ HELPERS
 When you hand work to a helper, take the first rule that fits:
 
 ${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
+
+${pickModelAndEffort(backend)}
 
 ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${QUESTION_RULE[backend]}
 
@@ -232,10 +252,11 @@ koloft session read <id or name> [--last <number>]
 koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
-koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] [--backend ${BACKEND_CHOICE}] -- "<first message>"
+koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
+    Pick the model and effort that fit the task, every time. ${PICK_FOR_THE_TASK} ${SESSION_BACKENDS.map(tiersOf).join('. ')}. A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, Koloft starts the next best one and says so.
     Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
-    Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
-    Example: koloft session new --workspace koloft -- "Check that the latest release has all its files."
+    Example: koloft session new --name "Fix docs links" --backend claude --model sonnet --effort low -- "Fix the broken links in docs/."
+    Example: koloft session new --workspace koloft --backend codex --model astra --effort high -- "Find why the latest release is missing files."
     The butler: without --workspace the session starts in the butler's own folder, shown under the butler in the sidebar, for any task that belongs to no project; it is told the butler's goals and to report back. With --workspace it starts in that project's workspace like any other session; in a git workspace it always gets its own worktree: -w names it, and without -w Koloft picks a name.
 
 How to talk to a session you started:
@@ -276,7 +297,7 @@ koloft session stop <id or name>
     Example: koloft session stop "Fix docs links"
 
 koloft session close [<id or name>]
-    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other session on this computer, open or ended (an open one is ended first, so do not stop it yourself): one on another machine is refused. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it in the worktree, merge its branch in the main checkout, then close. From inside the worktree, git aimed at the main checkout may be refused (Claude Code refuses it, and a ! command too): then start a session in the main checkout with koloft session new -- "<task>" (from a worktree session, without -w it starts there), ask it to merge the branch, and close it once it reports the merge done.
+    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other session on this computer, open or ended (an open one is ended first, so do not stop it yourself): one on another machine is refused. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it in the worktree, merge its branch in the main checkout, then close. From inside the worktree, git aimed at the main checkout may be refused (Claude Code refuses it, and a ! command too): then start a session in the main checkout with koloft session new ${PICKED_FLAGS} -- "<task>" (from a worktree session, without -w it starts there), ask it to merge the branch, and close it once it reports the merge done.
     Example: koloft session close "Fix docs links"
 
 INBOX
@@ -396,13 +417,13 @@ When the owner asks you to sort out the to-dos, or what waits on them, do this. 
 2. A workspace with no to-do note: agree one with the owner first. This talk is yours, not a helper's. With many of them, take now only those used in the last 2 weeks; sort the others' sessions and pull requests only, and agree their note once they are used again. Ask first whether to start: how many workspaces, about how many minutes (4 to 5 questions each); options: start (recommended), only sessions and pull requests for now, later. Then for each workspace (workspaces of one GitHub repository share one note), look first and ask with what you found, one question at a time:
    a. Where its to-dos are kept, with counts: its GitHub issues (koloft gh issue list --repo <repo>, with labels and assignees), the to-do tools you can reach, a convention in its CLAUDE.md, AGENTS.md or GEMINI.md, a TODO file (koloft todo file <workspace> <file> reads them, also on another machine). A workspace with none of these: only ask whether it keeps to-dos anywhere else. A pull request outside GitHub (GitLab and the like) is a source too, read with a tool you can reach; with none, say plainly that you cannot see those.
    b. Which of them need the owner, with counts: suggest from the marks you found (assigned to the owner, a status, a label).
-   c. Only when nothing tells them apart: offer to add one sentence to the project's instruction files so AI sessions working there mark what needs the owner's decision, in the way its own tool allows (a fixed start of an issue comment, a status, a label). Give the exact sentence, in the project's language, naming the owner's account in that tool, never "the owner". In a repository others commit to, say they will see it. Options: add it (recommended); do not, and read everything each time (say how much longer it takes); do not look at that source. If added: a git repository on GitHub the owner can push to: start a session in that workspace with koloft session new --workspace to write it into CLAUDE.md and AGENTS.md and open a pull request; a folder that is no git repository: that session changes the file; anything else (GitLab, a repository only on its own machine, no push right): give the owner the sentence to add.
+   c. Only when nothing tells them apart: offer to add one sentence to the project's instruction files so AI sessions working there mark what needs the owner's decision, in the way its own tool allows (a fixed start of an issue comment, a status, a label). Give the exact sentence, in the project's language, naming the owner's account in that tool, never "the owner". In a repository others commit to, say they will see it. Options: add it (recommended); do not, and read everything each time (say how much longer it takes); do not look at that source. If added: a git repository on GitHub the owner can push to: start a session in that workspace with koloft session new --workspace <workspace> ${PICKED_FLAGS} to write it into CLAUDE.md and AGENTS.md and open a pull request; a folder that is no git repository: that session changes the file; anything else (GitLab, a repository only on its own machine, no push right): give the owner the sentence to add.
    d. Which pull requests are the owner's, with counts: opened by the owner or asking the owner to review (recommended), or all of them.
    e. What changes on an item once the owner decided it, so it stops counting: suggest undoing the mark from b or c (remove that label, set that status), or nothing where no mark picks the items or the decision itself ends it (a session closed, a pull request merged).
    f. Show the note you wrote down, word for word: right, or change it. Then save it with koloft todo note <workspace> -- "<note>". The note says where the to-dos are, which count, which pull requests count, how to tell that someone already works on one, and what changes on a decided item so it stops counting.
    A workspace that already has a note, but one that does not say what changes on a decided item: before step 3, ask only question e, add the answer to the note, show it word for word and save it. Take only those used in the last 2 weeks; with more than one, first say how many and offer: ask now (recommended), later. When a helper's report brings such an answer, add it to that note the same way.
    Say once, too: what the to-dos say is read by the AI company of the agent you run on, which may not be the one the owner set the tool up with. A tool set up only inside one project: ask whether to set it up everywhere, or leave that source out for now. The owner can ask you to go over a workspace's note again at any time.
-3. If even one item is left, start a helper in your own folder (koloft session new --name "<'Sort out to-dos' in the owner's language>" -- "<task>"). Always do this, for one item too, and even when the owner could answer an item in its own session: the owner may be on a phone, where a session's own question shows only once that session has a room on Discord, but the helper's questions always do, and the helper keeps the questions from crowding you. Never ask about the items yourself, and never send the owner to answer in a session. With nothing left, just tell the owner so. Tell the owner how many items and about how many minutes. The helper runs koloft todo itself.
+3. If even one item is left, start a helper in your own folder (koloft session new --name "<'Sort out to-dos' in the owner's language>" ${PICKED_FLAGS} -- "<task>"). Always do this, for one item too, and even when the owner could answer an item in its own session: the owner may be on a phone, where a session's own question shows only once that session has a room on Discord, but the helper's questions always do, and the helper keeps the questions from crowding you. Never ask about the items yourself, and never send the owner to answer in a session. With nothing left, just tell the owner so. Tell the owner how many items and about how many minutes. The helper runs koloft todo itself.
 4. The helper reads each workspace's sources as its note says, keeps what fits, and drops what someone already works on: an open pull request says it closes it, or a session's name or branch holds its number. It reads each item's own record, drops what does not need the owner, and asks the owner about the rest, one item at a time. An open or asleep session whose work is done still needs the owner, to decide whether to close it: one not asking the owner, whose last turn (koloft session read <session> --last 1) says its work is done and asks the owner nothing, with no pull request of its own on its line, and whose line says "nothing left in its worktree" or "closing it deletes no worktree", or that is on another machine. Ask about all of these, with the closed sessions that have nothing left, as one batch: close them all (tab, sidebar row, worktree and branch), ask one by one, or leave them for now. Close an open or asleep one as it is, with koloft session close alone. Of those on another machine, an open one is only stopped (its tab closes, its row stays) and an asleep one is left as it is; say which ones those are. If Koloft refuses to close one, tell the owner why. It goes through every item in one run and never stops to ask whether to go on; if the owner says to stop, the rest are left for later and it reports. "Leave it for now" means the item is asked again next time; there is no "never ask again". What the owner decides, it does, by koloft session send, answer, resume and close, koloft gh, or the item's tool. A session on another machine can be stopped but not closed for good. At the end it reports to you: done, left for later and skipped, one line each, and you tell the owner. Right after that report, as its very last step, the helper closes itself for good with koloft session close. That counts as the owner asking for it: a to-do helper is started to end with its report, and closing it loses nothing the owner needs. So it waits for no more work, and a later question from the owner goes to you. You do not close it; one you still see open after its report skipped that step, so close it with koloft session close "<helper>".
 
 Rules for every question (the helper's, and yours in step 2):
@@ -448,7 +469,7 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} Before opening a GitHub issue, first look for one already open with koloft gh issue list --repo <owner>/<name> --search "<words in English>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` : ''} ${SORT_OUT_THE_TO_DOS}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's). ${PICK_FOR_THE_TASK} ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} Before opening a GitHub issue, first look for one already open with koloft gh issue list --repo <owner>/<name> --search "<words in English>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` : ''} ${SORT_OUT_THE_TO_DOS}`
 }
 
 export function butlerHelperRole(name: string): string {

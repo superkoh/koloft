@@ -47,6 +47,7 @@ import {
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
+  readAgyModels,
   prepareAgyHome,
   readAgyQuota,
   setAgyApiKeyRoute
@@ -97,6 +98,7 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
+import type { ListedModel } from '@shared/sessionPicks'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
@@ -1915,7 +1917,35 @@ const sessionSync = new SessionSync({
   notice: noticeOf
 })
 
+const A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS = 3_600_000
+const modelLists = new Map<BackendId, { at: number; listed: Promise<ListedModel[] | undefined> }>()
+
+async function readModelList(backend: BackendId): Promise<ListedModel[] | undefined> {
+  if (backend === 'codex') {
+    const picked = codexPicker.peek(accountViews())
+    return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
+  }
+  const target = await agyOneShotTarget()
+  if (!target) return undefined
+  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done?.())
+}
+
+function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
+  const kept = modelLists.get(backend)
+  if (kept && Date.now() - kept.at < A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS) return kept.listed
+  const listed = readModelList(backend).catch(() => undefined)
+  modelLists.set(backend, { at: Date.now(), listed })
+  void listed.then((models) => {
+    if (!models?.length && modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
+  })
+  return listed
+}
+
 const sessionDeps: SessionVerbDeps = {
+  pickFacts: async (backend) => ({
+    fableLeft: picker.fableLeft(),
+    ...((backend === 'codex' || backend === 'agy') && { listed: await listedModels(backend) })
+  }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
   tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,

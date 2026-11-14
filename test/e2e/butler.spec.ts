@@ -47,7 +47,8 @@ import {
   waitForAllCalls,
   waitForCalls,
   waitStartupTurnOver,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
 import { openSettings } from './helpers/extensions'
@@ -328,7 +329,11 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await openButler(page)
       const tabId = await butlerTabId(page, env)
       await page.evaluate(
-        (id) => window.api.terminal.write(id, '/koloft session new -- look into the logs\r'),
+        (id) =>
+          window.api.terminal.write(
+            id,
+            '/koloft session new --model sonnet --effort low -- look into the logs\r'
+          ),
         tabId
       )
       const [, helper] = await waitForAllCalls(env, 2, 60_000)
@@ -357,7 +362,11 @@ test.describe('The butler: one global session at the top of the sessions list, k
         (s) => s.tabId === tabId
       )!
       await page.evaluate(
-        (id) => window.api.terminal.write(id, '/koloft session new -- sort out the to-dos\r'),
+        (id) =>
+          window.api.terminal.write(
+            id,
+            '/koloft session new --model sonnet --effort low -- sort out the to-dos\r'
+          ),
         tabId
       )
       const helperRow = butlerHelperRows(page)
@@ -767,9 +776,12 @@ test.describe('The butler: one global session at the top of the sessions list, k
     try {
       await startSessionIn(page, 'ws-a')
       await openButler(page)
-      expect(await koloftSays(page, 'session new --workspace ws-b -- "Check the docs."')).toContain(
-        'Started'
-      )
+      expect(
+        await koloftSays(
+          page,
+          `session new ${picksFor('claude')} --workspace ws-b -- "Check the docs."`
+        )
+      ).toContain('Started')
       await expect(wsRows(page, 'ws-b')).toHaveCount(1, { timeout: 30_000 })
       const mark = '.ws-tab-sub .session-backend-icon[title="started by Alfred"]'
       await expect(wsRows(page, 'ws-b').locator(mark)).toHaveCount(1, { timeout: 30_000 })
@@ -811,7 +823,7 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
 
       const started = await koloftRun(
         page,
-        'session new --workspace ws-b --backend codex -- "Check the docs."'
+        `session new ${picksFor('codex')} --workspace ws-b --backend codex -- "Check the docs."`
       )
       expect(started.exit).toBe(0)
       await expect

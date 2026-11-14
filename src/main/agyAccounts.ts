@@ -4,6 +4,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import type { QuotaBucket } from '@shared/types'
 import { FIVE_HOUR_MINUTES, WEEK_MINUTES, windowLabel } from '@shared/accountUsage'
+import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
 import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
@@ -206,6 +207,22 @@ export function readAgyQuota(
       [`--gemini_dir=${home}`, '-p', '/usage', '--output-format', 'json'],
       { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
       (error, stdout) => resolve(error ? undefined : agyQuotaFrom(stdout))
+    ).stdin?.end()
+  })
+}
+
+// AGY§21
+export function readAgyModels(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+  signedInArgs: string[]
+): Promise<ListedModel[] | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      binary,
+      [...signedInArgs, 'models'],
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      (error, stdout) => resolve(error ? undefined : agyListedModels(stdout))
     ).stdin?.end()
   })
 }

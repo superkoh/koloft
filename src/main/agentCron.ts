@@ -14,7 +14,7 @@ import {
 } from '@shared/types'
 import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
-import { effortsFor, takenEffort } from '@shared/cronModels'
+import { effortNotTaken } from '@shared/cronModels'
 import { describeSchedule, describeWhen, DOW } from '@shared/schedule'
 import {
   histText,
@@ -230,10 +230,7 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
 }
 
 export function effortRefusal(input: CronSaveInput, patch: CronPatch): string | null {
-  const backend = input.backend ?? 'claude'
-  if (!patch.effort || takenEffort(backend, input.model, patch.effort)) return null
-  const takes = effortsFor(backend, input.model).join(', ')
-  return `${input.model ?? 'the default model'} does not take --effort ${patch.effort}; it takes ${takes}.`
+  return effortNotTaken(input.backend ?? 'claude', input.model, patch.effort)
 }
 
 export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {
