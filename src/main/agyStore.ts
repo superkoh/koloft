@@ -209,19 +209,22 @@ const saidOf = (step: TranscriptStep): SaidLine | undefined =>
 // AGY§8
 export async function readAgyTurns(file: string, n: number): Promise<Turn[]> {
   const turns: Turn[] = []
-  await eachTranscriptStep(file, (step) => addToTurns(turns, step))
+  await eachTranscriptStep(file, (step) => {
+    addToTurns(turns, step)
+  })
   return turns.slice(-n)
 }
 
-function addToTurns(turns: Turn[], step: TranscriptStep): void {
+function addToTurns(turns: Turn[], step: TranscriptStep): Turn | undefined {
   const said = saidOf(step)
-  if (!said) return
+  if (!said) return undefined
   const open = turns[turns.length - 1]
   if (said.who === 'owner' || !open) turns.push({ said: [], reply: '', at: said.at })
   const turn = turns[turns.length - 1]
   if (said.who === 'owner') turn.said.push(said)
   else turn.reply = turn.reply ? `${turn.reply}\n\n${said.text}` : said.text
   turn.at = said.at
+  return turn
 }
 
 // AGY§8
@@ -268,8 +271,8 @@ export interface TokenTotals {
   cacheRead: number
 }
 
-export interface LastTurnAndTokens {
-  turn?: Turn
+export interface TurnsAndTokens {
+  turns: Turn[]
   tokens: TokenTotals
 }
 
@@ -280,23 +283,28 @@ export class TranscriptFollower {
   private tokens: TokenTotals = { input: 0, output: 0, cacheRead: 0 }
   private reading: Promise<unknown> = Promise.resolve()
 
-  constructor(readonly file: string) {}
+  constructor(
+    readonly file: string,
+    private onlyTheLastTurnAtFirst = false
+  ) {}
 
-  catchUp(): Promise<LastTurnAndTokens> {
+  catchUp(): Promise<TurnsAndTokens> {
     const read = this.reading.then(() => this.readWhatWasAdded())
     this.reading = read.catch(() => undefined)
     return read
   }
 
-  private async readWhatWasAdded(): Promise<LastTurnAndTokens> {
-    const unreadable = { tokens: { ...this.tokens } }
+  private async readWhatWasAdded(): Promise<TurnsAndTokens> {
+    const unreadable = { turns: [], tokens: { ...this.tokens } }
     const size = (await fs.promises.stat(this.file).catch(() => undefined))?.size
     if (size === undefined) return unreadable
     if (size < this.cursor.offset) {
       this.cursor = { offset: 0, tail: [] }
       this.turns = []
       this.tokens = { input: 0, output: 0, cacheRead: 0 }
+      this.onlyTheLastTurnAtFirst = true
     }
+    const grew: Turn[] = []
     while (this.cursor.offset < size) {
       const from = this.cursor.offset
       const lines = await readAppendedLines(this.file, size, this.cursor)
@@ -304,20 +312,30 @@ export class TranscriptFollower {
       if (this.cursor.offset === from) break
       for (const line of lines) {
         const step = line && stepOf(line)
-        if (step) addLastTurnStep(this.turns, this.tokens, step)
+        if (step) addLastTurnStep(this.turns, this.tokens, step, grew)
       }
     }
-    const turns = this.turns.map((turn) => ({ ...turn, said: [...turn.said] }))
+    const copy = (turn: Turn): Turn => ({ ...turn, said: [...turn.said] })
+    const last = this.turns.map(copy)
+    const turns = grew.map((turn) => (turn === this.turns[0] ? last[0] : turn))
     const tokens = { ...this.tokens }
     const lineWithNoNewlineYet =
       this.cursor.tail.length && stepOf(Buffer.concat(this.cursor.tail).toString('utf8'))
-    if (lineWithNoNewlineYet) addLastTurnStep(turns, tokens, lineWithNoNewlineYet)
-    return { turn: turns[0], tokens }
+    if (lineWithNoNewlineYet) addLastTurnStep(last, tokens, lineWithNoNewlineYet, turns)
+    const onlyTheLast = this.onlyTheLastTurnAtFirst
+    this.onlyTheLastTurnAtFirst = false
+    return { turns: onlyTheLast ? turns.slice(-1) : turns, tokens }
   }
 }
 
-function addLastTurnStep(turns: Turn[], tokens: TokenTotals, step: TranscriptStep): void {
-  addToTurns(turns, step)
+function addLastTurnStep(
+  turns: Turn[],
+  tokens: TokenTotals,
+  step: TranscriptStep,
+  grew: Turn[]
+): void {
+  const turn = addToTurns(turns, step)
+  if (turn && grew.at(-1) !== turn) grew.push(turn)
   if (turns.length > 1) turns.shift()
   if (step.type !== 'PLANNER_RESPONSE') return
   tokens.input += step.inputTokens

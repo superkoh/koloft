@@ -1101,6 +1101,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
+    const resumed = switched || (!!run.resumeKey && this.nativeId(run.resumeKey) === conversationId)
+    run.transcript = new TranscriptFollower(
+      agyTranscript(this.geminiOf(run.cwd), conversationId),
+      resumed
+    )
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
     if (run.commands?.size) this.publishBackground(run)
     if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
@@ -1276,11 +1281,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!chasing) void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
-    if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file)
+    if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file, true)
     const read = await run.transcript.catchUp().catch(() => undefined)
     if (!read) return
-    const { turn, tokens: t } = read
-    if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
+    const { turns, tokens: t } = read
+    for (const turn of turns)
+      if (turn.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
     const tokens = {
       inTok: t.input,
       outTok: t.output,
