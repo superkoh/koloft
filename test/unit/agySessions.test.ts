@@ -31,6 +31,7 @@ const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
 const LISTED_TITLE_READ_SETTLES_MS = 300
+const TITLE_LANDS_AFTER_THE_TURN_MS = 1500
 const STANDING_CRON = {
   name: 'schedule',
   args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
@@ -421,6 +422,16 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(true)
   })
 
+  // AGY§5
+  it('counts a folder the owner’s own agy settings trust as trusted before any launch, as a launch does', () => {
+    fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'antigravity-cli', 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    expect(sessions.trustsFolder(repo)).toBe(true)
+  })
+
   // AGY§32
   it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
     const memory = path.join(repo, 'AGENTS.md')
@@ -751,6 +762,23 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     say(id, state('done'))
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
     expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
+  it('takes the title agy makes up even when it reaches agy’s list a few seconds after a short turn ends', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Tidy the readme',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'), {
+      timeout: 3000
+    })
   })
 
   // AGY§16

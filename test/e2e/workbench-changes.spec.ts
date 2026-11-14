@@ -79,6 +79,7 @@ const blockOf = (page: Page, rel: string): Locator =>
 const stream = (page: Page): Locator => page.locator(CV.stream)
 
 const GIT_KILLED_AFTER_MS = 3000
+const SNAPBACK_SETTLE_MS = 1500
 
 function hangStatusReadsWhileFlagged(
   env: E2EEnv,
@@ -961,6 +962,14 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await page.keyboard.type('part6rewritten_')
     await expect(bar.locator('.find-count')).toHaveText(/^1\/900$/)
     await expect.poll(() => far.locator(CV.diffRow).count(), { timeout: 30_000 }).toBe(farRows)
+    const firstHit = far.locator(CV.diffRow, { hasText: /part6rewritten_/ }).first()
+    await expect
+      .poll(async () => {
+        const view = await stream(page).boundingBox()
+        const hit = await firstHit.boundingBox()
+        return !!view && !!hit && hit.y >= view.y && hit.y + hit.height <= view.y + view.height
+      })
+      .toBe(true)
 
     const top = await blockTop(page, 'bulk/part-6.ts')
     await stream(page).evaluate((el, y) => {
@@ -969,6 +978,42 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
     expect(await far.locator(CV.diffRow).count()).toBe(farRows)
     await expect(bar.locator('.find-count')).toHaveText(/\/900$/)
+  })
+
+  test('with ⌘F on a match in the first block, scrolling down to a far block that then draws leaves the stream where it was scrolled to', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    setupChangeFixture(env.workspaces.a).bigChange()
+    await openChanges(page)
+    await waitStream(page, 6, 60_000)
+
+    const first = blockOf(page, 'bulk/part-1.ts')
+    const far = blockOf(page, 'bulk/part-6.ts')
+    await expect(first.locator(CV.diffRow).first()).toBeVisible()
+    await expect(far.locator(CV.diffRow)).toHaveCount(0)
+
+    await first.locator(CV.diffRow).first().click()
+    await sendShortcut(app, 'shortcut:find')
+    const bar = page.locator('.find-bar')
+    await expect(bar.locator('.find-input')).toBeFocused()
+    await page.keyboard.type('part1rewritten_')
+    await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+
+    const top = await blockTop(page, 'bulk/part-6.ts')
+    await stream(page).evaluate((el, y) => {
+      el.scrollTop = y
+    }, top)
+    await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
+    await page.waitForTimeout(SNAPBACK_SETTLE_MS)
+    const view = await stream(page).boundingBox()
+    const farBox = await far.boundingBox()
+    expect(farBox!.y).toBeLessThan(view!.y + view!.height)
+    expect(farBox!.y + farBox!.height).toBeGreaterThan(view!.y)
+    await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
   })
 
   test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({

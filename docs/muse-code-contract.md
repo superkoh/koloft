@@ -681,6 +681,43 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   puts it up: `1` Space `3` Space `5` Enter, `2` Enter, Enter sent `selected_labels`
   then `selected_label: "Blue"`, the same for the reverse order and for a note on either
   question. Keys in one write (`"1 3 5\r\r"`) were all taken (2 runs).
+- **A one-question several-pick dialog left half-answered goes back to nothing ticked
+  with `N+2`, Down, Down, Enter, `N+1`, Space, then `1`.** Measured 2026-11-13 on `Muse Code
+  1.4.11 (1.4.11-R6667.1)` (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`, Docker
+  `--network none`) and on `Muse Code 1.4.18 (1.4.18-R8587.1)` (the same image's
+  launcher updating itself, network on), a python3 pty 160×50 answering the cursor,
+  colour and 7501 queries, the screen read through `pyte`, the fake `/responses` model
+  above asking one `request_user_input` question with `selection: {"mode":"multiple"}`
+  and three options, a fresh `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run, keys 300 ms
+  apart from 2.5 s after `blocked`; one run per case.
+  - The review page lists one row per question, then `Submit answers` (highlighted) and
+    `Interrupt turn`. There digits, Space, ← and Shift+Tab do nothing; ↑/↓ move and wrap
+    (↑ from the top row lands on `Interrupt turn`, ↓ from `Interrupt turn` on the top
+    row); Enter on a question's row goes back to that question with its ticks kept and
+    the highlight on its Submit row; Esc goes back to the last question. A question's
+    own footer says Esc interrupts.
+  - So `N+2` (review page: nothing; question: the highlight to Submit), Down, Down (to
+    the question's row / around to row 2), Enter (back to the question / row 2 toggled),
+    `N+1` Space leave only None of the above ticked (it unticks the rest), and `1` puts
+    the highlight on row 1, as on a fresh question. Koloft's usual keys after the run
+    sent just what was asked (`selected_labels: ["Banana"]`, `["Banana","Cherry"]`, or
+    `{"free_text":"None of the above","note":"Mango"}`) from: nothing pressed; Apple and
+    Cherry ticked; None of the above ticked; the review page up; the "Nothing is
+    checked" warning up; Apple ticked by a lone Enter; Koloft's `1` Space `3` Space `5`
+    Enter Enter cut after its 1st, 3rd or 5th key; the same with its `3` lost and the
+    last Enter cut, or its `5` and last Enter lost; `max_selections: 2` with two ticked, on the question and on the review
+    page; `min_selections: 2` (18 cases, each as asked on 1.4.18, again on 1.4.18 inside
+    tmux 3.3a as a remote tab runs it, `tmux -u -f /dev/null`, and on 1.4.11). Losing Koloft's `1` still sent Apple and Cherry (Space ticked the
+    highlighted row 1); losing its first Space sent `["Cherry"]`, its second
+    `["Apple"]` — answers taken, so no second answer follows.
+  - The same run with Up in place of the two Downs did as well from such states (36 runs
+    on 1.4.11, 11 of them in tmux; 15 on 1.4.18), but pressed after the question had closed, in the empty
+    input box, Up brought back the last prompt and Enter sent it to the model again (2
+    of 2). With the two Downs the box sent `5` as a message instead (1 of 1), and the
+    rest of the run then sent `4 12 5`.
+  - Not tried: the run from the middle of a run of its own whose rest was lost.
+  - With two questions, ← and → switch question and wrap (← on question 1 goes to the
+    last one), so no key run was found that reaches question 1 from every page.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting
@@ -1216,3 +1253,35 @@ Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike
 or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
 agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
 butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.
+
+## §23 What muse asks the terminal
+
+**Every question muse asks its terminal is one Koloft's off-screen batching lets through
+at once.** Measured 2026-11-12 on muse 1.4.15 (`1.4.15-R8339.1`, the launcher in the
+`koloft-muse-probe-1411` image updating itself to it), Linux arm64 in Docker: a python pty
+at 120×40 that answered as Koloft's terminal does (DA1, DA2, cursor position, DECRQM,
+OSC 4 and 10–12, `?996n` with `?997;1n`, OSC 7501 with Koloft's reply) and left
+XTVERSION and `?u` unanswered as Koloft does (CODEX§37), a fake `/responses`
+model (`--base-url`, `META_API_KEY`, `MUSE_MODEL`) whose answer ran `touch` through the
+`bash` tool, `TERM_PROGRAM=Apple_Terminal`, Koloft's launch flags (`--approval-judge off
+--sandbox-network enabled`). Two runs: one as Koloft starts it, one with
+`--approval-mode untrusted` so the run question showed. Each run: the trust question
+(`1`, Enter), one prompt, a resize to 100×30, `/clear`, Ctrl+C twice. An earlier
+round that left `?996n` and OSC 4 unanswered asked exactly the same.
+
+- At start, in one read: `ESC]7501;?ESC\`, `ESC]10;?BEL`, `ESC]11;?BEL`, and the 16
+  palette questions `ESC]4;0;?BEL` … `ESC]4;15;?BEL`; then `ESC[6n` on its own.
+- When the input box first draws (after the trust answer) and again after `/clear`:
+  `ESC[?996n` (the colour-scheme question) and `ESC[6n`.
+- Nothing else: no DA1, no XTVERSION, no DECRQM, no `?u`, no DCS or APC question, and
+  nothing during the turn, the run question or the resize. `ESC[22;0t` and `ESC[23;0t`
+  (save and restore the title) are not questions. Both runs the same.
+- Each run's reads, replayed in order and at their recorded times into Koloft's
+  `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
+- The OSC 7501 question is answered by Koloft's main process straight from the pty
+  output (§3), not by the terminal, so the batching never delays its answer; the rest
+  are answered by the terminal and need the early send.
+
+Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
+
+Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.

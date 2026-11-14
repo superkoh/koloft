@@ -113,6 +113,48 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     }
   })
 
+  test('a remote row resumed on a custom endpoint account that pins a model Claude Code does not know runs with the context capped at 200k on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    addKeychainEntry(env, 'koloft-dev-custom-endpoint', 'glm', 'custom-endpoint-fixture-token')
+    seedSettings(env, {
+      accounts: [
+        {
+          name: 'glm',
+          kind: 'custom',
+          enabled: true,
+          fable: 'unknown',
+          status: 'ok',
+          addedAt: 1,
+          baseUrl: 'https://custom-endpoint.invalid/api',
+          model: 'glm-5.2'
+        }
+      ]
+    })
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    seedJsonl(env, remoteDir(env), {
+      root: path.join(env.userData, 'remote', REMOTE_HOST, 'projects'),
+      cwd: remoteDir(env),
+      summary: 'Yesterday on the build machine'
+    })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await row.click()
+      const calls = await waitForCalls(env, 1, 90_000)
+      expect(calls[calls.length - 1].disable1mContext).toBe('1')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   function seedRemoteRowWithNoUsableAccount(env: E2EEnv): string {
     seedSettings(env, { accounts: [seededAccount('no-secret-in-the-keychain')] })
     installFakeRemote(env)
