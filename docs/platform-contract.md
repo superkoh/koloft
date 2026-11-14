@@ -2067,6 +2067,15 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   255 alone says the kill did not reach the machine: `can't find session: <name>` with
   a server running, `error connecting to …` with none (2026-10-10, tmux 3.3a in the
   e2e sshd Docker image, run directly).
+- **A session's id (`#{session_id}`, `$N`) stays the same through `rename-session`, and
+  `kill-session -t '$N'` ends that session alone**; an id with no session exits 1
+  (`can't find session`). A pane can read its own session's id with `display-message
+  -p`, no client attached. Ids are per server and start again at `$0` once the server
+  restarts, so an id kept from before a restart can name another session: pair it with
+  `#{session_created}` and match both in `list-sessions -F`. `display-message -t '$N'`
+  for an id with no session prints an empty line and exits 0 from 3.2a on (1 in 2.6), so
+  it cannot tell whether the id is alive. (2026-11-14, tmux 2.6, 3.2a, 3.3a, 3.4, 3.5a and
+  3.8 in Docker, two detached sessions on one `-L` socket, 1 run each.)
 - **With no `default-shell`, tmux runs the new-session command through `$SHELL`**, the
   login shell — for a fish user, sh syntax is a syntax error.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)

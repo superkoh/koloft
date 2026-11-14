@@ -967,6 +967,51 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
       expect(await machine().endTmuxSession(tmux, 'pty-1')).toBeUndefined()
       expect(fs.existsSync(killed)).toBe(false)
     })
+
+    const tmuxListing = (...sessions: string[]): string => {
+      const bin = path.join(home, '.local', 'bin')
+      fs.mkdirSync(bin, { recursive: true })
+      const killed = path.join(home, 'killed-sessions')
+      fs.writeFileSync(
+        path.join(bin, 'tmux'),
+        `#!/bin/sh
+[ "$3" = list-sessions ] && { printf '%s\\n' ${sessions.map((s) => `'${s}'`).join(' ')}; exit 0; }
+[ "$3" = kill-session ] || exit 0
+printf '%s\\n' ${sessions.map((s) => `'${s}'`).join(' ')} | grep -q -e "^$5 " -e " $5\\$" || { echo "can't find session: $5" >&2; exit 1; }
+printf '%s\\n' "$5" >> ${JSON.stringify(killed)}
+`,
+        { mode: 0o755 }
+      )
+      return killed
+    }
+
+    const tabIdFile = (tabId: string, stamp: string): void => {
+      fs.mkdirSync(path.join(home, '.koloft', 'tabs'), { recursive: true })
+      fs.writeFileSync(path.join(home, '.koloft', 'tabs', `${tabId}.tmuxid`), `${stamp}\n`)
+    }
+
+    it('a kill landing after the hook renamed the session but before it wrote the name file ends the session by the id the tab kept at its start, and a launch of the cleared conversation starts afresh', async () => {
+      const killed = tmuxListing(`$3 1700000000 k-${cleared}`)
+      tabNameFile('pty-1', tmux)
+      tabIdFile('pty-1', '$3 1700000000')
+      const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+      const host = machine(runOnMachine, { alive: () => new Set([cleared]), pickAccount })
+
+      const kill = host.endTmuxSession(tmux, 'pty-1')
+      await host.launch({ root: keyed('/w'), resumeSessionId: cleared })
+      expect(await kill).toBeUndefined()
+      expect(fs.readFileSync(killed, 'utf8')).toBe('$3\n')
+      expect(pickAccount).toHaveBeenCalled()
+    })
+
+    it("an id kept from before the machine's tmux restarted, now naming another tab's session, is never killed", async () => {
+      const killed = tmuxListing('$0 1700000999 k-another-tab')
+      tabNameFile('pty-1', tmux)
+      tabIdFile('pty-1', '$0 1700000000')
+
+      expect(await machine().endTmuxSession(tmux, 'pty-1')).toBeUndefined()
+      expect(fs.existsSync(killed)).toBe(false)
+    })
   })
 
   // ADR-0044

@@ -20,12 +20,19 @@ would keep running on the machine with no tab and no error. The kill does not wa
 rename and pick a name from its result: a rename can take on the machine and still come
 back failed (the link drops, the name file cannot be written).
 A `/clear`'s rename is the hook's, on the machine, and reaches the tracker only one mirror
-pull later, so a tab's kill then tries, last, the name in the tab's `tabs/<tab>.tmux`, never
+pull later, and the hook writes the new name to `tabs/<tab>.tmux` only after renaming, so a
+kill between those two steps finds no session under any name it knows. So a tab's start
+keeps its tmux session's id and creation time in `tabs/<tab>.tmuxid`, read from inside
+the pane before the agent runs, and a kill given the tab tries that first: an id
+survives every rename. It kills by id only when both still match the machine's
+`list-sessions`, since ids start again at `$0` once the tmux server restarts and an old
+id can name another tab's session (PLATFORM§35). It then tries the names (a tab started
+before the id was kept has no id file) and, last, the name in `tabs/<tab>.tmux`, never
 an empty one (tmux would pick a session itself: another tab's), and prints the name it
-ended. Koloft books that session as ended by it, and a launch of a conversation the
+ended. Muse and Antigravity tabs pass their tab too. Koloft books that session as ended by it, and a launch of a conversation the
 machine still lists waits for every kill on the wire there (any one of them may be ending it
-under its new name) before choosing between attach and start. A tab's start deletes the
-file, so a name left by an earlier run of that tab id never reaches a kill. Reading the file
+under its new name) before choosing between attach and start. A tab's start deletes both
+files, so a name or id left by an earlier run of that tab id never reaches a kill. Reading the file
 in a separate ssh call first (as Muse and Antigravity tabs do) costs one more round trip
 and leaves the books naming the old session while the kill runs.
 **Rejected**: renaming in the hook script on any report whose session id differs from the
