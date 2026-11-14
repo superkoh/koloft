@@ -403,6 +403,7 @@ const api: KoloftApi = {
   fs: {
     listDir: (p, opts) => ipcRenderer.invoke(CH.fs.listDir, p, opts),
     dirExists: (p) => ipcRenderer.invoke(CH.fs.dirExists, p),
+    fileExists: (p) => ipcRenderer.invoke(CH.fs.fileExists, p),
     search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
     gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
     gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),

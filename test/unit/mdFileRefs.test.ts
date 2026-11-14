@@ -99,8 +99,14 @@ describe('fileRefs', () => {
     expect(md.render('sample.ts:12\n')).not.toContain('href')
   })
 
-  it('leaves a path with no line, or one ending a sentence, unlinked in the preview', () => {
-    expect(md.render('edited src/app.ts and src/b.ts:3.\n')).not.toContain('md-fileref')
+  it('links a path:line that ends a sentence, and leaves a path with no line unlinked', () => {
+    const html = md.render('edited src/app.ts and src/b.ts:3.\n')
+    expect(html).toContain('>src/b.ts:3</a>.')
+    expect(html).not.toContain('data-path="src/app.ts"')
+  })
+
+  it('takes the first line of a line range', () => {
+    expect(md.render('see src/a.ts:10-20\n')).toContain('data-line="10"')
   })
 })
 

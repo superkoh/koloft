@@ -81,10 +81,8 @@ const PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION =
   '[^\\s:"\'`<>()\\[\\]{}|,;/，。、；：！？（）《》「」【】…]'
 const NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH =
   '(?![\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]+[A-Za-z0-9])'
-const PATH_WITH_SUFFIX = `(?<![\\w.~/-])${NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH}(/?(?:${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+/)*${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+\\.([A-Za-z0-9]+))`
-const REF_RE = new RegExp(`${PATH_WITH_SUFFIX}:(\\d+)(?::\\d+)?(?![\\w.-])`, 'gu')
-const REF_WITH_OR_WITHOUT_LINE_ENDING_A_SENTENCE_RE = new RegExp(
-  `${PATH_WITH_SUFFIX}(?::(\\d+)(?::\\d+)?)?(?![\\w-]|\\.\\w)`,
+const PATH_WITH_OPTIONAL_LINE_ENDING_A_SENTENCE_RE = new RegExp(
+  `(?<![\\w.~/-])${NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH}(/?(?:${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+/)*${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+\\.([A-Za-z0-9]+))(?::(\\d+)(?:[:-]\\d+)?)?(?![\\w-]|\\.\\w)`,
   'gu'
 )
 const URL_RE = /[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g
@@ -97,12 +95,13 @@ interface Ref {
   line: string
 }
 
-function scanFileRefs(text: string, re: RegExp): Ref[] {
+export function findFilePaths(text: string): Ref[] {
   const urls: [number, number][] = []
   URL_RE.lastIndex = 0
   for (let u = URL_RE.exec(text); u; u = URL_RE.exec(text))
     urls.push([u.index, u.index + u[0].length])
 
+  const re = PATH_WITH_OPTIONAL_LINE_ENDING_A_SENTENCE_RE
   const out: Ref[] = []
   re.lastIndex = 0
   for (let m = re.exec(text); m; m = re.exec(text)) {
@@ -115,11 +114,7 @@ function scanFileRefs(text: string, re: RegExp): Ref[] {
 }
 
 export function findFileRefs(text: string): Ref[] {
-  return scanFileRefs(text, REF_RE)
-}
-
-export function findFilePaths(text: string): Ref[] {
-  return scanFileRefs(text, REF_WITH_OR_WITHOUT_LINE_ENDING_A_SENTENCE_RE)
+  return findFilePaths(text).filter((ref) => ref.line)
 }
 
 function linkTokens(ref: Ref, level: number, state: StateCore): Token[] {
