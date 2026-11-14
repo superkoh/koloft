@@ -14,8 +14,8 @@ import {
   runIn,
   sendShortcut,
   setNextSessionTitle,
+  readCalls,
   settingsOnDisk,
-  shownCenterTerm,
   startSessionIn,
   waitBooted,
   waitForCalls
@@ -61,12 +61,45 @@ async function waitColumnRiseInOver(page: Page): Promise<void> {
     .toBe(true)
 }
 
-async function waitTuiToldTheWidthBesideTheBoundPanel(page: Page): Promise<void> {
+async function waitTuiToldItsSizeBesideTheBoundPanel(page: Page, env: E2EEnv): Promise<void> {
   await expect.poll(() => layoutState(page)).toBe('T2')
   await expect
     .poll(async () => {
-      const cols = (await shownCenterTerm(page))?.cols
-      return (await centerTerm(page).innerText()).includes(`[fake-claude] winch ${cols}x`)
+      const shown = await page.evaluate(() => {
+        const terms = (
+          window as unknown as {
+            __koloftTerms?: Record<
+              string,
+              {
+                cols: number
+                rows: number
+                element?: HTMLElement
+                buffer: {
+                  active: {
+                    length: number
+                    getLine(y: number): { translateToString(trim: boolean): string } | undefined
+                  }
+                }
+              }
+            >
+          }
+        ).__koloftTerms
+        for (const t of Object.values(terms ?? {})) {
+          const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
+          if (!wrap || wrap.style.display === 'none' || wrap.style.visibility === 'hidden') continue
+          const lines = t.buffer.active
+          let lastWinch: string | null = null
+          for (let y = 0; y < lines.length; y++) {
+            const text = lines.getLine(y)?.translateToString(true) ?? ''
+            lastWinch = /\[fake-claude\] winch (\d+x\d+)/.exec(text)?.[1] ?? lastWinch
+          }
+          return { cols: t.cols, size: `${t.cols}x${t.rows}`, lastWinch }
+        }
+        return null
+      })
+      if (!shown) return false
+      if (shown.lastWinch) return shown.lastWinch === shown.size
+      return readCalls(env).at(-1)?.cols === shown.cols
     })
     .toBe(true)
 }
@@ -302,7 +335,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
   }) => {
     test.setTimeout(180_000)
     await startSessionIn(page, 'ws-a')
-    await waitTuiToldTheWidthBesideTheBoundPanel(page)
+    await waitTuiToldItsSizeBesideTheBoundPanel(page, env)
 
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(e.message))
