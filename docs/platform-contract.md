@@ -2223,6 +2223,20 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
   `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
   tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
+- **Under Koloft's tmux.conf, with agy or muse in the pane, tmux 3.3a asks the outer
+  terminal only `ESC[>c` (DA2) and `ESC[>q` (XTVERSION), once at attach; the bare
+  questions agy and muse ask in the pane never come out** (neither wraps one for
+  passthrough). With Claude Code in the pane it was not run; CC§12 has tmux answering
+  claude's own questions and claude wrapping only a mod's image for passthrough, so the
+  same is inferred, not checked. Started as Koloft starts a remote
+  tab (`tmux -L koloft -u -f <Koloft's conf> new-session -A -D -s <name> <agent>`) from a
+  python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
+  reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 run directly
+  in the pane (without Koloft's launcher script and status relay), each through start, trust question, a turn with a tool run, a resize,
+  `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
+  only questions the outer terminal got, both in Koloft's off-screen pass-through list
+  (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
+  3.3a, 1 run each).
 
 ## §36 ccstatusline
 
