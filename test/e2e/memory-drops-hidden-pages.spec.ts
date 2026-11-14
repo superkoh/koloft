@@ -3,30 +3,18 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { koloftReadMemoryPressure, memoryPressure, seedSettings } from './helpers/env'
-import {
-  centerTerm,
-  newSessionInWith,
-  runIn,
-  startSessionIn,
-  switchToRow,
-  terminalText,
-  waitBooted,
-  wsRows
-} from './helpers/p1'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
+import type { BackendId } from '../../src/shared/types'
+import { centerTerm, runIn, startSessionIn, switchToRow, waitBooted, wsRows } from './helpers/p1'
 import { BROWSER, cdpEndpointOf, connectCdp, guestByUrl, guestContents } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { wbFrozenTabs, wbTabByTitle } from './helpers/workbench'
-import {
-  OTHER_AGENTS_ON_THE_MACHINE,
-  REMOTE_WS_NAME,
-  addRemoteWorkspace,
-  killFakeRemote,
-  launchWithRemote
-} from './helpers/remote'
+import { REMOTE_WS_NAME, killFakeRemote, launchWithRemote, machineHome } from './helpers/remote'
+import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
 
 const TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS = 40_000
 const ONE_MIRROR_PULL_LATE_PLUS_TWO_READINGS_MS = 60_000
-const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const FAKE_CLAUDES_BUSY_TURN_MS = 30_000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const SLOW_ENOUGH_TO_SEE_THE_LOADING_BAR_MS = 2000
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
@@ -190,76 +178,89 @@ test.describe('when memory turns critical, Koloft lets go of the Workbench web p
   })
 })
 
-async function koloftExits(page: Page, tabId: string): Promise<string[]> {
-  return [
-    ...(await terminalText(page, tabId)).matchAll(/\[fake-(?:codex|muse|agy)\] koloft exit=(\d+)/g)
-  ].map((m) => m[1])
+const TURN_ON_THE_MACHINE_AS_LONG_AS_CLAUDES_BUSY: Record<
+  BackendId,
+  { line: string; lengthFile?: string }
+> = {
+  claude: { line: '/busy' },
+  codex: { line: '/busy', lengthFile: 'fake-codex-busy-ms' },
+  muse: { line: 'a long turn', lengthFile: 'fake-muse-delay' },
+  agy: { line: 'a long turn', lengthFile: 'fake-agy-delay' }
 }
 
-async function agentOpens(page: Page, tabId: string, name: string): Promise<void> {
-  const url = pageNamed(name).replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
-  const before = (await koloftExits(page, tabId)).length
-  await page.evaluate(
-    ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
-    [tabId, `/koloft open ${url}`]
-  )
-  await expect
-    .poll(async () => (await koloftExits(page, tabId)).length, {
-      timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
-    })
-    .toBe(before + 1)
-  expect((await koloftExits(page, tabId))[before]).toBe('0')
-  await expect.poll(() => server.count(`/${name}`), { timeout: 30_000 }).toBeGreaterThan(0)
+async function agentOnTheMachineOpens(page: Page, tabId: string, name: string): Promise<void> {
+  const url = server.hostUrl(PAGE_HOST_THAT_IS_NOT_THE_MAC, new URL(pageNamed(name)).pathname)
+  expect(await koloftInSession(page, tabId, `open ${url}`)).toBe('0')
+  await expect.poll(() => server.count(`/${name}`), { timeout: 30_000 }).toBe(1)
 }
 
-for (const agent of OTHER_AGENTS_ON_THE_MACHINE)
-  test.describe(`a ${agent.label} tab on a machine reached over SSH, when memory turns critical`, () => {
-    test.afterEach(({ env }) => killFakeRemote(env))
+for (const backend of SESSION_BACKENDS)
+  test(`a ${backend} session on a machine reached over SSH: while its turn runs its hidden pages stay, once the turn is over they go, the one on screen stays, and each loads again by itself when the owner comes back to it`, async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installOnTheMachine(env, backend)
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
+    const [hidden, shown, localHidden, localShown] = [
+      'hidden',
+      'shown',
+      'local-hidden',
+      'local-shown'
+    ].map((n) => `${backend}-${n}`)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const remoteTab = await startRemoteTab(page, env, backend)
+      const remoteRow = wsRows(page, REMOTE_WS_NAME).first()
+      await switchToRow(page, remoteRow)
+      await agentOnTheMachineOpens(page, remoteTab, hidden)
+      await agentOnTheMachineOpens(page, remoteTab, shown)
+      await wbTabByTitle(page, shown).click()
 
-    test(`the pages ${agent.label} on the machine opened go once nobody can see them, the one on screen stays, and each loads again by itself when the owner comes back to it`, async ({
-      env
-    }) => {
-      test.setTimeout(300_000)
-      agent.install(env)
-      seedSettings(env, { hintsOff: true })
-      env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
-      const hidden = `${agent.label.toLowerCase()}-hidden`
-      const shown = `${agent.label.toLowerCase()}-shown`
-      const { app, page } = await launchWithRemote(env)
-      try {
-        await addRemoteWorkspace(page, env)
-        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-        await agent.bound?.(page)
-        const remoteRow = wsRows(page, REMOTE_WS_NAME).first()
-        await expect(remoteRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-        const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
-        await switchToRow(page, remoteRow)
+      await startSessionIn(page, 'ws-a', backend === 'claude' ? {} : { method: 'Claude' })
+      await openAndShow(page, localHidden)
+      await openAndShow(page, localShown)
+      await expect
+        .poll(() => pagesAlive(app))
+        .toEqual([hidden, localHidden, localShown, shown].sort())
 
-        await agentOpens(page, remoteTab, hidden)
-        await agentOpens(page, remoteTab, shown)
-        await wbTabByTitle(page, shown).click()
-        await expect.poll(() => pagesAlive(app), { timeout: 30_000 }).toEqual([hidden, shown])
+      const busy = TURN_ON_THE_MACHINE_AS_LONG_AS_CLAUDES_BUSY[backend]
+      if (busy.lengthFile)
+        fs.writeFileSync(
+          path.join(machineHome(env), busy.lengthFile),
+          String(FAKE_CLAUDES_BUSY_TURN_MS)
+        )
+      await page.evaluate(
+        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+        [remoteTab, busy.line]
+      )
+      await expect(remoteRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+      memoryPressure(env, 4)
+      await expect
+        .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
+        .toEqual([hidden, localShown, shown].sort())
 
-        memoryPressure(env, 4)
-        await expect
-          .poll(() => pagesAlive(app), { timeout: ONE_MIRROR_PULL_LATE_PLUS_TWO_READINGS_MS })
-          .toEqual([shown])
-        await expect(wbFrozenTabs(page)).toContainText(hidden)
+      await expect
+        .poll(() => pagesAlive(app), {
+          timeout: FAKE_CLAUDES_BUSY_TURN_MS + ONE_MIRROR_PULL_LATE_PLUS_TWO_READINGS_MS
+        })
+        .toEqual([localShown])
+      expect(server.count(`/${hidden}`)).toBe(1)
+      expect(server.count(`/${shown}`)).toBe(1)
 
-        await startSessionIn(page, 'ws-a', { method: 'Claude' })
-        await expect
-          .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
-          .toEqual([])
-        expect(server.count(`/${shown}`)).toBe(1)
+      await switchToRow(page, remoteRow)
+      await expect.poll(() => server.count(`/${shown}`), { timeout: 30_000 }).toBe(2)
+      await expect((await guestByUrl(app, `/${shown}`)).locator('p')).toHaveText(shown)
+      await expect(wbFrozenTabs(page)).toHaveCount(1)
+      await expect(wbFrozenTabs(page)).toContainText(hidden)
+      await expect
+        .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
+        .toEqual([shown])
 
-        await switchToRow(page, remoteRow)
-        await expect.poll(() => server.count(`/${shown}`), { timeout: 30_000 }).toBe(2)
-        await expect((await guestByUrl(app, `/${shown}`)).locator('p')).toHaveText(shown)
-        await wbTabByTitle(page, hidden).click()
-        await expect.poll(() => server.count(`/${hidden}`), { timeout: 30_000 }).toBe(2)
-        await expect((await guestByUrl(app, `/${hidden}`)).locator('p')).toHaveText(hidden)
-      } finally {
-        await quitAndClose(app)
-      }
-    })
+      await wbTabByTitle(page, hidden).click()
+      await expect.poll(() => server.count(`/${hidden}`), { timeout: 30_000 }).toBe(2)
+      await expect((await guestByUrl(app, `/${hidden}`)).locator('p')).toHaveText(hidden)
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
   })
