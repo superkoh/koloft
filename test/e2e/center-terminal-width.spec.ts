@@ -44,7 +44,6 @@ import {
 import { seedWorkbenchDefault } from './helpers/workbench'
 
 const CENTER_MAX_COLS = 140
-const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const MIN_SIDE_GUTTER_PX = 24
 const SUBPIXEL_PX = 2
 const BELOW_THE_WINDOW_MIN_WIDTH_PX = 900
@@ -509,13 +508,9 @@ test.describe('the center session terminal stops at 140 columns and sits centred
         await openMenu(first.page, row)
         await first.page.locator('.menu .mi', { hasText: 'Keep running' }).click()
         await expect(row.locator('.ws-tab-resident')).toBeVisible()
-        if (tab.remote) {
-          await first.page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
-        } else {
-          await openMenu(first.page, row)
-          await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
-          await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-        }
+        await openMenu(first.page, row)
+        await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
         before = tab.startWidths(env).length
       } finally {
         await quitAndClose(first.app)
@@ -527,6 +522,7 @@ test.describe('the center session terminal stops at 140 columns and sits centred
           .poll(() => tab.startWidths(env).length, { timeout: 60_000 })
           .toBeGreaterThan(before)
         expect(tab.startWidths(env)[before]).toBe(CENTER_MAX_COLS)
+        await expect((await app.firstWindow()).locator('.ws .ws-tab.active')).toHaveCount(0)
       } finally {
         await quitAndClose(app)
       }
