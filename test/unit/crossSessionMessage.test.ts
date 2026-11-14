@@ -10,6 +10,8 @@ import {
   writeLineInTurn
 } from '../../src/main/crossSessionMessage'
 
+const BODY_LARGER_THAN_ANY_SOCKET_BUFFER = 4 * 1024 * 1024
+
 let dir: string | undefined
 let server: net.Server | undefined
 
@@ -65,7 +67,7 @@ describe('a message to another Claude session, the way Claude sessions send one'
     expect(received).toBe(line)
   })
 
-  it('counts as taken once every byte is written, though the session keeps its end open past the wait, so a retry never sends it twice', async () => {
+  it('counts as taken once every byte is written, though the session keeps its end open past the wait', async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kx-'))
     const sock = path.join(dir, 's.sock')
     let received = ''
@@ -92,7 +94,10 @@ describe('a message to another Claude session, the way Claude sessions send one'
     await new Promise<void>((resolve) => server!.listen(sock, resolve))
     try {
       await expect(
-        writeLine(sock, crossSessionLine('bypass', 'x'.repeat(4 * 1024 * 1024), 'k-1'))
+        writeLine(
+          sock,
+          crossSessionLine('bypass', 'x'.repeat(BODY_LARGER_THAN_ANY_SOCKET_BUFFER), 'k-1')
+        )
       ).rejects.toThrow('did not take the message in time')
     } finally {
       held?.destroy()
