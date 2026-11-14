@@ -65,10 +65,11 @@ TUI-2 ─ relay-2 ─ app-server-2                thread 1: config = env of tab 
 ### Closing, crashing, leftovers
 
 - **Close a tab:** the relay sends `turn/interrupt` (if a turn runs),
-  `thread/backgroundTerminals/terminate` and `thread/unsubscribe` for the threads it
-  opened, then closes its connection. Codex unloads an unsubscribed idle thread within a
-  minute (CODEX§16), and its MCP processes with it. That `terminate` ends a running
-  background command at once is **not probed yet**.
+  `thread/backgroundTerminals/clean` and `thread/unsubscribe` for the threads it
+  opened, then closes its connection. `clean` ended that thread's background command
+  within 2 s and left the other thread's running; `unsubscribe` plus a closed
+  connection alone let it run to its end (CODEX§38). Codex unloads an unsubscribed idle
+  thread within a minute (CODEX§16), and its MCP processes with it.
 - **Server crash:** the pool starts one new server; each relay drops its TUI, which
   reconnects and resumes (CODEX§34) and gets its config again. The 3-replacements limit
   becomes per server.

@@ -3729,11 +3729,19 @@ results each time.
   after one turn each 115–117 MB, holding 3 threads 104–118 MB; a server of its own for
   each of 3 threads, after one turn, 88–110 MB each. Turns were the stand-in's, so a real
   model turn's size is not measured.
+- **`thread/backgroundTerminals/clean {threadId}` ends that thread's background commands
+  and no other thread's; `thread/unsubscribe` does not.** `notes/810/probe-close.mjs`,
+  same setup, same day: two threads on one server each ran `sleep 45 && touch <file>`
+  with `yield_time_ms: 500`, so each turn ended with its command still running.
+  `thread/backgroundTerminals/list` for A gave one entry (`processId` "85055", `osPid`
+  null); `clean` for A answered `{}`, and 2 s later A's `sleep` was gone while B's ran;
+  A's file was never written. `thread/unsubscribe` for B answered `unsubscribed` and B's
+  client closed its connection; B's `sleep` still ran 5 s later and wrote its file at
+  45 s. One run.
 - Read in the request list of the same build (`app-server generate-json-schema
   --experimental`), not run: `thread/resume` takes the same free `config` object as
-  `thread/start`; `turn/interrupt`, `thread/backgroundTerminals/terminate`,
-  `thread/backgroundTerminals/clean`, `thread/unsubscribe` and `thread/settings/update`
-  act on one thread.
+  `thread/start`; `turn/interrupt`, `thread/backgroundTerminals/terminate {threadId,
+  processId}` and `thread/settings/update` act on one thread.
 - Not probed yet: a real TUI connected with `--remote` to a server other TUIs share,
   sub-agent threads (whether a child thread gets its parent's `set`), and a real model
   turn.
