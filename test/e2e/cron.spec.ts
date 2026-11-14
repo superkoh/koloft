@@ -743,7 +743,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model, and its History line says the endpoint set the model', async ({
+  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model and with the context capped at 200k, and its History line says the endpoint set the model', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -778,6 +778,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       const call = await waitNewCall(env, 0)
       expect(call.argv).not.toContain('--model')
+      expect(call.disable1mContext).toBe('1')
       const row = cronRows(page, 'ws-a')
       await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
