@@ -21,11 +21,16 @@ import {
   remoteDir
 } from './helpers/remote'
 import {
+  auxIcon,
   centerTerm,
+  gitInit,
+  launchWithWebGL,
   newSessionInWith,
+  openWorktreeSession,
   runIn,
   startSessionIn,
   waitBooted,
+  waitForCalls,
   waitStartupTurnOver,
   writeTo,
   wsRows
@@ -99,6 +104,62 @@ function linksOnLineWith(page: Page, tabId: string, marker: string): Promise<Fou
 
 async function linkTextsOnLineWith(page: Page, tabId: string, marker: string): Promise<string[]> {
   return (await linksOnLineWith(page, tabId, marker)).map((l) => l.text)
+}
+
+async function clickLinkCell(
+  page: Page,
+  tabId: string,
+  marker: string,
+  opts: { holdingCommand: boolean }
+): Promise<void> {
+  const at = await page.evaluate(
+    async ({ id, marker }) => {
+      interface Link {
+        range: { start: { x: number; y: number }; end: { x: number } }
+      }
+      interface Term {
+        cols: number
+        rows: number
+        element: HTMLElement
+        buffer: {
+          active: {
+            length: number
+            viewportY: number
+            getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+          }
+        }
+        _core: {
+          _linkProviderService: {
+            linkProviders: { provideLinks(y: number, cb: (l?: Link[]) => void): void }[]
+          }
+        }
+      }
+      const term = (window as unknown as { __koloftTerms: Record<string, Term> }).__koloftTerms[id]
+      const buf = term.buffer.active
+      let y = -1
+      for (let i = buf.length - 1; i >= 0 && y < 0; i--) {
+        if ((buf.getLine(i)?.translateToString(true) ?? '').includes(marker)) y = i + 1
+      }
+      const providers = term._core._linkProviderService.linkProviders
+      const ours = providers[providers.length - 1]
+      const [link] = await new Promise<Link[]>((done) => ours.provideLinks(y, (l) => done(l ?? [])))
+      const screen = term.element.querySelector('.xterm-screen')!.getBoundingClientRect()
+      const cellW = screen.width / term.cols
+      const cellH = screen.height / term.rows
+      const midX = (link.range.start.x + link.range.end.x) / 2
+      return {
+        x: screen.left + (midX - 0.5) * cellW,
+        y: screen.top + (link.range.start.y - 1 - buf.viewportY + 0.5) * cellH
+      }
+    },
+    { id: tabId, marker }
+  )
+  // PLATFORM§18
+  await page.mouse.move(at.x, at.y)
+  await page.waitForTimeout(ROOM_FOR_A_WRONG_OPEN_MS)
+  if (opts.holdingCommand) await page.keyboard.down('Meta')
+  await page.mouse.click(at.x, at.y)
+  if (opts.holdingCommand) await page.keyboard.up('Meta')
 }
 
 async function commandClick(page: Page, text: string): Promise<void> {
@@ -208,6 +269,76 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       }
     })
   }
+
+  test('in a worktree session, a relative path opens the worktree copy, not the main checkout one', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchSettled(env)
+    try {
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'ws-a')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('wt821')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+      await waitForCalls(env, 1)
+      await expect(auxIcon(page, 'Workbench')).toHaveAttribute('aria-disabled', 'false', {
+        timeout: 60_000
+      })
+      const tree = path.join(env.workspaces.a, '.claude', 'worktrees', 'wt821')
+      writeIn(env.workspaces.a, 'src/w.ts', numberedTs('tfmain'))
+      writeIn(tree, 'src/w.ts', numberedTs('tftree'))
+      const tabId = await shownTabId(page)
+
+      await writeTo(page, tabId, '\r\ntfw-mark src/w.ts:30\r\n')
+      await expect
+        .poll(() => linkTextsOnLineWith(page, tabId, 'tfw-mark'), { timeout: 20_000 })
+        .toEqual(['src/w.ts:30'])
+      await commandClick(page, 'src/w.ts:30')
+      await expect(
+        page.locator(WORKBENCH.readingBody).getByText('tftree-30').first()
+      ).toBeInViewport({ timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('drawn with WebGL, on the alternate screen with mouse reporting on as a fullscreen agent has it, a plain click opens nothing and a ⌘-click after resting on the path opens it', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    writeIn(env.workspaces.a, 'src/g.ts', numberedTs('tfg'))
+    const { app, page } = await launchWithWebGL(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      await waitStartupTurnOver(page, 'ws-a')
+      const tabId = await shownTabId(page)
+      await writeTo(
+        page,
+        tabId,
+        '\x1b[?1049h\x1b[?1002h\x1b[?1006h\x1b[H\r\ntfg-mark src/g.ts:33\r\n'
+      )
+      await expect
+        .poll(() => linkTextsOnLineWith(page, tabId, 'tfg-mark'), { timeout: 20_000 })
+        .toEqual(['src/g.ts:33'])
+
+      const title = page.locator(WORKBENCH.readingTitle)
+      await clickLinkCell(page, tabId, 'tfg-mark', { holdingCommand: false })
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_OPEN_MS)
+      await expect(title.filter({ hasText: 'g.ts' })).toHaveCount(0)
+
+      await clickLinkCell(page, tabId, 'tfg-mark', { holdingCommand: true })
+      await expect(title).toHaveText('src/g.ts', { timeout: 30_000 })
+      await expect(page.locator(WORKBENCH.readingBody).getByText('tfg-33').first()).toBeInViewport({
+        timeout: 20_000
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   test('in a remote tab, the path is looked up and opened on the machine', async ({ env }) => {
     test.setTimeout(300_000)

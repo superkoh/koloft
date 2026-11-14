@@ -88,7 +88,9 @@ export function fileLinkProvider(
       const ask = ++asked
       const from = owner()
       const line = term.buffer.active.getLine(y - 1)
-      if (!from?.cwd || !line) return callback(undefined)
+      const folder =
+        useStore.getState().sessions.find((s) => s.tabId === from?.tabId)?.treeRoot ?? from?.cwd
+      if (!from || !folder || !line) return callback(undefined)
       const { text, colOf, widthAt } = textWithCellColumns(line)
       const refs = findFilePaths(text).filter(
         (ref, i, all) =>
@@ -98,12 +100,14 @@ export function fileLinkProvider(
       )
       if (!refs.length) return callback(undefined)
       const drawnWhenAsked = line.translateToString()
-      void Promise.all(
-        refs.map(async (ref): Promise<ILink | null> => {
-          const src = resolveOnHost(`${from.cwd}/`, ref.path)
-          if (!(await fileThere(src))) return null
+      void (async () => {
+        const found: ILink[] = []
+        for (const ref of refs) {
+          if (ask !== asked) return
+          const src = resolveOnHost(`${folder}/`, ref.path)
+          if (!(await fileThere(src))) continue
           const last = colOf[ref.end - 1]
-          return {
+          found.push({
             range: {
               start: { x: colOf[ref.start] + 1, y },
               end: { x: last + widthAt[last], y }
@@ -118,14 +122,12 @@ export function fileLinkProvider(
                   from.tabId
                 )
             }
-          }
-        })
-      ).then((links) => {
+          })
+        }
         if (ask !== asked) return
         const redrawn = term.buffer.active.getLine(y - 1)?.translateToString() !== drawnWhenAsked
-        const found = links.filter((l): l is ILink => l !== null)
         callback(!redrawn && found.length ? found : undefined)
-      })
+      })()
     }
   }
 }
