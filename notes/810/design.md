@@ -1,121 +1,164 @@
 # #810 — local Codex tabs of one account share one Codex server
 
 **Core idea:** local Codex tabs signed in to the same account (the same `CODEX_HOME`)
-talk to one `codex app-server`. What makes a tab's server its own today — its env and
-its `-c` settings — travels with the tab's thread instead.
+and started with the same server settings talk to one `codex app-server`. What makes a
+tab's server its own today — its env and its per-tab settings — travels with the tab's
+thread instead.
 
 ## What a user sees
 
 | Case | Today | After |
 |---|---|---|
 | Open the first local Codex tab of an account | 1 server for the tab (~60 MB idle, ~90–110 MB after a turn) | the same: that tab starts the account's server |
-| Open each further local Codex tab of that account | +1 server, ~90–110 MB after a turn | +0–15 MB inside the shared server |
-| 10 local Codex tabs, one account | ~1 GB in servers | ~0.1–0.2 GB |
-| The Codex server of a tab crashes | that tab's TUI reconnects to a new server (up to 3 times, CODEX§34); other tabs untouched | **every local Codex tab of that account** reconnects at once to one new server; a turn that was running in any of them is lost |
-| Close a Codex tab | its server and everything it ran are killed | its turn is interrupted, its background commands are stopped, its thread is let go; the server stays while another tab of that account is open |
-| Codex tab on a remote machine | one server per tab on the machine | unchanged (see the eight kinds below) |
+| Open a further local Codex tab of that account | +1 server, ~90–110 MB after a turn | about +0–15 MB in the shared server (measured up to 3 threads; more is extrapolated) |
+| 10 local Codex tabs, one account | ~1 GB in servers | ~0.15–0.25 GB, extrapolated from 3 |
+| The Codex server crashes | that tab reconnects to a new server; other tabs untouched | **every local Codex tab sharing that server** reconnects at once to one new server; a turn running in any of them stops, as one tab's does today |
+| A tab's TUI drops its connection (sleep, a hang) | Koloft kills and restarts that tab's server (CODEX§34) | only that tab's connection is redone; the server and other tabs are untouched |
+| Close a Codex tab | its server and every process under it are killed at once | its turn is interrupted and its background commands end within ~2 s; its MCP processes go when Codex unloads the thread, up to a minute later; a process that left its process group (`nohup`, `setsid`) is found by its env and killed (below) |
+| Close a Codex tab, then open the same session in a new tab within a minute, while another tab of that account stays open | resumes at once | **waits until Codex has unloaded the thread (up to ~60 s)** before it resumes, so the session does not keep the closed tab's env |
+| Restart a Codex tab (same tab) | new server | resumes in the shared server; the tab id stays the same, so its env does too |
+| Sign in again after a login expired | the next new tab gets a new server with the new login | the account's server is replaced after the new sign-in (open tabs reconnect, as on a crash) |
+| Koloft itself crashes | each orphan `--stdio` server exits on its own within ~14 s (CODEX§5) | the `--listen` server does not exit by itself (CODEX§16); the next Koloft start ends it and everything under it |
+| Codex is updated while tabs are open | each new tab starts a server of the new version | a new tab starts a new server for the new version; tabs on the old one keep it until they close |
+| Codex tab on a remote machine | one server per tab on the machine | unchanged (see the eight kinds) |
 
-Memory numbers: `docs/codex-cli-contract.md` section 38 (codex 0.166.0, stand-in model
-turns; a real model turn's size is not measured). MCP servers (the Workbench browser's
-Playwright MCP) are one process per thread either way, so they are not counted.
+Memory: `docs/codex-cli-contract.md` section 38 (codex 0.166.0, stand-in model turns;
+a real model turn's size is not measured). MCP servers are one process per thread
+either way, so they are not counted.
 
 ## How
 
 ```
 today                                   after
 TUI-1 ─ relay-1 ─ app-server-1          TUI-1 ─ relay-1 ─┐
-        (--stdio, env of tab 1,                          ├─ app-server (--listen unix://…,
-         -c of tab 1)                   TUI-2 ─ relay-2 ─┘   one per CODEX_HOME + binary)
-TUI-2 ─ relay-2 ─ app-server-2                thread 1: config = env of tab 1, …
-        (--stdio, env/-c of tab 2)            thread 2: config = env of tab 2, …
+        (--stdio, env of tab 1,                          ├─ app-server (--listen unix://…)
+         -c of tab 1)                   TUI-2 ─ relay-2 ─┘  one per (CODEX_HOME, codex
+TUI-2 ─ relay-2 ─ app-server-2                               version, server -c list)
+        (--stdio, env/-c of tab 2)            thread 1: config = env of tab 1, …
+                                              thread 2: config = env of tab 2, …
 ```
 
 - **The relay stays one per tab** (`createCodexTransport`: the TUI's own socket, the
   observer, Koloft's own requests such as `thread/queue/add` and `thread/name/set`, the
-  skills call). Only its upstream changes: from a `CodexProcess` it owns to a WebSocket
-  connection into the account's shared `--listen` server — a new `CodexUpstream`, the
-  same seam `MachineCodexUpstream` already uses. Each TUI keeps its own connection and
-  its own `initialize`, so Codex itself keeps request ids and thread notifications apart
-  (CODEX§38: every connection also sees other threads' `thread/started` and
-  `thread/status/changed`, nothing else).
+  skills call). Its upstream becomes a WebSocket connection into the shared `--listen`
+  server, a new `CodexUpstream`. Each TUI keeps its own connection and its own
+  `initialize`, so Codex keeps request ids, thread notifications and approval requests
+  apart (CODEX§38: an approval request reached only the client that started the
+  thread; other clients see only `thread/started` / `thread/status/changed`).
+- **Reconnects are split in two.** Today `canReplaceTheServer()` is false whenever an
+  `upstream` factory is given (`codexTransport.ts`), so a new upstream gets no
+  reconnect for free; it is written for this:
+  - *the TUI leaves* → the relay opens a new upstream connection for the TUI's next
+    connect; the server is not touched and `onServerReplaced` is not called;
+  - *the server dies* → the pool starts one new server (at most 3 times per server
+    instead of per tab), each relay drops its TUI, which reconnects and resumes and gets
+    its config again (CODEX§34).
 - **The relay adds the tab's settings to the TUI's thread openers.** On `thread/start`,
-  `thread/resume` and `thread/fork` from the TUI it merges into `params.config`, with
-  dotted keys so nothing else is replaced: `shell_environment_policy.set.<VAR>` for each
-  of the tab's env values, and the tab's MCP env (below); on
-  `thread/start` it also sets `developerInstructions` (the TUI sends `null`; a start's
-  own instructions win over `-c`, CODEX§17). The env is not saved with a thread
-  (CODEX§38), so every resume, every `/new`, and every reconnect after a server crash
-  sends it again.
-- **A pool, one server per (`CODEX_HOME`, codex binary path).** The first tab starts it
-  with the settings every tab shares as `-c`; the last tab to close stops it. A new
-  codex version after an update gets a new server; tabs on the old one keep theirs.
+  `thread/resume` and `thread/fork` it merges into `params.config`, with dotted keys so
+  nothing else is replaced (CODEX§38): `shell_environment_policy.set.<VAR>` for each
+  of the tab's env values and `mcp_servers.<name>.env.<VAR>` for the tab's Playwright
+  MCP values; on `thread/start` it also sets `developerInstructions` (the TUI sends
+  `null`; a start's own instructions win over `-c`, CODEX§17). The env is not saved
+  with a thread (CODEX§38), so every resume, `/new` and reconnect sends it again.
+- **The pool** keys a server by `CODEX_HOME`, the codex version Koloft already reads
+  (`availability().version`; an in-place update keeps the binary path) and the server's
+  own `-c` list. Tabs whose server settings differ (another status-line choice, other
+  hook trust, a folder whose project config gives other writable roots or MCP entries)
+  get different servers; most tabs have the same and share. The server runs in the
+  account home's folder, not a tab's; each thread's `cwd` comes from its TUI (`-C`).
+  The last tab to close stops the server. A new sign-in for that home replaces it, as
+  Koloft already drops its side server then (`codexSessions.ts`).
 
 ### Where each per-tab setting goes
 
 | Per tab today (server env or `-c`) | After |
 |---|---|
-| `ZDOTDIR` (open shim), `KOLOFT_TAB_ID`, browser control env, `KOLOFT_PORT_OFFSET` | thread `config.shell_environment_policy.set` — reaches commands, `ZDOTDIR`'s `.zshenv` included (CODEX§38) |
-| Reply-language / said / notice / Discord-said / shell-wrote file paths, read by the hooks | hooks see only the server's env (CODEX§38). The hook commands are the same for every tab, so they go on the server once; the hook script finds the tab's files from stdin `session_id` (= the thread id, CODEX§38; a sub-agent's tool calls carry the parent's, CODEX§27): Koloft writes `<hookRegDir>/<threadId>.codex-tab` holding those paths when the relay sees the opener's reply, before the TUI can start a turn |
+| `KOLOFT_TAB_ID`, browser control env (`PLAYWRIGHT_CLI_SESSION`, `PLAYWRIGHT_MCP_OUTPUT_DIR`, `KOLOFT_BROWSER_CDP`, … — all keyed by the tab id), `KOLOFT_PORT_OFFSET` | thread `config`, `shell_environment_policy.set.<VAR>` — reaches commands (CODEX§38) |
+| `ZDOTDIR` (the open shim, a new folder per launch today) | the same key; the shim folder is kept per tab id across relaunches, so a restarted tab's thread still finds it |
+| Reply-language / said / notice / Discord-said / shell-wrote file paths, read by the hook script | hooks see only the server's env (CODEX§38). The hook commands are the same for every tab, so they go on the server once; the script finds the tab's files from stdin `session_id` (= the thread id, CODEX§38; a sub-agent's tool calls carry the parent's, CODEX§27): Koloft writes `<hookRegDir>/<threadId>.codex-tab` holding those paths when the relay sees the opener's reply, before the TUI can start a turn |
 | `developer_instructions` (Koloft prompt, role) | `thread/start` `developerInstructions`. A resume takes no new instructions either way (CODEX§17), same as today |
 | `approval_policy` / `sandbox_mode` on a resumed tab | `thread/resume` params `approvalPolicy` / `sandbox` (in the schema; not run) |
-| Playwright MCP `env_vars` (forwards the server env, which no longer holds the tab's values) | thread config with dotted keys, `"mcp_servers.<name>.env.<VAR>"` = the tab's browser endpoint values. Dotted keys merge: the server's `-c` MCP entries and the owner's `config.toml` ones still start (CODEX§38); a nested `mcp_servers` object would have replaced the `-c` ones |
-| `sandbox_workspace_write.network_access`, writable roots, `default_mode_request_user_input`, status line, hooks | the same for every tab: `-c` on the shared server |
+| Playwright MCP `env_vars` (forwarded the server env, which no longer holds the tab's values) | thread config `mcp_servers.<name>.env.<VAR>` = the tab's values; dotted keys keep the server's `-c` MCP entries and the owner's `config.toml` ones (CODEX§38) |
+| Status line, hooks and their trust, `network_access`, writable roots, `default_mode_request_user_input`, the Playwright MCP approval mode | the server's `-c`, part of the pool key |
 | `skills/extraRoots/set` after `initialized` | unchanged: sent per connection; the roots are the same for every tab |
 
-### Closing, crashing, leftovers
+### Closing, the quick reopen, crashes, leftovers
 
 - **Close a tab:** the relay sends `turn/interrupt` (if a turn runs),
   `thread/backgroundTerminals/clean` and `thread/unsubscribe` for the threads it
   opened, then closes its connection. `clean` ended that thread's background command
-  within 2 s and left the other thread's running; `unsubscribe` plus a closed
-  connection alone let it run to its end (CODEX§38). Codex unloads an unsubscribed idle
-  thread within a minute (CODEX§16), and its MCP processes with it.
-- **Server crash:** the pool starts one new server; each relay drops its TUI, which
-  reconnects and resumes (CODEX§34) and gets its config again. The 3-replacements limit
-  becomes per server.
-- **Koloft crash:** `endCodexAppServersLeftByACrash` matches `app-server --stdio`; it
-  must also match the pool's `--listen` command.
-- **Foreign frames:** the observer already ignores frames of other threads
-  (`codexObservation.ts`, `p.threadId !== this.threadId && !ownedChild`). The relay also
-  drops, before the TUI, `thread/started` / `thread/status/changed` of threads it did
-  not open and that are not its children (children are known from `spawnAgent` items,
-  as the observer does). What a TUI does with a foreign `thread/started` is **not probed
-  yet**.
-- **Two tabs on one thread:** a resume of a thread another connection holds keeps the
-  first env (CODEX§38). Whether Koloft can open one Codex session in two tabs at once is
-  inferred not to happen, not checked.
+  within 2 s and left another thread's running; `unsubscribe` alone let it run to its
+  end (CODEX§38). Then Koloft kills the processes under the shared server whose env
+  holds this tab's `KOLOFT_TAB_ID` (macOS `ps -E` shows the env of the owner's other
+  processes: 312 of them carried a `KOLOFT_TAB_ID` on this Mac), which catches what
+  left the process group, as the per-tab tree kill does today. MCP processes go when
+  Codex unloads the thread (CODEX§16). The worktree removal after close runs as today;
+  the thread may still be loaded then, as a TUI's thread is today until its server dies.
+- **The quick reopen:** a resume of a thread the shared server still has loaded keeps
+  the env it was loaded with (CODEX§38), which would name a closed tab. So before it
+  forwards a `thread/resume`, the relay asks `thread/loaded/list`; if the thread is
+  there and no open tab holds it, it waits for Codex to unload it (30–60 s, CODEX§17)
+  and then forwards. A `/resume <id>` typed in a TUI goes through the same check.
+- **Koloft crash:** at start, Koloft ends every pool server left by an earlier run
+  (`endCodexAppServersLeftByACrash` today matches only `app-server --stdio` and kills
+  only the server) together with its process tree.
+- **Foreign frames:** the observer already ignores other threads' frames
+  (`codexObservation.ts`, `p.threadId !== this.threadId && !ownedChild`). The relay
+  also drops, before the TUI, `thread/started` / `thread/status/changed` of threads it
+  did not open and that are not its children (known from `spawnAgent` items, as the
+  observer does). What a TUI does with a foreign `thread/started` is not probed yet.
+- **Two tabs on one thread:** Koloft refuses to open one stored session twice
+  (`storedSessions.ts`), but a `/resume <id>` typed in a TUI is not stopped today
+  either; with a shared server the second tab gets the first tab's env.
+
+## Not probed yet — the first build steps
+
+1. Sub-agent threads: whether a child thread gets its parent's `set` (a real model
+   turn: the stand-in got no spawn tool). If not, the relay also sets the env on
+   threads the server starts for a child — or the feature waits.
+2. A real TUI over `--remote` on a shared server: a foreign `thread/started`, `/new`,
+   `/resume`, a reconnect.
+3. `thread/fork` with `config`; `thread/resume` with `approvalPolicy` / `sandbox`.
+4. Whether an unloaded thread lets go of its writer lock (CODEX§15). Another account's
+   home has its own locks: §15 saw home B resume and take a turn while home D held the
+   writer, so resuming in another account is not blocked.
 
 ## The eight tab kinds
 
 | Kind | What it does |
 |---|---|
-| Codex, local | shares its account's server (this change) |
-| Codex, remote (SSH) | unchanged: one server per tab on the machine (`codexTabScript`). The memory is the machine's, not the Mac's; sharing there means moving the tab's exports into thread config and a per-machine pool over ssh — a separate change if wanted |
+| Codex, local | shares a server with the account's other local Codex tabs (this change) |
+| Codex, remote (SSH) | unchanged: one server per tab on the machine (`codexTabScript`). The memory is the machine's, not the Mac's; sharing there means moving the tab's exports into thread config and a per-machine pool over ssh |
 | Claude Code, local / remote | not affected: no Codex server |
 | Muse Code, local / remote | not affected: no Codex server |
 | Antigravity, local / remote | not affected: no Codex server |
 
 ## Upgrade
 
-An existing user sees no setting change. Tabs restored at the first launch after the
-update resume their threads into the shared server; the relay sends their env again,
-which is what a new server needs anyway (CODEX§38).
+No setting changes. Tabs restored at the first launch after the update resume their
+threads into the shared server; the relay sends their env again, which a new server
+needs anyway (CODEX§38).
 
 ## Rejected
 
 - **Koloft multiplexes one `--stdio` server itself:** it would have to rewrite request
-  ids and route every notification by thread. `--listen` does that inside Codex, and
-  Koloft already runs `--listen` servers on remote machines.
-- **One shared server for the account's side server (#755) too:** another ~60 MB per
-  account, but the side server is `--stdio` with a different life; left out.
+  ids and route every notification and approval by thread. `--listen` does that inside
+  Codex, and Koloft already runs `--listen` servers on remote machines.
+- **Fold the account's side server (#755) in too:** another ~60 MB per account, but
+  the side server is `--stdio` with a different life; left out.
+- **Resume a still-loaded thread at once and accept the old env:** commands would
+  reach a closed tab's Workbench and shim; a wait of up to a minute in that one case
+  costs less.
 
 ## Size and tests
 
-- Runtime: a server pool and a WebSocket upstream (new), the opener rewrite in the
-  relay, launch changes in `codexSessions.ts`, the hook script's lookup by
-  `session_id`, the leftover sweep. Roughly +400 / −150 lines under `src/`, guessed.
-- `fixtures/fake-codex.js` must learn `--listen` with several connections, and the
-  thread config, before any e2e can show two tabs on one server.
-- E2E flows to run: the Codex specs (local tabs, resume, `/new`, close, server
-  replacement, agent tools / browser, reply language), and the remote Codex specs to
-  show they are unchanged.
+- Runtime: a server pool and a WebSocket upstream (new), the opener rewrite and the
+  loaded-thread wait in the relay, the split reconnect, launch changes in
+  `codexSessions.ts`, the hook script's lookup by `session_id`, the per-tab process
+  sweep on close, the leftover sweep at start. Roughly +500 / −150 lines under
+  `src/`, guessed.
+- `fixtures/fake-codex.js` must learn `--listen` with several connections and the
+  thread config before any e2e can show two tabs on one server.
+- E2E flows to run: the local Codex specs (start, resume, `/new`, close, restart,
+  server replacement, agent tools / browser, reply language, Inbox questions), and the
+  remote Codex specs to show they are unchanged.

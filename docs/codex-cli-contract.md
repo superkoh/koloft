@@ -3723,7 +3723,12 @@ results each time.
   thread's.
 - **Each client sees the other threads start.** Every client got `thread/started` and
   `thread/status/changed` for threads other clients started (as §16 saw over ssh), and
-  nothing else about them.
+  nothing else about them. **An approval request goes only to the client that started
+  the thread**: with `approval_policy = "on-request"` and `workspace-write`
+  (`notes/810/probe-more.mjs`), thread A's `exec_command` with `sandbox_permissions:
+  "require_escalated"` sent `item/commandExecution/requestApproval` to A's client alone;
+  B's client again got only `thread/started` and `thread/status/changed` for A; A's
+  `accept` ran the command. One run. Questions and MCP forms were not tried.
 - **Memory (RSS of the codex process, 3 s after the last turn ended; MCP children not
   counted):** one server before any thread 59–60 MB; the same server holding 2 threads
   after one turn each 115–117 MB, holding 3 threads 104–118 MB; a server of its own for
@@ -3742,6 +3747,8 @@ results each time.
   --experimental`), not run: `thread/resume` takes the same free `config` object as
   `thread/start`; `turn/interrupt`, `thread/backgroundTerminals/terminate {threadId,
   processId}` and `thread/settings/update` act on one thread.
-- Not probed yet: a real TUI connected with `--remote` to a server other TUIs share,
-  sub-agent threads (whether a child thread gets its parent's `set`), and a real model
-  turn.
+- Not probed yet: a real TUI connected with `--remote` to a server other TUIs share;
+  sub-agent threads (whether a child thread gets its parent's `set`) — the stand-in got
+  no spawn tool with `model = "gpt-5.5"` and `features.multi_agent = true`, and with
+  `gpt-6.1-sol` its first request carried no tools at all; `thread/fork` with `config`;
+  whether an unloaded thread lets go of its writer lock (§15); a real model turn.
