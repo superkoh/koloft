@@ -72,6 +72,7 @@ const AGY_SETUP_SCREEN = { timeout: 20_000 }
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
+const THE_FORM_DRAWS_ITS_TRUST_ANSWER_MS = 500
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -1013,7 +1014,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§5
-  test('an Antigravity job in a git workspace agy trusts starts in its new worktree without agy asking whether to trust that folder', async ({
+  test('an Antigravity job in a git workspace agy trusts gets no trust warning in the form and starts in its new worktree without agy asking whether to trust that folder', async ({
     env
   }) => {
     installAgy(env)
@@ -1029,6 +1030,13 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const dlg = page.locator('.modal.cronjobs')
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
       await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      await expect
+        .poll(() => page.evaluate((ws) => window.api.cron.trusted(ws, 'agy'), env.workspaces.a))
+        .toBe(true)
+      await page.waitForTimeout(THE_FORM_DRAWS_ITS_TRUST_ANSWER_MS)
+      await expect(
+        dlg.locator('.field-hint.warn', { hasText: 'cannot see that Antigravity trusts' })
+      ).toHaveCount(0)
       await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
       await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
       await dlg.locator('.modal-foot .btn-primary').click()

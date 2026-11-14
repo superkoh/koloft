@@ -422,6 +422,16 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(true)
   })
 
+  // AGY§5
+  it('counts a folder the owner’s own agy settings trust as trusted before any launch, as a launch does', () => {
+    fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'antigravity-cli', 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    expect(sessions.trustsFolder(repo)).toBe(true)
+  })
+
   // AGY§32
   it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
     const memory = path.join(repo, 'AGENTS.md')
