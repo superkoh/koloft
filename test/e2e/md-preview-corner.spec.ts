@@ -102,6 +102,30 @@ async function setScrollTop(page: Page, top: number): Promise<void> {
   }, top)
 }
 
+async function lineAtTop(page: Page): Promise<{ text: string; offset: number }> {
+  const h = await scroller(page)
+  return h.evaluate((el) => {
+    const top = el.getBoundingClientRect().top
+    const first = Array.from(el.querySelectorAll('p')).find(
+      (p) => p.getBoundingClientRect().bottom > top
+    )
+    return {
+      text: first?.textContent ?? '',
+      offset: Math.round((first?.getBoundingClientRect().top ?? top) - top)
+    }
+  })
+}
+
+async function drawnDiagramsAboveView(page: Page): Promise<number> {
+  const h = await scroller(page)
+  return h.evaluate((el) => {
+    const top = el.getBoundingClientRect().top
+    return Array.from(el.querySelectorAll('.mmd svg')).filter(
+      (svg) => svg.getBoundingClientRect().bottom < top
+    ).length
+  })
+}
+
 async function scrollStep(page: Page): Promise<boolean> {
   const h = await scroller(page)
   return h.evaluate((el) => {
@@ -1052,7 +1076,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page)).toContainText('marker-C20')
   })
 
-  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back at the same scroll position and draws every diagram again', async ({
+  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back showing the same text, with every diagram drawn before already at its full height', async ({
     page,
     env
   }) => {
@@ -1089,6 +1113,12 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     expect(kept.join('|')).toContain('C25n2')
     expect(kept.join('|')).toContain('C25n3')
     await expect.poll(() => scrollTopOf(page), { timeout: 15_000 }).toBe(before)
+    expect(
+      await drawnDiagramsAboveView(page),
+      'a drawn diagram sits above the view'
+    ).toBeGreaterThan(0)
+    const onScreen = await lineAtTop(page)
+    expect(onScreen.text).toContain('filler-body-C25')
 
     await startSessionIn(page, 'ws-b')
     await page.waitForTimeout(4000)
@@ -1097,6 +1127,15 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(artifactTitle(page)).toHaveText('c25.md', { timeout: 30_000 })
     await expect(mdBody(page)).toBeVisible({ timeout: 30_000 })
     await expect.poll(() => scrollTopOf(page), { timeout: 15_000 }).toBe(before)
+    await expect
+      .poll(
+        async () => {
+          const now = await lineAtTop(page)
+          return { text: now.text, movedOverAPixel: Math.abs(now.offset - onScreen.offset) > 1 }
+        },
+        { timeout: 15_000 }
+      )
+      .toEqual({ text: onScreen.text, movedOverAPixel: false })
     await setScrollTop(page, 0)
     await expect(mdBody(page).locator('.mmd').first().locator('svg')).toHaveCount(1, {
       timeout: 60_000
