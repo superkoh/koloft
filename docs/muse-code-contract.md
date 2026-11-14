@@ -1285,3 +1285,43 @@ round that left `?996n` and OSC 4 unanswered asked exactly the same.
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 
 Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+
+## §24 No plan to approve
+
+**Muse has no plan mode and no box that asks to approve a plan. `/plan` is a skill: the
+plan is the reply of an ordinary turn, and the person's next message is what starts the
+work.** Measured 2026-11-14 on `Muse Code 1.4.20 (1.4.20-R8619.1)` (the launcher in the
+`koloft-muse-probe-1411` image updating itself to it), Linux arm64 in Docker, a python3
+pty 160×50 answering the cursor, colour, `?996n` and 7501 queries (§23), the screen read
+through `pyte`, a fake model (`--base-url`, `META_API_KEY`, `MUSE_MODEL`) answering
+`GET /muse-code/models`, `GET /muse-code/config` and `POST /responses` with the same
+text plan every time, `--trust-workspace --approval-judge off --sandbox-network
+enabled`; one run per bullet. Not run: macOS muse, muse inside tmux.
+
+- The `/` menu, scrolled to its end, lists 40 commands and 13 skills; none switches a
+  mode or approves anything. `/plan` shows as `/plan · built-in · default skill`.
+- `/plan add a hello.sh that prints hello`, then Enter: the screen drew `◆ Loaded skill
+  plan · built-in`, the skill's text went into the user message of the model request,
+  and the frames were `working` then `done` 0.2 s later. The plan showed as the reply,
+  with the empty `❯` input box under it: no box, no menu, no `blocked` frame. `go`,
+  then Enter, was an ordinary next prompt (`working`, `done`). The fake model answered it
+  with the plan again, so what muse does once a real model goes ahead was not watched.
+- The skill's own text says: "Treat this as planning guidance, not a host-enforced mode.
+  Do not call this a mode in user-facing text or claim that the host is blocking write
+  tools, commands, edits, or approvals for you", and that only `go` or a plain request to
+  implement starts the work.
+- The main model request offered 36 tools; none is a plan tool (`request_user_input`
+  and `write_todos` are the nearest). The binary also holds an `update_plan` tool name;
+  it was not offered with these flags, and `--preset` runs were not tried. The
+  `workflow` tool was not called; the binary's text holds no wording about the person
+  approving a workflow's plan ("Plan mode" there is a dry run of the `workflow recover`
+  command kept for testing).
+- Shift+Tab, twice in the empty box, changed nothing on screen; the footer stayed
+  `fake-model · high · <path> · Launch overrides`.
+- `muse schema generate-ts`, the stable and the `--experimental` surface, has no plan
+  request and no plan kind of approval.
+
+So nothing in a Muse tab waits for the person to approve a plan; local and remote tabs
+run the same muse, so neither shows a plan card.
+
+Koloft dependents: `museAsk` in `src/main/museServe.ts`.
