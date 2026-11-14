@@ -11,6 +11,13 @@ export interface SavedWindowState {
   bounds?: WinBounds
   maximized?: boolean
   fullScreen?: boolean
+  sessionScreen?: { cols: number; rows: number }
+}
+
+export function usableSessionScreen(raw: unknown): { cols: number; rows: number } | undefined {
+  const { cols, rows } = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const cells = (n: unknown): n is number => Number.isInteger(n) && (n as number) > 0
+  return cells(cols) && cells(rows) ? { cols, rows } : undefined
 }
 
 export function fullscreenOption(fullScreen: boolean): { fullscreen?: true } {

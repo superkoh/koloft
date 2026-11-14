@@ -3121,6 +3121,7 @@ function rendererTeardown(): void {
 
 function createWindow(): void {
   const geo = restoredWindowGeometry()
+  ptyMgr.sessionScreen ??= geo.sessionScreen
   windowOpenedAt = Date.now()
   mainWindow = new BrowserWindow({
     ...geo.bounds,
@@ -3164,7 +3165,8 @@ function createWindow(): void {
   trackWindowState(
     mainWindow,
     OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined,
-    () => hiddenFromFullScreen
+    () => hiddenFromFullScreen,
+    () => ptyMgr.sessionScreen
   )
 
   // PLATFORM§5
@@ -6537,8 +6539,11 @@ function registerIpc(): void {
   })
   ipcMain.handle(CH.terminal.flowStats, () => terminalOutput.stats())
   ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
-    ptyMgr.resize(id, cols, rows)
+    ptyMgr.fittedToItsScreen(id, cols, rows)
   )
+  ipcMain.on(CH.terminal.size, (e, id: string) => {
+    e.returnValue = ptyMgr.sizeOf(id)
+  })
   ipcMain.on(
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)

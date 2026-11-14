@@ -1,7 +1,12 @@
 import { app, screen, type BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { usableBounds, type SavedWindowState, type WinBounds } from './windowBounds'
+import {
+  usableBounds,
+  usableSessionScreen,
+  type SavedWindowState,
+  type WinBounds
+} from './windowBounds'
 
 const DEFAULT_SIZE = { width: 1440, height: 920 }
 const DRAG_SETTLE_MS = 400
@@ -24,6 +29,7 @@ export function restoredWindowGeometry(): {
   bounds: Partial<WinBounds> & { width: number; height: number }
   maximized: boolean
   fullScreen: boolean
+  sessionScreen: SavedWindowState['sessionScreen']
 } {
   const st = loadState()
   const displays = screen.getAllDisplays().map((d) => d.workArea)
@@ -31,14 +37,16 @@ export function restoredWindowGeometry(): {
   return {
     bounds: bounds ?? DEFAULT_SIZE,
     maximized: st.maximized === true,
-    fullScreen: st.fullScreen === true
+    fullScreen: st.fullScreen === true,
+    sessionScreen: usableSessionScreen(st.sessionScreen)
   }
 }
 
 export function trackWindowState(
   win: BrowserWindow,
-  pinnedFlags?: { maximized: boolean; fullScreen: boolean },
-  hiddenFromFullScreen: () => boolean = () => false
+  pinnedFlags: { maximized: boolean; fullScreen: boolean } | undefined,
+  hiddenFromFullScreen: () => boolean,
+  sessionScreen: () => SavedWindowState['sessionScreen']
 ): void {
   let timer: NodeJS.Timeout | null = null
 
@@ -49,7 +57,8 @@ export function trackWindowState(
       maximized: pinnedFlags ? pinnedFlags.maximized : win.isMaximized(),
       fullScreen: pinnedFlags
         ? pinnedFlags.fullScreen
-        : win.isFullScreen() || hiddenFromFullScreen()
+        : win.isFullScreen() || hiddenFromFullScreen(),
+      sessionScreen: sessionScreen()
     }
     try {
       fs.writeFileSync(stateFile(), JSON.stringify(st, null, 2))

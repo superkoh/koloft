@@ -10,6 +10,7 @@ export const CH = {
     onScreen: 'terminal:on-screen',
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
+    size: 'terminal:size',
     kill: 'terminal:kill',
     exit: 'terminal:exit',
     processTitle: 'terminal:processTitle',

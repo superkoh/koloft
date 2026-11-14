@@ -19,6 +19,11 @@ import {
   withoutMouseAndFocusReports
 } from './typeKeys'
 
+export interface ScreenSize {
+  cols: number
+  rows: number
+}
+
 export interface PtyHandle {
   id: string
   proc: pty.IPty
@@ -186,6 +191,7 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
+  sessionScreen?: ScreenSize
 
   private ptys = new Map<string, PtyHandle>()
   private running = new Set<pty.IPty>()
@@ -291,10 +297,11 @@ export class PtyManager extends EventEmitter {
       ? [args.executable, ...(args.argv ?? [])]
       : [shell, ...login.args]
     const [file, ...fileArgs] = args.aboveItsTools ? aboveItsTools(program) : program
+    const screen = args.kind === 'shell' ? undefined : this.sessionScreen
     const proc = pty.spawn(file, fileArgs, {
       name: 'xterm-256color',
-      cols: args.cols ?? 80,
-      rows: args.rows ?? 24,
+      cols: args.cols ?? screen?.cols ?? 80,
+      rows: args.rows ?? screen?.rows ?? 24,
       cwd: args.cwd,
       env
     })
@@ -469,6 +476,17 @@ export class PtyManager extends EventEmitter {
         h.proc.resume()
       } catch {}
     }
+  }
+
+  sizeOf(id: string): ScreenSize | null {
+    const h = this.ptys.get(id)
+    return h?.alive ? { cols: h.proc.cols, rows: h.proc.rows } : null
+  }
+
+  fittedToItsScreen(id: string, cols: number, rows: number): void {
+    const h = this.ptys.get(id)
+    if (h?.alive && h.kind !== 'shell' && cols > 0 && rows > 0) this.sessionScreen = { cols, rows }
+    this.resize(id, cols, rows)
   }
 
   resize(id: string, cols: number, rows: number): void {

@@ -1139,6 +1139,7 @@ export interface KoloftApi {
     onScreen(id: string, onScreen: boolean): void
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
+    size(id: string): { cols: number; rows: number } | null
     kill(id: string, restarting?: boolean): void
     onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void

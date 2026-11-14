@@ -79,6 +79,7 @@ const api: KoloftApi = {
     onScreen: (id, onScreen) => ipcRenderer.send(CH.terminal.onScreen, id, onScreen),
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
     resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
+    size: (id) => ipcRenderer.sendSync(CH.terminal.size, id),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),
     onData: (id, cb) => terminalDataSinks.listen(id, cb),
     onExit: (cb) => {

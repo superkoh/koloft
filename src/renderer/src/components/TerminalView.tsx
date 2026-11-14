@@ -194,6 +194,7 @@ function LiveTerminal({
   useEffect(() => {
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
+      ...window.api.terminal.size(id),
       fontSize: useStore.getState().settings.fontSize,
       fontFamily: fontFamilyRef.current,
       cursorBlink: true,
