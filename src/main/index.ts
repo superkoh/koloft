@@ -573,8 +573,6 @@ import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudeShowsAPanel,
   claudeShowsAPanelOnMachine,
-  sessionTakingMessagesAt,
-  sessionTakingMessagesAtOnMachine,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
@@ -1894,18 +1892,6 @@ async function sendPeerLine(tabId: string, line: string, ms: number): Promise<vo
   )
 }
 const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
-
-// CC§13
-async function messagedFrom(tabId: string, senderSocket: string): Promise<void> {
-  const host = tracker.remoteOf(tabId)?.host
-  const sender = host
-    ? sessionTakingMessagesAtOnMachine(await liveClaudeRegistryOn(host), senderSocket)
-    : sessionTakingMessagesAt(senderSocket)
-  if (!sender) return
-  sessionCommand.messaged(tabId, sender)
-  const senderTab = allSessions().find((s) => s.sessionId === sender)?.tabId
-  if (senderTab && attention.waitsOnAnother(senderTab)) attention.markFyi(senderTab)
-}
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
   if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
@@ -6505,7 +6491,7 @@ const claudeBackend = new ClaudeBackend({
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
-  messagedFrom: (tabId, senderSocket) => void messagedFrom(tabId, senderSocket).catch(() => {}),
+  messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.cron.toast, message),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>

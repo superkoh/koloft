@@ -8,8 +8,6 @@ import {
   claudePeerNames,
   claudeShowsAPanelOnMachine,
   messagingSocketOf,
-  sessionTakingMessagesAt,
-  sessionTakingMessagesAtOnMachine,
   tabSocketOnMachine,
   runningClaudePid,
   whenMessagingSocket
@@ -133,31 +131,6 @@ describe("claude's own session registry: the socket a session takes messages on"
     const soon = new Promise((r) => setTimeout(() => r('still waiting'), 5_000))
     expect(await Promise.race([waiting, soon])).toBe('/tmp/cc-socks/29948.sock')
   })
-
-  // CC§13
-  it('names the session behind the socket a message came from, and none for a socket no entry holds', () => {
-    const OTHER = '424b6fd0-a45c-489b-a221-8346f11d37ed'
-    fs.writeFileSync(
-      path.join(dir, '29948.json'),
-      JSON.stringify({
-        pid: 29948,
-        sessionId: SID,
-        procStart: START,
-        messagingSocketPath: '/tmp/cc-socks/29948.sock'
-      })
-    )
-    fs.writeFileSync(
-      path.join(dir, '8242.json'),
-      JSON.stringify({
-        pid: 8242,
-        sessionId: OTHER,
-        procStart: START,
-        messagingSocketPath: '/tmp/cc-socks/8242.sock'
-      })
-    )
-    expect(sessionTakingMessagesAt('/tmp/cc-socks/8242.sock', dir)).toBe(OTHER)
-    expect(sessionTakingMessagesAt('/tmp/cc-socks/1.sock', dir)).toBeNull()
-  })
 })
 
 // CC§5 CC§11
@@ -190,21 +163,6 @@ describe('the registry of a claude on another machine, read through ssh', () => 
 
   it('finds nothing on a machine where claude never ran', () => {
     expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
-  })
-
-  // CC§13
-  it('names the running session behind the socket a message came from on that machine, not one a hard-killed claude left behind', () => {
-    const sessions = path.join(dir, '.claude', 'sessions')
-    fs.mkdirSync(sessions, { recursive: true })
-    const gone = spawnSync('true').pid
-    for (const pid of [gone, process.pid])
-      fs.writeFileSync(
-        path.join(sessions, `${pid}.json`),
-        JSON.stringify({ pid, sessionId: SID, messagingSocketPath: `/tmp/cc-socks/${pid}.sock` })
-      )
-    const live = readOnMachine(dir)
-    expect(sessionTakingMessagesAtOnMachine(live, `/tmp/cc-socks/${process.pid}.sock`)).toBe(SID)
-    expect(sessionTakingMessagesAtOnMachine(live, `/tmp/cc-socks/${gone}.sock`)).toBeNull()
   })
 
   it('says a panel is open while the claude running in the tab reads waiting, not while a hard-killed one’s entry still does, and cannot say without an entry', () => {

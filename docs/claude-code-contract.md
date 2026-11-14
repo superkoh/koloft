@@ -3052,7 +3052,14 @@ sessions.
   - The sender's tool result names the target only as typed: `{"success":true,"message":
     "“probe” → recv (another Claude session on this machine; in that session's inbox, not
     yet read by its Claude …"}`. Its `to` may be a bare name, `name [ref]`, or a `from`
-    attribute copied back.
+    attribute copied back (the tool's own text).
+  - The sender's PostToolUse fires for it, a deferred tool, through a hook with
+    `matcher: "SendMessage"` (2 of 2; ToolSearch did not fire that hook), before the
+    sender's Stop, and carries `tool_name: "SendMessage"`, `tool_input: {to, summary,
+    message}` and `tool_response: {success: true, message, display, msg_id}`. Run with
+    and without the matcher, the same fields.
+  - Not probed: what `tool_response` holds for a send to an in-process agent (a subagent,
+    `main`, a teammate), and what a `[ref]` is made of.
 - **Esc that interrupts a running turn fires no `Stop` hook.** 2026-10-11, CC 2.1.296,
   model haiku, temp HOME, a `Stop` hook that appends to a file: a typed turn running
   `ping -c 30 127.0.0.1` was interrupted with Esc 6 s in; the session went `idle` and the

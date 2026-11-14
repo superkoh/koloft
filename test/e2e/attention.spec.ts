@@ -1,10 +1,17 @@
 import fs from 'fs'
-import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
+import { ATTENTION_REASON } from '../../src/shared/types'
 import { codexRows, startCodex } from './helpers/codex'
+import {
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  machineHome
+} from './helpers/remote'
 import {
   centerTerm,
   FAKE_SESSION_TITLE,
@@ -30,6 +37,60 @@ async function lookAtTheWindow(app: ElectronApplication): Promise<void> {
 
 const markOn = async (page: Page, tabId: string) =>
   (await pendingAttention(page)).find((e) => e.tabId === tabId)
+
+const activeTab = async (page: Page): Promise<string> =>
+  (await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id'))!
+
+async function messageSocketOf(page: Page, home: string, tabId: string): Promise<string> {
+  const registry = path.join(home, '.claude', 'sessions')
+  let socket: string | undefined
+  await expect
+    .poll(
+      async () => {
+        const s = (await page.evaluate(() => window.api.sessions.list())).find(
+          (x) => x.tabId === tabId
+        )
+        const id = s?.nativeSessionId ?? s?.sessionId
+        socket = (fs.existsSync(registry) ? fs.readdirSync(registry) : [])
+          .filter((f) => f.endsWith('.json'))
+          .map((f) => JSON.parse(fs.readFileSync(path.join(registry, f), 'utf8')))
+          .find((e) => id && e.sessionId === id)?.messagingSocketPath
+        return socket
+      },
+      { timeout: 60_000 }
+    )
+    .toBeTruthy()
+  return socket!
+}
+
+async function sendingToABusySessionIsOnlyNews(
+  app: ElectronApplication,
+  page: Page,
+  home: string,
+  sender: string,
+  receiver: string
+): Promise<void> {
+  const type = (tab: string, line: string): Promise<void> =>
+    page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+  const receiverSocket = await messageSocketOf(page, home, receiver)
+  await expect.poll(() => markOn(page, sender), { timeout: 60_000 }).toBeTruthy()
+  const before = (await markOn(page, sender))!.at
+  await type(receiver, '/hold')
+  await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(
+    /\bst-working\b/,
+    { timeout: 30_000 }
+  )
+  const notices = (await osOutlets(app)).notifications.length
+  await type(sender, `/send-message uds:${receiverSocket} Run the tests`)
+  await expect
+    .poll(async () => (await markOn(page, sender))?.at ?? before, { timeout: 30_000 })
+    .toBeGreaterThan(before)
+  expect((await markOn(page, sender))?.fyi).toBe(true)
+  expect(
+    (await osOutlets(app)).notifications.slice(notices).map((n) => n.body.split(' · ')[0])
+  ).not.toContain(ATTENTION_REASON['turn-done'])
+  await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(/\bst-working\b/)
+}
 
 test.describe('attention markers come from real session-status transitions (shim → hooks → tracker → attention set)', () => {
   test('a finished turn pends attention and a red dot on its row, visiting the tab keeps both, and only the session working again clears them', async ({
@@ -174,59 +235,42 @@ test.describe('attention markers come from real session-status transitions (shim
   })
 
   // CC§13
-  test('a turn that ended after messaging another Claude session with SendMessage is only news once that session takes the message into its running turn, told by code alone', async ({
+  test('a turn that ends after sending another Claude session a message with SendMessage, while that session works, is only news from the start, told by code alone', async ({
     env
   }) => {
     test.setTimeout(120_000)
     seedSettings(env, { hintsOff: true })
-    const registry = path.join(env.home, '.claude', 'sessions')
-    const sockets = (): string[] =>
-      (fs.existsSync(registry) ? fs.readdirSync(registry) : [])
-        .filter((f) => f.endsWith('.json'))
-        .map((f) => JSON.parse(fs.readFileSync(path.join(registry, f), 'utf8')).messagingSocketPath)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const type = (tab: string, line: string): Promise<void> =>
-        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
-      const activeTab = async (): Promise<string> =>
-        (await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id'))!
       await startSessionIn(page, 'ws-a')
-      const sender = await activeTab()
-      await expect.poll(sockets, { timeout: 25_000 }).toHaveLength(1)
-      const [senderSocket] = sockets()
+      const sender = await activeTab(page)
       await startSessionIn(page, 'ws-b')
-      const receiver = await activeTab()
-      await expect.poll(sockets, { timeout: 25_000 }).toHaveLength(2)
-      const receiverSocket = sockets().find((s) => s !== senderSocket)!
-      await type(receiver, '/hold')
-      await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(
-        /\bst-working\b/,
-        { timeout: 20_000 }
-      )
-
-      await expect.poll(() => markOn(page, sender), { timeout: 25_000 }).toBeTruthy()
-      const before = (await markOn(page, sender))!.at
-      await type(sender, 'reporting back')
-      await expect
-        .poll(async () => (await markOn(page, sender))?.at ?? before, { timeout: 20_000 })
-        .toBeGreaterThan(before)
-      expect((await markOn(page, sender))?.fyi).toBeFalsy()
-
-      const content = `<cross-session-message from="uds:${senderSocket}" from-name="sender" from-mode="bypass">\nRun the tests\n</cross-session-message>`
-      await new Promise<void>((resolve, reject) => {
-        const c = net.createConnection(receiverSocket, () =>
-          c.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n')
-        )
-        c.on('close', () => resolve())
-        c.on('error', reject)
-      })
-      await expect
-        .poll(async () => (await markOn(page, sender))?.fyi, { timeout: 20_000 })
-        .toBe(true)
+      const receiver = await activeTab(page)
+      await sendingToABusySessionIsOnlyNews(app, page, env.home, sender, receiver)
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  // CC§13
+  test('on a remote machine too, a turn that ends after sending another Claude session there a message with SendMessage, while that session works, is only news from the start', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const sender = await activeTab(page)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const receiver = await activeTab(page)
+      await sendingToABusySessionIsOnlyNews(app, page, machineHome(env), sender, receiver)
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
     }
   })
 

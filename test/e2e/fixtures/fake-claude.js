@@ -1611,6 +1611,38 @@ function handleLine(line) {
     })
     return
   }
+  // CC§13
+  if (text.startsWith('/send-message uds:')) {
+    const [to, ...words] = text.slice('/send-message '.length).trim().split(' ')
+    const message = words.join(' ')
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+    append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
+    const content = `<cross-session-message from="uds:${peerSocket}" from-name="${argVal('--name') ?? 'fake'}" from-mode="bypass">\n${message}\n</cross-session-message>`
+    const c = require('net').createConnection(to.slice('uds:'.length), () =>
+      c.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n')
+    )
+    c.on('error', () => undefined)
+    c.on('close', (failed) => {
+      fireToolHooks('PostToolUse', {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'SendMessage',
+        tool_input: { to, message },
+        tool_response: { success: !failed, message: `→ ${to}` },
+        tool_use_id: `toolu_send_${require('crypto').randomUUID()}`
+      })
+      append([
+        {
+          type: 'assistant',
+          timestamp: new Date().toISOString(),
+          message: { role: 'assistant', content: [{ type: 'text', text: `Sent to ${to}.` }] },
+          cwd
+        }
+      ])
+      fireHook('stop', { hook_event_name: 'Stop' })
+      process.stdout.write(`[fake-claude] sent to ${to}\r\n> `)
+    })
+    return
+  }
   // CC§2
   if (text.startsWith('/scratch ')) {
     const name = text.slice('/scratch '.length).trim()
