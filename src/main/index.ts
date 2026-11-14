@@ -326,7 +326,7 @@ import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from '.
 import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
-import { fullscreenOption, windowMinWidth } from './windowBounds'
+import { fullscreenOption, usableSessionScreen, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
@@ -3121,7 +3121,6 @@ function rendererTeardown(): void {
 
 function createWindow(): void {
   const geo = restoredWindowGeometry()
-  ptyMgr.sessionScreen ??= geo.sessionScreen
   windowOpenedAt = Date.now()
   mainWindow = new BrowserWindow({
     ...geo.bounds,
@@ -3229,6 +3228,7 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
   const stalls = new StallWatchWhileFocused(
     signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
   )
@@ -6542,7 +6542,8 @@ function registerIpc(): void {
     CH.terminal.resize,
     (_e, id: string, cols: number, rows: number, sessionScreen: unknown) => {
       ptyMgr.resize(id, cols, rows)
-      if (sessionScreen === true) ptyMgr.sessionScreen = { cols, rows }
+      const fitted = sessionScreen === true && usableSessionScreen({ cols, rows })
+      if (fitted) ptyMgr.sessionScreen = fitted
     }
   )
   ipcMain.on(CH.terminal.sessionScreen, (e) => {

@@ -1,6 +1,7 @@
 import { app, screen, type BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import type { ScreenSize } from '@shared/types'
 import {
   usableBounds,
   usableSessionScreen,
@@ -29,7 +30,7 @@ export function restoredWindowGeometry(): {
   bounds: Partial<WinBounds> & { width: number; height: number }
   maximized: boolean
   fullScreen: boolean
-  sessionScreen: SavedWindowState['sessionScreen']
+  sessionScreen: ScreenSize | undefined
 } {
   const st = loadState()
   const displays = screen.getAllDisplays().map((d) => d.workArea)
@@ -46,7 +47,7 @@ export function trackWindowState(
   win: BrowserWindow,
   pinnedFlags: { maximized: boolean; fullScreen: boolean } | undefined,
   hiddenFromFullScreen: () => boolean,
-  sessionScreen: () => SavedWindowState['sessionScreen']
+  sessionScreen: () => ScreenSize | undefined
 ): void {
   let timer: NodeJS.Timeout | null = null
 
