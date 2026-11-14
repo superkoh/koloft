@@ -769,6 +769,21 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   not load.
 - **A content script with `run_at: document_start` can run before
   `document.documentElement` exists.**
+- **Native messaging (read 2026-11-13 in electron-chrome-extensions 4.9.0's
+  `dist/cjs/index.js`):** on macOS the library reads `<host>.json` from
+  `/Library/Google/Chrome/NativeMessagingHosts`, then
+  `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`, then
+  `NativeMessagingHosts` in the app's `userData`, and takes the first file that reads
+  and has a valid shape; a missing or broken one is skipped with only a debug line. It
+  spawns the host from the main process with the extension origin as its one argument —
+  so the host's parent is the app itself. Two differences from Chrome, not yet seen
+  happening: `receive`, a stdout `data` listener in the main process with no
+  `try`, reads one message per chunk, so a message split over two chunks (or a chunk
+  under 4 bytes) throws there, an uncaught exception in the main process, and a second
+  message in the same chunk is dropped; `send` writes `message.length` (UTF-16 units,
+  not bytes) as the length, so a message with non-ASCII text is cut short. On a Mac
+  without Chrome, whether a host's installer writes to any of those folders is not
+  probed.
 
 ## §16 CDP through `webContents.debugger`
 
@@ -3679,6 +3694,76 @@ Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so Ap
 and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
 of that it spent on the CPU.
+
+## §71 1Password for Mac: which browsers its app lets the extension in
+
+How established: read 2026-11-13 on 1Password for Mac 8.12.44, macOS 27.0 (Darwin
+27.0.0), with `strings` on the host binary `1Password-BrowserSupport` (inside
+`1Password Browser Helper.app`, under the app's `Contents/Library/LoginItems`) and on
+`Contents/Frameworks/index.node`, plus `ps`, `pgrep` and the macOS unified log
+(`log show`). 1Password was not opened, and its settings, data and own log files were
+not read.
+
+- **The extension talks to the app through a native messaging host.** 1Password puts a
+  `com.1password.1password.json` host file in each browser's `NativeMessagingHosts`
+  folder. Chrome's copy points at `1Password-BrowserSupport` and allows six extension
+  origins, among them the store build (`aeblfdkhhhdcdjpifhhbdiojplfjncoa`) and the
+  Nightly build (`gejiddohjgogedgjnonbofjigllpkmbf`). The host is started with the
+  extension's origin as its one argument. In Chrome, the host's parent process is
+  Chrome's main process, and it stays up for as long as Chrome does (`ps`).
+- **The host checks the browser that started it before it talks to the app.** Its
+  strings name `browser_verification/apple.rs` and messages such as "BrowserSupport was
+  not part of the main browser's tree", "BrowserSupport spawned by misplaced
+  intermediate process", "encountered unsupported browser, attempting to check for a
+  helper", "browser was unsigned, rejecting it", "no possible browser subprocesses
+  matched the users approval list" and "Browser process validation failed". Other early
+  exits it names: "Settings file wasn't readable", "Settings file was invalid.",
+  "failed to get path to grandparent process", "Couldn't find any running application,
+  or failed to get its code signature".
+- **A built-in list of 24 bundle ids from 7 makers** passes that check: Firefox (3),
+  Vivaldi (2), Microsoft Edge (4), The Browser Company (Arc and Dia, 2), Perplexity Comet
+  (1), Google Chrome (4) and Brave (8). Elsewhere in the binary sit 24 team ids in groups
+  of the same sizes; that each bundle id is paired with its maker's team id is inferred
+  from the counts, not checked. Safari (`com.apple.Safari` and two variants) is handled
+  apart. `ai.koloft.app` is in neither binary (`grep -c` gives 0).
+- **Any other browser must be on the user's own approval list.** The official page
+  "Connect additional browsers to the 1Password app"
+  (https://support.1password.com/additional-browsers/, read 2026-11-13) gives the way:
+  Settings ▸ Browser ▸ Add Browser, then "choose a browser that's code signed by Apple
+  in the Applications folder". The same page warns that a connected browser "will
+  receive full access to the information saved in 1Password when the 1Password app is
+  unlocked". The strings show each entry holds a bundle id and a
+  code-signing requirement string ("requirements string from user settings was
+  corrupt"); that the stored string is the app's designated requirement is inferred,
+  not checked. Ways an addition is refused: "The selected application was signed in an
+  unsupported way or may be missing a required identifier.", `NotInApplicationsDirectory`,
+  `AppBundleIsSymlinked`, `AppBundleDoesNotExistOnDisk`, `UnableToGetMetadata`. Adding
+  needs 1Password unlocked ("trusted browsers can only be added while unlocked"), an
+  account that signs in with SSO needs biometrics on ("adding browsers with SSO
+  authorization is not supported. Please enable biometrics"), an admin can push entries
+  (`AdminDeployedBrowserProperties`) and custom browsers can be turned off
+  ("custom-browsers-unavailable-alert").
+- **A partner browser can be approved from the extension's side**:
+  `TrustedBrowserAddReason::Partner`, "received request to add a (most likely) partner
+  browser", "running browser is not signed by the expected team" and, in the host,
+  "waiting for potential partner browser authorization from B5X". `Partner` is the only
+  variant found. Which browsers count as partners, and whether an unknown browser is
+  ever offered this way, is not probed.
+- **A browser off both lists, as seen 2026-11-13 with Koloft 0.71.0** (the Developer
+  ID-signed, notarized release in `/Applications`) and the 1Password
+  Nightly extension installed in its Workbench browser: Koloft's main process starts
+  `1Password-BrowserSupport chrome-extension://gejiddohjgogedgjnonbofjigllpkmbf/`
+  (caught with `pgrep -P <Koloft pid>`), the same parent shape as Chrome. `log show`
+  lists one such host every minute since Koloft's last launch; each is gone 25–30 ms
+  after its first log line, which is about checking a code signature
+  (`SecTrustEvaluateIfNecessary`; whose signature, not checked). That it exits because
+  Koloft is on neither list is inferred, not checked: the other early exits above were
+  not ruled out, since 1Password's own log files were not read. Not probed: whether Add Browser
+  takes Koloft, and what the extension shows once the host stays up.
+
+Koloft dependents: the Workbench browser's extensions (`extensionManager.ts`) reach
+1Password only through the host above; how the extension library finds and starts a
+host is §15.
 
 ## §72 Making work give way on a Linux machine, as the user logged in over SSH
 
