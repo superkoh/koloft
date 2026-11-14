@@ -38,5 +38,6 @@ function mirrorRewritingOnlyChangedBytesLikeInplace(fromDir, toDir) {
   }
 }
 
-if (fs.existsSync(from)) mirrorRewritingOnlyChangedBytesLikeInplace(from, dst)
+const pullsHeldBack = fs.existsSync(path.join(STATE, 'mirror-hold'))
+if (fs.existsSync(from) && !pullsHeldBack) mirrorRewritingOnlyChangedBytesLikeInplace(from, dst)
 process.exit(0)

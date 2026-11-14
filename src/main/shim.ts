@@ -532,6 +532,9 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
       export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+      case "$pjson" in
+        *'"disable1mContext":true'*) export CLAUDE_CODE_DISABLE_1M_CONTEXT=1 ;;
+      esac
       # CC§9
       kargs=()
       kdrop=0

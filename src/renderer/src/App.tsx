@@ -1416,6 +1416,7 @@ export default function App(): JSX.Element {
   const [sbDragging, setSbDragging] = useState(false)
   const dockRef = useRef<HTMLDivElement>(null)
   const sideRef = useRef<HTMLDivElement>(null)
+  const notesRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   // ADR-0011
   const shownWidth = useRef(0)
@@ -1501,15 +1502,18 @@ export default function App(): JSX.Element {
     const box = dockRef.current?.getBoundingClientRect()
     const bottom = box?.bottom ?? window.innerHeight
     const room = box?.height ?? window.innerHeight
+    let live = useStore.getState().notesHeight
     const onMove = (ev: globalThis.MouseEvent): void => {
-      setNotesHeight(notesHeightFromDrag(bottom, room, ev.clientY))
+      live = notesHeightFromDrag(bottom, room, ev.clientY)
+      if (notesRef.current) notesRef.current.style.height = `${live}px`
     }
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      setNotesHeight(live)
       setNbDragging(false)
       endLayoutDrag()
-      void window.api.settings.set({ notesHeight: useStore.getState().notesHeight })
+      void window.api.settings.set({ notesHeight: live })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
@@ -1636,6 +1640,7 @@ export default function App(): JSX.Element {
             />
           )}
           <NotesIsland
+            ref={notesRef}
             wsPath={notesWs}
             height={dockHeight ? clampNotesHeight(notesHeight, notesRoom) : notesHeight}
             folded={notesFolded}

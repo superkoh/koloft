@@ -449,6 +449,7 @@ export class KoloftInbox {
   // ADR-0039
   private agentStoppedWithKoloft(c: InboxCard): boolean {
     if (!c.where.machine) return true
+    if (this.d.marks().some((m) => m.sessionId === c.session && m.stoppedByRestart)) return true
     return !!c.session && this.d.liveTabOf(c.session)?.backend === 'codex'
   }
 

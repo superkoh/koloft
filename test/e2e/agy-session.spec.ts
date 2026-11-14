@@ -72,6 +72,7 @@ const AGY_SETUP_SCREEN = { timeout: 20_000 }
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
+const THE_FORM_DRAWS_ITS_TRUST_ANSWER_MS = 500
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -101,6 +102,45 @@ async function startAgy(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<AgyCall> 
   await newSessionInWith(page, ws, 'Antigravity')
   await expect.poll(() => sessionCalls(env).length).toBe(before + 1)
   return sessionCalls(env)[before]
+}
+
+function signInAgyWithGoogle(env: E2EEnv, name: string): void {
+  const appDir = path.join(env.userData, 'agy-homes', name, 'antigravity-cli')
+  fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
+  fs.writeFileSync(
+    path.join(appDir, 'cache', 'onboarding.json'),
+    JSON.stringify({ onboardingComplete: true })
+  )
+  fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+}
+
+function writeAgyWeeklyUsage(env: E2EEnv, remaining: number): string {
+  const usage = path.join(env.home, 'fake-agy-usage.json')
+  fs.writeFileSync(
+    usage,
+    JSON.stringify({
+      groups: [
+        {
+          name: 'Gemini Models',
+          buckets: [
+            {
+              id: 'gemini-weekly',
+              name: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remaining_fraction: remaining,
+              reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
+            }
+          ]
+        }
+      ]
+    })
+  )
+  return usage
+}
+
+async function agyQuotaUsed(page: Page): Promise<number | undefined> {
+  return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
+    ?.quota?.[0]?.used
 }
 
 async function boundAgy(page: Page): Promise<{ tabId: string; id: string }> {
@@ -1013,7 +1053,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§5
-  test('an Antigravity job in a git workspace agy trusts starts in its new worktree without agy asking whether to trust that folder', async ({
+  test('an Antigravity job in a git workspace agy trusts gets no trust warning in the form and starts in its new worktree without agy asking whether to trust that folder', async ({
     env
   }) => {
     installAgy(env)
@@ -1029,6 +1069,13 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const dlg = page.locator('.modal.cronjobs')
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
       await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      await expect
+        .poll(() => page.evaluate((ws) => window.api.cron.trusted(ws, 'agy'), env.workspaces.a))
+        .toBe(true)
+      await page.waitForTimeout(THE_FORM_DRAWS_ITS_TRUST_ANSWER_MS)
+      await expect(
+        dlg.locator('.field-hint.warn', { hasText: 'cannot see that Antigravity trusts' })
+      ).toHaveCount(0)
       await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
       await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
       await dlg.locator('.modal-foot .btn-primary').click()
@@ -1142,13 +1189,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     const binary = path.join(env.fakeBin, 'agy')
     fs.symlinkSync(FAKE_AGY, binary)
     env.launchEnv.KOLOFT_AGY_CMD = binary
-    const appDir = path.join(accountHome(env), 'antigravity-cli')
-    fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
-    fs.writeFileSync(
-      path.join(appDir, 'cache', 'onboarding.json'),
-      JSON.stringify({ onboardingComplete: true })
-    )
-    fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+    signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
     seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
     const app = await launchApp(env)
     try {
@@ -1171,55 +1212,19 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     env.launchEnv.KOLOFT_AGY_CMD = binary
     trustInAgy(env, env.workspaces.a)
     const homeOf = (name: string) => path.join(env.userData, 'agy-homes', name)
-    const signInWithGoogle = (name: string) => {
-      const appDir = path.join(homeOf(name), 'antigravity-cli')
-      fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
-      fs.writeFileSync(
-        path.join(appDir, 'cache', 'onboarding.json'),
-        JSON.stringify({ onboardingComplete: true })
-      )
-      fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
-    }
-    signInWithGoogle(E2E_AGY_ACCOUNT)
+    signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
     seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
-    const usage = path.join(env.home, 'fake-agy-usage.json')
-    fs.writeFileSync(
-      usage,
-      JSON.stringify({
-        groups: [
-          {
-            name: 'Gemini Models',
-            buckets: [
-              {
-                id: 'gemini-weekly',
-                name: 'Weekly Limit Remaining',
-                window: 'weekly',
-                remaining_fraction: 0,
-                reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
-              }
-            ]
-          }
-        ]
-      })
-    )
+    const usage = writeAgyWeeklyUsage(env, 0)
     const lastOpen = await launchApp(env)
     try {
       const page = await lastOpen.firstWindow()
       await waitBooted(page)
-      await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.accounts.probe())).find(
-              (a) => a.kind === 'agy-home'
-            )?.quota?.[0]?.used,
-          { timeout: 30_000 }
-        )
-        .toBe(1)
+      await expect.poll(() => agyQuotaUsed(page), { timeout: 30_000 }).toBe(1)
     } finally {
       await quitAndClose(lastOpen)
     }
 
-    signInWithGoogle('roomy')
+    signInAgyWithGoogle(env, 'roomy')
     seedSettings(env, {
       hintsOff: true,
       accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home'), seededAccount('roomy', 'agy-home')]
@@ -1230,6 +1235,43 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const page = await app.firstWindow()
       await waitBooted(page)
       expect((await startAgy(page, env)).geminiDir).toBe(homeOf('roomy'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('the first Antigravity tab after Koloft reopens, started while no quota can be read, prints the quota read before the restart with how long ago it was read, as a Codex or Muse tab does', async ({
+    env
+  }) => {
+    const binary = path.join(env.fakeBin, 'agy')
+    fs.symlinkSync(FAKE_AGY, binary)
+    env.launchEnv.KOLOFT_AGY_CMD = binary
+    trustInAgy(env, env.workspaces.a)
+    signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    const usage = writeAgyWeeklyUsage(env, 0.9)
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => agyQuotaUsed(page), { timeout: 30_000 }).toBeCloseTo(0.1)
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    const saved = path.join(env.userData, 'home-usage-snapshots.json')
+    const snapshots = JSON.parse(fs.readFileSync(saved, 'utf8')) as Record<string, { at: number }>
+    for (const s of Object.values(snapshots)) s.at -= 2 * 3600_000
+    fs.writeFileSync(saved, JSON.stringify(snapshots))
+    fs.writeFileSync(usage, '{"groups":"unread"}')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_AGY_ACCOUNT} · Gemini Models 7d 10% · 2 h ago`
+      )
     } finally {
       await quitAndClose(app)
     }
