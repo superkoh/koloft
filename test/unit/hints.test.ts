@@ -167,6 +167,35 @@ describe('firedHints — worktree', () => {
     expect(firedHints(prev, next)).toEqual([])
   })
 
+  it('stays quiet when a lone launch row gives way to the session it started, as a Muse, Antigravity or remote tab’s does', () => {
+    const starting = { id: 'pty-1', worktree: 'main', running: true, pending: true }
+    const prev = snap({ rows: [ws('/a', [starting])] })
+    const next = snap({ rows: [ws('/a', [running('muse:devbox:s1')])] })
+    expect(firedHints(prev, next)).toEqual([])
+  })
+
+  it('stays quiet when a lone tab swaps its session, as /clear or a resume does', () => {
+    const prev = snap({ rows: [ws('/a', [running('s1')])] })
+    const next = snap({ rows: [ws('/a', [running('s2'), cold('s1')])] })
+    expect(firedHints(prev, next)).toEqual([])
+  })
+
+  it('fires at the second launch when it lands in the same update in which the first launch row gives way to its session', () => {
+    const starting = { id: 'pty-1', worktree: 'main', running: true, pending: true }
+    const prev = snap({ rows: [ws('/a', [starting])] })
+    const next = snap({
+      rows: [ws('/a', [running('muse:devbox:s1'), { ...starting, id: 'pty-2' }])]
+    })
+    expect(firedHints(prev, next)).toEqual([{ id: 'worktree', selector: rowSelector('pty-2') }])
+  })
+
+  it('stays quiet when the other running session is in a worktree folder of its own', () => {
+    const elsewhere = { id: 'w1', worktree: 'fix-login', running: true }
+    const prev = snap({ rows: [ws('/a', [elsewhere])] })
+    const next = snap({ rows: [ws('/a', [elsewhere, launch('pty-2')])] })
+    expect(firedHints(prev, next)).toEqual([])
+  })
+
   it('stays quiet when nothing else in that workspace is running', () => {
     const prev = snap({ rows: [ws('/a', [cold('s1')])] })
     const next = snap({

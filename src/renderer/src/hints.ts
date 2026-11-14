@@ -50,6 +50,12 @@ export function selectorOf(h: HintFire, panelShown: boolean, sidebarHidden: bool
   return h.selector
 }
 
+type Row = HintSnapshot['rows'][number]['rows'][number]
+
+function runsInMainFolder(r: Row): boolean {
+  return r.worktree === 'main' && (r.running || !!r.pending)
+}
+
 function rowTabId(s: HintSnapshot, rowId: string): string {
   return s.sessions.find((x) => x.sessionId === rowId && x.alive)?.tabId ?? rowId
 }
@@ -85,13 +91,16 @@ export function firedHints(prev: HintSnapshot, next: HintSnapshot): HintFire[] {
   for (const ws of next.rows) {
     const before = prev.rows.find((w) => w.workspace.path === ws.workspace.path)
     if (!before) continue
-    const started = ws.rows.find((r) => {
-      if (r.worktree !== 'main' || !(r.running || r.pending)) return false
+    const running = ws.rows.filter(runsInMainFolder)
+    const started = running.filter((r) => {
       const was = before.rows.find((b) => b.id === r.id)
       return !was?.running && !was?.pending
     })
-    if (started && before.rows.some((b) => b.id !== started.id && b.running)) {
-      out.push({ id: 'worktree', selector: rowSelector(rowTabId(next, started.id)) })
+    if (!started.length) continue
+    const runningBefore = before.rows.filter(runsInMainFolder).length
+    if (runningBefore > 0 && running.length > runningBefore) {
+      const newTab = started.find((r) => r.pending) ?? started[0]
+      out.push({ id: 'worktree', selector: rowSelector(rowTabId(next, newTab.id)) })
       break
     }
   }
