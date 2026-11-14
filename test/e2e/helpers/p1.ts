@@ -493,6 +493,10 @@ export function notesIsland(page: Page): Locator {
   return page.locator('.isl-notes')
 }
 
+export function notesGutter(page: Page): Locator {
+  return page.locator('.gutter-h:has(+ .isl-notes)')
+}
+
 export function notesArea(page: Page): Locator {
   return notesIsland(page).locator('.ed-area')
 }
