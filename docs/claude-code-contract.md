@@ -3031,6 +3031,27 @@ sessions.
     message started its own turn; Enter pressed after that turn sent the half-typed line
     whole, as a prompt of its own. The same check while the receiver was busy was run but
     its result was not kept.
+- **A receiver closes its end of the connection once it has taken the line, a
+  just-resumed one too — when nothing else holds it up.** 2026-11-14, CC 2.1.322 and
+  2.1.325, an interactive `--dangerously-skip-permissions` receiver in a python pty, a
+  scratch `CLAUDE_CONFIG_DIR`, a fake `apiKeyHelper` key and a local fake Messages API, no
+  MCP servers and no hooks. One `bypass` line per connection, the writer's half closed
+  right after the write (as `socket.end(line)` does), on a fresh session after 4 s and on
+  the same session `--resume`d three times, written the moment its registry entry (§11)
+  named the socket (~0.17 s after spawn), two runs per version: every write finished at
+  once, the receiver closed its end 0.006–0.011 s after it on the fresh session and
+  0.041–0.080 s after it on each resume (16 of 16), and the line was in the transcript
+  0.17–0.26 s after the write (the file read every 0.05 s while the pty was drained; a
+  pty left undrained held the transcript back for as long). **A receiver that is not
+  reading still lets the whole line in, and takes it once it runs again:** the same
+  resume with the claude process stopped (`SIGSTOP`) just before the write — the write
+  finished at once, no close came in 4 s, then on `SIGCONT` the receiver closed its end
+  0.006–0.088 s later and the line was in the transcript 0.19–0.22 s later, as exactly
+  one `user` record (6 of 6, three per version). Inside Koloft, with its hooks and a real
+  account (2026-11-10, CC 2.1.322, the hand-test sandbox, 2 of 3 runs), a just-resumed
+  receiver did not close within 3 s, yet the line reached its transcript; what held that
+  receiver up there was not looked into. So a line the socket took whole is counted as
+  taken; one still waiting to be written when the wait ends is not.
 - **Esc that interrupts a running turn fires no `Stop` hook.** 2026-10-11, CC 2.1.296,
   model haiku, temp HOME, a `Stop` hook that appends to a file: a typed turn running
   `ping -c 30 127.0.0.1` was interrupted with Esc 6 s in; the session went `idle` and the

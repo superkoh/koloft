@@ -31,7 +31,7 @@ export function writeLine(socketPath: string, line: string): Promise<void> {
     socket.setTimeout(SOCKET_WRITE_TIMEOUT_MS, () =>
       socket.destroy(new Error('the session did not take the message in time.'))
     )
-    socket.on('error', reject)
+    socket.on('error', (e) => (socket.writableFinished ? resolve() : reject(e)))
     socket.on('close', (hadError) => {
       if (!hadError) resolve()
     })
