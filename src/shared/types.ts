@@ -727,6 +727,7 @@ export interface AttentionEvent extends AttentionSubject {
 
 export interface OsOutletsSeenByTests {
   notifications: { title: string; body: string }[]
+  inNotificationCenter: { title: string; body: string }[]
   dockBadge: string
   windowHidden: boolean
 }

@@ -1177,6 +1177,7 @@ function projectFolderName(event: AttentionEvent): string | undefined {
 
 const osOutletsSeenByTests: OsOutletsSeenByTests = {
   notifications: [],
+  inNotificationCenter: [],
   dockBadge: '',
   windowHidden: false
 }
@@ -1249,18 +1250,31 @@ function activateTabFromNotification(tabId: string): void {
   app.focus({ steal: true })
 }
 
+interface OsNotification {
+  show(): void
+  close(): void
+  on(event: 'click', listener: () => void): unknown
+}
+
 // PLATFORM§4
-const osNotifications = new Map<string, Notification>()
+const osNotifications = new Map<string, OsNotification>()
+
+function withdrawOsNotification(tabId: string): void {
+  const n = osNotifications.get(tabId)
+  osNotifications.delete(tabId)
+  try {
+    n?.close()
+  } catch {}
+}
 
 function retractStaleOsNotifications(pending: AttentionEvent[]): void {
-  for (const [tabId, n] of osNotifications) {
-    if (!pending.some((ev) => ev.tabId === tabId)) {
-      try {
-        n.close()
-      } catch {}
-      osNotifications.delete(tabId)
-    }
-  }
+  for (const tabId of osNotifications.keys())
+    if (!pending.some((ev) => ev.tabId === tabId)) withdrawOsNotification(tabId)
+}
+
+function ownerSees(tabId: string): void {
+  attention.seen(tabId)
+  withdrawOsNotification(tabId)
 }
 
 function osNotificationText(event: AttentionEvent): { title: string; body: string } {
@@ -1272,11 +1286,28 @@ function osNotificationText(event: AttentionEvent): { title: string; body: strin
   }
 }
 
-function osNotification(text: { title: string; body: string }): Notification | null {
-  if (OFF_SCREEN_TEST) {
-    osOutletsSeenByTests.notifications.push(text)
-    return null
+class NotificationSeenByTests implements OsNotification {
+  constructor(private readonly text: { title: string; body: string }) {}
+
+  show(): void {
+    osOutletsSeenByTests.notifications.push(this.text)
+    osOutletsSeenByTests.inNotificationCenter.push(this.text)
   }
+
+  // PLATFORM§4
+  close(): void {
+    osOutletsSeenByTests.inNotificationCenter = osOutletsSeenByTests.inNotificationCenter.filter(
+      (t) => t !== this.text
+    )
+  }
+
+  on(): this {
+    return this
+  }
+}
+
+function osNotification(text: { title: string; body: string }): OsNotification | null {
+  if (OFF_SCREEN_TEST) return new NotificationSeenByTests(text)
   return Notification.isSupported() ? new Notification(text) : null
 }
 
@@ -1287,13 +1318,7 @@ function showOsNotification(event: AttentionEvent): void {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
   })
-  n.on('close', () => osNotifications.delete(event.tabId))
-  const prev = osNotifications.get(event.tabId)
-  if (prev) {
-    try {
-      prev.close()
-    } catch {}
-  }
+  withdrawOsNotification(event.tabId)
   osNotifications.set(event.tabId, n)
   n.show()
 }
@@ -3238,7 +3263,7 @@ function createWindow(): void {
     sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
-    if (uiActiveTabId) attention.seen(uiActiveTabId)
+    if (uiActiveTabId) ownerSees(uiActiveTabId)
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
@@ -6707,7 +6732,7 @@ function registerIpc(): void {
     lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
     guard?.lookedAtChanged()
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
+    if (uiActiveTabId && windowFocused()) ownerSees(uiActiveTabId)
     rememberOpenTabs()
   })
 
