@@ -7421,15 +7421,9 @@ function registerIpc(): void {
   ipcMain.handle(CH.fs.dirExists, (_e, p: string) =>
     typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
-  ipcMain.handle(CH.fs.fileExists, async (_e, p: string): Promise<boolean> => {
-    if (typeof p !== 'string' || !p) return false
-    const remote = parseRemoteKey(p)
-    if (remote) return hosts.machine(remote.host).fileExists(p)
-    return fs.promises.stat(p).then(
-      (st) => st.isFile(),
-      () => false
-    )
-  })
+  ipcMain.handle(CH.fs.fileExists, (_e, p: string) =>
+    typeof p === 'string' && p ? hosts.of(p).fileExists(p) : false
+  )
   ipcMain.handle(CH.fs.search, (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)
   )

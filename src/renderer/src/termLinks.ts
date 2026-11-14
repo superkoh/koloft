@@ -16,6 +16,20 @@ export interface FileLinkOwner {
 
 type Ref = ReturnType<typeof findFilePaths>[number]
 
+const FILE_LOOKUP_FRESH_MS = 5000
+const LOOKUPS_KEPT_AT_MOST = 500
+const lookups = new Map<string, { at: number; found: Promise<boolean> }>()
+
+function fileThere(src: string): Promise<boolean> {
+  const now = Date.now()
+  const seen = lookups.get(src)
+  if (seen && now - seen.at < FILE_LOOKUP_FRESH_MS) return seen.found
+  if (lookups.size >= LOOKUPS_KEPT_AT_MOST) lookups.clear()
+  const found = fileExists(src)
+  lookups.set(src, { at: now, found })
+  return found
+}
+
 let commandHeld = false
 let commandKeyWatched = false
 let hoveredFileLink: ILink | undefined
@@ -74,18 +88,17 @@ function restOfAPathBrokenAtTheRowAbove(
   ref: Ref,
   text: string
 ): boolean {
-  if (text.slice(0, ref.start).trim()) return false
-  const above = term.buffer.active.getLine(y - 2)
-  if (!above) return false
-  const aboveText = above.translateToString(true)
-  return (
-    aboveText.endsWith('/') ||
-    aboveText.endsWith('-') ||
-    !!above
-      .getCell(term.cols - 1)
-      ?.getChars()
-      .trim()
-  )
+  if (y < 2 || text.slice(0, ref.start).trim()) return false
+  const above = term.buffer.active.getLine(y - 2)?.translateToString(true) ?? ''
+  const lastWord = above.slice(above.lastIndexOf(' ') + 1)
+  if (!lastWord.includes('/')) return false
+  return /[/-]$/.test(lastWord) || above.length >= term.cols
+}
+
+// CC§12 MUSE§1
+function cutAtTheRowEnd(term: Terminal, ref: Ref, colOf: number[], widthAt: number[]): boolean {
+  const last = colOf[ref.end - 1]
+  return last + widthAt[last] >= term.cols
 }
 
 // PLATFORM§21
@@ -100,19 +113,20 @@ export function fileLinkProvider(
       const ask = ++asked
       const from = owner()
       const line = term.buffer.active.getLine(y - 1)
-      if (!from || !line) return callback(undefined)
+      if (!from?.cwd || !line) return callback(undefined)
       const { text, colOf, widthAt } = textWithCellColumns(line)
       const refs = findFilePaths(text).filter(
         (ref, i, all) =>
           !labelNamingThePathRightAfterIt(ref, all[i + 1], text) &&
-          !restOfAPathBrokenAtTheRowAbove(term, y, ref, text)
+          !restOfAPathBrokenAtTheRowAbove(term, y, ref, text) &&
+          !cutAtTheRowEnd(term, ref, colOf, widthAt)
       )
       if (!refs.length) return callback(undefined)
       const drawnWhenAsked = line.translateToString()
       void Promise.all(
         refs.map(async (ref): Promise<ILink | null> => {
           const src = resolveOnHost(`${from.cwd}/`, ref.path)
-          if (!(await fileExists(src))) return null
+          if (!(await fileThere(src))) return null
           const last = colOf[ref.end - 1]
           const link: ILink = {
             range: {
@@ -121,9 +135,10 @@ export function fileLinkProvider(
             },
             text: ref.text,
             decorations: { underline: commandHeld, pointerCursor: commandHeld },
-            hover: () => {
+            hover: (event) => {
               hoveredFileLink = link
-              showOnlyWhileCommandHeld(link)
+              commandHeld = event.metaKey
+              queueMicrotask(() => showOnlyWhileCommandHeld(link))
             },
             leave: () => {
               if (hoveredFileLink === link) hoveredFileLink = undefined
@@ -141,10 +156,10 @@ export function fileLinkProvider(
           return link
         })
       ).then((links) => {
+        if (ask !== asked) return
         const redrawn = term.buffer.active.getLine(y - 1)?.translateToString() !== drawnWhenAsked
-        if (ask !== asked || redrawn) return
         const found = links.filter((l): l is ILink => l !== null)
-        callback(found.length ? found : undefined)
+        callback(!redrawn && found.length ? found : undefined)
       })
     }
   }
