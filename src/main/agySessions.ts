@@ -1012,13 +1012,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§11 AGY§12
   private showLastState(run: AgyRun, earlierLog: string): void {
     let last: ProgramStatus | undefined
+    let reviewing = false
     for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
       if (!read) continue
       if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      if ('title' in read && read.title.conversationId === run.info?.nativeSessionId)
+        reviewing = read.title.agentState === 'reviewing'
       last = remoteStatus(run, read) ?? last
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
+    // AGY§19
+    if (reviewing) void this.readPlan(run)
     this.replayTasks(run)
   }
 
@@ -1435,6 +1440,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!id) return
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
+    const stillThere = this.runs.get(run.tabId) === run && !run.explicitStop && !run.stopping
+    if (!stillThere || run.info?.nativeSessionId !== id) return
     const brain = path.join(agyBrain(this.geminiOf(run.cwd)), id)
     let names: string[] = []
     try {
@@ -1446,6 +1453,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!waiting) return
     const plan = waiting.n.replace(/\.metadata\.json$/, '')
     const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
+    if (run.waiting?.approval?.id === askId) return
     const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,
