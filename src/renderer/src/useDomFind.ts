@@ -128,6 +128,27 @@ function scrollRangeIntoViewLanding(range: Range, container: HTMLElement): boole
   return r === own && r.height <= container.clientHeight
 }
 
+function countStartingBefore(list: Range[], point: Range, countTies: boolean): number {
+  return list.filter((r) => {
+    const c = r.compareBoundaryPoints(Range.START_TO_START, point)
+    return c < 0 || (countTies && c === 0)
+  }).length
+}
+
+function samePlaceIn(ranges: Range[], old: Range[], oldIndex: number): number {
+  const last = Math.max(0, ranges.length - 1)
+  const was = old[oldIndex]
+  if (was.startContainer.nodeType === Node.TEXT_NODE) {
+    return Math.min(countStartingBefore(ranges, was, false), last)
+  }
+  const holderOfRemovedText = was.startContainer
+  if (!holderOfRemovedText.parentNode) return oldIndex
+  const edge = document.createRange()
+  edge.setStartBefore(holderOfRemovedText)
+  const insideHolder = Math.max(0, oldIndex - countStartingBefore(old, edge, true))
+  return Math.min(countStartingBefore(ranges, edge, true) + insideHolder, last)
+}
+
 export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const rangesRef = useRef<Range[]>([])
   const activeRef = useRef(0)
@@ -184,13 +205,17 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
 
   const recompute = useCallback(() => {
     const root = getRoot()
-    rangesRef.current = root ? computeMatchRanges(root, queryRef.current) : []
+    const ranges = root ? computeMatchRanges(root, queryRef.current) : []
+    if (rangesRef.current[activeRef.current])
+      activeRef.current = samePlaceIn(ranges, rangesRef.current, activeRef.current)
+    rangesRef.current = ranges
     render()
   }, [getRoot, render])
 
   const search = useCallback(
     (query: string) => {
       queryRef.current = query
+      rangesRef.current = []
       activeRef.current = 0
       armJump()
       observerRef.current?.disconnect()
