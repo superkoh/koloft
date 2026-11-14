@@ -81,8 +81,10 @@ const PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION =
   '[^\\s:"\'`<>()\\[\\]{}|,;/，。、；：！？（）《》「」【】…]'
 const NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH =
   '(?![\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]+[A-Za-z0-9])'
-const REF_RE = new RegExp(
-  `(?<![\\w.~/-])${NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH}(/?(?:${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+/)*${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+\\.([A-Za-z0-9]+)):(\\d+)(?::\\d+)?(?![\\w.-])`,
+const PATH_WITH_SUFFIX = `(?<![\\w.~/-])${NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH}(/?(?:${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+/)*${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+\\.([A-Za-z0-9]+))`
+const REF_RE = new RegExp(`${PATH_WITH_SUFFIX}:(\\d+)(?::\\d+)?(?![\\w.-])`, 'gu')
+const REF_WITH_OR_WITHOUT_LINE_ENDING_A_SENTENCE_RE = new RegExp(
+  `${PATH_WITH_SUFFIX}(?::(\\d+)(?::\\d+)?)?(?![\\w-]|\\.\\w)`,
   'gu'
 )
 const URL_RE = /[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g
@@ -95,21 +97,29 @@ interface Ref {
   line: string
 }
 
-export function findFileRefs(text: string): Ref[] {
+function scanFileRefs(text: string, re: RegExp): Ref[] {
   const urls: [number, number][] = []
   URL_RE.lastIndex = 0
   for (let u = URL_RE.exec(text); u; u = URL_RE.exec(text))
     urls.push([u.index, u.index + u[0].length])
 
   const out: Ref[] = []
-  REF_RE.lastIndex = 0
-  for (let m = REF_RE.exec(text); m; m = REF_RE.exec(text)) {
+  re.lastIndex = 0
+  for (let m = re.exec(text); m; m = re.exec(text)) {
     const at = m.index
     if (!FILE_SUFFIXES_KEPT_APART_FROM_HIGHLIGHTER_LANGS.has(m[2].toLowerCase())) continue
     if (urls.some(([from, to]) => at >= from && at < to)) continue
-    out.push({ start: at, end: at + m[0].length, text: m[0], path: m[1], line: m[3] })
+    out.push({ start: at, end: at + m[0].length, text: m[0], path: m[1], line: m[3] ?? '' })
   }
   return out
+}
+
+export function findFileRefs(text: string): Ref[] {
+  return scanFileRefs(text, REF_RE)
+}
+
+export function findFilePaths(text: string): Ref[] {
+  return scanFileRefs(text, REF_WITH_OR_WITHOUT_LINE_ENDING_A_SENTENCE_RE)
 }
 
 function linkTokens(ref: Ref, level: number, state: StateCore): Token[] {

@@ -32,7 +32,8 @@ import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { relOf } from './filesModel'
-import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
+import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
+import { fileExists } from '../fileExists'
 import { editRefusal, startEditRead, useEditProbe } from './EditPane'
 import {
   allEditTabs,

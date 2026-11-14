@@ -1562,6 +1562,18 @@ only downloaded the public release.
   `doc 152` opened nothing; without it 49 of 49 redraws framed, 370 OSC 8 links, and the
   click opened `/link-152` in the Workbench. The links about double what the scroll
   sends (20.5 KB to 44.3 KB for the 60 notches); the 49 paints stayed 49.
+- **A file path is a link only inside a markdown link, and then its address is the bare
+  path.** With `TERM_PROGRAM` unset, a reply holding `src/util.ts:7`, a bare
+  `src/app.ts`, `[app.ts](<abs>/src/app.ts:42)`, `[util](src/util.ts:7)` and a long
+  relative and absolute path wrote OSC 8 links only for the two markdown links, with the
+  target as written for the address (`<abs>/src/app.ts:42`, `src/util.ts:7`: no
+  `file://`, the `:line` kept). Each shows as its bold label, a space and its underlined
+  target, both carrying the link; `[util](src/util.ts:7)` showed as
+  `util /src/util.ts:7`, a `/` added on screen but not in the address. agy breaks a long
+  line itself with `\r\n` and a two-space indent, after a space or a `-`, so the terminal
+  holds two unwrapped lines. 2026-11-14, agy 1.3.6 (`agy-a-img`, Linux, no network),
+  the fake Gemini server above, a python pty at 100×40 answering its queries; 2 runs,
+  the same.
 
 ## §28 Telemetry
 

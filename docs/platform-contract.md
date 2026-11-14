@@ -1158,7 +1158,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`, 2026-11-05); the clipboard addon is a
   separate package.
 - **OSC 8 links**: xterm's own OSC 8 provider wins over the web-links addon, and with no
-  `linkHandler` it falls back to a native `confirm()` plus `window.open`.
+  `linkHandler` it falls back to a native `confirm()` plus `window.open`. Unless the
+  `linkHandler` sets `allowNonHttpProtocols`, it drops every OSC 8 address that is not
+  an `http:` or `https:` URL, a bare path and `file://` included, so the cells under
+  such a link go to the other link providers as plain text (read from `@xterm/xterm`
+  `src/browser/OscLinkProvider.ts`, 2026-11-14).
 - **Under the WebGL renderer the terminal has no text nodes**; `innerText` is empty, so
   read the buffer through the xterm instance.
 - **xterm's CSS hard-codes the IME composition box** (`.xterm .composition-view`) to
