@@ -7015,8 +7015,8 @@ function registerIpc(): void {
     return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
-  ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
-    sessionBackends.historyRows(p, historyPartlyUnread)
+  ipcMain.handle(CH.workspace.historyRows, (_e, p: string, opts?: { quiet: boolean }) =>
+    sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({
