@@ -30,6 +30,18 @@ type RecordingWindow = {
 
 type RecordingMain = typeof globalThis & { __ptyWritesRecord: Recorded[] }
 
+const HALVES = ['renderer', 'main'] as const
+const READ_LIMIT_MS = 3_000
+
+function withinReadLimit<T>(read: Promise<T>): Promise<T> {
+  return Promise.race([
+    read,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`no answer in ${READ_LIMIT_MS} ms`)), READ_LIMIT_MS)
+    )
+  ])
+}
+
 export interface TypingRecording {
   save(file: string): Promise<void>
 }
@@ -45,6 +57,12 @@ export async function recordTyping(
       w.__typingRecord = []
       const term = w.__koloftTerms[id]
       const helper = term._core?._compositionHelper
+      if (!helper)
+        w.__typingRecord.push({
+          at: Date.now(),
+          where: 'renderer',
+          type: 'no xterm composition helper'
+        })
       const note = (fields: Record<string, unknown>): void => {
         w.__typingRecord.push({
           at: Date.now(),
@@ -89,13 +107,13 @@ export async function recordTyping(
   return {
     async save(file) {
       const halves = await Promise.allSettled([
-        page.evaluate(() => (window as unknown as RecordingWindow).__typingRecord),
-        app.evaluate(() => (globalThis as RecordingMain).__ptyWritesRecord)
+        withinReadLimit(page.evaluate(() => (window as unknown as RecordingWindow).__typingRecord)),
+        withinReadLimit(app.evaluate(() => (globalThis as RecordingMain).__ptyWritesRecord))
       ])
-      const lines = halves.flatMap((half) =>
+      const lines = halves.flatMap((half, i) =>
         half.status === 'fulfilled'
-          ? half.value
-          : [{ at: 0, unreadable: String(half.reason) } as Recorded]
+          ? (half.value ?? [])
+          : [{ at: 0, where: HALVES[i], unreadable: String(half.reason) }]
       )
       lines.sort((a, b) => a.at - b.at)
       fs.writeFileSync(file, lines.map((r) => JSON.stringify(r)).join('\n') + '\n')
