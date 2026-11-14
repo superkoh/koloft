@@ -39,8 +39,9 @@ TUI-2 ─ relay-2 ─ app-server-2                thread 1: config = env of tab 
   (CODEX§38: every connection also sees other threads' `thread/started` and
   `thread/status/changed`, nothing else).
 - **The relay adds the tab's settings to the TUI's thread openers.** On `thread/start`,
-  `thread/resume` and `thread/fork` from the TUI it merges into `params.config`:
-  `shell_environment_policy.set` = the tab's env, and the tab's MCP entries (below); on
+  `thread/resume` and `thread/fork` from the TUI it merges into `params.config`, with
+  dotted keys so nothing else is replaced: `shell_environment_policy.set.<VAR>` for each
+  of the tab's env values, and the tab's MCP env (below); on
   `thread/start` it also sets `developerInstructions` (the TUI sends `null`; a start's
   own instructions win over `-c`, CODEX§17). The env is not saved with a thread
   (CODEX§38), so every resume, every `/new`, and every reconnect after a server crash
@@ -57,7 +58,7 @@ TUI-2 ─ relay-2 ─ app-server-2                thread 1: config = env of tab 
 | Reply-language / said / notice / Discord-said / shell-wrote file paths, read by the hooks | hooks see only the server's env (CODEX§38). The hook commands are the same for every tab, so they go on the server once; the hook script finds the tab's files from stdin `session_id` (= the thread id, CODEX§38; a sub-agent's tool calls carry the parent's, CODEX§27): Koloft writes `<hookRegDir>/<threadId>.codex-tab` holding those paths when the relay sees the opener's reply, before the TUI can start a turn |
 | `developer_instructions` (Koloft prompt, role) | `thread/start` `developerInstructions`. A resume takes no new instructions either way (CODEX§17), same as today |
 | `approval_policy` / `sandbox_mode` on a resumed tab | `thread/resume` params `approvalPolicy` / `sandbox` (in the schema; not run) |
-| Playwright MCP `env_vars` (forwards the server env) | thread `config.mcp_servers.<name>` with the full entry and an `env` holding the tab's browser endpoint (CODEX§38: per-thread env works). A thread's `mcp_servers` stops the server's own `-c` entries from starting for that thread, so the relay sends every entry `config/read` gives, not only the Playwright one; whether the owner's `config.toml` entries are dropped the same way is **not probed yet** — the first build step |
+| Playwright MCP `env_vars` (forwards the server env, which no longer holds the tab's values) | thread config with dotted keys, `"mcp_servers.<name>.env.<VAR>"` = the tab's browser endpoint values. Dotted keys merge: the server's `-c` MCP entries and the owner's `config.toml` ones still start (CODEX§38); a nested `mcp_servers` object would have replaced the `-c` ones |
 | `sandbox_workspace_write.network_access`, writable roots, `default_mode_request_user_input`, status line, hooks | the same for every tab: `-c` on the shared server |
 | `skills/extraRoots/set` after `initialized` | unchanged: sent per connection; the roots are the same for every tab |
 

@@ -3692,8 +3692,9 @@ off, and `[shell_environment_policy] set = { OWNER_VAR = "owner" }`. The server 
 only `HOME`, `CODEX_HOME`, `PATH`, `SHELL=/bin/zsh`, `USER`, `LANG`, `TMPDIR` and a tag
 naming the server. The stand-in answered each turn's first request with one
 `exec_command` that echoed `$PROBE_TAB`, `$ZDOTDIR`, `$ZMARK` (set only by a `.zshenv` in
-that `ZDOTDIR`), the server tag and `$OWNER_VAR`, then ended the turn. Three runs, the
-same results each time.
+that `ZDOTDIR`), the server tag and `$OWNER_VAR`, then ended the turn. Four runs (the
+fourth added the dotted-key thread and an MCP server in `config.toml`), the same
+results each time.
 
 - **`thread/start {config: {shell_environment_policy: {set: {…}}}}` gives that thread's
   commands their own env.** Two clients, one per thread, on the same server, turns
@@ -3711,12 +3712,15 @@ same results each time.
   (trusted, §27) saw the server tag and none of the thread's `set` values; its stdin's
   `session_id` was the thread id.
 - **A thread's `config.mcp_servers` starts that thread's own MCP server with its own
-  `env`, and the server's `-c mcp_servers.*` entry does not start for that thread.**
-  Threads A and B each named an MCP server `thr` with `env: {MCP_TAB: …}`: two processes
-  started, each with its own value. The server's own `-c mcp_servers.srv` (with
-  `env_vars=["PROBE_TAB"]`) started only for the threads that sent no `mcp_servers`, and
-  its `PROBE_TAB` was empty there. Whether an `mcp_servers` table in the owner's
-  `config.toml` is dropped the same way is inferred, not checked.
+  `env`.** Threads A and B each named an MCP server `thr` with `env: {MCP_TAB: …}`: two
+  processes started, each with its own value. Sent as a nested object
+  (`{mcp_servers: {thr: …}}`), it replaced the server's own `-c mcp_servers.srv` (with
+  `env_vars=["PROBE_TAB"]`), which then did not start for that thread; an
+  `[mcp_servers.own]` in the home's `config.toml` still started. Sent with dotted keys
+  (`{"mcp_servers.thr": …, "shell_environment_policy.set.PROBE_TAB": "D"}`), all three
+  started for the thread and its command printed `TAB=D` (fourth run). The `-c` server's
+  `PROBE_TAB` was empty wherever it ran: `env_vars` forwards the server's env, not the
+  thread's.
 - **Each client sees the other threads start.** Every client got `thread/started` and
   `thread/status/changed` for threads other clients started (as §16 saw over ssh), and
   nothing else about them.

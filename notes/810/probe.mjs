@@ -85,6 +85,9 @@ fs.writeFileSync(
     '[features]',
     'apps = false',
     'plugins = false',
+    '[mcp_servers.own]',
+    `command = ${JSON.stringify(NODE)}`,
+    `args = ${JSON.stringify([path.join(HERE, 'mcp.cjs'), mcpLog, 'owner-config'])}`,
     '[model_providers.stand-in]',
     'name = "stand-in"',
     `base_url = "http://127.0.0.1:${port}/v1"`,
@@ -297,6 +300,17 @@ try {
   log(`[start] thread C (no config) ran: ${JSON.stringify(await runTurn(cC, C))}`)
   await settle()
   log(`[memory] S with 3 threads after a turn each: ${treeRssMb(S.pid)}`)
+
+  const mcpBefore = fs.existsSync(mcpLog) ? fs.readFileSync(mcpLog, 'utf8').trim().split('\n').length : 0
+  const cD = await connect(S, 'D')
+  const D = await startThread(cD, {
+    'shell_environment_policy.set.PROBE_TAB': 'D',
+    'mcp_servers.thr': { command: NODE, args: [path.join(HERE, 'mcp.cjs'), mcpLog, 'thread-D-dotted'], env: { MCP_TAB: 'D' } }
+  })
+  log(`[start, dotted keys] thread D ran: ${JSON.stringify(await runTurn(cD, D))}`)
+  await settle()
+  const mcpAfter = fs.readFileSync(mcpLog, 'utf8').trim().split('\n').slice(mcpBefore)
+  log(`[mcp started for thread D] ${mcpAfter.join(' | ')}`)
 
   const cA2 = await connect(S, 'A2')
   await cA2.rpc('thread/resume', { threadId: A, config: tabConfig('A-again', zdot('Aagain')) })

@@ -1,5 +1,12 @@
 node notes/810/probe.mjs <scratch dir> <path to the real codex binary>
-(third run of three; the first two gave the same env results, memory within the ranges in docs/codex-cli-contract.md section 38)
+
+Fourth run (the probe as committed: an [mcp_servers.own] in config.toml, and thread D sent with dotted keys), the lines it added:
+[start, dotted keys] thread D ran: ["TAB=D ZD= MARK= SERVER=S OWNER=owner"]
+[mcp started for thread D] {"mcp":"server-level","PROBE_TAB":null,"MCP_TAB":null} | {"mcp":"owner-config","PROBE_TAB":null,"MCP_TAB":null} | {"mcp":"thread-D-dotted","PROBE_TAB":null,"MCP_TAB":"D"}
+and owner-config started next to thread-A, thread-B, thread-T1..T3 and thread-A-resumed, while server-level did not.
+Memory that run: S with 2 threads 116.8 MB, with 3 threads 118.5 MB; T1..T3 109.8-110.5 MB each.
+
+Third run, full output (before the config.toml MCP server and thread D were added):
 
 codex codex-cli 0.166.0
 hooks trusted: trusted
