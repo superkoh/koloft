@@ -3395,6 +3395,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
     memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
+    // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
         .map((s) => s.tabId)
