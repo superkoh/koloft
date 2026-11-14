@@ -49,6 +49,7 @@ import {
 import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
 import { workspaceOfTab } from '../sessionRows'
 import { useStore } from '../store'
+import { useShallow } from 'zustand/react/shallow'
 import {
   FILES_TAB_ID,
   activateTab,
@@ -704,17 +705,30 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
       ? secretAsk
       : undefined
-  const askedGuest = secretAsk?.kind === 'page' ? secretAsk.guestId : undefined
+  const askedGuest = secretAsk && secretAsk.kind !== 'url' ? secretAsk.guestId : undefined
+  const webTabOfGuest = (tabs: WorkbenchTabSet[], guestId: number): string | undefined =>
+    tabs.flatMap((s) => s.tabs).find((t) => t.kind === 'web' && guestIdOf(t.id) === guestId)?.id
   useEffect(() => {
     if (askedGuest === undefined || !ownerTab) return
-    const hit = (statesRef.current[ownerTab] ?? NO_TABS).tabs.find(
-      (t) => t.kind === 'web' && guestIdOf(t.id) === askedGuest
-    )
+    const hit = webTabOfGuest([statesRef.current[ownerTab] ?? NO_TABS], askedGuest)
     if (!hit) return
     const st = useStore.getState()
     if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
-    activate(hit.id)
+    activate(hit)
   }, [askedGuest, ownerTab])
+  const tappedGuests = useStore(
+    useShallow((s) => s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [a.guestId] : [])))
+  )
+  const heldForTaps = useRef<string[]>([])
+  useEffect(() => {
+    const all = Object.values(states)
+    const held = tappedGuests.flatMap((guest) => webTabOfGuest(all, guest) ?? [])
+    for (const id of heldForTaps.current)
+      if (!held.includes(id) && !pinnedRef.current.has(id)) unstage(id)
+    heldForTaps.current = held
+    // PLATFORM§9
+    for (const id of held) if (!staged.has(id)) stage(id)
+  }, [tappedGuests, staged, states])
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined
