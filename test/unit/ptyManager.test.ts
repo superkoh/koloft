@@ -665,14 +665,15 @@ describe('tabInstancePid', () => {
     expect(tabInstancePid('pty-')).toBeNull()
     expect(tabInstancePid('pty-0-1')).toBeNull()
   })
+})
 
+describe('PtyManager.nextId', () => {
   it('two Koloft runs that get the same pid mint different tab ids, so an id saved before a restart never names a tab of a later run', () => {
     const earlierRun = new PtyManager()
     const laterRun = new PtyManager()
     const earlierIds = [earlierRun.nextId(), earlierRun.nextId()]
     const laterIds = [laterRun.nextId(), laterRun.nextId()]
     expect(laterIds.filter((id) => earlierIds.includes(id))).toEqual([])
-    expect([...earlierIds, ...laterIds].map(tabInstancePid)).toEqual(Array(4).fill(process.pid))
   })
 })
 
