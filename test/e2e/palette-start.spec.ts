@@ -929,15 +929,25 @@ const ONE_PIXEL_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 const PICTURE_LINE = 'Picture: '
 
-async function pastePicture(page: Page): Promise<void> {
-  await askBox(page).evaluate((box, png) => {
-    const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
-    const carried = new DataTransfer()
-    carried.items.add(new File([bytes], 'shot.png', { type: 'image/png' }))
-    box.dispatchEvent(
-      new ClipboardEvent('paste', { clipboardData: carried, bubbles: true, cancelable: true })
-    )
-  }, ONE_PIXEL_PNG)
+const COPIED_FROM_A_SPREADSHEET = {
+  'text/html': '<table><tr><td>a</td></tr></table>',
+  'text/plain': 'a'
+}
+const COPIED_WITH_COPY_IMAGE_IN_A_BROWSER = { 'text/html': '<img src="https://example.com/a.png">' }
+
+async function pastePicture(page: Page, alongside: Record<string, string> = {}): Promise<void> {
+  await askBox(page).evaluate(
+    (box, [png, texts]) => {
+      const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
+      const carried = new DataTransfer()
+      carried.items.add(new File([bytes], 'shot.png', { type: 'image/png' }))
+      for (const [type, text] of Object.entries(texts)) carried.setData(type, text)
+      box.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: carried, bubbles: true, cancelable: true })
+      )
+    },
+    [ONE_PIXEL_PNG, alongside] as const
+  )
 }
 
 const pastedPictures = (within: Locator): Locator =>
@@ -965,7 +975,7 @@ const picturesOnTheMachine = (env: E2EEnv): string =>
   path.join(machineHome(env), '.koloft', 'element-picks')
 
 test.describe('a picture pasted in ⌘P goes with the words to the session that takes them', () => {
-  test('local Claude: each pasted picture shows under the words and × takes one away; a picture with no words cannot start; ⏎ sends the words with a "Picture:" line naming the saved file, and Assist is asked about the words only', async ({
+  test('local Claude: each pasted picture shows under the words, also one copied with a browser’s Copy Image, while cells copied with their text stay a text paste; × takes one away; a picture with no words cannot start; ⏎ sends the words with a "Picture:" line naming the saved file, and Assist is asked about the words only', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -975,8 +985,9 @@ test.describe('a picture pasted in ⌘P goes with the words to the session that 
       const page = await app.firstWindow()
       await waitBooted(page)
       await ask(app, page, '')
+      await pastePicture(page, COPIED_FROM_A_SPREADSHEET)
       await pastePicture(page)
-      await pastePicture(page)
+      await pastePicture(page, COPIED_WITH_COPY_IMAGE_IN_A_BROWSER)
       const shown = pastedPictures(palette(page))
       await expect(shown).toHaveCount(2)
       await expect(palette(page).locator('.pal-tips')).toHaveText(

@@ -1505,11 +1505,15 @@ function elementPicksDir(): string {
   return path.join(app.getPath('userData'), 'element-picks')
 }
 
-async function savePickOnThisMac(png: Buffer): Promise<string> {
-  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
-  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
-  await fs.promises.writeFile(file, png)
+async function savePictureIn(dir: string, extension: string, picture: Buffer): Promise<string> {
+  await fs.promises.mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${crypto.randomUUID()}.${extension}`)
+  await fs.promises.writeFile(file, picture)
   return file
+}
+
+function savePickOnThisMac(png: Buffer): Promise<string> {
+  return savePictureIn(elementPicksDir(), 'png', png)
 }
 
 const PASTED_PICTURES_KEPT_MS = 7 * 24 * 60 * 60 * 1000
@@ -1521,32 +1525,31 @@ function pastedPicturesDir(): string {
 
 async function savePastedPicture(dataUrl: string): Promise<string | null> {
   const [, mime, picture] = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl) ?? []
-  const extension = PASTED_PICTURE_EXTENSIONS[mime]
-  if (!extension) return null
-  await fs.promises.mkdir(pastedPicturesDir(), { recursive: true })
-  const file = path.join(pastedPicturesDir(), `${crypto.randomUUID()}.${extension}`)
-  await fs.promises.writeFile(file, Buffer.from(picture, 'base64'))
-  return file
+  if (!Object.hasOwn(PASTED_PICTURE_EXTENSIONS, mime ?? '')) return null
+  return savePictureIn(
+    pastedPicturesDir(),
+    PASTED_PICTURE_EXTENSIONS[mime],
+    Buffer.from(picture, 'base64')
+  )
 }
 
-async function withPastedPicturesOnItsMachine<T extends CreateTabOptions>(options: T): Promise<T> {
+async function withPastedPicturesOnItsMachine(
+  options: CreateTabOptions
+): Promise<CreateTabOptions> {
   const machine = typeof options.cwd === 'string' ? parseRemoteKey(options.cwd)?.host : undefined
   if (!machine || !options.firstPrompt) return options
-  const copies = await Promise.all(
-    pastedPicturesIn(options.firstPrompt, pastedPicturesDir()).map(async (file) => {
+  let firstPrompt = options.firstPrompt
+  await Promise.all(
+    pastedPicturesIn(firstPrompt, pastedPicturesDir()).map(async (file) => {
       try {
         const picture = await fs.promises.readFile(file)
-        return { file, there: await hosts.machine(machine).savePick(path.basename(file), picture) }
+        const there = await hosts.machine(machine).savePick(path.basename(file), picture)
+        firstPrompt = firstPrompt.replaceAll(file, there)
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
         sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
-        return { file, there: file }
       }
     })
-  )
-  const firstPrompt = copies.reduce(
-    (prompt, { file, there }) => prompt.replaceAll(file, there),
-    options.firstPrompt
   )
   return { ...options, firstPrompt }
 }

@@ -10,7 +10,7 @@ export const PASTED_PICTURE_EXTENSIONS: Record<string, string> = {
   'image/webp': 'webp'
 }
 
-const PICTURE_LINE = 'Picture: '
+export const PICTURE_LINE = 'Picture: '
 
 // CC§18 CODEX§23 AGY§13
 export function withPictures(words: string, paths: readonly string[]): string {

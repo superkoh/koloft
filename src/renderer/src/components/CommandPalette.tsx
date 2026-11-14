@@ -48,7 +48,10 @@ import '../restoreDialog.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
 const PICTURE_NOT_KEPT = 'Koloft could not keep that picture. It takes PNG, JPEG, GIF and WebP.'
-const COPIED_WITH_ITS_TEXT = 'text/html'
+
+function copiedAsRichText(copied: DataTransfer): boolean {
+  return copied.types.includes('text/html') && !!copied.getData('text/plain').trim()
+}
 
 function dataUrlOf(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -106,9 +109,11 @@ function tipsFor(
   twoNamed: boolean,
   picked: boolean,
   listed: boolean,
-  pictureAlone: boolean
+  pictureAlone: boolean,
+  savingPicture: boolean
 ): string {
   if (mode === 'thinking') return 'Esc cancel'
+  if (savingPicture) return 'Keeping the picture…'
   if (mode === 'search') return '↓↑ move · ⏎ open · Esc back'
   if (naming) return '↓↑ move · ⏎ pick · Esc'
   if (picked) return '↓↑ move · ⏎ open · Esc'
@@ -250,7 +255,7 @@ export function CommandPalette({
   }
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (mode !== 'ask' || e.clipboardData.types.includes(COPIED_WITH_ITS_TEXT)) return
+    if (mode !== 'ask' || copiedAsRichText(e.clipboardData)) return
     const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
     if (!files.length) return
     e.preventDefault()
@@ -487,7 +492,8 @@ export function CommandPalette({
     twoNamed,
     at !== null,
     visible.length > 0,
-    pictures.length > 0 && !typed
+    pictures.length > 0 && !typed,
+    saving > 0
   )
 
   return (

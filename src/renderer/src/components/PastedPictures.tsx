@@ -9,7 +9,7 @@ export function PastedPictures({
   onRemove
 }: {
   pictures: readonly PastedPicture[]
-  disabled?: boolean
+  disabled: boolean
   onRemove: (picture: PastedPicture) => void
 }): JSX.Element | null {
   if (!pictures.length) return null
