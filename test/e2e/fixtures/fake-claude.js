@@ -748,6 +748,8 @@ function lastPlanAsked() {
 }
 let turnHeld = false
 // CC§13
+const SHORTEST_REPLY_AFTER_A_SEND_MS = 700
+// CC§13
 function peerTurn(content) {
   if (turnHeld) {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
@@ -767,6 +769,19 @@ function peerTurn(content) {
   const context = hookContext(
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
   )
+  if (fs.existsSync(path.join(home, 'fake-claude-peer-turn-held'))) {
+    append([
+      {
+        type: 'user',
+        isMeta: true,
+        origin: { kind: 'peer' },
+        message: { role: 'user', content },
+        cwd
+      }
+    ])
+    process.stdout.write('[fake-claude] working on a peer message\r\n')
+    return
+  }
   append([
     {
       type: 'user',
@@ -1630,6 +1645,9 @@ function handleLine(line) {
         tool_response: { success: !failed, message: `→ ${to}` },
         tool_use_id: `toolu_send_${require('crypto').randomUUID()}`
       })
+      setTimeout(() => saidAndStopped(), SHORTEST_REPLY_AFTER_A_SEND_MS)
+    })
+    const saidAndStopped = () => {
       append([
         {
           type: 'assistant',
@@ -1640,7 +1658,7 @@ function handleLine(line) {
       ])
       fireHook('stop', { hook_event_name: 'Stop' })
       process.stdout.write(`[fake-claude] sent to ${to}\r\n> `)
-    })
+    }
     return
   }
   // CC§2

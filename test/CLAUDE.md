@@ -127,7 +127,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     Bash tool call: its PreToolUse and PostToolUse hooks around it, then Stop; ends
     `ran <command>`), `/send-message uds:<socket> <text>` (a SendMessage, CC§13: writes
     `<text>` to that socket as another session's message from its own, then its
-    PostToolUse and Stop), `/clear`,
+    PostToolUse, and its Stop 0.7 s later, the shortest gap measured), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
     writes), `/compact-while-idle` (Claude compacting a finished session on its own:
     the `idle_prompt` Notification, then an `auto` PreCompact and a compact
@@ -157,7 +157,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
     transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
     Stop; during a `/hold` turn it is taken into that turn instead, as CC's is: the hook
-    fires and a `queued_command` attachment lands, with no reply and no Stop), except one
+    fires and a `queued_command` attachment lands, with no reply and no Stop; while
+    `<home>/fake-claude-peer-turn-held` exists, it starts a turn that never ends), except one
     asking it to approve the same plan again, which asks its transcript's last plan once
     more, as `/plan` does. A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in

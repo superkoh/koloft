@@ -63,23 +63,29 @@ async function messageSocketOf(page: Page, home: string, tabId: string): Promise
   return socket!
 }
 
-async function sendingToABusySessionIsOnlyNews(
+const RECEIVERS = ['busy', 'idle'] as const
+
+async function sendingIsOnlyNews(
   app: ElectronApplication,
   page: Page,
   home: string,
   sender: string,
-  receiver: string
+  receiver: string,
+  receiverWas: (typeof RECEIVERS)[number]
 ): Promise<void> {
   const type = (tab: string, line: string): Promise<void> =>
     page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
   const receiverSocket = await messageSocketOf(page, home, receiver)
+  await expect.poll(() => markOn(page, receiver), { timeout: 60_000 }).toBeTruthy()
   await expect.poll(() => markOn(page, sender), { timeout: 60_000 }).toBeTruthy()
   const before = (await markOn(page, sender))!.at
-  await type(receiver, '/hold')
-  await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(
-    /\bst-working\b/,
-    { timeout: 30_000 }
-  )
+  if (receiverWas === 'busy') {
+    await type(receiver, '/hold')
+    await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(
+      /\bst-working\b/,
+      { timeout: 30_000 }
+    )
+  } else fs.writeFileSync(path.join(home, 'fake-claude-peer-turn-held'), '')
   const notices = (await osOutlets(app)).notifications.length
   await type(sender, `/send-message uds:${receiverSocket} Run the tests`)
   await expect
@@ -234,45 +240,47 @@ test.describe('attention markers come from real session-status transitions (shim
     }
   })
 
-  // CC§13
-  test('a turn that ends after sending another Claude session a message with SendMessage, while that session works, is only news from the start, told by code alone', async ({
-    env
-  }) => {
-    test.setTimeout(120_000)
-    seedSettings(env, { hintsOff: true })
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await startSessionIn(page, 'ws-a')
-      const sender = await activeTab(page)
-      await startSessionIn(page, 'ws-b')
-      const receiver = await activeTab(page)
-      await sendingToABusySessionIsOnlyNews(app, page, env.home, sender, receiver)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+  for (const receiverWas of RECEIVERS) {
+    // CC§13
+    test(`a turn that ends after sending another Claude session a message with SendMessage, which that ${receiverWas} session works on, is only news from the start, told by code alone`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a')
+        const sender = await activeTab(page)
+        await startSessionIn(page, 'ws-b')
+        const receiver = await activeTab(page)
+        await sendingIsOnlyNews(app, page, env.home, sender, receiver, receiverWas)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
-  // CC§13
-  test('on a remote machine too, a turn that ends after sending another Claude session there a message with SendMessage, while that session works, is only news from the start', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    seedSettings(env, { hintsOff: true })
-    const { app, page } = await launchWithRemote(env)
-    try {
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      const sender = await activeTab(page)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      const receiver = await activeTab(page)
-      await sendingToABusySessionIsOnlyNews(app, page, machineHome(env), sender, receiver)
-    } finally {
-      await quitAndClose(app)
-      killFakeRemote(env)
-    }
-  })
+    // CC§13
+    test(`on a remote machine too, a turn that ends after sending another Claude session there a message with SendMessage, which that ${receiverWas} session works on, is only news from the start`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+        const sender = await activeTab(page)
+        await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+        const receiver = await activeTab(page)
+        await sendingIsOnlyNews(app, page, machineHome(env), sender, receiver, receiverWas)
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 
   test('with Assist on, a finished turn the Assist reads as a report is only news: looking at it clears the dot', async ({
     env
