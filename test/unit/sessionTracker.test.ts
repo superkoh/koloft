@@ -2037,6 +2037,127 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     ])
   })
 
+  describe('a remote tab, whose Stop can come one mirror pull before its turn’s lines', () => {
+    const RCWD = '/home/koh/app'
+    const ended: { turn: { said: { text: string }[]; reply: string } }[] = []
+    let file = ''
+
+    async function remoteTurnTab(sid: string): Promise<InstanceType<typeof SessionTracker>> {
+      ended.length = 0
+      const mirror = path.join(home, 'remote', sid, 'projects')
+      file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(
+        file,
+        [human('earlier question', 1), said(text('earlier answer'), 2)]
+          .map((l) => JSON.stringify(l))
+          .join('\n') + '\n'
+      )
+      const tracker = newTracker()
+      tracker.on('turn-ended', (e) => ended.push(e))
+      tracker.track('tabRT', RCWD, { host: 'devbox', projectsRoot: mirror, tmuxName: `k-${sid}` })
+      tracker.bindSession('tabRT', file, sid, RCWD)
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.title === 'earlier question')
+      return tracker
+    }
+
+    const appendAsWritten = (...lines: unknown[]): void =>
+      fs.appendFileSync(file, lines.map((l) => JSON.stringify(l) + '\n').join(''))
+    const append = (...lines: unknown[]): void =>
+      appendAsWritten(
+        ...lines.map((l) => ({ ...(l as object), timestamp: new Date().toISOString() }))
+      )
+    const replies = (): string[] => ended.map((e) => e.turn.reply)
+
+    async function stopBeforeAnyLine(tracker: InstanceType<typeof SessionTracker>): Promise<void> {
+      tracker.receive('tabRT', { type: 'prompt' })
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status === 'working')
+      tracker.receive('tabRT', { type: 'stop' })
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status !== 'working')
+    }
+
+    it('a Stop that finds no turn ends the turn whose lines come after it; the next turn ends on its own, and a repeated Stop, which had no prompt of its own, does not end the turn after it', async () => {
+      const tracker = await remoteTurnTab('88888888-8888-4888-8888-888888888888')
+      await stopBeforeAnyLine(tracker)
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31))
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+
+      append(human('pick a size', 40), said(text('Picked: Small'), 41))
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small'])
+      expect(ended.map((e) => e.turn.said.map((l) => l.text))).toEqual([
+        ['pick a colour'],
+        ['pick a size']
+      ])
+
+      tracker.setStatus('tabRT', 'working')
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status === 'working')
+      tracker.receive('tabRT', { type: 'stop' })
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status !== 'working')
+      append(human('pick a shape', 50))
+      await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+      expect(replies()).toEqual(['Picked: Green', 'Picked: Small'])
+
+      append(said(text('Picked: Circle'), 51))
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small', 'Picked: Circle'])
+    })
+
+    it('lines written before the bind that reach the mirror after an early Stop are history: the Stop ends the live turn after them, not one of theirs', async () => {
+      const tracker = await remoteTurnTab('66666666-6666-4666-8666-666666666666')
+      await stopBeforeAnyLine(tracker)
+      appendAsWritten(
+        human('older question', 3),
+        said(text('older answer'), 4),
+        human('another older question', 5),
+        said(text('another older answer'), 6)
+      )
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31))
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+      await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+      expect(replies()).toEqual(['Picked: Green'])
+    })
+
+    it('when the early-stopped turn and the next turn’s prompt arrive together, the early Stop ends the first turn, not the new one', async () => {
+      const tracker = await remoteTurnTab('99999999-9999-4999-8999-999999999999')
+      await stopBeforeAnyLine(tracker)
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31), human('pick a size', 40))
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+
+      append(said(text('Picked: Small'), 41))
+      tracker.receive('tabRT', { type: 'stop' })
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small'])
+      expect(ended[1].turn.said.map((l) => l.text)).toEqual(['pick a size'])
+    })
+
+    it('two turns whose Stops both come before any of their lines each end on their own, in order', async () => {
+      const tracker = await remoteTurnTab('77777777-7777-4777-8777-777777777777')
+      await stopBeforeAnyLine(tracker)
+      await stopBeforeAnyLine(tracker)
+      append(
+        human('pick a colour', 30),
+        said(text('Picked: Green'), 31),
+        human('pick a size', 40),
+        said(text('Picked: Small'), 41)
+      )
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green', 'Picked: Small'])
+    })
+  })
+
   // CC§2
   it('a skill command is the owner’s line that opens its turn, live and on disk, so the turn ends once with its reply even when its Stop comes before any of it is on disk; a built-in command opens no turn', async () => {
     const cwd = makeWorkspace({})

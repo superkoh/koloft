@@ -576,6 +576,19 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+- **A Stop always ends a turn with lines of its own: no Stop comes twice, or after its
+  turn has already ended.** Each Stop that runs a hook writes a `stop_hook_summary`
+  record after its turn's records. Sweep of every main transcript on a dev Mac
+  (2026-11-12; 940 with a Stop hook, 2026-04-21 to 2026-11-12, CC 2.1.111 to 2.1.322):
+  9199 `stop_hook_summary` records, 50 of them right after a Stop hook's own
+  `hook_blocking_error` (the turn goes on, §21; left out); for each of the 9149 others,
+  the records since the previous one were read with the tracker's turn reader
+  (`lastTurnsOfLines`), and every one held a line that opens or joins a turn (0 of 9149
+  without; 0 on each of 31 builds). That each Stop firing leaves a record was checked
+  only against Koloft's own hook log of 11 sessions: hook Stops never outnumbered
+  records, and in 6 of the 9 sessions whose log began at their start the counts matched
+  (a blocked Stop counts as a record but reaches no log). A real turn is not short: from its first prompt
+  record to its Stop took at least 729 ms (8042 turns, 8 under 1 s, 411 under 2 s).
 - **A typed `/koloft <args>` runs Koloft's plugin skill `koloft:koloft` as a model turn,
   whose only typed record is a `<command-message>` one** (2026-10-20, CC 2.1.304, the butler's claude
   in Koloft, e2e temp HOME, `/koloft session list` sent from the fake Discord, so typed,
