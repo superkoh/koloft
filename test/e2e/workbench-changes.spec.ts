@@ -1016,6 +1016,44 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
   })
 
+  test('with ⌘F on a match in a lower block, a change that adds a match above it keeps the same match current', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    const parts = setupChangeFixture(env.workspaces.a).bigChange()
+    await openChanges(page)
+    await waitStream(page, 6, 60_000)
+
+    const first = blockOf(page, 'bulk/part-1.ts')
+    await expect(first.locator(CV.diffRow).first()).toBeVisible()
+    await first.locator(CV.diffRow).first().click()
+    await sendShortcut(app, 'shortcut:find')
+    const bar = page.locator('.find-bar')
+    await expect(bar.locator('.find-input')).toBeFocused()
+    await page.keyboard.type('rewritten_7 = ')
+    await expect(bar.locator('.find-count')).toHaveText('1/6')
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Enter')
+    await expect(bar.locator('.find-count')).toHaveText('4/6')
+
+    const activeBlock = (): Promise<string | null> =>
+      page.evaluate(() => {
+        const r = [...(CSS.highlights.get('find-active') ?? [])][0] as Range | undefined
+        const at = r?.startContainer.parentElement?.closest<HTMLElement>('.cv-blk')
+        return at?.dataset.path ?? null
+      })
+    await expect.poll(activeBlock).toBe('bulk/part-4.ts')
+    await expect
+      .poll(() => blockOf(page, 'bulk/part-4.ts').locator(CV.token).count(), { timeout: 60_000 })
+      .toBeGreaterThan(0)
+
+    fs.appendFileSync(parts[0], 'export const morerewritten_7 = 7\n')
+    await expect(bar.locator('.find-count')).toHaveText(/\/7$/, { timeout: 30_000 })
+    expect(await activeBlock()).toBe('bulk/part-4.ts')
+    await expect(bar.locator('.find-count')).toHaveText('5/7')
+  })
+
   test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({
     page,
     env

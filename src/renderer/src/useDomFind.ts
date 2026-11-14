@@ -184,13 +184,22 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
 
   const recompute = useCallback(() => {
     const root = getRoot()
-    rangesRef.current = root ? computeMatchRanges(root, queryRef.current) : []
+    const was = rangesRef.current[activeRef.current]
+    const ranges = root ? computeMatchRanges(root, queryRef.current) : []
+    const same = was
+      ? ranges.findIndex(
+          (r) => r.startContainer === was.startContainer && r.startOffset === was.startOffset
+        )
+      : -1
+    if (same !== -1) activeRef.current = same
+    rangesRef.current = ranges
     render()
   }, [getRoot, render])
 
   const search = useCallback(
     (query: string) => {
       queryRef.current = query
+      rangesRef.current = []
       activeRef.current = 0
       armJump()
       observerRef.current?.disconnect()
