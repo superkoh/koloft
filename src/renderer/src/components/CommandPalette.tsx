@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type JSX,
   type KeyboardEvent
 } from 'react'
@@ -14,6 +15,7 @@ import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey } from '@shared/remoteKey'
+import type { PastedPicture } from '@shared/pastedPictures'
 import { askRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
@@ -38,12 +40,14 @@ import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { startOrList, type AgentChoice } from '../agentChoice'
 import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
+import { PastedPictures } from './PastedPictures'
 import '../commandPalette.css'
 import '../workspaceSidebar.css'
 import '../workspacePicker.css'
 import '../restoreDialog.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
+const PICTURE_NOT_KEPT = 'Koloft could not keep that picture. It takes PNG, JPEG, GIF and WebP.'
 
 let lastSearchId = 0
 
@@ -91,7 +95,8 @@ function tipsFor(
   naming: boolean,
   twoNamed: boolean,
   picked: boolean,
-  listed: boolean
+  listed: boolean,
+  pictureAlone: boolean
 ): string {
   if (mode === 'thinking') return 'Esc cancel'
   if (mode === 'search') return '↓↑ move · ⏎ open · Esc back'
@@ -99,10 +104,16 @@ function tipsFor(
   if (picked) return '↓↑ move · ⏎ open · Esc'
   if (twoNamed) return 'Name one workspace · Esc'
   if (listed) return '↓ pick a match · Esc'
+  if (pictureAlone) return 'Say what to do with the picture · Esc'
   return '⇧⏎ new line · Esc'
 }
 
-export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
+export type PaletteRouted = (
+  prompt: string,
+  backend: BackendId,
+  route: SessionRoute | null,
+  pictures: readonly PastedPicture[]
+) => void
 
 export function CommandPalette({
   actions,
@@ -131,6 +142,7 @@ export function CommandPalette({
   const [searchDone, setSearchDone] = useState(false)
   const [listOpen, setListOpen] = useState(false)
   const [grown, setGrown] = useState({ typed: '', rows: SESSION_ROWS_PER_BATCH })
+  const [pictures, setPictures] = useState<PastedPicture[]>([])
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const asking = useRef<ReturnType<typeof askRoute> | null>(null)
@@ -200,7 +212,8 @@ export function CommandPalette({
       onRouted(
         typed,
         backend,
-        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null }
+        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null },
+        pictures
       )
       return
     }
@@ -210,8 +223,25 @@ export function CommandPalette({
     void ask.result.then((route) => {
       if (asking.current !== ask) return
       asking.current = null
-      onRouted(typed, backend, route)
+      onRouted(typed, backend, route, pictures)
     })
+  }
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
+    if (!files.length) return
+    e.preventDefault()
+    if (mode !== 'ask') return
+    for (const file of files) {
+      void file
+        .arrayBuffer()
+        .then((bytes) => window.api.palette.savePicture(new Uint8Array(bytes), file.type))
+        .catch(() => null)
+        .then((path) => {
+          if (!path) return useStore.getState().showToast(PICTURE_NOT_KEPT)
+          setPictures((had) => [...had, { path, shown: URL.createObjectURL(file) }])
+        })
+    }
   }
 
   const stopAsking = (): void => {
@@ -438,7 +468,14 @@ export function CommandPalette({
     )
   }
 
-  const tips = tipsFor(mode, !!mention, twoNamed, at !== null, visible.length > 0)
+  const tips = tipsFor(
+    mode,
+    !!mention,
+    twoNamed,
+    at !== null,
+    visible.length > 0,
+    pictures.length > 0 && !typed
+  )
 
   return (
     <div className="modal-backdrop palette-top" onClick={onClose}>
@@ -473,8 +510,14 @@ export function CommandPalette({
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
           />
         </div>
+        <PastedPictures
+          pictures={pictures}
+          disabled={mode === 'thinking'}
+          onRemove={(gone) => setPictures((had) => had.filter((p) => p !== gone))}
+        />
         {results()}
         <div className="pal-bar">
           <span className="pal-tips">{tips}</span>

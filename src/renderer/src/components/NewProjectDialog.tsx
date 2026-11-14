@@ -4,7 +4,10 @@ import { IconAiStart, IconClose } from '../icons'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import type { PastedPicture } from '@shared/pastedPictures'
 import { projectOptions } from '../aiStart'
+import type { TypedStart } from '../newSession'
+import { PastedPictures } from './PastedPictures'
 import { shortenHome } from '../browseModel'
 import { isComposing } from '../keys'
 import { remoteKeyFromForm } from '../remoteWorkspace'
@@ -25,6 +28,7 @@ import '../workspaceSidebar.css'
 
 export interface ProjectSeed {
   prompt: string
+  pictures: readonly PastedPicture[]
   title: string
   machine: string
   folder: string
@@ -42,7 +46,7 @@ export function NewProjectDialog({
   launchLock: { current: boolean }
   onClose: () => void
   onStart: StartSession
-  onChangeWorkspace: (typed: { prompt: string; title: string }) => void
+  onChangeWorkspace: (typed: TypedStart) => void
 }): JSX.Element {
   const { machine } = seed
   const local = machine === LOCAL_MACHINE
@@ -51,6 +55,7 @@ export function NewProjectDialog({
   const [parent, setParent] = useState(folders[machine] ?? '')
   const [title, setTitle] = useState(seed.title)
   const [prompt, setPrompt] = useState(seed.prompt)
+  const [pictures, setPictures] = useState(seed.pictures)
   const folderRef = useRef<HTMLInputElement>(null)
   const sessionLaunch = useSessionLaunch(local ? 'local' : 'ssh', onStart, onClose)
   const choice = sessionLaunch.choice()
@@ -90,7 +95,7 @@ export function NewProjectDialog({
   const submit = (backend: BackendId = choice.lead): void => {
     if (!ready || locked || sessionLaunch.issue(backend)) return
     void sessionLaunch.launch(async () => {
-      const opts = await projectOptions(parentKey, name, { prompt, title })
+      const opts = await projectOptions(parentKey, name, { prompt, title, pictures })
       updateSettings({ newProjectFolders: { ...folders, [machine]: where } })
       return opts
     }, backend)
@@ -131,7 +136,7 @@ export function NewProjectDialog({
               className="ob-link"
               disabled={locked}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onChangeWorkspace({ prompt, title })}
+              onClick={() => onChangeWorkspace({ prompt, title, pictures })}
             >
               Change workspace
             </button>
@@ -199,6 +204,11 @@ export function NewProjectDialog({
             onPrompt={setPrompt}
             onKeyDown={onKeyDown}
             disabled={locked}
+          />
+          <PastedPictures
+            pictures={pictures}
+            disabled={locked}
+            onRemove={(gone) => setPictures((had) => had.filter((p) => p !== gone))}
           />
           {locked && <BusyLine>Starting…</BusyLine>}
           <SessionLaunchStatus launch={sessionLaunch} />

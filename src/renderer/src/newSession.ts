@@ -11,6 +11,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { distinctName, type RouteWorktree } from '@shared/sessionRoute'
 import { worktreeBase } from '@shared/cronNames'
+import { withPictures, type PastedPicture } from '@shared/pastedPictures'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
@@ -47,6 +48,7 @@ export type WtHot = { where: 'field' } | { where: 'list'; index: number }
 export interface TypedStart {
   prompt: string
   title: string
+  pictures?: readonly PastedPicture[]
 }
 
 export interface PendingStart extends TypedStart {
@@ -54,8 +56,18 @@ export interface PendingStart extends TypedStart {
   worktree: RouteWorktree | null
 }
 
+export function promptWithPictures(typed: Pick<TypedStart, 'prompt' | 'pictures'>): string {
+  return withPictures(
+    typed.prompt.trim(),
+    (typed.pictures ?? []).map((p) => p.path)
+  )
+}
+
 export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPrompt' | 'name'> {
-  return { firstPrompt: typed.prompt.trim() || undefined, name: typed.title.trim() || undefined }
+  return {
+    firstPrompt: promptWithPictures(typed) || undefined,
+    name: typed.title.trim() || undefined
+  }
 }
 
 export function pendingWorktree(
@@ -86,7 +98,9 @@ export function pendingLaunch(
       wished,
       worktrees.map((w) => w.name)
     ),
-    ...(item ? seededItemExtras(item, pending.prompt, pending.title) : typedLaunch(pending))
+    ...(item
+      ? seededItemExtras(item, promptWithPictures(pending), pending.title)
+      : typedLaunch(pending))
   }
 }
 

@@ -1483,6 +1483,9 @@ export interface KoloftApi {
     startFresh(): Promise<ConductorOpenResult>
     fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
   }
+  palette: {
+    savePicture(bytes: Uint8Array, mime: string): Promise<string | null>
+  }
   discord: {
     status(): Promise<DiscordStatus>
     onStatus(cb: (s: DiscordStatus) => void): () => void
