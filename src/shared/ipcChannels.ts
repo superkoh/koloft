@@ -89,8 +89,7 @@ export const CH = {
   machine: {
     state: 'machine:state',
     now: 'machine:now',
-    free: 'machine:free',
-    drop: 'machine:drop'
+    free: 'machine:free'
   },
   conductors: {
     bind: 'conductors:bind',

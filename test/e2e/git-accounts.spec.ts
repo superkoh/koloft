@@ -388,9 +388,9 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(hersPanel.locator('.tbu-act', { hasText: 'Use bob' })).toHaveCount(0)
       await hersPanel.locator('.tbu-act', { hasText: 'Not now' }).click()
       await expect(hersPanel.locator('.fx-note').last()).toHaveText('Uses your own git setup')
-      expect(settingsOnDisk(env).gitSuggestionsDismissed).toEqual([
-        fs.realpathSync(path.join(hers, '.git'))
-      ])
+      await expect
+        .poll(() => settingsOnDisk(env).gitSuggestionsDismissed)
+        .toEqual([fs.realpathSync(path.join(hers, '.git'))])
     } finally {
       await quitAndClose(app)
       await github.close()
@@ -772,9 +772,9 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(
         panel.locator('.fx-note.warn', { hasText: 'does not know this key' })
       ).toHaveCount(0)
-      expect(settingsOnDisk(env).gitPicks).toEqual([
-        expect.objectContaining({ account: id, sshKey: 'unchecked' })
-      ])
+      await expect
+        .poll(() => settingsOnDisk(env).gitPicks)
+        .toEqual([expect.objectContaining({ account: id, sshKey: 'unchecked' })])
       await panel.locator('.tbu-act', { hasText: 'Open SSH keys page' }).click()
       await expect
         .poll(() => fs.readFileSync(env.externalOpens, 'utf8'))

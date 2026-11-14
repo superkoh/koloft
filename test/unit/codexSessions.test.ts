@@ -15,14 +15,8 @@ import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/
 import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../src/main/remote/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
-import {
-  CODEX_REPLY_LANGUAGE_HOOKS,
-  CODEX_SHELL_WRITES_HOOKS,
-  codexHoldHook
-} from '../../src/main/hooks'
-import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
-import { BUSY_MARKER } from '../../src/main/machineRoom'
-import { execFileSync, spawn } from 'child_process'
+import { CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SHELL_WRITES_HOOKS } from '../../src/main/hooks'
+import { execFileSync } from 'child_process'
 import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
 import { localGitOut } from '../../src/main/host/localHost'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
@@ -1632,47 +1626,6 @@ describe('CodexSessions', () => {
     expect(mocks.crashLeftoverMarkers).toHaveLength(1)
     for (const { options } of transports)
       expect(options.configOverrides).toContain(mocks.crashLeftoverMarkers[0])
-  })
-
-  // ADR-0043 CODEX§27 CODEX§30
-  it("a background tab's app-server, once Codex trusts the hook, holds its next Bash command while the Mac is busy, for at most 25 s; an owner's tab gets no hold", async () => {
-    const reg = path.join(directory, 'reg')
-    fs.mkdirSync(reg)
-    const file = path.join(directory, 'hold.sh')
-    fs.writeFileSync(file, HOLD_SCRIPT)
-    deps.holdScript = { file, regDir: reg }
-    deps.holdWhileBusy = (tabId) => tabId === 'pty-bg'
-    const hold = codexHoldHook('hold')
-    const listed = [
-      ...REPLY_LANGUAGE_LISTED,
-      {
-        key: '/<session-flags>/config.toml:pre_tool_use:1:0',
-        eventName: 'preToolUse',
-        command: hold.command
-      }
-    ]
-    mocks.request.mockImplementation(async (method: string) =>
-      method === 'hooks/list' ? hookListing('trusted', listed) : { data: [], nextCursor: null }
-    )
-    await sessions.launch({ kind: 'codex', cwd: repo })
-    await sessions.launch({ kind: 'codex', cwd: repo, tabId: 'pty-bg' })
-    const [owner, background] = transports.map((t) => t.options)
-    expect(owner.configOverrides).toContain(`${SHELL_LOOK_BEFORE}]`)
-    expect(background.configOverrides).toContain(
-      `${SHELL_LOOK_BEFORE},{matcher="Bash",hooks=[{type="command",command=${JSON.stringify(hold.command)},timeout=60}]}]`
-    )
-    expect(hold.command).toMatch(/ 25$/)
-    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
-    const kid = spawn('/bin/sh', ['-c', hold.command], {
-      env: { PATH: process.env.PATH ?? '', ...background.sessionEnv }
-    })
-    kid.stdin.end(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } }))
-    await vi.waitFor(
-      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
-      { timeout: 3000 }
-    )
-    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
-    await new Promise((resolve) => kid.on('exit', resolve))
   })
 
   // CODEX§27 CODEX§15

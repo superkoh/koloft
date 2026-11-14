@@ -132,7 +132,7 @@ export function setupE2EEnv(): E2EEnv {
   const fileDialogFile = path.join(home, 'file-dialog-answers')
 
   const roomyMachineNotTheDevMacsOwnLoad = path.join(home, 'machine-reading.json')
-  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1, load1: 0 }))
+  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1 }))
 
   const workspaces = {
     a: makeWorkspace(home, 'ws-a', {
@@ -361,6 +361,16 @@ export function agyTranscriptOf(
     'transcript.jsonl'
   )
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+}
+
+// PLATFORM§59
+export function memoryPressure(env: E2EEnv, pressure: 1 | 2 | 4): void {
+  fs.writeFileSync(env.launchEnv.KOLOFT_TEST_MACHINE_FILE!, JSON.stringify({ pressure }))
+}
+
+export function koloftReadMemoryPressure(env: E2EEnv, pressure: 1 | 2 | 4): boolean {
+  const log = path.join(env.userData, 'machine.log')
+  return fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes(`memory pressure ${pressure}`)
 }
 
 // AGY§4 AGY§5

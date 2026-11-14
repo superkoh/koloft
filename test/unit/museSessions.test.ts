@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { execFileSync, spawn } from 'child_process'
+import { execFileSync } from 'child_process'
 import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -20,8 +20,6 @@ import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
-import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
-import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { museAccountEnv } from '../../src/main/museAccounts'
 
 const mocks = vi.hoisted(() => ({
@@ -432,34 +430,6 @@ describe('The butler on Muse', () => {
     skipPermissions = true
     await launch()
     expect(created[1].argv).toEqual(['--permission-profile', ':unrestricted'])
-  })
-
-  // ADR-0043 MUSE§9
-  it("a background tab's hooks hold muse's next bash command while the Mac is busy, with no variable from muse's environment and an hour's timeout; an owner's tab gets no hold", async () => {
-    const reg = path.join(home, 'reg')
-    fs.mkdirSync(reg)
-    const file = path.join(home, 'hold.sh')
-    fs.writeFileSync(file, HOLD_SCRIPT)
-    sessions['deps'].holdScript = { file, regDir: reg }
-    sessions['deps'].holdWhileBusy = (tabId) => tabId === 'pty-bg'
-    await launch()
-    await launch({ tabId: 'pty-bg' })
-    const hooksOf = (n: number) =>
-      JSON.parse(fs.readFileSync(created[n].env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
-    expect(hooksOf(0).PreToolUse).toEqual(hooksOf(0).PostToolUse.map(lookBefore))
-    const [entry] = hooksOf(1).PreToolUse[1].hooks
-    expect(entry.timeout).toBe(HOLD_HOOK_TIMEOUT_S)
-    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
-    const kid = spawn('/bin/sh', ['-c', entry.command], { env: { PATH: '/usr/bin:/bin' } })
-    kid.stdin.end(
-      JSON.stringify({ session_id: A, tool_name: 'bash', tool_input: { command: 'npm test' } })
-    )
-    await vi.waitFor(
-      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
-      { timeout: 3000 }
-    )
-    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
-    await new Promise((resolve) => kid.on('exit', resolve))
   })
 
   // ADR-0029

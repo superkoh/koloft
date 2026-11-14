@@ -206,8 +206,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.machine.state, handler)
     },
     now: () => ipcRenderer.invoke(CH.machine.now),
-    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId),
-    drop: (tabId) => ipcRenderer.invoke(CH.machine.drop, tabId)
+    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId)
   },
   conductors: {
     bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),

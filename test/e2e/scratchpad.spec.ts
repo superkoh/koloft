@@ -36,12 +36,20 @@ import {
   seedRemoteWorkspace
 } from './helpers/remote'
 import { openTabs } from './helpers/browser'
-import { activeKind, showBrowse, WORKBENCH, workbenchPanel } from './helpers/workbench'
+import {
+  activeKind,
+  browseRow,
+  showBrowse,
+  WORKBENCH,
+  workbenchIcon,
+  workbenchPanel
+} from './helpers/workbench'
 import type { Locator, Page } from '@playwright/test'
 import fs from 'fs'
 import path from 'path'
 
 const LONGER_THAN_RELIST_THROTTLE_MS = 1200
+const LONGER_THAN_A_FOLDER_CHANGE_TAKES_TO_REACH_ITS_WATCHER_MS = 1500
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
   'base64'
@@ -132,6 +140,41 @@ test.describe('the ⌗ Scratchpad node in Browse: Claude’s per-session scratch
     await expect(centerTerm(page)).toContainText('handled: ping', { timeout: 30_000 })
     await page.waitForTimeout(LONGER_THAN_RELIST_THROTTLE_MS)
     await expect(panel.locator('.ft-scratchpad')).toHaveCount(0)
+  })
+
+  test('a folder opened inside the scratchpad lists the file the agent wrote there while the Workbench was collapsed, once it is open again', async ({
+    page
+  }) => {
+    test.setTimeout(150_000)
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(page.locator('.ws-tab-title', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
+      timeout: 40_000
+    })
+    await runIn(page, centerTerm(page), '/scratch first.txt')
+    await tickSessionActivityToRelist(page)
+    await showBrowse(page)
+    await expect(scratchpadNode(page)).toBeVisible({ timeout: 40_000 })
+    const dir = (await scratchpadNode(page).getAttribute('data-path'))!
+    const drafts = path.join(dir, 'drafts')
+    fs.mkdirSync(drafts)
+    fs.writeFileSync(path.join(drafts, 'one.txt'), 'one\n')
+    await browseRow(page, drafts, 'scratchpad').click({ timeout: 20_000 })
+    await expect(browseRow(page, path.join(drafts, 'one.txt'), 'scratchpad')).toBeVisible({
+      timeout: 20_000
+    })
+
+    await workbenchIcon(page).click()
+    await expect(workbenchPanel(page)).toBeHidden()
+    fs.writeFileSync(path.join(drafts, 'later.txt'), 'later\n')
+    await page.waitForTimeout(LONGER_THAN_A_FOLDER_CHANGE_TAKES_TO_REACH_ITS_WATCHER_MS)
+    await workbenchIcon(page).click()
+    await expect(workbenchPanel(page)).toBeVisible()
+    await expect(browseRow(page, path.join(drafts, 'one.txt'), 'scratchpad')).toBeVisible()
+
+    await expect(browseRow(page, path.join(drafts, 'later.txt'), 'scratchpad')).toBeVisible({
+      timeout: 20_000
+    })
   })
 })
 

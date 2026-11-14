@@ -31,8 +31,6 @@ import {
   AGY_START_ENV,
   agyLogLine,
   koloftHookEntry,
-  localAgyHold,
-  machineAgyHold,
   runWithSh,
   sessionStartOutput,
   writeAgyScripts,
@@ -89,10 +87,9 @@ import {
   type AgyMachinePlan,
   type RemoteAgyConfig
 } from './remote/agyTab'
-import { remoteMachineDir } from './remote/paths'
 import { keepSkillsIn } from './agentPlugin'
 import { seedAssistMemory } from './assistMemory'
-import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
+import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
@@ -673,12 +670,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       playwrightServers: ownersPlaywrightMcp(gemini),
       workbenchBrowser: !!endpoint
     })
-    const hold = this.deps.holdScript
-    mergeAgyHooks(
-      pick.home,
-      gemini,
-      koloftHookEntry(runWithSh(scripts.hook), hold && localAgyHold(hold))
-    )
+    mergeAgyHooks(pick.home, gemini, koloftHookEntry(runWithSh(scripts.hook)))
     let bound: AgyRun | undefined
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -728,8 +720,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
           // AGY§30
-          ...browserControlEnv(tabId, endpoint),
-          ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
+          ...browserControlEnv(tabId, endpoint)
         },
         resumeSessionId: opts.resumeSessionId,
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
@@ -812,7 +803,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
-      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
+      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
     )
     const instructions = [
       ...(agentTools ? [koloftPrompt('agy', rules)] : []),
@@ -826,8 +817,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
-        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
-        ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
+        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {})
       },
       program: agyTab({
         tabId,
@@ -1023,13 +1013,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§11 AGY§12
   private showLastState(run: AgyRun, earlierLog: string): void {
     let last: ProgramStatus | undefined
+    let reviewing = false
     for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
       if (!read) continue
       if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      if ('title' in read && read.title.conversationId === run.info?.nativeSessionId)
+        reviewing = read.title.agentState === 'reviewing'
       last = remoteStatus(run, read) ?? last
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
+    // AGY§19
+    if (reviewing) void this.readPlan(run)
     this.replayTasks(run)
   }
 
@@ -1446,6 +1441,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!id) return
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
+    const stillThere = this.runs.get(run.tabId) === run && !run.explicitStop && !run.stopping
+    if (!stillThere || run.info?.nativeSessionId !== id) return
     const brain = path.join(agyBrain(this.geminiOf(run.cwd)), id)
     let names: string[] = []
     try {
@@ -1457,6 +1454,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!waiting) return
     const plan = waiting.n.replace(/\.metadata\.json$/, '')
     const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
+    if (run.waiting?.approval?.id === askId) return
     const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,

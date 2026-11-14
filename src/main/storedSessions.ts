@@ -37,7 +37,6 @@ import {
 } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
 import { forgetAgentsInLoginShell } from './loginShell'
-import type { HoldScript } from './hooks'
 import type { LaunchedSession } from './accountPicker'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
@@ -116,8 +115,6 @@ export interface StoredSessionDeps {
   remoteTreeIo?(cwd: string): TreeIo
   realFilesOn?: RealFilesOnMachine
   skipPermissions?(): boolean
-  holdWhileBusy?(tabId: string): boolean
-  holdScript?: HoldScript
   hookRegDir?: string
 }
 

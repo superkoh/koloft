@@ -607,8 +607,14 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
 
       await page.keyboard.press('Enter')
       await expectStep(page, 4)
-      const accounts = settingsOnDisk(env).accounts as { name: string; kind: string }[]
-      expect(accounts.map((a) => [a.name, a.kind])).toEqual([['Claude', 'oauth']])
+      await expect
+        .poll(() =>
+          ((settingsOnDisk(env).accounts ?? []) as { name: string; kind: string }[]).map((a) => [
+            a.name,
+            a.kind
+          ])
+        )
+        .toEqual([['Claude', 'oauth']])
       expect(settingsOnDisk(env).assist).toEqual({})
     } finally {
       await quitAndClose(app)
@@ -644,8 +650,9 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
         .toBe(true)
       await expectStep(page, 4)
       await expect(page.locator('.wl-aside')).toHaveCount(0)
-      const accounts = settingsOnDisk(env).accounts as { name: string }[]
-      expect(accounts.map((a) => a.name)).toEqual(['Codex'])
+      await expect
+        .poll(() => ((settingsOnDisk(env).accounts ?? []) as { name: string }[]).map((a) => a.name))
+        .toEqual(['Codex'])
       await expect(primary(page)).toHaveText(/Resume “Codex one”/)
     } finally {
       await quitAndClose(app)

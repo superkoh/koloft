@@ -35,7 +35,6 @@ import {
   MUSE_HOOKS_ENV,
   museHook,
   writeMuseHooks,
-  type MuseHold,
   type MuseRelayFiles,
   type MuseHook
 } from './museHooks'
@@ -246,6 +245,30 @@ function registryDirs(env: NodeJS.ProcessEnv): string[] {
   ]
 }
 
+interface RegistryDir {
+  dir: string
+  changed: number
+}
+
+function registryDirsChangedNow(env: NodeJS.ProcessEnv): RegistryDir[] {
+  return registryDirs(env).flatMap((dir) => {
+    const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
+    return changed === undefined ? [] : [{ dir, changed }]
+  })
+}
+
+async function registryDirsChanged(env: NodeJS.ProcessEnv): Promise<RegistryDir[]> {
+  const seen = await Promise.all(
+    registryDirs(env).map((dir) =>
+      fs.promises.stat(dir).then(
+        (st) => [{ dir, changed: st.mtimeMs }],
+        () => []
+      )
+    )
+  )
+  return seen.flat()
+}
+
 // MUSE§2 MUSE§10
 function trustFile(env: NodeJS.ProcessEnv): string {
   return path.join(museConfigHome(env), 'muse', 'trust.json')
@@ -332,6 +355,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
+  private registryLooking = false
+  private registryLooks = 0
   private registrySeenAt?: number
   private unreadable = new Set<string>()
   private remoteHistory = new Map<string, MuseHistoryEntry[]>()
@@ -641,8 +666,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       context: agentTools ? koloftPrompt('muse', rules) : undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
-      ownerWords: opts.ownerWords,
-      holdWhileBusy: !!this.deps.holdWhileBusy?.(tabId)
+      ownerWords: opts.ownerWords
     })
     this.assertStarting()
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -686,8 +710,18 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private keepSweeping(): void {
     this.sweeping ??= setInterval(() => {
-      this.sweepRegistry()
-      this.followLogs()
+      if (this.registryLooking) return
+      this.registryLooking = true
+      const looksBefore = this.registryLooks
+      // PLATFORM§69
+      void registryDirsChanged(this.env)
+        .then((dirs) => {
+          const aLaterLookAlreadyRan = this.registryLooks !== looksBefore
+          if (!aLaterLookAlreadyRan) this.sweepRegistry(dirs)
+          this.followLogs()
+        })
+        .catch((error) => console.error('[koloft] Muse registry sweep failed:', error))
+        .finally(() => (this.registryLooking = false))
     }, REGISTRY_SWEEP_MS)
     this.sweeping.unref?.()
   }
@@ -719,14 +753,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
-    const hold = this.deps.holdWhileBusy?.(tabId) ? this.deps.holdScript : undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
-      hold && { ...hold, tabId },
       this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined,
       rules
     )
@@ -778,7 +810,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
     ownerWords: string | undefined,
-    hold: MuseHold | undefined,
     relay: MuseRelayFiles | undefined,
     rules: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
@@ -808,7 +839,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold, relay)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, relay)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },
@@ -1214,7 +1245,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§4
-  private sweepRegistry(): Set<MuseRun> {
+  private sweepRegistry(dirs = registryDirsChangedNow(this.env)): Set<MuseRun> {
+    this.registryLooks++
     const rebound = new Set<MuseRun>()
     const live = [...this.runs.values()].filter(
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
@@ -1224,10 +1256,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       this.sweeping = undefined
       return rebound
     }
-    const dirs = registryDirs(this.env).flatMap((dir) => {
-      const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
-      return changed === undefined ? [] : [{ dir, changed }]
-    })
     if (!dirs.length) return rebound
     const changedAt = Math.max(...dirs.map((d) => d.changed))
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound
