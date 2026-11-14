@@ -52,15 +52,29 @@ import {
   selectInputSource,
   windowBounds
 } from './helpers/macInput'
+import { recordTyping, type TypingRecording } from './helpers/typingRecorder'
 
-const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>({
+const test = e2eTest.extend<{
+  shown: {
+    app: ElectronApplication
+    page: Page
+    recordTyping: (tabId: string) => Promise<void>
+  }
+}>({
   shown: async ({ env }, use, testInfo) => {
     seedSettings(env, { hintsOff: true })
     env.launchEnv.KOLOFT_TEST_REAL_WINDOW = '1'
     const app = await launchApp(env)
     const page = await app.firstWindow()
     await waitBooted(page)
-    await use({ app, page })
+    let typing: TypingRecording | undefined
+    await use({
+      app,
+      page,
+      recordTyping: async (tabId) => {
+        typing = await recordTyping(app, page, tabId)
+      }
+    })
     if (testInfo.status !== testInfo.expectedStatus) {
       screenshot(testInfo.outputPath('failed-screen.png'))
       const body = await page
@@ -68,6 +82,7 @@ const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>
         .innerHTML()
         .catch((e: Error) => e.message)
       fs.writeFileSync(testInfo.outputPath('failed-dom.html'), body)
+      await typing?.save(testInfo.outputPath('typing.jsonl'))
     }
     await quitAndClose(app)
   }
@@ -299,7 +314,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   })
 
   test('with macOS Pinyin, Return while composing puts the letters in the line without sending it, and Space picks 你好 for the next Return to send', async ({
-    shown: { app, page },
+    shown: { app, page, recordTyping },
     env
   }, testInfo) => {
     const tabId = await sessionIn(page, 'ws-a')
@@ -309,6 +324,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       selectInputSource(PINYIN_SIMPLIFIED)
       await comeBackThroughTheDock(app)
       await clickIntoTerminal(app, page)
+      await recordTyping(tabId)
       typeNihao()
       realKey(KEY_RETURN)
       await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/> nihao$/)
