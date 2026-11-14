@@ -262,7 +262,10 @@ method. A recheck adds its date, version and command to the bullet.
   (`shell/browser/api/electron_api_notification.cc`,
   `shell/browser/notifications/mac/cocoa_notification.mm`,
   `notification_center_delegate.mm`) on 2026-11-14; the selector is in the shipped
-  `Electron Framework` binary's strings. Not watched on a real screen.
+  `Electron Framework` binary's strings. Measured the same day in the tart VM below
+  (macOS 27.0, the ad-hoc signed Electron 43.8.7): with two delivered notifications,
+  `close()` on one took it out of `Notification.getHistory()` (the app's delivered list)
+  within a poll, while the other stayed listed until it was closed too.
 - **`shell.openPath` and `shell.openExternal` go through LaunchServices, not PATH**, so
   a fake `open` on PATH cannot catch them. `openPath` does not reject on failure: it
   resolves with an error string (empty on success). `openExternal` and
