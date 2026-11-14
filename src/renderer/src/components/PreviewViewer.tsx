@@ -44,7 +44,8 @@ const UNREADABLE: DrawnDoc = {
 let mermaidTempIdSeq = 0
 
 const DIAGRAM_HEIGHTS_KEPT = 1000
-const drawnHeights = makeCache<{ height: number; bodyWidth: number }>(DIAGRAM_HEIGHTS_KEPT)
+const drawnHeights = makeCache<number>(DIAGRAM_HEIGHTS_KEPT)
+const heightKey = (key: string, bodyWidth: number): string => `${key}@${bodyWidth}`
 
 interface Shown extends DrawnBlock {
   html: string
@@ -263,7 +264,7 @@ export function PreviewViewer({
       drawnText.current = doc.text
     }
 
-    const bodyWidth = body.offsetWidth
+    let bodyWidth: number | undefined
     const watch = (b: Shown): void => {
       for (const el of b.el.querySelectorAll<HTMLElement>('.mmd')) {
         if (el.dataset.k !== TOKEN || el.dataset.state === 'busy') continue
@@ -271,8 +272,9 @@ export function PreviewViewer({
           diagrams.current.keepHeight(el)
           continue
         }
-        const kept = drawnHeights.get(diagramKey(codeOf(el)))
-        if (kept?.bodyWidth === bodyWidth) el.style.minHeight = `${kept.height}px`
+        bodyWidth ??= body.offsetWidth
+        const kept = drawnHeights.get(heightKey(diagramKey(codeOf(el)), bodyWidth))
+        if (kept) el.style.minHeight = `${kept}px`
         diagrams.current.watch(el)
       }
     }
@@ -338,22 +340,28 @@ export function PreviewViewer({
       if (code.trim().length > MERMAID_MAX_TEXT_SIZE) {
         fillTooBig(el, code)
         el.dataset.state = 'done'
+        el.style.minHeight = ''
       } else {
         const res = await renderDiagram(code, `d${++mermaidTempIdSeq}`)
+        el.style.minHeight = ''
         if (disposed || !el.isConnected) return
         showDrawn(el, res, code)
       }
-      el.style.minHeight = ''
-      sizes.observe(el)
+      keepHeight(el, code)
     }
 
+    const measured = new Map<Element, string>()
+    const keepHeight = (el: HTMLElement, code = codeOf(el)): void => {
+      measured.set(el, diagramKey(code))
+      sizes.observe(el)
+    }
     const sizes = new ResizeObserver((entries) => {
       const bodyWidth = body.offsetWidth
       for (const e of entries) {
-        const el = e.target as HTMLElement
-        if (!el.isConnected) sizes.unobserve(el)
+        const key = measured.get(e.target)
         const height = e.borderBoxSize[0]?.blockSize
-        if (height && bodyWidth) drawnHeights.set(diagramKey(codeOf(el)), { height, bodyWidth })
+        if (key && height && bodyWidth && e.target.isConnected)
+          drawnHeights.set(heightKey(key, bodyWidth), height)
       }
     })
 
@@ -378,8 +386,13 @@ export function PreviewViewer({
           pending.delete(el)
           io.unobserve(el)
         }
+        for (const el of measured.keys()) {
+          if (el.isConnected) continue
+          measured.delete(el)
+          sizes.unobserve(el)
+        }
       },
-      keepHeight: (el) => sizes.observe(el)
+      keepHeight: (el) => keepHeight(el)
     }
 
     const ro = new ResizeObserver(() => {

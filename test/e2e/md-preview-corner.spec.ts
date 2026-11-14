@@ -1146,9 +1146,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
       )
       .toEqual({ text: onScreen.text, movedOverAPixel: false })
     await setScrollTop(page, 0)
-    await expect(mdBody(page).locator('.mmd').nth(2).locator('svg')).toHaveCount(1, {
-      timeout: 60_000
-    })
+    await expect(diagrams(page).filter({ hasText: /C25n1/ })).toHaveCount(1, { timeout: 60_000 })
     await scrollToBottom(page)
     await expect(diagrams(page)).toHaveCount(3, { timeout: 120_000 })
     const texts = await diagrams(page).evaluateAll((els) => els.map((e) => e.textContent ?? ''))
