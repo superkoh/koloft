@@ -80,7 +80,7 @@ describe('what a row says while the session waits on you', () => {
     expect(ask('mcp__fs__read_file', { path: '/a/b.txt' })).toBe('Wants to use: read_file')
   })
 
-  it('Codex, Muse Code and Antigravity: a question, a command, a file edit or a file read; Antigravity also a plan', () => {
+  it('an ask kept for Codex, Muse Code or Antigravity: a question, a command, a file edit, a file read or a plan', () => {
     expect(
       storedAskLine({
         id: 1,

@@ -69,7 +69,6 @@ export function askFromClaude(p: AskPayload): KoloftAsk {
   }
 }
 
-// MUSE§24
 export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   if ('questions' in a) return { kind: 'question', questions: a.questions }
   if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
