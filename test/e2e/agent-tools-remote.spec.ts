@@ -1,25 +1,22 @@
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
-import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
+import { agyTranscriptOf, museSaid, type E2EEnv } from './helpers/env'
 import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
 import {
   encodeCwd,
-  newSessionInWith,
   notesOnDisk,
   notesPath,
   openMenu,
   processAlive,
   readCalls,
-  startSessionIn,
   terminalText,
-  wsGroup,
-  wsRows
+  wsGroup
 } from './helpers/p1'
 import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
 import {

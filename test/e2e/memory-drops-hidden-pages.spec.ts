@@ -14,7 +14,7 @@ import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/
 
 const TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS = 40_000
 const ONE_MIRROR_PULL_LATE_PLUS_TWO_READINGS_MS = 60_000
-const FAKE_CLAUDES_BUSY_TURN_MS = 30_000
+const A_TURN_THAT_OUTLASTS_THE_STEPS_BEFORE_THE_DROP_MS = 60_000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const SLOW_ENOUGH_TO_SEE_THE_LOADING_BAR_MS = 2000
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
@@ -178,11 +178,11 @@ test.describe('when memory turns critical, Koloft lets go of the Workbench web p
   })
 })
 
-const TURN_ON_THE_MACHINE_AS_LONG_AS_CLAUDES_BUSY: Record<
+const LONG_TURN_ON_THE_MACHINE: Record<
   BackendId,
-  { line: string; lengthFile?: string }
+  { line: string; endKey?: string; lengthFile?: string }
 > = {
-  claude: { line: '/busy' },
+  claude: { line: '/hold', endKey: '\x1b' },
   codex: { line: '/busy', lengthFile: 'fake-codex-busy-ms' },
   muse: { line: 'a long turn', lengthFile: 'fake-muse-delay' },
   agy: { line: 'a long turn', lengthFile: 'fake-agy-delay' }
@@ -223,25 +223,27 @@ for (const backend of SESSION_BACKENDS)
         .poll(() => pagesAlive(app))
         .toEqual([hidden, localHidden, localShown, shown].sort())
 
-      const busy = TURN_ON_THE_MACHINE_AS_LONG_AS_CLAUDES_BUSY[backend]
-      if (busy.lengthFile)
+      const turn = LONG_TURN_ON_THE_MACHINE[backend]
+      const typeIntoRemote = (text: string): Promise<void> =>
+        page.evaluate(([tab, t]) => window.api.terminal.write(tab, t), [remoteTab, text])
+      if (turn.lengthFile)
         fs.writeFileSync(
-          path.join(machineHome(env), busy.lengthFile),
-          String(FAKE_CLAUDES_BUSY_TURN_MS)
+          path.join(machineHome(env), turn.lengthFile),
+          String(A_TURN_THAT_OUTLASTS_THE_STEPS_BEFORE_THE_DROP_MS)
         )
-      await page.evaluate(
-        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
-        [remoteTab, busy.line]
-      )
+      await typeIntoRemote(turn.line + '\r')
       await expect(remoteRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
       memoryPressure(env, 4)
       await expect
         .poll(() => pagesAlive(app), { timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS })
         .toEqual([hidden, localShown, shown].sort())
 
+      if (turn.endKey) await typeIntoRemote(turn.endKey)
       await expect
         .poll(() => pagesAlive(app), {
-          timeout: FAKE_CLAUDES_BUSY_TURN_MS + ONE_MIRROR_PULL_LATE_PLUS_TWO_READINGS_MS
+          timeout:
+            A_TURN_THAT_OUTLASTS_THE_STEPS_BEFORE_THE_DROP_MS +
+            ONE_MIRROR_PULL_LATE_PLUS_TWO_READINGS_MS
         })
         .toEqual([localShown])
       expect(server.count(`/${hidden}`)).toBe(1)
