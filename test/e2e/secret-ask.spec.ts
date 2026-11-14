@@ -13,6 +13,7 @@ test.setTimeout(120_000)
 const SIGN_IN_HOST = 'koloft-a.test'
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
 const SUDO_BOX = '.term-wrap .secret-modal'
+const SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN = 'owner_only_zq'
 
 function ownerAtTheMac(env: E2EEnv): void {
   const presence = path.join(env.home, 'presence.txt')
@@ -107,7 +108,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         .poll(async () => unwrapped(await terminalText(page, tab)))
         .toContain(unwrapped(OWNER_FILLED))
       await expect(page.locator(SECRET_BAR)).toHaveCount(0)
-      expect(await terminalText(page, tab)).not.toContain('typed-by-the-owner')
+      expect(unwrapped(await terminalText(page, tab))).not.toContain('typed-by-the-owner')
     } finally {
       await quitAndClose(app)
       await server.close()
@@ -128,7 +129,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         res.writeHead(200)
         res.end('signed in')
       })
-      const callback = `http://localhost:${cli.port}/auth/callback?code=c-8`
+      const callback = `http://localhost:${cli.port}/auth/callback?code=${SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN}`
       server.route('/authorize', (_q, res) => {
         res.writeHead(302, { location: '/sign-in' })
         res.end()
@@ -150,12 +151,14 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await signIn.locator('#go').click()
       await expect
         .poll(() => cli.requestsFor('/auth/callback').map((r) => r.search))
-        .toEqual(['?code=c-8'])
+        .toEqual([`?code=${SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN}`])
       await expect
         .poll(() => terminalText(page, tab))
         .toContain('finished the sign-in in this session')
       await expect(page.locator(SECRET_BAR)).toHaveCount(0)
-      expect(await terminalText(page, tab)).not.toContain('c-8')
+      expect(unwrapped(await terminalText(page, tab))).not.toContain(
+        SIGN_IN_CODE_NO_SESSION_ID_CAN_CONTAIN
+      )
     } finally {
       await quitAndClose(app)
       await server.close()

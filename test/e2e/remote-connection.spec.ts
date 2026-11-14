@@ -405,6 +405,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         const unread = row.locator('.ws-tab-unread')
         await there.longTurn(env, page)
         await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+        await expect(unread).toHaveCount(0)
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
         await expect(unread).toHaveCount(1)
         launches = there.launches(env)

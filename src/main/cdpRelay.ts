@@ -18,6 +18,7 @@ export interface RelayDeps {
   stage(sessionId: string, targetId: string): Promise<void>
   setAttached(sessionId: string, targetIds: string[]): void
   cameThroughAForward(guestId: number, url: string): boolean
+  anotherLiveKoloftOwns(tabId: string): boolean
 }
 
 // PLATFORM§9
@@ -204,20 +205,39 @@ export function renewRelayEndpointOnMachine(tabId: string): string {
   return relayEndpointOnMachine(tabId)
 }
 
+const relayEnvOnDisk = new Map<string, string>()
+let relayEnvFolderSwept = false
+
+// PLATFORM§69
 export function writeRelayEnv(openTabIds: string[]): void {
   const dir = cdpEnvDir()
   try {
-    fs.mkdirSync(dir, { recursive: true })
-    for (const name of fs.readdirSync(dir)) {
-      if (!openTabIds.includes(name)) fs.rmSync(path.join(dir, name), { force: true })
+    if (!relayEnvFolderSwept) {
+      fs.mkdirSync(dir, { recursive: true })
+      for (const name of fs.readdirSync(dir)) {
+        // ADR-0004
+        const leftBehind = !openTabIds.includes(name) && !deps?.anotherLiveKoloftOwns(name)
+        if (leftBehind) fs.rmSync(path.join(dir, name), { force: true })
+      }
+      relayEnvFolderSwept = true
+    }
+    for (const tabId of [...relayEnvOnDisk.keys()]) {
+      if (openTabIds.includes(tabId)) continue
+      fs.rmSync(path.join(dir, tabId), { force: true })
+      relayEnvOnDisk.delete(tabId)
     }
     for (const tabId of openTabIds) {
       const url = relayEndpoint(tabId)
+      if (relayEnvOnDisk.get(tabId) === url) continue
       const file = path.join(dir, tabId)
       if (url) fs.writeFileSync(file, url)
       else fs.rmSync(file, { force: true })
+      relayEnvOnDisk.set(tabId, url)
     }
-  } catch {}
+  } catch {
+    relayEnvFolderSwept = false
+    relayEnvOnDisk.clear()
+  }
 }
 
 function guestOf(guestId: number): Electron.WebContents {

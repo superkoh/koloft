@@ -106,22 +106,40 @@ ${NEW_PROJECT_RULE}. It wants something new built (a new program, tool or projec
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
- "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
- "why" (rule ${NEW_PROJECT_RULE} only, leave it out for every other rule): <one short sentence in the language of the message>,
+ "title": <a very short title, at most 6 words, or 16 characters in a language written without spaces, in the language of the text the person typed between <<< and >>>, even when the session titles and examples above are in another language>,
+ "why" (rule ${NEW_PROJECT_RULE} only, leave it out for every other rule): <one short sentence in that same language>,
  "rule": <the number of the rule you took>`
   return { system: ROUTE_SYSTEM, prompt }
 }
 
-function jsonIn(reply: string): Record<string, unknown> | null {
-  const start = reply.indexOf('{')
-  const end = reply.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
+function jsonObject(text: string): Record<string, unknown> | null {
   try {
-    const v: unknown = JSON.parse(reply.slice(start, end + 1))
+    const v: unknown = JSON.parse(text)
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
   } catch {
     return null
   }
+}
+
+function topLevelObjects(reply: string): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = []
+  let depth = 0
+  let start = 0
+  let inString = false
+  for (let i = 0; i < reply.length; i++) {
+    const c = reply[i]
+    if (inString) {
+      if (c === '\\') i++
+      else if (c === '"') inString = false
+    } else if (c === '{') {
+      if (depth++ === 0) start = i
+    } else if (depth > 0 && c === '"') inString = true
+    else if (depth > 0 && c === '}' && --depth === 0) {
+      const o = jsonObject(reply.slice(start, i + 1))
+      if (o) found.push(o)
+    }
+  }
+  return found
 }
 
 function text(v: unknown, max = TITLE_MAX_CHARS): string {
@@ -162,7 +180,8 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
-  const o = reply ? jsonIn(reply) : null
+  const written = reply ? topLevelObjects(reply) : []
+  const o = written.findLast((answer) => 'rule' in answer) ?? written.at(-1)
   if (!o) return null
   const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }

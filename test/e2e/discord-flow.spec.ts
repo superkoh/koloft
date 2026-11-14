@@ -554,7 +554,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Answer to: [Discord] hello there')
-      expect(butlerSessionOnDisk(env)?.sessionIds).toHaveLength(1)
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds ?? []).toHaveLength(1)
       expect(agySessionCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
