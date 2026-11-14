@@ -1,32 +1,50 @@
 import type { ElectronApplication, Page } from '@playwright/test'
+import type { BackendId } from '../../src/shared/types'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import { codexCalls } from './helpers/codex'
+import {
+  agySessionCalls,
+  installAgy,
+  installCodex,
+  installMuse,
+  museCalls,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import { closeSettings, openSettings } from './helpers/extensions'
 import {
   addRemoteWorkspace,
+  agyReady,
   killFakeRemote,
   launchWithRemote,
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
+  remoteKey,
+  sshCalls,
   type OtherAgentName
 } from './helpers/remote'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   clickAppMenuItem,
   focusOwner,
   newSessionInWith,
   openMenu,
   openSessionTerminal,
+  readCalls,
+  runIn,
   setWindowWidth,
   shownCenterTerm,
   startSessionIn,
   waitBooted,
-  waitForCalls,
   wsRows
 } from './helpers/p1'
 import { seedWorkbenchDefault } from './helpers/workbench'
 
 const CENTER_MAX_COLS = 140
+const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const MIN_SIDE_GUTTER_PX = 24
 const SUBPIXEL_PX = 2
 const BELOW_THE_WINDOW_MIN_WIDTH_PX = 900
@@ -164,6 +182,132 @@ async function launchWithPanelShut(env: E2EEnv): Promise<{ app: ElectronApplicat
   await page.waitForLoadState('domcontentloaded')
   await waitBooted(page)
   return { app, page }
+}
+
+type StartWidths = (env: E2EEnv) => (number | null | undefined)[]
+
+const widthsOfTerminalsToTheMachine: StartWidths = (env) =>
+  sshCalls(env)
+    .filter((c) => c.phase === 'start' && c.argv.includes('-tt'))
+    .map((c) => c.cols)
+
+const codexScreenWidths: StartWidths = (env) => codexCalls(env).map((c) => c.cols)
+
+async function waitsAfterItsTurn(page: Page): Promise<void> {
+  await expect(page.locator('.ws .ws-tab.active')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+}
+
+interface SessionTabKind {
+  kind: string
+  backend: BackendId
+  remote: boolean
+  startsAt: string
+  install: (env: E2EEnv) => void
+  startWidths: StartWidths
+  startOnScreen: (page: Page) => Promise<unknown>
+}
+
+const BACKEND_OF: Record<OtherAgentName, BackendId> = {
+  Codex: 'codex',
+  Muse: 'muse',
+  Antigravity: 'agy'
+}
+
+const EVERY_SESSION_TAB_KIND: SessionTabKind[] = [
+  {
+    kind: 'local Claude Code',
+    backend: 'claude',
+    remote: false,
+    startsAt: 'its agent starts',
+    install: () => {},
+    startWidths: (env) => readCalls(env).map((c) => c.cols),
+    startOnScreen: (page) => startSessionIn(page, 'ws-a')
+  },
+  {
+    kind: 'local Codex',
+    backend: 'codex',
+    remote: false,
+    startsAt: 'its agent starts',
+    install: (env) => installCodex(env),
+    startWidths: codexScreenWidths,
+    startOnScreen: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await waitsAfterItsTurn(page)
+    }
+  },
+  {
+    kind: 'local Muse',
+    backend: 'muse',
+    remote: false,
+    startsAt: 'its agent starts',
+    install: (env) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    startWidths: (env) => museCalls(env).map((c) => c.cols),
+    startOnScreen: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await waitsAfterItsTurn(page)
+      await runIn(page, centerTerm(page), 'keep me running')
+      await expect(page.locator('.ws .ws-tab.active')).toContainText('keep me running')
+      await waitsAfterItsTurn(page)
+    }
+  },
+  {
+    kind: 'local Antigravity',
+    backend: 'agy',
+    remote: false,
+    startsAt: 'its agent starts',
+    install: (env) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    startWidths: (env) => agySessionCalls(env).map((c) => c.cols),
+    startOnScreen: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'keep me running')
+      await agyConversationOnceFirstTurnEnded(page)
+    }
+  },
+  {
+    kind: 'remote Claude Code',
+    backend: 'claude',
+    remote: true,
+    startsAt: 'the terminal that links it to the machine opens',
+    install: () => {},
+    startWidths: widthsOfTerminalsToTheMachine,
+    startOnScreen: async (page) => {
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitsAfterItsTurn(page)
+    }
+  },
+  ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
+    kind: `remote ${agent.label}`,
+    backend: BACKEND_OF[agent.label],
+    remote: true,
+    startsAt:
+      agent.label === 'Codex'
+        ? 'its Codex screen starts on this Mac'
+        : 'the terminal that links it to the machine opens',
+    install: agent.install,
+    startWidths: agent.label === 'Codex' ? codexScreenWidths : widthsOfTerminalsToTheMachine,
+    startOnScreen: async (page: Page) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+      await agent.bound?.(page)
+      await waitsAfterItsTurn(page)
+    }
+  }))
+]
+
+async function launchFor(
+  tab: SessionTabKind,
+  env: E2EEnv
+): Promise<{ app: ElectronApplication; page: Page }> {
+  if (tab.remote) return launchRemoteWithPanelShut(env)
+  const launched = await launchWithPanelShut(env)
+  await setWindowWidth(launched.app, WIDE_WINDOW_PX)
+  return launched
 }
 
 test.describe('the center session terminal stops at 140 columns and sits centred, with at least 24 px on each side; the Workbench terminal still fills its pane', () => {
@@ -315,65 +459,79 @@ test.describe('the center session terminal stops at 140 columns and sits centred
     })
   }
 
-  test('a session started in a tab that is not on screen is as wide as the session on screen when its agent starts, not 80 columns until someone opens it', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    const { app, page } = await launchWithPanelShut(env)
-    try {
-      await setWindowWidth(app, WIDE_WINDOW_PX)
-      await startSessionIn(page, 'ws-a')
-      await expect.poll(() => shownCenterCols(page), { timeout: 20_000 }).toBe(CENTER_MAX_COLS)
-      const onScreen = await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id')
-      await page.evaluate(
-        (id) => window.api.terminal.write(id, '/koloft session new -- /answer hello\r'),
-        onScreen!
-      )
-      const [, startedOffScreen] = await waitForCalls(env, 2)
-      expect(startedOffScreen.cols).toBe(CENTER_MAX_COLS)
-      await expect(page.locator('.ws .ws-tab.active')).toHaveAttribute('data-tab-id', onScreen!)
-      const colsOffScreen = (): Promise<number[]> =>
-        page.evaluate((shown) => {
-          const terms = (window as unknown as { __koloftTerms: Record<string, { cols: number }> })
-            .__koloftTerms
-          return Object.entries(terms).flatMap(([id, t]) => (id === shown ? [] : [t.cols]))
-        }, onScreen!)
-      await expect.poll(colsOffScreen, { timeout: 20_000 }).toEqual([CENTER_MAX_COLS])
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+  for (const tab of EVERY_SESSION_TAB_KIND) {
+    test(`a ${tab.kind} session that koloft session new starts in a tab not on screen is as wide as the session on screen when ${tab.startsAt}, not 80 columns until someone opens it`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      tab.install(env)
+      const { app, page } = await launchFor(tab, env)
+      try {
+        await startSessionIn(page, 'ws-a', tab.backend === 'claude' ? {} : { method: 'Claude' })
+        await expect.poll(() => shownCenterCols(page), { timeout: 20_000 }).toBe(CENTER_MAX_COLS)
+        const onScreen = await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id')
+        const before = tab.startWidths(env).length
+        const where = tab.remote ? ` --workspace ${remoteKey(env)}` : ''
+        await page.evaluate(([id, line]) => window.api.terminal.write(id, line), [
+          onScreen!,
+          `/koloft session new --backend ${tab.backend}${where} -- hello\r`
+        ] as const)
+        await expect
+          .poll(() => tab.startWidths(env).length, { timeout: 60_000 })
+          .toBeGreaterThan(before)
+        expect(tab.startWidths(env)[before]).toBe(CENTER_MAX_COLS)
+        await expect(page.locator('.ws .ws-tab.active')).toHaveAttribute('data-tab-id', onScreen!)
+        const colsOffScreen = (): Promise<number[]> =>
+          page.evaluate((shown) => {
+            const terms = (window as unknown as { __koloftTerms: Record<string, { cols: number }> })
+              .__koloftTerms
+            return Object.entries(terms).flatMap(([id, t]) => (id === shown ? [] : [t.cols]))
+          }, onScreen!)
+        await expect.poll(colsOffScreen, { timeout: 20_000 }).toEqual([CENTER_MAX_COLS])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
-  test('a Keep running session that starts again by itself when Koloft reopens is as wide as the session screen was when Koloft quit', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const first = await launchWithPanelShut(env)
-    try {
-      await setWindowWidth(first.app, WIDE_WINDOW_PX)
-      await startSessionIn(first.page, 'ws-a')
-      await expect
-        .poll(() => shownCenterCols(first.page), { timeout: 20_000 })
-        .toBe(CENTER_MAX_COLS)
-      const row = wsRows(first.page, 'ws-a').first()
-      await openMenu(first.page, row)
-      await first.page.locator('.menu .mi', { hasText: 'Keep running' }).click()
-      await expect(row.locator('.ws-tab-resident')).toBeVisible()
-      await openMenu(first.page, row)
-      await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
-      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-    } finally {
-      await quitAndClose(first.app)
-    }
+    test(`a ${tab.kind} session marked Keep running that comes back by itself when Koloft reopens is as wide as the session screen was when Koloft quit, when ${tab.startsAt}`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      tab.install(env)
+      const first = await launchFor(tab, env)
+      let before = 0
+      try {
+        await tab.startOnScreen(first.page)
+        await expect
+          .poll(() => shownCenterCols(first.page), { timeout: 20_000 })
+          .toBe(CENTER_MAX_COLS)
+        const row = wsRows(first.page, tab.remote ? REMOTE_WS_NAME : 'ws-a').first()
+        await openMenu(first.page, row)
+        await first.page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+        await expect(row.locator('.ws-tab-resident')).toBeVisible()
+        if (tab.remote) {
+          await first.page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+        } else {
+          await openMenu(first.page, row)
+          await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+          await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+        }
+        before = tab.startWidths(env).length
+      } finally {
+        await quitAndClose(first.app)
+      }
 
-    const app = await launchApp(env)
-    try {
-      const [, startedByItself] = await waitForCalls(env, 2)
-      expect(startedByItself.cols).toBe(CENTER_MAX_COLS)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+      const app = await launchApp(env)
+      try {
+        await expect
+          .poll(() => tab.startWidths(env).length, { timeout: 60_000 })
+          .toBeGreaterThan(before)
+        expect(tab.startWidths(env)[before]).toBe(CENTER_MAX_COLS)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('a remote Claude tab stops at 140 columns too', async ({ env }) => {
     test.setTimeout(240_000)
