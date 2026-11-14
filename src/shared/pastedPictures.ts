@@ -12,6 +12,7 @@ export const PASTED_PICTURE_EXTENSIONS: Record<string, string> = {
 
 const PICTURE_LINE = 'Picture: '
 
+// CC§18 CODEX§23 AGY§13
 export function withPictures(words: string, paths: readonly string[]): string {
   const lines = paths.map((p) => PICTURE_LINE + p).join('\n')
   return [words, lines].filter(Boolean).join('\n\n')

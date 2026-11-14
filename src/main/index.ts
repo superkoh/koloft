@@ -374,7 +374,7 @@ import {
   type RelayDeps
 } from './cdpRelay'
 import { pickElement, pickText, stopPick } from './elementPick'
-import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn } from '@shared/pastedPictures'
+import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -1519,29 +1519,35 @@ function pastedPicturesDir(): string {
   return path.join(app.getPath('userData'), 'palette-pictures')
 }
 
-async function savePastedPicture(bytes: Uint8Array, mime: string): Promise<string | null> {
+async function savePastedPicture(dataUrl: string): Promise<string | null> {
+  const [, mime, picture] = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl) ?? []
   const extension = PASTED_PICTURE_EXTENSIONS[mime]
   if (!extension) return null
   await fs.promises.mkdir(pastedPicturesDir(), { recursive: true })
   const file = path.join(pastedPicturesDir(), `${crypto.randomUUID()}.${extension}`)
-  await fs.promises.writeFile(file, bytes)
+  await fs.promises.writeFile(file, Buffer.from(picture, 'base64'))
   return file
 }
 
 async function withPastedPicturesOnItsMachine<T extends CreateTabOptions>(options: T): Promise<T> {
   const machine = typeof options.cwd === 'string' ? parseRemoteKey(options.cwd)?.host : undefined
   if (!machine || !options.firstPrompt) return options
-  let firstPrompt = options.firstPrompt
-  for (const file of pastedPicturesIn(firstPrompt, pastedPicturesDir())) {
-    try {
-      const picture = await fs.promises.readFile(file)
-      const there = await hosts.machine(machine).savePick(path.basename(file), picture)
-      firstPrompt = firstPrompt.replaceAll(file, there)
-    } catch (error) {
-      const why = error instanceof Error ? error.message : String(error)
-      sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
-    }
-  }
+  const copies = await Promise.all(
+    pastedPicturesIn(options.firstPrompt, pastedPicturesDir()).map(async (file) => {
+      try {
+        const picture = await fs.promises.readFile(file)
+        return { file, there: await hosts.machine(machine).savePick(path.basename(file), picture) }
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
+        return { file, there: file }
+      }
+    })
+  )
+  const firstPrompt = copies.reduce(
+    (prompt, { file, there }) => prompt.replaceAll(file, there),
+    options.firstPrompt
+  )
   return { ...options, firstPrompt }
 }
 
@@ -6323,11 +6329,11 @@ function commandIntoButler(text: string): string {
   return commandInto(butlerDestination(), text)
 }
 
-function fromPalette({ words, backend, about, at }: PaletteRequest): string {
+function fromPalette({ words, pictures, backend, about, at }: PaletteRequest): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
   const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
-  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
+  return withPictures(`The owner typed this in ⌘P: ${words}${where}${routed}${agent}`, pictures)
 }
 
 async function startHelper(
@@ -7316,8 +7322,8 @@ function registerIpc(): void {
       : null
     return pickText(picked, picture)
   })
-  ipcMain.handle(CH.palette.savePicture, (_e, bytes: unknown, mime: unknown) =>
-    bytes instanceof Uint8Array && typeof mime === 'string' ? savePastedPicture(bytes, mime) : null
+  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
   )
   ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
     if (typeof id === 'number') stopPick(id)

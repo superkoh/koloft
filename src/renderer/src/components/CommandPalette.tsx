@@ -48,6 +48,16 @@ import '../restoreDialog.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
 const PICTURE_NOT_KEPT = 'Koloft could not keep that picture. It takes PNG, JPEG, GIF and WebP.'
+const COPIED_WITH_ITS_TEXT = 'text/html'
+
+function dataUrlOf(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 let lastSearchId = 0
 
@@ -143,6 +153,7 @@ export function CommandPalette({
   const [listOpen, setListOpen] = useState(false)
   const [grown, setGrown] = useState({ typed: '', rows: SESSION_ROWS_PER_BATCH })
   const [pictures, setPictures] = useState<PastedPicture[]>([])
+  const [saving, setSaving] = useState(0)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const asking = useRef<ReturnType<typeof askRoute> | null>(null)
@@ -159,7 +170,7 @@ export function CommandPalette({
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
   const asksAssist = !pin
   const typed = (pin ? pin.prompt : query).trim()
-  const startable = !!typed && !twoNamed
+  const startable = !!typed && !twoNamed && !saving
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
   const offered = tagging && tagging.start !== dismissedAt ? tagging : null
   const suggestions = offered ? mentionCandidates(workspaceItems, offered, named) : []
@@ -227,21 +238,23 @@ export function CommandPalette({
     })
   }
 
+  const keep = async (files: File[]): Promise<void> => {
+    setSaving((n) => n + 1)
+    for (const file of files) {
+      const shown = await dataUrlOf(file).catch(() => null)
+      const path = shown && (await window.api.palette.savePicture(shown).catch(() => null))
+      if (shown && path) setPictures((had) => [...had, { path, shown }])
+      else useStore.getState().showToast(PICTURE_NOT_KEPT)
+    }
+    setSaving((n) => n - 1)
+  }
+
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    if (mode !== 'ask' || e.clipboardData.types.includes(COPIED_WITH_ITS_TEXT)) return
     const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
     if (!files.length) return
     e.preventDefault()
-    if (mode !== 'ask') return
-    for (const file of files) {
-      void file
-        .arrayBuffer()
-        .then((bytes) => window.api.palette.savePicture(new Uint8Array(bytes), file.type))
-        .catch(() => null)
-        .then((path) => {
-          if (!path) return useStore.getState().showToast(PICTURE_NOT_KEPT)
-          setPictures((had) => [...had, { path, shown: URL.createObjectURL(file) }])
-        })
-    }
+    void keep(files)
   }
 
   const stopAsking = (): void => {

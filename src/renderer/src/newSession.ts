@@ -56,7 +56,7 @@ export interface PendingStart extends TypedStart {
   worktree: RouteWorktree | null
 }
 
-export function promptWithPictures(typed: Pick<TypedStart, 'prompt' | 'pictures'>): string {
+function promptWithPictures(typed: Pick<TypedStart, 'prompt' | 'pictures'>): string {
   return withPictures(
     typed.prompt.trim(),
     (typed.pictures ?? []).map((p) => p.path)

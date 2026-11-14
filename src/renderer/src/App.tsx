@@ -149,7 +149,7 @@ import { useHints } from './useHints'
 import { updateSettings } from './components/settings/useSettingsUpdate'
 import { CommandPalette, type PaletteRouted } from './components/CommandPalette'
 import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialog'
-import { promptWithPictures, type PendingStart, type TypedStart } from './newSession'
+import type { PendingStart, TypedStart } from './newSession'
 import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
 import {
@@ -1195,7 +1195,8 @@ export default function App(): JSX.Element {
     const toButler = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
       const request = {
-        words: promptWithPictures({ prompt, pictures }),
+        words: prompt,
+        pictures: pictures.map((p) => p.path),
         backend,
         title: title || undefined,
         about: about ?? undefined,

@@ -842,6 +842,15 @@ only downloaded the public release.
     commands ending started no turn: their `PostToolUse` and the title scripts came, no
     model request and no `Stop` in the next 40 s. A decline followed by a typed prompt
     that ran a command left that next command's ending its turn as usual.
+- **A picture path in the prompt is opened and read as a picture.** Measured 2026-11-14,
+  agy 1.5.9 on macOS with a real signed-in account (a copy of the sign-in file in a
+  `--gemini_dir` of its own, `WSL_INTEROP=koloft`), `agy -p … --output-format json`, 1 run
+  each. The prompt was "What word is in this picture? Answer with the word only." then a
+  blank line and `Picture: <path>` naming a PNG with the word ZEBRA drawn on it (the
+  word nowhere in the text or the file name). With the PNG inside the folder agy ran
+  in, the answer was `ZEBRA`. With the PNG outside it, `-p` produced no answer and
+  listed `denied_actions: [{action: "read_file"}]`: the outside-workspace ask of §26,
+  which headless mode cannot show. Not run: the same in the TUI, where that ask shows.
 
 ## §14 Asks in the terminal and the keys that answer them
 

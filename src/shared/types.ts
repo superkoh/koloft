@@ -456,6 +456,7 @@ export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; err
 
 export interface PaletteRequest {
   words: string
+  pictures: string[]
   backend: BackendId
   title?: string
   about?: string
@@ -1484,7 +1485,7 @@ export interface KoloftApi {
     fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
   }
   palette: {
-    savePicture(bytes: Uint8Array, mime: string): Promise<string | null>
+    savePicture(dataUrl: string): Promise<string | null>
   }
   discord: {
     status(): Promise<DiscordStatus>
