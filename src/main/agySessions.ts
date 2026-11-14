@@ -151,7 +151,7 @@ export interface AgyMachine {
   agyHeldElsewhere(conversationId: string): Promise<boolean>
   agyConversations(): Promise<SummaryRow[]>
   agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
-  endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined>
   endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -902,8 +902,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run.remote || this.shuttingDown) return
     const { host, tmuxName } = run.remote
     const machine = this.deps.remote.machine(host)
+    // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
-    const problem = await machine.endTmuxSession(named?.trim() || tmuxName)
+    const problem = await machine.endTmuxSession(named?.trim() || tmuxName, run.tabId)
     if (problem)
       this.deps.error(
         `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`

@@ -121,7 +121,7 @@ export interface MuseMachine {
   launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan>
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
-  endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined>
   endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -1144,8 +1144,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (!run.host || !run.tmuxName || this.shuttingDown) return
     const machine = this.deps.remote?.machine(run.host)
     const runId = run.mirror?.runId
+    // ADR-0044
     const named = runId && (await machine?.runScript(TAB_TMUX_NAME_SH, [runId]))
-    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName)
+    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName, runId)
     if (problem)
       this.deps.error(`Could not stop Muse on ${run.host}: ${problem}. It is still running there.`)
     this.deps.remote?.poke(run.host)
