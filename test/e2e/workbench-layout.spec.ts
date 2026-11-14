@@ -15,7 +15,9 @@ import {
   sendShortcut,
   setNextSessionTitle,
   settingsOnDisk,
+  shownCenterTerm,
   startSessionIn,
+  terminalText,
   waitBooted,
   waitForCalls
 } from './helpers/p1'
@@ -57,6 +59,20 @@ async function waitColumnRiseInOver(page: Page): Promise<void> {
         .locator(WORKBENCH.column)
         .evaluate((el) => el.getAnimations().every((a) => a.playState === 'finished'))
     )
+    .toBe(true)
+}
+
+async function waitTuiToldItsSizeBesideTheBoundPanel(page: Page): Promise<void> {
+  await expect.poll(() => layoutState(page)).toBe('T2')
+  await expect
+    .poll(async () => {
+      const shown = await shownCenterTerm(page)
+      if (!shown) return false
+      const winches = (await terminalText(page, shown.id)).matchAll(
+        /\[fake-claude\] winch (\d+x\d+)/g
+      )
+      return [...winches].at(-1)?.[1] === `${shown.cols}x${shown.rows}`
+    })
     .toBe(true)
 }
 
@@ -291,6 +307,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
   }) => {
     test.setTimeout(180_000)
     await startSessionIn(page, 'ws-a')
+    await waitTuiToldItsSizeBesideTheBoundPanel(page)
 
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(e.message))
