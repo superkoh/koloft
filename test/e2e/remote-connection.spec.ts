@@ -30,6 +30,8 @@ import {
   killSession,
   listeningPortsOf,
   newSessionInWith,
+  openSessionTerminal,
+  panelTerm,
   processAlive,
   readCalls,
   runIn,
@@ -581,6 +583,53 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       }
     })
   }
+
+  // PLATFORM§67
+  test('after a Koloft restart brings a remote Claude tab back, its listening ports still list the server started from its Workbench shell before the restart', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    seedSettings(env, { hintsOff: true })
+    const port = await portFreeOnTheMac()
+    const pids = path.join(machineHome(env), 'servers.pid')
+    let launchesBeforeQuit = 0
+    try {
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await startOnTheMachine(page, { label: 'Claude' })
+        const [tab] = await remoteTabIds(page)
+        await openSessionTerminal(app, page)
+        await runIn(
+          page,
+          panelTerm(page),
+          `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${machineHome(env)} >/dev/null 2>&1 & echo $! >> ${pids}`
+        )
+        await expect.poll(() => listeningPortsOf(page, tab), { timeout: 60_000 }).toEqual([port])
+        await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+        launchesBeforeQuit = ON_THE_MACHINE.Claude.launches(env)
+      } finally {
+        await quitAndClose(app)
+      }
+
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await waitBooted(page2)
+        await untilItCameBackOnTheMachine(env, 'Claude', launchesBeforeQuit)
+        await expect(wsRows(page2, REMOTE_WS_NAME).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
+          timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+        })
+        const [tab] = await remoteTabIds(page2)
+        await expect.poll(() => listeningPortsOf(page2, tab), { timeout: 60_000 }).toEqual([port])
+      } finally {
+        await quitAndClose(app2)
+      }
+    } finally {
+      for (const pid of fs.existsSync(pids) ? fs.readFileSync(pids, 'utf8').split('\n') : [])
+        if (pid) killSession(Number(pid), env)
+    }
+  })
 
   test('E-RW-16: /exit after an attach drops the row from the working set', async ({ env }) => {
     test.setTimeout(300_000)

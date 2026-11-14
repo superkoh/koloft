@@ -17,9 +17,6 @@ export interface HookPaths {
   regDir: string
 }
 
-// PLATFORM§67
-export const TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV = 'KOLOFT_HOLD_TAB'
-
 // ADR-0031
 export const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
 interface WhatTheUserReads {
