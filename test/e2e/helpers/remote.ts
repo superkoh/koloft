@@ -93,6 +93,14 @@ export function sshCommands(env: E2EEnv, phase: 'start' | 'end' = 'start'): stri
     .map((c) => remoteCommandText(c.argv))
 }
 
+export function tmuxName(id: string): string {
+  return `k-${id}`
+}
+
+export function killLines(env: E2EEnv, id: string): string[] {
+  return sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmuxName(id)}`))
+}
+
 export function rsyncCalls(env: E2EEnv): string[][] {
   const file = path.join(stateDir(env), 'rsync-log')
   if (!fs.existsSync(file)) return []

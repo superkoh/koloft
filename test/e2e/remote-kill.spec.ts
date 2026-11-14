@@ -15,12 +15,14 @@ import {
   breakConnection,
   dropTabLinkWhileItsSessionDies,
   killFakeRemote,
+  killLines,
   launchWithRemote,
   liveTmuxSessions,
   REMOTE_WS_NAME,
   remoteCommandText,
   sshCalls,
-  sshCommands
+  sshCommands,
+  tmuxName
 } from './helpers/remote'
 import {
   centerTerm,
@@ -45,10 +47,6 @@ const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
-function tmuxName(id: string): string {
-  return `k-${id}`
-}
-
 function closeConfirm(page: Page): Locator {
   return page.locator('.modal', { hasText: 'Close running session?' })
 }
@@ -63,10 +61,6 @@ async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Pro
       .first()
       .click()
   }
-}
-
-function killLines(env: E2EEnv, id: string): string[] {
-  return sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmuxName(id)}`))
 }
 
 function killExits(env: E2EEnv, id: string): (number | undefined)[] {
