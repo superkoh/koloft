@@ -95,17 +95,30 @@ exit 0
 `
 
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
+const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
 
-// PLATFORM§2
-function zdotFile(name: string, userDotDir: string, shimDir: string): string {
-  const own = `${userDotDir}/${name}`
-  const source = `[ -f ${own} ] && . ${own}\n`
-  return name === '.zprofile' ? `${source}export PATH=${shq(shimDir)}:"$PATH"\n` : source
+// PLATFORM§2 CODEX§12
+function zdotFile(name: string, userDotDir: string, zdotDir: string, shimDir: string): string {
+  const own = `"$${USER_ZDOTDIR_VAR}/${name}"`
+  const source =
+    name === '.zshenv'
+      ? `${USER_ZDOTDIR_VAR}=${userDotDir}\n[ -f ${own} ] && . ${own}\n[ "$ZDOTDIR" = ${shq(zdotDir)} ] || ${USER_ZDOTDIR_VAR}="$ZDOTDIR"\n`
+      : `ZDOTDIR="$${USER_ZDOTDIR_VAR}"\n[ -f ${own} ] && . ${own}\n${USER_ZDOTDIR_VAR}="$ZDOTDIR"\n`
+  const back = `ZDOTDIR=${shq(zdotDir)}\n`
+  return name === '.zprofile'
+    ? `${source}${back}export PATH=${shq(shimDir)}:"$PATH"\n`
+    : `${source}${back}`
+}
+
+// CODEX§12
+function bashEnvFile(shimDir: string): string {
+  return `if shopt -q login_shell && [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\nexport PATH=${shq(shimDir)}:"$PATH"\n`
 }
 
 export interface OpenShim {
   shimDir: string
   zdotDir: string
+  bashEnv: string
   requestDir: string
 }
 
@@ -116,7 +129,12 @@ export function writeOpenShim(
 ): OpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
-  const shim = { shimDir, zdotDir, requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`) }
+  const shim = {
+    shimDir,
+    zdotDir,
+    bashEnv: path.join(shimDir, 'bash_env'),
+    requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`)
+  }
   try {
     fs.mkdirSync(zdotDir, { recursive: true })
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {
@@ -124,7 +142,8 @@ export function writeOpenShim(
     })
     const userDotDir = userZdotdir ? shq(userZdotdir) : '"$HOME"'
     for (const name of ZSH_DOTFILES)
-      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, shimDir))
+      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, zdotDir, shimDir))
+    fs.writeFileSync(shim.bashEnv, bashEnvFile(shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {
     removeOpenShim(shim)

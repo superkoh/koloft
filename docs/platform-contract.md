@@ -71,6 +71,24 @@ method. A recheck adds its date, version and command to the bullet.
   `zsh -lc`, with the user's own `PATH` additions kept. (2026-09-25, macOS 27.0, zsh:
   `command -v open` printed the wrapper's `open`; `command -v codex` still printed
   `~/.local/bin/codex`, which the user's `~/.zprofile` adds.)
+- **A `~/.zshenv` that sets `ZDOTDIR` takes zsh past such a wrapper.** zsh reads each
+  later dotfile from whatever `ZDOTDIR` holds at that moment, so a user `~/.zshenv`
+  (sourced by the wrapper's `.zshenv`) that says `ZDOTDIR=~/.config/zsh` sends zsh to
+  `~/.config/zsh/.zprofile`, and the folder is never put first. The wrapper holds when
+  each of its files sets `ZDOTDIR` to the user's folder while it sources the user's file,
+  remembers what that file left there, and then sets `ZDOTDIR` back to itself; the
+  user's files still see their own `ZDOTDIR`. (2026-11-15, macOS 27.0 zsh 5.9, in real
+  Codex turns, CODEX§12.)
+- **`BASH_ENV` puts a folder first again in `bash -lc`.** A login bash reads
+  `/etc/profile` (where `path_helper` runs), then the first of `~/.bash_profile`,
+  `~/.bash_login`, `~/.profile`, and only then the file `BASH_ENV` names, so a folder
+  that file prepends wins and the user's profile still runs. macOS's own `/bin/bash`
+  3.2.57 reads `BASH_ENV` only in a login shell: `bash -c` with it set ran nothing from
+  it. A bash run with `-c` whose stdin is a socket sources `~/.bashrc` by itself (bash's
+  check for a shell started by sshd); Node's `spawnSync` pipes on macOS count, so a test
+  of what a `bash -c` loads gives it no stdin (`stdio: ['ignore', …]`), which made the
+  `~/.bashrc` load go away. (2026-11-15, macOS 27.0, a scratch node script and
+  `codexOpenShim.test.ts`.)
 - **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive), so a
   `command -v` run through it can miss a tool that every interactive session finds.
   Only `zsh -l -i` loads the user's full profile. (2026-09-24, macOS 27.0, zsh with a

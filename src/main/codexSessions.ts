@@ -901,7 +901,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           (target) => observe({ type: 'open', target }),
           agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
         )
-    const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
+    const env = openShim
+      ? {
+          ...this.envFor(home),
+          ZDOTDIR: openShim.zdotDir,
+          ...(!processEnv?.BASH_ENV && { BASH_ENV: openShim.bashEnv })
+        }
+      : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')
     if (said && opts.ownerWords) seedHandedOverOwnerWords(said, opts.ownerWords)
     const shellWroteDir = machine ? this.machineDeps().mirrorDir(machine) : this.deps.hookRegDir
@@ -1168,12 +1174,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     userZdotdir: string | undefined,
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
-  ): { shimDir: string; zdotDir: string; release(): void } {
+  ): { shimDir: string; zdotDir: string; bashEnv: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       { backend: 'codex', userZdotdir, open, agent }
     )
-    return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
+    return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, bashEnv: shim.bashEnv, release }
   }
 
   // CODEX§34

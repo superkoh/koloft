@@ -1187,11 +1187,15 @@ describe('CodexSessions', () => {
     })
   })
 
-  it("points Codex's zsh at a dotfile folder of the run's own, whose open shim asks Koloft through /tmp and reads no KOLOFT_ variable", async () => {
+  it("points Codex's zsh at a dotfile folder of the run's own, and its bash at a BASH_ENV file there, whose open shim asks Koloft through /tmp and reads no KOLOFT_ variable", async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     const zdot = transports[0].options.env?.ZDOTDIR
     expect(zdot?.startsWith(path.join(directory, 'codex-open') + path.sep)).toBe(true)
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.ZDOTDIR).toBe(zdot)
+    const bashEnv = path.join(path.dirname(zdot!), 'bash_env')
+    expect(transports[0].options.env?.BASH_ENV).toBe(bashEnv)
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.BASH_ENV).toBe(bashEnv)
+    expect(fs.existsSync(bashEnv)).toBe(true)
     const script = fs.readFileSync(path.join(path.dirname(zdot!), 'open'), 'utf8')
     expect(script).toMatch(/\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/)
     expect(script).not.toContain('KOLOFT_')
@@ -1529,6 +1533,18 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       ...RESERVED_TAB_ENV
     })
+  })
+
+  it("leaves a BASH_ENV the user's login shell exports in place", async () => {
+    mocks.runtime.mockResolvedValue({
+      binary: '/fixture/codex',
+      env: { PATH: '/usr/bin', BASH_ENV: '/home/me/.bash_env' },
+      version: MIN_CODEX_VERSION,
+      verified: true
+    })
+    vi.mocked(sessions.availability).mockRestore()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[0].options.env?.BASH_ENV).toBe('/home/me/.bash_env')
   })
 
   it("a tab's shell finds the user's own gh before the one Koloft ships, and Koloft's git first only when the Mac has none", async () => {
