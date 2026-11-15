@@ -396,6 +396,28 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the real model once launched it so that it ran under launchd (parent pid 1) while
   muse kept running, with no background item for it; asked to keep it as the bash
   tool's own background job, it did.
+- **What a background command shows from outside muse.** 2026-11-15, `Muse Code 1.4.11
+  (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`, no network), `muse exec
+  --approval-mode never --disable-sandbox`, the fake model calling `bash` with
+  `yield_time_ms: 1500` on a Python script that listens on 127.0.0.1:8800 and prints a
+  line every 0.5 s, one run, looked at from inside the container 2 s and 5 s after the
+  tool result came back:
+  - The process tree is `muse` → `/bin/sh -c <command>` → the program, so a
+    `ps`/`/proc` read sees each pid and its CPU time (the script's grew 1 s in 3 s).
+  - Its stdin is `/dev/null`; stdout and stderr are two pipes whose other ends muse
+    holds, so no file belongs to the command itself.
+  - Muse copies what it prints into
+    `<data>/muse/sessions/YYYY/MM/DD/<session id>/tool-outputs/.spool/<call_id>-bash.txt.tmp`,
+    `<call_id>` being the model's function-call id (`call_b1` here); that file grew
+    49 → 95 bytes in the same 3 s. `session.jsonl` grew too, but by muse's own reminder
+    records as well, so its size says nothing about the command.
+  - The tool result is `{"execution_state":"background_running","work_id":
+    "work.v2.managed_bash.sha256.…","output":"tick 1\ntick 2\ntick 3\n",…}`, the output
+    printed so far included.
+  - `muse exec` did not end by itself while the command ran (killed after 40 s); the
+    command then lived on under pid 1.
+  Not probed: the spool file on macOS, its name after the command ends, and whether a
+  hook's input carries the `call_id`.
 - **A `bash` command has no terminal unless the model asks for one, and the macOS
   sandbox refuses sudo itself.** 2026-11-05, `Muse Code 1.4.14 (1.4.14-R7309.1)` on macOS
   27 (official installer, a throwaway HOME, the TUI under `expect`) and `Muse Code 1.4.11
