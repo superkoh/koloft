@@ -423,7 +423,10 @@ describe('AgySessions launch', () => {
   })
 
   // AGY§5
-  it("a resume on another account trusts the folder there when one of the owner's accounts already trusts it, here and on a remote machine, since agy would stop on its trust question with nobody at the tab; a fresh launch there still asks", async () => {
+  it("a resume on another account trusts the folder there when one of the owner's accounts already trusts it, here and on a remote machine, since agy would stop on its trust question with nobody at the tab; a fresh launch, or a resume in a folder no account trusts, still asks", async () => {
+    storedMember(A)
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(sessions.trustsFolder(repo)).toBe(false)
     const spent = path.join(home, 'agy-homes', 'spent', 'antigravity-cli')
     fs.mkdirSync(spent, { recursive: true })
     fs.writeFileSync(
@@ -432,12 +435,10 @@ describe('AgySessions launch', () => {
     )
     await launch()
     expect(sessions.trustsFolder(repo)).toBe(false)
-    storedMember(A)
-    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    storedMember(CHILD)
+    await sessions.resume({ sessionId: agySessionKey(CHILD), cwd: repo })
     expect(sessions.trustsFolder(repo)).toBe(true)
 
-    machine.config = { ...machine.config, accountsSettings: [{ trustedWorkspaces: [repo] }, {}] }
-    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
     machine.config.accountsSettings = [{ trustedWorkspaces: ['/home/me/proj'] }, {}]
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
     sessions.store.upsertMember({
@@ -453,7 +454,7 @@ describe('AgySessions launch', () => {
     const trusted = machine.launches.map(
       (spec) => JSON.parse(spec.program.files[`${spec.tabId}.settings.json`]).trustedWorkspaces
     )
-    expect(trusted).toEqual([[], [], ['/home/me/proj']])
+    expect(trusted).toEqual([[], ['/home/me/proj']])
   })
 
   // AGY§5
