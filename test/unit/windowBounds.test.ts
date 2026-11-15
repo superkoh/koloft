@@ -85,7 +85,7 @@ describe('windowState: saved bounds are restored only while they stay on-screen'
 
 // PLATFORM§5
 describe('windowState (B1/BB-C55): the 1020 minimum must not force-resize an older saved window', () => {
-  it('applies the full minimum to a default or wider-than-minimum launch', () => {
+  it('applies the full minimum to a window at least as wide as it, the 1440 first-launch window included', () => {
     expect(windowMinWidth(1440)).toBe(1020)
     expect(windowMinWidth(1020)).toBe(1020)
   })
