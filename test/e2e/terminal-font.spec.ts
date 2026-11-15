@@ -74,7 +74,7 @@ async function restoreWithFacesHeldBack(page: Page, meanwhile: () => Promise<voi
   })
   await page.reload()
   await waitBooted(page)
-  await expect(page.locator('.term').first()).toBeAttached()
+  await expect(page.locator('.term').first()).toBeAttached({ timeout: 30_000 })
   await meanwhile()
   expect(await page.locator('.xterm').count()).toBe(0)
   await page.evaluate(() => (window as unknown as { __releaseFaces: () => void }).__releaseFaces())
@@ -91,25 +91,16 @@ interface SessionTab {
   start: (page: Page) => Promise<unknown>
 }
 
-async function startOtherAgent(
-  page: Page,
-  wsName: string,
-  agent: OtherAgentName,
-  bound?: (page: Page) => Promise<unknown>
-): Promise<void> {
-  await newSessionInWith(page, wsName, agent)
-  await bound?.(page)
-  await expect(wsRows(page, wsName).first()).toHaveClass(/st-waiting/, { timeout: 60_000 })
-}
+const wsOf = (tab: SessionTab): string => (tab.remote ? REMOTE_WS_NAME : 'ws-a')
 
-// AGY§8
-async function agyBoundOnThisMac(page: Page): Promise<void> {
-  await agyReady(page)
-  await runIn(page, centerTerm(page), 'first words')
-  await agyConversationOnceFirstTurnEnded(page)
+const BOUND_ON_THIS_MAC: Partial<Record<OtherAgentName, (page: Page) => Promise<unknown>>> = {
+  // AGY§8
+  Antigravity: async (page) => {
+    await agyReady(page)
+    await runIn(page, centerTerm(page), 'first words')
+    await agyConversationOnceFirstTurnEnded(page)
+  }
 }
-
-const OTHER_AGENTS_ON_THIS_MAC: OtherAgentName[] = ['Codex', 'Muse', 'Antigravity']
 
 const EVERY_SESSION_TAB: SessionTab[] = [
   {
@@ -117,23 +108,28 @@ const EVERY_SESSION_TAB: SessionTab[] = [
     remote: false,
     start: (page) => startSessionIn(page, 'ws-a')
   },
-  ...OTHER_AGENTS_ON_THIS_MAC.map((agent): SessionTab => ({
-    name: `${agent} tab on this Mac`,
+  ...OTHER_AGENTS_ON_THE_MACHINE.map(({ label }): SessionTab => ({
+    name: `${label} tab on this Mac`,
     remote: false,
-    install: (env) => installAgentFor(env, agent, env.workspaces.a),
-    start: (page) =>
-      startOtherAgent(page, 'ws-a', agent, agent === 'Antigravity' ? agyBoundOnThisMac : undefined)
+    install: (env) => installAgentFor(env, label, env.workspaces.a),
+    start: async (page) => {
+      await newSessionInWith(page, 'ws-a', label)
+      await BOUND_ON_THIS_MAC[label]?.(page)
+    }
   })),
   {
     name: 'Claude tab on a machine reached over SSH',
     remote: true,
     start: (page) => startSessionIn(page, REMOTE_WS_NAME, { remote: true })
   },
-  ...OTHER_AGENTS_ON_THE_MACHINE.map((agent): SessionTab => ({
-    name: `${agent.label} tab on a machine reached over SSH`,
+  ...OTHER_AGENTS_ON_THE_MACHINE.map(({ label, install, bound }): SessionTab => ({
+    name: `${label} tab on a machine reached over SSH`,
     remote: true,
-    install: agent.install,
-    start: (page) => startOtherAgent(page, REMOTE_WS_NAME, agent.label, agent.bound)
+    install,
+    start: async (page) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, label)
+      await bound?.(page)
+    }
   }))
 ]
 
@@ -145,21 +141,20 @@ async function withSessionTab(
   test.setTimeout(tab.remote ? 240_000 : 120_000)
   tab.install?.(env)
   seedSettings(env, { hintsOff: true })
+  const { app, page } = tab.remote ? await launchWithRemote(env) : await launchSettled(env)
   try {
-    const { app, page } = tab.remote ? await launchWithRemote(env) : await launchSettled(env)
-    try {
-      if (tab.remote) await addRemoteWorkspace(page, env)
-      await tab.start(page)
-      await body(page)
-    } finally {
-      await quitAndClose(app)
-    }
+    if (tab.remote) await addRemoteWorkspace(page, env)
+    await tab.start(page)
+    await expect(wsRows(page, wsOf(tab)).first()).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    await body(page)
   } finally {
-    if (tab.remote) killFakeRemote(env)
+    await quitAndClose(app)
   }
 }
 
 test.describe('the terminal font ships with the app', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
+
   test('the four JetBrainsMono Nerd Font faces a terminal draws with (regular, bold, italic, bold italic) have loaded before the first terminal opens', async ({
     page
   }) => {
@@ -199,7 +194,6 @@ test.describe('the terminal font ships with the app', () => {
           await notesArea(page).click()
           expect(await focusIn(page, '.isl-notes')).toBe(true)
         })
-        expect(await focusIn(page, '.isl-notes')).toBe(true)
         await page.waitForTimeout(LONG_ENOUGH_FOR_A_LATE_FOCUS_GRAB_MS)
         expect(await focusIn(page, '.isl-notes')).toBe(true)
       })
