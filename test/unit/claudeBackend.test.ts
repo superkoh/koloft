@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest'
-import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -17,8 +16,9 @@ import {
   rebuildWorktree,
   type ClaudeBackendDeps
 } from '../../src/main/backends/claude'
-import { localGitOut } from '../../src/main/host/localHost'
-import type { Host } from '../../src/main/host/host'
+import { GIT_CALL_TIMEOUT_MS, localHost } from '../../src/main/host/localHost'
+import { GithubLookup } from '../../src/main/github'
+import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
 import { answered, replyJson } from '../../src/main/agentRequests'
 import { mirrorHookDir } from '../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../src/main/hooks'
@@ -416,37 +416,31 @@ describe('ClaudeBackend: the resume check before a restart', () => {
   })
 })
 
-const CHECKOUT_OF_A_BIG_REPO_MS = 6000
+const CHECKOUT_OF_A_BIG_REPO_MS = GIT_CALL_TIMEOUT_MS + 500
 
 describe('ClaudeBackend: rebuilding a missing worktree on resume', () => {
   it(
     'rebuilds the worktree of a repository whose checkout takes longer than a quick git call is given',
     async () => {
-      const realGit = execFileSync('which', ['git']).toString().trim()
-      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-rebuild-')))
-      const run = (args: string[]): Buffer =>
-        execFileSync(realGit, ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
-      run(['init', '-q', '-b', 'main'])
-      run(['commit', '-q', '--allow-empty', '-m', 'init'])
-      const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-slow-git-'))
-      fs.writeFileSync(
-        path.join(bin, 'git'),
-        `#!/bin/sh\ncase " $* " in *" worktree add "*) sleep ${CHECKOUT_OF_A_BIG_REPO_MS / 1000} ;; esac\nexec "${realGit}" "$@"\n`,
-        { mode: 0o755 }
+      const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-rebuild-')))
+      const root = path.join(tmp, 'repo')
+      seedRepo(root)
+      gitOnPath(
+        tmp,
+        `#!/bin/sh\ncase " $* " in *" worktree add "*) sleep ${CHECKOUT_OF_A_BIG_REPO_MS / 1000} ;; esac\nexec "${realGit()}" "$@"\n`
       )
       const worktreePath = path.join(root, '.claude', 'worktrees', 'wt')
-      const savedPath = process.env.PATH
-      process.env.PATH = `${bin}:${savedPath}`
       try {
         const rebuilt = await rebuildWorktree(
           { worktreePath, branch: 'worktree-wt', baseRef: 'main' },
-          { gitOut: localGitOut, keyed: (p: string) => p } as unknown as Host,
+          localHost(new GithubLookup({}), {} as never),
           undefined
         )
         expect(rebuilt).toBe(true)
         expect(fs.existsSync(worktreePath)).toBe(true)
       } finally {
-        process.env.PATH = savedPath
+        restorePath()
+        fs.rmSync(tmp, { recursive: true, force: true })
       }
     },
     CHECKOUT_OF_A_BIG_REPO_MS * 3

@@ -78,7 +78,7 @@ import {
 import { registeredByTabRoot } from '../shim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
-import { GIT_REF_RE, GIT_STEP_TIMEOUT_MS } from '../gitSteps'
+import { GIT_REF_RE } from '../gitSteps'
 import {
   dirExistsSync,
   gitProbes,
@@ -140,17 +140,17 @@ export async function rebuildWorktree(
   host: Host,
   machine: ScriptRunner | undefined
 ): Promise<boolean> {
-  const git = hostGit(host)
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
+  const at = host.keyed(root)
   const branchLives =
-    (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
+    (await host.gitOut(at, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
-  await git(root, ['worktree', 'remove', spec.worktreePath])
+  await host.gitRun(at, ['worktree', 'remove', spec.worktreePath])
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  if ((await git(root, args, GIT_STEP_TIMEOUT_MS)) === null) return false
+  if ((await host.gitRun(at, args)).code !== 0) return false
   await copyWorktreeIncludes(root, spec.worktreePath, machine)
   return true
 }
@@ -1149,7 +1149,7 @@ function transcriptEnding(file: string): { exists: boolean; continuedIn?: string
 }
 
 function hostGit(host: Host): GitOut {
-  return (dir, ...rest) => host.gitOut(host.keyed(dir), ...rest)
+  return (dir, args) => host.gitOut(host.keyed(dir), args)
 }
 
 export async function pickMachineAccount(
