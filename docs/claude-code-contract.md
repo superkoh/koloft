@@ -2505,6 +2505,16 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     within ~1 s (two runs, 2026-09-29, CC 2.1.285: a python pty whose master fd was
     closed, the way Koloft's own exit closes every tab). So a Koloft that relaunches
     does not find its last run's sessions still registered.
+  - **A SIGHUP with the terminal left open — how Koloft closes a tab — removes the entry
+    255–264 ms later**, with or without a SessionEnd hook; the process itself exits
+    443–532 ms after the SIGHUP with no hook, 484–585 ms with a quick one, and
+    1982–2129 ms with a hook that sleeps 3 s, which claude cuts off (it never finished).
+    Exit code 129 in all. 2026-11-15, CC 2.1.325, python `pty.fork`, scratch `HOME` and
+    `CLAUDE_CONFIG_DIR`, an `apiKeyHelper` key, no MCP server, SIGHUP 2 s after the entry
+    appeared, the entry and `waitpid` read every 2 ms, 5 runs each. So for about a
+    quarter second after Koloft closes a tab the session still reads as held by a live
+    claude; Koloft waits up to 2 s for that entry to go before it calls a session it
+    has just closed "running elsewhere".
   - A `kill -9`'d claude **leaves its entry behind**.
   - **`status` is `waiting` exactly while a dialog, panel or menu is open** (2026-10-04/05,
     CC 2.1.289 and 2.1.290): the `/model` and `/resume` pickers, the "Switch model?"

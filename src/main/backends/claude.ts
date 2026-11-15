@@ -56,7 +56,11 @@ import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
-import { claudePeerNames, runningClaudePid } from '../claudeSessionRegistry'
+import {
+  OLD_CLAUDE_GOES_WITHIN_MS,
+  claudePeerNames,
+  runningClaudePidAfter
+} from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import { sharedProcessTable } from '../processTable'
 import {
@@ -197,6 +201,7 @@ export class ClaudeBackend implements SessionBackend {
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
+  private closedAt = new Map<string, number>()
   private heldBeforeStartup = new Map<string, string>()
   agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
 
@@ -257,7 +262,8 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async runningElsewhere(key: string): Promise<boolean> {
-    return (await runningClaudePid(key)) !== null
+    const waitMs = (this.closedAt.get(key) ?? -Infinity) + OLD_CLAUDE_GOES_WITHIN_MS - Date.now()
+    return (await runningClaudePidAfter(key, Math.max(0, waitMs))) !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -307,6 +313,8 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   stop(tabId: string): void {
+    const sessionId = this.sessionIdOf(tabId)
+    if (sessionId) this.closedAt.set(sessionId, Date.now())
     const remote = this.d.tracker.remoteOf(tabId)
     if (remote) {
       this.endRemoteTmux(remote.host, remote.tmuxName, tabId)

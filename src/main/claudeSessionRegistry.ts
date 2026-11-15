@@ -99,6 +99,25 @@ export async function runningClaudePid(
   return (await liveEntryOf(sessionId, dir, startOf))?.pid ?? null
 }
 
+// CC§11
+export const OLD_CLAUDE_GOES_WITHIN_MS = 2000
+const OLD_CLAUDE_READ_AGAIN_AFTER_MS = 50
+
+export async function runningClaudePidAfter(
+  sessionId: string,
+  waitMs: number,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<number | null> {
+  const deadline = Date.now() + waitMs
+  for (;;) {
+    const pid = await runningClaudePid(sessionId, dir, startOf)
+    const left = deadline - Date.now()
+    if (pid === null || left <= 0) return pid
+    await sleep(Math.min(OLD_CLAUDE_READ_AGAIN_AFTER_MS, left))
+  }
+}
+
 export async function messagingSocketOf(
   sessionId: string,
   dir = REGISTRY_DIR,
