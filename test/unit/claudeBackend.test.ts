@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -11,7 +12,13 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import {
+  ClaudeBackend,
+  rebuildWorktree,
+  type ClaudeBackendDeps
+} from '../../src/main/backends/claude'
+import { localGitOut } from '../../src/main/host/localHost'
+import type { Host } from '../../src/main/host/host'
 import { answered, replyJson } from '../../src/main/agentRequests'
 import { mirrorHookDir } from '../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../src/main/hooks'
@@ -407,4 +414,41 @@ describe('ClaudeBackend: the resume check before a restart', () => {
     expect(swept).toEqual([sessionId])
     listedFolders.mockRestore()
   })
+})
+
+const CHECKOUT_OF_A_BIG_REPO_MS = 6000
+
+describe('ClaudeBackend: rebuilding a missing worktree on resume', () => {
+  it(
+    'rebuilds the worktree of a repository whose checkout takes longer than a quick git call is given',
+    async () => {
+      const realGit = execFileSync('which', ['git']).toString().trim()
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-rebuild-')))
+      const run = (args: string[]): Buffer =>
+        execFileSync(realGit, ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
+      run(['init', '-q', '-b', 'main'])
+      run(['commit', '-q', '--allow-empty', '-m', 'init'])
+      const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-slow-git-'))
+      fs.writeFileSync(
+        path.join(bin, 'git'),
+        `#!/bin/sh\ncase " $* " in *" worktree add "*) sleep ${CHECKOUT_OF_A_BIG_REPO_MS / 1000} ;; esac\nexec "${realGit}" "$@"\n`,
+        { mode: 0o755 }
+      )
+      const worktreePath = path.join(root, '.claude', 'worktrees', 'wt')
+      const savedPath = process.env.PATH
+      process.env.PATH = `${bin}:${savedPath}`
+      try {
+        const rebuilt = await rebuildWorktree(
+          { worktreePath, branch: 'worktree-wt', baseRef: 'main' },
+          { gitOut: localGitOut, keyed: (p: string) => p } as unknown as Host,
+          undefined
+        )
+        expect(rebuilt).toBe(true)
+        expect(fs.existsSync(worktreePath)).toBe(true)
+      } finally {
+        process.env.PATH = savedPath
+      }
+    },
+    CHECKOUT_OF_A_BIG_REPO_MS * 3
+  )
 })

@@ -78,7 +78,7 @@ import {
 import { registeredByTabRoot } from '../shim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
-import { GIT_REF_RE } from '../gitSteps'
+import { GIT_REF_RE, GIT_STEP_TIMEOUT_MS } from '../gitSteps'
 import {
   dirExistsSync,
   gitProbes,
@@ -131,15 +131,16 @@ function startTakenFromTheStatusLog(note: unknown): boolean {
   const n = note as { event?: string; [START_IN_STATUS_LOG]?: unknown } | null
   return n?.event === 'start' && n[START_IN_STATUS_LOG] === true
 }
-async function rebuildWorktree(
+export async function rebuildWorktree(
   spec: {
     worktreePath: string
     branch: string
     baseRef: string
   },
-  git: GitOut,
+  host: Host,
   machine: ScriptRunner | undefined
 ): Promise<boolean> {
+  const git = hostGit(host)
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
   const branchLives =
@@ -149,7 +150,7 @@ async function rebuildWorktree(
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  if ((await git(root, args)) === null) return false
+  if ((await git(root, args, GIT_STEP_TIMEOUT_MS)) === null) return false
   await copyWorktreeIncludes(root, spec.worktreePath, machine)
   return true
 }
@@ -965,7 +966,7 @@ export class ClaudeBackend implements SessionBackend {
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, hostGit(host), this.d.hosts.machineOf(home ?? asked)))
+          !(await rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked)))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
@@ -1148,7 +1149,7 @@ function transcriptEnding(file: string): { exists: boolean; continuedIn?: string
 }
 
 function hostGit(host: Host): GitOut {
-  return (dir, args) => host.gitOut(host.keyed(dir), args)
+  return (dir, ...rest) => host.gitOut(host.keyed(dir), ...rest)
 }
 
 export async function pickMachineAccount(
