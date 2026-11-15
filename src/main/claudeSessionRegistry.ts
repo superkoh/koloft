@@ -103,17 +103,17 @@ export async function runningClaudePid(
 export const OLD_CLAUDE_GOES_WITHIN_MS = 2000
 const OLD_CLAUDE_READ_AGAIN_AFTER_MS = 50
 
-export async function runningClaudePidAfter(
+export async function runningClaudePidOnceGone(
   sessionId: string,
-  waitMs: number,
+  leaving: number | null | undefined,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<number | null> {
-  const deadline = Date.now() + waitMs
+  const deadline = Date.now() + OLD_CLAUDE_GOES_WITHIN_MS
   for (;;) {
     const pid = await runningClaudePid(sessionId, dir, startOf)
     const left = deadline - Date.now()
-    if (pid === null || left <= 0) return pid
+    if (!leaving || pid !== leaving || left <= 0) return pid
     await sleep(Math.min(OLD_CLAUDE_READ_AGAIN_AFTER_MS, left))
   }
 }

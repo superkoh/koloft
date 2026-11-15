@@ -81,12 +81,14 @@ describe('a Claude session whose tab Koloft has just closed', () => {
     expect(ms).toBeLessThan(OLD_CLAUDE_GOES_WITHIN_MS / 2)
   })
 
-  it('an old claude still there when the wait runs out is running elsewhere', async () => {
-    oldClaudeHolding(SID)
+  it('a claude that took the session up after the close is running elsewhere at once, with no wait for the closed one', async () => {
+    const old = oldClaudeHolding(SID)
     const backend = backendWithTab()
     backend.stop(TAB)
+    old.kill('SIGKILL')
+    oldClaudeHolding(SID)
     const { value, ms } = await timed(backend.runningElsewhere(SID))
     expect(value).toBe(true)
-    expect(ms).toBeGreaterThanOrEqual(OLD_CLAUDE_GOES_WITHIN_MS - 100)
-  }, 10_000)
+    expect(ms).toBeLessThan(OLD_CLAUDE_GOES_WITHIN_MS / 2)
+  })
 })
