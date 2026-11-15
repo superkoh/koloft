@@ -26,9 +26,11 @@ export function dockBadgeText(pendingCount: number, dockBadgeEnabled: boolean): 
 export function route(
   event: AttentionEvent,
   windowFocused: boolean,
-  settings: Settings
+  settings: Settings,
+  activeTabId: string | null = null
 ): RouteDecision {
   if (!categoryEnabled(event.kind, settings)) return NONE
+  if (windowFocused && event.tabId === activeTabId) return NONE
   const sound = event.kind === 'approval' && settings.notifyApprovalSound
   return { os: !windowFocused, sound }
 }

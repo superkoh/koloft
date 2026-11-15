@@ -1,8 +1,9 @@
 import fs from 'fs'
-import { test, expect } from './helpers/app'
+import { test, expect, osOutlets, pendingAttention } from './helpers/app'
 import type { Locator, Page } from '@playwright/test'
 import {
   centerTerm,
+  ENDED_ROW_NOTE,
   killSession,
   layoutOnDisk,
   openMenu,
@@ -11,6 +12,7 @@ import {
   sendShortcut,
   startSessionIn,
   waitForCalls,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
@@ -56,6 +58,23 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<s
   await page.keyboard.press('Enter')
   await expect(page.locator(EDIT.dirty)).toBeVisible()
   return ed.configBody + MARKER + '\n'
+}
+
+async function theResumedStartupTurnIsOver(
+  page: Page,
+  sessionId: string,
+  restartedAt: number
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        (await pendingAttention(page)).some(
+          (e) => e.kind === 'turn-done' && e.sessionId === sessionId && e.at > restartedAt
+        ),
+      { timeout: 60_000 }
+    )
+    .toBe(true)
+  await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 }
 
 test.describe('File edit · unsaved work is never lost, and the ✎ that stays off', () => {
@@ -545,13 +564,16 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
     const [first] = await waitForCalls(env, 1)
+    await waitStartupTurnOver(page, 'ws-a')
 
     const mine = await dirtyEditor(page, fx.root, ed)
 
+    const restartedAt = Date.now()
     await sendShortcut(app, 'shortcut:restart-session')
     const calls = await waitForCalls(env, 2)
     const i = calls[1].argv.indexOf('--resume')
     expect(calls[1].argv[i + 1]).toBe(first.sessionId)
+    await theResumedStartupTurnIsOver(page, first.sessionId, restartedAt)
 
     await expect(fileTab(page)).toHaveCount(1, { timeout: 20_000 })
     await expect(page.locator('.wb-tab.on .dirty')).toHaveCount(1, { timeout: 20_000 })
@@ -570,7 +592,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await closeDiscardingEdits(app)
   })
 
-  test('a session killed while its Workbench has unsaved work asks at once — Keep for later, Discard or Save, with no Cancel as the tab is already gone — and Save writes the file', async ({
+  test('a session killed while its Workbench has unsaved work keeps its tab and the work and asks nothing; closing that tab asks Cancel, Discard or Save & close, and Save writes the file', async ({
     app,
     page,
     env
@@ -587,18 +609,25 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
 
     killSession(session.pid, env)
 
-    await expect(modal(page)).toBeVisible({ timeout: 30_000 })
+    await expect(wsRows(page, 'ws-a').locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, {
+      timeout: 30_000
+    })
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/)
+    await expect(modal(page)).toHaveCount(0)
+    expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
+
+    await centerTerm(page).click()
+    await sendShortcut(app, 'shortcut:close-tab')
+    await expect(modal(page)).toBeVisible({ timeout: 20_000 })
     await expect(modal(page)).toContainText('config/app.json')
     await expect(modal(page)).not.toContainText(fx.root)
     expect(await modal(page).locator('button').allTextContents()).toEqual([
-      'Keep for later',
+      'Cancel',
       'Discard',
-      'Save'
+      'Save & close'
     ])
-    await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
-    expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
 
-    await modal(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await modal(page).getByRole('button', { name: 'Save & close', exact: true }).click()
     await expect(modal(page)).toHaveCount(0, { timeout: 20_000 })
     await expect.poll(() => fs.readFileSync(ed.config, 'utf8'), { timeout: 20_000 }).toBe(mine)
 
@@ -636,5 +665,27 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
 
     await exited
     expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
+  })
+
+  test('quitting with unsaved work while the red button has hidden the window shows the window to ask, rather than asking where nobody sees it', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    const fx = setupChangeFixture(env.workspaces.a)
+    const ed = seedEditFixture(env.workspaces.a)
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    await dirtyEditor(page, fx.root, ed)
+
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
+    await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(true)
+    await app.evaluate(({ app: electronApp }) => electronApp.quit())
+    await expect(modal(page)).toBeVisible({ timeout: 20_000 })
+    await expect.poll(async () => (await osOutlets(app)).windowHidden).toBe(false)
+
+    await modal(page).getByRole('button', { name: 'Cancel' }).click()
+    await closeDiscardingEdits(app)
   })
 })

@@ -3,9 +3,11 @@ import {
   askHow,
   claudeDialog,
   claudeKeysFor,
+  codexDialog,
   codexKeyFor,
   dialogText,
   hookAnswer,
+  PLAN_IS_IN_ITS_SESSION,
   isAskedCall
 } from '../../src/main/discord/dialog'
 
@@ -86,6 +88,28 @@ describe('the conductor’s own dialog, asked in Discord and answered from there
     })
   })
 
+  it('a many-pick answer reads numbers and names alike, on one line split by commas or one per line, and sends the picked labels in option order, as the keys of the same reply would', () => {
+    const fruit = {
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+            multiSelect: true
+          }
+        ]
+      }
+    }
+    for (const reply of ['3, 1, cherry,', '1\ncherry'])
+      expect(decisionOf(hookAnswer(fruit, reply))).toMatchObject({
+        updatedInput: { answers: { 'Which fruits?': 'Apple, Cherry' } }
+      })
+    expect(decisionOf(hookAnswer(fruit, 'Mango juice'))).toMatchObject({
+      updatedInput: { answers: { 'Which fruits?': 'Mango juice' } }
+    })
+  })
+
   it('"no" refuses the question with the owner’s words, unless "No" is one of its options', () => {
     const own = { ...colour, tool_input: { questions: [{ question: 'Go?', options: [] }] } }
     expect(decisionOf(hookAnswer(own, 'no, stop here'))).toEqual({
@@ -94,7 +118,7 @@ describe('the conductor’s own dialog, asked in Discord and answered from there
     })
     expect(decisionOf(hookAnswer(colour, 'no'))).toMatchObject({
       behavior: 'allow',
-      updatedInput: { answers: { 'Which colour?': 'no' } }
+      updatedInput: { answers: { 'Which colour?': 'No' } }
     })
   })
 
@@ -136,27 +160,147 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     )
   })
 
+  it('a plan another agent waits on reads like Claude’s: the whole plan under "Approve this plan?", with Approve and Reject; with its text unread, it says where to read it', () => {
+    const asked = { id: 'plan:1', command: 'implementation_plan.md', plan: true as const }
+    expect(codexDialog({ ...asked, reason: 'Create plan-ok.txt.' })).toEqual(claudeDialog(plan))
+    expect(codexDialog(asked).text).toBe(`Approve this plan?\n\n${PLAN_IS_IN_ITS_SESSION}`)
+  })
+
+  const DOWN = '\x1b[B'
+  const UP = '\x1b[A'
+  const downs = (n: number): string[] => Array<string>(n).fill(DOWN)
+  const ups = (n: number): string[] => Array<string>(n).fill(UP)
+  const CTRL_U = '\x15'
+  const SHIFT_TAB = '\x1b[Z'
+  const toTheEmptiedField = [...downs(3 + 2), ...ups(1), CTRL_U]
+  const toTheEmptiedFieldOfManyPicks = [...downs(3 + 3), ...ups(2), CTRL_U]
+
   // CC§14
-  it('a number presses that option, own words press the option after the last, then type and Enter; a second question or many picks are refused', () => {
-    expect(claudeKeysFor(colour, '2')).toEqual({ ok: true, value: ['2'] })
-    expect(claudeKeysFor(colour, 'Purple')).toEqual({ ok: true, value: ['4', 'Purple', '\r'] })
-    expect(claudeKeysFor(colour, '7')).toEqual({ ok: true, value: ['4', '7', '\r'] })
-    const two = {
-      ...colour,
-      tool_input: { questions: [...colour.tool_input.questions, colour.tool_input.questions[0]] }
-    }
-    expect(claudeKeysFor(two, '1').ok).toBe(false)
-    const many = {
-      ...colour,
-      tool_input: { questions: [{ ...colour.tool_input.questions[0], multiSelect: true }] }
-    }
-    expect(claudeKeysFor(many, '1').ok).toBe(false)
+  it('before an answer the highlight goes to the bottom row and up to the own-words field to empty it, then one row up onto an option, so a highlight or text the owner left there does not eat or spoil the answer', () => {
+    expect(claudeKeysFor(colour, '2')).toEqual({ ok: true, value: [...toTheEmptiedField, UP, '2'] })
   })
 
   // CC§14
-  it('an approval or a plan takes 1 for yes and Esc for no, and nothing else', () => {
+  it('a number or a label presses that option, and own words are typed into the emptied field, then Enter', () => {
+    expect(claudeKeysFor(colour, 'green')).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, UP, '2']
+    })
+    expect(claudeKeysFor(colour, 'Purple')).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, 'Purple', '\r']
+    })
+    expect(claudeKeysFor(colour, '7')).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, '7', '\r']
+    })
+  })
+
+  // CC§14
+  it('several questions take one line each, after a way back to question 1 and with each question emptied first when the owner pressed keys since it was asked, else with only question 1 emptied: a pick moves on, picks of a many-pick question are ticked and Tab moves on, own words go in its field, and 1 on the review page sends them all', () => {
+    const [q] = colour.tool_input.questions
+    const fruit = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+      multiSelect: true
+    }
+    const ask = (...questions: object[]): typeof colour =>
+      ({ ...colour, tool_input: { questions } }) as typeof colour
+    const backToTheFirst = (tabs: number): string[] => {
+      const pass = [...downs(3 + 3), ...ups(3), ...Array<string>(tabs).fill(SHIFT_TAB)]
+      return [...pass, ...pass]
+    }
+    expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry')).toEqual({
+      ok: true,
+      value: [
+        ...backToTheFirst(2),
+        ...toTheEmptiedField,
+        UP,
+        '2',
+        ...toTheEmptiedFieldOfManyPicks,
+        UP,
+        '1',
+        '3',
+        '\t',
+        '1'
+      ]
+    })
+    expect(claudeKeysFor(ask(fruit, q), 'Mango juice\nPurple')).toEqual({
+      ok: true,
+      value: [
+        ...backToTheFirst(2),
+        ...toTheEmptiedFieldOfManyPicks,
+        'Mango juice',
+        '\t',
+        '\r',
+        ...toTheEmptiedField,
+        'Purple',
+        '\r',
+        '1'
+      ]
+    })
+    expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry', false)).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, UP, '2', '1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(ask(q, fruit), 'Purple\nMango juice', false)).toEqual({
+      ok: true,
+      value: [
+        ...toTheEmptiedField,
+        'Purple',
+        '\r',
+        DOWN,
+        DOWN,
+        DOWN,
+        'Mango juice',
+        '\t',
+        '\r',
+        '1'
+      ]
+    })
+    expect(claudeKeysFor(ask(q, q), '1\nPurple', false)).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, UP, '1', '4', 'Purple', '\r', '1']
+    })
+    expect(claudeKeysFor(ask(fruit), '3, 1, 3,')).toEqual({
+      ok: true,
+      value: [...backToTheFirst(1), ...toTheEmptiedFieldOfManyPicks, UP, '1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(ask(fruit), '1\ncherry')).toEqual({
+      ok: true,
+      value: [...backToTheFirst(1), ...toTheEmptiedFieldOfManyPicks, UP, '1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(colour, 'Purple\nstripes')).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, 'Purple stripes', '\r']
+    })
+    expect(claudeKeysFor(ask(q, fruit), '2')).toEqual({
+      ok: false,
+      error: askHow(ask(q, fruit))
+    })
+  })
+
+  // CC§14
+  it('an approval takes 1 for yes; a plan takes Ctrl+U on every row of a dialog of two to five rows, whichever row holds the highlight, before the Shift+Tab that approves it, so text left in its feedback row (the last, where Down wraps to the first) is never sent; both take Esc for no, and nothing else', () => {
+    expect(claudeKeysFor(bash, 'yes')).toEqual({ ok: true, value: ['1'] })
+    const keys = claudeKeysFor(plan, 'yes')
+    if (!keys.ok) throw new Error(keys.error)
+    expect(keys.value.at(-1)).toBe(SHIFT_TAB)
+    for (const rows of [2, 3, 4, 5])
+      for (let start = 0; start < rows; start++) {
+        let row = start
+        let feedbackLeft = true
+        for (const key of keys.value.slice(0, -1)) {
+          if (key === DOWN) {
+            row = (row + 1) % rows
+            continue
+          }
+          expect(key).toBe(CTRL_U)
+          if (row === rows - 1) feedbackLeft = false
+        }
+        expect({ rows, start, feedbackLeft }).toEqual({ rows, start, feedbackLeft: false })
+      }
     for (const p of [bash, plan]) {
-      expect(claudeKeysFor(p, 'yes')).toEqual({ ok: true, value: ['1'] })
       expect(claudeKeysFor(p, 'no')).toEqual({ ok: true, value: ['\x1b'] })
       expect(claudeKeysFor(p, 'Add a test first.').ok).toBe(false)
     }

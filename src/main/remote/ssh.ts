@@ -1,5 +1,6 @@
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import fs from 'fs'
+import readline from 'readline'
 
 // PLATFORM§3
 export function defaultControlDir(): string {
@@ -41,7 +42,7 @@ const MASTER_FULL = 'Session open refused by peer'
 
 const spilledHosts = new Set<string>()
 
-function backgroundOptions(host: string, controlDir: string): string[] {
+export function backgroundOptions(host: string, controlDir: string): string[] {
   return sshOptions(controlDir, true, spilledHosts.has(host) ? SPILL_MASTER : SHARED_MASTER)
 }
 
@@ -63,6 +64,14 @@ const NEEDS_SOMEONE_TO_SIGN_IN =
 // PLATFORM§34
 const SHELL_PRINTS_AT_LOGIN = /unexpected tag|protocol version mismatch|is your shell clean/i
 
+export function needsSignIn(r: { code: number | null; stderr: string }): boolean {
+  return r.code === SSH_LINK_BROKE_EXIT && NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr)
+}
+
+export function machineOutOfReach(r: { code: number | null; stderr: string }): boolean {
+  return r.code === SSH_LINK_BROKE_EXIT && !needsSignIn(r) && !r.stderr.includes(MASTER_FULL)
+}
+
 export function problemOf(r: { code: number | null; stderr: string }): string {
   if (r.stderr.includes(MASTER_FULL))
     return 'Too many tabs share one connection to this machine (its sshd MaxSessions) — close some, or raise MaxSessions there'
@@ -77,6 +86,15 @@ export function problemOf(r: { code: number | null; stderr: string }): string {
   return NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr)
     ? `${said} — start a session on this machine and sign in there`
     : said
+}
+
+export const ANSWER_STARTS = 'koloft-answer-starts-here'
+export const ECHO_THE_MARK = `echo ${ANSWER_STARTS}; `
+
+// PLATFORM§33
+export function answerOf(remoteCmd: string, stdout: Buffer): Buffer {
+  const at = remoteCmd.includes(ANSWER_STARTS) ? stdout.indexOf(`${ANSWER_STARTS}\n`) : -1
+  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
 }
 
 export interface RunResult {
@@ -118,6 +136,7 @@ function runBytes(
       }
     )
     // PLATFORM§27
+    child.stdin?.on('error', () => {})
     child.stdin?.end(opts.input)
   })
 }
@@ -130,7 +149,7 @@ async function run(bin: string, args: string[], timeoutMs: number): Promise<RunR
 export function runSsh(
   host: string,
   remoteCmd: string,
-  opts: { controlDir: string; timeoutMs?: number }
+  opts: { controlDir: string; timeoutMs?: number; input?: Buffer }
 ): Promise<RunResult> {
   return runSshBytes(host, remoteCmd, { ...opts, maxBuffer: 32 * 1024 * 1024 }).then((r) => ({
     ...r,
@@ -138,22 +157,96 @@ export function runSsh(
   }))
 }
 
+export function runMasterCommand(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): Promise<RunResult> {
+  return run('ssh', [...sshOptions(opts.controlDir, true), ...op, host], 10_000)
+}
+
+// PLATFORM§41
+export function masterCommandOutlivingKoloft(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): void {
+  spawn('ssh', [...sshOptions(opts.controlDir, true), ...op, host], {
+    detached: true,
+    stdio: 'ignore'
+  }).unref()
+}
+
 export function runSshBytes(
   host: string,
   remoteCmd: string,
   opts: { controlDir: string; timeoutMs?: number; input?: Buffer; maxBuffer?: number }
 ): Promise<BytesResult> {
+  const sent = markedFirst(remoteCmd)
   const args = [
     ...(opts.input ? [] : ['-n']),
     ...backgroundOptions(host, opts.controlDir),
     host,
-    remoteCmd
+    sent
   ]
   return runBytes('ssh', args, {
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, r))
+  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(sent, r.stdout) }))
+}
+
+// PLATFORM§33
+function markedFirst(remoteCmd: string): string {
+  return remoteCmd.includes(ECHO_THE_MARK) ? remoteCmd : `${ECHO_THE_MARK}${remoteCmd}`
+}
+
+const STDERR_TAIL_KEPT = 4096
+
+export function listenOverSsh(
+  host: string,
+  remoteCmd: string,
+  opts: { controlDir: string },
+  onLine: (line: string) => void,
+  onEnd: () => void
+): () => void {
+  const sent = markedFirst(remoteCmd)
+  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, sent], {
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  let stderr = ''
+  let answering = false
+  readline.createInterface({ input: child.stdout }).on('line', (line) => {
+    if (answering) onLine(line)
+    else answering = line.endsWith(ANSWER_STARTS)
+  })
+  child.stderr
+    .setEncoding('utf8')
+    .on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-STDERR_TAIL_KEPT)))
+  child.on('error', () => {})
+  child.on('close', (code) => {
+    noteMasterRoom(host, { code, stderr })
+    onEnd()
+  })
+  return () => child.kill()
+}
+
+// PLATFORM§33 CC§13
+export async function writeToMachineSocket(
+  host: string,
+  socketPath: string,
+  data: string,
+  opts: { controlDir: string }
+): Promise<void> {
+  const r = await runBytes(
+    'ssh',
+    [...backgroundOptions(host, opts.controlDir), '-W', socketPath, host],
+    { timeoutMs: 10_000, maxBuffer: 1024 * 1024, input: Buffer.from(data) }
+  )
+  if (r.code !== 0)
+    throw new Error(
+      `the session on ${host} did not take the message (${r.stderr.trim() || `ssh exited with ${r.code}`}).`
+    )
 }
 
 // PLATFORM§34

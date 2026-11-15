@@ -1,5 +1,6 @@
 import type { GitFileStatus, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { isDocPath, relOf, splitPath, type ChangeFilters } from './filesModel'
+import type { SourceLines } from '../markdown/lines'
 
 export type ChangeKind = 'text' | 'renamed' | 'binary' | 'deleted' | 'conflict'
 
@@ -156,11 +157,55 @@ export interface HunkPrompt {
   typed: string
 }
 
-// CC§18
+function fenced(lang: string, text: string): string[] {
+  const fence = fenceFor(text)
+  return [fence + lang, text, fence]
+}
+
+// CC§18 CODEX§23
+function commentPrompt(pastedLines: string[], note: string): HunkPrompt {
+  return {
+    pasted: pastedLines.join('\n') + '\n\n',
+    typed: note.trim()
+  }
+}
+
 export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
-  const diff = hunk.replace(/\n+$/, '')
-  const fence = fenceFor(diff)
-  return { pasted: [rel, fence + 'diff', diff, fence].join('\n') + '\n\n', typed: note.trim() }
+  return commentPrompt([rel, ...fenced('diff', hunk.replace(/\n+$/, ''))], note)
+}
+
+export interface Passage {
+  place: string
+  source: string | null
+  selected: string
+}
+
+const MARKDOWN_IT_NEWLINE = /\r\n?|\n/
+const SELECTED_CHARS_KEPT = 300
+
+export function passageAt(
+  rel: string,
+  text: string,
+  lines: SourceLines | null,
+  selected: string
+): Passage {
+  const chars = [...selected.replace(/\s+/g, ' ').trim()]
+  const words =
+    chars.length > SELECTED_CHARS_KEPT
+      ? chars.slice(0, SELECTED_CHARS_KEPT).join('') + '…'
+      : chars.join('')
+  if (!lines) return { place: rel, source: null, selected: words }
+  const all = text.split(MARKDOWN_IT_NEWLINE)
+  const from = lines[0]
+  let to = Math.min(lines[1], all.length)
+  while (to > from + 1 && !all[to - 1].trim()) to--
+  const place = to > from + 1 ? `${rel}:${from + 1}-${to}` : `${rel}:${from + 1}`
+  return { place, source: all.slice(from, to).join('\n'), selected: words }
+}
+
+export function passagePrompt(p: Passage, note: string): HunkPrompt {
+  const quote = p.source === null ? [] : fenced('markdown', p.source)
+  return commentPrompt([p.place, ...quote, `Selected: “${p.selected}”`], note)
 }
 
 export function commentBlocked(session: SessionInfo | null): string | null {
@@ -228,12 +273,16 @@ function sameEntry(a: ChangeEntry, b: ChangeEntry): boolean {
   )
 }
 
-export function stableEntries(prev: readonly ChangeEntry[], next: ChangeEntry[]): ChangeEntry[] {
+export function stableEntries(
+  prev: readonly ChangeEntry[],
+  next: ChangeEntry[]
+): readonly ChangeEntry[] {
   const byPath = new Map(prev.map((e) => [e.path, e]))
-  return next.map((e) => {
+  const out = next.map((e) => {
     const old = byPath.get(e.path)
     return old && sameEntry(old, e) ? old : e
   })
+  return out.length === prev.length && out.every((e, i) => e === prev[i]) ? prev : out
 }
 
 export function passesFilters(e: ChangeEntry, f: ChangeFilters): boolean {
@@ -304,6 +353,26 @@ export function nearViewport(block: Span, viewport: Span, lead = HIGHLIGHT_LEAD_
   return block.bottom >= viewport.top - lead && block.top <= viewport.bottom + lead
 }
 
+export const DRAWN_ROW_BUDGET = 5000
+
+export function blocksPastBudget(
+  drawnOldestFirst: readonly string[],
+  rowsOf: (path: string) => number,
+  stays: (path: string) => boolean,
+  budget = DRAWN_ROW_BUDGET
+): string[] {
+  let total = 0
+  for (const p of drawnOldestFirst) total += rowsOf(p)
+  const out: string[] = []
+  for (const p of drawnOldestFirst) {
+    if (total <= budget) break
+    if (stays(p)) continue
+    out.push(p)
+    total -= rowsOf(p)
+  }
+  return out
+}
+
 export const CHANGES_MSG = {
   empty: 'No changes against the base.',
   loading: 'Reading the change set…',
@@ -321,6 +390,8 @@ export const CHANGES_MSG = {
   fileCutOff: 'This file’s diff was truncated — showing what fits.',
   noDiff: 'No diff available.',
   comment: 'Comment on this hunk and put it in the session’s input box',
+  commentPassage: 'Comment on this passage and put it in the session’s input box',
+  commentNotPasted: 'The comment could not be put in the session.',
   commentNoSession: 'No running session to put it in',
   commentApproval: 'The session is waiting for an approval — answer it in the session first',
   totals: (t: ChangeTotals): string => {

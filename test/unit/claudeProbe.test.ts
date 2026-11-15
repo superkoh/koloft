@@ -15,6 +15,16 @@ it('finds a claude whose PATH entry lives in .zshrc alone', async () => {
   expect(result).toEqual({ found: true })
 })
 
+it('counts a claude the profile defines as a shell function as installed, as a tab can run it', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-claude-probe-'))
+  onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }))
+  fs.writeFileSync(path.join(directory, '.zshrc'), 'claude() { echo lazy-loaded; }\n')
+  const probe = await freshProbe()
+  expect(await probe({ PATH: '/usr/bin:/bin', SHELL: '/bin/zsh', ZDOTDIR: directory })).toEqual({
+    found: true
+  })
+})
+
 async function freshProbe(): Promise<typeof probeClaude> {
   vi.resetModules()
   return (await import('../../src/main/claudeProbe')).probeClaude

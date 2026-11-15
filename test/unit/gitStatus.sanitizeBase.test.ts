@@ -9,7 +9,7 @@ const SHA40 = '41bc8cd5b57f78e76e57ee127ce63d489203cccc'
 const SHA64 = SHA40 + '0123456789abcdef01234567'
 
 describe('sanitizeBase', () => {
-  it('passes exactly what fs:diffBase can answer: the literal HEAD, or a hex object id', () => {
+  it('passes exactly what fs:gitChanges can report as its base: the literal HEAD, or a hex object id', () => {
     expect(sanitizeBase('HEAD')).toBe('HEAD')
     expect(sanitizeBase(SHA40)).toBe(SHA40)
     expect(sanitizeBase(SHA64)).toBe(SHA64)

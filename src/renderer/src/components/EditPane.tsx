@@ -8,7 +8,7 @@ import {
   useState,
   type JSX
 } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import {
   AUTOSAVE_DELAY_MS,
   autosaveAllowed,
@@ -34,8 +34,12 @@ import {
   subscribeDirty
 } from '../editRegistry'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
+import type { EditOpenResult } from '@shared/types'
+import '../editPane.css'
+import '../artifactPane.css'
 
 const CARET_READOUT_THROTTLE_MS = 100
+const DIFF_FOLLOWS_TYPING_AFTER_MS = 300
 
 function reasonSentence(readOnly: string | null, failure: string): string {
   if (failure.includes('KOLOFT_TOO_LARGE'))
@@ -55,6 +59,27 @@ export function editRefusal(failure: string): string {
   return 'Cannot edit this file — ' + (reasonSentence(null, failure) || 'unknown reason')
 }
 
+const readsInFlight = new Map<string, Promise<EditOpenResult>>()
+
+export function startEditRead(path: string): Promise<EditOpenResult> {
+  const read: Promise<EditOpenResult> = window.api.edit.open(path).then(
+    (result) => {
+      if (readsInFlight.get(path) === read) readsInFlight.delete(path)
+      return result
+    },
+    (err: unknown) => {
+      if (readsInFlight.get(path) === read) readsInFlight.delete(path)
+      throw err
+    }
+  )
+  readsInFlight.set(path, read)
+  return read
+}
+
+function joinOrStartEditRead(path: string): Promise<EditOpenResult> {
+  return readsInFlight.get(path) ?? startEditRead(path)
+}
+
 export interface EditProbe {
   ready: boolean
   can: boolean
@@ -70,8 +95,7 @@ export function useEditProbe(path: string | null): EditProbe {
     }
     let cancelled = false
     setProbe({ ready: false, can: false, title: '' })
-    window.api.edit
-      .open(path)
+    joinOrStartEditRead(path)
       .then((r) => {
         if (cancelled) return
         setProbe({
@@ -99,6 +123,7 @@ export interface EditPaneProps {
   onSaved: () => void
   prose?: boolean
   autosave?: boolean
+  placeholder?: string
 }
 
 export function EditPane({
@@ -107,7 +132,8 @@ export function EditPane({
   focusNonce,
   onSaved,
   prose = false,
-  autosave = false
+  autosave = false,
+  placeholder
 }: EditPaneProps): JSX.Element {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const [, bump] = useReducer((n: number) => n + 1, 0)
@@ -269,9 +295,17 @@ export function EditPane({
     }
   }, [path, ownerTab, tabId])
 
+  const [diffMine, setDiffMine] = useState('')
+  useEffect(() => {
+    if (!showConflict) return
+    const t = setTimeout(() => setDiffMine(text), DIFF_FOLLOWS_TYPING_AFTER_MS)
+    return () => clearTimeout(t)
+  }, [showConflict, text])
+
   const openDiff = useCallback((): void => {
     setShowConflict(true)
     const e = getEntry(ownerTab, tabId)
+    setDiffMine(e?.text ?? '')
     if (!e?.conflict || e.conflict.text !== null) return
     window.api.edit
       .open(e.path)
@@ -319,8 +353,8 @@ export function EditPane({
   const conflict = entry?.conflict ?? null
   const diskText = conflict?.text
   const parsed = useMemo(
-    () => (showConflict && typeof diskText === 'string' ? diffLines(diskText, text) : null),
-    [showConflict, diskText, text]
+    () => (showConflict && typeof diskText === 'string' ? diffLines(diskText, diffMine) : null),
+    [showConflict, diskText, diffMine]
   )
 
   const saved = entry?.savedAt
@@ -361,7 +395,7 @@ export function EditPane({
             aria-label="Dismiss"
             onClick={() => clearConflict(ownerTab, tabId)}
           >
-            <LuX size={14} />
+            <IconClose size={14} />
           </button>
         </div>
       )}
@@ -372,6 +406,7 @@ export function EditPane({
         className="ed-area"
         spellCheck={prose}
         aria-label="File contents"
+        placeholder={placeholder}
         readOnly={!!entry?.readOnly}
         defaultValue={text}
         onInput={(e) => {
@@ -414,7 +449,7 @@ export function EditPane({
               aria-label="Close"
               onClick={() => setShowConflict(false)}
             >
-              <LuX size={14} />
+              <IconClose size={14} />
             </button>
           </div>
           <div className="ed-conflict-body">

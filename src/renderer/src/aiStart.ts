@@ -32,7 +32,7 @@ export async function pendingOptions(
     ws.isGit ? window.api.workspace.worktrees(ws.path) : [],
     named?.kind === 'issue' ? window.api.github.openItems(ws.path).catch(() => null) : null
   ])
-  const wt = pendingWorktree(named, ws.isGit, worktrees, Date.now())
+  const wt = pendingWorktree(named, ws.isGit, Date.now())
   return pendingLaunch(
     ws.path,
     wt,

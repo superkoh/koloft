@@ -2,7 +2,11 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { commandLineToolsMissing, dirsAnotherGitMayBeIn } from './commandLineTools'
+import {
+  APPLE_GIT_STUB_DIR,
+  commandLineToolsMissing,
+  dirsAnotherGitMayBeIn
+} from './commandLineTools'
 import { writeExecutable } from './playwrightCli'
 
 function vendorPath(name: string): string {
@@ -75,6 +79,44 @@ export function setupBundledGit(
   fs.writeFileSync(config, gitSystemConfig(root))
   writeExecutable(path.join(dir, 'git'), gitLauncherScript(root, config))
   return dir
+}
+
+function isScript(file: string): boolean {
+  const head = Buffer.alloc(2)
+  const fd = fs.openSync(file, 'r')
+  try {
+    fs.readSync(fd, head, 0, 2, 0)
+  } finally {
+    fs.closeSync(fd)
+  }
+  return head.toString() === '#!'
+}
+
+function isRealGitProgram(file: string): boolean {
+  try {
+    const real = fs.realpathSync(file)
+    return (
+      path.basename(real) === 'git' &&
+      path.dirname(real) !== APPLE_GIT_STUB_DIR &&
+      isExecutableFile(real) &&
+      !isScript(real)
+    )
+  } catch {
+    return false
+  }
+}
+
+// PLATFORM§1
+export function theUsersGit(loginPath: string | undefined): string | undefined {
+  return dirsAnotherGitMayBeIn(loginPath)
+    .filter((dir) => path.isAbsolute(dir))
+    .map((dir) => path.join(dir, 'git'))
+    .find(isRealGitProgram)
+}
+
+export function stepAsideForTheUsersGit(gitBinDir: string, loginPath: string | undefined): void {
+  const theirs = theUsersGit(loginPath)
+  if (theirs) writeExecutable(path.join(gitBinDir, 'git'), `#!/bin/sh\nexec ${shq(theirs)} "$@"\n`)
 }
 
 export function linkOrUnlink(link: string, target: string | undefined): void {

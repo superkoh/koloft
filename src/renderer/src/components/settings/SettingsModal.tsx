@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import {
-  LuBell,
-  LuConciergeBell,
-  LuInfo,
-  LuKeyboard,
-  LuPalette,
-  LuPuzzle,
-  LuSparkles,
-  LuTerminal,
-  LuUsers,
-  LuX
-} from 'react-icons/lu'
+  IconAccounts,
+  IconAiStart,
+  IconAppearance,
+  IconAssist,
+  IconClose,
+  IconExtensions,
+  IconInfo,
+  IconNotifications,
+  IconShortcuts,
+  IconTerminal,
+  IconUsage,
+  type Icon
+} from '../../icons'
 import { clearHistory } from '../../browserHistory'
 import { useStore } from '../../store'
 import { EscScope } from './escScope'
 import { AccountsPane } from './AccountsPane'
+import { UsagePane } from './UsagePane'
 import { SessionsPane } from './SessionsPane'
 import { AppearancePane } from './AppearancePane'
 import { ShortcutsPane } from './ShortcutsPane'
@@ -26,6 +29,7 @@ import { DiscordPane } from './DiscordPane'
 import { AssistPane } from './AssistPane'
 import { BsDiscord } from 'react-icons/bs'
 import { SETTINGS_PANES, type SettingsPaneId } from '@shared/paletteFeatures'
+import '../../settings.css'
 
 function ClearBrowsingData(): JSX.Element {
   const [asking, setAsking] = useState(false)
@@ -67,17 +71,18 @@ function ClearBrowsingData(): JSX.Element {
   )
 }
 
-const PANE_ICONS: Record<SettingsPaneId, typeof LuUsers> = {
-  welcome: LuSparkles,
-  sessions: LuTerminal,
-  accounts: LuUsers,
-  appearance: LuPalette,
-  shortcuts: LuKeyboard,
-  assist: LuConciergeBell,
+const PANE_ICONS: Record<SettingsPaneId, Icon> = {
+  welcome: IconAiStart,
+  sessions: IconTerminal,
+  accounts: IconAccounts,
+  usage: IconUsage,
+  appearance: IconAppearance,
+  shortcuts: IconShortcuts,
+  assist: IconAssist,
   discord: BsDiscord,
-  notifications: LuBell,
-  extensions: LuPuzzle,
-  about: LuInfo
+  notifications: IconNotifications,
+  extensions: IconExtensions,
+  about: IconInfo
 }
 
 const PANES = SETTINGS_PANES.map(({ id, label }) => ({ id, label, Icon: PANE_ICONS[id] }))
@@ -199,6 +204,7 @@ export function SettingsModal(): JSX.Element | null {
             {pane === 'welcome' && <WelcomePane />}
             {pane === 'sessions' && <SessionsPane />}
             {pane === 'accounts' && <AccountsPane />}
+            {pane === 'usage' && <UsagePane />}
             {pane === 'appearance' && <AppearancePane />}
             {pane === 'shortcuts' && <ShortcutsPane />}
             {pane === 'notifications' && <NotificationsPane />}
@@ -214,7 +220,7 @@ export function SettingsModal(): JSX.Element | null {
           aria-label="Close"
           onClick={() => setSettingsOpen(false)}
         >
-          <LuX size={14} />
+          <IconClose size={14} />
         </button>
       </div>
     </div>

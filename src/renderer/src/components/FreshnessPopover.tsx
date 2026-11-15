@@ -1,25 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import {
-  LuCheck,
-  LuChevronDown,
-  LuCopy,
-  LuDownload,
-  LuExternalLink,
-  LuLogIn,
-  LuPlus,
-  LuRefreshCw,
-  LuUsers,
-  LuX
-} from 'react-icons/lu'
+  IconAccounts,
+  IconCheck,
+  IconChevronDown,
+  IconClose,
+  IconCopy,
+  IconDownload,
+  IconIssue,
+  IconOpenOutside,
+  IconPlus,
+  IconPullRequest,
+  IconReload,
+  IconSignIn
+} from '../icons'
 import type {
   GitAccountSuggestion,
   GitAccountView,
-  SessionRow,
   WorkspaceFreshness,
   WorkspaceGitAccount,
-  WorkspaceGithub
+  WorkspaceGithub,
+  WorkspaceRows
 } from '@shared/types'
-import { canPull } from '@shared/freshnessOps'
+import { busyInCheckout, canPull, pullToast } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
 import { gitAccountId, gitPlatformName } from '@shared/gitAccountOps'
 import { useStore } from '../store'
@@ -30,12 +32,11 @@ import {
   openIssuesLabel,
   openPullsLabel,
   pullNote,
-  pullToast,
   suggestionText,
   type PullNote
 } from '../freshnessView'
-import { mainRunningCount } from '../newSession'
 import { PullConfirm } from './PullConfirm'
+import '../accounts.css'
 
 const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
 
@@ -51,7 +52,8 @@ function useGitAccountView(
 ): { acct: WorkspaceGitAccount | undefined; notes: GitNote[]; block: JSX.Element | null } {
   const ws = useStore((s) => s.workspaceRows.find((r) => r.workspace.path === wsPath)?.workspace)
   const openGitAccounts = useStore((s) => s.openGitAccounts)
-  const shown = !!ws && !ws.remote
+  const shown = !!ws
+  const machine = ws?.remote?.host
   const acct = shown ? ws?.gitAccount : undefined
   const picked = acct?.id
   const [switching, setSwitching] = useState(false)
@@ -75,11 +77,11 @@ function useGitAccountView(
 
   const toSettings = (): void => {
     onClose()
-    openGitAccounts()
+    openGitAccounts(undefined, machine)
   }
   const toTokenBox = (): void => {
     onClose()
-    openGitAccounts('git-token')
+    openGitAccounts('git-token', machine)
   }
   const openList = (): void => {
     setSwitching(true)
@@ -159,7 +161,9 @@ function useGitAccountView(
       <>
         <div className="tbu-sep" />
         <div className="tbu-pop-head">
-          <span>Account · {host} on this Mac</span>
+          <span>
+            Account · {host} on {machine ?? 'this Mac'}
+          </span>
         </div>
         {noteRows}
         {shared.length > 0 && (
@@ -171,21 +175,21 @@ function useGitAccountView(
           </div>
         )}
         {accounts
-          .filter((a) => a.host === host)
+          .filter((a) => a.host === host && a.machine === machine)
           .map((a) => (
             <button key={a.id} className="tbu-act" onClick={() => pick(a.id)}>
-              {a.id === picked ? <LuCheck size={14} /> : BLANK_ICON}
+              {a.id === picked ? <IconCheck size={14} /> : BLANK_ICON}
               {a.login}
               {a.default && <span className="k">default</span>}
             </button>
           ))}
         <button className="tbu-act" onClick={() => pick(null)}>
-          {picked ? BLANK_ICON : <LuCheck size={14} />}
+          {picked ? BLANK_ICON : <IconCheck size={14} />}
           Use my own git setup
         </button>
         <div className="tbu-sep" />
         <button className="tbu-act" onClick={toSettings}>
-          <LuPlus size={14} />
+          <IconPlus size={14} />
           Add account…<span className="k">Settings ▸ Accounts</span>
         </button>
       </>
@@ -217,15 +221,15 @@ function useGitAccountView(
           className="tbu-act"
           onClick={() => navigator.clipboard?.writeText(publicKey).catch(() => {})}
         >
-          <LuCopy size={14} />
+          <IconCopy size={14} />
           Copy key
         </button>
         <button className="tbu-act" onClick={() => window.api.browser.openExternal(keysPage)}>
-          <LuExternalLink size={14} />
+          <IconOpenOutside size={14} />
           Open SSH keys page
         </button>
         <button className="tbu-act" disabled={checking} onClick={check}>
-          <LuRefreshCw size={14} />
+          <IconReload size={14} />
           {checking ? 'Checking…' : 'Check again'}
         </button>
       </>
@@ -246,21 +250,21 @@ function useGitAccountView(
           title="Change the account this workspace uses"
           onClick={openList}
         >
-          <LuUsers size={14} />
+          <IconAccounts size={14} />
           {acct.login} · {acct.host}
           <span className="k">
             {expired ? (
               'needs sign-in'
             ) : (
               <>
-                change <LuChevronDown size={14} />
+                change <IconChevronDown size={14} />
               </>
             )}
           </span>
         </button>
         {expired ? (
           <button className="tbu-act" onClick={toSettings}>
-            <LuLogIn size={14} />
+            <IconSignIn size={14} />
             Sign in again
           </button>
         ) : refused ? (
@@ -269,7 +273,7 @@ function useGitAccountView(
             title={`Makes an SSH key on this Mac for ${acct.login} only`}
             onClick={() => void window.api.gitAccounts.makeSshKey(wsPath)}
           >
-            <LuPlus size={14} />
+            <IconPlus size={14} />
             Make a key for {acct.login}
           </button>
         ) : (
@@ -294,7 +298,7 @@ function useGitAccountView(
     )
   const pickAccount = (
     <button className="tbu-act" onClick={openList}>
-      <LuUsers size={14} />
+      <IconAccounts size={14} />
       Pick account
     </button>
   )
@@ -304,7 +308,7 @@ function useGitAccountView(
       title="Keep your own git setup; ask again next time this changes"
       onClick={notNow}
     >
-      <LuX size={14} />
+      <IconClose size={14} />
       Not now
     </button>
   )
@@ -329,7 +333,7 @@ function useGitAccountView(
       return offer(
         <>
           <button className="tbu-act" onClick={toSettings}>
-            <LuPlus size={14} />
+            <IconPlus size={14} />
             Add {suggestion.login}
           </button>
           {notNowBtn}
@@ -344,7 +348,7 @@ function useGitAccountView(
         title={`This workspace’s git and gh use ${login} from now on`}
         onClick={() => pick(gitAccountId(on, login))}
       >
-        <LuCheck size={14} />
+        <IconCheck size={14} />
         Use {login}
       </button>
       {notNowBtn}
@@ -356,7 +360,7 @@ export function FreshnessPopover({
   wsPath,
   f,
   github,
-  rows,
+  remote,
   left,
   top,
   onClose,
@@ -367,7 +371,7 @@ export function FreshnessPopover({
   wsPath: string
   f?: WorkspaceFreshness
   github?: WorkspaceGithub
-  rows: SessionRow[]
+  remote?: WorkspaceRows['workspace']['remote']
   left: number
   top: number
   onClose: () => void
@@ -381,7 +385,8 @@ export function FreshnessPopover({
   const [failed, setFailed] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (pulling) return
     if (confirm !== null) {
       const onKey = (e: KeyboardEvent): void => {
@@ -444,9 +449,17 @@ export function FreshnessPopover({
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
-  const inMain = mainRunningCount(rows)
+  const offline = !!remote && !remote.connected
+  const openList = (what: 'issues' | 'pulls'): void => {
+    onClose()
+    useStore.getState().openWorkspaceList(wsPath, what)
+  }
   const eligible = !!f && canPull(f)
-  const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
+  const note: PullNote | null = failed
+    ? { text: failed, tone: 'alarm' }
+    : f
+      ? pullNote(f, remote?.host)
+      : null
 
   return (
     <>
@@ -484,8 +497,9 @@ export function FreshnessPopover({
               <div className="tbu-sep" />
               <button
                 className="tbu-act pull"
-                disabled={!eligible || pulling}
+                disabled={!eligible || pulling || offline}
                 onClick={() => {
+                  const inMain = busyInCheckout(useStore.getState().sessions, wsPath)
                   if (inMain > 0) {
                     setConfirm(inMain)
                     return
@@ -493,7 +507,7 @@ export function FreshnessPopover({
                   void doPull()
                 }}
               >
-                <LuDownload size={14} />
+                <IconDownload size={14} />
                 {pulling ? 'Pulling…' : 'Pull · fast-forward'}
                 {eligible && !pulling && (
                   <span className="k">
@@ -501,8 +515,12 @@ export function FreshnessPopover({
                   </span>
                 )}
               </button>
-              <button className="tbu-act" disabled={fetching} onClick={() => void doFetch()}>
-                <LuRefreshCw size={14} />
+              <button
+                className="tbu-act"
+                disabled={fetching || offline}
+                onClick={() => void doFetch()}
+              >
+                <IconReload size={14} />
                 {fetching ? 'Fetching…' : 'Fetch now'}
               </button>
             </>
@@ -514,17 +532,23 @@ export function FreshnessPopover({
                 <span>GitHub · {github.repo}</span>
                 {acct && <span className="age">as {acct.login}</span>}
               </div>
-              <div className="tbu-row">
-                <div className="fx-counts">
-                  <span>{openIssuesLabel(github.issues)}</span>
-                  <span>{openPullsLabel(github.prs)}</span>
+              <button className="tbu-act" disabled={offline} onClick={() => openList('issues')}>
+                <IconIssue size={14} />
+                {openIssuesLabel(github.issues)}
+              </button>
+              <button className="tbu-act" disabled={offline} onClick={() => openList('pulls')}>
+                <IconPullRequest size={14} />
+                {openPullsLabel(github.prs)}
+              </button>
+              {gitNotes.length > 0 && (
+                <div className="tbu-row">
+                  {gitNotes.map((n) => (
+                    <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
+                      {n.text}
+                    </div>
+                  ))}
                 </div>
-                {gitNotes.map((n) => (
-                  <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
-                    {n.text}
-                  </div>
-                ))}
-              </div>
+              )}
               {gitBlock}
             </>
           )}

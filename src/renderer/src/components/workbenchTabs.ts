@@ -115,6 +115,22 @@ export function dialogHasLiveOwner(
   return !!owner && liveTabs.has(owner)
 }
 
+export interface HiddenPageFacts {
+  owner: string | undefined
+  onScreen: boolean
+  heldForAnAgent: boolean
+  guestId: number
+}
+
+export function mayDropForMemory(
+  page: HiddenPageFacts,
+  inUse: { guestIds: ReadonlySet<number>; owners: ReadonlySet<string> }
+): boolean {
+  if (!page.owner || !page.guestId) return false
+  if (page.onScreen || page.heldForAnAgent) return false
+  return !inUse.guestIds.has(page.guestId) && !inUse.owners.has(page.owner)
+}
+
 export function activateTab(set: WorkbenchTabSet, id: string): WorkbenchTabSet {
   if (!set.tabs.some((t) => t.id === id)) return set
   return {
@@ -219,13 +235,9 @@ export function openTab(
     openedByAgent: opts.openedByAgent ? true : undefined,
     agentOpenedAt: opts.agentOpenedAt
   }
-  const at =
-    opts.kind === 'terminal' ? base.tabs.length : base.tabs.findIndex((t) => t.kind === 'terminal')
-  const tabs =
-    at < 0 ? [...base.tabs, tab] : [...base.tabs.slice(0, at), tab, ...base.tabs.slice(at)]
   return {
     set: {
-      tabs,
+      tabs: [...base.tabs, tab],
       activeId: opts.source === 'user' ? tab.id : base.activeId,
       recency: [...base.recency, tab.id]
     },
@@ -251,10 +263,7 @@ export function moveTab(set: WorkbenchTabSet, id: string, to: number): Workbench
   if (id === FILES_TAB_ID) return set
   const from = set.tabs.findIndex((t) => t.id === id)
   if (from < 0) return set
-  if (set.tabs[from].kind === 'terminal') return set
-  const firstTerm = set.tabs.findIndex((t) => t.kind === 'terminal')
-  const right = (firstTerm < 0 ? set.tabs.length : firstTerm) - 1
-  const target = Math.max(1, Math.min(right, to))
+  const target = Math.max(1, Math.min(set.tabs.length - 1, to))
   if (target === from) return set
   const tabs = set.tabs.slice()
   const [moved] = tabs.splice(from, 1)

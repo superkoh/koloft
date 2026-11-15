@@ -213,26 +213,39 @@ describe('Assist picks the docs a session made for its reader', () => {
     expect(docs.of('s1')).toEqual({ [real]: { show: true, at: expect.any(Number) } })
   })
 
-  it('on an ssh session, sends plain paths and checks an unwritten one on that machine', async () => {
-    const written = 'ssh://devbox/home/koh/repo/report.md'
-    const t = setup({
-      remote: 'devbox',
-      cwd: '/home/koh/repo',
-      files: [wrote(written, TURN_START + 1)],
-      remoteFiles: ['ssh://devbox/home/koh/repo/notes/summary.md'],
-      answer: ['/home/koh/repo/report.md', 'notes/summary.md', '/home/koh/repo/gone.md'].join('\n')
-    })
-    const docs = t.make()
-    await docs.turnEnded('t1', turn('See notes/summary.md'))
-    expect(t.jobs[0].prompt).toContain('\n/home/koh/repo/report.md')
-    expect(t.jobs[0].prompt).not.toContain('ssh://')
-    expect(t.asked).toEqual([
-      'ssh://devbox/home/koh/repo/notes/summary.md',
-      'ssh://devbox/home/koh/repo/gone.md'
-    ])
-    expect(docs.of('s1')).toEqual({
-      [written]: { show: true, at: expect.any(Number) },
-      'ssh://devbox/home/koh/repo/notes/summary.md': { show: true, at: expect.any(Number) }
-    })
-  })
+  it.each([
+    {
+      shape: 'that names its machine beside a plain folder (Claude Code)',
+      where: { remote: 'devbox', cwd: '/home/koh/repo' }
+    },
+    {
+      shape: 'whose folder alone names its machine (Codex, Muse, Antigravity)',
+      where: { cwd: 'ssh://devbox/home/koh/repo' }
+    }
+  ])(
+    'on an ssh session $shape, sends plain paths and checks an unwritten one on that machine',
+    async ({ where }) => {
+      const written = 'ssh://devbox/home/koh/repo/report.md'
+      const t = setup({
+        ...where,
+        files: [wrote(written, TURN_START + 1)],
+        remoteFiles: ['ssh://devbox/home/koh/repo/notes/summary.md'],
+        answer: ['/home/koh/repo/report.md', 'notes/summary.md', '/home/koh/repo/gone.md'].join(
+          '\n'
+        )
+      })
+      const docs = t.make()
+      await docs.turnEnded('t1', turn('See notes/summary.md'))
+      expect(t.jobs[0].prompt).toContain('\n/home/koh/repo/report.md')
+      expect(t.jobs[0].prompt).not.toContain('ssh://')
+      expect(t.asked).toEqual([
+        'ssh://devbox/home/koh/repo/notes/summary.md',
+        'ssh://devbox/home/koh/repo/gone.md'
+      ])
+      expect(docs.of('s1')).toEqual({
+        [written]: { show: true, at: expect.any(Number) },
+        'ssh://devbox/home/koh/repo/notes/summary.md': { show: true, at: expect.any(Number) }
+      })
+    }
+  )
 })

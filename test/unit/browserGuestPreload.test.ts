@@ -22,15 +22,17 @@ describe('the guest preload', () => {
     expect(src).not.toMatch(/webFrame|shell|clipboard/)
   })
 
-  it('speaks three channels and no others: the dialog, the refused link, the background open', () => {
+  it('speaks four channels and no others: the dialog, the undecided permission, the refused link, the background open', () => {
     const src = code(GUEST)
     expect(src.match(/ipcRenderer\.\w+/g)).toEqual([
+      'ipcRenderer.sendSync',
       'ipcRenderer.sendSync',
       'ipcRenderer.send',
       'ipcRenderer.send'
     ])
     expect(src.match(/'browser:[^']+'/g)).toEqual([
       "'browser:js-dialog'",
+      "'browser:permission-undecided'",
       "'browser:link-blocked'",
       "'browser:open-background'"
     ])

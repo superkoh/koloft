@@ -2,7 +2,7 @@ name: CI
 
 # Push only, on every branch. Not `pull_request`: the repo takes no outside pull
 # requests, and a pull_request trigger would run a stranger's fork on this runner
-# before the closing workflow gets to it. Nobody but the owner can push.
+# before the closing workflow gets to it. Only people with write access can push.
 on:
   push:
 

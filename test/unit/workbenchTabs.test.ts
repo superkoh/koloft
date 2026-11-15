@@ -10,6 +10,7 @@ import {
   emptyTabSet,
   fileLabels,
   liveWebTabs,
+  mayDropForMemory,
   moveTab,
   navigateTab,
   openTab,
@@ -240,6 +241,30 @@ describe('a cold session answers only ownerless dialogs', () => {
   it('a guest no tab can name, and an auth challenge with no guest, are ownerless too', () => {
     expect(dialogHasLiveOwner({ guestId: 42 }, ownerOf, live)).toBe(false)
     expect(dialogHasLiveOwner({}, ownerOf, live)).toBe(false)
+  })
+})
+
+describe('which hidden web pages may go when memory is critical', () => {
+  const hidden = { owner: 'tab-A', onScreen: false, heldForAnAgent: false, guestId: 7 }
+  const nothingInUse = { guestIds: new Set<number>(), owners: new Set<string>() }
+
+  it('a hidden page nobody is using goes', () => {
+    expect(mayDropForMemory(hidden, nothingInUse)).toBe(true)
+  })
+
+  it('the page on screen and a page held for an agent stay', () => {
+    for (const fact of ['onScreen', 'heldForAnAgent'] as const)
+      expect(mayDropForMemory({ ...hidden, [fact]: true }, nothingInUse)).toBe(false)
+  })
+
+  it('a page the main process says is in use stays, and so does every page of an owner it names', () => {
+    expect(mayDropForMemory(hidden, { ...nothingInUse, guestIds: new Set([7]) })).toBe(false)
+    expect(mayDropForMemory(hidden, { ...nothingInUse, owners: new Set(['tab-A']) })).toBe(false)
+  })
+
+  it('a page that cannot be told apart yet — no guest id, no owner — stays', () => {
+    expect(mayDropForMemory({ ...hidden, guestId: 0 }, nothingInUse)).toBe(false)
+    expect(mayDropForMemory({ ...hidden, owner: undefined }, nothingInUse)).toBe(false)
   })
 })
 
@@ -1128,10 +1153,10 @@ describe('a terminal tab (R2/R19)', () => {
     expect(set.tabs.filter((t) => t.kind === 'terminal')).toHaveLength(2)
   })
 
-  it('lands at the RIGHT end, and a later web tab goes in FRONT of it', () => {
+  it('keeps the order tabs were opened in — a later web tab goes AFTER it, not in front', () => {
     const withTerm = withShells(1)
     const after = openTab(withTerm, { kind: 'web', url: 'http://h/p', source: 'user' }).set
-    expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'terminal'])
+    expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'terminal', 'web'])
   })
 
   it('refuses the ninth instead of evicting one of the eight, which could kill a running shell (R2)', () => {
@@ -1150,7 +1175,7 @@ describe('a terminal tab (R2/R19)', () => {
     expect(r.set.tabs.filter((t) => t.kind === 'terminal')).toHaveLength(KIND_TAB_CAP)
   })
 
-  it('takes no part in drag ordering, in either direction', () => {
+  it('drags like any other tab, and a web tab can be dragged past it', () => {
     let set = openTab(emptyTabSet(), { kind: 'web', url: 'http://h/a', source: 'user' }).set
     set = openTab(set, {
       kind: 'terminal',
@@ -1159,12 +1184,11 @@ describe('a terminal tab (R2/R19)', () => {
       title: 'zsh',
       source: 'user'
     }).set
-    set = openTab(set, { kind: 'web', url: 'http://h/b', source: 'user' }).set
-    expect(set.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    expect(moveTab(set, 'pty1', 1)).toBe(set)
-    const moved = moveTab(set, set.tabs[1].id, 9)
-    expect(moved.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    expect(moved.tabs[3].id).toBe('pty1')
+    const webA = set.tabs[1].id
+    const left = moveTab(set, 'pty1', 0)
+    expect(left.tabs.map((t) => t.id)).toEqual([FILES_TAB_ID, 'pty1', webA])
+    const right = moveTab(left, webA, 1)
+    expect(right.tabs.map((t) => t.id)).toEqual([FILES_TAB_ID, webA, 'pty1'])
   })
 
   it('labels itself with its title alone (R19), never with its directory', () => {

@@ -12,10 +12,20 @@ import {
   type LiveRun,
   type Schedule
 } from '@shared/types'
-import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
-import { describeSchedule, describeWhen, DOW, nextRun } from '@shared/schedule'
-import { histText, histWhen, lastRunOf, LIVE_WORDS, liveOf, whenLine } from '@shared/cronHistory'
+import { effortsFor, takenEffort } from '@shared/cronModels'
+import { describeSchedule, describeWhen, DOW } from '@shared/schedule'
+import {
+  histText,
+  histWhen,
+  lastRunOf,
+  liveOf,
+  liveWords,
+  nextWords,
+  oncePassed,
+  whenLine
+} from '@shared/cronHistory'
 import {
   answered,
   EXIT_USAGE,
@@ -32,7 +42,8 @@ type Sub = (typeof SUBS)[number]
 const TAKES_OPTIONS: Sub[] = ['add', 'edit']
 const TAKES_NO_JOB: Sub[] = ['list', 'add']
 
-const TIME_FLAGS = ['--every', '--daily', '--weekly']
+const TIME_FLAGS = ['--every', '--daily', '--weekly', '--once', '--after']
+const TIME_FLAG_WORDS = `${TIME_FLAGS.slice(0, -1).join(', ')} or ${TIME_FLAGS[TIME_FLAGS.length - 1]}`
 const VALUE_FLAGS = [
   '--name',
   ...TIME_FLAGS,
@@ -43,6 +54,7 @@ const VALUE_FLAGS = [
   '--when-done'
 ]
 const WHEN_DONE = ['open', 'close'] as const
+const BACKEND_WORDS = `${SESSION_BACKENDS.slice(0, -1).join(', ')} or ${SESSION_BACKENDS[SESSION_BACKENDS.length - 1]}`
 
 export interface CronPatch {
   name?: string
@@ -59,18 +71,29 @@ export interface CronCommand {
   sub: Sub
   ref?: string
   patch: CronPatch
+  workspace?: string
 }
 
+const WORKSPACE_FLAG = '--workspace'
+
+export const CRON_NEEDS_A_WORKSPACE = `${NOT_PINNED} Or name one with ${WORKSPACE_FLAG} <workspace>; "koloft workspace list" shows them.`
+
 export function parseSchedule(flag: string, value: string): Parsed<Schedule> {
-  if (flag === '--every') {
+  if (flag === '--every' || flag === '--after') {
     const m = /^(\d+)([mh])$/.exec(value)
-    if (!m) return fail('write --every like 30m or 2h.')
+    if (!m) return fail(`write ${flag} like 30m or 2h.`)
+    const kind = flag === '--every' ? 'every' : 'after'
     return {
       ok: true,
-      value: { kind: 'every', n: Number(m[1]), unit: m[2] === 'm' ? 'minutes' : 'hours' }
+      value: { kind, n: Number(m[1]), unit: m[2] === 'm' ? 'minutes' : 'hours' }
     }
   }
   if (flag === '--daily') return { ok: true, value: { kind: 'daily', at: value } }
+  if (flag === '--once') {
+    const [date, at, ...more] = value.split('@')
+    if (at === undefined || more.length > 0) return fail('write --once like 2026-10-25@14:00.')
+    return { ok: true, value: { kind: 'once', date, at } }
+  }
   const at = value.lastIndexOf('@')
   if (at < 0) return fail('write --weekly like mon,wed,fri@09:00.')
   const days: number[] = []
@@ -93,7 +116,7 @@ function applyFlag(patch: CronPatch, flag: string, value: string): string | null
   else if (flag === '--model') patch.model = value
   else if (flag === '--backend') {
     const backend = backendIdOf(value)
-    if (!backend) return '--backend is claude or codex.'
+    if (!backend) return `--backend is ${BACKEND_WORDS}.`
     patch.backend = backend
   } else if (flag === '--effort') {
     if (!isCronEffort(value)) return `--effort is one of ${CRON_EFFORTS.join(', ')}.`
@@ -107,7 +130,7 @@ function applyFlag(patch: CronPatch, flag: string, value: string): string | null
     if (!whenDone) return `--when-done is one of ${WHEN_DONE.join(', ')}.`
     patch.autoClose = whenDone === 'close'
   } else {
-    if (patch.schedule) return 'give only one of --every, --daily or --weekly.'
+    if (patch.schedule) return `give only one of ${TIME_FLAG_WORDS}.`
     const schedule = parseSchedule(flag, value)
     if (!schedule.ok) return schedule.error
     patch.schedule = schedule.value
@@ -125,6 +148,7 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
   const patch: CronPatch = {}
   const nameWords: string[] = []
   let nameEnded = false
+  let workspace: string | undefined
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]
     if (arg === '--') {
@@ -133,10 +157,15 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
     }
     if (arg.startsWith('--')) {
       nameEnded = nameWords.length > 0
-      if (!VALUE_FLAGS.includes(arg)) return fail(`there is no ${arg} option.`)
+      if (!VALUE_FLAGS.includes(arg) && arg !== WORKSPACE_FLAG)
+        return fail(`there is no ${arg} option.`)
       const value = rest[i + 1]
       if (value === undefined || value === '--') return fail(`${arg} needs a value.`)
       i++
+      if (arg === WORKSPACE_FLAG) {
+        workspace = value
+        continue
+      }
       const error = applyFlag(patch, arg, value)
       if (error) return fail(error)
       continue
@@ -155,11 +184,13 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
   if (sub === 'add') {
     if (patch.name === undefined) return fail('give the task a name with --name.')
     if (!patch.schedule)
-      return fail('say when it runs: --every 30m, --daily 09:00 or --weekly mon,wed,fri@09:00.')
+      return fail(
+        'say when it runs: --every 30m, --daily 09:00, --weekly mon,wed,fri@09:00, --once 2026-10-25@14:00 or --after 2h.'
+      )
     if (patch.task === undefined) return fail('put what to do after --, like: -- "Run the tests"')
   }
   if (sub === 'edit' && Object.keys(patch).length === 0) return fail('say what to change.')
-  return { ok: true, value: { sub, ref, patch } }
+  return { ok: true, value: { sub, ref, patch, ...(workspace !== undefined && { workspace }) } }
 }
 
 export function newJobInput(
@@ -176,7 +207,7 @@ export function newJobInput(
     backend,
     model: patch.model,
     effort: patch.effort,
-    permission: patch.permission ?? NEW_JOB_PERMISSION[backend],
+    permission: patch.permission ?? NEW_JOB_PERMISSION,
     ...(patch.autoClose ? { autoClose: true } : {}),
     enabled: true
   }
@@ -198,6 +229,13 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
   }
 }
 
+export function effortRefusal(input: CronSaveInput, patch: CronPatch): string | null {
+  const backend = input.backend ?? 'claude'
+  if (!patch.effort || takenEffort(backend, input.model, patch.effort)) return null
+  const takes = effortsFor(backend, input.model).join(', ')
+  return `${input.model ?? 'the default model'} does not take --effort ${patch.effort}; it takes ${takes}.`
+}
+
 export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {
   if (/^\d+$/.test(ref)) {
     const job = jobs[Number(ref) - 1]
@@ -217,8 +255,8 @@ function lastText(job: CronJob, live: LiveRun[], now: Date): string {
   return last ? `${last.lead}${last.words}` : 'never run'
 }
 
-function nextText(job: CronJob, now: Date): string {
-  return job.enabled ? `next ${describeWhen(nextRun(job.schedule, now), now)}` : 'no next run'
+function nextText(job: CronJob, live: LiveRun[], now: Date): string {
+  return job.enabled || oncePassed(job, now) ? nextWords(job, now, live) : 'no next run'
 }
 
 export function formatList(jobs: CronJob[], live: LiveRun[], now: Date): string {
@@ -229,7 +267,7 @@ export function formatList(jobs: CronJob[], live: LiveRun[], now: Date): string 
         `${i + 1}. ${job.name}`,
         describeSchedule(job.schedule),
         job.enabled ? 'on' : 'off',
-        nextText(job, now),
+        nextText(job, live, now),
         lastText(job, live, now)
       ].join(' · ')
     )
@@ -239,14 +277,14 @@ export function formatList(jobs: CronJob[], live: LiveRun[], now: Date): string 
 export function formatShow(job: CronJob, number: number, live: LiveRun[], now: Date): string {
   const run = liveOf(live, job.id)
   const runs = [
-    ...(run ? [`    ${describeWhen(new Date(run.dueAt), now)} · ${LIVE_WORDS[run.state]}`] : []),
+    ...(run ? [`    ${describeWhen(new Date(run.dueAt), now)} · ${liveWords(job, run)}`] : []),
     ...job.history.map((h) => `    ${histWhen(h, now)} · ${histText(h)}`)
   ]
   return [
     `${number}. ${job.name}`,
     `Id: ${job.id}`,
     `When: ${describeSchedule(job.schedule)}`,
-    `On: ${job.enabled ? 'yes' : 'no'} · ${nextText(job, now)}`,
+    `On: ${job.enabled ? 'yes' : 'no'} · ${nextText(job, live, now)}`,
     `Runs as: ${BACKEND_LABEL[cronBackend(job)]}`,
     `Model: ${job.model ?? 'default'}`,
     `Effort: ${job.effort ?? 'default'}`,
@@ -259,11 +297,13 @@ export function formatShow(job: CronJob, number: number, live: LiveRun[], now: D
   ].join('\n')
 }
 
-const RUN_REFUSED: Record<Exclude<CronRunNowResult, { ok: true }>['reason'], string> = {
+const RUN_REFUSED: Record<
+  Exclude<CronRunNowResult, { ok: true } | { reason: 'no-account' | 'turned-off' }>['reason'],
+  string
+> = {
   skipped: 'the last run is still open.',
   failed: 'the session exited before it started.',
   'folder-missing': 'the workspace folder is missing.',
-  'no-account': 'there is no usable account.',
   'not-ready': 'Koloft is not ready yet. Try again in a moment.',
   'unknown-job': 'the task is gone.'
 }
@@ -281,6 +321,7 @@ export interface CronRunnerApi {
 export interface CronVerbDeps {
   runner(): CronRunnerApi | null
   pinnedWorkspaceOf(tabId: string): string | undefined
+  resolveWorkspace(ref: string): Parsed<string>
   toast(text: string): void
   now(): Date
 }
@@ -289,8 +330,11 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
   return async (args, caller): Promise<AgentReply> => {
     const parsed = parseCronArgs(args)
     if (!parsed.ok) return refused(`koloft cron: ${parsed.error}`, EXIT_USAGE)
-    const workspace = d.pinnedWorkspaceOf(caller.tabId)
-    if (!workspace) return refused(NOT_PINNED)
+    const named = parsed.value.workspace
+    const resolved = named === undefined ? undefined : d.resolveWorkspace(named)
+    if (resolved && !resolved.ok) return refused(`koloft cron: ${resolved.error}`)
+    const workspace = resolved ? resolved.value : d.pinnedWorkspaceOf(caller.tabId)
+    if (!workspace) return refused(CRON_NEEDS_A_WORKSPACE)
     const runner = d.runner()
     if (!runner) return refused(RUNNER_NOT_READY)
     const { sub, ref, patch } = parsed.value
@@ -302,15 +346,19 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     const saved = (result: CronSaveResult, did: string, reply: string): AgentReply => {
       if (!result.ok) return refused(`koloft cron: ${result.errors.join(' ')}`)
       tell(did, result.job.name)
-      const number =
-        jobsHere(runner.jobsAndLive().jobs).findIndex((j) => j.id === result.job.id) + 1
-      return answered(`${reply} task ${number}. ${result.job.name} · ${whenLine(result.job, now)}`)
+      const { jobs: jobsNow, live: liveNow } = runner.jobsAndLive()
+      const number = jobsHere(jobsNow).findIndex((j) => j.id === result.job.id) + 1
+      return answered(
+        `${reply} task ${number}. ${result.job.name} · ${whenLine(result.job, now, liveNow)}`
+      )
     }
 
     const jobs = jobsHere(allJobs)
     if (sub === 'list') return answered(formatList(jobs, live, now))
     if (sub === 'add') {
       const input = newJobInput(patch, workspace, caller.session.backendId)
+      const refusal = effortRefusal(input, patch)
+      if (refusal) return refused(`koloft cron: ${refusal}`)
       return saved(runner.save(input), 'added', 'Added')
     }
 
@@ -318,20 +366,32 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     if (!found.ok) return refused(`koloft cron: ${found.error}`)
     const job = found.value
     if (sub === 'show') return answered(formatShow(job, jobs.indexOf(job) + 1, live, now))
-    if (sub === 'edit') return saved(runner.save(mergeEdit(job, patch)), 'changed', 'Changed')
+    if (sub === 'edit') {
+      const input = mergeEdit(job, patch)
+      const refusal = effortRefusal(input, patch)
+      if (refusal) return refused(`koloft cron: ${refusal}`)
+      return saved(runner.save(input), 'changed', 'Changed')
+    }
     if (sub === 'rm') {
       runner.delete(job.id)
       tell('removed', job.name)
       return answered(`Removed ${job.name}.`)
     }
+    if (sub === 'on' && oncePassed(job, now))
+      return refused(
+        `koloft cron: ${job.name} runs once and its time has passed. Give it a new time: koloft cron edit ${jobs.indexOf(job) + 1} --once <date>@<time>`
+      )
     if (sub === 'on' || sub === 'off') {
       runner.setEnabled(job.id, sub === 'on')
       tell(`turned ${sub}`, job.name)
-      return answered(`Turned ${sub} ${job.name}. ${whenLine(job, now)}`)
+      return answered(`Turned ${sub} ${job.name}. ${whenLine(job, now, live)}`)
     }
     const result = await runner.runNow(job.id)
-    return result.ok
-      ? answered(`Started ${job.name} in a new session tab.`)
-      : refused(`koloft cron: ${job.name} did not start: ${RUN_REFUSED[result.reason]}`)
+    if (result.ok) return answered(`Started ${job.name} in a new session tab.`)
+    const why =
+      result.reason === 'no-account' || result.reason === 'turned-off'
+        ? result.why
+        : RUN_REFUSED[result.reason]
+    return refused(`koloft cron: ${job.name} did not start: ${why}`)
   }
 }

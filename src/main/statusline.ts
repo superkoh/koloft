@@ -3,7 +3,9 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE } from './remote/install'
+import { REMOTE_ENV_LINES } from './remote/install'
+import { REMOTE_COMPILE_CACHE } from './remote/paths'
+import { AGY_COST_ENV } from './agyHooks'
 
 // CC§6
 export interface StatusLineSetting {
@@ -140,7 +142,7 @@ function localWrapperScript(config: string, cacheDir: string): string {
 
 export function remoteWrapperScript(): string {
   return wrapperScript({
-    head: `${REMOTE_PATH_LINE}
+    head: `${REMOTE_ENV_LINES}
 D="$(cd "$(dirname "$0")" && pwd)"
 node="$HOME/.koloft/node/bin/node"
 [ -x "$node" ] || node="$(command -v node 2>/dev/null)"
@@ -148,7 +150,7 @@ node="$HOME/.koloft/node/bin/node"
     node: '"$node"',
     bundle: '"$D/ccstatusline.js"',
     config: '"$D/theme.json"',
-    cacheDir: '"$HOME/.koloft/vcache"'
+    cacheDir: `"${REMOTE_COMPILE_CACHE}"`
   })
 }
 
@@ -182,13 +184,15 @@ export function pruneDeadInstalls(
 
 function pruneDeadWrappers(dir: string, keep: string): void {
   pruneDeadInstalls(dir, keep, (entry) =>
-    /^run-[0-9a-f]+\.sh$/.test(path.basename(entry)) ? entry : undefined
+    /^(agy-)?run-[0-9a-f]+\.sh$/.test(path.basename(entry)) ? entry : undefined
   )
 }
 
+const compileCacheIn = (dir: string): string => path.join(dir, 'vcache')
+
 export function setupStatusline(): StatuslinePaths {
   const dir = path.join(app.getPath('userData'), 'statusline')
-  const cacheDir = path.join(dir, 'vcache')
+  const cacheDir = compileCacheIn(dir)
   fs.mkdirSync(cacheDir, { recursive: true })
 
   const config = path.join(dir, 'settings.json')
@@ -201,6 +205,51 @@ export function setupStatusline(): StatuslinePaths {
   pruneDeadWrappers(dir, name)
 
   return { wrapper, config }
+}
+
+// AGY§11 PLATFORM§36
+export const AGY_STATUSLINE_JS = `const fs = require('fs')
+const { Readable } = require('stream')
+const { pathToFileURL } = require('url')
+const [bundle, config] = process.argv.slice(2)
+let input = {}
+try {
+  input = JSON.parse(fs.readFileSync(0, 'utf8'))
+} catch {
+  process.exit(0)
+}
+if (!input.model) process.exit(0)
+let cost
+try {
+  cost = Number(fs.readFileSync(process.env.${AGY_COST_ENV}, 'utf8'))
+} catch {}
+if (Number.isFinite(cost)) input.cost = { ...(input.cost || {}), total_cost_usd: cost }
+Object.defineProperty(process, 'stdin', {
+  configurable: true,
+  value: Readable.from([Buffer.from(JSON.stringify(input))], { objectMode: false })
+})
+process.argv = [process.argv[0], bundle, '--config', config]
+import(pathToFileURL(bundle).href)
+`
+
+export function setupAgyStatusline(paths: StatuslinePaths): string {
+  const dir = path.dirname(paths.wrapper)
+  const script = path.join(dir, 'agy-statusline.js')
+  fs.writeFileSync(script, AGY_STATUSLINE_JS)
+  const wrapper = path.join(dir, `agy-${path.basename(paths.wrapper)}`)
+  fs.writeFileSync(
+    wrapper,
+    `#!/usr/bin/env bash
+${EXEC_MARKER}${process.execPath}
+export ELECTRON_RUN_AS_NODE=1
+# PLATFORM§36
+export NODE_COMPILE_CACHE=${shq(compileCacheIn(dir))}
+[ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
+exec ${shq(process.execPath)} ${shq(script)} ${shq(bundlePath())} ${shq(paths.config)}
+`,
+    { mode: 0o755 }
+  )
+  return `/bin/bash ${shq(wrapper)}`
 }
 
 // CC§6

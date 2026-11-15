@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { DirEntry, PreviewItem, SessionInfo } from '../../src/shared/types'
 import {
+  DIR_PAGE_ROWS,
   NO_MATCHES,
   ancestorDirs,
   buildSyn,
   changedDirsOf,
   deltaFor,
+  foldersToRelist,
   hiddenTouchedUnder,
   hitDir,
   inRoot,
@@ -16,8 +18,11 @@ import {
   locFor,
   midTruncate,
   outsideFiles,
+  pageOfEntries,
+  pathsWithTheirFolders,
   persistableExpansion,
   relTo,
+  sameEntries,
   scratchpadEntries,
   sessionIndex,
   truncationNotice
@@ -145,8 +150,50 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
       { name: 'tasks', path: SCRATCH + '/tasks', isDir: true },
       { name: 'plan.md', path: SCRATCH + '/plan.md', isDir: false }
     ]
-    expect(scratchpadEntries(entries, SCRATCH).map((e) => e.name)).toEqual(['plan.md'])
-    expect(scratchpadEntries(undefined, SCRATCH)).toEqual([])
+    expect(scratchpadEntries(entries, SCRATCH, 'claude', {}).map((e) => e.name)).toEqual([
+      'plan.md'
+    ])
+    expect(scratchpadEntries(undefined, SCRATCH, 'claude', {})).toEqual([])
+  })
+
+  // AGY§8 AGY§19
+  it('an Antigravity conversation folder shows its artifacts and a scratch/ with something in it, never agy’s own logs, uploads folder or an artifact’s metadata file; files of those names the model made deeper down, or in another agent’s scratchpad, still show', () => {
+    const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
+    const entry = (dir: string, name: string, isDir = false): DirEntry => ({
+      name,
+      path: `${dir}/${name}`,
+      isDir
+    })
+    const top: DirEntry[] = [
+      entry(brain, '.system_generated', true),
+      entry(brain, '.user_uploaded', true),
+      entry(brain, 'scratch', true),
+      entry(brain, 'implementation_plan.md'),
+      entry(brain, 'implementation_plan.md.metadata.json'),
+      entry(brain, 'tasks', true)
+    ]
+    const scratchHasAFile = { [brain + '/scratch']: [entry(brain + '/scratch', 'notes.md')] }
+    expect(scratchpadEntries(top, brain, 'agy', scratchHasAFile).map((e) => e.name)).toEqual([
+      'scratch',
+      'implementation_plan.md',
+      'tasks'
+    ])
+    const deeper = [entry(brain + '/scratch', 'run.md.metadata.json')]
+    expect(scratchpadEntries(deeper, brain, 'agy', {})).toEqual(deeper)
+    const claudes = [entry(SCRATCH, 'build.md.metadata.json')]
+    expect(scratchpadEntries(claudes, SCRATCH, 'claude', {})).toEqual(claudes)
+  })
+
+  // AGY§8
+  it('an Antigravity conversation folder hides the scratch/ agy makes empty at the first prompt while it is empty or not yet listed; a file named scratch still shows', () => {
+    const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
+    const scratch: DirEntry = { name: 'scratch', path: `${brain}/scratch`, isDir: true }
+    const plan: DirEntry = { name: 'plan.md', path: `${brain}/plan.md`, isDir: false }
+    const names = (top: DirEntry[], listed: Record<string, DirEntry[]>): string[] =>
+      scratchpadEntries(top, brain, 'agy', listed).map((e) => e.name)
+    expect(names([scratch, plan], {})).toEqual(['plan.md'])
+    expect(names([scratch, plan], { [scratch.path]: [] })).toEqual(['plan.md'])
+    expect(names([{ ...scratch, isDir: false }, plan], {})).toEqual(['scratch', 'plan.md'])
   })
 })
 
@@ -334,5 +381,83 @@ describe('FR-47 — persisted expansion', () => {
     expect([...initialExpansion(null, ROOT)]).toEqual([ROOT])
     expect([...initialExpansion([], ROOT)]).toEqual([ROOT])
     expect([...initialExpansion([ROOT + '/src'], ROOT)]).toEqual([ROOT + '/src', ROOT])
+  })
+})
+
+describe('sameEntries', () => {
+  const a: DirEntry[] = [
+    { name: 'src', path: ROOT + '/src', isDir: true },
+    { name: 'x.ts', path: ROOT + '/x.ts', isDir: false }
+  ]
+
+  it('a re-list that found the same names keeps the old list, so the tree does not redraw', () => {
+    expect(
+      sameEntries(
+        a,
+        a.map((e) => ({ ...e }))
+      )
+    ).toBe(true)
+  })
+
+  it('a re-list that only changed which entries git ignores is new, so the faded rows update', () => {
+    expect(sameEntries(a, [a[0], { ...a[1], ignored: true }])).toBe(false)
+  })
+
+  it('a folder listed for the first time, or with a name added, is new', () => {
+    expect(sameEntries(undefined, a)).toBe(false)
+    expect(sameEntries(a, [...a, { name: 'y.ts', path: ROOT + '/y.ts', isDir: false }])).toBe(false)
+  })
+})
+
+describe('pageOfEntries', () => {
+  const big: DirEntry[] = Array.from({ length: DIR_PAGE_ROWS * 3 + 7 }, (_, i) => ({
+    name: `f${i}`,
+    path: `${ROOT}/many/f${i}`,
+    isDir: false
+  }))
+
+  const none = new Set<string>()
+
+  it('a big folder shows one page at first, and each Show more adds one more page', () => {
+    expect(pageOfEntries(big, 1, none).rows).toHaveLength(DIR_PAGE_ROWS)
+    expect(pageOfEntries(big, 1, none).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
+    expect(pageOfEntries(big, 1, none).firstHidden).toBe(big[DIR_PAGE_ROWS].path)
+    expect(pageOfEntries(big, 2, none).rows).toHaveLength(DIR_PAGE_ROWS * 2)
+    expect(pageOfEntries(big, 4, none)).toEqual({ rows: big, notShown: 0 })
+  })
+
+  it('a file to keep in sight (open, being written, written or changed) stays shown past the page, with the folder that holds it, and each Show more still adds a full page of new rows', () => {
+    const late = big[DIR_PAGE_ROWS]
+    const dir: DirEntry = { name: 'zz', path: `${ROOT}/many/zz`, isDir: true }
+    const list = [...big, dir]
+    const keep = pathsWithTheirFolders([late.path, dir.path + '/deep/file.ts', undefined])
+    const { rows, notShown, firstHidden } = pageOfEntries(list, 1, keep)
+    expect(rows.slice(DIR_PAGE_ROWS)).toEqual([late, dir])
+    expect(notShown).toBe(list.length - DIR_PAGE_ROWS - 2)
+    expect(firstHidden).toBe(big[DIR_PAGE_ROWS + 1].path)
+    expect(pageOfEntries(list, 2, keep).rows.length - rows.length).toBe(DIR_PAGE_ROWS)
+  })
+})
+
+describe('foldersToRelist', () => {
+  const open = [ROOT, `${ROOT}/src`, `${ROOT}/out`, `${ROOT}/out/assets`, `${ROOT}/lib`]
+
+  it('a write re-lists only the open folder that holds it', () => {
+    expect(
+      foldersToRelist(open, {
+        listsChanged: [`${ROOT}/src`],
+        replacedTrees: [`${ROOT}/src/a.ts`]
+      })
+    ).toEqual([`${ROOT}/src`])
+  })
+
+  it('a folder replaced by a move re-lists it, its parent and every open folder under it', () => {
+    expect(foldersToRelist(open, { listsChanged: [ROOT], replacedTrees: [`${ROOT}/out`] })).toEqual(
+      [ROOT, `${ROOT}/out`, `${ROOT}/out/assets`]
+    )
+  })
+
+  it('a change with no folder list re-lists every open folder', () => {
+    expect(foldersToRelist(open, undefined)).toEqual(open)
   })
 })

@@ -20,20 +20,26 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-function verbs(over: { canShow?: boolean; pinned?: boolean } = {}): ReturnType<
+function verbs(over: { canShow?: boolean; pinned?: boolean; copied?: string } = {}): ReturnType<
   typeof workbenchVerbs
 > & {
   opened: { tabId: string; target: string; view?: ArtifactView }[]
+  copies: string[]
 } {
   const opened: { tabId: string; target: string; view?: ArtifactView }[] = []
+  const copies: string[] = []
   const v = workbenchVerbs({
     open: (tabId, target, view) => {
       opened.push({ tabId, target, view })
       return over.canShow ?? true
     },
+    copyToPhone: async (_tabId, target) => {
+      copies.push(target)
+      return over.copied
+    },
     notesFileOf: () => (over.pinned === false ? undefined : note)
   })
-  return Object.assign(v, { opened })
+  return Object.assign(v, { opened, copies })
 }
 
 const caller = (): AgentCaller => ({
@@ -80,9 +86,19 @@ describe('koloft open / diff', () => {
   })
 
   it('a file the Workbench cannot show, missing or not, is refused and named', async () => {
-    const reply = await verbs({ canShow: false }).open(['missing.md'], caller())
+    const v = verbs({ canShow: false, copied: 'Sent it.' })
+    const reply = await v.open(['missing.md'], caller())
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain(path.join(dir, 'missing.md'))
+    expect(v.copies).toEqual([])
+  })
+
+  it('the reply says what was also sent to Discord, after it says the Workbench opened it', async () => {
+    const v = verbs({ copied: 'Sent it to Discord as text, with the file.' })
+    const reply = await v.open(['plan.md'], caller())
+    expect(reply.text).toBe(
+      `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Sent it to Discord as text, with the file.`
+    )
   })
 })
 

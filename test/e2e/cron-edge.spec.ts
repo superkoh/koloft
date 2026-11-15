@@ -35,6 +35,7 @@ import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
 import { EDIT, closeDiscardingEdits, editReady, typeAtEnd } from './helpers/editPane'
 import { browseRow, rowMenu, showBrowse } from './helpers/workbench'
+import { noAccountLine } from '../../src/shared/accountUsage'
 
 const JOB = 'Nightly report'
 const TASK = '/daily-report'
@@ -428,8 +429,8 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
 
       await page.waitForTimeout(NO_LEFTOVER_ROW_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
-      await expect(page.locator('.ws-tab-cron')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab-cron')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(1)
 
       fs.rmSync(env.claudeExitFile)
@@ -467,11 +468,11 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
         .toBe(
-          'Could not start — Claude did not start — this folder was never opened in Claude; ' +
-            'start one session here first'
+          'Could not start — Claude did not start — Koloft cannot see that Claude trusts this ' +
+            'folder; start one session here first'
         )
       await expect.poll(() => termIds(page), { timeout: 15_000 }).toEqual(idsBefore)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
       await expect.poll(() => processAlive(call.pid), { timeout: 15_000 }).toBe(false)
 
       fs.rmSync(hangFile)
@@ -494,10 +495,42 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await edCreateJob(page)
       await edRunNow(page)
 
-      await edExpectToast(page, `⏰ ${JOB} could not start: no usable account`)
+      const noClaudeAccount = noAccountLine([], 'claude')
+      await edExpectToast(page, `⏰ ${JOB} could not start: ${noClaudeAccount}`)
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
-        .toBe('Could not start — no usable account')
+        .toBe(`Could not start — ${noClaudeAccount}`)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-E37: a job saved with no agent runs in Claude, so with Claude switched off in Settings ▸ Sessions it does not start and History says Claude is turned off', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, {
+      sessionMethods: {
+        defaultBackend: 'codex',
+        enabled: { claude: false, codex: true, muse: true, agy: true }
+      }
+    })
+    edWriteStore(env, [{ name: JOB, schedule: { kind: 'daily', at: '03:00' } }])
+
+    const { app, page } = await edLaunch(env)
+    try {
+      await edOpenDialog(page, 'ws-a')
+      await edRunNow(page)
+
+      await edExpectToast(
+        page,
+        `⏰ ${JOB} could not start: Claude is turned off in Settings ▸ Sessions`
+      )
+      await expect
+        .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
+        .toBe('Could not start — Claude is turned off in Settings ▸ Sessions')
       expect(readCalls(env)).toHaveLength(0)
     } finally {
       await app.close().catch(() => {})
@@ -1017,7 +1050,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await edOpenDialog(first.page, 'ws-a')
       await edOpenForm(first.page)
       await expect(edFormRow(first.page, 'Where it runs').locator('p.field-hint.warn')).toHaveText(
-        'Claude has never been opened in this folder. Start one session here first — a ' +
+        'Koloft cannot see that Claude trusts this folder. Start one session here first — a ' +
           'scheduled run would stall on Claude\'s "do you trust this project?" question and ' +
           'be stopped at the deadline.'
       )

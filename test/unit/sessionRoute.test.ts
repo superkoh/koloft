@@ -52,17 +52,17 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).toContain('fix the login bug')
   })
 
-  it('lists the Koloft features it may pick by key, leaving out those that act on whichever session or workspace is current', () => {
+  it('lists the Koloft features it may pick by key with the words people use for each, leaving out those that act on whichever session or workspace is current', () => {
     const { prompt } = routeJob(LIST, 'open settings')
-    expect(prompt).toContain('open-settings | Settings…')
-    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts')
+    expect(prompt).toContain('open-settings | Settings… | 设置, 偏好, preferences')
+    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts | 账号, 账户, token')
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
   })
 })
 
 describe('parseRoute: an answer is checked before anything uses it', () => {
-  it('reads a workspace by its number, with title and reason', () => {
+  it('reads a workspace by its number, with its title and no reason even when one is sent', () => {
     expect(
       parseRoute(
         reply({
@@ -77,17 +77,19 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
       kind: 'workspace',
       path: '/Users/me/code/app',
       worktree: { kind: 'new', name: 'safari-login' },
-      title: 'Safari 登录',
-      why: 'The login bug lives in app.'
+      title: 'Safari 登录'
     })
   })
 
-  it('reads a feature only by a key it was offered, and a session only by a ref it was shown', () => {
+  it('reads a feature only by a key it was offered, also when the answer leaves out its hand, and a session only by a ref it was shown', () => {
     expect(parseRoute(reply({ hand: 'feature', feature: 'check-update' }), LIST)).toEqual({
       kind: 'feature',
       key: 'check-update',
-      title: '',
-      why: ''
+      title: ''
+    })
+    expect(parseRoute(reply({ feature: 'check-update' }), LIST)).toMatchObject({
+      kind: 'feature',
+      key: 'check-update'
     })
     expect(parseRoute(reply({ hand: 'feature', feature: 'restart-session' }), LIST)).toBeNull()
     expect(parseRoute(reply({ hand: 'feature', feature: 'nope' }), LIST)).toBeNull()
@@ -110,8 +112,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(tree({ new: 'Fix-Login' })).toEqual({ kind: 'new', name: 'Fix-Login-2' })
     expect(tree({ new: '../x' })).toBeNull()
     expect(tree({ new: 'main' })).toBeNull()
-    expect(tree({ existing: 'REDIS-CACHE' })).toEqual({ kind: 'existing', name: 'redis-cache' })
-    expect(tree({ existing: 'nope' })).toBeNull()
+    expect(tree({ existing: 'redis-cache' })).toBeNull()
     expect(tree({ issue: 433 })).toEqual({ kind: 'issue', number: 433 })
     expect(tree({ issue: -1 })).toBeNull()
     expect(tree('main')).toBeNull()
@@ -122,10 +123,23 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(r).toMatchObject({ kind: 'workspace', worktree: { kind: 'main' } })
   })
 
-  it('reads a brand-new project as a machine Koloft knows and a folder name, never a path', () => {
+  it('reads a brand-new project as a machine Koloft knows and a folder name, never a path, with the reason the New Project dialog shows', () => {
     expect(
-      parseRoute(reply({ workspace: null, machine: 'devbox', newFolder: 'price-crawler' }), LIST)
-    ).toMatchObject({ kind: 'project', machine: 'devbox', folder: 'price-crawler' })
+      parseRoute(
+        reply({
+          workspace: null,
+          machine: 'devbox',
+          newFolder: 'price-crawler',
+          why: 'No workspace is a crawler.'
+        }),
+        LIST
+      )
+    ).toMatchObject({
+      kind: 'project',
+      machine: 'devbox',
+      folder: 'price-crawler',
+      why: 'No workspace is a crawler.'
+    })
     expect(
       parseRoute(reply({ workspace: null, machine: 'elsewhere', newFolder: '/tmp/x' }), LIST)
     ).toMatchObject({ kind: 'project', machine: 'local', folder: null })
@@ -134,22 +148,66 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
   it('hands a message about Koloft itself to the global Assist, and "ask <workspace> …" to that workspace’s Assist; an unknown hand is ordinary work', () => {
     expect(
       parseRoute(reply({ hand: 'koloft', title: 'Dark mode', why: 'A setting.' }), LIST)
-    ).toEqual({ kind: 'koloft', title: 'Dark mode', why: 'A setting.' })
+    ).toEqual({ kind: 'koloft', title: 'Dark mode' })
     expect(parseRoute(reply({ hand: 'discord', title: 'Discord' }), LIST)).toEqual({
       kind: 'discord',
-      title: 'Discord',
-      why: ''
+      title: 'Discord'
     })
     expect(parseRoute(reply({ hand: 'assist', workspace: 2, title: 'Ask api' }), LIST)).toEqual({
       kind: 'assist',
       path: 'devbox:/srv/api',
-      title: 'Ask api',
-      why: ''
+      title: 'Ask api'
     })
     expect(parseRoute(reply({ hand: 'assist', workspace: 9 }), LIST)).toBeNull()
     expect(
       parseRoute(reply({ hand: 'other', workspace: 1, worktree: 'main' }), LIST)
     ).toMatchObject({ kind: 'workspace', path: '/Users/me/code/app' })
+  })
+
+  it('a reply that names rule 1, the check-in rule, goes to the butler for that workspace even when written in the new-session shape', () => {
+    expect(
+      parseRoute(reply({ rule: 1, workspace: 1, worktree: 'main', title: 'Progress' }), LIST)
+    ).toEqual({ kind: 'assist', path: '/Users/me/code/app', title: 'Progress' })
+    expect(parseRoute(reply({ rule: 6, workspace: 1, worktree: 'main' }), LIST)).toMatchObject({
+      kind: 'workspace',
+      path: '/Users/me/code/app'
+    })
+  })
+
+  it('reads a reply that corrects itself by its last whole object, past a stray brace, and never falls back to an answer it took back', () => {
+    const answer = reply({ hand: 'koloft', title: 'Resume', rule: 5 })
+    expect(parseRoute(`${answer}(not rule 6})`, LIST)).toEqual({ kind: 'koloft', title: 'Resume' })
+    expect(
+      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9', rule: 4 })}`, LIST)
+    ).toBeNull()
+    expect(
+      parseRoute(
+        '{"hand": "koloft", "title": "恢复修复登录的会话", "rule": 5}\n\nWait, the title should be in the language of the message (English):\n\n{"hand": "koloft", "title": "Resume login fix session", "rule": 5}\n',
+        LIST
+      )
+    ).toEqual({ kind: 'koloft', title: 'Resume login fix session' })
+    expect(
+      parseRoute(
+        `${reply({ workspace: 1, worktree: { new: 'deng-lu' }, title: '修登录' })}Actually:\n${reply({ workspace: 1, worktree: { new: 'safari-login' }, title: 'Fix login' })}`,
+        LIST
+      )
+    ).toEqual({
+      kind: 'workspace',
+      path: '/Users/me/code/app',
+      title: 'Fix login',
+      worktree: { kind: 'new', name: 'safari-login' }
+    })
+  })
+
+  it('takes the last object that names its rule as the answer, passing over an example object written after it; a reply that names no rule anywhere is read by its last object', () => {
+    const answer = '{"hand": "koloft", "title": "Resume", "rule": 5}'
+    expect(
+      parseRoute(`${answer}\n\nFor a new session it would have been {"workspace": 1}.`, LIST)
+    ).toEqual({ kind: 'koloft', title: 'Resume' })
+    expect(parseRoute('{"workspace": 3} or {"hand": "koloft", "title": "Resume"}', LIST)).toEqual({
+      kind: 'koloft',
+      title: 'Resume'
+    })
   })
 
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {

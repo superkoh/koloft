@@ -8,17 +8,21 @@ import {
   type JSX,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import type { ArtifactView } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
 import { basename, previewKindForPath, stateAfterReadError } from '@shared/preview'
-import { resolveOnHost } from '@shared/remoteKey'
+import { barePath, resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
-import { parseUnifiedDiff } from '../inlineDiff'
-import { highlightCode, langForPath } from '../highlight'
+import { relOf } from './filesModel'
+import type { CommentTarget } from './CommentBox'
+import { parseUnifiedDiff } from '@shared/unifiedDiff'
+import { langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
+import { highlightCodeOffThread } from '../offThread'
+import '../artifactPane.css'
 
 interface Sym {
   name: string
@@ -83,7 +87,7 @@ const VIEW_SCROLLER = '.code-body, .md-body, .idiff'
 const GIVE_UP_RESTORE_MS = 4000
 const HEADING_AT_TOP_SLACK_PX = 8
 
-async function fileExists(p: string): Promise<boolean> {
+export async function fileExists(p: string): Promise<boolean> {
   try {
     await window.api.preview.readText(p)
     return true
@@ -131,36 +135,65 @@ function CodeSource({
   text: string
   line?: number
 }): JSX.Element {
-  const [html, setHtml] = useState('')
+  const [colors, setColors] = useState<{ text: string; html: string } | null>(null)
+  const [colorAskedFor, setColorAskedFor] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const lang = langForPath(path)
+  const askFirst = useMemo(() => lang !== 'text' && tooBigToColorUnasked(text), [lang, text])
+  const waitingToBeAsked = askFirst && colorAskedFor !== text
+  const colored = lang !== 'text' && !waitingToBeAsked
+  const plainUntilColored = lang === 'text' || askFirst
+  const coloredHtml = plainUntilColored
+    ? colored && colors?.text === text
+      ? colors.html
+      : null
+    : (colors?.html ?? '')
 
   useEffect(() => {
+    if (!colored) return
     let cancelled = false
-    highlightCode(text, langForPath(path))
-      .then((h) => {
-        if (!cancelled) setHtml(h)
-      })
-      .catch(() => {})
+    const color = (): void => {
+      highlightCodeOffThread(text, lang)
+        .then((html) => {
+          if (!cancelled) setColors({ text, html })
+        })
+        .catch(() => {})
+    }
+    let frame = 0
+    if (askFirst) frame = requestAnimationFrame(() => (frame = requestAnimationFrame(color)))
+    else color()
     return () => {
       cancelled = true
+      cancelAnimationFrame(frame)
     }
-  }, [text, path])
+  }, [text, lang, colored, askFirst])
 
+  const showPlain = coloredHtml === null
+  const plainHtml = useMemo(() => (showPlain ? plainCodeHtml(text) : ''), [showPlain, text])
+  const shownHtml = coloredHtml ?? plainHtml
   // PLATFORM§25
-  const codeHtml = useMemo(() => ({ __html: html }), [html])
+  const codeHtml = useMemo(() => ({ __html: shownHtml }), [shownHtml])
 
   const jumpedLine = useRef<number | null>(null)
   useEffect(() => {
-    if (!line || jumpedLine.current === line || !html) return
+    if (!line || jumpedLine.current === line || !shownHtml) return
     jumpedLine.current = line
     bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]?.scrollIntoView({
       block: 'center'
     })
-  }, [line, html])
+  }, [line, shownHtml])
 
   return (
     <div className="code-wrap">
       <div className="code-body" ref={bodyRef} dangerouslySetInnerHTML={codeHtml} />
+      {waitingToBeAsked && (
+        <div className="fp-stale" role="status">
+          <span className="fp-stale-msg">Large file, no colors</span>
+          <button className="fp-stale-btn" onClick={() => setColorAskedFor(text)}>
+            Show colors
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -187,6 +220,7 @@ export interface ArtifactPaneProps {
   onUnmount?: (tabId: string, scrollTop: number) => void
   editText?: string
   editUnsaved?: boolean
+  commentTo: CommentTarget
 }
 
 export function ArtifactPane({
@@ -210,7 +244,8 @@ export function ArtifactPane({
   onClose,
   onUnmount,
   editText,
-  editUnsaved
+  editUnsaved,
+  commentTo
 }: ArtifactPaneProps): JSX.Element {
   const kind = previewKindForPath(path)
   const isBinaryKind = kind === 'image' || kind === 'pdf'
@@ -558,6 +593,7 @@ export function ArtifactPane({
           item={{ kind: 'markdown', src: path, label: basename(path) }}
           tick={reloadTick}
           onHeadings={setMdHeadings}
+          comment={{ ...commentTo, rel: barePath(relOf(path, wsRoot)) }}
         />
       )
     }
@@ -630,7 +666,7 @@ export function ArtifactPane({
             title="Dismiss"
             aria-label="Dismiss"
           >
-            <LuX size={14} />
+            <IconClose size={14} />
           </button>
         </div>
       )}

@@ -40,10 +40,6 @@ export class DiscordRest {
     return sent
   }
 
-  sent(route: string): Promise<unknown> {
-    return this.queues.get(bucketOf(route)) ?? Promise.resolve()
-  }
-
   private async send<T>(method: string, route: string, body?: unknown): Promise<T> {
     const form = body instanceof FormData
     for (;;) {

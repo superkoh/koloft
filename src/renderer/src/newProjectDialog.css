@@ -1,0 +1,17 @@
+.assist-why {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.assist-why .ob-link {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.assist-glyph {
+  flex: none;
+  align-self: center;
+  color: var(--fable);
+}
+.project-in .mini {
+  flex: none;
+}

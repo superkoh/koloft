@@ -4,6 +4,22 @@ export const PERSISTED_TAB_CAP = 8
 
 export const DEFAULT_PANEL_OPEN = false
 
+export const WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT = false
+
+const WORKSPACE_WORKBENCH_PREFIX = 'ws:'
+
+export function workspaceWorkbenchKey(wsPath: string): string {
+  return WORKSPACE_WORKBENCH_PREFIX + wsPath
+}
+
+export function isWorkspaceWorkbenchKey(id: string | null | undefined): boolean {
+  return !!id && id.startsWith(WORKSPACE_WORKBENCH_PREFIX)
+}
+
+export function workspaceOfWorkbenchKey(key: string): string {
+  return key.slice(WORKSPACE_WORKBENCH_PREFIX.length)
+}
+
 const VIEWS: readonly ArtifactView[] = ['render', 'diff', 'source']
 
 export function isRecord(v: unknown): v is Record<string, unknown> {

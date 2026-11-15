@@ -2,21 +2,33 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  agySessionCalls,
+  installAgy,
+  installCodex,
+  seedSettings,
+  trustInAgy,
+  type E2EEnv
+} from './helpers/env'
+import { codexCalls, codexRows } from './helpers/codex'
+import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   clickAppMenuItem,
   encodeCwd,
   gitInit,
+  newSessionInWith,
   processAlive,
   readCalls,
   resumedId,
   runIn,
   startSessionIn,
   termIds,
+  terminalText,
   waitBooted,
   waitForCalls,
+  waitTerminalQuiet,
   wsRows
 } from './helpers/p1'
 
@@ -172,10 +184,10 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       const { pid } = await startSilentSession(page, env)
       const rows = wsRows(page, WS_A)
       await expect(rows).toHaveCount(1)
-      const before = await page.evaluate(
-        () =>
-          document.querySelector('.term-island .term-wrap:not([style*="none"])')?.textContent ?? ''
-      )
+      await expect.poll(() => termIds(page)).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await waitTerminalQuiet(page, tabId)
+      const before = await terminalText(page, tabId)
 
       await restart(app, page)
 
@@ -185,10 +197,7 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
       await expect(rows).toHaveCount(1)
       await expect(rows.first()).not.toHaveClass(/\bcold\b/)
-      const after = await page.evaluate(
-        () =>
-          document.querySelector('.term-island .term-wrap:not([style*="none"])')?.textContent ?? ''
-      )
+      const after = await terminalText(page, tabId)
       expect(after).toBe(before)
 
       await runIn(page, centerTerm(page), '/scratch gate-probe')
@@ -308,6 +317,86 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       await expect(page.locator('.toast')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  test('a Codex thread with no turn yet is gated the same way: ⇧⌘R is a no-op with the toast, and its first turn unlocks a restart that resumes the same thread', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-lazy'), '')
+    const { app, page } = await launch(env)
+    try {
+      await newSessionInWith(page, WS_A, 'Codex')
+      await expect.poll(() => codexCalls(env).length).toBe(1)
+      const [first] = codexCalls(env)
+      const row = codexRows(page)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
+      await expect(page.locator('.term-island .term-wrap:visible')).toContainText(
+        `Codex fixture ready ${first.sessionId}`
+      )
+
+      await restart(app, page)
+      await expect(page.locator('.toast-msg')).toHaveText(LIVE_TOAST, { timeout: 20_000 })
+      expect(processAlive(first.pid)).toBe(true)
+      expect(codexCalls(env)).toHaveLength(1)
+      await expect(page.locator('.toast')).toHaveCount(0, { timeout: 20_000 })
+
+      await runIn(page, centerTerm(page), 'now we have talked')
+      await expect(page.locator('.term-island .term-wrap:visible')).toContainText('Codex done', {
+        timeout: 30_000
+      })
+
+      await restart(app, page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1]).toMatchObject({
+        method: 'thread/resume',
+        sessionId: first.sessionId
+      })
+      await expect.poll(() => processAlive(first.pid), { timeout: 30_000 }).toBe(false)
+      await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
+      await expect(row).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§8
+  test('an Antigravity tab before its first prompt, with no conversation id yet, is gated the same way: ⇧⌘R is a no-op with the toast, and its first prompt unlocks a restart that resumes that conversation', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launch(env)
+    try {
+      await newSessionInWith(page, WS_A, 'Antigravity')
+      await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const [first] = agySessionCalls(env)
+      const row = wsRows(page, WS_A)
+      await expect(row).toHaveCount(1)
+      await expect.poll(() => termIds(page)).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await waitTerminalQuiet(page, tabId)
+
+      await restart(app, page)
+      await expect(page.locator('.toast-msg')).toHaveText(LIVE_TOAST, { timeout: 20_000 })
+      expect(processAlive(first.pid)).toBe(true)
+
+      await runIn(page, centerTerm(page), 'now we have talked')
+      const { id: conversation } = await agyConversationOnceFirstTurnEnded(page, tabId)
+      expect(agySessionCalls(env)).toHaveLength(1)
+
+      await restart(app, page)
+      await expect.poll(() => agySessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(agySessionCalls(env)[1].argv).toContain(`--conversation=${conversation}`)
+      await expect.poll(() => processAlive(first.pid), { timeout: 30_000 }).toBe(false)
+      await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
+      await expect(row).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
     }
   })
 })

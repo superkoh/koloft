@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { WebglAddon } from '@xterm/addon-webgl'
 import {
+  forgetWebglThatLeftItsAtlasAsItWas,
   registerWebglRepair,
   unregisterWebglRepair,
   repairAllWebgl
@@ -96,7 +97,7 @@ describe('webglRepair: merge-triggered healing frame', () => {
 
 // PLATFORM§23
 describe('webglRepair: a terminal joining or leaving churns the shared atlas', () => {
-  it('a terminal joining clears the atlas and repaints the terminals already there', () => {
+  it('a terminal joining repaints the terminals already there without clearing the atlas', () => {
     const a = fakeAddon()
     const refreshed: string[] = []
     register('a', a, () => refreshed.push('a'))
@@ -104,10 +105,43 @@ describe('webglRepair: a terminal joining or leaving churns the shared atlas', (
     a.cleared = 0
     refreshed.length = 0
 
+    const b = fakeAddon()
+    register('b', b, () => refreshed.push('b'))
+    vi.advanceTimersByTime(60)
+    expect(a.cleared).toBe(0)
+    expect(b.cleared).toBe(0)
+    expect(refreshed).toContain('a')
+  })
+
+  it('a terminal leaving within the same moment as one joining still clears the atlas', () => {
+    const a = fakeAddon()
+    const refreshed: string[] = []
+    register('a', a, () => refreshed.push('a'))
     register('b', fakeAddon(), () => refreshed.push('b'))
     vi.advanceTimersByTime(60)
+    a.cleared = 0
+
+    unregisterWebglRepair('b')
+    register('c', fakeAddon(), () => refreshed.push('c'))
+    vi.advanceTimersByTime(60)
     expect(a.cleared).toBe(1)
-    expect(refreshed).toContain('a')
+  })
+
+  it('a hidden terminal handing its context back, its atlas left as it was, neither clears the atlas nor repaints the terminals that stay', () => {
+    const a = fakeAddon()
+    const b = fakeAddon()
+    const refreshed: string[] = []
+    register('a', a, () => refreshed.push('a'))
+    register('b', b, () => refreshed.push('b'))
+    vi.advanceTimersByTime(60)
+    a.cleared = 0
+    refreshed.length = 0
+
+    forgetWebglThatLeftItsAtlasAsItWas('b')
+    vi.advanceTimersByTime(60)
+    expect(a.cleared).toBe(0)
+    expect(refreshed).toEqual([])
+    expect(b.mergeListeners).toHaveLength(0)
   })
 
   it('a terminal leaving clears the atlas and repaints the terminals that stay', () => {

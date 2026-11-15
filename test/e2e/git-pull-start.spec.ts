@@ -58,7 +58,7 @@ test.describe('Git freshness · Pull & Start on the ⌘N picker, and the explain
       await expect(page.locator('.ws-behind')).toHaveCount(0)
       const rows = wsRows(page, 'repo')
       await expect(rows).toHaveCount(1, { timeout: 40_000 })
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
       await snap(page, 'T-GP-01-started')
     } finally {
       await app.close().catch(() => {})

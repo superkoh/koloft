@@ -53,6 +53,41 @@ function activeTag(page: Page): Promise<string> {
   return page.evaluate(() => (document.activeElement as HTMLElement | null)?.tagName ?? 'NONE')
 }
 
+async function holdAnimationFramesLikeABusyMachine(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const realRequest = window.requestAnimationFrame.bind(window)
+    const realCancel = window.cancelAnimationFrame.bind(window)
+    const held = new Map<number, FrameRequestCallback>()
+    let nextHeldId = -1
+    window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      const id = nextHeldId--
+      held.set(id, cb)
+      return id
+    }
+    window.cancelAnimationFrame = (id: number): void => {
+      if (!held.delete(id)) realCancel(id)
+    }
+    ;(window as unknown as { __releaseHeldFrames: () => void }).__releaseHeldFrames = () => {
+      window.requestAnimationFrame = realRequest
+      window.cancelAnimationFrame = realCancel
+      const now = performance.now()
+      const due = [...held.values()]
+      held.clear()
+      for (const cb of due) {
+        try {
+          cb(now)
+        } catch {}
+      }
+    }
+  })
+}
+
+async function releaseHeldFrames(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    (window as unknown as { __releaseHeldFrames: () => void }).__releaseHeldFrames()
+  )
+}
+
 async function clickNonFocusableFoldIconKeepingPick(page: Page): Promise<void> {
   await page.locator('.ws-head', { hasText: 'ws-b' }).locator('.fico').click()
 }
@@ -244,6 +279,24 @@ test.describe('Workbench focus ring: the keys belong to whichever island is lit,
     await expect(page.locator(WORKBENCH.panel)).not.toHaveClass(/full/)
     await expect.poll(() => focusOwner(page), { timeout: 15_000 }).toBe('panel')
     expect(await litIsland(page)).toBe('panel')
+  })
+
+  test('T-FX-06b: a caret placed in the panel before ⌘⏎’s own caret frame lands — ⌘⇧F’s search box on a busy machine — stays there', async ({
+    app,
+    page
+  }) => {
+    test.setTimeout(240_000)
+    const searchInput = page.locator('.wb-panel .ft-search-input')
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+
+    await holdAnimationFramesLikeABusyMachine(page)
+    await toggleFull(app, page)
+    await expect(page.locator(WORKBENCH.panel)).toHaveClass(/full/)
+    await clickAppMenuItem(app, page, 'find-files')
+    await expect(searchInput).toBeFocused()
+    await releaseHeldFrames(page)
+    await expect(searchInput).toBeFocused()
   })
 
   test('T-FX-07: Esc inside a guest belongs to the page, not to the panel’s ladder', async ({

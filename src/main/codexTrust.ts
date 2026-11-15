@@ -3,14 +3,18 @@ import os from 'os'
 import path from 'path'
 import { writePrivateAtomically } from './privateFile'
 import { realpathSafe } from './projectInfo'
+import { record } from './codexObservation'
+import type { KoloftHook } from './codexLaunchConfig'
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
 }
 
-const projectHeader = (dir: string): string => `[projects.${JSON.stringify(fs.realpathSync(dir))}]`
+const projectHeaderOf = (realDir: string): string => `[projects.${JSON.stringify(realDir)}]`
 
-const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
+const projectHeader = (dir: string): string => projectHeaderOf(fs.realpathSync(dir))
+
+export const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
 
 function readConfig(configFile: string): string {
   try {
@@ -35,13 +39,37 @@ function appendTable(text: string, table: string): string {
 
 // CODEX§11 ADR-0026
 export function acceptCodexTrust(configFile: string, dir: string): void {
-  const text = readConfig(configFile)
-  const header = projectHeader(dir)
-  if (text.split(/\r?\n/).some((line) => line.trim() === header)) return
-  writeConfig(configFile, appendTable(text, `${header}\ntrust_level = "trusted"\n`))
+  joinProjectTables(configFile, `${projectHeader(dir)}\ntrust_level = "trusted"\n`)
+}
+
+// CODEX§15 CODEX§27
+export function joinProjectTables(configFile: string, from: string): void {
+  const before = readConfig(configFile)
+  let text = before
+  const have = new Set(text.split(/\r?\n/).map((line) => line.trim()))
+  const lines = from.split(/\r?\n/)
+  for (let start = 0; start < lines.length; start++) {
+    const header = lines[start].trim()
+    if (!header.startsWith('[projects.') || have.has(header)) continue
+    have.add(header)
+    let end = start + 1
+    while (end < lines.length && !lines[end].trim().startsWith('[')) end++
+    text = appendTable(text, `${lines.slice(start, end).join('\n').trimEnd()}\n`)
+  }
+  if (text !== before) writeConfig(configFile, text)
 }
 
 // CODEX§27
+export function codexHookTrusted(configFile: string, key: string, hash: string): boolean {
+  const lines = readConfig(configFile).split('\n')
+  const start = lines.findIndex((line) => line.trim() === hookStateHeader(key))
+  if (start < 0) return false
+  const trusted = `trusted_hash = ${JSON.stringify(hash)}`
+  for (let i = start + 1; i < lines.length && !lines[i].trim().startsWith('['); i++)
+    if (lines[i].trim() === trusted) return true
+  return false
+}
+
 export function acceptCodexHookTrust(configFile: string, key: string, hash: string): void {
   const header = hookStateHeader(key)
   const trusted = `trusted_hash = ${JSON.stringify(hash)}`
@@ -60,14 +88,16 @@ export function acceptCodexHookTrust(configFile: string, key: string, hash: stri
 
 // CODEX§11
 export function codexTrustsFolder(configFile: string, dir: string): boolean {
-  let text: string
-  let header: string
   try {
-    text = fs.readFileSync(configFile, 'utf8')
-    header = projectHeader(dir)
+    return configTrusts(fs.readFileSync(configFile, 'utf8'), fs.realpathSync(dir))
   } catch {
     return false
   }
+}
+
+// CODEX§11
+export function configTrusts(text: string, realDir: string): boolean {
+  const header = projectHeaderOf(realDir)
   const lines = text.split(/\r?\n/).map((line) => line.trim())
   const start = lines.indexOf(header)
   if (start < 0) return false
@@ -76,4 +106,40 @@ export function codexTrustsFolder(configFile: string, dir: string): boolean {
     if (/^trust_level\s*=\s*"trusted"$/.test(line)) return true
   }
   return false
+}
+
+export interface ListedHook {
+  key: string
+  command: string
+  currentHash: string
+  trustStatus: string
+}
+
+// CODEX§27
+export function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): ListedHook[] {
+  const found: ListedHook[] = []
+  const lists = record(reply).data
+  for (const list of Array.isArray(lists) ? lists : []) {
+    const hooks = record(list).hooks
+    for (const raw of Array.isArray(hooks) ? hooks : []) {
+      const hook = record(raw)
+      if (
+        hook.source === 'sessionFlags' &&
+        wanted.some(
+          (w) =>
+            w.command === hook.command &&
+            w.event.toLowerCase() === String(hook.eventName).toLowerCase()
+        ) &&
+        typeof hook.key === 'string' &&
+        typeof hook.currentHash === 'string'
+      )
+        found.push({
+          key: hook.key,
+          command: String(hook.command),
+          currentHash: hook.currentHash,
+          trustStatus: String(hook.trustStatus)
+        })
+    }
+  }
+  return found
 }

@@ -7,10 +7,13 @@ import path from 'path'
 import {
   defaultControlDir,
   ensureControlDir,
+  listenOverSsh,
   problemOf,
   runSsh,
+  runSshBytes,
   sshOptions
 } from '../../src/main/remote/ssh'
+import { remoteAnswerCommand, remoteShCommand } from '../../src/main/remote/install'
 
 const UNIX_SOCKET_PATH_MAX_BYTES = 104
 
@@ -165,10 +168,59 @@ describe("U-SSH-2: remote command result code is null on a local timeout, 127 fo
     expect(r.stderr).toContain('boom')
   })
 
+  it('an ssh that exits before reading the input it was given keeps its exit code, with no EPIPE thrown', async () => {
+    fakeSsh('exit 255')
+    const r = await runSsh('host', 'cat', { controlDir: tmp, input: Buffer.alloc(4 * 1024 * 1024) })
+    expect(r.code).toBe(255)
+  })
+
   it('a missing ssh binary reads as 127, with the reason in stderr', async () => {
     process.env.PATH = tmp
     const r = await runSsh('host', 'true', { controlDir: tmp })
     expect(r.code).toBe(127)
     expect(r.stderr).toContain('ENOENT')
+  })
+})
+
+describe('a machine whose shell prints a greeting and a title escape as it starts, before the command ssh hands it', () => {
+  const ANSWER = 'PATH=/from/the/script\nkoloft-answer-starts-here\n'
+  beforeEach(() => {
+    process.env.PATH = `${bin}:/usr/bin:/bin`
+    fakeSsh(
+      `printf 'Welcome to the box\\n\\033]0;box\\007'\nshift $(($# - 1))\nexec /bin/sh -c "$1"`
+    )
+  })
+
+  it('an answer Koloft reads comes back exactly as the script printed it, byte for byte', async () => {
+    const script = "printf 'PATH=/from/the/script\\nkoloft-answer-starts-here\\n\\000\\377'"
+    const r = await runSshBytes('host', remoteAnswerCommand(script), { controlDir: tmp })
+    expect(r.stdout).toEqual(Buffer.concat([Buffer.from(ANSWER), Buffer.from([0, 0xff])]))
+  })
+
+  it('a read built without the mark loses the greeting too, so a new read cannot forget it', async () => {
+    const r = await runSsh('host', remoteShCommand("printf 'README.md\\n'"), { controlDir: tmp })
+    expect(r.stdout).toBe('README.md\n')
+  })
+
+  it('a command fed input that only reports its exit code gets all its input and keeps its exit code', async () => {
+    const r = await runSsh('host', remoteShCommand('cat; exit 3'), {
+      controlDir: tmp,
+      input: Buffer.from('typed text')
+    })
+    expect(r).toMatchObject({ code: 3, stdout: 'typed text' })
+  })
+
+  it('a live stream loses the greeting too, even a title escape with no newline after it, and gets every line its command printed', async () => {
+    const lines: string[] = []
+    await new Promise<void>((ended) =>
+      listenOverSsh(
+        'host',
+        remoteShCommand("echo 'hooks changed'; echo 'still here'"),
+        { controlDir: tmp },
+        (line) => lines.push(line),
+        ended
+      )
+    )
+    expect(lines).toEqual(['hooks changed', 'still here'])
   })
 })

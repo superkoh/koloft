@@ -160,7 +160,7 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     expect(
       blocks.some((b) =>
         b.includes(
-          'curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash'
+          'curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash'
         )
       )
     ).toBe(true)

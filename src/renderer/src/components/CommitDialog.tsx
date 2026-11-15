@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 
 export function CommitDialog({
   branch,
@@ -26,7 +26,7 @@ export function CommitDialog({
         <div className="modal-header">
           Commit changes
           <span className="modal-close" onClick={onCancel} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">

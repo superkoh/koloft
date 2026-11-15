@@ -25,7 +25,7 @@ export interface SuggestDeps {
     opts: { env: NodeJS.ProcessEnv; input?: string }
   ): Promise<GitRunResult>
   ssh(args: string[]): Promise<GitRunResult>
-  readFile(p: string): string | null
+  readFile(p: string): Promise<string | null>
   home: string
   env: NodeJS.ProcessEnv
   githubUrl: string
@@ -36,8 +36,9 @@ export interface SuggestDeps {
 }
 
 const OFF: GitAccountSuggestion = { kind: 'off' }
-const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
-const COMMIT_EMAILS_LOOKED_AT = 50
+export const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
+export const CREDENTIAL_HELPER_KEYS = '^credential\\..*helper$'
+export const COMMIT_EMAILS_LOOKED_AT = 50
 const SSH_GREETS: GitPlatform[] = ['github', 'ghes', 'gitlab', 'gitea']
 
 export function clueEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -66,7 +67,7 @@ interface Here {
 
 export async function suggestFor(
   wsPath: string,
-  opts: { network: boolean },
+  opts: { network: boolean; pushChecks?: boolean },
   d: SuggestDeps
 ): Promise<GitAccountSuggestion> {
   const env = clueEnv(d.env)
@@ -81,8 +82,9 @@ export async function suggestFor(
   const here = whereIs(remote, d)
   if (!here) return OFF
   const clue = await firstClue(here, opts.network, git, out, d)
-  if (clue) return decide(clue, here, opts.network, d)
-  return noClue(here, opts.network, out, d)
+  const checks = opts.network && opts.pushChecks !== false
+  if (clue) return decide(clue, here, checks, d)
+  return noClue(here, checks, out, d)
 }
 
 function whereIs(remote: Remote, d: SuggestDeps): Here | null {
@@ -179,9 +181,9 @@ async function firstClue(
     if (configured) return { login: configured, reason: 'config-user' }
     if (!platform || !isGhPlatform(platform)) return null
     if (d.env.GH_TOKEN || d.env.GITHUB_TOKEN || d.env.GH_ENTERPRISE_TOKEN) return null
-    const helpers = (await out(['config', '--get-regexp', '^credential\\..*helper$'])) ?? ''
+    const helpers = (await out(['config', '--get-regexp', CREDENTIAL_HELPER_KEYS])) ?? ''
     const ghLogin = ghActiveLogin(
-      readGhHosts(d),
+      await readGhHosts(d),
       usesGhCredentialHelper(helpers, here.host),
       here.host
     )
@@ -199,13 +201,13 @@ async function firstClue(
   return login ? { login, reason: 'ssh-greeting' } : null
 }
 
-function readGhHosts(d: SuggestDeps): string {
+async function readGhHosts(d: SuggestDeps): Promise<string> {
   const dir =
     d.env.GH_CONFIG_DIR ||
     (d.env.XDG_CONFIG_HOME
       ? path.join(d.env.XDG_CONFIG_HOME, 'gh')
       : path.join(d.home, '.config', 'gh'))
-  return d.readFile(path.join(dir, 'hosts.yml')) ?? ''
+  return (await d.readFile(path.join(dir, 'hosts.yml'))) ?? ''
 }
 
 async function decide(

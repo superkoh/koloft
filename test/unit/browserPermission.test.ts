@@ -3,6 +3,7 @@ import {
   permissionAsk,
   permissionKey,
   permissionOriginOf,
+  permissionQueryAsk,
   type PermissionAsk
 } from '../../src/main/browserPermission'
 
@@ -103,6 +104,37 @@ describe('permissionAsk — what a raw permission request becomes', () => {
         mediaTypes: ['audio']
       })
     ).toMatchObject({ kind: 'refuse' })
+  })
+})
+
+describe('permissionQueryAsk — what a page asking permissions.query would get asked', () => {
+  it('reads a status by the name Chromium gives it as the request the same page would make', () => {
+    const page = { requestingUrl: 'https://meet.example/room' }
+    expect(permissionQueryAsk('audio_capture', page)).toEqual({
+      kind: 'ask',
+      permission: 'microphone',
+      origin: 'https://meet.example'
+    })
+    expect(permissionQueryAsk('video_capture', page)).toMatchObject({
+      kind: 'ask',
+      permission: 'camera'
+    })
+    expect(permissionQueryAsk('geolocation', page)).toMatchObject({
+      kind: 'ask',
+      permission: 'geolocation'
+    })
+  })
+
+  it('is no ask from a sub-frame, or for a name no prompt exists for, so those keep reading denied', () => {
+    expect(
+      permissionQueryAsk('audio_capture', {
+        requestingUrl: 'https://ads.example/',
+        isMainFrame: false
+      })
+    ).toMatchObject({ kind: 'refuse' })
+    expect(
+      permissionQueryAsk('midi', { requestingUrl: 'https://meet.example/' })
+    ).not.toMatchObject({ kind: 'ask' })
   })
 })
 

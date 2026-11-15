@@ -10,6 +10,7 @@ import {
   unwatchDir,
   closeAllDirWatchers
 } from '../../src/main/fileWatch'
+import type { DirChanges } from '../../src/shared/types'
 
 let dir: string
 let file: string
@@ -139,16 +140,16 @@ describe('watchDir (recursive dir watcher)', () => {
     vi.restoreAllMocks()
   })
 
-  it('answers true when the recursive watch starts', () => {
-    expect(watchDir(dir, () => {})).toBe(true)
+  it('answers true when the recursive watch starts', async () => {
+    expect(await watchDir(dir, () => {})).toBe(true)
   })
 
-  it('answers false when fs.watch throws, and a later call on the same root tries again', () => {
+  it('answers false when fs.watch throws, and a later call on the same root tries again', async () => {
     const spy = vi.spyOn(fs, 'watch').mockImplementation(() => {
       throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' })
     })
-    expect(watchDir(dir, () => {})).toBe(false)
-    expect(watchDir(dir, () => {})).toBe(false)
+    expect(await watchDir(dir, () => {})).toBe(false)
+    expect(await watchDir(dir, () => {})).toBe(false)
     expect(spy).toHaveBeenCalledTimes(2)
   })
 
@@ -157,7 +158,7 @@ describe('watchDir (recursive dir watcher)', () => {
     fs.mkdirSync(gitDir)
     fs.writeFileSync(path.join(gitDir, 'index'), 'a')
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
     await sleep(700)
     roots.length = 0
 
@@ -168,6 +169,180 @@ describe('watchDir (recursive dir watcher)', () => {
 
     fs.appendFileSync(file, 'two\n')
     expect(await until(() => roots.length > 0)).toBe(true)
+  })
+
+  // AGY§8
+  it('never reports Antigravity writing its own logs under .system_generated, which it does at every step, or each step would re-list every open folder', async () => {
+    const logs = path.join(dir, '.system_generated', 'logs')
+    fs.mkdirSync(logs, { recursive: true })
+    const roots: string[] = []
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    await sleep(700)
+    roots.length = 0
+
+    fs.appendFileSync(path.join(logs, 'transcript.jsonl'), '{}\n')
+    await sleep(1000)
+    expect(roots).toEqual([])
+
+    fs.appendFileSync(file, 'two\n')
+    expect(await until(() => roots.length > 0)).toBe(true)
+  })
+
+  it('names the folders whose list of names may have changed, so Browse re-lists only those and not every open folder', async () => {
+    const sub = path.join(dir, 'a', 'b')
+    fs.mkdirSync(sub, { recursive: true })
+    const reports: (DirChanges | undefined)[] = []
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+
+    fs.writeFileSync(path.join(sub, 'new.txt'), 'x')
+    expect(await until(() => reports.length > 0)).toBe(true)
+    expect(reports[0]?.listsChanged).toContain(sub)
+    expect(reports[0]?.listsChanged).not.toContain(dir)
+  })
+
+  it('names a folder moved into place as a replaced tree, so its open subfolders re-list though no event came from inside it', async () => {
+    const staged = path.join(dir, 'out.tmp')
+    fs.mkdirSync(path.join(staged, 'assets'), { recursive: true })
+    fs.writeFileSync(path.join(staged, 'assets', 'a.js'), 'x')
+    const reports: (DirChanges | undefined)[] = []
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+
+    fs.renameSync(staged, path.join(dir, 'out'))
+    expect(
+      await until(() => reports.some((r) => r?.replacedTrees.includes(path.join(dir, 'out'))))
+    ).toBe(true)
+  })
+
+  it('names the folder of a changed .gitignore as a replaced tree, since it can hide or show files in every folder under it', async () => {
+    const sub = path.join(dir, 'pkg')
+    fs.mkdirSync(sub)
+    fs.writeFileSync(path.join(sub, '.gitignore'), 'a\n')
+    const reports: (DirChanges | undefined)[] = []
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+
+    fs.appendFileSync(path.join(sub, '.gitignore'), 'b\n')
+    expect(await until(() => reports.some((r) => r?.replacedTrees.includes(sub)))).toBe(true)
+  })
+
+  it('a folder viewed again after its last viewer left opens no second watcher, and reports its changes again', async () => {
+    const spy = vi.spyOn(fs, 'watch')
+    const roots: string[] = []
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    unwatchDir(dir)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    await sleep(700)
+    roots.length = 0
+    fs.appendFileSync(file, 'two\n')
+    expect(await until(() => roots.length > 0)).toBe(true)
+  })
+
+  it('reports nothing about a folder nobody views, though its watcher is kept', async () => {
+    const roots: string[] = []
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    await sleep(700)
+    roots.length = 0
+    unwatchDir(dir)
+
+    fs.appendFileSync(file, 'two\n')
+    await sleep(1000)
+    expect(roots).toEqual([])
+  })
+
+  it('tells a returning viewer nothing about changes made while nobody viewed the folder, since every viewer reads the folder itself as it starts watching and a report would make it read twice', async () => {
+    const reports: (DirChanges | undefined)[] = []
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    unwatchDir(dir)
+    reports.length = 0
+    fs.appendFileSync(file, 'two\n')
+    await sleep(700)
+
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    expect(reports).toEqual([])
+
+    fs.appendFileSync(file, 'three\n')
+    expect(await until(() => reports.length > 0)).toBe(true)
+  })
+
+  it('drops a change still waiting to be reported when the last viewer left, rather than reporting it to the next viewer', async () => {
+    const reports: (DirChanges | undefined)[] = []
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+    fs.appendFileSync(file, 'two\n')
+    await sleep(120)
+    unwatchDir(dir)
+    await sleep(500)
+
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    expect(reports).toEqual([])
+
+    fs.appendFileSync(file, 'three\n')
+    expect(await until(() => reports.length > 0)).toBe(true)
+  })
+
+  it('opens a new watcher for a folder deleted and made again while nobody viewed it', async () => {
+    const folder = path.join(dir, 'worktree')
+    fs.mkdirSync(folder)
+    const spy = vi.spyOn(fs, 'watch')
+    expect(await watchDir(folder, () => {})).toBe(true)
+    unwatchDir(folder)
+    fs.rmSync(folder, { recursive: true })
+    fs.mkdirSync(path.join(dir, 'takes-the-freed-inode-number'))
+    fs.mkdirSync(folder)
+
+    expect(await watchDir(folder, () => {})).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(2)
+    unwatchDir(folder)
+    fs.rmSync(folder, { recursive: true })
+    expect(await watchDir(folder, () => {})).toBe(false)
+  })
+
+  it('a watch and an unwatch of one folder take effect in the order they were asked, though the watch waits on the disk', async () => {
+    const spy = vi.spyOn(fs, 'watch')
+    const first = watchDir(dir, () => {})
+    unwatchDir(dir)
+    const again = watchDir(dir, () => {})
+    expect(await first).toBe(true)
+    expect(await again).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a watch still waiting on the disk when every watcher is closed opens none', async () => {
+    const spy = vi.spyOn(fs, 'watch')
+    const pending = watchDir(dir, () => {})
+    closeAllDirWatchers()
+    expect(await pending).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('keeps the watchers of only the 8 folders left most recently, so a ninth closes the one left longest ago', async () => {
+    const folders = Array.from({ length: 9 }, (_, i) => {
+      const folder = path.join(dir, `ws-${i}`)
+      fs.mkdirSync(folder)
+      return folder
+    })
+    const spy = vi.spyOn(fs, 'watch')
+    for (const folder of folders) {
+      expect(await watchDir(folder, () => {})).toBe(true)
+      unwatchDir(folder)
+    }
+    expect(spy).toHaveBeenCalledTimes(9)
+
+    await watchDir(folders[8], () => {})
+    expect(spy).toHaveBeenCalledTimes(9)
+    await watchDir(folders[0], () => {})
+    expect(spy).toHaveBeenCalledTimes(10)
   })
 
   it('after an FSWatcher error rebuilds the watcher in place with its ref count kept, and keeps reporting changes', async () => {
@@ -181,8 +356,8 @@ describe('watchDir (recursive dir watcher)', () => {
       return w
     }) as typeof fs.watch)
     const roots: string[] = []
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
-    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
 
     watchers[0].emit('error', new Error('FSEvents stream died'))
     expect(spy).toHaveBeenCalledTimes(2)

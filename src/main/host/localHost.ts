@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
 import os from 'os'
+import path from 'path'
 import { dirExists, listDir, search, searchContent } from '../fileTree'
 import { watchFile, unwatchFile, watchDir, unwatchDir } from '../fileWatch'
 import { MAX_READ_BYTES, createFile, looksBinary, openForEdit, writeText } from '../fileEdit'
@@ -13,10 +14,11 @@ import {
   gitFileDiffFull
 } from '../gitStatus'
 import type { GithubLookup } from '../github'
-import { networkGit } from '../gitFreshness'
+import { LocalRunner, networkGit } from '../gitFreshness'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
+import { aboveItsTools } from '../agentLift'
 import { claudeArgv } from '../claudeArgs'
 import {
   acceptClaudeTrust,
@@ -27,6 +29,8 @@ import {
 import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
 import { listSkills, type SkillFs } from '../skillList'
+import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
 const skillFs: SkillFs = {
@@ -46,12 +50,14 @@ const GIT_CALL_TIMEOUT_MS = 5000
 export function localGitOut(
   cwd: string,
   args: string[],
-  timeoutMs = GIT_CALL_TIMEOUT_MS
+  timeoutMs = GIT_CALL_TIMEOUT_MS,
+  onFailure?: (stderr: string) => void
 ): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout) =>
+    execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout, stderr) => {
+      if (err) onFailure?.(String(stderr))
       resolve(err ? null : stdout)
-    )
+    })
   })
 }
 
@@ -84,7 +90,15 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
   })
 }
 
-async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
+export interface LocalClaudeDeps {
+  hookRegDir(): string
+  agentPlugin(): string | undefined
+  docsPlugin(): string | undefined
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  agentHomes(): { codexHome: string; configHome: string }
+}
+
+async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
   const args = claudeArgv(process.env.KOLOFT_CLAUDE_CMD || 'claude', {
     resumeSessionId: spec.resumeSessionId,
     worktree: spec.worktree,
@@ -98,26 +112,48 @@ async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
   } catch (err) {
     console.error('[koloft] could not mark Claude onboarding done', err)
   }
+  if (spec.trustFolder) trustFolder(spec.cwd ?? spec.root)
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
-  const launchCommand = `exec ${args.argv.join(' ')}`
+  const launchCommand = `exec ${aboveItsTools(args.argv).join(' ')}`
   const worktree = spec.worktree ?? worktreeNameAround(cwd)
+  // ADR-0029
+  const assist = d.assistOf(cwd, spec.resumeSessionId)
+  const conductor = !!spec.conductor || !!assist
+  const role = spec.role ?? assist?.role
+  const agentPlugin = d.agentPlugin()
   return {
     ok: true,
     spawnCwd: cwd,
     cwd,
-    launchCommand: () => launchCommand,
+    conductor,
+    launchCommand: (tabId) => {
+      const regDir = d.hookRegDir()
+      if (role) writeConductorMarker(regDir, tabId, role)
+      if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(regDir, tabId), spec.ownerWords)
+      return launchCommand
+    },
     extraEnv: {
       // CC§9
       ...(spec.firstPrompt !== undefined || spec.name
         ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
         : {}),
-      ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {})
+      ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
+      KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
+      // CC§12
+      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+      CLAUDE_CODE_DECSTBM: '1',
+      ...(agentPlugin
+        ? {
+            KOLOFT_AGENT_PLUGIN: agentPlugin,
+            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
+          }
+        : {})
     }
   }
 }
 
 // ADR-0026
-async function trustFolder(dir: string): Promise<void> {
+function trustFolder(dir: string): void {
   if (!fs.existsSync(dir)) return
   try {
     acceptClaudeTrust(claudeJsonPath(), dir)
@@ -139,7 +175,7 @@ async function readText(p: string): Promise<string> {
   return buf.toString('utf8')
 }
 
-export function localHost(github: GithubLookup): Host {
+export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
   return {
     listDir,
     dirExists,
@@ -151,16 +187,24 @@ export function localHost(github: GithubLookup): Host {
       ),
     search,
     searchContent,
-    diffBase,
-    gitStatus,
-    gitNumstat,
+    gitChanges: async (root, choice) => {
+      const base = choice === 'head' ? 'HEAD' : await diffBase(root).catch(() => null)
+      const arg = base ?? undefined
+      const [status, numstat, exists] = await Promise.all([
+        gitStatus(root, arg),
+        gitNumstat(root, arg),
+        dirExists(root)
+      ])
+      return { base, status, numstat, missing: !exists }
+    },
     gitDiff,
     gitFileDiff,
     gitFileDiffFull,
     readText,
-    openForEdit: async (p) => openForEdit(p),
-    writeText: async (p, text, expect, opts) => writeText(p, text, expect, opts),
-    createFile: async (dir, name) => createFile(dir, name),
+    readBytes: (p) => fs.promises.readFile(p),
+    openForEdit: (p) => openForEdit(p),
+    writeText: (p, text, expect, opts) => writeText(p, text, expect, opts),
+    createFile,
     watchDir,
     unwatchDir,
     watchFile: (p, onChange) =>
@@ -170,15 +214,16 @@ export function localHost(github: GithubLookup): Host {
       const spawnCwd = resolveSpawnCwd(cwd)
       return { spawnCwd, cwd: spawnCwd }
     },
-    launch: launchClaude,
-    trustFolder,
+    launch: (spec) => launchClaude(claude, spec),
     trustsFolder: async (dir) => claudeTrustsFolder(claudeJsonPath(), dir),
-    listSkills: async (root) => listSkills(skillFs, root, os.homedir()),
+    listSkills: async (root, backend) =>
+      listSkills(skillFs, backend, { workspace: root, home: os.homedir(), ...claude.agentHomes() }),
     keyed: (p) => p,
     gitOut: localGitOut,
     gitRun: localGitRun,
     reveal: (p) => void leaveForOS(p, 'reveal'),
     osOpen: osOpenFallback,
-    github
+    github,
+    freshness: new LocalRunner()
   }
 }

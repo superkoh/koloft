@@ -33,7 +33,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
 
-      const row = page.locator('.ws-tab', { hasText: 'WT preseed session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'WT preseed session' })
       await expect.poll(async () => row.isVisible(), { timeout: 20_000 }).toBe(true)
       await expect(row).toHaveClass(/\bcold\b/)
       await expect(row.locator('.ws-tab-sub')).toHaveText('wt1')
@@ -58,7 +58,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
         timeout: 20_000
       })
       await page.waitForTimeout(GRACE_FOR_A_WRONG_RESCAN_MS)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -82,7 +82,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
 
-      const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+      const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
       await expect.poll(async () => row.isVisible(), { timeout: 30_000 }).toBe(true)
       await expect(row.locator('.ws-tab-sub')).toHaveText('feat1')
       await expect(row).not.toHaveClass(/\bcold\b/)
@@ -125,7 +125,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Bound root-slug session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Bound root-slug session' })
       await expect(row).toBeVisible({ timeout: 20_000 })
       await expect(row).toHaveClass(/\bcold\b/)
       await expect(row.locator('.ws-tab-sub')).toHaveText('wt2')
@@ -159,14 +159,14 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
       await expect(page.locator('.ws-head .ws-name', { hasText: 'ws-a' })).toBeVisible({
         timeout: 20_000
       })
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
 
       seedJsonl(env, wt4, { summary: 'Foreign wt4 session', cwd: wt4, owned: false })
       seedJsonl(env, wt, { id: ownedId, summary: 'External wt3 session', cwd: wt, owned: false })
-      const row = page.locator('.ws-tab', { hasText: 'External wt3 session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'External wt3 session' })
       await expect.poll(async () => row.isVisible(), { timeout: 15_000 }).toBe(true)
       await expect(row.locator('.ws-tab-sub')).toHaveText('wt3')
-      await expect(page.locator('.ws-tab', { hasText: 'Foreign wt4 session' })).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Foreign wt4 session' })).toHaveCount(0)
 
       const strangerDir = path.join(env.home, '.claude', 'projects', '-zebra-unrelated-repo')
       fs.mkdirSync(strangerDir, { recursive: true })
@@ -175,8 +175,10 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
         JSON.stringify({ type: 'summary', summary: 'Zebra stranger session' }) + '\n'
       )
       await page.waitForTimeout(GRACE_FOR_A_WRONG_RESCAN_MS)
-      await expect(page.locator('.ws-tab', { hasText: 'Zebra stranger session' })).toHaveCount(0)
-      await expect(page.locator('.ws-tab')).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Zebra stranger session' })).toHaveCount(
+        0
+      )
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
       await snap(page, 'T-AGG-08')
     } finally {
       await app.close().catch(() => {})
@@ -195,7 +197,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const title = page.locator('.ws-tab .ws-tab-title')
+      const title = page.locator('.ws .ws-tab .ws-tab-title')
       await expect(title).toBeVisible({ timeout: 20_000 })
       expect((await title.textContent())?.trim()).toMatch(/^\d+[smhd] ago$/)
       await snap(page, 'T-AGG-03')
@@ -214,7 +216,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Ghost session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Ghost session' })
       await expect(row).toBeVisible({ timeout: 20_000 })
       await expect(row).toHaveClass(/\bcold\b/)
       await expect(row).not.toHaveClass(/\bdisabled\b/)
@@ -258,7 +260,7 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      await expect(page.locator('.ws-tab', { hasText: 'Slug sanity session' })).toBeVisible({
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Slug sanity session' })).toBeVisible({
         timeout: 20_000
       })
     } finally {

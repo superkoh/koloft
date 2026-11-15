@@ -2,9 +2,10 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
+import { setTimeout as sleep } from 'timers/promises'
 
 const REGISTRY_DIR = path.join(os.homedir(), '.claude', 'sessions')
-
+const REGISTRY_IS_READ_AGAIN_AFTER_MS = 500
 // CC§11
 function processStartUtc(pid: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -107,42 +108,95 @@ export async function messagingSocketOf(
 }
 
 // CC§11
+function panelFromStatus(status: string | undefined): boolean | undefined {
+  return status === undefined ? undefined : status === 'waiting'
+}
+
 export async function claudeShowsAPanel(
   sessionId: string,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<boolean | undefined> {
-  const status = (await liveEntryOf(sessionId, dir, startOf))?.status
-  return status === undefined ? undefined : status === 'waiting'
+  return panelFromStatus((await liveEntryOf(sessionId, dir, startOf))?.status)
 }
 
+async function socketWithin(
+  ms: number,
+  everyMs: number,
+  read: () => Promise<string | null>
+): Promise<string | null> {
+  const deadline = Date.now() + ms
+  for (;;) {
+    const socket = await read()
+    const left = deadline - Date.now()
+    if (socket || left <= 0) return socket
+    await sleep(Math.min(everyMs, left))
+  }
+}
+
+// PLATFORM§28
 export function whenMessagingSocket(
   sessionId: string,
   ms: number,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<string | null> {
-  return new Promise((resolve) => {
-    let watcher: fs.FSWatcher | undefined
-    let settled = false
-    const settle = (socket: string | null): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(deadline)
-      watcher?.close()
-      resolve(socket)
-    }
-    const check = (): void =>
-      void messagingSocketOf(sessionId, dir, startOf).then((socket) => socket && settle(socket))
-    const deadline = setTimeout(
-      () => void messagingSocketOf(sessionId, dir, startOf).then(settle),
-      Math.max(0, ms)
-    )
+  return socketWithin(ms, REGISTRY_IS_READ_AGAIN_AFTER_MS, () =>
+    messagingSocketOf(sessionId, dir, startOf)
+  )
+}
+
+// CC§11
+export const LIVE_REGISTRY_ON_A_MACHINE_SH = `for f in "$HOME"/.claude/sessions/*.json; do p=\${f##*/}; kill -0 "\${p%.json}" 2>/dev/null && cat "$f" && printf '\\0'; done; :`
+
+interface EntryOnMachine {
+  sessionId?: unknown
+  kind?: unknown
+  messagingSocketPath?: unknown
+  status?: unknown
+}
+
+// CC§5 CC§11
+function tabEntriesOnMachine(liveRegistry: string, sessionId: string): EntryOnMachine[] {
+  return liveRegistry.split('\0').flatMap((text) => {
+    let entry: EntryOnMachine
     try {
-      watcher = fs.watch(dir, check)
-    } catch {}
-    check()
+      entry = JSON.parse(text)
+    } catch {
+      return []
+    }
+    return entry.sessionId === sessionId && entry.kind !== 'bg' ? [entry] : []
   })
+}
+
+export function tabSocketOnMachine(liveRegistry: string, sessionId: string): string | null {
+  for (const { messagingSocketPath } of tabEntriesOnMachine(liveRegistry, sessionId))
+    if (typeof messagingSocketPath === 'string' && messagingSocketPath) return messagingSocketPath
+  return null
+}
+
+// CC§11
+export function claudeShowsAPanelOnMachine(
+  liveRegistry: string,
+  sessionId: string
+): boolean | undefined {
+  return panelFromStatus(
+    tabEntriesOnMachine(liveRegistry, sessionId)
+      .map((entry) => entry.status)
+      .find((status): status is string => typeof status === 'string')
+  )
+}
+
+const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000
+
+export function whenMessagingSocketOnMachine(
+  sessionId: string,
+  ms: number,
+  readLiveRegistry: () => Promise<string>
+): Promise<string | null> {
+  return socketWithin(ms, REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS, async () =>
+    tabSocketOnMachine(await readLiveRegistry(), sessionId)
+  )
 }
 
 export function claudePeerNames(

@@ -15,8 +15,20 @@ import {
 } from '../e2e/helpers/p1'
 import { claudePrompts } from '../e2e/helpers/workbench'
 import {
+  BROWSER,
+  INSPECT_MODE_SETTLES_MS,
+  PICKED_LABEL,
+  PICK_PAGE,
+  cdpEndpointOf,
+  connectCdp,
+  openPickPage
+} from '../e2e/helpers/browser'
+import { startEchoServer } from '../e2e/helpers/fixtureServer'
+import {
   ABC_LAYOUT,
   COMMAND_FLAG,
+  KEY_K,
+  KEY_O,
   KEY_P,
   KEY_RETURN,
   KEY_SPACE,
@@ -27,6 +39,7 @@ import {
   bareScreenPointOf,
   chooseOnBanner,
   bringFinderToFront,
+  closeButtonCenter,
   dockBadgeDrawn,
   dockItemCenter,
   notificationCenterRunning,
@@ -39,15 +52,29 @@ import {
   selectInputSource,
   windowBounds
 } from './helpers/macInput'
+import { recordTyping, type TypingRecording } from './helpers/typingRecorder'
 
-const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>({
+const test = e2eTest.extend<{
+  shown: {
+    app: ElectronApplication
+    page: Page
+    recordTyping: (tabId: string) => Promise<void>
+  }
+}>({
   shown: async ({ env }, use, testInfo) => {
     seedSettings(env, { hintsOff: true })
     env.launchEnv.KOLOFT_TEST_REAL_WINDOW = '1'
     const app = await launchApp(env)
     const page = await app.firstWindow()
     await waitBooted(page)
-    await use({ app, page })
+    let typing: TypingRecording | undefined
+    await use({
+      app,
+      page,
+      recordTyping: async (tabId) => {
+        typing = await recordTyping(app, page, tabId)
+      }
+    })
     if (testInfo.status !== testInfo.expectedStatus) {
       screenshot(testInfo.outputPath('failed-screen.png'))
       const body = await page
@@ -55,6 +82,7 @@ const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>
         .innerHTML()
         .catch((e: Error) => e.message)
       fs.writeFileSync(testInfo.outputPath('failed-dom.html'), body)
+      await typing?.save(testInfo.outputPath('typing.jsonl'))
     }
     await quitAndClose(app)
   }
@@ -80,6 +108,8 @@ const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 // PLATFORM§52
 const MAC_DRAG_SLACK_PX = 6
 const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
+const TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS = 3_000
+const TIME_FOR_A_MENU_KEY_TO_LAND_MS = 1_500
 
 async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
   await expect
@@ -98,8 +128,12 @@ async function sessionIn(page: Page, ws: string): Promise<string> {
   return (await wsRows(page, ws).first().getAttribute('data-tab-id')) ?? ''
 }
 
+function typeInSession(page: Page, tabId: string, line: string): Promise<void> {
+  return page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, line])
+}
+
 function endTurn(page: Page, tabId: string): Promise<void> {
-  return page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/answer hi\r'])
+  return typeInSession(page, tabId, '/answer hi\r')
 }
 
 const windowFocused = (app: ElectronApplication): Promise<boolean> =>
@@ -156,6 +190,31 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     screenshot(testInfo.outputPath('palette-open.png'))
   })
 
+  // PLATFORM§7
+  test('⌘⏎ typed on the keyboard in ⌘P, with a session open and Focus Mode ready on ⌘⏎, reaches the palette and starts the words, and Focus Mode stays off', async ({
+    shown: { app, page }
+  }) => {
+    await sessionIn(page, 'ws-a')
+    await clickIntoTerminal(app, page)
+    realKey(KEY_P, COMMAND_FLAG)
+    const field = palette(page).getByRole('textbox', { name: 'Ask or jump' })
+    await expect(field).toBeFocused()
+    await field.fill('read the readme')
+    expect(
+      await app.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('toggle-focus-mode')?.enabled
+      )
+    ).toBe(true)
+    realKey(KEY_RETURN, COMMAND_FLAG)
+    await expect(palette(page)).toHaveCount(0, { timeout: 30_000 })
+    const terminalShown = (): Promise<boolean> =>
+      page.evaluate(
+        () => ((document.querySelector('.term-island') as HTMLElement | null)?.offsetWidth ?? 0) > 0
+      )
+    await page.waitForTimeout(TIME_FOR_A_MENU_KEY_TO_LAND_MS)
+    expect(await terminalShown()).toBe(true)
+  })
+
   test('dragging the title bar with the mouse moves the window along with it', async ({
     shown: { app, page }
   }, testInfo) => {
@@ -179,7 +238,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     screenshot(testInfo.outputPath('window-moved.png'))
   })
 
-  test('a turn that ends while Koloft is in the background draws its count on the Dock icon, and coming back clears it', async ({
+  test('a turn that ends while Koloft is in the background draws its count on the Dock icon; coming back keeps it, and only the session working again clears it', async ({
     shown: { app, page }
   }, testInfo) => {
     const tabId = await sessionIn(page, 'ws-a')
@@ -188,7 +247,52 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
     await comeBackThroughTheDock(app)
+    await page.waitForTimeout(TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS)
+    expect(dockBadgeDrawn(DOCK_NAME)).toBe('1')
+    await typeInSession(page, tabId, '/busy\r')
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
+  })
+
+  test('the red button clicked with the mouse only hides the window: its session goes on working, and a click on the Dock icon shows that same window again', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    const tabId = await sessionIn(page, 'ws-a')
+    const windows = (): Promise<{ id: number; visible: boolean }[]> =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().map((w) => ({ id: w.webContents.id, visible: w.isVisible() }))
+      )
+    const [before] = await windows()
+    realClick(await closeButtonCenter(app))
+    await expect.poll(windows).toEqual([{ id: before.id, visible: false }])
+    screenshot(testInfo.outputPath('window-hidden.png'))
+    await typeInSession(page, tabId, '/answer while-hidden\r')
+    const unwrapped = async (): Promise<string> =>
+      (await terminalText(page, tabId)).replace(/\s+/g, '')
+    await expect.poll(unwrapped).toContain('answered:while-hidden')
+    await comeBackThroughTheDock(app)
+    expect(await windows()).toEqual([{ id: before.id, visible: true }])
+    screenshot(testInfo.outputPath('window-back.png'))
+  })
+
+  // PLATFORM§5
+  test('closing the window while it is in fullscreen leaves fullscreen and hides it, so the desktop shows rather than a black screen, and a click on the Dock icon brings it back in fullscreen', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    await sessionIn(page, 'ws-a')
+    const look = (): Promise<{ visible: boolean; fullScreen: boolean }[]> =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().map((w) => ({
+          visible: w.isVisible(),
+          fullScreen: w.isFullScreen()
+        }))
+      )
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true))
+    await expect.poll(look, { timeout: 15_000 }).toEqual([{ visible: true, fullScreen: true }])
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+    await expect.poll(look, { timeout: 15_000 }).toEqual([{ visible: false, fullScreen: false }])
+    screenshot(testInfo.outputPath('fullscreen-closed.png'))
+    await comeBackThroughTheDock(app)
+    await expect.poll(look, { timeout: 15_000 }).toEqual([{ visible: true, fullScreen: true }])
   })
 
   test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened, once macOS has asked and been told Allow', async ({
@@ -210,7 +314,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   })
 
   test('with macOS Pinyin, Return while composing puts the letters in the line without sending it, and Space picks 你好 for the next Return to send', async ({
-    shown: { app, page },
+    shown: { app, page, recordTyping },
     env
   }, testInfo) => {
     const tabId = await sessionIn(page, 'ws-a')
@@ -220,6 +324,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       selectInputSource(PINYIN_SIMPLIFIED)
       await comeBackThroughTheDock(app)
       await clickIntoTerminal(app, page)
+      await recordTyping(tabId)
       typeNihao()
       realKey(KEY_RETURN)
       await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/> nihao$/)
@@ -231,6 +336,92 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       screenshot(testInfo.outputPath('pinyin-sent.png'))
     } finally {
       selectInputSource(ABC_LAYOUT)
+    }
+  })
+
+  // PLATFORM§10
+  test('with macOS Pinyin, a word half typed in one session survives another session’s agent clicking into a field of its Workbench page; the click lands once the word is picked', async ({
+    shown: { app, page },
+    env
+  }, testInfo) => {
+    const server = await startEchoServer()
+    await sessionIn(page, 'ws-a')
+    const browser = await connectCdp(page, await cdpEndpointOf(env))
+    const typing = await sessionIn(page, 'ws-b')
+    try {
+      const driven = await browser.contexts()[0].newPage()
+      await driven.goto(server.page('/form', '<body><input id="name"></body>'))
+      await goToBackground(app)
+      // PLATFORM§52
+      selectInputSource(PINYIN_SIMPLIFIED)
+      await comeBackThroughTheDock(app)
+      await clickIntoTerminal(app, page)
+      const before = (await terminalText(page, typing)).trimEnd()
+      typeNihao()
+      const clicked = driven.click('#name')
+      await page.waitForTimeout(1_000)
+      realKey(KEY_SPACE)
+      await expect
+        .poll(async () =>
+          (await terminalText(page, typing)).trimEnd().slice(before.length).replace(/\s/g, '')
+        )
+        .toBe('你好')
+      await clicked
+      expect(await driven.evaluate(() => document.activeElement?.id)).toBe('name')
+      screenshot(testInfo.outputPath('pinyin-kept.png'))
+    } finally {
+      selectInputSource(ABC_LAYOUT)
+      await browser.close().catch(() => {})
+      await server.close()
+    }
+  })
+
+  test('an element picked with the real mouse lands in the session, and the words typed next on the real keyboard go to the session, not the page', async ({
+    shown: { app, page },
+    env
+  }, testInfo) => {
+    const server = await startEchoServer()
+    try {
+      const tabId = await sessionIn(page, 'ws-a')
+      const url = server.page('/pick', PICK_PAGE)
+      const guest = await openPickPage(app, page, url)
+      await clickIntoTerminal(app, page)
+
+      realClick(await screenPointOf(app, page.locator(BROWSER.pickButton)))
+      await expect(page.locator(BROWSER.pickButton)).toHaveAttribute('aria-pressed', 'true')
+      await page.waitForTimeout(INSPECT_MODE_SETTLES_MS)
+      const content = await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getContentBounds()
+      )
+      const host = await page.evaluate((u) => {
+        const el = [...document.querySelectorAll('webview')].find(
+          (w) => (w as unknown as { getURL(): string }).getURL() === u
+        )
+        const r = el?.getBoundingClientRect()
+        return r ? { x: r.x, y: r.y } : null
+      }, url)
+      const inGuest = await guest.locator('#buy').boundingBox()
+      if (!host || !inGuest) throw new Error('the picked button has no place on screen')
+      realClick({
+        x: content.x + host.x + inGuest.x + inGuest.width / 2,
+        y: content.y + host.y + inGuest.y + inGuest.height / 2
+      })
+      await expect(page.locator(BROWSER.pickButton)).toHaveAttribute('aria-pressed', 'false')
+      await expect.poll(() => focusOwner(page)).toBe('tui')
+      realKey(KEY_O)
+      realKey(KEY_K)
+      realKey(KEY_RETURN)
+
+      await expect
+        .poll(() => promptsStartingWith(env, page, tabId, 'Element picked'), { timeout: 30_000 })
+        .toHaveLength(1)
+      const [prompt] = await promptsStartingWith(env, page, tabId, 'Element picked')
+      expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+      expect(prompt.endsWith('ok')).toBe(true)
+      expect(await guest.evaluate('window.clicks')).toBe(0)
+      screenshot(testInfo.outputPath('picked.png'))
+    } finally {
+      await server.close()
     }
   })
 })

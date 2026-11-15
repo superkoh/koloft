@@ -1,9 +1,52 @@
 import { describe, it, expect } from 'vitest'
-import { ageLabel, canPull, freshLineState } from '@shared/freshnessOps'
+import { ageLabel, busyInCheckout, canPull, freshLineState } from '@shared/freshnessOps'
 import type { WorkspaceFreshness } from '@shared/types'
 
 const NOW = 1_700_000_000_000
 const MIN = 60_000
+
+describe('busyInCheckout (a pull asks first only while a root-checkout session is mid-task)', () => {
+  type Live = Parameters<typeof busyInCheckout>[0][number]
+  const live = (patch: Partial<Live> = {}): Live => ({
+    treeRoot: '/repo',
+    alive: true,
+    status: 'working',
+    ...patch
+  })
+
+  it('counts a working or approval-waiting session in the root checkout', () => {
+    expect(busyInCheckout([live(), live({ status: 'approval' })], '/repo')).toBe(2)
+  })
+
+  it('does not count a session idle at its prompt, an ended one, or one whose tree root is not the workspace path as pinned (a worktree, another repo)', () => {
+    expect(
+      busyInCheckout(
+        [
+          live({ status: 'waiting' }),
+          live({ status: 'idle' }),
+          live({ status: undefined }),
+          live({ alive: false }),
+          live({ treeRoot: '/repo/.claude/worktrees/fix' }),
+          live({ treeRoot: '/other' })
+        ],
+        '/repo'
+      )
+    ).toBe(0)
+  })
+
+  it('a parked session whose turn is over but a background task still runs is waiting, not busy', () => {
+    expect(busyInCheckout([live({ status: 'working', turnOver: true })], '/repo')).toBe(0)
+  })
+
+  it('counts a Codex session whose status cannot be seen — unknown means ask', () => {
+    expect(
+      busyInCheckout(
+        [live({ status: 'waiting', details: { codex: { observation: 'degraded' } } })],
+        '/repo'
+      )
+    ).toBe(1)
+  })
+})
 
 function f(patch: Partial<WorkspaceFreshness> = {}): WorkspaceFreshness {
   return {

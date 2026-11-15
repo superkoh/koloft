@@ -1,0 +1,122 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { spawn } from 'child_process'
+import {
+  ASKPASS_NAME,
+  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
+  SUDO_SHIM_FILES,
+  writeSudoShims
+} from '../../src/main/sudoShim'
+
+let base: string
+let shimDir: string
+let realDir: string
+let log: string
+
+function run(
+  file: string,
+  args: string[],
+  env: Record<string, string> = {}
+): Promise<{ status: number; stdout: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(file, args, {
+      env: { PATH: `${shimDir}:${realDir}:/usr/bin:/bin`, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
+    })
+    let stdout = ''
+    child.stdout.on('data', (c) => (stdout += c))
+    child.on('close', (status) => resolve({ status: status ?? -1, stdout }))
+  })
+}
+
+const MACOS_SCRIPT_GIVES_ITS_COMMAND_A_TERMINAL = '/usr/bin/script'
+
+function runWithATerminalOfItsOwn(
+  file: string,
+  args: string[],
+  env: Record<string, string> = {}
+): Promise<{ status: number }> {
+  return run(MACOS_SCRIPT_GIVES_ITS_COMMAND_A_TERMINAL, ['-q', '/dev/null', file, ...args], env)
+}
+
+const logged = (): string[] => fs.readFileSync(log, 'utf8').trim().split('\n')
+
+beforeEach(() => {
+  base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sudo-shim-')))
+  shimDir = path.join(base, 'shim')
+  realDir = path.join(base, 'real')
+  log = path.join(base, 'calls.log')
+  fs.mkdirSync(shimDir)
+  fs.mkdirSync(realDir)
+  writeSudoShims(shimDir, SUDO_SHIM_FILES)
+  fs.writeFileSync(
+    path.join(realDir, 'sudo'),
+    `#!/bin/sh\necho "askpass=$SUDO_ASKPASS args=$*" >> '${log}'\n`,
+    { mode: 0o755 }
+  )
+  fs.writeFileSync(
+    path.join(shimDir, 'koloft'),
+    `#!/bin/sh\nprintf '%s|' "$@" >> '${log}'\necho >> '${log}'\necho typed-password\n`,
+    { mode: 0o755 }
+  )
+})
+
+afterEach(() => {
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+describe("Koloft's sudo in a session", () => {
+  it('with no terminal it runs the real sudo with -A and Koloft’s password helper', async () => {
+    await run(path.join(shimDir, 'sudo'), ['brew', 'services', 'restart', 'nginx'])
+    expect(logged()).toEqual([
+      `askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A brew services restart nginx`
+    ])
+  })
+
+  it('leaves sudo alone when the command reads its password itself, must not ask, or already has a helper', async () => {
+    await run(path.join(shimDir, 'sudo'), ['-S', 'true'])
+    await run(path.join(shimDir, 'sudo'), ['-n', 'true'])
+    await run(path.join(shimDir, 'sudo'), ['true'], { SUDO_ASKPASS: '/own/helper' })
+    expect(logged()).toEqual([
+      'askpass= args=-S true',
+      'askpass= args=-n true',
+      'askpass=/own/helper args=true'
+    ])
+  })
+
+  it('a command an agent runs with a terminal of its own, which no one sees, still asks Koloft for the password', async () => {
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'])
+    expect(logged()).toEqual([`askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`])
+  })
+
+  it('sudo typed into a Koloft shell tab on another machine, whose terminal the owner sees, asks in that terminal as usual', async () => {
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'], { KOLOFT_UTIL: '1' })
+    expect(logged()).toEqual(['askpass= args=true'])
+  })
+
+  it('in the folder local Claude Code tabs share with this Mac’s shell tabs, a terminal is the owner’s and sudo asks there', async () => {
+    writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'])
+    await run(path.join(shimDir, 'sudo'), ['true'])
+    expect(logged()).toEqual([
+      'askpass= args=true',
+      `askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`
+    ])
+  })
+
+  it('an option of the command itself is not taken for one of sudo’s', async () => {
+    await run(path.join(shimDir, 'sudo'), ['sysctl', '-n', 'kern.hostname'])
+    expect(logged()[0]).toMatch(/args=-A sysctl -n kern\.hostname$/)
+  })
+
+  it('the helper asks Koloft for the password with sudo’s prompt and the command that asked, and prints the answer for sudo', async () => {
+    const r = await run(path.join(shimDir, ASKPASS_NAME), ['Password:'])
+    expect(r.stdout).toBe('typed-password\n')
+    const [secret, sudo, prompt, command] = logged()[0].split('|')
+    expect([secret, sudo, prompt]).toEqual(['secret', 'sudo', 'Password:'])
+    expect(command).not.toBe('')
+  })
+})

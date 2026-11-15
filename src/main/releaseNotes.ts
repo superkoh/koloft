@@ -1,4 +1,4 @@
-import type { ReleaseNotes, WhatsNew } from '@shared/types'
+import type { ReleaseNotes } from '@shared/types'
 
 export interface GhRelease {
   tag_name?: string
@@ -65,31 +65,4 @@ export function notesSince(
     releases: all.slice(0, MAX_NOTES_RELEASES),
     omittedReleases: Math.max(0, all.length - MAX_NOTES_RELEASES)
   }
-}
-
-function notesBetween(
-  published: GhRelease[],
-  lastSeen: string,
-  current: string
-): { releases: ReleaseNotes[]; omittedReleases: number } {
-  const currentOrOlder = published.filter((r) => !isNewer(versionOf(r), current))
-  return notesSince(currentOrOlder, lastSeen)
-}
-
-export async function whatsNewDecision(
-  lastSeen: string,
-  current: string,
-  fetchFeed: () => Promise<GhRelease[]>
-): Promise<{ show: WhatsNew | null; record: string | null }> {
-  if (lastSeen === '') return { show: null, record: current }
-  if (lastSeen === current) return { show: null, record: null }
-  let published: GhRelease[]
-  try {
-    published = await fetchFeed()
-  } catch {
-    return { show: null, record: null }
-  }
-  const { releases, omittedReleases } = notesBetween(published, lastSeen, current)
-  if (releases.length === 0) return { show: null, record: current }
-  return { show: { current, releases, omittedReleases }, record: null }
 }

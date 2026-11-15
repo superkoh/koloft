@@ -1,19 +1,42 @@
+import type { TabKind } from '@shared/types'
+import { backendIdOf, pasteKeepsItsLastLineFeeds } from '@shared/sessionBackend'
 import { sleep } from './codexTransport'
 
-// CC§12 CC§18
+// CC§12 CC§18 MUSE§17
 const SUBMIT_AFTER_TEXT_MS = 300
 
 // CC§12
-export async function typeKeys(write: (data: string) => void, keys: string[]): Promise<void> {
+export async function typeKeys(
+  write: (data: string) => void,
+  keys: string[],
+  stillWanted: () => boolean = () => true
+): Promise<boolean> {
   for (const [i, key] of keys.entries()) {
     if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
+    if (!stillWanted()) return false
     write(key)
   }
+  return true
 }
+
+const CONTROLS_THAT_COULD_END_A_PASTE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g
 
 // CC§18 CODEX§23
 export function bracketedPaste(text: string): string {
-  return `\x1b[200~${text}\x1b[201~`
+  return `\x1b[200~${text.replace(CONTROLS_THAT_COULD_END_A_PASTE, '')}\x1b[201~`
+}
+
+const LAST_LINE_FEEDS = /\n+$/
+
+const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
+
+// CC§18 CODEX§23 MUSE§7 AGY§15
+export function pasteFor(text: string, kind: TabKind | undefined): string {
+  const backend = backendIdOf(kind)
+  const typedAfter =
+    backend && !pasteKeepsItsLastLineFeeds(backend) ? (LAST_LINE_FEEDS.exec(text)?.[0] ?? '') : ''
+  const pasted = text.slice(0, text.length - typedAfter.length)
+  return bracketedPaste(APART_FROM_WHAT_THE_INPUT_BOX_HOLDS + pasted) + typedAfter
 }
 
 // CC§18
@@ -30,6 +53,25 @@ const MOUSE_AND_FOCUS_REPORTS = /\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[[IO]/g
 
 export function withoutMouseAndFocusReports(data: string): string {
   return data.replace(MOUSE_AND_FOCUS_REPORTS, '')
+}
+
+// PLATFORM§21
+const ONLY_THE_TERMINALS_OWN_ANSWERS =
+  /^(?:\x1b\[[?>]?[\d;]*(?:[Rcntu]|\$y)|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/
+
+export function onlyTheTerminalsOwnAnswers(data: string): boolean {
+  return ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)
+}
+
+export function pressesAKey(data: string): boolean {
+  const keys = withoutMouseAndFocusReports(data)
+  return keys !== '' && !onlyTheTerminalsOwnAnswers(keys)
+}
+
+const A_MOUSE_BUTTON_PRESS = /\x1b\[<[0-2];\d+;\d+M/
+
+export function clicksTheMouse(data: string): boolean {
+  return A_MOUSE_BUTTON_PRESS.test(data)
 }
 
 // CC§12 CODEX§25

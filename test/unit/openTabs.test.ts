@@ -47,12 +47,12 @@ describe('the open-tabs file', () => {
   it('reads back what was written: running tabs, sleepers and the selected one', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-open-tabs-'))
     const file = path.join(dir, 'open-tabs.json')
-    const state = openTabsNow([tab('a')], [tab('b')], 'b')
+    const state = openTabsNow([tab('a'), tab('m', { kind: 'muse' })], [tab('b')], 'b')
     const onDisk = new OpenTabsFile(file, { tabs: [] })
     onDisk.write(state)
     onDisk.flushSync()
     expect(readOpenTabs(file)).toEqual({
-      tabs: [tab('a'), tab('b', { asleep: true })],
+      tabs: [tab('a'), tab('m', { kind: 'muse' }), tab('b', { asleep: true })],
       active: 'b'
     })
   })

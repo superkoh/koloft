@@ -6,7 +6,12 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeCodexAgentShim } from '../../src/main/agentShim'
+import {
+  AGENT_SHIM_WAITS_MS,
+  CLAUDE_AGENT_SHIM,
+  REMOTE_AGENT_SHIM,
+  writeAgentShim
+} from '../../src/main/agentShim'
 import {
   AgentRequests,
   answered,
@@ -17,6 +22,7 @@ import {
 } from '../../src/main/agentRequests'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
+import { AGENT_GUIDE } from '../../src/shared/agentGuide'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
@@ -32,7 +38,11 @@ const verbs: AgentVerbs = {
     received.push({ argv: args, tabId: caller.tabId })
     return answered(args[0] ?? '')
   },
-  fail: () => refused('it broke: "x"', 3)
+  fail: () => refused('it broke: "x"', 3),
+  session: async () => {
+    await new Promise((r) => setTimeout(r, AGENT_SHIM_WAITS_MS + 500))
+    return answered('Answered Fix login.')
+  }
 }
 
 const session = (tabId: string): SessionInfo => ({
@@ -107,12 +117,46 @@ describe('koloft command in a Claude session', () => {
     expect(fs.readdirSync(agentDir)).toEqual([])
   })
 
+  it('koloft session answer waits past the usual wait, while Koloft watches the session take the answer', async () => {
+    listen(agentDir)
+    const r = await run(
+      path.join(shimDir, 'koloft'),
+      ['session', 'answer', 'x', 'yes'],
+      claudeEnv()
+    )
+    expect(r.stdout).toBe('Answered Fix login.\n')
+    expect(r.status).toBe(0)
+  }, 30_000)
+
   it('prints a refusal on stderr and exits with the code Koloft gave', async () => {
     listen(agentDir)
     const r = await run(path.join(shimDir, 'koloft'), ['fail'], claudeEnv())
     expect(r.stdout).toBe('')
     expect(r.stderr).toBe('it broke: "x"\n')
     expect(r.status).toBe(3)
+  })
+
+  it('an answer for a koloft command that already went away is never written, so a secret meant for it does not stay on disk', async () => {
+    const requests = new AgentRequests({
+      verbs,
+      tab: () => ({ util: false }),
+      session,
+      enabled: () => true,
+      alive: (pid) => pid !== 4242
+    })
+    await requests.answer(agentDir, 'req-gone.json', {
+      tabId: TAB,
+      argv: ['echo', 'hunter2'],
+      cwd: base,
+      pid: 4242
+    })
+    await requests.answer(agentDir, 'req-here.json', {
+      tabId: TAB,
+      argv: ['echo', 'hi'],
+      cwd: base,
+      pid: 4243
+    })
+    expect(fs.readdirSync(agentDir)).toEqual(['res-here.json'])
   })
 
   it('outside a live Koloft session it says so and exits 1 without writing a request', async () => {
@@ -156,7 +200,26 @@ describe('koloft command in a Claude session on a remote machine', () => {
       TMUX_PANE: '%0'
     })
     expect(r.stdout).toBe('hi\n')
-    expect(raws).toEqual([{ tabId: TAB, tmux: 'k-sess1', argv: ['echo', 'hi'], cwd: base }])
+    expect(raws).toEqual([
+      { tabId: TAB, tmux: 'k-sess1', argv: ['echo', 'hi'], cwd: base, pid: expect.any(Number) }
+    ])
+    expect(fs.readdirSync(hookDir)).toEqual([])
+  })
+
+  it('killed while it waits, it takes its request back, so no answer is ever written for nobody', async () => {
+    const hookDir = path.join(base, '.koloft', 'hook-sessions')
+    const remoteShim = path.join(base, 'machine-bin', 'koloft')
+    fs.mkdirSync(path.dirname(remoteShim))
+    fs.mkdirSync(hookDir, { recursive: true })
+    fs.writeFileSync(remoteShim, REMOTE_AGENT_SHIM, { mode: 0o755 })
+    const child = spawn(remoteShim, ['secret', 'sudo', 'Password:', 'x'], {
+      env: { HOME: base, PATH: '/usr/bin:/bin', KOLOFT_TAB_ID: TAB }
+    })
+    const closed = new Promise((resolve) => child.on('close', resolve))
+    while (!fs.readdirSync(hookDir).some((n) => REQUEST_NAME.test(n)))
+      await new Promise((r) => setTimeout(r, 20))
+    child.kill('SIGTERM')
+    await closed
     expect(fs.readdirSync(hookDir)).toEqual([])
   })
 })
@@ -167,7 +230,7 @@ describe('koloft command in a Codex session', () => {
   beforeEach(() => {
     requestDir = path.join(base, 'codex-requests')
     fs.mkdirSync(requestDir)
-    writeCodexAgentShim(shimDir, requestDir)
+    writeAgentShim(shimDir, requestDir, 'codex')
   })
 
   afterEach(() => {
@@ -198,10 +261,48 @@ describe('koloft command in a Codex session', () => {
     expect(raws[0]).not.toHaveProperty('tabId')
   })
 
-  it('in a read-only sandbox it says it cannot run here and exits 1', async () => {
+  it('in a read-only sandbox it still prints its guide', async () => {
     fs.chmodSync(requestDir, 0o555)
-    const r = await run(path.join(shimDir, 'koloft'), ['help'], {})
-    expect(r.status).toBe(1)
-    expect(r.stderr).toMatch(/read-only/)
+    for (const args of [['help'], [], ['--help']]) {
+      const guide = await run(path.join(shimDir, 'koloft'), args, {})
+      expect(guide.status).toBe(0)
+      expect(guide.stdout).toBe(AGENT_GUIDE + '\n')
+    }
   })
+})
+
+describe('koloft command in a Codex, Muse or Antigravity session says which agent it runs in, and what stops it', () => {
+  it.each([
+    ['codex', 'Codex'],
+    ['muse', 'Muse'],
+    ['agy', 'Antigravity']
+  ] as const)(
+    'once Koloft lets go of it, a %s session says it is a %s session no longer linked to Koloft, and exits 1',
+    async (backend, label) => {
+      writeAgentShim(shimDir, path.join(base, `${backend}-requests`), backend)
+      const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
+      expect(r.status).toBe(1)
+      expect(r.stderr).toBe(`koloft: this ${label} session is no longer linked to Koloft.\n`)
+    }
+  )
+
+  it.each([
+    ['codex', 'koloft: this sandbox is read-only, so koloft cannot run here.'],
+    ['muse', 'koloft: could not reach Koloft.'],
+    ['agy', 'koloft: could not reach Koloft.']
+  ] as const)(
+    'a %s session that cannot write its request prints only "%s", and exits 1',
+    async (backend, said) => {
+      const requestDir = path.join(base, `${backend}-requests`)
+      fs.mkdirSync(requestDir, { mode: 0o555 })
+      writeAgentShim(shimDir, requestDir, backend)
+      try {
+        const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
+        expect(r.status).toBe(1)
+        expect(r.stderr).toBe(`${said}\n`)
+      } finally {
+        fs.chmodSync(requestDir, 0o700)
+      }
+    }
+  )
 })

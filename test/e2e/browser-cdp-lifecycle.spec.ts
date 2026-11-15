@@ -8,6 +8,7 @@ import {
   startSessionIn,
   waitBooted,
   waitForCalls,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import {
@@ -264,6 +265,7 @@ test.describe('CDP client lifecycle: the user always wins, and a connected clien
   test('BB-49: closing the Koloft tab closes its endpoint for good', async ({ app, page, env }) => {
     test.setTimeout(240_000)
     const url = await session(page, env, 'ws-a')
+    await waitStartupTurnOver(page, 'ws-a')
     const browser = await connect(page, url)
     const closed = new Promise<void>((r) => browser.on('disconnected', () => r()))
     try {

@@ -1,6 +1,14 @@
 import { useState, type JSX, type ReactNode, type RefObject } from 'react'
-import { LuArrowLeft, LuArrowRight, LuExternalLink, LuRotateCw, LuX } from 'react-icons/lu'
+import {
+  IconBack,
+  IconClose,
+  IconForward,
+  IconOpenOutside,
+  IconPickElement,
+  IconReload
+} from '../icons'
 import { loadHistory, match } from '../browserHistory'
+import { PICK_BUTTON_LABEL } from './useElementPick'
 
 export function BrowserAddressBar({
   url,
@@ -15,11 +23,16 @@ export function BrowserAddressBar({
   onReload,
   onStop,
   onExternalOpen,
+  picking,
+  pickBlocked,
+  onPick,
   actions,
-  overflow
+  overflow,
+  machine
 }: {
   url: string
   workspace: string | null
+  machine: { host: string; connected: boolean } | null
   loading: boolean
   canBack: boolean
   canForward: boolean
@@ -30,6 +43,9 @@ export function BrowserAddressBar({
   onReload: () => void
   onStop: () => void
   onExternalOpen: () => void
+  picking: boolean
+  pickBlocked: string | null
+  onPick: () => void
   actions?: ReactNode
   overflow?: ReactNode
 }): JSX.Element {
@@ -55,7 +71,7 @@ export function BrowserAddressBar({
         disabled={!canBack}
         onClick={onBack}
       >
-        <LuArrowLeft size={16} />
+        <IconBack size={16} />
       </button>
       <button
         className={'bnav' + (canForward ? '' : ' dis')}
@@ -64,22 +80,22 @@ export function BrowserAddressBar({
         disabled={!canForward}
         onClick={onForward}
       >
-        <LuArrowRight size={16} />
+        <IconForward size={16} />
       </button>
       {loading ? (
         <button className="bnav" aria-label="Stop" title="Stop" onClick={onStop}>
-          <LuX size={16} />
+          <IconClose size={16} />
         </button>
       ) : (
         <button className="bnav" aria-label="Reload" title="Reload ⌘R" onClick={onReload}>
-          <LuRotateCw size={16} />
+          <IconReload size={16} />
         </button>
       )}
       <input
         ref={inputRef}
         className="url"
         value={draft ?? url}
-        placeholder="Search or enter address (http(s) / file://)"
+        placeholder="Search, address or file name"
         spellCheck={false}
         autoComplete="off"
         onChange={(e) => {
@@ -121,6 +137,25 @@ export function BrowserAddressBar({
           ))}
         </div>
       )}
+      {machine && (
+        <span
+          className="ws-remote"
+          title={`localhost in this tab is ${machine.host}, reached through its ssh connection`}
+        >
+          {machine.host}
+          <span className={'ws-conn' + (machine.connected ? ' on' : '')} />
+        </span>
+      )}
+      <button
+        className={'bnav' + (picking ? ' on' : '') + (pickBlocked ? ' dis' : '')}
+        aria-label={PICK_BUTTON_LABEL}
+        aria-pressed={picking}
+        title={pickBlocked ?? 'Pick an element and paste it into the session'}
+        disabled={!!pickBlocked}
+        onClick={onPick}
+      >
+        <IconPickElement size={16} />
+      </button>
       {actions}
       <button
         className="bnav"
@@ -128,7 +163,7 @@ export function BrowserAddressBar({
         title="Open in system browser"
         onClick={onExternalOpen}
       >
-        <LuExternalLink size={16} />
+        <IconOpenOutside size={16} />
       </button>
       {overflow}
       {loading && <span className="prog" />}

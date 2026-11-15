@@ -10,6 +10,7 @@ import {
   HIGHLIGHT_LEAD_IN,
   baseArg,
   baseUnresolved,
+  blocksPastBudget,
   buildEntries,
   classifyKind,
   commentBlocked,
@@ -19,6 +20,8 @@ import {
   isBigDiff,
   mergeSections,
   nearViewport,
+  passageAt,
+  passagePrompt,
   passesFilters,
   sectionsByPath,
   splitAggregateDiff,
@@ -30,7 +33,6 @@ import {
   type DiffSection
 } from '../../src/renderer/src/components/changesModel'
 import { DEFAULT_FILTERS, type ChangeFilters } from '../../src/renderer/src/components/filesModel'
-
 const NUL_BYTES_GIT_CALLS_BINARY = Buffer.from([0x00, 0x01, 0x02, 0x00, 0x41])
 const LINES_FOR_TWO_SEPARATE_HUNKS = 20
 
@@ -361,6 +363,51 @@ describe('hunkPrompt — what a ✎ comment puts in the session’s input box', 
   })
 })
 
+describe('passagePrompt — what a ✎ comment on a rendered Markdown file puts in the session’s input box', () => {
+  const plan = '# Retry plan\r\n\r\n- Wait **30 s**.\r\n- Give up after 3 tries.\r\n\r\nend\r\n'
+
+  it('pastes path:line, the file’s own lines in a markdown fence and the selected words; the note is typed after it', () => {
+    const p = passageAt('docs/plan.md', plan, [3, 4], 'Give up after 3 tries')
+    expect(passagePrompt(p, '  make it 5  ')).toEqual({
+      pasted: [
+        'docs/plan.md:4',
+        '```markdown',
+        '- Give up after 3 tries.',
+        '```',
+        'Selected: “Give up after 3 tries”',
+        '',
+        ''
+      ].join('\n'),
+      typed: 'make it 5'
+    })
+  })
+
+  it('names a range as path:first-last, leaves out the blank lines a list item ends with, and puts the selection on one line', () => {
+    const p = passageAt('docs/plan.md', plan, [2, 5], 'Wait 30 s.\nGive up')
+    expect(p).toEqual({
+      place: 'docs/plan.md:3-4',
+      source: '- Wait **30 s**.\n- Give up after 3 tries.',
+      selected: 'Wait 30 s. Give up'
+    })
+  })
+
+  it('cuts a long selection to its first 300 characters, since the file’s own lines already carry it whole', () => {
+    const p = passageAt('a.md', plan, [0, 1], 'word '.repeat(200))
+    expect(p.selected).toHaveLength(301)
+    expect(p.selected.endsWith('…')).toBe(true)
+  })
+
+  it('names only the path when the selected block has no lines, and still quotes the words', () => {
+    const p = passageAt('a.md', plan, null, 'raw html')
+    expect(passagePrompt(p, 'x').pasted).toBe('a.md\nSelected: “raw html”\n\n')
+  })
+
+  it('makes the fence longer than any run of backticks in the quoted lines', () => {
+    const p = passageAt('a.md', '````\ncode\n````\n', [0, 3], 'code')
+    expect(passagePrompt(p, '').pasted.split('\n')[1]).toBe('`````markdown')
+  })
+})
+
 describe('commentBlocked — a comment only goes to a running session that is not asking for an approval', () => {
   const session = (over: Partial<SessionInfo>): SessionInfo =>
     ({ tabId: 't', alive: true, status: 'idle', ...over }) as SessionInfo
@@ -501,6 +548,30 @@ describe('stableEntries', () => {
     expect(kept[0]).toBe(first[0])
     expect(kept[1]).not.toBe(first[1])
     expect(kept[1].delta).toEqual({ added: 3, removed: 0 })
+  })
+
+  it('hands back the previous list itself when no file moved, so a session push redraws and measures nothing', () => {
+    const snap = { '/w/a.ts': 'modified', '/w/b.ts': 'modified' } as const
+    const first = entries(snap, {})
+    expect(stableEntries(first, entries(snap, {}))).toBe(first)
+  })
+})
+
+describe('blocksPastBudget — the drawn rows stay bounded however far the stream is scrolled', () => {
+  const rows: Record<string, number> = { a: 3000, b: 3000, c: 3000 }
+  const rowsOf = (p: string): number => rows[p]
+
+  it('forgets the earliest-drawn blocks until the rest fit the budget', () => {
+    expect(blocksPastBudget(['a', 'b', 'c'], rowsOf, () => false, 5000)).toEqual(['a', 'b'])
+  })
+
+  it('never forgets a block that must stay — on screen, or holding the selection — even past the budget', () => {
+    expect(blocksPastBudget(['a', 'b', 'c'], rowsOf, (p) => p === 'a', 5000)).toEqual(['b', 'c'])
+    expect(blocksPastBudget(['a', 'b', 'c'], rowsOf, () => true, 5000)).toEqual([])
+  })
+
+  it('forgets nothing while the drawn rows fit', () => {
+    expect(blocksPastBudget(['a'], rowsOf, () => false, 5000)).toEqual([])
   })
 })
 

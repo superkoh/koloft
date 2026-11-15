@@ -69,8 +69,6 @@ test.describe('browser extensions (black-box cases; BB-M12 needs the real Web St
     return found
   }
 
-  const PINNED_FILES_TAB_LABEL = 'Files'
-
   async function showWorkbench(page: Page): Promise<void> {
     await expect(globeIcon(page)).toBeVisible({ timeout: 30_000 })
     await openBrowser(page)
@@ -420,8 +418,10 @@ test.describe('browser extensions (black-box cases; BB-M12 needs the real Web St
       await expect(rowA).toHaveClass(/\bactive\b/, { timeout: 20_000 })
       await showWorkbench(page)
       await expect
-        .poll(() => wbTabTitles(page), { timeout: 20_000 })
-        .toEqual([PINNED_FILES_TAB_LABEL, 'M10A'])
+        .poll(() => openTabs(page).locator(BROWSER.tabLabel).allTextContents(), {
+          timeout: 20_000
+        })
+        .toEqual(['M10A'])
     } finally {
       await app.close().catch(() => {})
       await server.close()

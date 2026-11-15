@@ -2,9 +2,24 @@ import { describe, it, expect } from 'vitest'
 import {
   fullscreenOption,
   usableBounds,
+  usableSessionScreen,
   windowMinWidth,
   type WinBounds
 } from '../../src/main/windowBounds'
+
+describe('windowState: the saved session screen size opens a terminal only when it is whole cells', () => {
+  it('keeps a size of whole positive cells, and drops a missing, partial or broken one', () => {
+    expect(usableSessionScreen({ cols: 140, rows: 49 })).toEqual({ cols: 140, rows: 49 })
+    for (const broken of [
+      undefined,
+      'wat',
+      { cols: 140 },
+      { cols: 0, rows: 49 },
+      { cols: 1.5, rows: 49 }
+    ])
+      expect(usableSessionScreen(broken)).toBeUndefined()
+  })
+})
 
 // PLATFORM§5
 describe('windowState: fullscreen restore must never pass an explicit false', () => {

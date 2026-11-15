@@ -1,10 +1,15 @@
 import DOMPurify from 'dompurify'
 import { fnv1a32 } from '@shared/fnv1a'
+import { loadMonoFonts } from './monoFonts'
 
 type MermaidApi = (typeof import('mermaid'))['default']
 
 // PLATFORM§26
 export const MERMAID_MAX_TEXT_SIZE = 50000
+
+// PLATFORM§26
+const DAGRE = { layout: 'dagre' } as const
+const NODE_WIDTHS_OF_11 = { wrappingWidth: 200, minNodeWidth: 0 } as const
 
 const CACHE_LIMIT = 50
 
@@ -52,8 +57,9 @@ function appFontFamily(): string {
 
 let mermaidPromise: Promise<MermaidApi> | null = null
 function getMermaid(): Promise<MermaidApi> {
-  return (mermaidPromise ??= import('mermaid')
-    .then(({ default: mermaid }) => {
+  // PLATFORM§66
+  return (mermaidPromise ??= Promise.all([import('mermaid'), loadMonoFonts(appFontFamily())])
+    .then(([{ default: mermaid }]) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
@@ -74,8 +80,13 @@ function getMermaid(): Promise<MermaidApi> {
         ],
         // PLATFORM§26
         htmlLabels: false,
-        flowchart: { htmlLabels: false },
-        class: { htmlLabels: false },
+        theme: 'default',
+        look: 'classic',
+        flowchart: { htmlLabels: false, ...DAGRE, ...NODE_WIDTHS_OF_11 },
+        class: { htmlLabels: false, ...DAGRE },
+        state: { ...DAGRE, ...NODE_WIDTHS_OF_11 },
+        er: DAGRE,
+        requirement: DAGRE,
         fontFamily: appFontFamily()
       })
       return mermaid
@@ -105,6 +116,14 @@ function messageOf(err: unknown): string {
   return raw.trim() || 'The diagram could not be rendered.'
 }
 
+function svgFromCache(key: string, id: string): string | undefined {
+  return cache.get(key)?.split(ID_SLOT).join(selectorSafeId(id))
+}
+
+export function cachedDiagram(code: string, id: string): string | undefined {
+  return svgFromCache(hashCode(code.trim()), id)
+}
+
 export async function renderDiagram(
   code: string,
   id: string
@@ -119,8 +138,8 @@ export async function renderDiagram(
   }
 
   const key = hashCode(src)
-  const cached = cache.get(key)
-  if (cached !== undefined) return { ok: true, svg: cached.split(ID_SLOT).join(selectorSafeId(id)) }
+  const cached = svgFromCache(key, id)
+  if (cached !== undefined) return { ok: true, svg: cached }
 
   let mermaid: MermaidApi
   try {

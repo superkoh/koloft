@@ -1,0 +1,293 @@
+import fs from 'fs'
+import path from 'path'
+import { formatRemoteKey } from '@shared/remoteKey'
+import type { GitAccount, GitAccountRemoveResult, GitRepoPick } from '@shared/types'
+import { accountConfigText, fileNameOf, gitAccountFiles } from './gitConfigFile'
+import type { GhResult } from './prChecks'
+import { problemOf, type RunResult } from './remote/ssh'
+import {
+  CLUE_ALL,
+  CLUE_ENV_STEP,
+  CLUE_FILE_STEP,
+  CLUE_GIT,
+  CLUE_READ_WITHOUT_TOKENS,
+  CLUE_SSH,
+  FORGET_SECRETS,
+  HELPER_ANSWERS,
+  INCLUDE_IF_FIRST_GIT,
+  INSTALL_GCM,
+  MACHINE_GH,
+  MACHINE_LOGIN_PATH,
+  MACHINE_PREFLIGHT,
+  RECEIVE_FILES,
+  REMOTE_URLS_LINE_TAG,
+  REMOTE_URLS_OF_EACH,
+  REPO_KEYS,
+  REPO_KEYS_LINE_TAG,
+  SYNC_FILES,
+  absoluteLoginPath,
+  clueKey,
+  fileLines,
+  gcmDownload,
+  machineGhMissing,
+  machineHelperScript,
+  machinePaths,
+  parseClueAll,
+  parseClueEnv,
+  parsePreflight,
+  type MachineFacts
+} from './remote/gitAccounts'
+import type { GitRunResult } from './gitSteps'
+import type { SuggestDeps } from './gitAccountSuggest'
+
+const GCM_INSTALL_TIMEOUT_MS = 5 * 60_000
+const MACHINE_STEP_TIMEOUT_MS = 30_000
+const LOGIN_PATH_KEPT_MS = 30 * 60_000
+const FAILED_LOGIN_PATH_ASK_KEPT_MS = 60_000
+
+export type MachineRun = (
+  machine: string,
+  script: string,
+  args?: string[],
+  opts?: { input?: string; timeoutMs?: number }
+) => Promise<RunResult>
+
+export type MachineReady =
+  { ok: true } | { ok: false; error: 'machine'; message: string } | { ok: false; error: 'no-gcm' }
+
+export async function throughTempStore<T>(
+  root: string,
+  job: (dir: string) => Promise<T>
+): Promise<T> {
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 })
+  const dir = fs.mkdtempSync(path.join(root, 'store-'))
+  try {
+    return await job(dir)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+function filesUnder(dir: string): Map<string, Buffer> {
+  const out = new Map<string, Buffer>()
+  for (const rel of fs.readdirSync(dir, { recursive: true }) as string[]) {
+    const full = path.join(dir, rel)
+    if (fs.statSync(full).isFile()) out.set(rel, fs.readFileSync(full))
+  }
+  return out
+}
+
+export class GitMachineAccounts {
+  private facts = new Map<string, MachineFacts>()
+  private loginPaths = new Map<string, { until: number; path: Promise<string> }>()
+
+  constructor(private run: MachineRun) {}
+
+  async factsFor(machine: string): Promise<MachineFacts | undefined> {
+    if (!this.facts.has(machine)) await this.ready(machine, false)
+    return this.facts.get(machine)
+  }
+
+  async ready(machine: string, needGcm: boolean): Promise<MachineReady> {
+    const r = await this.run(machine, MACHINE_PREFLIGHT, [], { timeoutMs: MACHINE_STEP_TIMEOUT_MS })
+    const facts = r.code === 0 ? parsePreflight(r.stdout) : null
+    if (!facts)
+      return {
+        ok: false,
+        error: 'machine',
+        message: `Koloft could not reach ${machine} (${problemOf(r)}).`
+      }
+    this.facts.set(machine, facts)
+    const need = `${INCLUDE_IF_FIRST_GIT[0]}.${INCLUDE_IF_FIRST_GIT[1]}`
+    if (!facts.git)
+      return {
+        ok: false,
+        error: 'machine',
+        message: `${machine} has no git. Install git there, then add the account again.`
+      }
+    if (facts.gitTooOld)
+      return {
+        ok: false,
+        error: 'machine',
+        message: `git on ${machine} is ${facts.git}; git accounts need git ${need} or newer there. Update git on ${machine}, then add the account again.`
+      }
+    if (!needGcm || facts.gcm) return { ok: true }
+    const download = facts.gcmAsset && gcmDownload(facts.gcmAsset)
+    if (!download) return { ok: false, error: 'no-gcm' }
+    if (!facts.fetch)
+      return {
+        ok: false,
+        error: 'machine',
+        message: `${machine} has neither curl nor wget, so Koloft cannot fetch the sign-in tool there. Install one of them on ${machine}, then add the account again.`
+      }
+    const installed = await this.run(machine, INSTALL_GCM, [download.url, download.sha256], {
+      timeoutMs: GCM_INSTALL_TIMEOUT_MS
+    })
+    if (installed.code !== 0) return { ok: false, error: 'no-gcm' }
+    this.facts.set(machine, { ...facts, gcm: true })
+    return { ok: true }
+  }
+
+  async writeToken(machine: string, a: GitAccount, token: string): Promise<boolean> {
+    const lines = fileLines(new Map([[fileNameOf(a.id), token]]))
+    const r = await this.run(machine, RECEIVE_FILES, ['secrets'], {
+      input: lines,
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    })
+    return r.code === 0
+  }
+
+  // PLATFORM§55 ADR-0036
+  async moveGcmStore(machine: string, dir: string): Promise<boolean> {
+    const files = filesUnder(dir)
+    fs.rmSync(dir, { recursive: true, force: true })
+    if (!files.size) return false
+    const r = await this.run(machine, RECEIVE_FILES, ['gcm-store'], {
+      input: fileLines(files),
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    })
+    return r.code === 0
+  }
+
+  async helperAnswers(machine: string, a: GitAccount): Promise<boolean> {
+    const r = await this.run(machine, HELPER_ANSWERS, [`accounts/${fileNameOf(a.id)}.sh`, a.id], {
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    })
+    return r.code === 0
+  }
+
+  async forget(machine: string, a: GitAccount): Promise<GitAccountRemoveResult> {
+    const r = await this.run(machine, FORGET_SECRETS, [
+      a.gcmNamespace ? '' : fileNameOf(a.id),
+      a.gcmNamespace ?? ''
+    ])
+    return r.code === 0 ? { ok: true } : { ok: false, problem: problemOf(r) }
+  }
+
+  async sync(
+    machine: string,
+    accounts: GitAccount[],
+    picks: GitRepoPick[],
+    pickTexts: Map<string, string>
+  ): Promise<boolean> {
+    const facts = await this.factsFor(machine)
+    if (!facts) return false
+    const p = machinePaths(facts.home, fileNameOf)
+    const files = gitAccountFiles(
+      p.dir,
+      picks,
+      accounts,
+      (a) => accountConfigText(a, p.helper(a), true),
+      pickTexts
+    )
+    const rel = (f: string): string => f.slice(p.dir.length + 1)
+    const out = new Map<string, string>()
+    for (const [file, text] of files.accounts) out.set(rel(file), text)
+    for (const a of accounts) out.set(rel(p.helper(a)), machineHelperScript(a, p))
+    for (const [file, text] of files.picks) out.set(rel(file), text ?? '')
+    out.set(rel(files.master[0]), files.master[1])
+    const r = await this.run(machine, SYNC_FILES, [], {
+      input: fileLines(out),
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    })
+    return r.code === 0
+  }
+
+  async repoKeys(machine: string, paths: string[]): Promise<(string | null)[]> {
+    if (!paths.length) return []
+    const r = await this.run(machine, REPO_KEYS, paths)
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REPO_KEYS_LINE_TAG))
+      .map((l) => l.slice(REPO_KEYS_LINE_TAG.length).replace(/\r$/, ''))
+    if (r.code !== 0 || lines.length !== paths.length) return paths.map(() => null)
+    return lines.map((real) => (real.startsWith('/') ? formatRemoteKey(machine, real) : null))
+  }
+
+  async remoteUrlsOfEach(machine: string, repos: string[]): Promise<string[] | null> {
+    if (!repos.length) return []
+    const r = await this.run(machine, REMOTE_URLS_OF_EACH, repos)
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REMOTE_URLS_LINE_TAG))
+      .map((l) => Buffer.from(l.slice(REMOTE_URLS_LINE_TAG.length).trim(), 'base64').toString())
+    return r.code === 0 && lines.length === repos.length ? lines : null
+  }
+
+  private knownLoginPath(machine: string): Promise<string> | undefined {
+    const known = this.loginPaths.get(machine)
+    return known && Date.now() < known.until ? known.path : undefined
+  }
+
+  // PLATFORM§33
+  private askLoginPath(machine: string): Promise<string> {
+    const asked = Date.now()
+    const kept = { until: asked + LOGIN_PATH_KEPT_MS, path: Promise.resolve('') }
+    kept.path = this.run(machine, MACHINE_LOGIN_PATH, [], {
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    }).then((r) => {
+      if (r.code === 0) return absoluteLoginPath(r.stdout)
+      kept.until = asked + FAILED_LOGIN_PATH_ASK_KEPT_MS
+      return ''
+    })
+    this.loginPaths.set(machine, kept)
+    return kept.path
+  }
+
+  loginPath(machine: string): Promise<string> {
+    return this.knownLoginPath(machine) ?? this.askLoginPath(machine)
+  }
+
+  async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {
+    const ghWith = (loginPath: string): Promise<RunResult> =>
+      this.run(machine, MACHINE_GH, [repoDir, loginPath, ...args], {
+        timeoutMs: MACHINE_STEP_TIMEOUT_MS
+      })
+    const done = (r: RunResult): GhResult => ({ ...r, missing: machineGhMissing(r.code) })
+    const known = this.knownLoginPath(machine)
+    const r = await ghWith(known ? await known : '')
+    if (known || !machineGhMissing(r.code)) return done(r)
+    const loginPath = await this.loginPath(machine)
+    return done(loginPath ? await ghWith(loginPath) : r)
+  }
+
+  async clueGit(
+    machine: string,
+    cwd: string,
+    args: string[],
+    input?: string
+  ): Promise<GitRunResult> {
+    return this.run(machine, CLUE_GIT, [cwd, ...args], { input })
+  }
+
+  async clueSsh(machine: string, args: string[]): Promise<GitRunResult> {
+    return this.run(machine, CLUE_SSH, args, { timeoutMs: MACHINE_STEP_TIMEOUT_MS })
+  }
+
+  async clueFile(machine: string, file: string): Promise<string | null> {
+    const r = await this.run(machine, CLUE_READ_WITHOUT_TOKENS, [file])
+    return r.code === 0 ? r.stdout : null
+  }
+
+  async cluesIn(machine: string, dir: string): Promise<MachineClues> {
+    const r = await this.run(machine, CLUE_ALL, [dir], { timeoutMs: MACHINE_STEP_TIMEOUT_MS })
+    const answers = parseClueAll(r.stdout)
+    const answered = (words: string[], input?: string): GitRunResult | undefined =>
+      answers.get(clueKey(words, input))
+    const env = answered([CLUE_ENV_STEP])
+    return {
+      env: env ? parseClueEnv(env.stdout) : {},
+      git: async (cwd, args, { input }) =>
+        (cwd === dir ? answered(['git', ...args], input) : undefined) ??
+        this.clueGit(machine, cwd, args, input),
+      ssh: async (args) => answered(['ssh', ...args]) ?? this.clueSsh(machine, args),
+      readFile: async (file) => {
+        const read = answered([CLUE_FILE_STEP, file])
+        if (!read) return this.clueFile(machine, file)
+        return read.code === 0 ? read.stdout : null
+      }
+    }
+  }
+}
+
+export type MachineClues = Pick<SuggestDeps, 'env' | 'git' | 'ssh' | 'readFile'>

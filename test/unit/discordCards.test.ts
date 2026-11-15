@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  cardMessages,
-  IS_COMPONENTS_V2,
-  SUPPRESS_NOTIFICATIONS,
-  TEXT_DISPLAY_LIMIT
-} from '../../src/main/discord/cards'
+import { cardMessages, IS_COMPONENTS_V2, TEXT_DISPLAY_LIMIT } from '../../src/main/discord/cards'
 
 type Container = { components: { type: number; content?: string; components?: unknown[] }[] }
 
@@ -34,11 +29,8 @@ describe('a card is a Components V2 message', () => {
     expect(texts(messages.at(-1)!).join('\n')).toContain('line 600 of a long reply')
   })
 
-  it('is flagged as Components V2, and a quiet card also as silent', () => {
+  it('is flagged as Components V2', () => {
     expect(cardMessages({ accent: 1, header: 'h' })[0].flags).toBe(IS_COMPONENTS_V2)
-    expect(cardMessages({ accent: 1, header: 'h', silent: true })[0].flags).toBe(
-      IS_COMPONENTS_V2 | SUPPRESS_NOTIFICATIONS
-    )
   })
 
   it('rewrites a table in the body the way plain messages are rewritten', () => {

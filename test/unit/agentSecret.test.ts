@@ -1,0 +1,228 @@
+import { describe, expect, it } from 'vitest'
+import {
+  FILLED,
+  FILLED_AND_EMPTIED,
+  NO_SUCH_FIELD,
+  NOT_IN_TIME,
+  NOT_LOOPBACK,
+  OWNER_ASLEEP,
+  OWNER_DECLINED,
+  OWNER_FILLED,
+  OWNER_FILLED_AND_EMPTIED,
+  PAGE_CHANGED,
+  secretVerb,
+  type FieldPage,
+  type SecretVerbDeps
+} from '../../src/main/agentSecret'
+import type { SecretAnswer, SecretAsk } from '../../src/main/discord/secretAsks'
+import type { AgentCaller } from '../../src/main/agentRequests'
+import type { SessionInfo } from '../../src/shared/types'
+
+const session = { tabId: 'tab-1', title: 'Fix login' } as SessionInfo
+
+function caller(): AgentCaller {
+  return { tabId: 'tab-1', cwd: '/w', session }
+}
+
+interface FakeField {
+  count: number
+  label?: string
+  keptAfterSubmit?: boolean
+}
+
+function page(url: string, field: FakeField, run: string[] = []): FieldPage & { url_: string } {
+  const p = {
+    guestId: 7,
+    url_: url,
+    url: () => p.url_,
+    run: async (script: string) => {
+      run.push(script)
+      if (script.includes('requestSubmit')) return field.count === 1
+      if (script.includes("set(els[0], '')")) return !!field.keptAfterSubmit
+      return { count: field.count, label: field.label }
+    }
+  }
+  return p
+}
+
+const typed = (text: string): SecretAnswer => ({ typed: text })
+const DONE_IN_KOLOFT: SecretAnswer = { doneInKoloft: true }
+
+function setup(over: Partial<SecretVerbDeps> = {}, answer: SecretAnswer = typed('pw')) {
+  const asked: SecretAsk[] = []
+  const opened: string[] = []
+  const shown: string[] = []
+  const verb = secretVerb({
+    ask: async (a) => {
+      asked.push(a)
+      return answer
+    },
+    sessionTab: (tabId) => tabId,
+    ownerAsleep: () => false,
+    machine: () => undefined,
+    pages: () => [],
+    showSignIn: (_tab, url) => void shown.push(url),
+    open: async (_tab, url) => {
+      opened.push(url)
+      return '200'
+    },
+    sleep: async () => undefined,
+    ...over
+  })
+  return { verb, asked, opened, shown }
+}
+
+describe('koloft secret sudo (what Koloft’s password helper runs)', () => {
+  it('shows the owner the command that asked, and prints the password only for sudo', async () => {
+    const { verb, asked } = setup()
+    const r = await verb(
+      ['sudo', 'Password:', '/usr/bin/sudo -A brew services restart nginx'],
+      caller()
+    )
+    expect(r).toEqual({ exit: 0, text: 'pw' })
+    expect(asked[0].header('fix-login')).toContain('sudo password')
+    expect(asked[0].body).toContain('/usr/bin/sudo -A brew services restart nginx')
+    expect(asked[0].shape).toEqual({
+      kind: 'sudo',
+      command: '/usr/bin/sudo -A brew services restart nginx',
+      prompt: 'Password:'
+    })
+  })
+
+  it('turned down by the owner, or with no answer in time, sudo gets nothing and is told which', async () => {
+    const declined = setup({}, { ended: 'declined' })
+    expect((await declined.verb(['sudo', 'Password:', 'x'], caller())).text).toBe(OWNER_DECLINED)
+    const late = setup({}, { ended: 'timeout' })
+    expect((await late.verb(['sudo', 'Password:', 'x'], caller())).text).toBe(NOT_IN_TIME)
+  })
+
+  it('while the owner is asleep, sudo is told so at once and nothing is asked on Discord, so the phone stays quiet', async () => {
+    const { verb, asked } = setup({ ownerAsleep: () => true })
+    expect((await verb(['sudo', 'Password:', 'x'], caller())).text).toBe(OWNER_ASLEEP)
+    expect(asked).toEqual([])
+  })
+})
+
+describe('koloft secret page', () => {
+  it('fills the one field the selector matches, names its site and field to the owner, and says it submitted', async () => {
+    const scripts: string[] = []
+    const p = page(
+      'https://accounts.example.com/login?x=1',
+      { count: 1, label: 'Password' },
+      scripts
+    )
+    const { verb, asked } = setup({ pages: () => [p] })
+    const r = await verb(['page', 'input[type=password]'], caller())
+    expect(r).toEqual({ exit: 0, text: FILLED })
+    expect(asked[0].body).toContain('https://accounts.example.com')
+    expect(asked[0].body).toContain('Password')
+    expect(asked[0].body).not.toContain('x=1')
+  })
+
+  it('a field still holding the text after the submit is emptied, so a later look at the page cannot read it', async () => {
+    const p = page('https://a.example', { count: 1, label: 'Code', keptAfterSubmit: true })
+    const { verb } = setup({ pages: () => [p] })
+    expect((await verb(['page', '#otp'], caller())).text).toBe(FILLED_AND_EMPTIED)
+  })
+
+  it('at the Mac, Koloft puts the caret in the field, asks about that page by its guest, and when the owner filled it in there, fills nothing itself but still empties a field the page kept', async () => {
+    const scripts: string[] = []
+    const p = page('https://a.example/login', { count: 1, label: 'Password' }, scripts)
+    const { verb, asked } = setup({ pages: () => [p] }, DONE_IN_KOLOFT)
+    expect((await verb(['page', '#pw'], caller())).text).toBe(OWNER_FILLED)
+    expect(scripts.some((s) => s.includes('.focus()'))).toBe(true)
+    expect(asked[0].shape).toEqual({
+      kind: 'page',
+      guestId: 7,
+      url: 'https://a.example/login',
+      label: 'Password'
+    })
+    expect(scripts.some((s) => s.includes('requestSubmit'))).toBe(false)
+    const kept = page('https://a.example', { count: 1, label: 'Code', keptAfterSubmit: true })
+    const again = setup({ pages: () => [kept] }, DONE_IN_KOLOFT)
+    expect((await again.verb(['page', '#otp'], caller())).text).toBe(OWNER_FILLED_AND_EMPTIED)
+  })
+
+  it('asks nothing, and touches no field, unless exactly one field in all open pages matches', async () => {
+    const scripts: string[] = []
+    for (const pages of [
+      [],
+      [page('https://a.example', { count: 2 }, scripts)],
+      [
+        page('https://a.example', { count: 1, label: 'x' }, scripts),
+        page('https://b.example', { count: 1, label: 'y' }, scripts)
+      ]
+    ]) {
+      const { verb, asked } = setup({ pages: () => pages })
+      expect((await verb(['page', 'input'], caller())).text).toBe(NO_SUCH_FIELD)
+      expect(asked).toEqual([])
+    }
+    expect(scripts.some((s) => s.includes('.focus()'))).toBe(false)
+  })
+
+  it('fills nothing when the page went to another site while the owner answered', async () => {
+    const p = page('https://a.example/login', { count: 1, label: 'Password' })
+    const { verb } = setup({
+      pages: () => [p],
+      ask: async () => {
+        p.url_ = 'https://evil.example/'
+        return typed('pw')
+      }
+    })
+    expect((await verb(['page', '#pw'], caller())).text).toBe(PAGE_CHANGED)
+  })
+})
+
+describe('koloft secret url', () => {
+  it('opens a pasted 127.0.0.1 or localhost address on the session’s machine and says what it answered', async () => {
+    const { verb, opened, asked } = setup(
+      {},
+      typed(' http://127.0.0.1:1455/auth/callback?code=c&state=s ')
+    )
+    const r = await verb(['url', 'https://auth.example/authorize?x'], caller())
+    expect(opened).toEqual(['http://127.0.0.1:1455/auth/callback?code=c&state=s'])
+    expect(r.text).toContain('answered 200')
+    expect(asked[0].body).toContain('https://auth.example/authorize?x')
+  })
+
+  it('opens the address on the machine it named to the owner, even when the tab has left that machine by the time the owner answers', async () => {
+    const where = ['devbox']
+    const machines: (string | undefined)[] = []
+    const { verb } = setup(
+      {
+        machine: () => where.shift(),
+        open: async (machine) => {
+          machines.push(machine)
+          return '200'
+        }
+      },
+      typed('http://127.0.0.1:1455/auth/callback?code=c')
+    )
+    const r = await verb(['url', 'https://auth.example'], caller())
+    expect(machines).toEqual(['devbox'])
+    expect(r.text).toContain('opened the address on devbox')
+  })
+
+  it('Koloft opens the sign-in in the session’s Workbench; finished there, the session hears where it ended, never the address with its code', async () => {
+    const { verb, opened, shown } = setup({ machine: () => 'devbox' }, DONE_IN_KOLOFT)
+    const r = await verb(['url', 'https://auth.example/authorize?x'], caller())
+    expect(shown).toEqual(['https://auth.example/authorize?x'])
+    expect(opened).toEqual([])
+    expect(r).toEqual({
+      exit: 0,
+      text: "The owner finished the sign-in in this session's Workbench, and its last page loaded on devbox."
+    })
+  })
+
+  it('anything that is not a loopback http address is not opened', async () => {
+    for (const pasted of [
+      'https://evil.example/cb?code=c',
+      'http://10.0.0.2:1455/cb',
+      'not a url'
+    ]) {
+      const { verb, opened } = setup({}, typed(pasted))
+      expect((await verb(['url', 'https://auth.example'], caller())).text).toBe(NOT_LOOPBACK)
+      expect(opened).toEqual([])
+    }
+  })
+})

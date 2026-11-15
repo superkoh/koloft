@@ -7,25 +7,28 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type JSX,
   type MouseEvent as ReactMouseEvent,
   type RefObject
 } from 'react'
 import type { ArtifactView, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
-import { parseUnifiedDiff, type ParsedDiff } from '../inlineDiff'
-import { highlightCode, langForPath } from '../highlight'
+import { parseUnifiedDiff, type ParsedDiff } from '@shared/unifiedDiff'
+import { langForPath } from '../highlight'
+import { highlightCodeOffThread } from '../offThread'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
-import { isComposing } from '../keys'
+import { keepCaretInSessionTerminal } from '../keys'
+import { CommentBox, type CommentTarget } from './CommentBox'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
   baseArg,
   baseUnresolved,
+  blocksPastBudget,
   buildEntries,
-  commentBlocked,
   emptyStreamMessage,
   groupByDir,
   hunkPrompt,
@@ -44,10 +47,14 @@ import {
   type HunkPrompt
 } from './changesModel'
 import '../changesView.css'
+import '../fileTree.css'
+import '../inlineDiff.css'
 
 export interface ChangesViewProps {
   root: string
   base: string | null | undefined
+  firstReadFailed: boolean
+  onReread: () => void
   git: GitStatusMap
   numstat: GitNumstatMap
   filters: ChangeFilters
@@ -60,7 +67,7 @@ export interface ChangesViewProps {
   onSplit: (path: string, view: ArtifactView, scrollTop: number) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   onScrollRequest: (rel: string) => void
-  onReturnFocus: () => void
+  commentTo: CommentTarget
   streamRef: RefObject<HTMLDivElement | null>
 }
 
@@ -97,6 +104,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const {
     root,
     base,
+    firstReadFailed,
+    onReread,
     git,
     numstat,
     filters,
@@ -109,7 +118,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     onSplit,
     onContextMenu,
     onScrollRequest,
-    onReturnFocus,
+    commentTo,
     streamRef
   } = props
 
@@ -139,7 +148,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     () => buildEntries({ git, numstat, root, written, sections }),
     [git, numstat, root, written, sections]
   )
-  const kept = useRef<ChangeEntry[]>([])
+  const kept = useRef<readonly ChangeEntry[]>([])
   const entries = useMemo(() => {
     const next = stableEntries(kept.current, fresh)
     kept.current = next
@@ -170,6 +179,21 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     setExpandCut({})
     setOpened({})
   }, [refreshNonce, base, root])
+
+  useEffect(() => {
+    if (baseUnresolved(base)) return
+    const onlyStillChanged = <T,>(prev: Record<string, T>): Record<string, T> => {
+      const gone = Object.keys(prev).filter((p) => !(p in git))
+      if (!gone.length) return prev
+      const next = { ...prev }
+      for (const p of gone) delete next[p]
+      return next
+    }
+    setExpanded(onlyStillChanged)
+    setExpandCut(onlyStillChanged)
+    setOpened(onlyStillChanged)
+    setBlockView(onlyStillChanged)
+  }, [git, base])
 
   const trigger = useRef({ refreshNonce, retryNonce, base, root })
   const failed = useRef(false)
@@ -248,7 +272,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       if (!wanted.length) setPerFile((prev) => mergeSections(prev, {}))
       else setLoad((l) => (l.backfill ? { ...l, backfill: false } : l))
 
-      const open = Object.keys(expandedRef.current)
+      const open = Object.keys(expandedRef.current).filter((p) => p in git)
       if (open.length) {
         const got = await Promise.all(
           open.map((p) =>
@@ -266,7 +290,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
         })
         setExpandCut((prev) => {
           const next = { ...prev }
-          for (const hit of got) if (hit) next[hit[0]] = hit[2]
+          for (const hit of got)
+            if (hit && expandedRef.current[hit[0]] !== undefined) next[hit[0]] = hit[2]
           return next
         })
       }
@@ -278,7 +303,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   }, [active, root, base, refreshNonce, retryNonce, git, numstat])
 
   const obs = useRef<IntersectionObserver | null>(null)
-  const watched = useRef(new Set<HTMLElement>())
+  const watched = useRef(new Map<string, HTMLElement>())
 
   const markVisible = useCallback((els: Iterable<HTMLElement>): void => {
     const stream = streamEl.current
@@ -293,17 +318,29 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       const box = el.getBoundingClientRect()
       if (box.height > 0 && nearViewport(box, view)) hit.push(p)
     }
-    if (!hit.length) return
+    const blocks = watched.current
+    const rowsOf = (p: string): number => Number(blocks.get(p)?.dataset.rows ?? 0)
+    const stays = (p: string): boolean => {
+      const el = blocks.get(p)
+      if (!el) return false
+      return (
+        nearViewport(el.getBoundingClientRect(), view) ||
+        !!document.getSelection()?.containsNode(el, true)
+      )
+    }
     setSeen((prev) => {
       const next = { ...prev }
-      let added = false
+      let changed = false
       for (const p of hit) {
-        if (!next[p]) {
-          next[p] = true
-          added = true
-        }
+        if (next[p]) continue
+        next[p] = true
+        changed = true
       }
-      return added ? next : prev
+      for (const p of blocksPastBudget(Object.keys(next), rowsOf, stays)) {
+        delete next[p]
+        changed = true
+      }
+      return changed ? next : prev
     })
   }, [])
 
@@ -320,10 +357,11 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   const observe = useCallback(
     (el: HTMLElement): (() => void) => {
-      watched.current.add(el)
+      const p = el.dataset.abs ?? ''
+      watched.current.set(p, el)
       ensureObs()?.observe(el)
       return () => {
-        watched.current.delete(el)
+        if (watched.current.get(p) === el) watched.current.delete(p)
         obs.current?.unobserve(el)
       }
     },
@@ -332,8 +370,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   useLayoutEffect(() => {
     const o = ensureObs()
-    if (o) for (const el of watched.current) o.observe(el)
-    markVisible(watched.current)
+    if (o) for (const el of watched.current.values()) o.observe(el)
+    markVisible(watched.current.values())
   }, [sections, shown, ensureObs, markVisible])
 
   useEffect(
@@ -373,15 +411,16 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
         return
       }
       const gen = expandResetGen.current
+      const stillWanted = (): boolean => gen === expandResetGen.current && path in gitRef.current
       void window.api.fs
         .gitFileDiffFull(path, baseArg(base), gitRef.current[path] === 'untracked')
         .then((r) => {
-          if (gen !== expandResetGen.current) return
+          if (!stillWanted()) return
           setExpanded((prev) => ({ ...prev, [path]: r.text }))
           setExpandCut((prev) => ({ ...prev, [path]: r.truncated }))
         })
         .catch(() => {
-          if (gen !== expandResetGen.current) return
+          if (!stillWanted()) return
           setExpanded((prev) => ({ ...prev, [path]: '' }))
         })
     },
@@ -415,16 +454,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [onScrollRequest]
   )
 
-  const pasteTab = session?.tabId ?? null
-  const blocked = commentBlocked(session)
-  const putInSession = useCallback(
-    async ({ pasted, typed }: HunkPrompt): Promise<void> => {
-      if (!pasteTab) return
-      await window.api.terminal.paste(pasteTab, pasted, typed)
-      onReturnFocus()
-    },
-    [pasteTab, onReturnFocus]
-  )
+  const { blocked, put: putInSession } = commentTo
 
   const listEl = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -447,10 +477,14 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [split]
   )
 
-  const banner = load.failed ? (
+  const gitFailed = load.failed || firstReadFailed
+  const banner = gitFailed ? (
     <div className="cv-banner cv-banner-err" role="status">
       <span>{MSG.gitFailed}</span>
-      <button className="cv-retry" onClick={() => setRetryNonce((n) => n + 1)}>
+      <button
+        className="cv-retry"
+        onClick={() => (load.failed ? setRetryNonce((n) => n + 1) : onReread())}
+      >
         Retry
       </button>
     </div>
@@ -514,7 +548,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       <div className="cv-stream" ref={streamEl}>
         {banner}
         {shown.length === 0
-          ? !load.failed && (
+          ? !gitFailed && (
               <div className="fv-empty cv-empty">
                 <p>{emptyMsg}</p>
               </div>
@@ -569,7 +603,7 @@ interface BlockProps {
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
-  onComment: (prompt: HunkPrompt) => Promise<void>
+  onComment: (prompt: HunkPrompt) => void
 }
 
 const ChangeBlock = memo(function ChangeBlock({
@@ -603,10 +637,16 @@ const ChangeBlock = memo(function ChangeBlock({
   const special = entry.kind !== 'text'
   const parsable = !special || entry.kind === 'renamed'
   const folded = parsable && !opened && !isExpanded && isBigDiff(diffText)
+  const showsRows = view === 'diff' && (!special || opened)
   const hunks = useMemo(
-    () => (parsable && !folded ? splitHunks(diffText) : []),
-    [parsable, folded, diffText]
+    () =>
+      parsable && !folded && showsRows
+        ? splitHunks(diffText).map((h) => ({ ...h, parsed: parseUnifiedDiff(h.text) }))
+        : [],
+    [parsable, folded, showsRows, diffText]
   )
+  const rows = hunks.reduce((n, h) => n + Math.min(h.parsed.rows.length, MAX_INLINE_ROWS), 0)
+  const drawnSize = { '--rows': rows, '--hunks': hunks.length } as CSSProperties
 
   const body = ((): JSX.Element => {
     if (view === 'source') {
@@ -683,6 +723,8 @@ const ChangeBlock = memo(function ChangeBlock({
       data-kind={entry.kind}
       data-status={entry.status}
       data-ready={hasFinalHeight ? '1' : undefined}
+      data-rows={rows}
+      style={drawnSize}
       onContextMenu={(e) => onContextMenu(e, entry.path, false)}
     >
       <div className="cv-blk-hd">
@@ -708,6 +750,7 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={view === 'diff' ? 'on' : undefined}
             aria-pressed={view === 'diff'}
+            onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'diff')}
           >
             Diff
@@ -715,6 +758,7 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={view === 'source' ? 'on' : undefined}
             aria-pressed={view === 'source'}
+            onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'source')}
           >
             Source
@@ -739,13 +783,13 @@ function Hunks({
   onToggleExpand,
   onComment
 }: {
-  hunks: { header: string; text: string }[]
+  hunks: { header: string; text: string; parsed: ParsedDiff }[]
   entry: ChangeEntry
   seen: boolean
   expanded: boolean
   blocked: string | null
   onToggleExpand: (path: string) => void
-  onComment: (prompt: HunkPrompt) => Promise<void>
+  onComment: (prompt: HunkPrompt) => void
 }): JSX.Element {
   const [commentedHunk, setCommentedHunk] = useState<string | null>(null)
   const commenting = hunks.findIndex((h) => h.text === commentedHunk)
@@ -782,108 +826,77 @@ function Hunks({
           </div>
           {commenting === i && (
             <CommentBox
+              on="hunk"
               blocked={blocked}
               note={note}
               setNote={setNote}
               onClose={() => openComment(null)}
               onPut={() => {
                 openComment(null)
-                void onComment(hunkPrompt(entry.rel, h.text, note))
+                onComment(hunkPrompt(entry.rel, h.text, note))
               }}
             />
           )}
-          <DiffRows text={h.text} path={entry.path} seen={seen} />
+          <DiffRows parsed={h.parsed} path={entry.path} seen={seen} />
         </Fragment>
       ))}
     </>
   )
 }
 
-function CommentBox({
-  blocked,
-  note,
-  setNote,
-  onClose,
-  onPut
-}: {
-  blocked: string | null
-  note: string
-  setNote: (note: string) => void
-  onClose: () => void
-  onPut: () => void
-}): JSX.Element {
-  const put = (): void => {
-    if (!blocked) onPut()
-  }
-  return (
-    <form
-      className="cv-comment"
-      aria-label="Comment on this hunk"
-      onSubmit={(e) => {
-        e.preventDefault()
-        put()
-      }}
-    >
-      <textarea
-        className="ed-area"
-        rows={3}
-        autoFocus
-        placeholder="Your note on this hunk…"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose()
-          if (e.key !== 'Enter' || e.shiftKey || isComposing(e)) return
-          e.preventDefault()
-          put()
-        }}
-      />
-      <div className="cv-comment-row">
-        <span className="cv-comment-hint">
-          {blocked ??
-            'Lands in the session’s input box with the hunk — you press ⏎ there to send it. ⏎ here · ⇧⏎ new line · Esc closes'}
-        </span>
-        <button type="button" className="cv-retry" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="submit" className="btn-primary" disabled={!!blocked}>
-          Put in session
-        </button>
-      </div>
-    </form>
-  )
-}
-
 function DiffRows({
-  text,
+  parsed,
   path,
   seen
 }: {
-  text: string
+  parsed: ParsedDiff
   path: string
   seen: boolean
 }): JSX.Element {
-  const parsed = useMemo(() => parseUnifiedDiff(text), [text])
-  if (seen) return <InlineDiff src={path} parsed={parsed} />
-  return <PlainRows parsed={parsed} />
+  const box = useRef<HTMLDivElement>(null)
+  const drawn = useRef<{ parsed: ParsedDiff; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (seen && el) drawn.current = { parsed, height: el.offsetHeight }
+  }, [seen, parsed])
+  const drawnHeight = drawn.current?.parsed === parsed ? drawn.current.height : undefined
+  return (
+    <div ref={box}>
+      {seen ? (
+        <InlineDiff src={path} parsed={parsed} />
+      ) : (
+        <UndrawnRows parsed={parsed} height={drawnHeight} />
+      )}
+    </div>
+  )
 }
 
-function PlainRows({ parsed }: { parsed: ParsedDiff }): JSX.Element {
+function UndrawnRows({
+  parsed,
+  height
+}: {
+  parsed: ParsedDiff
+  height: number | undefined
+}): JSX.Element {
   const rows = parsed.rows
   const truncated = rows.length > MAX_INLINE_ROWS
-  const shown = truncated ? rows.slice(0, MAX_INLINE_ROWS) : rows
+  const shown = truncated ? MAX_INLINE_ROWS : rows.length
+  const code = useMemo(
+    () =>
+      rows
+        .slice(0, shown)
+        .map((r) => r.text || ' ')
+        .join(''),
+    [rows, shown]
+  )
   return (
-    <div className="idiff">
-      {shown.map((r, i) => (
-        <div key={i} className={'idiff-row idiff-' + r.kind} data-newno={r.newNo ?? undefined}>
-          <span className="idiff-num">{r.oldNo ?? ''}</span>
-          <span className="idiff-num">{r.newNo ?? ''}</span>
-          <span className="idiff-sign">
-            {r.kind === 'add' ? '+' : r.kind === 'del' ? '−' : ' '}
-          </span>
-          <span className="idiff-code">{r.text || ' '}</span>
+    <div className="idiff" style={height === undefined ? undefined : { height }}>
+      <div className="cv-undrawn" style={{ '--rows': shown } as CSSProperties}>
+        {/* PLATFORM§24 */}
+        <div className="cv-undrawn-code" hidden>
+          {code}
         </div>
-      ))}
+      </div>
       {truncated && (
         <div className="idiff-hint">
           Diff truncated — showing first {MAX_INLINE_ROWS} of {rows.length} lines.
@@ -938,7 +951,7 @@ function BlockSource({
   useEffect(() => {
     if (!seen || !text) return
     let cancelled = false
-    highlightCode(text, langForPath(path))
+    highlightCodeOffThread(text, langForPath(path))
       .then((h) => {
         if (!cancelled) setHtml(h)
       })

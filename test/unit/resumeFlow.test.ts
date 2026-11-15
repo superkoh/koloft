@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResumePlan } from '@shared/types'
+import { SESSION_BACKENDS } from '@shared/sessionBackend'
 import {
   existingRequest,
   mainRequest,
@@ -9,12 +10,12 @@ import {
   releaseResume,
   releaseSettledResumes,
   renamedRequest,
-  resumeFailureMessage,
   resumeInFlight,
   resumeSession,
-  UNAVAILABLE_NOTICE,
-  STILL_RUNNING_NOTICE
+  runResume,
+  UNAVAILABLE_NOTICE
 } from '../../src/renderer/src/resumeFlow'
+import { resumeFailureMessage } from '../../src/renderer/src/agentUi'
 import { useStore } from '../../src/renderer/src/store'
 
 const target = { id: 'sid-1', backendId: 'claude' as const, title: 'Refactor session management' }
@@ -76,11 +77,17 @@ describe('planToStep (D6/D8 routing)', () => {
     expect(UNAVAILABLE_NOTICE).toBe("This session's directory no longer exists — transcript only.")
   })
 
-  it('a session still running in another claude is never opened a second time', () => {
-    expect(planToStep({ action: 'unavailable', reason: 'running' }, target)).toEqual({
+  it('a session still running in another process is never opened a second time, and the notice names the process of that session’s own agent', () => {
+    const running: ResumePlan = { action: 'unavailable', reason: 'running' }
+    expect(planToStep(running, target)).toEqual({
       kind: 'notice',
-      message: STILL_RUNNING_NOTICE
+      message:
+        'This session is still running in another claude process — resuming it would start a second copy.'
     })
+    for (const backendId of SESSION_BACKENDS)
+      expect(planToStep(running, { ...target, backendId })).toMatchObject({
+        message: expect.stringContaining(`still running in another ${backendId} process`)
+      })
   })
 })
 
@@ -172,6 +179,56 @@ describe('the in-flight latch (double-click dedupe)', () => {
   })
 })
 
+describe('a session Koloft has already bound in a live tab while its row still reads cold', () => {
+  it('goes to that tab and never asks for a resume plan, so the session is not attached a second time', async () => {
+    const api = stubApi()
+    let plans = 0
+    api.resumePlan = async () => {
+      plans++
+      return { action: 'direct', cwd: '/repo' }
+    }
+    useStore.setState({
+      tabs: [
+        { id: 'pty-elsewhere', kind: 'claude', title: 'other', cwd: '/repo', alive: true },
+        {
+          id: 'pty-reattached',
+          kind: 'claude',
+          title: 'reattached',
+          cwd: '/repo',
+          sessionId: 'sid-reattached',
+          alive: true
+        }
+      ],
+      sessions: [{ tabId: 'pty-reattached', sessionId: 'sid-reattached', alive: true }] as never,
+      activeTabId: 'pty-elsewhere'
+    })
+
+    await resumeSession({ id: 'sid-reattached', backendId: 'claude', title: 'reattached' })
+
+    expect(useStore.getState().activeTabId).toBe('pty-reattached')
+    expect(plans).toBe(0)
+    useStore.setState({ tabs: [], sessions: [] })
+  })
+
+  it('a session record still naming a tab the window no longer has does not swallow the resume', async () => {
+    const api = stubApi()
+    let plans = 0
+    api.resumePlan = async () => {
+      plans++
+      return { action: 'unavailable', reason: 'not-found' }
+    }
+    useStore.setState({
+      tabs: [],
+      sessions: [{ tabId: 'pty-gone', sessionId: 'sid-stale', alive: true }] as never
+    })
+
+    await resumeSession({ id: 'sid-stale', backendId: 'claude', title: 'stale' })
+
+    expect(plans).toBe(1)
+    useStore.setState({ sessions: [] })
+  })
+})
+
 describe('the click-time placeholder: the store holds the target before the first IPC, so a slow plan never reads as a hang', () => {
   it('is up from the click until the tab lands, and gone the moment it does', async () => {
     const api = stubApi()
@@ -194,10 +251,41 @@ describe('the click-time placeholder: the store holds the target before the firs
   })
 })
 
+describe('a rebuild that fails', () => {
+  it('offers the resume in the workspace the row sits in, not the deleted worktree the request ran from', async () => {
+    const api = stubApi() as unknown as { resume: () => Promise<unknown> }
+    api.resume = async () => ({ ok: false, code: 'rebuild-failed' })
+    useStore.setState({
+      workspaceRows: [{ workspace: { path: '/repo' }, rows: [{ id: target.id }] }] as never,
+      resumeDialog: null
+    })
+    await runResume(target, {
+      ...rebuildRequest(target, rebuildPlan),
+      cwd: '/repo/.claude/worktrees/session-tab'
+    })
+    expect(useStore.getState().resumeDialog).toEqual({
+      kind: 'escape',
+      target,
+      worktreeName: 'session-tab',
+      cwd: '/repo'
+    })
+    useStore.setState({ workspaceRows: [], resumeDialog: null })
+  })
+})
+
 describe('resumeFailureMessage', () => {
   it('keeps the vanished-folder wording distinct from a generic failure', () => {
-    expect(resumeFailureMessage('cwd-missing')).toBe('Folder is gone — cannot resume here')
-    expect(resumeFailureMessage('invalid-args')).toBe('Resume failed')
-    expect(resumeFailureMessage('rebuild-failed')).toBe('Resume failed')
+    expect(resumeFailureMessage({ ok: false, code: 'cwd-missing' })).toBe(
+      'Folder is gone — cannot resume here'
+    )
+    expect(resumeFailureMessage({ ok: false, code: 'invalid-args' })).toBe('Resume failed')
+    expect(resumeFailureMessage({ ok: false, code: 'rebuild-failed' })).toBe('Resume failed')
+  })
+
+  it("gives the agent's own reason, or a generic failure when it gave none", () => {
+    expect(resumeFailureMessage({ ok: false, code: 'backend', message: 'No account' })).toBe(
+      'No account'
+    )
+    expect(resumeFailureMessage({ ok: false, code: 'backend', message: '' })).toBe('Resume failed')
   })
 })

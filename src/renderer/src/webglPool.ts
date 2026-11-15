@@ -1,57 +1,75 @@
 // PLATFORM§20
 const MAX_CONTEXTS_BELOW_CHROMIUM_CAP = 12
+// PLATFORM§20
+const HIDDEN_CONTEXTS_KEPT_FOR_A_QUICK_RETURN = 2
+const HAND_BACK_AFTER_THE_SWITCH_HAS_PAINTED_MS = 1000
 
 type Member = {
   attach: () => void
   detach: () => void
-  holding: boolean
+  shown: boolean
 }
 
 const members = new Map<string, Member>()
-const holdersLeastRecentFirst: string[] = []
+const holdersLeastRecentFirst = new Set<string>()
+let handBackTimer: ReturnType<typeof setTimeout> | undefined
 
 function bump(id: string): void {
-  const i = holdersLeastRecentFirst.indexOf(id)
-  if (i !== -1) holdersLeastRecentFirst.splice(i, 1)
-  holdersLeastRecentFirst.push(id)
+  holdersLeastRecentFirst.delete(id)
+  holdersLeastRecentFirst.add(id)
 }
 
-function promote(id: string): void {
+function handBack(id: string): void {
+  holdersLeastRecentFirst.delete(id)
+  members.get(id)?.detach()
+}
+
+function hiddenHoldersLeastRecentFirst(): string[] {
+  return [...holdersLeastRecentFirst].filter((h) => !members.get(h)?.shown)
+}
+
+function evictOne(): void {
+  handBack(
+    hiddenHoldersLeastRecentFirst()[0] ?? (holdersLeastRecentFirst.values().next().value as string)
+  )
+}
+
+function handBackHiddenBeyondTheKept(): void {
+  const hidden = hiddenHoldersLeastRecentFirst()
+  const surplus = Math.max(0, hidden.length - HIDDEN_CONTEXTS_KEPT_FOR_A_QUICK_RETURN)
+  for (const h of hidden.slice(0, surplus)) handBack(h)
+}
+
+export function enrollWebgl(id: string, attach: () => void, detach: () => void): void {
+  members.set(id, { attach, detach, shown: false })
+}
+
+export function showWebgl(id: string): void {
   const m = members.get(id)
   if (!m) return
-  if (!m.holding) {
-    while (holdersLeastRecentFirst.length >= MAX_CONTEXTS_BELOW_CHROMIUM_CAP) {
-      const victim = holdersLeastRecentFirst.shift()
-      if (victim === undefined) break
-      const vm = members.get(victim)
-      if (vm && vm.holding) {
-        vm.holding = false
-        vm.detach()
-      }
-    }
-    m.holding = true
-    m.attach()
+  m.shown = true
+  if (holdersLeastRecentFirst.has(id)) {
+    bump(id)
+    return
   }
+  while (holdersLeastRecentFirst.size >= MAX_CONTEXTS_BELOW_CHROMIUM_CAP) evictOne()
+  holdersLeastRecentFirst.add(id)
+  m.attach()
+}
+
+export function hideWebgl(id: string): void {
+  const m = members.get(id)
+  if (!m) return
+  m.shown = false
+  if (!holdersLeastRecentFirst.has(id)) return
   bump(id)
-}
-
-export function acquireWebgl(id: string, attach: () => void, detach: () => void): void {
-  const existing = members.get(id)
-  if (existing) {
-    existing.attach = attach
-    existing.detach = detach
-  } else {
-    members.set(id, { attach, detach, holding: false })
-  }
-  promote(id)
-}
-
-export function touchWebgl(id: string): void {
-  promote(id)
+  handBackTimer ??= setTimeout(() => {
+    handBackTimer = undefined
+    handBackHiddenBeyondTheKept()
+  }, HAND_BACK_AFTER_THE_SWITCH_HAS_PAINTED_MS)
 }
 
 export function releaseWebgl(id: string): void {
   members.delete(id)
-  const i = holdersLeastRecentFirst.indexOf(id)
-  if (i !== -1) holdersLeastRecentFirst.splice(i, 1)
+  holdersLeastRecentFirst.delete(id)
 }

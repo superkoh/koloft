@@ -92,6 +92,34 @@ test.describe('File edit · a save onto a file the disk changed under you', () =
     await closeDiscardingEdits(app)
   })
 
+  test('a file changed on disk after it was previewed opens in the editor with what is on disk now, clean and with no "Changed on disk"', async ({
+    app,
+    page,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    const ed = seedEditFixture(env.workspaces.a)
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    await showBrowse(page)
+    const dir = browseRow(page, `${fx.root}/config`)
+    await expect(dir).toBeVisible({ timeout: 30_000 })
+    await dir.click()
+    const file = browseRow(page, ed.config)
+    await expect(file).toBeVisible({ timeout: 20_000 })
+    await file.click()
+    const readEdit = page.locator(EDIT.readEdit).first()
+    await expect(readEdit).toBeEnabled({ timeout: 20_000 })
+
+    const theirs = overwriteChangingSizeAndMtime(ed)
+    await readEdit.click()
+
+    await expect(editArea(page)).toHaveValue(theirs, { timeout: 20_000 })
+    await expect(stale(page)).toHaveCount(0)
+    await expect(page.locator(EDIT.dirty)).toHaveCount(0)
+    await closeDiscardingEdits(app)
+  })
+
   test('BB-M09: Reload replaces the textarea value with what is on disk, clears the unsaved mark, and the next save goes through', async ({
     app,
     page,

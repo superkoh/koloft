@@ -30,10 +30,35 @@ function onMergeSignal(): void {
   armRepair(false)
 }
 
+type SharedAtlas = { pages: { currentRow: { x: number } }[] }
+
+function sharedAtlasOf(addon: WebglAddon): SharedAtlas | undefined {
+  return (addon as unknown as { _renderer?: { _charAtlas?: SharedAtlas } })._renderer?._charAtlas
+}
+
+// PLATFORM§20
+export function disposeThenReturnGpuMemory(addon: WebglAddon | null, dispose: () => void): void {
+  const gl = (addon as unknown as { _renderer?: { _gl?: WebGL2RenderingContext } } | null)
+    ?._renderer?._gl
+  try {
+    dispose()
+  } finally {
+    try {
+      gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    } catch {}
+  }
+}
+
 // PLATFORM§20 PLATFORM§23
 export function repairAllWebgl(): void {
+  const clearedAtlases = new Set<SharedAtlas>()
   for (const e of live.values()) {
     try {
+      const atlas = sharedAtlasOf(e.addon)
+      if (atlas && !clearedAtlases.has(atlas)) {
+        clearedAtlases.add(atlas)
+        atlas.pages[0].currentRow.x = 1
+      }
       e.addon.clearTextureAtlas()
     } catch {}
   }
@@ -56,14 +81,19 @@ export function registerWebglRepair(id: string, addon: WebglAddon, refresh: () =
   } catch {}
   live.get(id)?.offMerge()
   live.set(id, { addon, refresh, offMerge })
-  scheduleWebglRepair()
+  armRepair(false)
+}
+
+// PLATFORM§23
+export function forgetWebglThatLeftItsAtlasAsItWas(id: string): boolean {
+  const e = live.get(id)
+  if (!e) return false
+  e.offMerge()
+  live.delete(id)
+  return true
 }
 
 // PLATFORM§23
 export function unregisterWebglRepair(id: string): void {
-  const e = live.get(id)
-  if (!e) return
-  e.offMerge()
-  live.delete(id)
-  scheduleWebglRepair()
+  if (forgetWebglThatLeftItsAtlasAsItWas(id)) scheduleWebglRepair()
 }

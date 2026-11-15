@@ -1,5 +1,5 @@
 import type { MarkdownIt, StateBlock, Token } from 'markdown-it'
-import { escapeHtml as esc } from './escape'
+import { escapeHtml as esc } from '@shared/escapeHtml'
 
 const FENCE = '---'
 const MAX_SCAN = 200

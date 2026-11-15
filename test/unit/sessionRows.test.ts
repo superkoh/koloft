@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { AttentionEvent, WorkspaceRows } from '../../src/shared/types'
+import { PLAN_READY, type AttentionEvent, type WorkspaceRows } from '../../src/shared/types'
 import {
   clampNotesHeight,
   isOrphanRow,
@@ -14,14 +14,73 @@ import {
   parkedBadge,
   sessionActivityBadge,
   relTime,
+  rowActivityLine,
+  rowLookups,
   rowStateClass,
   selectionRoot,
   sessionTree,
   rowsUnder,
   welcomeQuietLine,
   welcomeTarget,
+  endedTabOf,
+  endedTabsLiveElsewhere,
+  withEndedRows,
+  workspaceOfTab,
   type RowNode
 } from '../../src/renderer/src/sessionRows'
+
+it('a workspace row’s own Workbench belongs to that workspace, so its pages are kept in that workspace’s history', () => {
+  expect(workspaceOfTab([], [], 'ws:ssh://devbox/p')).toBe('ssh://devbox/p')
+})
+
+describe('withEndedRows (a tab whose agent died on its own keeps one row until it is closed)', () => {
+  const ws = (path: string, ids: string[]): WorkspaceRows => ({
+    workspace: { path, missing: false, isGit: true, hasHistory: true },
+    rows: ids.map((id) => ({
+      id,
+      title: id,
+      worktree: 'main',
+      cwd: path,
+      running: false,
+      invalidCwd: false,
+      mtime: 0,
+      backendId: 'codex',
+      host: 'local'
+    }))
+  })
+  const startingRow = { ...ws('/a', ['t1']).rows[0], title: 'Starting…', pending: true }
+  const died = {
+    id: 't1',
+    title: 'Codex',
+    ended: { note: 'exited (code 1)', wsPath: '/a', row: startingRow }
+  }
+
+  it('brings back the row of a launch that died before it started, in its workspace, titled by its tab and no longer starting', () => {
+    const rows = withEndedRows([ws('/a', ['s9']), ws('/b', [])], [died])
+    expect(rows[0].rows.map((r) => [r.id, r.title, r.pending, r.running])).toEqual([
+      ['t1', 'Codex', false, false],
+      ['s9', 's9', undefined, false]
+    ])
+    expect(rows[1].rows).toEqual([])
+  })
+
+  it('lets the row follow a live tab once its session is running again elsewhere, and picks the dead tab to close, so no tab is left with no row', () => {
+    const dead = { ...died, sessionId: 's1' }
+    const live = { sessionId: 's1', tabId: 't2', alive: true }
+    const neverBound = { ...died, id: 't3' }
+    expect(endedTabOf({ id: 's1' }, [dead], [])).toBe(dead)
+    expect(endedTabsLiveElsewhere([dead, neverBound], [])).toEqual([])
+    expect(endedTabOf({ id: 's1' }, [dead], [live])).toBeUndefined()
+    expect(endedTabsLiveElsewhere([dead, neverBound], [live])).toEqual([dead])
+  })
+
+  it('adds nothing while the list still shows the tab or its session, so the row never doubles', () => {
+    const all = [ws('/a', ['t1'])]
+    expect(withEndedRows(all, [died])).toBe(all)
+    const bound = [ws('/a', ['s1'])]
+    expect(withEndedRows(bound, [{ ...died, sessionId: 's1' }])).toBe(bound)
+  })
+})
 
 type Row = { id: string; parentId?: string }
 
@@ -120,6 +179,32 @@ describe('rowStateClass (C2 lightbar)', () => {
 
   it('keeps running rows on their run-state once the pending flag clears', () => {
     expect(rowStateClass(true, 'working', false)).toBe('st-working')
+  })
+})
+
+describe('rowActivityLine (C2 the line under a live row)', () => {
+  const s = { lastAction: 'Edited foo.ts', asking: 'Asks: English or Chinese?' }
+  it('says what the session is doing while it works', () => {
+    expect(rowActivityLine('st-working', s)).toBe('Edited foo.ts')
+  })
+  it('shows the question only while the row is amber, and what it did otherwise', () => {
+    expect(rowActivityLine('st-approval', s)).toBe('Asks: English or Chinese?')
+    expect(rowActivityLine('st-approval', { lastAction: 'Ran ls' })).toBe('Last: Ran ls')
+  })
+  it('says Last: once the turn is over, background work still running included', () => {
+    expect(rowActivityLine('st-waiting', s)).toBe('Last: Edited foo.ts')
+    expect(rowActivityLine('st-waiting st-bg-run', s)).toBe('Last: Edited foo.ts')
+    expect(rowActivityLine('st-idle', s)).toBe('Last: Edited foo.ts')
+  })
+  it('a ready Codex plan reads as itself, never as Last:', () => {
+    expect(rowActivityLine('st-waiting', { lastAction: PLAN_READY })).toBe(PLAN_READY)
+  })
+  it('a sleeping, starting or unknown-state row, or one with nothing to say, has no line', () => {
+    expect(rowActivityLine('cold', s)).toBeUndefined()
+    expect(rowActivityLine('st-pending', s)).toBeUndefined()
+    expect(rowActivityLine('', s)).toBeUndefined()
+    expect(rowActivityLine('st-waiting', {})).toBeUndefined()
+    expect(rowActivityLine('st-working', undefined)).toBeUndefined()
   })
 })
 
@@ -504,7 +589,7 @@ describe('mixesBackends (when a row list shows method icons)', () => {
   })
 })
 
-describe('nextWaitingTab (⌘J: the session that has waited longest for you)', () => {
+describe('nextWaitingTab (⌘J and the bell: walk the waiting sessions, longest wait first)', () => {
   const tabs = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
 
   it('picks the oldest mark of any kind, whatever order the list holds them in', () => {
@@ -516,12 +601,15 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
     expect(nextWaitingTab(pending, null, tabs)).toBe('b')
   })
 
-  it('skips the tab you are already on', () => {
+  it('from a waiting tab goes to the one that waited next longest, and from the last back to the first', () => {
     const pending: AttentionEvent[] = [
+      { tabId: 'c', kind: 'turn-done', at: 30 },
       { tabId: 'a', kind: 'turn-done', at: 10 },
       { tabId: 'b', kind: 'turn-done', at: 20 }
     ]
     expect(nextWaitingTab(pending, 'a', tabs)).toBe('b')
+    expect(nextWaitingTab(pending, 'b', tabs)).toBe('c')
+    expect(nextWaitingTab(pending, 'c', tabs)).toBe('a')
   })
 
   it('skips a mark whose tab is gone, so the press lands on a live session instead of silently clearing that mark', () => {
@@ -532,8 +620,82 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
     expect(nextWaitingTab(pending, null, tabs)).toBe('c')
   })
 
-  it('answers nothing when nothing else waits', () => {
+  it('finds a mark from the last run on the tab that now holds its session, such as one restored asleep under a new id', () => {
+    const pending: AttentionEvent[] = [
+      { tabId: 'before-restart', kind: 'turn-done', at: 1, sessionId: 's-1' }
+    ]
+    expect(nextWaitingTab(pending, null, [{ id: 'asleep-1', sessionId: 's-1' }])).toBe('asleep-1')
+  })
+
+  it('stays on the tab you are on when it is the only one waiting, and answers nothing when none waits', () => {
     expect(nextWaitingTab([], null, tabs)).toBeUndefined()
-    expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBeUndefined()
+    expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBe('a')
+  })
+})
+
+describe('rowLookups (which tab, live session and attention mark belong to a sidebar row)', () => {
+  const sessions = [
+    { sessionId: 's-dead', tabId: 'pty-old', alive: false },
+    { sessionId: 's-1', tabId: 'pty-1', alive: true },
+    { sessionId: 's-1', tabId: 'pty-1b', alive: true }
+  ]
+  const tabs = [
+    { id: 'pty-9', sessionId: 's-2', alive: false, asleep: true as const },
+    { id: 'pty-8', sessionId: 's-2', alive: true },
+    { id: 'pty-7', sessionId: 's-cold', alive: true },
+    { id: 'pty-6', alive: true }
+  ]
+  const bySession: AttentionEvent = { tabId: 'pty-x', sessionId: 's-1', kind: 'turn-done', at: 2 }
+  const byTab: AttentionEvent = { tabId: 'pty-1', kind: 'approval', at: 3 }
+  const look = rowLookups(sessions, tabs, [bySession, byTab])
+
+  it('a running row shows in the tab of its first live session, else its first open or asleep tab', () => {
+    expect(look.tabOf({ id: 's-1', running: true })).toBe('pty-1')
+    expect(look.tabOf({ id: 's-2', running: true })).toBe('pty-9')
+    expect(look.tabOf({ id: 's-dead', running: true })).toBeUndefined()
+  })
+
+  it('a pending row is its own tab, and a cold row has none even when a tab carries its id', () => {
+    expect(look.tabOf({ id: 'pty-new', running: false, pending: true })).toBe('pty-new')
+    expect(look.tabOf({ id: 's-cold', running: false })).toBeUndefined()
+    expect(look.hasAliveTab('s-cold')).toBe(true)
+    expect(look.hasAliveTab('s-dead')).toBe(false)
+  })
+
+  it('a row whose session is already bound in a live tab reads running in that tab, before the rows say so and past a record of a closed tab', () => {
+    const bound = rowLookups(
+      [
+        { sessionId: 's-back', tabId: 'pty-gone', alive: true },
+        { sessionId: 's-back', tabId: 'pty-back', alive: true },
+        { sessionId: 's-gone', tabId: 'pty-closed', alive: true }
+      ],
+      [
+        { id: 'pty-back', sessionId: 's-back', alive: true },
+        { id: 'pty-closed', sessionId: 's-gone', alive: false },
+        { id: 'pty-7', sessionId: 's-cold', alive: true }
+      ],
+      []
+    )
+    expect(bound.running({ id: 's-back', running: false })).toBe(true)
+    expect(bound.tabOf({ id: 's-back', running: false })).toBe('pty-back')
+    expect(bound.tabOf({ id: 's-back', running: true })).toBe('pty-back')
+    expect(bound.boundTabOf('s-back')).toBe('pty-back')
+    expect(bound.running({ id: 's-gone', running: false })).toBe(false)
+    expect(bound.tabOf({ id: 's-gone', running: false })).toBeUndefined()
+    expect(bound.running({ id: 's-cold', running: false })).toBe(false)
+    expect(bound.tabOf({ id: 's-cold', running: false })).toBeUndefined()
+  })
+
+  it('the live session on a tab is the first one the stream names, dead or alive', () => {
+    expect(look.sessionOn('pty-1')).toBe(sessions[1])
+    expect(look.sessionOn('pty-old')).toBe(sessions[0])
+    expect(look.sessionOn('pty-none')).toBeUndefined()
+  })
+
+  it('a row’s attention mark is the earliest one naming its session or its tab', () => {
+    expect(look.attentionOn('s-1', 'pty-1')).toBe(bySession)
+    expect(look.attentionOn('s-other', 'pty-1')).toBe(byTab)
+    expect(look.attentionOn('s-other', undefined)).toBeUndefined()
+    expect(rowLookups([], [], [byTab, bySession]).attentionOn('s-1', 'pty-1')).toBe(byTab)
   })
 })

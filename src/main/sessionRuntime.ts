@@ -26,12 +26,15 @@ export interface StatusSignals {
   heldByBackground: boolean
   background: BackgroundItem[]
   restingSince?: number
+  dialogOnScreen?: boolean
 }
 
 export function deriveStatus(signals: StatusSignals, now: number): SessionStatus | undefined {
   const { turn, background } = signals
   if (!turn) return undefined
-  if (turn === 'working' || turn === 'approval') return turn
+  if (signals.dialogOnScreen) return 'approval'
+  if (turn === 'working') return turn
+  if (turn === 'approval' || turn === 'input') return 'approval'
   if (
     turn === 'ended' &&
     (signals.heldByBackground || background.some((item) => item.state === 'working'))
@@ -112,6 +115,13 @@ export class SessionRuntime extends EventEmitter {
     e.background = items
     this.evaluate(tabId, e, Date.now())
     return true
+  }
+
+  showDialog(tabId: string, onScreen: boolean): void {
+    if (!onScreen && !this.entries.has(tabId)) return
+    const e = this.entry(tabId)
+    e.dialogOnScreen = onScreen
+    this.evaluate(tabId, e, Date.now())
   }
 
   setWakeupPending(tabId: string, pending: boolean): void {

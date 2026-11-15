@@ -35,12 +35,14 @@ describe('acceptCodexTrust', () => {
     expect(fs.readFileSync(config, 'utf8')).toBe(`[projects."${repo}"]\ntrust_level = "trusted"\n`)
   })
 
-  it('leaves a folder the person already answered for alone, even when the answer was no', () => {
+  it('leaves a folder the person already answered for alone, even when the answer was no, and does not rewrite the file, so a save Codex makes at that moment is never lost', () => {
     fs.mkdirSync(path.dirname(config))
     const answered = `[projects."${repo}"]\ntrust_level = "untrusted"\n`
     fs.writeFileSync(config, answered)
+    const file = fs.statSync(config).ino
     acceptCodexTrust(config, repo)
     expect(fs.readFileSync(config, 'utf8')).toBe(answered)
+    expect(fs.statSync(config).ino).toBe(file)
   })
 })
 

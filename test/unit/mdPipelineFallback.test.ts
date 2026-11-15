@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
 
-vi.mock('dompurify', () => ({
-  default: { sanitize: (html: string) => html, addHook: () => {} }
-}))
 vi.mock('../../src/renderer/src/highlight', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../src/renderer/src/highlight')>()
   return {
@@ -23,7 +20,12 @@ vi.mock('@vscode/markdown-it-katex', async (importOriginal) => {
   return importOriginal()
 })
 
-const { renderMarkdown } = await import('../../src/renderer/src/markdown/index')
+const { renderBlocks } = await import('../../src/renderer/src/markdown/render')
+
+const renderMarkdown = async (text: string, opts: { srcPath: string }) => {
+  const doc = await renderBlocks(text, { ...opts, token: 'T' })
+  return { html: doc.blocks.join('') }
+}
 
 describe('renderMarkdown when the highlighter fails', () => {
   it('drops that fence to plain text and renders the rest of the document', async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
-import { LuArrowUpRight } from 'react-icons/lu'
+import { IconLinkOut } from '../../icons'
 import { buildResetPatch } from '@shared/settingsOps'
 import { useStore } from '../../store'
 import { useEscConsumer } from './escScope'
@@ -61,7 +61,7 @@ export function AboutPane(): JSX.Element {
           <small>What changed, version by version.</small>
         </div>
         <button className="mini" onClick={() => window.api.update.openRelease()}>
-          Open releases page <LuArrowUpRight size={13} />
+          Open releases page <IconLinkOut size={13} />
         </button>
       </div>
 

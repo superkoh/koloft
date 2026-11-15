@@ -6,7 +6,6 @@ import {
   itemAim,
   itemFilterText,
   itemLaunchExtras,
-  mainRunningCount,
   moveHot,
   pendingLaunch,
   pendingWorktree,
@@ -218,23 +217,6 @@ describe('pullFailedReason (git speaks in full sentences, or not)', () => {
   })
 })
 
-describe('mainRunningCount (D4 guard counts only root-checkout Koloft sessions)', () => {
-  it('counts running and pending rows in the main bucket only', () => {
-    expect(
-      mainRunningCount([
-        sessionRow(),
-        sessionRow({ id: 's2', running: false, pending: true }),
-        sessionRow({ id: 's3', worktree: 'bugfix' }),
-        sessionRow({ id: 's4', running: false })
-      ])
-    ).toBe(2)
-  })
-
-  it('is zero for an idle checkout', () => {
-    expect(mainRunningCount([sessionRow({ running: false })])).toBe(0)
-  })
-})
-
 describe('worktreeInUse (C8 "in use" note)', () => {
   it('a session running in the repo root does not mark a worktree named main in use', () => {
     expect(worktreeInUse(wt('main'), [sessionRow()])).toBe(false)
@@ -378,16 +360,12 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     expect(seededItemExtras(issue, ' ', '')).toEqual(itemLaunchExtras(issue))
   })
 
-  it('⌘P starts where Assist pointed: the main checkout, a listed worktree, a new one, or the issue’s worktree with its lines first', () => {
+  it('⌘P starts where Assist pointed: the main checkout of a folder that is not git, a new worktree, or a new worktree for the issue with its lines first; a worktree that already exists is never reused, its name gets the next free -N', () => {
     const said = { prompt: ' fix login ', title: 'Login fix' }
     const typed = { firstPrompt: 'fix login', name: 'Login fix' }
-    const listed = [wt('auth')]
+    const listed = [wt('auth'), wt('issue-218')]
     expect(pendingLaunch('/repo', { kind: 'main' }, said, listed, [])).toEqual({
       cwd: '/repo',
-      ...typed
-    })
-    expect(pendingLaunch('/repo', { kind: 'existing', name: 'auth' }, said, listed, [])).toEqual({
-      cwd: '/repo/.claude/worktrees/auth',
       ...typed
     })
     expect(pendingLaunch('/repo', { kind: 'new', name: 'login' }, said, listed, [])).toEqual({
@@ -395,9 +373,19 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
       worktree: 'login',
       ...typed
     })
+    expect(pendingLaunch('/repo', { kind: 'new', name: 'auth' }, said, listed, [])).toEqual({
+      cwd: '/repo',
+      worktree: 'auth-2',
+      ...typed
+    })
     expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue])).toEqual({
       cwd: '/repo',
       worktree: 'issue-218',
+      ...seededItemExtras(issue, ' fix login ', 'Login fix')
+    })
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, listed, [issue])).toEqual({
+      cwd: '/repo',
+      worktree: 'issue-218-2',
       ...seededItemExtras(issue, ' fix login ', 'Login fix')
     })
     expect(pendingLaunch('/repo', { kind: 'issue', number: 9 }, said, [], [issue])).toEqual({
@@ -407,19 +395,15 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     })
   })
 
-  it('⌘P never starts in the main checkout of a git workspace: with no worktree from Assist it makes a fresh one, free of the listed names; a folder that is not git starts in itself', () => {
+  it('⌘P never starts in the main checkout of a git workspace: with no worktree from Assist it makes a new one named for the time; a folder that is not git starts in itself', () => {
     const at = new Date(2026, 9, 13, 23, 21).getTime()
     const login: RouteWorktree = { kind: 'new', name: 'login' }
-    expect(pendingWorktree(login, true, [], at)).toEqual(login)
-    expect(pendingWorktree(null, true, [], at)).toEqual({
+    expect(pendingWorktree(login, true, at)).toEqual(login)
+    expect(pendingWorktree(null, true, at)).toEqual({
       kind: 'new',
       name: 'session-261013-2321'
     })
-    expect(pendingWorktree(null, true, [wt('session-261013-2321')], at)).toEqual({
-      kind: 'new',
-      name: 'session-261013-2321-2'
-    })
-    expect(pendingWorktree(null, false, [], at)).toBeNull()
+    expect(pendingWorktree(null, false, at)).toBeNull()
   })
 
   it('labels the primary with the number it acts on', () => {
@@ -590,16 +574,18 @@ describe('worktree preparation recovery', () => {
   const resource = {
     name: 'interrupted',
     dir: '/repo/.koloft/worktrees/interrupted',
-    recoveryResourceId: 'resource-1'
+    recoveryResourceId: 'resource-1',
+    recoveryBackend: 'muse' as const
   }
 
-  it('recovers the recorded resource for an exact name or a selected row', () => {
+  it('recovers the recorded resource for an exact name or a selected row, with the tool that recorded it', () => {
     for (const aim of [
       worktreeAim([resource], 'Interrupted', { where: 'field' }),
       worktreeAim([resource], '', { where: 'list', index: 0 })
     ]) {
       expect(aim.kind).toBe('recover')
       if (aim.kind !== 'recover') throw new Error('expected recovery')
+      expect(aim.backend).toBe('muse')
       expect(resolveLaunch(aim, '/repo')).toEqual({
         cwd: '/repo',
         worktreeResourceId: 'resource-1'

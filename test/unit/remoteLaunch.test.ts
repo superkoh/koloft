@@ -7,16 +7,29 @@ import { spawn, spawnSync } from 'child_process'
 
 import {
   accountEnv,
+  claudeCodeGuessesWindowOf,
   buildMachinePackage,
+  claudeTabSpec,
   killSessionCmd,
   launchLine,
+  skillsFromMachineLine,
+  machineToolProgram,
   tabScript,
+  utilShellLine,
   writeTabPackage,
+  type ClaudeTab,
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
+import { museRunLines } from '../../src/main/museRemote'
+import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
+import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
+import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
+const PYTHON_WITH_PTY = spawnSync('python3', ['-c', 'import pty, termios']).status === 0
+const TASKPOLICY = '/usr/sbin/taskpolicy'
+const TASKPOLICY_HERE = fs.existsSync(TASKPOLICY)
 const tmpRoots: string[] = []
 const mkroot = (tag: string): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), `koloft-${tag}-`))
@@ -31,6 +44,7 @@ interface Remote {
   dir: string
   machineHome: string
   fail(call: number, code: number): void
+  greet(text: string): void
   argv(call: number): string[]
   calls(): number
   bin: string
@@ -68,6 +82,7 @@ last=""
 for a in "$@"; do last="$a"; done
 printf '%s\\n' "$@" > "$D/log.$n"
 [ -f "$D/exit.$n" ] && exit "$(cat "$D/exit.$n")"
+[ -f "$D/greeting" ] && cat "$D/greeting"
 [ "$1" = -tt ] && exec "$D/bin/fish" -n -c "$last"
 exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
 `,
@@ -78,6 +93,7 @@ exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
     bin,
     machineHome: path.join(dir, 'machine'),
     fail: (call, code) => fs.writeFileSync(path.join(dir, `exit.${call}`), String(code)),
+    greet: (text) => fs.writeFileSync(path.join(dir, 'greeting'), `${text}\n`),
     argv: (call) =>
       fs
         .readFileSync(path.join(dir, `log.${call}`), 'utf8')
@@ -103,10 +119,10 @@ function typeLine(r: Remote, line: string): { status: number | null; stdout: str
   return { status: res.status, stdout: res.stdout }
 }
 
-function typeLineLive(
+function typeLineWithStdinOpen(
   r: Remote,
   line: string
-): { out: () => string; running: () => boolean; enter: () => void; done: Promise<number | null> } {
+): { out: () => string; done: Promise<number | null> } {
   const script = path.join(mkroot('line'), 'line.sh')
   fs.writeFileSync(script, line + '\n')
   const c = spawn(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, [script], {
@@ -114,36 +130,31 @@ function typeLineLive(
     stdio: ['pipe', 'pipe', 'pipe']
   })
   let out = ''
-  let alive = true
   c.stdout.on('data', (d) => (out += String(d)))
-  const done = new Promise<number | null>((resolve) =>
-    c.on('close', (code) => {
-      alive = false
-      resolve(code)
-    })
-  )
-  return { out: () => out, running: () => alive, enter: () => c.stdin.write('\n'), done }
+  const done = new Promise<number | null>((resolve) => c.on('close', resolve))
+  return { out: () => out, done }
 }
 
-async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    if (pred()) return true
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  return pred()
-}
-
-const spec = (over: Partial<TabSpec> = {}): TabSpec => ({
-  tabId: 'T',
-  tmuxName: 'k-sess1',
-  machineName: 'm-0000000000000000',
-  cwd: '/tmp',
-  banner: 'koloft: bravo',
-  settings: { hooks: {} },
-  claudeArgs: ['--session-id', 'sess1'],
+const spec = ({
+  settings = { hooks: {} },
+  claudeArgs = ['--session-id', 'sess1'],
+  agentPlugin,
+  trustFolder,
+  program,
   ...over
-})
+}: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
+  const tab = {
+    tabId: 'T',
+    tmuxName: 'k-sess1',
+    machineName: 'm-0000000000000000',
+    cwd: '/tmp',
+    banner: 'koloft: bravo',
+    ...over
+  }
+  return program
+    ? { ...tab, program }
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
+}
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
   const pkg = buildMachinePackage(path.join(r.dir, 'pkg'), files)
@@ -165,56 +176,95 @@ function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
 }
 
 describe('U-LINE-*: the launch line', () => {
-  it('pushes the machine package once, the tab package always, then runs the tab script, never letting ssh eat the terminal keystrokes', () => {
+  it('once the machine package is on the machine, a tab takes one ssh to push its package and one to run; before that the machine package goes first and the tab package after it, every ssh before the run reading a pipe and never the terminal keystrokes', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec())
     const first = typeLine(r, st.line())
 
     expect(first.status).toBe(0)
     expect(r.calls()).toBe(4)
-    expect(r.argv(1)).toContain('-n')
-    expect(r.argv(1).at(-1)).toContain('test -d')
+    expect(r.argv(2).at(-1)).toContain(st.pkg.name)
     expect(fs.readFileSync(koloft(r, st.pkg.name, 'run.sh'), 'utf8')).toBe('echo hi\n')
+    expect(r.argv(3).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
     expect(fs.readFileSync(koloft(r, 'tabs', 'T.sh'), 'utf8')).toContain('new-session')
     expect(r.argv(4)).toContain('-tt')
     expect(r.argv(4).at(-1)).toContain(`T.sh" start`)
+    expect(first.stdout).not.toContain('koloft-tab-in')
     const credentialTabPackageLeftOnThisDisk = fs.existsSync(st.tabDir)
     expect(credentialTabPackageLeftOnThisDisk).toBe(false)
+    expect(
+      st.line().match(/\| ssh /g)?.length,
+      'every ssh before the tab script takes a tar on its input'
+    ).toBe(3)
 
     const st2 = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec({ tabId: 'T2' }))
     const again = typeLine(r, st2.line())
     expect(again.status).toBe(0)
-    expect(r.calls()).toBe(7)
-    expect(r.argv(5).at(-1)).toContain('test -d')
-    expect(r.argv(6).at(-1)).toContain('tar xf')
-    expect(r.argv(6).at(-1)).toContain('tabs')
-    expect(r.argv(7)).toContain('-tt')
+    expect(r.calls()).toBe(6)
+    expect(r.argv(5).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
+    expect(fs.existsSync(koloft(r, 'tabs', 'T2.sh'))).toBe(true)
+    expect(r.argv(6)).toContain('-tt')
+  })
+
+  it('on a machine whose login shell prints a greeting, the tab still starts and the machine package goes over only once', () => {
+    const r = remote()
+    r.greet('Welcome to the box')
+    const st = stage(r, { 'run.sh': 'x' }, spec())
+    expect(typeLine(r, st.line()).status).toBe(0)
+    expect(r.calls()).toBe(4)
+    const st2 = stage(r, { 'run.sh': 'x' }, spec({ tabId: 'T2' }))
+    expect(typeLine(r, st2.line()).status).toBe(0)
+    expect(r.calls()).toBe(6)
   })
 
   // PLATFORM§3
-  it('pushes no macOS AppleDouble twins along with the packages', () => {
+  it('pushes no macOS AppleDouble twins along with the packages, and no extended-attribute headers that GNU tar on the machine would warn about for each file', () => {
     const r = remote()
+    const pushed = path.join(r.dir, 'pushed')
+    fs.mkdirSync(pushed)
+    fs.writeFileSync(
+      path.join(r.bin, 'tar'),
+      `#!/bin/sh\ncase "$1" in x*) tee "${pushed}/$$" | /usr/bin/tar "$@";; *) exec /usr/bin/tar "$@";; esac\n`,
+      { mode: 0o755 }
+    )
     const st = stage(r, { 'run.sh': 'echo hi\n' }, spec())
     for (const f of [path.join(st.pkg.dir, 'run.sh'), path.join(st.tabDir, 'T.json')]) {
-      spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f])
+      expect(spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f]).status).toBe(0)
     }
     const line = st.line()
-    expect(line.match(/COPYFILE_DISABLE=1 tar cf -/g)?.length).toBe(2)
+    expect(line.match(/COPYFILE_DISABLE=1 tar cz?f -/g)?.length).toBe(
+      line.match(/tar cz?f -/g)?.length
+    )
 
     expect(typeLine(r, line).status).toBe(0)
     expect(fs.readdirSync(koloft(r, st.pkg.name)).filter((n) => n.startsWith('._'))).toEqual([])
     expect(fs.readdirSync(koloft(r, 'tabs')).filter((n) => n.startsWith('._'))).toEqual([])
+    const streams = fs
+      .readdirSync(pushed)
+      .map(
+        (f) =>
+          spawnSync('/usr/bin/gzip', ['-dcf'], { input: fs.readFileSync(path.join(pushed, f)) })
+            .stdout
+      )
+    expect(streams.map((s) => ['run.sh', 'T.json'].filter((n) => s.includes(n))).sort()).toEqual([
+      ['T.json'],
+      ['run.sh']
+    ])
+    for (const s of streams) expect(s.includes('LIBARCHIVE.xattr')).toBe(false)
   })
 
-  it('stops when a push fails — never a bare login shell dressed up as Claude', () => {
-    const r = remote()
-    const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(3, 1)
-    const res = typeLine(r, st.line())
-    expect(res.status).toBe(4)
-    expect(res.stdout).toContain('[Koloft]')
-    expect(r.calls()).toBe(3)
-    expect(fs.existsSync(st.tabDir)).toBe(false)
+  it('stops when a push fails — never a bare login shell dressed up as Claude, and never leaving the tab package with its credentials on a machine whose package did not arrive', () => {
+    for (const failing of [2, 3]) {
+      const r = remote()
+      const st = stage(r, { 'run.sh': 'x' }, spec({ env: { CLAUDE_CODE_OAUTH_TOKEN: 'tok' } }))
+      r.fail(failing, 1)
+      const res = typeLine(r, st.line())
+      expect(res.status).toBe(4)
+      expect(res.stdout).toContain('[Koloft]')
+      expect(r.calls()).toBe(failing)
+      expect(fs.existsSync(st.tabDir)).toBe(false)
+      expect(fs.existsSync(koloft(r, 'tabs', 'T.env'))).toBe(false)
+    }
   })
 
   it("reconnects only on ssh’s own link-broke code, turning claude's mouse and paste modes off before the notice, and reconnecting attaches", () => {
@@ -241,17 +291,13 @@ describe('U-LINE-*: the launch line', () => {
     expect(r.calls()).toBe(4)
   })
 
-  it('a start that failed holds the tab open until Enter, so its reason can be read', async () => {
+  it('a session that failed to start or ended with an error says its exit code and ends at once, waiting for no key, since Koloft keeps the tab and its screen', async () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
     r.fail(4, 7)
-    const live = typeLineLive(r, st.line())
-    expect(await until(() => live.out().includes('did not start (exit 7)'))).toBe(true)
-    expect(live.out()).toContain('press Enter to close')
-    await new Promise((res) => setTimeout(res, 300))
-    expect(live.running()).toBe(true)
-    live.enter()
+    const live = typeLineWithStdinOpen(r, st.line())
     expect(await live.done).toBe(7)
+    expect(live.out()).toContain('stopped with exit code 7')
   }, 30_000)
 
   it('an account name full of quotes reaches the machine unharmed', () => {
@@ -295,6 +341,54 @@ describe('U-LINE-*: the launch line', () => {
   }, 60_000)
 })
 
+describe('the Workbench shell of a remote session', () => {
+  const shellLine = (r: Remote): string =>
+    utilShellLine({
+      host: 'dev.box',
+      sshOptions: ['-o', 'ControlPath=/tmp/koloft-1/%C'],
+      machine: buildMachinePackage(path.join(r.dir, 'pkg'), {
+        'util.sh':
+          'echo "shell up in $1 for $2"\nexit "$(cat "$HOME/shell-exit" 2>/dev/null || echo 0)"\n'
+      }),
+      tabId: 'W',
+      dir: "/srv/it's here"
+    })
+
+  it('opens with its one ssh once the machine package is there, even where the login shell prints a greeting; on a machine without it, the package goes over once and the shell opens after', () => {
+    const r = remote()
+    r.greet('Welcome to the box')
+    const first = typeLine(r, shellLine(r))
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain("shell up in /srv/it's here for W")
+    expect(r.calls()).toBe(4)
+
+    const again = typeLine(r, shellLine(r))
+    expect(again.status).toBe(0)
+    expect(again.stdout).toContain("shell up in /srv/it's here for W")
+    expect(r.calls()).toBe(5)
+  })
+
+  it('a shell the owner ends with the same code Koloft uses for a missing package just ends, with nothing sent and no second shell', () => {
+    const r = remote()
+    typeLine(r, shellLine(r))
+    const opened = r.calls()
+    fs.writeFileSync(path.join(r.machineHome, 'shell-exit'), '97')
+    const res = typeLine(r, shellLine(r))
+    expect(res.status).toBe(97)
+    expect(res.stdout.match(/shell up/g)).toHaveLength(1)
+    expect(r.calls()).toBe(opened + 2)
+  })
+
+  it('stops with a word from Koloft when the machine package cannot be sent', () => {
+    const r = remote()
+    r.fail(3, 1)
+    const res = typeLine(r, shellLine(r))
+    expect(res.status).toBe(4)
+    expect(res.stdout).toContain('[Koloft] could not connect')
+    expect(r.calls()).toBe(3)
+  })
+})
+
 interface Box {
   home: string
   tabs: string
@@ -303,6 +397,7 @@ interface Box {
   argv(): string[]
   tmux(): string[]
   ensured(): boolean
+  onATerminal(): boolean
   claudeCalls(): string[][]
   envAt(n: number): Record<string, string>
   tabEnvSeenAt(n: number): boolean
@@ -311,7 +406,10 @@ interface Box {
   run(...args: string[]): { status: number | null; stdout: string }
 }
 
-function box(s: TabSpec, opts: { ensureExit?: number } = {}): Box {
+function box(
+  s: TabSpec,
+  opts: { ensureExit?: number; claudeExit?: number; ensureBringsNode?: boolean } = {}
+): Box {
   const home = mkroot('tabhome')
   const bin = path.join(home, '.local', 'bin')
   const logs = path.join(home, 'logs')
@@ -320,9 +418,14 @@ function box(s: TabSpec, opts: { ensureExit?: number } = {}): Box {
   const m = path.join(home, '.koloft', s.machineName)
   fs.mkdirSync(m, { recursive: true })
   fs.writeFileSync(path.join(m, 'tmux.conf'), TMUX_CONF)
+  fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
-    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\nexit ${opts.ensureExit ?? 0}\n`,
+    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
+      opts.ensureBringsNode
+        ? `mkdir -p "$HOME/.koloft/node/bin" && ln -s ${JSON.stringify(process.execPath)} "$HOME/.koloft/node/bin/node"\n`
+        : ''
+    }exit ${opts.ensureExit ?? 0}\n`,
     { mode: 0o755 }
   )
 
@@ -334,9 +437,10 @@ printf '%s\\n' "$@" >> ${JSON.stringify(path.join(logs, 'tmux'))}
 printf 'tmux %s\\n' "$*" >> ${JSON.stringify(path.join(logs, 'order'))}
 conf=""; prev=""; last=""
 for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
+case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
 case " $* " in *" new-session "*) ;; *) exit 0;; esac
-grep -q 'default-shell /bin/sh' "$conf" && exec sh -c "$last"
-exec "$SHELL" -c "$last"
+if grep -q 'default-shell /bin/sh' "$conf"; then sh -c "$last"; else "$SHELL" -c "$last"; fi
+exit 0
 `,
     { mode: 0o755 }
   )
@@ -363,7 +467,8 @@ printf '%s\\n' "$@" > "$L/argv.$n"
 printf 'claude %s\\n' "$*" >> "$L/order"
 env > "$L/env"
 printf '%s\\n' "$@" > "$L/argv"
-exit 0
+[ -t 0 ] && : > "$L/tty"
+exit ${opts.claudeExit ?? 0}
 `,
     { mode: 0o755 }
   )
@@ -394,6 +499,7 @@ exit 0
     order: () => (fs.existsSync(path.join(logs, 'order')) ? read('order').trim().split('\n') : []),
     tmux: () => (fs.existsSync(path.join(logs, 'tmux')) ? read('tmux').trim().split('\n') : []),
     ensured: () => fs.existsSync(path.join(logs, 'ensure')),
+    onATerminal: () => fs.existsSync(path.join(logs, 'tty')),
     standIn: () =>
       fs.existsSync(path.join(logs, 'script')) ? read('script').trim().split('\n') : [],
     run: (...args) => {
@@ -403,7 +509,8 @@ exit 0
           HOME: home,
           PATH: '/usr/bin:/bin',
           SHELL: path.join(bin, 'fish'),
-          ANTHROPIC_API_KEY: 'stale-machine-key'
+          ANTHROPIC_API_KEY: 'stale-machine-key',
+          GEMINI_API_KEY: 'stale-machine-key'
         },
         timeout: 30_000
       })
@@ -418,6 +525,49 @@ function claudeEnvOf(s: TabSpec): Record<string, string> {
   return b.env()
 }
 
+const SKILLS_IN_A_MACHINE_PACKAGE = {
+  'agent-plugin/skills/koloft/SKILL.md': 'NEW',
+  'docs-plugin/skills/koloft-docs/SKILL.md': 'NEW DOCS',
+  'docs-plugin/skills/koloft-docs/references/core.md': 'NEW CORE'
+}
+
+function putSkillsInMachinePackage(machineDir: string): void {
+  for (const [rel, text] of Object.entries(SKILLS_IN_A_MACHINE_PACKAGE)) {
+    fs.mkdirSync(path.dirname(path.join(machineDir, rel)), { recursive: true })
+    fs.writeFileSync(path.join(machineDir, rel), text)
+  }
+}
+
+describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on the machine", () => {
+  it('keeps the koloft-docs skill folder the same as the machine package every time, and the koloft skill only while agent tools are on: an older copy is swapped for a whole new one with nothing left over, and a copy already the same is left in place, so a running agent never finds it gone', () => {
+    const root = mkroot('skill')
+    const machineDir = path.join(root, 'm-1')
+    const skills = path.join(root, 'home', 'skills')
+    buildMachinePackage(root, SKILLS_IN_A_MACHINE_PACKAGE)
+    const pkg = fs.readdirSync(root).find((n) => n.startsWith('m-'))!
+    fs.renameSync(path.join(root, pkg), machineDir)
+    for (const old of ['koloft/SKILL.md', 'koloft/old.md', 'koloft-docs/references/old.md']) {
+      fs.mkdirSync(path.dirname(path.join(skills, old)), { recursive: true })
+      fs.writeFileSync(path.join(skills, old), 'OLD')
+    }
+    const run = (line: string): number | null =>
+      spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
+    const read = (rel: string): string => fs.readFileSync(path.join(skills, rel), 'utf8')
+    expect(run(skillsFromMachineLine(skills, machineDir, true))).toBe(0)
+    expect(read('koloft/SKILL.md')).toBe('NEW')
+    expect(fs.readdirSync(path.join(skills, 'koloft'))).toEqual(['SKILL.md'])
+    expect(read('koloft-docs/references/core.md')).toBe('NEW CORE')
+    expect(fs.readdirSync(path.join(skills, 'koloft-docs', 'references'))).toEqual(['core.md'])
+    const docsFolder = fs.statSync(path.join(skills, 'koloft-docs')).ino
+    expect(run(skillsFromMachineLine(skills, machineDir, false))).toBe(0)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+    expect(read('koloft-docs/SKILL.md')).toBe('NEW DOCS')
+    expect(read('koloft-docs/references/core.md')).toBe('NEW CORE')
+    expect(fs.statSync(path.join(skills, 'koloft-docs')).ino).toBe(docsFolder)
+    expect(fs.readdirSync(skills).sort()).toEqual(['koloft-docs'])
+  })
+})
+
 describe('U-TAB-*: the tab script on the machine', () => {
   it('falls back to the workspace root when the recorded directory is gone, so a resume into a removed worktree still opens', () => {
     const root = mkroot('root')
@@ -427,7 +577,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().PWD).toBe(root)
   })
 
-  it('starts claude inside tmux with the picked account, and eats the credential file', () => {
+  it('starts claude inside tmux with the picked account and, with agent tools off, only the koloft-docs skill from the machine package, and eats the credential file', () => {
     const cwd = path.join(mkroot('cwd'), "it's here")
     fs.mkdirSync(cwd, { recursive: true })
     const s = spec({
@@ -447,12 +597,93 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.argv()).toEqual([
       '--settings',
       `${b.home}/.koloft/tabs/T.json`,
+      '--plugin-dir',
+      `${b.home}/.koloft/m-0000000000000000/docs-plugin/`,
       '--session-id',
       'sess1'
     ])
     expect(fs.existsSync(path.join(b.tabs, 'T.env'))).toBe(false)
     expect(res.stdout).toContain('koloft: bravo')
   })
+
+  // CC§12 AGY§29 PLATFORM§35
+  it.skipIf(!PYTHON_WITH_PTY).each([
+    { agent: 'claude', boxed: (): Box => box(spec()), arg: [0, '--settings'] as const },
+    {
+      agent: 'agy',
+      boxed: (): Box => {
+        const b = box(
+          spec({
+            program: agyTab({
+              tabId: 'T',
+              account: 'a',
+              args: ['--csrf_token=x'],
+              settings: '{}',
+              hooks: '{}',
+              koloftSkill: false
+            })
+          })
+        )
+        fs.writeFileSync(
+          path.join(b.home, '.local', 'bin', 'agy'),
+          `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n[ -t 0 ] && : > ${JSON.stringify(path.join(b.logs, 'tty'))}\nexit 0\n`,
+          { mode: 0o755 }
+        )
+        return b
+      },
+      arg: [1, '--csrf_token=x'] as const
+    }
+  ])(
+    "$agent runs on a terminal of the status relay's, and where python3 cannot run (macOS's stub without the developer tools) it starts on its own instead",
+    ({ boxed, arg: [at, expected] }) => {
+      const relayed = boxed()
+      expect(relayed.run().status).toBe(0)
+      expect(relayed.onATerminal()).toBe(true)
+      expect(relayed.argv()[at]).toBe(expected)
+
+      const stub = boxed()
+      fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+        mode: 0o755
+      })
+      expect(stub.run().status).toBe(0)
+      expect(stub.onATerminal()).toBe(false)
+      expect(stub.argv()[at]).toBe(expected)
+    }
+  )
+
+  // ADR-0042 PLATFORM§59 PLATFORM§72
+  it.for([
+    { through: 'through the status relay', relayed: true, runs: PYTHON_WITH_PTY },
+    { through: 'started on its own', relayed: false, runs: true }
+  ])(
+    'on a Mac machine the agent sits above the tools it starts, as taskpolicy -a puts a program there, $through',
+    ({ relayed, runs }, ctx) => {
+      const asTaskpolicyLiftsHere = TASKPOLICY_HERE
+        ? spawnSync(
+            TASKPOLICY,
+            ['-a', '/bin/sh', '-c', `ps -o pri= -p $$; /bin/sh -c 'ps -o pri= -p $$; :'`],
+            { encoding: 'utf8' }
+          )
+            .stdout.trim()
+            .split(/\s+/)
+        : []
+      if (!runs || asTaskpolicyLiftsHere[0] === asTaskpolicyLiftsHere[1]) ctx.skip()
+      const b = box(spec())
+      if (!relayed)
+        fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+          mode: 0o755
+        })
+      fs.writeFileSync(
+        path.join(b.home, '.local', 'bin', 'claude'),
+        `#!/bin/sh\nps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'agent'))}\n/bin/sh -c 'ps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'tool'))}; :'\n`,
+        { mode: 0o755 }
+      )
+      expect(b.run().status).toBe(0)
+      expect(
+        ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
+      ).toEqual(asTaskpolicyLiftsHere)
+    }
+  )
 
   it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
     const b = box(
@@ -464,27 +695,257 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
-  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package and finds the machine's koloft first on its PATH, told which tab it runs in", () => {
+  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
     const b = box(spec({ agentPlugin: true }))
     expect(b.run().status).toBe(0)
     const m = `${b.home}/.koloft/m-0000000000000000`
-    expect(b.argv().slice(0, 6)).toEqual([
+    expect(b.argv().slice(0, 8)).toEqual([
       '--settings',
       `${b.home}/.koloft/tabs/T.json`,
+      '--plugin-dir',
+      `${m}/docs-plugin/`,
       '--plugin-dir',
       `${m}/agent-plugin/`,
       '--append-system-prompt-file',
       `${m}/agent-plugin/koloft-prompt.md`
     ])
-    expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
+    expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
-  it('a reconnect attaches to the running session and installs nothing', () => {
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+    const s = spec({
+      tmuxName: 'm-T',
+      program: machineToolProgram(
+        'muse',
+        museRunLines({
+          tabId: 'T',
+          account: "o'brien",
+          args: ['--approval-judge', 'off', 'say hi'],
+          sandboxed: false,
+          trust: [],
+          koloftSkill: false
+        }),
+        { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
+      )
+    })
+    const b = box(s)
+    const own = path.join(b.home, '.config', 'muse')
+    fs.mkdirSync(own, { recursive: true })
+    fs.writeFileSync(path.join(own, 'settings.json'), '{"schema_version":1}')
+    const accountMuse = path.join(b.home, '.koloft', 'muse-homes', "o'brien", 'muse')
+    fs.mkdirSync(accountMuse, { recursive: true })
+    fs.symlinkSync(path.join(own, 'AGENTS.md'), path.join(accountMuse, 'AGENTS.md'))
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'python3'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.tmux().join(' ')).toContain('new-session -A -D -s m-T')
+    const m = path.join(b.home, '.koloft', 'm-0000000000000000')
+    expect(b.argv()).toEqual([
+      `${m}/muse-wrap.py`,
+      `${b.home}/.koloft/hook-sessions`,
+      'T',
+      '--',
+      ...(TASKPOLICY_HERE ? [TASKPOLICY, '-a'] : []),
+      'muse',
+      '--approval-judge',
+      'off',
+      'say hi'
+    ])
+    const account = path.join(b.home, '.koloft', 'muse-homes', "o'brien")
+    expect(b.env()).toMatchObject({
+      XDG_CONFIG_HOME: account,
+      TBH_CREDENTIAL_BACKEND: 'file',
+      TBH_MANAGED_HOOKS_PATH: `${b.home}/.koloft/tabs/T.hooks.json`
+    })
+    expect(b.env().PATH).not.toContain('claude-bin')
+    expect(fs.readFileSync(path.join(account, 'muse', 'auth.json'), 'utf8')).toBe(
+      '{"providers":{}}'
+    )
+    expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
+    expect(fs.existsSync(path.join(b.tabs, 'T.auth.json'))).toBe(false)
+    expect(fs.readlinkSync(path.join(account, 'muse', 'settings.json'))).toBe(
+      path.join(own, 'settings.json')
+    )
+    expect(fs.readlinkSync(path.join(account, 'muse', 'trust.json'))).toBe(
+      path.join(own, 'trust.json')
+    )
+    expect(fs.lstatSync(path.join(account, 'muse', 'AGENTS.md'), { throwIfNoEntry: false })).toBe(
+      undefined
+    )
+    fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
+    b.run('attach')
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
+  })
+
+  // MUSE§16
+  it("a Muse tab copies Koloft's skills from the machine package into its account's own skills folder, where a same-named skill of the machine user's never takes their place while the user's other skills are still linked in: koloft-docs every time, koloft only while agent tools are on", () => {
+    const muse = (koloftSkill: boolean): TabSpec =>
+      spec({
+        tmuxName: 'm-T',
+        program: machineToolProgram(
+          'muse',
+          museRunLines({
+            tabId: 'T',
+            account: 'a',
+            args: [],
+            sandboxed: false,
+            trust: [],
+            koloftSkill
+          }),
+          { 'T.hooks.json': '{"hooks":{}}' }
+        )
+      })
+    const b = box(muse(true))
+    putSkillsInMachinePackage(path.join(b.home, '.koloft', 'm-0000000000000000'))
+    const owners = path.join(b.home, '.config', 'muse', 'skills')
+    for (const skill of ['review', 'koloft-docs'])
+      fs.mkdirSync(path.join(owners, skill), { recursive: true })
+    fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\n', { mode: 0o755 })
+    const skills = path.join(b.home, '.koloft', 'muse-homes', 'a', 'muse', 'skills')
+    expect(b.run().status).toBe(0)
+    expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toBe('NEW')
+    writeTabPackage(b.tabs, muse(false))
+    expect(b.run().status).toBe(0)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+    expect(fs.lstatSync(path.join(skills, 'koloft-docs')).isSymbolicLink()).toBe(false)
+    expect(fs.readFileSync(path.join(skills, 'koloft-docs', 'references', 'core.md'), 'utf8')).toBe(
+      'NEW CORE'
+    )
+    expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(path.join(owners, 'review'))
+  })
+
+  // MUSE§17
+  it('a Muse tab on a machine where no user namespace can be made says why its sandbox cannot start only when Muse runs with its sandbox, not when permission prompts are skipped', () => {
+    const said = (sandboxed: boolean): string => {
+      const b = box(
+        spec({
+          tmuxName: 'm-T',
+          program: machineToolProgram(
+            'muse',
+            museRunLines({
+              tabId: 'T',
+              account: 'a',
+              args: [],
+              sandboxed,
+              trust: [],
+              koloftSkill: false
+            }),
+            {}
+          )
+        })
+      )
+      for (const [name, text] of [
+        ['unshare', 'exit 1'],
+        ['python3', 'exit 0']
+      ])
+        fs.writeFileSync(path.join(b.home, '.local', 'bin', name), `#!/bin/sh\n${text}\n`, {
+          mode: 0o755
+        })
+      const res = b.run()
+      expect(res.status).toBe(0)
+      return res.stdout
+    }
+    expect(said(true)).toContain(MUSE_SANDBOX_CANNOT_START)
+    expect(said(false)).not.toContain(MUSE_SANDBOX_CANNOT_START)
+  })
+
+  it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, with its status frames off since no one on the Mac reads them, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
+    const tabFiles = {
+      'T.settings.json': '{"koloft":1}',
+      'T.hooks.json': '{"hooks":{}}',
+      'T.auth.json': 'oauth-token'
+    }
+    const s = spec({
+      tmuxName: 'm-T-t',
+      env: { [AGY_KEY_FROM_KOLOFT]: 'koloft-key' },
+      program: agyTab({
+        tabId: 'T',
+        account: "o'brien",
+        args: ['--csrf_token=x', 'say hi'],
+        settings: tabFiles['T.settings.json'],
+        hooks: tabFiles['T.hooks.json'],
+        token: tabFiles['T.auth.json'],
+        koloftSkill: false
+      })
+    })
+    const b = box(s)
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'agy'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.tmux().join(' ')).toContain('new-session -A -D -s m-T-t')
+    const account = path.join(b.home, '.koloft', 'agy', "o'brien")
+    expect(b.argv()).toEqual([`--gemini_dir=${account}`, '--csrf_token=x', 'say hi'])
+    expect(b.env().GEMINI_API_KEY).toBe('koloft-key')
+    expect(b.env()[AGY_KEY_FROM_KOLOFT]).toBeUndefined()
+    expect(b.env().AGY_CLI_OSC7501).toBe('off')
+    expect(b.env().KOLOFT_AGY_LOG).toBe(`${b.home}/.koloft/hook-sessions/T.agy.jsonl`)
+    const app = path.join(account, 'antigravity-cli')
+    expect(fs.readFileSync(path.join(app, 'settings.json'), 'utf8')).toBe('{"koloft":1}')
+    expect(fs.readFileSync(path.join(account, 'config', 'hooks.json'), 'utf8')).toBe('{"hooks":{}}')
+    expect(fs.readFileSync(path.join(app, 'antigravity-oauth-token'), 'utf8')).toBe('oauth-token')
+    for (const name of Object.keys(tabFiles))
+      expect(fs.existsSync(path.join(b.tabs, name))).toBe(false)
+    expect(fs.readlinkSync(path.join(app, 'conversations'))).toBe(
+      `${b.home}/.gemini/antigravity-cli/conversations`
+    )
+    fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
+    b.run('attach')
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
+  })
+
+  it("an Antigravity tab started without an API key runs agy without the machine's own key", () => {
+    const b = box(
+      spec({
+        program: agyTab({
+          tabId: 'T',
+          account: 'a',
+          args: [],
+          settings: '{}',
+          hooks: '{}',
+          koloftSkill: false
+        })
+      })
+    )
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'agy'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.env().GEMINI_API_KEY).toBeUndefined()
+  })
+
+  it('the tab ends with the code the agent exited with inside tmux, though tmux itself always exits 0, and shows the screen the agent left when that code is not 0', () => {
+    const failed = box(spec(), { claudeExit: 3 }).run()
+    expect(failed.status).toBe(3)
+    expect(failed.stdout).toMatch(/the last screen\n$/)
+    const clean = box(spec()).run()
+    expect(clean.status).toBe(0)
+    expect(clean.stdout).not.toContain('the last screen')
+  })
+
+  it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {
+    expect(box(spec(), { claudeExit: 255 }).run().status).toBe(254)
+  })
+
+  // CC§4 PLATFORM§35
+  it("a reconnect turns on the pane title and the agent's status passthrough for a tmux started by an older Koloft, attaches to the running session and installs nothing", () => {
     const b = box(spec())
     const res = b.run('attach')
     expect(res.status).toBe(0)
-    expect(b.tmux()).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
+    expect(b.tmux()).toEqual([
+      ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
+      ...['set', '-gq', 'set-titles-string', '#{pane_title}', ';'],
+      ...['set', '-gq', 'allow-passthrough', 'on'],
+      ...['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1']
+    ])
     expect(b.ensured()).toBe(false)
   })
 
@@ -497,21 +958,26 @@ describe('U-TAB-*: the tab script on the machine', () => {
 
     b.run('attach', '90', '30')
     expect(b.standIn().join(' ')).toContain('stty cols 90 rows 30')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
   })
 
-  it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {
+  it("clears the tab's leftover hook reports and tmux name before starting, since tab ids are reused across Koloft runs and a close ends the session that name file names, but not on a reconnect", () => {
     const b = box(spec())
     const hooks = path.join(b.home, '.koloft', 'hook-sessions')
     fs.mkdirSync(hooks, { recursive: true })
-    const stale = [path.join(hooks, 'T.json'), path.join(hooks, 'T.status.jsonl')]
+    fs.mkdirSync(path.join(b.home, '.koloft', 'tabs'), { recursive: true })
+    const stale = [
+      path.join(hooks, 'T.json'),
+      path.join(hooks, 'T.status.jsonl'),
+      path.join(b.home, '.koloft', 'tabs', 'T.tmux')
+    ]
     for (const f of stale) fs.writeFileSync(f, '{"event":"end"}\n')
     expect(b.run().status).toBe(0)
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false, false])
 
     for (const f of stale) fs.writeFileSync(f, '{"event":"start"}\n')
     b.run('attach')
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true, true])
   })
 
   // CC§10
@@ -536,6 +1002,35 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const own = box(spec())
     expect(own.run().status).toBe(0)
     expect(fs.existsSync(cj(own))).toBe(false)
+  })
+
+  // CC§9 ADR-0026
+  it('a tab told to trust its folder writes the trust under the real path with the node ensure.sh brought, keeping what .claude.json had, even for a repo inside a trusted folder, since trust stops at the repo top; a tab not told to leaves it alone', () => {
+    const parent = mkroot('trust')
+    const repo = path.join(parent, 'repo')
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const real = fs.realpathSync(repo)
+    const seeded = JSON.stringify({
+      numStartups: 3,
+      projects: { [path.dirname(real)]: { hasTrustDialogAccepted: true } }
+    })
+    const cj = (b: Box): string => path.join(b.home, '.claude.json')
+    const trusting = box(spec({ cwd: repo, trustFolder: true }), { ensureBringsNode: true })
+    fs.writeFileSync(cj(trusting), seeded)
+    expect(trusting.run().status).toBe(0)
+    expect(JSON.parse(fs.readFileSync(cj(trusting), 'utf8'))).toEqual({
+      numStartups: 3,
+      projects: {
+        [path.dirname(real)]: { hasTrustDialogAccepted: true },
+        [real]: { hasTrustDialogAccepted: true }
+      }
+    })
+    expect(trusting.claudeCalls()).toHaveLength(1)
+
+    const plain = box(spec({ cwd: repo }), { ensureBringsNode: true })
+    fs.writeFileSync(cj(plain), seeded)
+    expect(plain.run().status).toBe(0)
+    expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
   })
 
   // CC§10
@@ -613,7 +1108,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ]
     const b = box(spec({ claudeArgs: args }))
     expect(b.run().status).toBe(0)
-    expect(b.argv().slice(2)).toEqual(args)
+    expect(b.argv().slice(-args.length)).toEqual(args)
     expect(() => tabScript(spec({ tmuxName: "k-'; id #" }))).toThrow()
   })
 })
@@ -677,14 +1172,46 @@ describe('U-ENV-1: what a tab sends about the account', () => {
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
       'ANTHROPIC_MODEL',
       'ANT_ACCOUNT',
+      'CLAUDE_CODE_DISABLE_1M_CONTEXT',
       'CLAUDE_CODE_SUBAGENT_MODEL',
       'CLAUDE_CODE_SUBAGENT_MODEL_FORCE'
     ])
     expect(custom.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5.2')
     expect(custom.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe('1')
+    expect(custom.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe('1')
     expect(
       Object.keys(accountEnv('custom', 'p', 't', { baseUrl: 'https://p.test' })).sort()
     ).toEqual(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANT_ACCOUNT'])
+  })
+
+  it('caps the context at 200k for pinned names CC 2.1.323 guesses a 1M window for that have no "claude" in them and no [1m] the owner asked for, and never for a name CC knows', () => {
+    const guessed = [
+      'glm-4.6',
+      'deepseek-chat',
+      'kimi-k2-0905-preview',
+      'qwen3-coder-plus',
+      'openai/gpt-5',
+      'opus',
+      'sonnet',
+      'haiku'
+    ]
+    const ownWindow = [
+      'claude-sonnet-4-5',
+      'Claude-Sonnet-4-5',
+      'claude-sonnet-4.5',
+      'anthropic/claude-sonnet-4.5',
+      'anthropic/claude-sonnet-4',
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'claude-3-5-sonnet-20241022',
+      'claude-opus-4-1',
+      'claude-opus-5-5',
+      'claude-fable-5-2',
+      'claude-sonnet-4-5[1m]',
+      'opus[1m]',
+      'glm-4.6[1m]'
+    ]
+    expect(guessed.filter((m) => !claudeCodeGuessesWindowOf(m))).toEqual([])
+    expect(ownWindow.filter(claudeCodeGuessesWindowOf)).toEqual([])
   })
 
   it('lands on disk readable by nobody else, quotes and all', () => {

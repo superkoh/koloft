@@ -1,5 +1,6 @@
-import { useEffect, useRef, type JSX, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, type JSX, type ReactNode } from 'react'
 import type { ExtensionPermissionRequest } from '@shared/types'
+import '../extensionConfirm.css'
 
 const CAPTURE_BEFORE_XTERM = true
 
@@ -25,12 +26,15 @@ export function ExtensionModal({
   const answer = useRef(onAnswer)
   answer.current = onAnswer
 
-  useEffect(() => cancelRef.current?.focus(), [])
+  // PLATFORM§25
+  useLayoutEffect(() => cancelRef.current?.focus(), [])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
+      e.stopPropagation()
       answer.current(false)
     }
     window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)

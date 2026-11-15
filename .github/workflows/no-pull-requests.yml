@@ -1,8 +1,10 @@
 name: Pull requests are not open yet
 
 # Koloft is published to be read and run, and to take bug reports and ideas as issues.
-# It does not take code contributions yet. GitHub has no switch for that, so this closes
-# any pull request that is not the maintainer's own, with a note saying where to go.
+# It does not take outside code contributions yet. GitHub has no switch for that, so this
+# closes any pull request that comes from a fork, with a note saying where to go. A branch
+# in this repository can only be pushed by someone with write access, so their pull
+# requests stay open.
 on:
   pull_request_target:
     types: [opened, reopened]
@@ -12,8 +14,7 @@ permissions:
 
 jobs:
   close:
-    # Dependabot's version-update pull requests are the owner's own tooling.
-    if: github.event.pull_request.user.login != github.repository_owner && github.event.pull_request.user.login != 'dependabot[bot]'
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - run: |

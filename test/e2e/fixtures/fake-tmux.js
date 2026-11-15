@@ -18,6 +18,7 @@ for (let i = 0; i < raw.length; i++) {
     i++
     continue
   }
+  if (a === '-u') continue
   if (!verb) verb = a
   else rest.push(a)
 }
@@ -28,9 +29,14 @@ const flagVal = (f) => {
 
 const openFifoNeverSeeingEof = (fifo) => fs.openSync(fifo, fs.constants.O_RDWR)
 
+const DCS_OPEN = '\x1bPtmux;'
+const WHOLE_DCS = /^\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\/
+const DCS = /\x1bPtmux;((?:[^\x1b]|\x1b\x1b)*)\x1b\\/g
+
 const aliveFile = (name) => path.join(aliveDir, name)
 const fifoPath = (io) => path.join(ioDir, `${io}.in`)
 const outPath = (io) => path.join(ioDir, `${io}.out`)
+const rawPaneMark = (io) => path.join(ioDir, `${io}.raw`)
 
 function recordOf(name) {
   try {
@@ -70,9 +76,18 @@ function attach(name) {
     } catch {}
   })
   process.stdin.resume()
+  // PLATFORM§35
+  const keysAtOnceOnceThePaneIsRaw = () => {
+    if (!process.stdin.isTTY) return
+    const raw = fs.existsSync(rawPaneMark(io))
+    if (raw !== process.stdin.isRaw) process.stdin.setRawMode(raw)
+  }
+  keysAtOnceOnceThePaneIsRaw()
 
   let off = 0
+  let held = ''
   const pump = () => {
+    keysAtOnceOnceThePaneIsRaw()
     try {
       const size = fs.statSync(outPath(io)).size
       if (size <= off) return
@@ -81,8 +96,21 @@ function attach(name) {
       fs.readSync(fd, buf, 0, buf.length, off)
       fs.closeSync(fd)
       off = size
-      process.stdout.write(buf)
+      process.stdout.write(passThrough(buf))
     } catch {}
+  }
+  // PLATFORM§35
+  const passThrough = (buf) => {
+    let text = held + buf.toString('latin1')
+    held = ''
+    const open = text.lastIndexOf(DCS_OPEN)
+    if (open >= 0 && !WHOLE_DCS.test(text.slice(open))) {
+      held = text.slice(open)
+      text = text.slice(0, open)
+    }
+    const passes = !fs.existsSync(path.join(STATE, 'no-passthrough'))
+    text = text.replace(DCS, (_, inner) => (passes ? inner.replace(/\x1b\x1b/g, '\x1b') : ''))
+    return Buffer.from(text, 'latin1')
   }
   setInterval(pump, 80)
   setInterval(() => {
@@ -106,6 +134,7 @@ if (verb === 'new-session') {
     } catch {}
     cp.execFileSync('mkfifo', [fifo])
     fs.writeFileSync(outPath(io), '')
+    fs.rmSync(rawPaneMark(io), { force: true })
     const inFd = openFifoNeverSeeingEof(fifo)
     const outFd = fs.openSync(outPath(io), 'a')
     const cmdSurvivingHangup = `trap "" HUP; ${cmd}`
@@ -118,7 +147,8 @@ if (verb === 'new-session') {
         ...process.env,
         TMUX: `${ioDir}/${io}.sock,0,0`,
         TMUX_PANE: '%0',
-        KOLOFT_FAKE_TMUX_IO: io
+        KOLOFT_FAKE_TMUX_IO: io,
+        KOLOFT_FAKE_TMUX_RAW_MARK: rawPaneMark(io)
       }
     })
     child.unref()
@@ -135,6 +165,11 @@ if (verb === 'new-session') {
         fs.unlinkSync(aliveFile(name))
       } catch {}
   }
+  process.exit(0)
+} else if (verb === 'list-panes') {
+  const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
+  if (!alive(pid)) process.exit(1)
+  process.stdout.write(pid + '\n')
   process.exit(0)
 } else if (verb === 'display-message' || verb === 'display') {
   const io = process.env.KOLOFT_FAKE_TMUX_IO

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { shq } from '@shared/shellQuote'
+import { CODEX_TMP_DIR } from './leftovers'
 
 const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
 
@@ -84,6 +85,15 @@ exit 0
 `
 }
 
+export const NO_REPLY_ENV = 'KOLOFT_NO_REPLY'
+
+export const REMOTE_OPEN_SHIM = `${OPEN_SHIM_HEAD}
+[ -n "$KOLOFT_TAB_ID" ] || passthrough "$@"
+${OPEN_SHIM_TARGET}
+${NO_REPLY_ENV}=1 "$self_dir/koloft" open "$abs$url" >/dev/null 2>&1 || passthrough "$@"
+exit 0
+`
+
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
 
 // PLATFORM§2
@@ -93,20 +103,20 @@ function zdotFile(name: string, userDotDir: string, shimDir: string): string {
   return name === '.zprofile' ? `${source}export PATH=${shq(shimDir)}:"$PATH"\n` : source
 }
 
-export interface CodexOpenShim {
+export interface OpenShim {
   shimDir: string
   zdotDir: string
   requestDir: string
 }
 
-export function writeCodexOpenShim(
+export function writeOpenShim(
   root: string,
   token: string,
   userZdotdir: string | undefined
-): CodexOpenShim {
+): OpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
-  const shim = { shimDir, zdotDir, requestDir: `/tmp/koloft-cx-open-${token}` }
+  const shim = { shimDir, zdotDir, requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`) }
   try {
     fs.mkdirSync(zdotDir, { recursive: true })
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {
@@ -117,13 +127,13 @@ export function writeCodexOpenShim(
       fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {
-    removeCodexOpenShim(shim)
+    removeOpenShim(shim)
     throw error
   }
   return shim
 }
 
-export function removeCodexOpenShim(shim: CodexOpenShim): void {
+export function removeOpenShim(shim: OpenShim): void {
   fs.rmSync(shim.shimDir, { recursive: true, force: true })
   fs.rmSync(shim.requestDir, { recursive: true, force: true })
 }

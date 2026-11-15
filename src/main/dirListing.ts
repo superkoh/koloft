@@ -22,6 +22,21 @@ function parentOf(dir: string): string | null {
   return cut > 0 ? trimmed.slice(0, cut) : cut === 0 ? '/' : null
 }
 
+function htmlPage(title: string, body: string): string {
+  return (
+    '<!doctype html>\n<html><head><meta charset="utf-8">' +
+    `<title>${escapeHtml(title)}</title>` +
+    '<style>body{font:13px/1.6 system-ui,sans-serif;margin:16px}' +
+    'ul{list-style:none;padding:0}a{text-decoration:none}</style></head><body>' +
+    `${body}</body></html>\n`
+  )
+}
+
+// PLATFORM§12
+export function fileNotFoundHtml(file: string): string {
+  return htmlPage('File not found', `<h1>File not found: ${escapeHtml(file)}</h1>`)
+}
+
 // PLATFORM§12
 export function directoryListingHtml(dir: string, entries: readonly DirEntry[]): string {
   const sorted = [...entries].sort((a, b) =>
@@ -37,11 +52,5 @@ export function directoryListingHtml(dir: string, entries: readonly DirEntry[]):
         }</a></li>`
     )
   ]
-  return (
-    '<!doctype html>\n<html><head><meta charset="utf-8">' +
-    `<title>${escapeHtml(dir)}</title>` +
-    '<style>body{font:13px/1.6 system-ui,sans-serif;margin:16px}' +
-    'ul{list-style:none;padding:0}a{text-decoration:none}</style></head><body>' +
-    `<h1>${escapeHtml(dir)}</h1><ul>${rows.join('')}</ul></body></html>\n`
-  )
+  return htmlPage(dir, `<h1>${escapeHtml(dir)}</h1><ul>${rows.join('')}</ul>`)
 }

@@ -1,10 +1,7 @@
 import type { MarkdownIt } from 'markdown-it'
+import { previewFileUrl } from '@shared/browserRoute'
 import { resolveOnHost } from '@shared/remoteKey'
-import { escapeHtml as esc } from './escape'
-
-function fileUrl(p: string): string {
-  return `koloft-file://localhost${encodeURI(p)}`
-}
+import { escapeHtml as esc } from '@shared/escapeHtml'
 
 function undoMarkdownItPercentEncoding(src: string): string {
   try {
@@ -38,7 +35,7 @@ export function assets(md: MarkdownIt): void {
     if (!isInline(src)) {
       const srcPath = typeof env?.srcPath === 'string' ? env.srcPath : ''
       const path = undoMarkdownItPercentEncoding(src)
-      token.attrSet('src', fileUrl(resolveOnHost(srcPath, path)))
+      token.attrSet('src', previewFileUrl(resolveOnHost(srcPath, path)))
       token.attrSet('data-path', path)
     }
 

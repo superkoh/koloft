@@ -1,7 +1,7 @@
 import path from 'path'
 import { isValidSchedule } from '@shared/schedule'
 import { HIST_WORDS } from '@shared/cronHistory'
-import { hasWordChar, isValidModelName } from '@shared/cronNames'
+import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { backendIdOf } from '@shared/sessionBackend'
 import { isAbsoluteOnHost } from '@shared/remoteKey'
@@ -63,7 +63,11 @@ function cleanHistory(raw: unknown): HistoryLine[] {
     if (typeof item.worktree === 'string' && isValidWorktreeName(item.worktree)) {
       line.worktree = item.worktree
     }
-    if (state === 'failed' && typeof item.note === 'string') line.note = item.note
+    if (typeof item.note === 'string') line.note = item.note
+    if (typeof item.sessionId === 'string' && item.sessionId) line.sessionId = item.sessionId
+    if (item.removed === true) line.removed = true
+    if (typeof item.kept === 'string' && item.kept) line.kept = item.kept
+    if (item.liveState === 'running' || item.liveState === 'done') line.liveState = item.liveState
     lines.push(line)
   }
   return lines
@@ -101,7 +105,9 @@ export function sanitizeCron(
     if (typeof enabled !== 'boolean') continue
 
     const permission =
-      item.permission === 'acceptEdits' || item.permission === 'skipAll' ? item.permission : 'same'
+      item.permission === 'acceptEdits' || item.permission === 'skipAll'
+        ? item.permission
+        : NEW_JOB_PERMISSION
 
     const job: CronJob = {
       id,
@@ -120,6 +126,12 @@ export function sanitizeCron(
     }
     if (isCronEffort(item.effort)) job.effort = item.effort
     if (item.autoClose === true) job.autoClose = true
+    if (
+      schedule.kind === 'after' &&
+      typeof item.waitFrom === 'number' &&
+      Number.isFinite(item.waitFrom)
+    )
+      job.waitFrom = item.waitFrom
     const backend = backendIdOf(item.backend)
     if (backend) job.backend = backend
     seen.add(id)

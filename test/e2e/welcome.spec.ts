@@ -4,7 +4,9 @@ import { test, expect, launchApp, runInTerminal } from './helpers/app'
 import { seedSettings } from './helpers/env'
 import {
   gitInit,
+  closeKeptTab,
   killSession,
+  landsOnTheButler,
   pickerDialog,
   seedJsonl,
   sendShortcut,
@@ -70,7 +72,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const recent = panel.locator('.recent-list .recent-row')
       await expect(recent).toHaveCount(1)
       await expect(recent.locator('.ws-tab-title')).toHaveText('Recent A session')
-      await expect(page.locator('.ws-tab', { hasText: 'Other B session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Other B session' })).toHaveCount(1)
       await snap(page, 'T-LIFE-13b')
 
       await panel.locator('button', { hasText: 'New worktree session' }).click()
@@ -92,7 +94,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
     }
   })
 
-  test('T-LIFE-17: the last session exiting cleanly hands the centre back to the panel, cold rows still listed', async ({
+  test('T-LIFE-17: the last session exiting cleanly lands on the butler, and closing the butler hands the centre back to the panel, cold rows still listed', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -107,22 +109,24 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       await waitForCalls(env, 1)
       await expect(page.locator('.w-empty')).toHaveCount(0)
 
-      await expect(page.locator('.ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
 
       await runInTerminal(page, '/exit')
+      await landsOnTheButler(page)
+      await sendShortcut(app, 'shortcut:close-tab')
 
       const panel = page.locator('.w-empty')
       await expect(panel).toBeVisible({ timeout: 30_000 })
       await expect(panel.locator('.quiet').first()).toHaveText('No running session')
       await expect(page.locator('.term-wrap')).toHaveCount(0)
-      await expect(page.locator('.ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
       await snap(page, 'T-LIFE-17')
     } finally {
       await app.close().catch(() => {})
     }
   })
 
-  test('T-LIFE-12: with nothing selected the panel targets the workspace last worked in, until a restart', async ({
+  test('T-LIFE-12: with nothing selected (the butler closed too) the panel targets the workspace last worked in, until a restart', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -142,6 +146,9 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const [sessionB] = await waitForCalls(env, 1)
       killSession(sessionB.pid, env)
       await expect(rowB).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+      await closeKeptTab(page1, rowB)
+      await landsOnTheButler(page1)
+      await sendShortcut(app1, 'shortcut:close-tab')
       const panel = page1.locator('.w-empty')
       await expect(panel).toBeVisible({ timeout: 20_000 })
 
@@ -163,6 +170,13 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const calls = await waitForCalls(env, 2)
       expect(calls[1].cwd).toBe(env.workspaces.b)
       expect(calls[1].argv).not.toContain('-w')
+      await expect(
+        wsRows(page1, 'ws-b').and(page1.locator('.st-working, .st-waiting'))
+      ).toHaveCount(1, { timeout: 40_000 })
+      killSession(calls[1].pid, env)
+      await expect(wsRows(page1, 'ws-b').and(page1.locator('.cold'))).toHaveCount(2, {
+        timeout: 40_000
+      })
     } finally {
       await app1.close().catch(() => {})
     }

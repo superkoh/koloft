@@ -1,11 +1,28 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, runInTerminal } from './helpers/app'
-import { writeClaudeWrapper, type E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose, runInTerminal, triggerRestart } from './helpers/app'
+import {
+  agySessionCalls,
+  E2E_CLAUDE_ACCOUNT,
+  installAgy,
+  installMuse,
+  museCalls,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  writeClaudeWrapper,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
+  ENDED_ROW_NOTE,
+  gitCommitAll,
+  gitInit,
+  newSessionInWith,
   openMenu,
+  openWorktreeSession,
   processAlive,
   readCalls,
   resumedId,
@@ -14,8 +31,11 @@ import {
   startSessionIn,
   waitBooted,
   waitForCalls,
+  wsRows,
   type ClaudeCall
 } from './helpers/p1'
+import { agyReady } from './helpers/remote'
+import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
 const SESSION_TITLE = 'Fake session: project notes'
@@ -25,7 +45,9 @@ const UNBOUND_WINDOW_OUTLASTS_ASSERTIONS_MS = 20_000
 const SHIM_REGISTRATION_SETTLE_MS = 2000
 const OLD_PTY_REVERT_CAN_TRAIL_RELAUNCH_MS = 5000
 const TITLE_SAMPLE_INTERVAL_MS = 150
-const SHELL_COMMAND_NOT_FOUND_TOAST = 'exit code 127'
+// PLATFORM§59
+const TASKPOLICY_FOUND_NO_PROGRAM_TOAST = 'exit code 66'
+const RESTART_COOLDOWN_OUTLASTED_MS = 1500
 
 function hasMalformedResume(calls: ClaudeCall[]): boolean {
   return calls.some((c) => {
@@ -75,16 +97,6 @@ function normalizeAccelerator(accel: string): string {
     .filter(Boolean)
     .sort()
     .join('+')
-}
-
-async function triggerRestart(app: ElectronApplication, times = 1): Promise<void> {
-  await app.evaluate(({ Menu }, count) => {
-    for (let i = 0; i < count; i++) {
-      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
-      if (!item) throw new Error('no application-menu item with id "restart-session"')
-      item.click()
-    }
-  }, times)
 }
 
 // PLATFORM§6
@@ -144,17 +156,10 @@ async function startClaudeTab(
 }
 
 async function backAfterRelaunch(page: Page, title: string): Promise<void> {
-  await expect(page.locator('.ws-tab', { hasText: title })).toHaveClass(
+  await expect(page.locator('.ws .ws-tab', { hasText: title })).toHaveClass(
     /\bst-(working|waiting|idle)\b/,
     { timeout: 40_000 }
   )
-}
-
-async function resumeColdRow(page: Page, title: string): Promise<void> {
-  const row = page.locator('.ws-tab', { hasText: title })
-  await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-  await row.click()
-  await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 40_000 })
 }
 
 function transcriptPath(env: E2EEnv, workspace: string, sessionId: string): string {
@@ -291,7 +296,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
 
         const transcript = transcriptPath(env, env.workspaces.a, sessionId)
         const sizeBefore = await transcriptBaseline(transcript)
-        const titlesBefore = await page.locator('.ws-tab .ws-tab-title').allTextContents()
+        const titlesBefore = await page.locator('.ws .ws-tab .ws-tab-title').allTextContents()
         await triggerRestart(app)
 
         const calls = await waitForCalls(env, 3)
@@ -300,10 +305,12 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         expect(calls[2].sessionId).toBe(sessionId)
         expect(calls[2].cwd).toBe(env.workspaces.a)
 
-        await expect(page.locator('.ws-tab')).toHaveCount(titlesBefore.length)
-        expect(await page.locator('.ws-tab .ws-tab-title').allTextContents()).toEqual(titlesBefore)
+        await expect(page.locator('.ws .ws-tab')).toHaveCount(titlesBefore.length)
+        expect(await page.locator('.ws .ws-tab .ws-tab-title').allTextContents()).toEqual(
+          titlesBefore
+        )
 
-        await expect(page.locator('.ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
+        await expect(page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
 
         await waitForResumedTurn(page, transcript, sizeBefore)
         await runIn(page, centerTerm(page), 'after-restart-marker')
@@ -325,7 +332,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       const [first] = await waitForCalls(env, 1)
 
       await runIn(page, centerTerm(page), '/busy')
-      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await countConfirmationsInsteadOfShowingThem(app, page)
 
@@ -344,7 +351,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         )
       ).toBe(0)
 
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 40_000 })
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 40_000 })
     })
 
     test('T6: the old claude process is dead after a restart', async ({ app, page, env }) => {
@@ -382,8 +389,8 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       await page.waitForTimeout(4000)
       expect(readCalls(env)).toHaveLength(1)
       expect(hasMalformedResume(readCalls(env))).toBe(false)
-      await expect(page.locator('.ws-tab')).toHaveCount(1)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1)
 
       fs.rmSync(env.claudeDelayFile, { force: true })
       await expect(page.locator('.ws-tab-title', { hasText: SESSION_TITLE })).toBeVisible({
@@ -407,12 +414,12 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       await triggerRestart(app, 3)
       await page.waitForTimeout(3000)
       await expect(page.locator('.center')).toContainText('No running session')
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
 
       await triggerRestart(app, 3)
       await page.waitForTimeout(3000)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
       await startClaudeTab(page, env)
       expect(readCalls(env)).toHaveLength(1)
@@ -431,8 +438,8 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
 
       await page.waitForTimeout(SECOND_RESTART_WOULD_LAND_WITHIN_MS)
       expect(readCalls(env)).toHaveLength(2)
-      await expect(page.locator('.ws-tab')).toHaveCount(1)
-      await expect(page.locator('.ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
 
       await runInTerminal(page, 'double-press-marker')
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
@@ -454,7 +461,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       await startClaudeTab(page, env, { wsName: 'ws-b' })
       const afterB = await waitForCalls(env, 2)
       const tabB = afterB[1]
-      await expect(page.locator('.ws-tab')).toHaveCount(2)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(2)
 
       await waitUntilTranscriptIsOnDiskSoRestartIsNotANoOp(
         transcriptPath(env, env.workspaces.a, tabA.sessionId)
@@ -465,7 +472,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       expect(resumedId(calls[2])).toBe(tabB.sessionId)
       await expect.poll(() => processAlive(tabB.pid), { timeout: 30_000 }).toBe(false)
       expect(processAlive(tabA.pid)).toBe(true)
-      await expect(page.locator('.ws-tab')).toHaveCount(2)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(2)
 
       await expect(centerTerm(page)).toContainText('ready in', {
         timeout: 20_000
@@ -475,7 +482,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       await expect(centerTerm(page)).toContainText('handled: tab-b-marker', {
         timeout: 20_000
       })
-      await expect(page.locator('.ws-tab', { hasText: 'Sibling session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Sibling session' })).toHaveCount(1)
     })
   })
 
@@ -516,17 +523,17 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       const calls = await waitForCalls(env, 3)
       const bravo = calls[1]
 
-      const orderBefore = await page.locator('.ws-tab .ws-tab-title').allTextContents()
+      const orderBefore = await page.locator('.ws .ws-tab .ws-tab-title').allTextContents()
       expect(orderBefore).toEqual(expect.arrayContaining(titles))
 
-      await page.locator('.ws-tab', { hasText: 'Bravo session' }).click()
+      await page.locator('.ws .ws-tab', { hasText: 'Bravo session' }).click()
       await triggerRestart(app)
       const after = await waitForCalls(env, 4)
       expect(resumedId(after[3])).toBe(bravo.sessionId)
 
-      await expect(page.locator('.ws-tab')).toHaveCount(3)
-      expect(await page.locator('.ws-tab .ws-tab-title').allTextContents()).toEqual(orderBefore)
-      await expect(page.locator('.ws-tab', { hasText: 'Bravo session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(3)
+      expect(await page.locator('.ws .ws-tab .ws-tab-title').allTextContents()).toEqual(orderBefore)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Bravo session' })).toHaveCount(1)
     })
 
     test('T12/T13 on a claude-kind tab: a resumed tab never flashes a default title and keeps its pane across a restart', async ({
@@ -563,7 +570,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         const hardDeadline = Date.now() + 45_000
         while (Date.now() < hardDeadline) {
           expect(
-            await page.locator('.ws-tab', { hasText: SESSION_TITLE }).count(),
+            await page.locator('.ws .ws-tab', { hasText: SESSION_TITLE }).count(),
             'the tab lost its session title during the restart'
           ).toBe(1)
           if (!sawRelaunch && readCalls(env).length >= 3) {
@@ -577,8 +584,8 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
 
         const calls = readCalls(env)
         expect(resumedId(calls[2])).toBe(sessionId)
-        await expect(page.locator('.ws-tab')).toHaveCount(1)
-        await expect(page.locator('.ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
+        await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+        await expect(page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
 
         await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')
         await expect(page.locator(WORKBENCH.readingBody)).toContainText(
@@ -619,10 +626,59 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await second.app.close().catch(() => {})
       }
     })
+
+    for (const [how, deleteTree] of [
+      [
+        'with git worktree remove',
+        (ws: string, dir: string) =>
+          execFileSync('git', ['-C', ws, 'worktree', 'remove', '--force', '--force', dir])
+      ],
+      [
+        'in Finder, which leaves git still registering it',
+        (_ws: string, dir: string) => fs.rmSync(dir, { recursive: true, force: true })
+      ]
+    ] as const) {
+      test(`T16: restarting a worktree session whose folder was deleted ${how} rebuilds the worktree and resumes the same session in it, in place`, async ({
+        env
+      }) => {
+        test.setTimeout(180_000)
+        const ws = env.workspaces.a
+        gitInit(ws)
+        fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n')
+        gitCommitAll(ws)
+        const { app, page } = await launch(env)
+        try {
+          await waitBooted(page)
+          const dlg = await openWorktreeSession(page, 'ws-a')
+          await dlg.getByRole('textbox').click()
+          await page.keyboard.type('gone')
+          await page.keyboard.press('Enter')
+          await expect(dlg).toHaveCount(0)
+          const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
+          await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+          const [first] = await waitForCalls(env, 1)
+
+          const wtDir = path.join(ws, '.claude', 'worktrees', 'gone')
+          deleteTree(ws, wtDir)
+          expect(fs.existsSync(wtDir)).toBe(false)
+          await triggerRestart(app)
+
+          const calls = await waitForCalls(env, 2, 60_000)
+          expect(resumedId(calls[1])).toBe(first.sessionId)
+          expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(wtDir))
+          await expect(page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
+          await backAfterRelaunch(page, SESSION_TITLE)
+        } finally {
+          await app.close().catch(() => {})
+        }
+      })
+    }
   })
 
   test.describe('fault tolerance', () => {
-    test('T15: a respawn that dies at exec says so, and the row still resumes', async ({ env }) => {
+    test('T15: a respawn that dies at exec says so and keeps its tab, and ⇧⌘R there resumes the same id in it', async ({
+      env
+    }) => {
       test.setTimeout(180_000)
       const wrapper = writeClaudeWrapper(env)
       env.launchEnv.KOLOFT_CLAUDE_CMD = wrapper
@@ -635,20 +691,107 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         fs.rmSync(path.join(env.fakeBin, wrapper), { force: true })
         await triggerRestart(app)
 
-        await expect(page.locator('.toast-msg')).toContainText(SHELL_COMMAND_NOT_FOUND_TOAST, {
+        await expect(page.locator('.toast-msg')).toContainText(TASKPOLICY_FOUND_NO_PROGRAM_TOAST, {
           timeout: 30_000
         })
         expect(readCalls(env)).toHaveLength(1)
-        await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
+        const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
+        await expect(row.locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, { timeout: 20_000 })
+        await expect(row).toHaveClass(/\bactive\b/)
+        await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
 
         writeClaudeWrapper(env, wrapper)
-        await resumeColdRow(page, SESSION_TITLE)
+        await page.waitForTimeout(RESTART_COOLDOWN_OUTLASTED_MS)
+        await triggerRestart(app)
         const calls = await waitForCalls(env, 2)
+        await expect(row.locator('.ws-tab-sub')).not.toHaveText(ENDED_ROW_NOTE, { timeout: 20_000 })
+        await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
         expect(resumedId(calls[1])).toBe(first.sessionId)
         expect(fs.readFileSync(env.wrapperCalls, 'utf8')).toContain(`--resume ${first.sessionId}`)
       } finally {
         await app.close().catch(() => {})
       }
     })
+
+    test('T17: with no Claude account usable, restart says why and leaves the running claude alone', async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      const { app, page } = await launch(env)
+      try {
+        await startClaudeTab(page, env)
+        const [first] = await waitForCalls(env, 1)
+        await waitUntilTranscriptIsOnDiskSoRestartIsNotANoOp(
+          transcriptPath(env, env.workspaces.a, first.sessionId)
+        )
+        await page.evaluate(
+          (name) => window.api.accounts.toggle(name, 'apikey', false),
+          E2E_CLAUDE_ACCOUNT
+        )
+        await triggerRestart(app)
+
+        await expect(page.locator('.toast-msg')).toHaveText(
+          'No Claude account can be used — check Settings ▸ Accounts.'
+        )
+        const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
+        await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/)
+        await expect(row).not.toHaveClass(/\bcold\b/)
+        expect(processAlive(first.pid)).toBe(true)
+        expect(readCalls(env)).toHaveLength(1)
+      } finally {
+        await app.close().catch(() => {})
+      }
+    })
+
+    const OTHER_LOCAL_AGENTS = [
+      {
+        backend: 'muse',
+        label: 'Muse',
+        install: (env: E2EEnv) => {
+          installMuse(env)
+          trustInMuse(env, env.workspaces.a)
+        },
+        ready: (page: Page) => expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/),
+        launches: museCalls
+      },
+      {
+        backend: 'agy',
+        label: 'Antigravity',
+        install: (env: E2EEnv) => {
+          installAgy(env)
+          trustInAgy(env, env.workspaces.a)
+        },
+        ready: agyReady,
+        launches: agySessionCalls
+      }
+    ] as const
+
+    for (const agent of OTHER_LOCAL_AGENTS)
+      test(`with no ${agent.label} account usable, restarting a local ${agent.label} session says why, keeps the running ${agent.label}, and starts no other`, async ({
+        env
+      }) => {
+        test.setTimeout(180_000)
+        agent.install(env)
+        seedSettings(env, { hintsOff: true })
+        const { app, page } = await launch(env)
+        try {
+          await waitBooted(page)
+          await newSessionInWith(page, 'ws-a', agent.label)
+          await expect.poll(() => agent.launches(env).length).toBe(1)
+          const [first] = agent.launches(env)
+          await agent.ready(page)
+          await runIn(page, centerTerm(page), 'one turn')
+          const row = wsRows(page, 'ws-a').filter({ hasText: 'one turn' })
+          await expect(row).toHaveClass(/\bst-waiting\b/)
+
+          await turnOffItsOnlyAccountRestartAndSeeWhy(app, page, agent.backend)
+          await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
+          await expect(row).not.toHaveClass(/\bcold\b/)
+          expect(processAlive(first.pid)).toBe(true)
+          expect(agent.launches(env)).toHaveLength(1)
+        } finally {
+          await quitAndClose(app)
+        }
+      })
   })
 })

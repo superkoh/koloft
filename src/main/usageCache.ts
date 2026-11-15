@@ -1,0 +1,276 @@
+import fs from 'fs'
+import path from 'path'
+import type { BackendId, UsageRead, UsageRecord, UsageRow } from '@shared/types'
+import { formatRemoteKey } from '@shared/remoteKey'
+import { AGY_APP_DIR, agyTranscript, conversationDb } from './agyStore'
+import { PrivateRecordFile } from './privateFile'
+import { mapAtMost } from './mapAtMost'
+import { claudeCallKeys, recordsOfClaudeCalls, type ClaudeCalls } from './usageScan'
+
+export interface UsageFile {
+  file: string
+  backend: BackendId
+  workspace: string
+  sessionId?: string
+  db?: string
+  host?: string
+}
+
+export interface SessionPlace {
+  workspace: string
+  title: string
+}
+
+export interface ScannedFile {
+  file: string
+  records: UsageRecord[]
+  claudeCalls?: ClaudeCalls
+  bornAt?: string
+  cwd?: string
+}
+
+interface FileStat {
+  mtimeMs: number
+  size: number
+}
+
+interface CachedFile extends FileStat, UsageFile, Omit<ScannedFile, 'file'> {}
+
+export interface UsageCacheDeps {
+  cacheFile: () => string
+  listFiles: () => Promise<UsageFile[]>
+  stat: (file: string) => Promise<FileStat | undefined>
+  scan: (files: UsageFile[], scanned: (file: ScannedFile) => void, ended: () => void) => void
+  codexWorkspaces: (cwds: string[]) => string[]
+  sessionPlaces: () => (
+    backend: BackendId,
+    sessionId: string,
+    host?: string
+  ) => SessionPlace | undefined
+  changed: (read: UsageRead) => void
+}
+
+const FILES_AT_ONCE = 16
+export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
+const MUSE_SESSION_FILE_PREFIX = 'session.'
+const MUSE_DATE_DEPTH = 3
+export class UsageCache {
+  private reading = false
+  private readonly cached: PrivateRecordFile<CachedFile>
+  private claudeGeneration = 0
+  private claudeOnce?: { generation: number; recordsByFile: Map<string, UsageRecord[]> }
+  private readonly unpackedClaude = new WeakMap<
+    ClaudeCalls,
+    { keys: string[]; records: UsageRecord[] }
+  >()
+
+  constructor(private readonly deps: UsageCacheDeps) {
+    this.cached = new PrivateRecordFile(deps.cacheFile)
+  }
+
+  async read(): Promise<UsageRead> {
+    if (!this.reading) await this.refresh()
+    return this.snapshot()
+  }
+
+  private snapshot(): UsageRead {
+    return { ...this.rows(), reading: this.reading }
+  }
+
+  private async refresh(): Promise<void> {
+    this.reading = true
+    const ended = (): void => {
+      this.reading = false
+      this.deps.changed(this.snapshot())
+    }
+    try {
+      const listed = await this.deps.listFiles()
+      const stats = await mapAtMost(listed, FILES_AT_ONCE, (f) => this.deps.stat(f.file))
+      const cached = this.cached.get()
+      const present = new Set<string>()
+      const stale = new Map<string, UsageFile & FileStat>()
+      listed.forEach((f, i) => {
+        const stat = stats[i]
+        if (!stat) return
+        present.add(f.file)
+        const entry = cached[f.file]
+        if (entry?.mtimeMs === stat.mtimeMs && entry.size === stat.size)
+          entry.workspace = f.workspace
+        else stale.set(f.file, { ...f, ...stat })
+      })
+      const gone = Object.keys(cached).filter((file) => !present.has(file))
+      if (gone.some((file) => cached[file].claudeCalls)) this.claudeGeneration++
+      for (const file of gone) delete cached[file]
+      if (!stale.size) {
+        if (gone.length) this.cached.save()
+        return ended()
+      }
+      this.deps.scan(
+        [...stale.values()],
+        ({ file, ...scanned }) => {
+          const f = stale.get(file)
+          if (!f) return
+          if (scanned.claudeCalls || cached[file]?.claudeCalls) this.claudeGeneration++
+          cached[file] = { ...f, ...scanned }
+        },
+        () => {
+          this.cached.save()
+          ended()
+        }
+      )
+    } catch (error) {
+      this.reading = false
+      throw error
+    }
+  }
+
+  private unpacked(calls: ClaudeCalls): { keys: string[]; records: UsageRecord[] } {
+    let found = this.unpackedClaude.get(calls)
+    if (!found) {
+      found = { keys: claudeCallKeys(calls).filter(Boolean), records: recordsOfClaudeCalls(calls) }
+      this.unpackedClaude.set(calls, found)
+    }
+    return found
+  }
+
+  // CC§5
+  private claudeRecordsCountingEachCallOnce(files: CachedFile[]): Map<string, UsageRecord[]> {
+    if (this.claudeOnce?.generation === this.claudeGeneration) return this.claudeOnce.recordsByFile
+    const startOf = (e: CachedFile): number => Date.parse(e.bornAt ?? '') || Infinity
+    const oldestFirst = files
+      .filter((e) => e.claudeCalls)
+      .sort((a, b) => startOf(a) - startOf(b) || (a.file < b.file ? -1 : 1))
+    const counted = new Set<string>()
+    const recordsByFile = new Map<string, UsageRecord[]>()
+    for (const e of oldestFirst) {
+      const { keys, records } = this.unpacked(e.claudeCalls!)
+      const copies = new Set(keys.filter((k) => counted.has(k)))
+      for (const k of keys) counted.add(k)
+      recordsByFile.set(
+        e.file,
+        copies.size ? recordsOfClaudeCalls(e.claudeCalls!, copies) : records
+      )
+    }
+    this.claudeOnce = { generation: this.claudeGeneration, recordsByFile }
+    return recordsByFile
+  }
+
+  private rows(): Pick<UsageRead, 'rows' | 'titles'> {
+    const files = Object.values(this.cached.get())
+    const claude = this.claudeRecordsCountingEachCallOnce(files)
+    const entries = files
+      .map((e) => (claude.has(e.file) ? { ...e, records: claude.get(e.file)! } : e))
+      .filter((e) => e.records.length)
+    const placeOf = this.deps.sessionPlaces()
+    const placed = new Map<CachedFile, string>()
+    for (const e of entries) {
+      if (e.backend === 'claude') continue
+      const own = placeOf(e.backend, e.sessionId ?? e.records[0].sessionId, e.host)
+      if (own) placed.set(e, own.workspace)
+    }
+    const unplacedCodex = entries.filter((e) => e.backend === 'codex' && !placed.has(e))
+    const fromCwd = this.deps.codexWorkspaces(
+      unplacedCodex.map((e) => (e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? '')))
+    )
+    unplacedCodex.forEach((e, i) => placed.set(e, fromCwd[i]))
+    const titles: Record<string, string> = {}
+    const rows = entries.flatMap((e) => {
+      const workspace = placed.get(e) ?? e.workspace
+      return e.records.map((r): UsageRow => {
+        titles[r.sessionId] ??= placeOf(e.backend, r.sessionId, e.host)?.title ?? ''
+        return { ...r, backend: e.backend, workspace }
+      })
+    })
+    return { rows, titles }
+  }
+}
+
+export interface UsageHome {
+  host?: string
+  codexHome: string
+  museHome: string
+  geminiDir: string
+}
+
+// CODEX§13
+async function codexFiles({ host, codexHome }: UsageHome): Promise<UsageFile[]> {
+  const found = await Promise.all(
+    CODEX_ROLLOUT_FOLDERS.map((folder) => jsonlUnder(path.join(codexHome, folder), 'rollout-'))
+  )
+  return found.flat().map((file) => ({ file, backend: 'codex' as const, workspace: '', host }))
+}
+
+// MUSE§2
+async function museFiles({ host, museHome }: UsageHome): Promise<UsageFile[]> {
+  const sessions = path.join(museHome, 'sessions')
+  return (await jsonlUnder(sessions, MUSE_SESSION_FILE_PREFIX)).map((file) => ({
+    file,
+    backend: 'muse' as const,
+    workspace: '',
+    sessionId: path.relative(sessions, file).split(path.sep)[MUSE_DATE_DEPTH],
+    host
+  }))
+}
+
+// AGY§8
+async function agyFiles({ host, geminiDir }: UsageHome): Promise<UsageFile[]> {
+  let ids: string[]
+  try {
+    ids = await fs.promises.readdir(path.join(geminiDir, AGY_APP_DIR, 'brain'))
+  } catch {
+    return []
+  }
+  return ids.map((id) => ({
+    file: agyTranscript(geminiDir, id),
+    backend: 'agy' as const,
+    workspace: '',
+    sessionId: id,
+    db: conversationDb(geminiDir, id),
+    host
+  }))
+}
+
+async function jsonlUnder(dir: string, namePrefix: string): Promise<string[]> {
+  let entries: fs.Dirent[]
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const found = await Promise.all(
+    entries.map(async (e) => {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) return jsonlUnder(p, namePrefix)
+      return e.isFile() && e.name.startsWith(namePrefix) && e.name.endsWith('.jsonl') ? [p] : []
+    })
+  )
+  return found.flat()
+}
+
+// CC§2 CODEX§13
+export async function listUsageFiles(
+  transcripts: { file: string; workspace: string }[],
+  homes: UsageHome[]
+): Promise<UsageFile[]> {
+  const claude = await mapAtMost(transcripts, FILES_AT_ONCE, async ({ file, workspace }) => {
+    const subagents = path.join(file.slice(0, -'.jsonl'.length), 'subagents')
+    return [file, ...(await jsonlUnder(subagents, ''))].map((f) => ({
+      file: f,
+      backend: 'claude' as const,
+      workspace
+    }))
+  })
+  const others = await Promise.all(
+    homes.flatMap((home) => [codexFiles(home), museFiles(home), agyFiles(home)])
+  )
+  return [...claude.flat(), ...others.flat()]
+}
+
+export async function statOf(file: string): Promise<FileStat | undefined> {
+  try {
+    const { mtimeMs, size } = await fs.promises.stat(file)
+    return { mtimeMs, size }
+  } catch {
+    return undefined
+  }
+}

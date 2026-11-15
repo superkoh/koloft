@@ -1,6 +1,13 @@
 import type { Locator } from '@playwright/test'
-import { test, expect } from './helpers/app'
-import { centerTerm, startSessionIn, wsRows } from './helpers/p1'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import {
+  centerTerm,
+  gitInit,
+  startSessionIn,
+  waitBooted,
+  worktreeDialog,
+  wsRows
+} from './helpers/p1'
 
 const PAST_HOVER_INTENT_DELAY_MS = 600
 
@@ -43,6 +50,45 @@ test.describe('C2 hover menu — resting the pointer on a row opens it, dragging
     await expect(row).toHaveClass(/\bactive\b/)
     await page.waitForTimeout(PAST_HOVER_INTENT_DELAY_MS)
     await expect(page.locator('.menu')).toHaveCount(0)
+  })
+
+  test('T-HM-04: a worktree session made from the folder row’s icon opens no menu at any moment while the pointer rests on the icon, and moving on the row still opens it', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const head = page.locator('.ws-head', { hasText: 'ws-a' })
+      await head.getByRole('button', { name: /^New worktree session/ }).click()
+      const dlg = worktreeDialog(page)
+      await expect(dlg).toBeVisible()
+      await page.evaluate(() => {
+        const seen = window as unknown as { menuEverShown?: boolean }
+        new MutationObserver(() => {
+          if (document.querySelector('.menu')) seen.menuEverShown = true
+        }).observe(document.body, { childList: true, subtree: true })
+      })
+      await page.keyboard.type('feat1')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/st-working|st-waiting/, {
+        timeout: 60_000
+      })
+      await page.waitForTimeout(PAST_HOVER_INTENT_DELAY_MS)
+      const menuEverShown = await page.evaluate(
+        () => (window as unknown as { menuEverShown?: boolean }).menuEverShown ?? false
+      )
+      expect(menuEverShown).toBe(false)
+
+      const name = await centerOf(head.locator('.ws-name'))
+      await page.mouse.move(name.x, name.y, { steps: 5 })
+      await expect(page.locator('.menu')).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('T-HM-02: a terminal selection dragged across a session row opens no menu', async ({

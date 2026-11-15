@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { SessionInfo } from '@shared/types'
-import { useStore, consumeRestartExit } from '../../src/renderer/src/store'
+import type { ResumeFailure, SessionInfo, WorkspaceRows } from '@shared/types'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import {
+  useStore,
+  consumeRestartExit,
+  keptTabsToClose,
+  workbenchOwnerLive
+} from '../../src/renderer/src/store'
 import {
   allEditTabs,
   allDirtyTabs,
@@ -21,9 +27,10 @@ let killed: string[]
 let order: string[]
 let nextPty: { id: string; cwd: string }
 let createFails: boolean
-let createRefuses: boolean
+let createRefuses: ResumeFailure | null
 let mainTrackerSessions: SessionInfo[]
 let transcriptOnDisk: boolean
+let noAccount: string | null
 let probeFails: boolean
 let probed: string[]
 
@@ -65,9 +72,10 @@ beforeEach(() => {
   order = []
   nextPty = { id: 'pty-new', cwd: '/w' }
   createFails = false
-  createRefuses = false
+  createRefuses = null
   mainTrackerSessions = []
   transcriptOnDisk = true
+  noAccount = null
   probeFails = false
   probed = []
   probeGate = null
@@ -84,10 +92,11 @@ beforeEach(() => {
             : Promise.resolve(transcriptOnDisk)
           return probeGate ? probeGate.promise.then(() => answer) : answer
         },
+        noAccountToResume: () => Promise.resolve(noAccount),
         resume: (req: ResumeReq) => {
           created.push(req)
           order.push('create')
-          if (createRefuses) return Promise.resolve({ ok: false, code: 'invalid-args' })
+          if (createRefuses) return Promise.resolve({ ok: false, code: createRefuses })
           if (createFails) return Promise.reject(new Error('spawn failed'))
           const done = Promise.resolve({ ok: true, ...nextPty })
           return createGate ? createGate.promise.then(() => done) : done
@@ -99,7 +108,8 @@ beforeEach(() => {
           killed.push(id)
           order.push('kill')
         }
-      }
+      },
+      tabs: { moved: () => {} }
     }
   }
   useStore.setState({
@@ -110,7 +120,9 @@ beforeEach(() => {
     workbench: {},
     workbenchOpen: {},
     workbenchFetched: {},
-    toast: null
+    toast: null,
+    workspaceRows: [],
+    resumeDialog: null
   })
   for (const t of allEditTabs()) endEdit(t.ownerTabId, t.tabId)
 })
@@ -376,6 +388,56 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
     expect(after.openFiles['int2']?.src).toBe('/w/notes.md')
   })
 
+  it('keeps the Workbench live while the old session reads dead mid-restart, so the tab’s shells are not torn down', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wl1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wl1', { sessionId: 'sid-WL' })])
+    nextPty = { id: 'wl2', cwd: '/w' }
+    createGate = gate()
+
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('wl1', { sessionId: 'sid-WL', alive: false })])
+
+    const mid = useStore.getState()
+    expect(workbenchOwnerLive(mid, mid.tabs[0])).toBe(true)
+
+    createGate.open()
+    await settle()
+    s.setSessions([session('wl2', { sessionId: 'sid-WL', alive: false })])
+    const after = useStore.getState()
+    expect(workbenchOwnerLive(after, after.tabs[0])).toBe(false)
+  })
+
+  it('lets the Workbench go when the restart fails, so a dead tab keeps no shells', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wf1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wf1', { sessionId: 'sid-WF' })])
+    createFails = true
+
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('wf1', { sessionId: 'sid-WF', alive: false })])
+
+    const failed = useStore.getState()
+    expect(workbenchOwnerLive(failed, failed.tabs[0])).toBe(false)
+  })
+
+  it('leaves a cold Workbench cold while a session that had already ended restarts', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wd1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wd1', { sessionId: 'sid-WD', alive: false })])
+    nextPty = { id: 'wd2', cwd: '/w' }
+    createGate = gate()
+
+    s.restartActiveSession()
+    await settle()
+
+    const mid = useStore.getState()
+    expect(created).toHaveLength(1)
+    expect(workbenchOwnerLive(mid, mid.tabs[0])).toBe(false)
+  })
+
   it('an untracked-session update DURING the probe leaves the restarting tab standing', async () => {
     const s = useStore.getState()
     s.addTab({ id: 'pw1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
@@ -403,7 +465,7 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
 })
 
 describe('restartActiveSession: no-op guards', () => {
-  it('does nothing on a terminal that never ran claude', async () => {
+  it('does nothing, and says nothing, on a terminal that never ran claude', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'plain1',
@@ -419,9 +481,10 @@ describe('restartActiveSession: no-op guards', () => {
     expect(killed).toEqual([])
     expect(created).toEqual([])
     expect(useStore.getState().tabs).toHaveLength(1)
+    expect(useStore.getState().toast).toBe(null)
   })
 
-  it('does nothing on a claude tab whose session has not bound yet (an empty id included), and works once it does', async () => {
+  it('kills nothing on a claude tab whose session has not bound yet (an empty id included) and says there is nothing to restart yet, and works once it does', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'late1',
@@ -435,6 +498,8 @@ describe('restartActiveSession: no-op guards', () => {
     await settle()
     expect(created).toEqual([])
     expect(killed).toEqual([])
+    expect(probed).toEqual([])
+    expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_LIVE)
 
     s.setSessions([session('late1', { sessionId: '' })])
     s.restartActiveSession()
@@ -485,7 +550,7 @@ describe('restartActiveSession: no-op guards', () => {
     expect(created).toEqual([{ sessionId: 'sid-MAIN', cwd: '/w/repo' }])
   })
 
-  it('stays a silent no-op when the tracker has no session for the tab either', async () => {
+  it('stays a silent no-op on a plain terminal when the tracker has no session for the tab either', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'none1',
@@ -501,6 +566,7 @@ describe('restartActiveSession: no-op guards', () => {
 
     expect(created).toEqual([])
     expect(killed).toEqual([])
+    expect(useStore.getState().toast).toBe(null)
   })
 
   it('does nothing when there is no active tab', () => {
@@ -682,7 +748,7 @@ describe('restartActiveSession: respawn failure', () => {
       alive: true
     })
     s.setSessions([session('ref1', { sessionId: 'sid-A' })])
-    createRefuses = true
+    createRefuses = 'invalid-args'
 
     s.restartActiveSession()
     await settle()
@@ -692,9 +758,126 @@ describe('restartActiveSession: respawn failure', () => {
     expect(refused.tabs[0].id).toBe('ref1')
     expect(refused.tabs[0].alive).toBe(false)
   })
+
+  it('a deleted worktree that cannot be rebuilt offers the same resume in the main checkout a cold-row resume offers', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'gone1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    s.setSessions([
+      session('gone1', {
+        backendId: 'codex',
+        sessionId: 'codex:local:thread-g',
+        title: 'Gone tree',
+        cwd: '/w/.claude/worktrees/feat'
+      })
+    ])
+    useStore.setState({
+      workspaceRows: [
+        { workspace: { path: '/w' }, rows: [{ id: 'codex:local:thread-g' }] }
+      ] as unknown as WorkspaceRows[]
+    })
+    createRefuses = 'rebuild-failed'
+
+    s.restartActiveSession()
+    await settle()
+
+    const after = useStore.getState()
+    expect(after.tabs[0].alive).toBe(false)
+    expect(after.resumeDialog).toEqual({
+      kind: 'escape',
+      target: { backendId: 'codex', id: 'codex:local:thread-g', title: 'Gone tree' },
+      worktreeName: 'feat',
+      cwd: '/w'
+    })
+  })
 })
 
 // CC§2
+describe('restartActiveSession: a kept tab whose agent died with no conversation starts again from its launch options', () => {
+  it('starts the same launch in the same tab, and the new tab carries no id of the dead session', async () => {
+    const launches: unknown[] = []
+    const api = (globalThis as unknown as { window: { api: { terminal: object } } }).window.api
+    api.terminal = {
+      ...api.terminal,
+      create: (o: unknown) => {
+        launches.push(o)
+        return Promise.resolve({ ok: true, id: 'kept-new', cwd: '/w' })
+      }
+    }
+    const launch = { kind: 'codex' as const, cwd: '/w' }
+    const row = {
+      id: 'kept1',
+      title: 'Codex',
+      worktree: 'main',
+      cwd: '/w',
+      running: false,
+      invalidCwd: false,
+      mtime: 0,
+      backendId: 'codex' as const,
+      host: 'local' as const
+    }
+    const s = useStore.getState()
+    s.addTab({ id: 'kept1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true, launch })
+    useStore.setState({
+      tabs: useStore.getState().tabs.map((t) => ({
+        ...t,
+        alive: false,
+        sessionId: 'sid-DEAD',
+        ended: { note: 'exited (code 1)', row, wsPath: '/w' }
+      }))
+    })
+    transcriptOnDisk = false
+
+    s.restartActiveSession()
+    await settle()
+    await settle()
+
+    expect(launches).toEqual([launch])
+    const [tab] = useStore.getState().tabs
+    expect(tab).toMatchObject({ id: 'kept-new', alive: true })
+    expect(tab.ended).toBeUndefined()
+    expect(tab.sessionId).toBeUndefined()
+  })
+
+  it('is not closed as live elsewhere while ⇧⌘R resumes it, even when the new pty binds the session before the resume answers', async () => {
+    const row = {
+      id: 'sid-KEPT',
+      title: 'Kept',
+      worktree: 'main',
+      cwd: '/w',
+      running: false,
+      invalidCwd: false,
+      mtime: 0,
+      backendId: 'claude' as const,
+      host: 'local' as const
+    }
+    const s = useStore.getState()
+    s.addTab({ id: 'kept2', kind: 'claude', title: 'Kept', cwd: '/w', alive: true })
+    useStore.setState({
+      tabs: useStore.getState().tabs.map((t) => ({
+        ...t,
+        alive: false,
+        sessionId: 'sid-KEPT',
+        ended: { note: 'killed (signal 9)', row, wsPath: '/w' }
+      }))
+    })
+    const boundElsewhere = [session('pty-other', { sessionId: 'sid-KEPT' })]
+    expect(keptTabsToClose({ ...useStore.getState(), sessions: boundElsewhere })).toHaveLength(1)
+
+    createGate = gate()
+    nextPty = { id: 'pty-new', cwd: '/w' }
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('pty-new', { sessionId: 'sid-KEPT' })])
+    expect(keptTabsToClose(useStore.getState())).toEqual([])
+
+    createGate.open()
+    await settle()
+    await settle()
+    expect(useStore.getState().tabs.map((t) => [t.id, t.ended])).toEqual([['pty-new', undefined]])
+    expect(killed).not.toContain('pty-new')
+  })
+})
+
 describe('restartActiveSession: the transcript gate — a session never typed into has nothing to resume, so ⇧⌘R asks main before the kill', () => {
   it('refuses a session with no conversation on disk: nothing killed, nothing spawned, a toast', async () => {
     const s = useStore.getState()
@@ -718,6 +901,29 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     expect(after.tabs.map((t) => t.id)).toEqual(['gate1'])
     expect(after.tabs[0].alive).toBe(true)
     expect(after.toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_LIVE)
+  })
+
+  it('keeps the running session when no account of its agent can be used: nothing killed, nothing spawned, the reason in a toast, and the next press works once one can', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'acct1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    s.setSessions([session('acct1', { backendId: 'codex', sessionId: 'codex:local:thread-acct' })])
+    noAccount = NO_USABLE_ACCOUNT.codex
+    nextPty = { id: 'acct2', cwd: '/w' }
+
+    s.restartActiveSession()
+    await settle()
+
+    expect(killed).toEqual([])
+    expect(created).toEqual([])
+    const after = useStore.getState()
+    expect(after.tabs).toMatchObject([{ id: 'acct1', alive: true }])
+    expect(after.tabs[0].respawning).toBeUndefined()
+    expect(after.toast).toBe(NO_USABLE_ACCOUNT.codex)
+
+    noAccount = null
+    useStore.getState().restartActiveSession()
+    await settle()
+    expect(created).toEqual([{ sessionId: 'codex:local:thread-acct', cwd: '/w' }])
   })
 
   it('has not killed anything while the probe is still in flight', async () => {
@@ -922,6 +1128,88 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     expect(probed).toEqual(['sid-GONE'])
     expect(killed).toEqual([])
     expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_DEAD)
+  })
+
+  it('refuses a session tab that has no conversation id at all yet — agy before its first prompt — with the same toast, and the next press works once it has one', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate12',
+      kind: 'agy',
+      title: 'Antigravity',
+      cwd: '/w',
+      alive: true
+    })
+    nextPty = { id: 'gate12b', cwd: '/w' }
+
+    s.restartActiveSession()
+    await settle()
+
+    expect(probed).toEqual([])
+    expect(killed).toEqual([])
+    expect(created).toEqual([])
+    expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_LIVE)
+
+    mainTrackerSessions = [session('gate12', { backendId: 'agy', sessionId: 'sid-AGY' })]
+    useStore.getState().restartActiveSession()
+    await settle()
+    expect(created).toEqual([{ sessionId: 'sid-AGY', cwd: '/w' }])
+  })
+
+  it('words the no-id refusal dead when that session tab exits while the tracker is asked', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate13',
+      kind: 'agy',
+      title: 'Antigravity',
+      cwd: '/w',
+      alive: true
+    })
+
+    s.restartActiveSession()
+    useStore.getState().setTabAlive('gate13', false)
+    await settle()
+
+    expect(killed).toEqual([])
+    expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_DEAD)
+  })
+
+  it('says nothing when the no-id tab is closed while the tracker is asked', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate14',
+      kind: 'agy',
+      title: 'Antigravity',
+      cwd: '/w',
+      alive: true
+    })
+
+    s.restartActiveSession()
+    useStore.getState().removeTab('gate14')
+    await settle()
+
+    expect(useStore.getState().toast).toBe(null)
+  })
+
+  it('says nothing either when a tab with an id but no conversation is closed while the probe is out', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate15',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
+    s.setSessions([session('gate15', { sessionId: 'sid-SHUT' })])
+    transcriptOnDisk = false
+    probeGate = gate()
+
+    s.restartActiveSession()
+    useStore.getState().removeTab('gate15')
+    probeGate.open()
+    await settle()
+
+    expect(probed).toEqual(['sid-SHUT'])
+    expect(useStore.getState().toast).toBe(null)
   })
 })
 

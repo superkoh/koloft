@@ -4,16 +4,21 @@ import type {
   AccountView,
   BackendId,
   CodexLimits,
+  SignInBackend,
   UsageSnapshot
 } from './types'
+import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
+import { ageLabel } from './freshnessOps'
 
-const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
+export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
-  codex: ['codex-home']
+  ...(Object.fromEntries(
+    Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [backend, [kind]])
+  ) as Record<SignInBackend, AccountKind[]>)
 }
 
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home']
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', ...SIGN_IN_FOLDER_KINDS]
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
@@ -65,7 +70,18 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
   claude:
     'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   codex:
-    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
+    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
+  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
+  agy: 'No Antigravity account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
+}
+
+export function noAccountLine(accounts: readonly AccountMeta[], backend: BackendId): string {
+  const lead = noUsableAccountLead(accounts, backend)
+  return lead && `${lead}${ACCOUNTS_PANE}.`
+}
+
+export function noAccountMessage(accounts: readonly AccountMeta[], backend: BackendId): string {
+  return noAccountLine(accounts, backend) || NO_USABLE_ACCOUNT[backend]
 }
 
 export const STALE_MS = 15 * 60_000
@@ -80,16 +96,34 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
   )
 }
 
-export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
+export const FIVE_HOUR_STOP = 0.9
+export const FIVE_HOUR_MINUTES = 5 * 60
+export const WEEK_MINUTES = 7 * 24 * 60
+
+export function windowStopped(used: number, resetsAt: number, nowSec: number): boolean {
+  return !resetElapsed(resetsAt, nowSec) && used >= FIVE_HOUR_STOP
+}
+
+export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
+  return windowStopped(u.u5, u.r5, nowSec)
+}
+
+const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
 
 export function resetElapsed(r: number, nowSec: number): boolean {
   return r > 0 && r <= nowSec
 }
 
+function windowKeepsResumedSession(used: number, resetsAt: number, nowSec: number): boolean {
+  return resetElapsed(resetsAt, nowSec) || used <= RESUME_KEEPS_ACCOUNT_UP_TO
+}
+
 export function keepsResumedSession(u: UsageSnapshot, nowSec: number): boolean {
-  const roomLeft = (used: number, resetsAt: number): boolean =>
-    resetElapsed(resetsAt, nowSec) || used <= RESUME_KEEPS_ACCOUNT_UP_TO
-  return !hardLimited(u, nowSec) && roomLeft(u.u5, u.r5) && roomLeft(u.u7, u.r7)
+  return (
+    !hardLimited(u, nowSec) &&
+    windowKeepsResumedSession(u.u5, u.r5, nowSec) &&
+    windowKeepsResumedSession(u.u7, u.r7, nowSec)
+  )
 }
 
 export type WindowTone = 'ok' | 'soon' | 'due' | 'hard'
@@ -149,13 +183,32 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
+interface UsedWindow {
+  used: number
+  resetsAt?: number
+  minutes?: number
+}
+
+function heaviestOf(windows: UsedWindow[]): number {
+  return Math.max(0, ...windows.map((w) => w.used))
+}
+
+function backAtOf(windows: UsedWindow[]): number {
+  const full = windows.filter((w) => w.used >= 1)
+  return Math.max(0, ...(full.length ? full : windows).map((w) => w.resetsAt ?? 0))
+}
+
 export function codexHeaviest(limits: CodexLimits): number {
-  return Math.max(0, ...limits.windows.map((w) => w.used))
+  return heaviestOf(limits.windows)
 }
 
 // CODEX§15
 export function codexWalled(limits: CodexLimits): boolean {
   return limits.reached === true || codexHeaviest(limits) >= 1
+}
+
+export function codexBackAt(limits: CodexLimits): number {
+  return backAtOf(limits.windows)
 }
 
 export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
@@ -170,6 +223,54 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
     frac: Math.min(binding, CAP),
     level: meterLevel(binding),
     stale,
+    fable: null
+  }
+}
+
+export interface HomeRoom {
+  keepsResumedSession: boolean
+  walled: boolean
+  backAt: number
+  longWindows: UsedWindow[]
+  fiveHourStoppedUntil?: number
+}
+
+// AGY§23
+export function homeRoom(
+  a: Pick<AccountView, 'limits' | 'quota'>,
+  nowSec: number
+): HomeRoom | undefined {
+  if (!a.limits && !a.quota?.length) return undefined
+  const windows: UsedWindow[] = a.limits?.windows ?? a.quota ?? []
+  const backAt = backAtOf(windows)
+  const full = a.limits ? codexWalled(a.limits) : heaviestOf(windows) >= 1
+  const walled = full && !resetElapsed(backAt, nowSec)
+  const stopped = windows.filter(
+    (w) => w.minutes === FIVE_HOUR_MINUTES && windowStopped(w.used, w.resetsAt ?? 0, nowSec)
+  )
+  return {
+    keepsResumedSession:
+      !walled && windows.every((w) => windowKeepsResumedSession(w.used, w.resetsAt ?? 0, nowSec)),
+    walled,
+    backAt,
+    longWindows: windows.filter((w) => w.minutes !== FIVE_HOUR_MINUTES),
+    ...(stopped.length > 0 && {
+      fiveHourStoppedUntil: Math.max(...stopped.map((w) => w.resetsAt || Infinity))
+    })
+  }
+}
+
+// AGY§23
+export function quotaGlyph(a: AccountView): CapsuleGlyph {
+  if (a.status !== 'ok') return { kind: 'grey' }
+  if (!a.quota?.length) return { kind: 'empty' }
+  const heaviest = heaviestOf(a.quota)
+  if (heaviest >= 1) return { kind: 'walled', stale: false }
+  return {
+    kind: 'bar',
+    frac: Math.min(heaviest, CAP),
+    level: meterLevel(heaviest),
+    stale: false,
     fable: null
   }
 }
@@ -203,6 +304,16 @@ export function oldestAt(views: AccountView[]): number | null {
   return oldest
 }
 
+export type LaunchUsageProbe = 'everyAccount' | 'signInFoldersOnly' | null
+
+export function launchUsageProbe(
+  accounts: readonly Pick<AccountMeta, 'kind' | 'enabled'>[]
+): LaunchUsageProbe {
+  const enabled = accounts.filter((a) => a.enabled)
+  if (enabled.some((a) => a.kind === 'oauth')) return 'everyAccount'
+  return enabled.some((a) => SIGN_IN_FOLDER_KINDS.includes(a.kind)) ? 'signInFoldersOnly' : null
+}
+
 export const AUTO_PROBE_MS = 5 * 60_000
 
 export function autoProbeDue(
@@ -212,7 +323,7 @@ export function autoProbeDue(
 ): boolean {
   if (lastAttempt !== null && nowMs >= lastAttempt && nowMs - lastAttempt <= AUTO_PROBE_MS)
     return false
-  const rows = usableAccounts(views, ['oauth', 'codex-home'])
+  const rows = usableAccounts(views, ['oauth', ...SIGN_IN_FOLDER_KINDS])
   if (rows.length === 0) return false
   let oldest = Infinity
   for (const a of rows) {
@@ -228,7 +339,7 @@ export interface PoolSnapshot {
   usable: number
   walled: number
   tension: number
-  t5: number
+  t5: number | null
   t7: number
   tfable: number | null
   fableSpentAll: boolean
@@ -245,7 +356,10 @@ export function poolSnapshot(members: AccountView[], nowMs: number): PoolSnapsho
   const walledRows = M.filter(isWalled)
   const usable = live.filter((a) => !a.usage || !accountWalled(a.usage, nowSec)).length
   const mean = (xs: number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
-  const t5 = M.length ? mean(M.map((a) => Math.min((a.usage as UsageSnapshot).u5, 1))) : 0
+  const with5h = M.filter((a) => (a.usage as UsageSnapshot).has5h)
+  const t5 = with5h.length
+    ? mean(with5h.map((a) => Math.min((a.usage as UsageSnapshot).u5, 1)))
+    : null
   const t7 = M.length ? mean(M.map((a) => Math.min((a.usage as UsageSnapshot).u7, 1))) : 0
   const tension = M.length
     ? mean(
@@ -307,7 +421,7 @@ export interface CodexPoolSnapshot {
 // CODEX§15
 export function codexPoolSnapshot(members: AccountView[], nowMs: number): CodexPoolSnapshot {
   const nowSec = Math.floor(nowMs / 1000)
-  const live = usableAccounts(members, ['codex-home'])
+  const live = usableAccounts(members, SIGN_IN_FOLDER_KINDS)
   const M = live.filter((a) => a.limits !== undefined)
   const limitsOf = (a: AccountView): CodexLimits => a.limits as CodexLimits
   const walledRows = M.filter((a) => codexWalled(limitsOf(a)))
@@ -429,4 +543,44 @@ export function windowLabel(minutes: number): string {
   if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}d`
   if (minutes % 60 === 0) return `${minutes / 60}h`
   return `${minutes}m`
+}
+
+export interface UsedPart {
+  label: string
+  used: number
+}
+
+export function accountLine(
+  name: string,
+  parts: UsedPart[],
+  read?: { at: number; nowMs: number }
+): string {
+  return [
+    `koloft: → ${name}`,
+    ...parts.map((p) => `${p.label} ${Math.round(p.used * 100)}%`),
+    ...(read && parts.length > 0 && read.nowMs - read.at > STALE_MS
+      ? [ageLabel(read.at, read.nowMs)]
+      : [])
+  ].join(' · ')
+}
+
+export const METERED_NOTE = 'Metered — used only when every subscription is rate-limited'
+
+export function meteredTag(name: string): string {
+  return `${name} (API key, metered)`
+}
+
+export function launchLine(a: AccountView, nowMs: number): string {
+  if (a.apiKey) return `koloft: → ${meteredTag(a.name)}`
+  if (a.limits)
+    return accountLine(
+      a.name,
+      a.limits.windows.map((w) => ({ label: windowLabel(w.minutes), used: w.used })),
+      { at: a.limits.at, nowMs }
+    )
+  return accountLine(
+    a.name,
+    (a.quota ?? []).map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used })),
+    a.quotaAt === undefined ? undefined : { at: a.quotaAt, nowMs }
+  )
 }

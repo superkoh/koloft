@@ -1,7 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import { exitedAbnormally, type SessionInfo, type TabKind } from '@shared/types'
+import type { SessionInfo, TabKind, TerminalExit } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -11,10 +11,11 @@ export type CloseIntent =
 export const CLOSE_CONFIRM_TITLE = 'Close running session?'
 
 export function closeTabIntent(
-  tab: { id: string; kind: TabKind; title: string } | undefined,
+  tab: { id: string; kind: TabKind; title: string; ended?: unknown } | undefined,
   sessions: SessionInfo[]
 ): CloseIntent {
   if (!tab) return { kind: 'none' }
+  if (tab.ended) return { kind: 'close' }
   const bound = sessions.find((s) => s.tabId === tab.id && s.alive && !!s.sessionId)
   if (bound && (bound.status === 'working' || bound.status === 'approval')) {
     return { kind: 'confirm', status: bound.status, title: bound.title || tab.title }
@@ -54,24 +55,27 @@ export function sessionEndedBody(title: string, files: string[]): string {
 }
 
 export function unexpectedExitNotice(
-  exit: { exitCode: number; signal?: number },
-  backend: SessionBackend
+  exit: { exitCode: number; signal?: number; accountIssue?: string },
+  backend: SessionBackend,
+  everBound: boolean
 ): string {
-  // PLATFORM§29
-  if (exit.signal) return `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
+  const agent = BACKEND_LABEL[backend]
   // ADR-0030
-  if (backend === 'claude' && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
-    return SHIM_FOUND_NO_ACCOUNT_NOTICE
-  return `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
+  if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+    return exit.accountIssue || SHIM_FOUND_NO_ACCOUNT_NOTICE
+  // PLATFORM§29
+  const how = exit.signal ? `killed by signal ${exit.signal}` : `exit code ${exit.exitCode}`
+  if (!everBound) return `${agent} closed before the session started (${how})`
+  if (exit.signal) return `${agent} session ended: ${how}`
+  return `${agent} session ended unexpectedly (${how})`
 }
 
 export function unexpectedExitWanted<
   T extends { kind: string; sessionId?: string; jobId?: string }
 >(
   tab: T | undefined,
-  exit: { exitCode: number; signal?: number }
+  exit: Pick<TerminalExit, 'unexpected' | 'runStarted'>
 ): tab is T & { kind: SessionBackend } {
-  if (!tab || !isSessionKind(tab.kind)) return false
-  if (!exitedAbnormally(exit)) return false
-  return !(tab.jobId !== undefined && tab.sessionId === undefined)
+  if (!tab || !isSessionKind(tab.kind) || !exit.unexpected) return false
+  return !(tab.jobId !== undefined && tab.sessionId === undefined && !exit.runStarted)
 }

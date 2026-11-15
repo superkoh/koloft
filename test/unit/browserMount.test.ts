@@ -49,10 +49,10 @@ describe('the panel asks it', () => {
 
   it("WorkbenchPane's stop handler settles only through stopEndsMount", () => {
     const src = fs.readFileSync(PANE, 'utf8')
-    const start = src.indexOf('onLoading: (loading: boolean)')
+    const start = src.indexOf('loading: (_owner, tabId, loading)')
     expect(start).toBeGreaterThan(-1)
-    const handler = src.slice(start, src.indexOf('onNavigate:', start))
+    const handler = src.slice(start, src.indexOf('navigate:', start))
     expect(handler).toContain('stopEndsMount')
-    expect(handler.indexOf('pendingSettles')).toBeGreaterThan(handler.indexOf('stopEndsMount'))
+    expect(handler.indexOf('settled(tabId)')).toBeGreaterThan(handler.indexOf('stopEndsMount'))
   })
 })

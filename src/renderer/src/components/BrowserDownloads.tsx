@@ -1,8 +1,24 @@
-import { useEffect, useRef, type JSX } from 'react'
-import { LuFileText, LuTrash2 } from 'react-icons/lu'
-import type { DownloadItem, DownloadList } from './downloadList'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { IconDelete, IconFile } from '../icons'
+import {
+  applyDownloadEvent,
+  clearFinishedDownloads,
+  type DownloadItem,
+  type DownloadList
+} from './downloadList'
 
 const OPENER_BUTTON_IS_NOT_OUTSIDE = '[data-panel-toggle="downloads"]'
+
+export function useBrowserDownloads(): { downloads: DownloadList; clearFinished: () => void } {
+  const [downloads, setDownloads] = useState<DownloadList>({ items: [] })
+  useEffect(() => {
+    return window.api.browser.onDownloadEvent((event) => {
+      setDownloads((prev) => applyDownloadEvent(prev, event))
+    })
+  }, [])
+  const clearFinished = useCallback(() => setDownloads((prev) => clearFinishedDownloads(prev)), [])
+  return { downloads, clearFinished }
+}
 
 function sizeText(item: DownloadItem): string {
   const mb = (n: number): string => (n / 1024 / 1024).toFixed(1) + ' MB'
@@ -57,7 +73,7 @@ export function BrowserDownloads({
       <div className="bdl-head">
         Downloads
         <button className="bdl-clear" onClick={onClear} title="Clear finished downloads">
-          <LuTrash2 size={12} />
+          <IconDelete size={12} />
           Clear
         </button>
       </div>
@@ -65,7 +81,7 @@ export function BrowserDownloads({
       {list.items.map((item) => (
         <div className="bdl-row" key={item.id} data-state={item.state}>
           <span className="bdl-ico">
-            <LuFileText size={14} />
+            <IconFile size={14} />
           </span>
           <span className="bdl-nm">
             <b title={item.name}>{item.name}</b>

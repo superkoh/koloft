@@ -3,19 +3,24 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/types'
 import { sanitizeLoadedSettings } from '@shared/settingsOps'
+import { assistOnMethodsThatAreOn, sanitizeAssist } from '@shared/assistPicks'
 import { normalizeSessionMethods } from '@shared/sessionBackend'
+import { BackgroundFile } from './backgroundFile'
 
 function settingsFile(): string {
   return path.join(app.getPath('userData'), 'settings.json')
 }
 
-function writeAtomically(file: string, text: string): void {
-  const tmp = `${file}.tmp`
-  fs.writeFileSync(tmp, text)
-  fs.renameSync(tmp, file)
+// PLATFORM§69
+const settingsOnDisk = new BackgroundFile(settingsFile, undefined, () => rereadSettingsOnNextLoad())
+
+export function flushSettings(): void {
+  settingsOnDisk.flushSync()
 }
 
-export function loadSettings(): Settings {
+let cached: Settings | undefined
+
+function readSettingsFile(): Settings {
   try {
     return sanitizeLoadedSettings(JSON.parse(fs.readFileSync(settingsFile(), 'utf8')))
   } catch {
@@ -23,11 +28,21 @@ export function loadSettings(): Settings {
   }
 }
 
+export function loadSettings(): Settings {
+  cached ??= readSettingsFile()
+  return structuredClone(cached)
+}
+
+export function rereadSettingsOnNextLoad(): void {
+  cached = undefined
+}
+
 export function saveSettings(patch: Partial<Settings>): Settings {
   const merged: Settings = { ...loadSettings(), ...patch }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
-  try {
-    writeAtomically(settingsFile(), JSON.stringify(merged, null, 2))
-  } catch {}
+  merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
+  const text = JSON.stringify(merged, null, 2)
+  settingsOnDisk.write(text)
+  cached = sanitizeLoadedSettings(JSON.parse(text))
   return merged
 }

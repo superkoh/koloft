@@ -4,7 +4,10 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { barePath, isRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
+import { gitIgnoredAmong } from './gitIgnored'
+import { worktreeHomeRoot } from './resumePlan'
 
 const execFileAsync = promisify(execFile)
 
@@ -15,13 +18,33 @@ interface Checkout {
   locked: boolean
 }
 
+export interface ScriptRunner {
+  runScript(script: string, args: string[]): Promise<string | null>
+}
+
+export interface TreeIo {
+  git(cwd: string, args: string[]): Promise<string>
+  exists(p: string): Promise<boolean>
+  real(p: string): string
+  keyed(listed: string): string
+  machine: ScriptRunner | undefined
+}
+
 async function git(cwd: string, args: string[]): Promise<string> {
   const result = await execFileAsync('git', ['-C', cwd, ...args], { maxBuffer: 4 * 1024 * 1024 })
   return result.stdout.trimEnd()
 }
 
-async function checkouts(cwd: string): Promise<Checkout[]> {
-  const raw = await git(cwd, ['worktree', 'list', '--porcelain', '-z'])
+const LOCAL_IO: TreeIo = {
+  git,
+  exists: async (p) => fs.existsSync(p),
+  real: (p) => fs.realpathSync(p),
+  keyed: (listed) => path.resolve(listed),
+  machine: undefined
+}
+
+async function checkouts(io: TreeIo, cwd: string): Promise<Checkout[]> {
+  const raw = await io.git(cwd, ['worktree', 'list', '--porcelain', '-z'])
   return raw
     .split('\0\0')
     .filter(Boolean)
@@ -31,7 +54,7 @@ async function checkouts(cwd: string): Promise<Checkout[]> {
         fields.find((v) => v.startsWith(prefix))?.slice(prefix.length) ?? ''
       const branch = field('branch ')
       return {
-        path: field('worktree '),
+        path: io.keyed(field('worktree ')),
         head: field('HEAD '),
         branch: branch.startsWith('refs/heads/') ? branch.slice('refs/heads/'.length) : null,
         locked: fields.some((v) => v === 'locked' || v.startsWith('locked '))
@@ -39,18 +62,18 @@ async function checkouts(cwd: string): Promise<Checkout[]> {
     })
 }
 
-async function rootOf(cwd: string): Promise<string> {
-  const listed = await checkouts(cwd)
+async function rootOf(io: TreeIo, cwd: string): Promise<string> {
+  const listed = await checkouts(io, cwd)
   const root = listed[0]?.path
-  if (!root || (await git(cwd, ['rev-parse', '--is-bare-repository'])) !== 'false') {
+  if (!root || (await io.git(cwd, ['rev-parse', '--is-bare-repository'])) !== 'false') {
     throw new Error('A Git working repository is required')
   }
-  return fs.realpathSync(root)
+  return io.real(root)
 }
 
-async function branchExists(cwd: string, branch: string): Promise<boolean> {
+async function branchExists(io: TreeIo, cwd: string, branch: string): Promise<boolean> {
   try {
-    await git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
+    await io.git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
     return true
   } catch (error) {
     if ((error as { code?: number }).code === 1) return false
@@ -58,36 +81,41 @@ async function branchExists(cwd: string, branch: string): Promise<boolean> {
   }
 }
 
-async function unregisterOnlyThisMissingCheckout(
-  root: string,
-  checkoutPath: string
-): Promise<void> {
-  await git(root, ['worktree', 'remove', checkoutPath])
-}
-
 function validName(name: string): void {
   if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
 }
 
-const NOTHING_IGNORED_EXIT = 1
+const COPY_INCLUDES_SH = `root=$1 tree=$2
+[ -f "$root/.worktreeinclude" ] || exit 0
+git -C "$root" ls-files -z --others --ignored --exclude-from="$root/.worktreeinclude" |
+  git -C "$root" check-ignore -z --stdin |
+  xargs -0 sh -c 'root=$1 tree=$2; shift 2
+for rel do
+  [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] && [ ! -e "$tree/$rel" ] || continue
+  mkdir -p "$(dirname "$tree/$rel")" && cp "$root/$rel" "$tree/$rel" || exit 1
+done' sh "$root" "$tree"`
 
-function gitIgnoredAmong(root: string, paths: string[]): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      'git',
-      ['-C', root, 'check-ignore', '-z', '--stdin'],
-      { maxBuffer: 4 * 1024 * 1024 },
-      (error, stdout) => {
-        if (error && error.code !== NOTHING_IGNORED_EXIT) reject(error)
-        else resolve(stdout.split('\0').filter(Boolean))
-      }
-    )
-    child.stdin?.end(paths.map((p) => p + '\0').join(''))
-  })
-}
+const IGNORED_FILES_SAME_AS_ROOT_SH = `root=$1 tree=$2
+git -C "$tree" ls-files -z --others --ignored --exclude-standard |
+  xargs -0 sh -c 'root=$1 tree=$2; shift 2
+for rel do
+  [ -f "$tree/$rel" ] && [ ! -L "$tree/$rel" ] && [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] &&
+    cmp -s "$root/$rel" "$tree/$rel" || exit 1
+done' sh "$root" "$tree"`
 
 // CC§3
-export async function copyWorktreeIncludes(root: string, worktreePath: string): Promise<void> {
+export async function copyWorktreeIncludes(
+  root: string,
+  worktreePath: string,
+  machine?: ScriptRunner
+): Promise<void> {
+  if (machine) {
+    if (
+      (await machine.runScript(COPY_INCLUDES_SH, [barePath(root), barePath(worktreePath)])) === null
+    )
+      console.error('[koloft] could not copy the .worktreeinclude files into', worktreePath)
+    return
+  }
   try {
     const includeFile = path.join(root, '.worktreeinclude')
     if (!fs.existsSync(includeFile)) return
@@ -122,22 +150,50 @@ async function sameFileInRoot(root: string, tree: string, rel: string): Promise<
   }
 }
 
+async function ignoredFilesSameAsRoot(io: TreeIo, root: string, tree: string): Promise<boolean> {
+  if (io.machine) {
+    const args = [barePath(root), barePath(tree)]
+    return (await io.machine.runScript(IGNORED_FILES_SAME_AS_ROOT_SH, args)) !== null
+  }
+  const ignored = await io.git(tree, [
+    'ls-files',
+    '-z',
+    '--others',
+    '--ignored',
+    '--exclude-standard'
+  ])
+  for (const rel of ignored.split('\0').filter(Boolean)) {
+    if (!(await sameFileInRoot(root, tree, rel))) return false
+  }
+  return true
+}
+
 export class SessionWorktrees {
   private readonly preparing = new Set<string>()
 
-  constructor(private readonly store: SessionStore) {}
+  constructor(
+    private readonly store: SessionStore,
+    private readonly remoteIo?: (cwd: string) => TreeIo
+  ) {}
+
+  // ADR-0025
+  private io(cwd: string): TreeIo {
+    return isRemoteKey(cwd) && this.remoteIo ? this.remoteIo(cwd) : LOCAL_IO
+  }
 
   async create(originalCwd: string, name: string): Promise<WorktreeResource> {
     validName(name)
-    const root = await rootOf(originalCwd)
-    return this.createAt(root, name, await git(originalCwd, ['rev-parse', 'HEAD']))
+    const io = this.io(originalCwd)
+    const root = await rootOf(io, originalCwd)
+    return this.createAt(root, name, await io.git(originalCwd, ['rev-parse', 'HEAD']))
   }
 
   async adopt(originalCwd: string, checkoutPath: string): Promise<WorktreeResource> {
-    const root = await rootOf(originalCwd)
-    const target = fs.realpathSync(checkoutPath)
+    const io = this.io(originalCwd)
+    const root = await rootOf(io, originalCwd)
+    const target = io.real(checkoutPath)
     if (target === root) throw new Error('Select a linked worktree')
-    const checkout = (await checkouts(root)).find((c) => path.resolve(c.path) === target)
+    const checkout = (await checkouts(io, root)).find((c) => c.path === target)
     if (!checkout) throw new Error('The checkout is not a worktree of this repository')
     const known = this.store
       .listResources()
@@ -156,7 +212,7 @@ export class SessionWorktrees {
       id: randomUUID(),
       originalCwd: root,
       worktreePath: target,
-      worktreeName: path.basename(target),
+      worktreeName: path.posix.basename(target),
       worktreeBranch: checkout.branch,
       originalHeadCommit: checkout.head,
       state: 'ready',
@@ -169,23 +225,20 @@ export class SessionWorktrees {
   async untouched(resource: WorktreeResource): Promise<boolean> {
     if (!resource.managed) return false
     const tree = resource.worktreePath
+    const io = this.io(tree)
     try {
-      const [branch, head, changes, ignored] = await Promise.all([
-        git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
-        git(tree, ['rev-parse', 'HEAD']),
-        git(tree, ['status', '--porcelain', '--untracked-files=all']),
-        git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'])
+      const [branch, head, changes, ignoredSame] = await Promise.all([
+        io.git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+        io.git(tree, ['rev-parse', 'HEAD']),
+        io.git(tree, ['status', '--porcelain', '--untracked-files=all']),
+        ignoredFilesSameAsRoot(io, resource.originalCwd, tree)
       ])
-      if (
-        branch !== `worktree-${resource.worktreeName}` ||
-        head !== resource.originalHeadCommit ||
-        changes
+      return (
+        branch === `worktree-${resource.worktreeName}` &&
+        head === resource.originalHeadCommit &&
+        !changes &&
+        ignoredSame
       )
-        return false
-      for (const rel of ignored.split('\0').filter(Boolean)) {
-        if (!(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
-      }
-      return true
     } catch {
       return false
     }
@@ -197,18 +250,45 @@ export class SessionWorktrees {
 
   async rebuild(resourceId: string): Promise<WorktreeResource> {
     const resource = this.requiredResource(resourceId)
-    if (fs.existsSync(resource.worktreePath)) {
+    if (await this.io(resource.worktreePath).exists(resource.worktreePath)) {
       return this.adopt(resource.originalCwd, resource.worktreePath)
     }
     return this.materialize(resource)
   }
 
+  // CC§3 CODEX§6
+  async recover(sessionCwd: string): Promise<WorktreeResource> {
+    const listedRoot = worktreeHomeRoot(sessionCwd)
+    if (!listedRoot) throw new Error('Not a .claude/worktrees folder')
+    const name = path.basename(sessionCwd)
+    validName(name)
+    const io = this.io(listedRoot)
+    const root = io.real(listedRoot)
+    const worktreePath = `${root}/.claude/worktrees/${name}`
+    if (await io.exists(worktreePath)) return this.adopt(root, worktreePath)
+    return this.materialize({
+      id: randomUUID(),
+      originalCwd: root,
+      worktreePath,
+      worktreeName: name,
+      worktreeBranch: `worktree-${name}`,
+      originalHeadCommit: await io.git(root, ['rev-parse', 'HEAD']),
+      state: 'creating',
+      managed: false
+    }).catch((error) => {
+      this.store.removeUnusedResourcesAt(worktreePath)
+      throw error
+    })
+  }
+
   async prepareRenamed(resourceId: string, name: string): Promise<WorktreeResource> {
     validName(name)
     const resource = this.requiredResource(resourceId)
+    const io = this.io(resource.originalCwd)
     const base =
-      resource.worktreeBranch && (await branchExists(resource.originalCwd, resource.worktreeBranch))
-        ? await git(resource.originalCwd, ['rev-parse', `refs/heads/${resource.worktreeBranch}`])
+      resource.worktreeBranch &&
+      (await branchExists(io, resource.originalCwd, resource.worktreeBranch))
+        ? await io.git(resource.originalCwd, ['rev-parse', `refs/heads/${resource.worktreeBranch}`])
         : resource.originalHeadCommit
     return this.createAt(resource.originalCwd, name, base)
   }
@@ -220,10 +300,11 @@ export class SessionWorktrees {
   }
 
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
-    const target = path.join(root, '.claude', 'worktrees', name)
-    if (fs.existsSync(target)) throw new Error('Worktree directory already exists')
+    const io = this.io(root)
+    const target = `${root}/.claude/worktrees/${name}`
+    if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
-    if (await branchExists(root, branch)) throw new Error('Worktree branch already exists')
+    if (await branchExists(io, root, branch)) throw new Error('Worktree branch already exists')
     if (this.recorded(target)) {
       throw new Error(
         'This worktree name has a recovery record; recover it or choose a different name'
@@ -263,26 +344,27 @@ export class SessionWorktrees {
     reuseBranch: boolean
   ): Promise<WorktreeResource> {
     const resource = pending
+    const io = this.io(resource.originalCwd)
     try {
-      const root = await rootOf(resource.originalCwd)
+      const root = await rootOf(io, resource.originalCwd)
       if (root !== resource.originalCwd) throw new Error('The recorded repository has changed')
-      if (fs.existsSync(resource.worktreePath)) throw new Error('Worktree directory already exists')
-      const stale = (await checkouts(root)).find(
-        (c) => path.resolve(c.path) === resource.worktreePath
-      )
+      if (await io.exists(resource.worktreePath))
+        throw new Error('Worktree directory already exists')
+      const stale = (await checkouts(io, root)).find((c) => c.path === resource.worktreePath)
       if (stale) {
         if (stale.locked)
           throw new Error('The missing worktree is locked; unlock it before rebuilding')
-        await unregisterOnlyThisMissingCheckout(root, resource.worktreePath)
+        await io.git(root, ['worktree', 'remove', barePath(resource.worktreePath)])
       }
+      const tree = barePath(resource.worktreePath)
       const branch = resource.worktreeBranch
       const args = branch
-        ? reuseBranch && (await branchExists(root, branch))
-          ? ['worktree', 'add', resource.worktreePath, branch]
-          : ['worktree', 'add', '-b', branch, resource.worktreePath, resource.originalHeadCommit]
-        : ['worktree', 'add', '--detach', resource.worktreePath, resource.originalHeadCommit]
-      await git(root, args)
-      await copyWorktreeIncludes(root, resource.worktreePath)
+        ? reuseBranch && (await branchExists(io, root, branch))
+          ? ['worktree', 'add', tree, branch]
+          : ['worktree', 'add', '-b', branch, tree, resource.originalHeadCommit]
+        : ['worktree', 'add', '--detach', tree, resource.originalHeadCommit]
+      await io.git(root, args)
+      await copyWorktreeIncludes(root, resource.worktreePath, io.machine)
       const ready: WorktreeResource = { ...pending, state: 'ready' }
       this.store.putResource(ready)
       return ready

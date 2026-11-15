@@ -11,7 +11,8 @@ vi.mock('electron', async () => {
 })
 
 import { app } from 'electron'
-import { loadSettings, saveSettings } from '../../src/main/settings'
+import { loadSettings, saveSettings, rereadSettingsOnNextLoad } from '../../src/main/settings'
+import { BackgroundFile, FOLDER_OF_HALF_WRITTEN_FILES } from '../../src/main/backgroundFile'
 import {
   keychainRead,
   keychainWrite,
@@ -55,9 +56,10 @@ function meta(p: Partial<AccountMeta>): AccountMeta {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(settingsFile, { force: true })
-  fs.rmSync(`${settingsFile}.tmp`, { force: true })
+  rereadSettingsOnNextLoad()
   fs.rmSync(fixtureFile, { force: true })
   resetProbeOutcomeState()
   process.env.KOLOFT_TEST_BACKGROUND = '1'
@@ -98,8 +100,9 @@ describe('U3 · registry persistence', () => {
     expect(listAccounts().map((a) => a.name)).toEqual(['alpha', 'bravo', 'charlie', 'api'])
   })
 
-  it('custom entries survive only with a valid http(s) URL and a safe model id (both land in shell exports in the shim)', () => {
+  it('custom entries survive only with a valid http(s) URL and a safe model id (both land in shell exports in the shim)', async () => {
     saveSettings({})
+    await BackgroundFile.whenAllWritten()
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     const base = { kind: 'custom', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
     raw.accounts = [
@@ -110,15 +113,17 @@ describe('U3 · registry persistence', () => {
       { ...base, name: 'badmodel', baseUrl: 'https://ok.test', model: 'a"; touch /tmp/pwned; #' }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     const kept = loadSettings().accounts
     expect(kept.map((a) => a.name)).toEqual(['good', 'badmodel'])
     expect(kept[0].model).toBe('glm-5.2[1m]')
     expect(kept[1].model).toBeUndefined()
   })
 
-  it('saveSettings writes atomically: no .tmp remains, content is complete JSON', () => {
+  it('saveSettings writes atomically: no half-written file remains, content is complete JSON', async () => {
     upsertAccountMeta(meta({ name: 'bravo' }))
-    expect(fs.existsSync(`${settingsFile}.tmp`)).toBe(false)
+    await BackgroundFile.whenAllWritten()
+    expect(fs.readdirSync(path.join(userData, FOLDER_OF_HALF_WRITTEN_FILES))).toEqual([])
     const parsed = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     expect(parsed.accounts).toHaveLength(1)
   })
@@ -126,11 +131,25 @@ describe('U3 · registry persistence', () => {
   it('LEAK ASSERTION: settings.json never contains sk-ant bytes', async () => {
     await keychainWrite('oauth', 'bravo', 'sk-ant-oat01-SUPER-SECRET')
     upsertAccountMeta(meta({ name: 'bravo' }))
+    await BackgroundFile.whenAllWritten()
     expect(fs.readFileSync(settingsFile, 'utf8')).not.toContain('sk-ant')
   })
 
-  it('hostile entries on disk are dropped on load (names reach a shell)', () => {
+  it('settings.json is read once: later loads and saves never read it again, each load hands back its own copy, and a save is seen by the next load', () => {
+    const reads = vi.spyOn(fs, 'readFileSync')
+    loadSettings().accounts.push(meta({ name: 'only-in-a-copy' }))
+    expect(loadSettings().accounts).toEqual([])
+    saveSettings({ keepAwake: false })
+    expect(loadSettings().keepAwake).toBe(false)
+    saveSettings({ keepAwake: true })
+    expect(loadSettings().keepAwake).toBe(true)
+    expect(reads.mock.calls.filter(([p]) => p === settingsFile)).toHaveLength(1)
+    reads.mockRestore()
+  })
+
+  it('hostile entries on disk are dropped on load (names reach a shell)', async () => {
     saveSettings({})
+    await BackgroundFile.whenAllWritten()
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     raw.accounts = [
       { name: 'ok-name', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 },
@@ -140,6 +159,7 @@ describe('U3 · registry persistence', () => {
       { name: 'other', kind: 'not-a-kind', enabled: true }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     expect(loadSettings().accounts.map((a) => a.name)).toEqual(['ok-name'])
   })
 })
@@ -275,8 +295,9 @@ describe('U3 · fable capability + §08 downgrade clock', () => {
     expect(listAccounts()[0].fable).toBe('yes')
   })
 
-  it('fableCheckedAt survives the settings sanitizer; non-numeric garbage is dropped', () => {
+  it('fableCheckedAt survives the settings sanitizer; non-numeric garbage is dropped', async () => {
     saveSettings({})
+    await BackgroundFile.whenAllWritten()
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     const base = { kind: 'oauth', enabled: true, fable: 'no', status: 'ok', addedAt: 1 }
     raw.accounts = [
@@ -284,6 +305,7 @@ describe('U3 · fable capability + §08 downgrade clock', () => {
       { ...base, name: 'evil', fableCheckedAt: 'DROP TABLE' }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     const accs = loadSettings().accounts
     expect(accs.find((a) => a.name === 'good')?.fableCheckedAt).toBe(123)
     expect(accs.find((a) => a.name === 'evil')?.fableCheckedAt).toBeUndefined()
@@ -295,7 +317,7 @@ describe('U4 · accounts:add IPC wiring', () => {
     const root = path.resolve(__dirname, '../..')
     const preload = fs.readFileSync(path.join(root, 'src/preload/index.ts'), 'utf8')
     const call = preload.match(
-      /add:\s*\(([^)]*)\)\s*=>\s*ipcRenderer\.invoke\('accounts:add',([^)]*)\)/
+      /add:\s*\(([^)]*)\)\s*=>\s*ipcRenderer\.invoke\(CH\.accounts\.add,([^)]*)\)/
     )
     expect(call, 'accounts.add is not a direct ipcRenderer.invoke').not.toBeNull()
     const params = call![1].split(',').map((s) => s.trim())

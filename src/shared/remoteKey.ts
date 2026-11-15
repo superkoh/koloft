@@ -23,6 +23,14 @@ export function formatRemoteKey(host: string, path: string): string {
   return `${PREFIX}${host}${path}`
 }
 
+export function barePath(p: string): string {
+  return parseRemoteKey(p)?.path ?? p
+}
+
+export function keyedOn(machine: string | undefined, p: string | undefined): string | undefined {
+  return machine && p?.startsWith('/') ? formatRemoteKey(machine, p) : p
+}
+
 export function isRemoteKey(key: string): boolean {
   return parseRemoteKey(key) !== null
 }

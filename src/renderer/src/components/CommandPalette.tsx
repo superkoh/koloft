@@ -1,24 +1,47 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuFolder, LuSearch, LuSparkles } from 'react-icons/lu'
-import type { BackendId, SearchSnippet, SessionSearchHit } from '@shared/types'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent
+} from 'react'
+import { flushSync } from 'react-dom'
+import { IconAiStart, IconFolder, IconSearch } from '../icons'
+import type { BackendId, HostId, SearchSnippet, SessionSearchHit } from '@shared/types'
 import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
-import { parseRemoteKey } from '@shared/remoteKey'
+import { hostOf, parseRemoteKey } from '@shared/remoteKey'
 import { askRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
+  completeMention,
+  mentionCandidates,
+  mentionTyping,
+  namedWorkspaces,
   paletteGroups,
   paletteSessions,
   paletteWorkspaces,
+  pinnedWorkspace,
+  SESSION_ROWS_PER_BATCH,
+  type MentionTyping,
   type PaletteAction,
-  type PaletteItem
+  type PaletteGroup,
+  type PaletteItem,
+  type PaletteWorkspace
 } from '../palette'
 import { openSessionRow } from '../sessionClick'
 import { mixesBackends, relTime } from '../sessionRows'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { BusyLine } from './SessionLaunchButtons'
+import { startOrList, type AgentChoice } from '../agentChoice'
+import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
+import '../commandPalette.css'
+import '../workspaceSidebar.css'
+import '../workspacePicker.css'
+import '../restoreDialog.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
 
@@ -34,10 +57,10 @@ function countLine(n: number): string {
   return n === 1 ? '1 conversation' : `${n} conversations`
 }
 
-function startLabel(assistOn: boolean, backend: string | undefined): string {
-  const verb = assistOn ? 'Ask AI' : 'Start'
+function startLabel(asksAssist: boolean, backend: string | undefined): string {
+  const verb = asksAssist ? 'Ask AI' : 'Start'
   if (backend) return `${verb} · ${backend}`
-  return assistOn ? verb : 'Start a session'
+  return asksAssist ? verb : 'Start a session'
 }
 
 const SNIPPET_LEAD_CHARS = 24
@@ -63,6 +86,22 @@ function SnippetText({ snippet, short }: { snippet: SearchSnippet; short?: boole
   )
 }
 
+function tipsFor(
+  mode: 'ask' | 'thinking' | 'search',
+  naming: boolean,
+  twoNamed: boolean,
+  picked: boolean,
+  listed: boolean
+): string {
+  if (mode === 'thinking') return 'Esc cancel'
+  if (mode === 'search') return '↓↑ move · ⏎ open · Esc back'
+  if (naming) return '↓↑ move · ⏎ pick · Esc'
+  if (picked) return '↓↑ move · ⏎ open · Esc'
+  if (twoNamed) return 'Name one workspace · Esc'
+  if (listed) return '↓ pick a match · Esc'
+  return '⇧⏎ new line · Esc'
+}
+
 export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
 
 export function CommandPalette({
@@ -70,25 +109,28 @@ export function CommandPalette({
   onClose,
   onRouted,
   onOpenHit,
-  methods
+  choices
 }: {
   actions: PaletteAction[]
   onClose: () => void
   onRouted: PaletteRouted
   onOpenHit: (hit: SessionSearchHit) => void
-  methods: BackendId[]
+  choices: Record<HostId, AgentChoice>
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
-  const assistOn = useStore((s) => !!s.settings.assist?.on)
   const [query, setQuery] = useState('')
+  const [caret, setCaret] = useState(0)
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null)
   const [hotKey, setHotKey] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const [mode, setMode] = useState<'ask' | 'thinking' | 'search'>('ask')
   const [hits, setHits] = useState<SessionSearchHit[]>([])
   const [searchDone, setSearchDone] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
+  const [grown, setGrown] = useState({ typed: '', rows: SESSION_ROWS_PER_BATCH })
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const asking = useRef<ReturnType<typeof askRoute> | null>(null)
@@ -99,20 +141,51 @@ export function CommandPalette({
   )
   const workspaceItems = useMemo(() => paletteWorkspaces(rows, window.api.home), [rows])
   const showBackend = mixesBackends(sessionItems.map((s) => s.row))
-  const typed = query.trim()
-  const scan = mode === 'search' || (!composing && worthScanningWhileTyping(typed))
-  const groups = paletteGroups(sessionItems, workspaceItems, actions, query, scan ? hits : [])
+  const named = namedWorkspaces(query, workspaceItems)
+  const pin = pinnedWorkspace(query, named)
+  const choice = choices[pin ? hostOf(pin.wsPath) : 'local']
+  const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
+  const asksAssist = !pin
+  const typed = (pin ? pin.prompt : query).trim()
+  const startable = !!typed && !twoNamed
+  const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
+  const offered = tagging && tagging.start !== dismissedAt ? tagging : null
+  const suggestions = offered ? mentionCandidates(workspaceItems, offered, named) : []
+  const mention = suggestions.length > 0 ? offered : null
+  const scan = mode === 'search' || (!composing && !mention && worthScanningWhileTyping(typed))
+  const sessionRows = grown.typed === typed ? grown.rows : SESSION_ROWS_PER_BATCH
+  const groups: PaletteGroup[] = mention
+    ? [{ title: 'Workspaces', items: suggestions }]
+    : paletteGroups(sessionItems, workspaceItems, actions, typed, scan ? hits : [], sessionRows)
+  const sessionGroup = groups.find((g) => g.title === 'Sessions')
+  const sessionsHidden = sessionGroup?.hidden ?? 0
+  const showMoreSessions = (): void => {
+    if (sessionsHidden === 0) return
+    const rows = sessionRows + SESSION_ROWS_PER_BATCH
+    setGrown((had) => (had.typed === typed && had.rows >= rows ? had : { typed, rows }))
+  }
   const visible = groups.flatMap((g) => g.items)
+  const lastListedSessionAt = sessionGroup ? visible.indexOf(sessionGroup.items.at(-1)!) : -1
   const keys = mode === 'search' ? hits.map((h) => h.row.id) : visible.map((i) => i.key)
   const count = keys.length
   const keyAt = keys.indexOf(hotKey ?? '')
-  const at = keyAt >= 0 ? keyAt : mode === 'search' && count > 0 ? 0 : null
-  const [primary, other] = methods
-  const startIsDefault = mode === 'ask' && at === null && !!typed
+  const at = keyAt >= 0 ? keyAt : (mode === 'search' || mention) && count > 0 ? 0 : null
+  const startIsDefault = mode === 'ask' && at === null && startable
   const pick = (i: number | null): void => setHotKey(i === null ? null : keys[i])
+
+  const complete = (word: MentionTyping, ws: PaletteWorkspace): void => {
+    const done = completeMention(query, word, ws.tag)
+    flushSync(() => {
+      setQuery(done.text)
+      setCaret(done.caret)
+      setHotKey(null)
+    })
+    inputRef.current?.setSelectionRange(done.caret, done.caret)
+  }
 
   const open = (item: PaletteItem | undefined): void => {
     if (!item || (item.kind === 'action' && item.disabled)) return
+    if (mention && item.kind === 'workspace') return complete(mention, item)
     if (item.kind === 'more') return search()
     if (item.kind === 'hit') return onOpenHit(item.hit)
     onClose()
@@ -121,10 +194,14 @@ export function CommandPalette({
     else item.run()
   }
 
-  const start = (backend: BackendId = primary): void => {
-    if (mode !== 'ask' || !typed) return
-    if (!assistOn) {
-      onRouted(typed, backend, null)
+  const start = (backend: BackendId = choice.lead): void => {
+    if (mode !== 'ask' || !startable) return
+    if (!asksAssist) {
+      onRouted(
+        typed,
+        backend,
+        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null }
+      )
       return
     }
     setMode('thinking')
@@ -148,7 +225,8 @@ export function CommandPalette({
     setHotKey(null)
   }
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     inputRef.current?.focus()
     return () => stopAsking()
   }, [])
@@ -176,7 +254,8 @@ export function CommandPalette({
     }
   }, [typed, scan])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
@@ -201,20 +280,39 @@ export function CommandPalette({
       if (e.key === 'Enter') e.preventDefault()
       return
     }
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0) {
+    const listTakesArrows = !!mention || !query.includes('\n')
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0 && listTakesArrows) {
       e.preventDefault()
-      if (e.key === 'ArrowDown') pick(at === null ? 0 : Math.min(at + 1, count - 1))
-      else pick(at ? at - 1 : null)
+      if (e.key === 'ArrowDown') {
+        if (mode === 'ask' && at === lastListedSessionAt && sessionsHidden > 0) {
+          showMoreSessions()
+          return
+        }
+        const next = at === null ? 0 : Math.min(at + 1, count - 1)
+        if (mode === 'ask' && next === lastListedSessionAt) showMoreSessions()
+        pick(next)
+      } else pick(at ? at - 1 : null)
       return
     }
-    if (e.key !== 'Enter') return
+    if (mention && e.key === 'Tab') {
+      e.preventDefault()
+      complete(mention, suggestions[at ?? 0])
+      return
+    }
+    if (mention && e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setDismissedAt(mention.start)
+      return
+    }
+    if (e.key !== 'Enter' || (e.shiftKey && mode === 'ask')) return
     e.preventDefault()
     e.stopPropagation()
     if (e.altKey) search()
     else if (mode === 'search') {
       if (at !== null && hits[at]) onOpenHit(hits[at])
-    } else if (at !== null && !e.shiftKey) open(visible[at])
-    else start(e.shiftKey && other ? other : primary)
+    } else if (at !== null && !e.metaKey) open(visible[at])
+    else startOrList(e.metaKey, choice, start, () => startable && setListOpen(true))
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
@@ -244,7 +342,7 @@ export function CommandPalette({
         {item.kind === 'workspace' && (
           <>
             <span className="fico">
-              <LuFolder size={15} />
+              <IconFolder size={15} />
             </span>
             <span className="wsp-name">{item.name}</span>
             <span className="note">{item.note}</span>
@@ -320,7 +418,16 @@ export function CommandPalette({
       )
     if (visible.length === 0) return null
     return (
-      <div className="pal-results" role="listbox" aria-label="Results" ref={listRef}>
+      <div
+        className="pal-results"
+        role="listbox"
+        aria-label="Results"
+        ref={listRef}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          if (el.scrollTop + 2 * el.clientHeight >= el.scrollHeight) showMoreSessions()
+        }}
+      >
         {groups.map((g) => (
           <div key={g.title} role="group" aria-label={g.title}>
             <div className="cb-hd">{g.title}</div>
@@ -331,16 +438,7 @@ export function CommandPalette({
     )
   }
 
-  const tips =
-    mode === 'thinking'
-      ? 'Esc cancel'
-      : mode === 'search'
-        ? '↓↑ move · ⏎ open · Esc back'
-        : at !== null
-          ? '↓↑ move · ⏎ open · Esc'
-          : visible.length > 0
-            ? '↓ pick a match · Esc'
-            : 'Esc'
+  const tips = tipsFor(mode, !!mention, twoNamed, at !== null, visible.length > 0)
 
   return (
     <div className="modal-backdrop palette-top" onClick={onClose}>
@@ -352,7 +450,7 @@ export function CommandPalette({
       >
         <div className={'pal-ask' + (mode === 'thinking' ? ' waiting' : '')}>
           <span className="pal-glyph">
-            {mode === 'search' ? <LuSearch size={18} /> : <LuSparkles size={18} />}
+            {mode === 'search' ? <IconSearch size={18} /> : <IconAiStart size={18} />}
           </span>
           <textarea
             ref={inputRef}
@@ -360,18 +458,18 @@ export function CommandPalette({
             rows={1}
             spellCheck={false}
             autoComplete="off"
-            placeholder={
-              assistOn
-                ? 'Ask or tell Koloft anything, or find a session to jump to…'
-                : 'What should a new session do? Or find one to jump to…'
-            }
+            placeholder="Ask or tell Koloft anything, or find a session to jump to…"
             aria-label="Ask or jump"
             readOnly={mode === 'thinking'}
             value={query}
             onChange={(e) => {
-              setQuery(e.target.value)
+              const { value, selectionStart } = e.target
+              setQuery(value)
+              setCaret(selectionStart)
               setHotKey(null)
+              if (mentionTyping(value, selectionStart)?.start !== dismissedAt) setDismissedAt(null)
             }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={onKeyDown}
@@ -390,26 +488,26 @@ export function CommandPalette({
               >
                 Search conversations <span className="k">⌥⏎</span>
               </button>
-              <button
+              <SessionLaunchButtons
+                choice={choice}
+                open={listOpen}
+                onOpen={setListOpen}
                 className={'pal-pill' + (startIsDefault ? ' go' : '')}
-                disabled={!typed}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => start(primary)}
-              >
-                <LuSparkles size={12} className="pal-pill-glyph" />{' '}
-                {startLabel(assistOn, other && BACKEND_LABEL[primary])}
-                {startIsDefault && <span className="k">⏎</span>}
-              </button>
-              {other && (
-                <button
-                  className="pal-pill"
-                  disabled={!typed}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => start(other)}
-                >
-                  {BACKEND_LABEL[other]} <span className="k">⇧⏎</span>
-                </button>
-              )}
+                icon={false}
+                keyHint={startIsDefault}
+                busy={false}
+                disabled={!startable}
+                label={(backend) => (
+                  <>
+                    <IconAiStart size={12} className="pal-pill-glyph" />{' '}
+                    {startLabel(
+                      asksAssist,
+                      choice.listed.length > 1 ? BACKEND_LABEL[backend] : undefined
+                    )}
+                  </>
+                )}
+                onStart={start}
+              />
             </>
           )}
         </div>

@@ -1,10 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { execFileSync, spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudePeerNames,
+  claudeShowsAPanelOnMachine,
   messagingSocketOf,
+  tabSocketOnMachine,
   runningClaudePid,
   whenMessagingSocket
 } from '../../src/main/claudeSessionRegistry'
@@ -26,6 +30,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -86,8 +91,12 @@ describe("claude's own session registry: the socket a session takes messages on"
     expect(await messagingSocketOf(SID, dir, async () => null)).toBeNull()
   })
 
-  it('waits for a session that binds before it registers, woken by its entry landing, and answers null at the deadline', async () => {
+  // PLATFORM§28
+  it('waits for a session that binds before it registers and finds its entry once it lands, even when a folder watch would never report it, and answers null at the deadline', async () => {
     const startOf = async (): Promise<string | null> => START
+    vi.spyOn(fs, 'watch').mockImplementation(
+      () => ({ close: () => undefined }) as unknown as fs.FSWatcher
+    )
     const waiting = whenMessagingSocket(SID, 60_000, dir, startOf)
     await new Promise((r) => setTimeout(r, 50))
     fs.writeFileSync(
@@ -101,5 +110,74 @@ describe("claude's own session registry: the socket a session takes messages on"
     )
     expect(await waiting).toBe('/tmp/cc-socks/29948.sock')
     expect(await whenMessagingSocket('not-running', 100, dir, startOf)).toBeNull()
+  })
+
+  it('finds the first claude ever run on this Mac, whose registry folder did not exist yet when Koloft began to wait', async () => {
+    const startOf = async (): Promise<string | null> => START
+    const later = path.join(dir, 'sessions')
+    const waiting = whenMessagingSocket(SID, 60_000, later, startOf)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(fs.existsSync(later)).toBe(false)
+    fs.mkdirSync(later)
+    fs.writeFileSync(
+      path.join(later, '29948.json'),
+      JSON.stringify({
+        pid: 29948,
+        sessionId: SID,
+        procStart: START,
+        messagingSocketPath: '/tmp/cc-socks/29948.sock'
+      })
+    )
+    const soon = new Promise((r) => setTimeout(() => r('still waiting'), 5_000))
+    expect(await Promise.race([waiting, soon])).toBe('/tmp/cc-socks/29948.sock')
+  })
+})
+
+// CC§5 CC§11
+describe('the registry of a claude on another machine, read through ssh', () => {
+  const readOnMachine = (home: string): string =>
+    execFileSync('sh', ['-c', LIVE_REGISTRY_ON_A_MACHINE_SH], {
+      env: { ...process.env, HOME: home }
+    }).toString()
+
+  it('gives the socket of the claude running in the tab, not the entry a hard-killed claude left behind nor a /fork copy’s', () => {
+    const sessions = path.join(dir, '.claude', 'sessions')
+    fs.mkdirSync(sessions, { recursive: true })
+    const write = (pid: number | undefined, kind: string): void =>
+      fs.writeFileSync(
+        path.join(sessions, `${pid}.json`),
+        JSON.stringify(
+          { pid, sessionId: SID, kind, messagingSocketPath: `/tmp/cc-socks/${pid}.sock` },
+          null,
+          2
+        )
+      )
+    const gone = spawnSync('true').pid
+    write(gone, 'interactive')
+    write(process.ppid, 'bg')
+    expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
+    write(process.pid, 'interactive')
+    fs.writeFileSync(path.join(sessions, `${process.pid}.0123abcd.key`), 'not json')
+    expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBe(`/tmp/cc-socks/${process.pid}.sock`)
+  })
+
+  it('finds nothing on a machine where claude never ran', () => {
+    expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
+  })
+
+  it('says a panel is open while the claude running in the tab reads waiting, not while a hard-killed one’s entry still does, and cannot say without an entry', () => {
+    const sessions = path.join(dir, '.claude', 'sessions')
+    fs.mkdirSync(sessions, { recursive: true })
+    const write = (pid: number | undefined, status: string): void =>
+      fs.writeFileSync(
+        path.join(sessions, `${pid}.json`),
+        JSON.stringify({ pid, sessionId: SID, kind: 'interactive', status })
+      )
+    expect(claudeShowsAPanelOnMachine(readOnMachine(dir), SID)).toBeUndefined()
+    write(spawnSync('true').pid, 'waiting')
+    write(process.pid, 'idle')
+    expect(claudeShowsAPanelOnMachine(readOnMachine(dir), SID)).toBe(false)
+    write(process.pid, 'waiting')
+    expect(claudeShowsAPanelOnMachine(readOnMachine(dir), SID)).toBe(true)
   })
 })

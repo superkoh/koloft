@@ -1,0 +1,2 @@
+export const MUSE_SANDBOX_CANNOT_START =
+  "[Koloft] This machine does not let programs create user namespaces, and Muse's sandbox needs them: every shell command Muse runs here fails with a bwrap error. To fix it, allow them on the machine (on Ubuntu 24.04: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, and put that setting in a file under /etc/sysctl.d to keep it after a restart), or load an AppArmor profile that lets muse create them, or turn on Settings ▸ Accounts ▸ Skip permission prompts."

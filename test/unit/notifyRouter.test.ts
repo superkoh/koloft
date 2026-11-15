@@ -59,6 +59,12 @@ describe('notifyRouter — sound is opt-in, approval-only, and focus-independent
     expect(route(ev('approval'), UNFOCUSED, s)).toEqual({ os: true, sound: true })
   })
 
+  it('no sound for the tab the user is watching in a focused window — its red dot is enough', () => {
+    const s = settings({ notifyApprovalSound: true })
+    expect(route(ev('approval'), FOCUSED, s, 'tab-A')).toEqual({ os: false, sound: false })
+    expect(route(ev('approval'), UNFOCUSED, s, 'tab-A')).toEqual({ os: true, sound: true })
+  })
+
   it('approval with sound OFF (the default) → no sound', () => {
     expect(route(ev('approval'), FOCUSED, settings()).sound).toBe(false)
     expect(route(ev('approval'), UNFOCUSED, settings()).sound).toBe(false)

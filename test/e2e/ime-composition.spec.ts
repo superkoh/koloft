@@ -6,12 +6,15 @@ import {
   centerTerm,
   gitInit,
   openWorktreeSession,
+  runIn,
   sendShortcut,
   startSessionIn,
+  terminalText,
   transcriptFile,
   waitBooted,
   waitForCalls,
-  worktreeDialog
+  worktreeDialog,
+  wsRows
 } from './helpers/p1'
 import { claudePrompts } from './helpers/workbench'
 
@@ -43,6 +46,20 @@ async function commit(cdp: CDPSession, text: string): Promise<void> {
   await cdp.send('Input.insertText', { text })
 }
 
+async function commitWithKeysQueuedRightBehindIt(
+  cdp: CDPSession,
+  text: string,
+  keys: { key: string; code: string; windowsVirtualKeyCode: number; text: string }[]
+): Promise<void> {
+  await Promise.all([
+    commit(cdp, text),
+    ...keys.flatMap((k) => [
+      cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...k }),
+      cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...k, text: undefined })
+    ])
+  ])
+}
+
 test.describe('Chinese input method: an Enter pressed while a word is still being composed picks the word and submits nothing', () => {
   test('in a session terminal, the Enter inside the composition sends nothing; the next Enter sends the line with the word', async ({
     page,
@@ -63,6 +80,29 @@ test.describe('Chinese input method: an Enter pressed while a word is still bein
       .poll(() => claudePrompts(transcript), { timeout: 30_000 })
       .toContain(`say ${HANZI}`)
     expect(claudePrompts(transcript).filter((p) => p.startsWith('say'))).toEqual([`say ${HANZI}`])
+  })
+
+  test('in a session terminal, keys queued right behind the commit (a letter, then Enter) all reach the session, and the word is sent once', async ({
+    page,
+    env
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const [call] = await waitForCalls(env, 1)
+    const transcript = transcriptFile(env.home, env.workspaces.a, call.sessionId)
+
+    await centerTerm(page).click()
+    await page.keyboard.type('say ')
+    const cdp = await composeThenPressEnter(page, PINYIN)
+    await commitWithKeysQueuedRightBehindIt(cdp, HANZI, [
+      { key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88, text: 'x' },
+      { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }
+    ])
+
+    await expect
+      .poll(() => claudePrompts(transcript), { timeout: 30_000 })
+      .toContain(`say ${HANZI}x`)
+    expect(claudePrompts(transcript).filter((p) => p.startsWith('say'))).toEqual([`say ${HANZI}x`])
   })
 
   test('in ⌘P, the Enter inside the composition starts nothing; the next Enter starts the session with the word', async ({
@@ -93,6 +133,30 @@ test.describe('Chinese input method: an Enter pressed while a word is still bein
     } finally {
       await quitAndClose(app)
     }
+  })
+
+  test('in an Inbox question card’s own-answer box, the Enter inside the composition sends nothing; the next Enter answers with the word', async ({
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const row = wsRows(page, 'ws-a').first()
+    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+    const tabId = (await row.getAttribute('data-tab-id')) as string
+    await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+    await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })
+    await page.locator('.ibx-entry').click()
+    const card = page.locator('.inbox-page .ibx-item.focus')
+    const own = card.getByPlaceholder(/Type your own answer/)
+    await own.click()
+    const cdp = await composeThenPressEnter(page, PINYIN)
+    await commit(cdp, HANZI)
+    await expect(own).toHaveValue(HANZI)
+    await expect(card.locator('.ibx-undo')).toHaveCount(0)
+    await page.keyboard.press('Enter')
+    await expect(card.locator('.ibx-undo')).toBeVisible()
+    await expect.poll(() => terminalText(page, tabId), { timeout: 20_000 }).toContain(HANZI)
+    expect(await terminalText(page, tabId)).not.toContain(PINYIN)
   })
 
   test('in the C8 New Worktree Session dialog, the Enter inside the composition creates nothing; the next Enter starts in the worktree with the whole name', async ({

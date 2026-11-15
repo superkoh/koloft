@@ -2,6 +2,7 @@ import {
   GIT_PLATFORMS,
   type GitAccount,
   type GitAuthor,
+  type GitMachine,
   type GitPlatform,
   type GitRepoPick,
   type GitSshKeyState
@@ -201,6 +202,23 @@ export function sanitizeGitPicks(raw: unknown, accounts: GitAccount[]): GitRepoP
     if (out.some((o) => o.repo === p.repo)) continue
     const sshKey = GIT_SSH_KEY_STATES.find((s) => s === p.sshKey)
     out.push({ repo: p.repo, account, ...(sshKey && { sshKey }) })
+  }
+  return out
+}
+
+export function sanitizeGitMachines(raw: unknown): Record<string, GitMachine> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, GitMachine> = {}
+  for (const [machine, m] of Object.entries(raw as Record<string, Partial<GitMachine>>)) {
+    if (!machine || !m || typeof m !== 'object') continue
+    const accounts = sanitizeGitAccounts(m.accounts)
+    out[machine] = {
+      accounts,
+      picks: sanitizeGitPicks(m.picks, accounts).map(({ repo, account }) => ({ repo, account })),
+      dismissed: Array.isArray(m.dismissed)
+        ? m.dismissed.filter((r): r is string => typeof r === 'string')
+        : []
+    }
   }
   return out
 }

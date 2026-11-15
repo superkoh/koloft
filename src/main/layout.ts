@@ -5,6 +5,7 @@ import type { LayoutV6 } from '@shared/types'
 import { migrateLayout, serializeLayout, type MigrateDeps } from './layoutMigrate'
 import { projectInfoFor } from './projectInfo'
 import { BackgroundFile } from './backgroundFile'
+import { dirExistsSync } from './resumePlan'
 
 function layoutFile(): string {
   return path.join(app.getPath('userData'), 'layout.json')
@@ -12,13 +13,7 @@ function layoutFile(): string {
 
 // PLATFORM§1
 const migrateDeps: MigrateDeps = {
-  dirExists: (p) => {
-    try {
-      return fs.statSync(p).isDirectory()
-    } catch {
-      return false
-    }
-  },
+  dirExists: dirExistsSync,
   projectRootOf: (p) => projectInfoFor(p).root
 }
 

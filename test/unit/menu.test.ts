@@ -434,12 +434,12 @@ describe.runIf(process.platform === 'darwin')('app menu: Keep Mac Awake (keepAwa
     expect(seen).toEqual(['toggle-keep-awake'])
   })
 
-  it('follows the setting through setKeepAwakeChecked', () => {
+  it('follows whether the Mac is held awake through setKeepAwakeChecked, greyed out while it cannot be changed', () => {
     buildMenu(() => {}, true)
-    setKeepAwakeChecked(false)
-    expect(mocks.state.live.get('keep-awake')?.checked).toBe(false)
-    setKeepAwakeChecked(true)
-    expect(mocks.state.live.get('keep-awake')?.checked).toBe(true)
+    setKeepAwakeChecked(false, true)
+    expect(mocks.state.live.get('keep-awake')).toMatchObject({ checked: false, enabled: true })
+    setKeepAwakeChecked(true, false)
+    expect(mocks.state.live.get('keep-awake')).toMatchObject({ checked: true, enabled: false })
   })
 })
 

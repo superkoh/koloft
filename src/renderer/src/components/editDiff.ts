@@ -1,4 +1,4 @@
-import type { DiffRow, ParsedDiff } from '../inlineDiff'
+import type { DiffRow, ParsedDiff } from '@shared/unifiedDiff'
 
 function splitLines(text: string): string[] {
   if (text === '') return []

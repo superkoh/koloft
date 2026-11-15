@@ -1,5 +1,19 @@
-import type { DirEntry, GitNumstatMap, GitStatusMap, PreviewItem, SessionInfo } from '@shared/types'
+import type {
+  BackendId,
+  DirChanges,
+  DirEntry,
+  GitNumstatMap,
+  GitStatusMap,
+  PreviewItem,
+  SessionInfo
+} from '@shared/types'
 import { isWebPagePath, previewKindForPath } from '@shared/preview'
+import {
+  AGY_ARTIFACT_SIDECAR,
+  AGY_LOGS_FOLDER,
+  AGY_SCRATCH_FOLDER,
+  AGY_UPLOADS_FOLDER
+} from '@shared/agyBrain'
 
 export function inRoot(p: string, root: string): boolean {
   return p === root || p.startsWith(root + '/')
@@ -108,12 +122,27 @@ export function isOutsideEligible(p: string): boolean {
   return k === 'markdown' || k === 'image' || isWebPagePath(p)
 }
 
+// AGY§8 AGY§19
+const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])
+
+type Listed = Readonly<Record<string, readonly DirEntry[] | undefined>>
+
+function isAgyBookkeeping(e: DirEntry, dir: string | undefined, listed: Listed): boolean {
+  if (e.path !== `${dir}/${e.name}`) return false
+  if (e.name === AGY_SCRATCH_FOLDER && e.isDir) return !listed[e.path]?.length
+  return AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR)
+}
+
 export function scratchpadEntries(
   entries: readonly DirEntry[] | undefined,
-  scratchpadDir: string | undefined
+  scratchpadDir: string | undefined,
+  backend: BackendId | undefined,
+  listed: Listed
 ): DirEntry[] {
   if (!entries) return []
-  return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
+  if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir, listed))
+  if (backend === 'claude') return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
+  return [...entries]
 }
 
 export interface OutsideInput {
@@ -199,6 +228,54 @@ export function hitDir(rel: string): string {
 
 export function persistableExpansion(expanded: Iterable<string>, root: string): string[] {
   return [...expanded].filter((d) => inRoot(d, root))
+}
+
+export function sameEntries(a: readonly DirEntry[] | undefined, b: readonly DirEntry[]): boolean {
+  if (!a || a.length !== b.length) return false
+  return a.every(
+    (e, i) => e.path === b[i].path && e.isDir === b[i].isDir && !!e.ignored === !!b[i].ignored
+  )
+}
+
+export const DIR_PAGE_ROWS = 500
+
+export function pathsWithTheirFolders(paths: Iterable<string | null | undefined>): Set<string> {
+  const out = new Set<string>()
+  for (let p of paths) {
+    while (p && !out.has(p)) {
+      out.add(p)
+      const cut = p.lastIndexOf('/')
+      p = cut > 0 ? p.slice(0, cut) : ''
+    }
+  }
+  return out
+}
+
+export function pageOfEntries(
+  entries: readonly DirEntry[],
+  pages: number,
+  keep: ReadonlySet<string>
+): { rows: readonly DirEntry[]; notShown: number; firstHidden?: string } {
+  const limit = pages * DIR_PAGE_ROWS
+  if (entries.length <= limit) return { rows: entries, notShown: 0 }
+  const rows: DirEntry[] = []
+  let paged = 0
+  let firstHidden: string | undefined
+  for (const e of entries) {
+    if (keep.has(e.path)) rows.push(e)
+    else if (paged < limit) {
+      rows.push(e)
+      paged++
+    } else firstHidden ??= e.path
+  }
+  return { rows, notShown: entries.length - rows.length, firstHidden }
+}
+
+export function foldersToRelist(open: Iterable<string>, changes: DirChanges | undefined): string[] {
+  const folders = [...open]
+  if (!changes) return folders
+  const lists = new Set(changes.listsChanged)
+  return folders.filter((d) => lists.has(d) || changes.replacedTrees.some((t) => inRoot(d, t)))
 }
 
 export function initialExpansion(saved: readonly string[] | null, root: string): Set<string> {

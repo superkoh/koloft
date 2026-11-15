@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, type JSX } from 'react'
-import { Terminal } from '@xterm/xterm'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { Terminal, type IDisposable } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -7,27 +7,43 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { consumeAdoptedNudge, useStore } from '../store'
 import { activateTerminalLink } from '../termLinks'
 import { suppressXtversionReply } from '../xtversionMask'
+import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
-import { exitSyncWindow } from '../syncOutput'
-import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
-import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
+import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
+import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
+import {
+  disposeThenReturnGpuMemory,
+  forgetWebglThatLeftItsAtlasAsItWas,
+  registerWebglRepair,
+  unregisterWebglRepair
+} from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
+import { loadMonoFonts, monoFontsLoaded } from '../monoFonts'
+import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
+
+let sessionScreen = window.api.sessionScreenAtLoad
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
+const SYNC_FRAME_NEVER_CLOSED_AFTER_MS = 1000
 const ACK_FLUSH_AT_UTF16_UNITS = 64 * 1024
 const ACK_FLUSH_AFTER_MS = 100
+const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
 export const NO_FOCUS_SIGNAL = 0
 
-export function TerminalView({
-  id,
-  active,
-  onUserInput,
-  autoFocus = true,
-  scrollbar = true,
-  focusSignal,
-  onRepainted
-}: {
+// CC§12 CODEX§25 MUSE§17 AGY§15 PLATFORM§2 PLATFORM§21
+const COMMAND_KEY_LINE_EDITS = new Map([
+  ['ArrowLeft', TO_LINE_START],
+  ['ArrowRight', TO_LINE_END],
+  ['Backspace', CLEAR_TO_LINE_START]
+])
+
+function commandKeyLineEdit(e: KeyboardEvent): string | undefined {
+  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing) return undefined
+  return COMMAND_KEY_LINE_EDITS.get(e.key)
+}
+
+type TerminalViewProps = {
   id: string
   active: boolean
   onUserInput?: () => void
@@ -35,25 +51,85 @@ export function TerminalView({
   scrollbar?: boolean
   focusSignal?: number
   onRepainted?: () => void
-}): JSX.Element {
+  onOutput?: () => void
+  maxCols?: number
+  copiesToClipboard?: boolean
+}
+
+// PLATFORM§66
+export function TerminalView(props: TerminalViewProps): JSX.Element {
+  const fontFamily = useStore((s) => s.settings.fontFamily)
+  const [loadedFamily, setLoadedFamily] = useState(() =>
+    monoFontsLoaded(fontFamily) ? fontFamily : null
+  )
+  useEffect(() => {
+    let live = true
+    void loadMonoFonts(fontFamily).then(() => {
+      if (live) setLoadedFamily(fontFamily)
+    })
+    return () => {
+      live = false
+    }
+  }, [fontFamily])
+  return loadedFamily === null ? (
+    <div className="term" />
+  ) : (
+    <LiveTerminal {...props} fontFamily={loadedFamily} />
+  )
+}
+
+function ownerTypesInAnotherField(): boolean {
+  const at = document.activeElement
+  if (!(at instanceof HTMLElement) || at.closest('.xterm')) return false
+  return at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || at.isContentEditable
+}
+
+function LiveTerminal({
+  fontFamily,
+  id,
+  active,
+  onUserInput,
+  autoFocus = true,
+  scrollbar = true,
+  focusSignal,
+  onRepainted,
+  onOutput,
+  maxCols,
+  copiesToClipboard = false
+}: TerminalViewProps & { fontFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
   const onRepaintedRef = useRef(onRepainted)
   onRepaintedRef.current = onRepainted
+  const onOutputRef = useRef(onOutput)
+  onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
+  const firstShow = useRef(true)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const repaintedRef = useRef(false)
-  const fontFamily = useStore((s) => s.settings.fontFamily)
+  const syncFrameWaitRef = useRef<{
+    deadline: ReturnType<typeof setTimeout>
+    closed: IDisposable
+  } | null>(null)
+  const fontFamilyRef = useRef(fontFamily)
+  fontFamilyRef.current = fontFamily
   const fontSize = useStore((s) => s.settings.fontSize)
 
+  const stopWaitingForSyncFrame = useCallback((): void => {
+    const wait = syncFrameWaitRef.current
+    if (!wait) return
+    syncFrameWaitRef.current = null
+    clearTimeout(wait.deadline)
+    wait.closed.dispose()
+  }, [])
+
   // PLATFORM§20
-  const forceRepaint = useCallback((): void => {
+  const repaint = useCallback((): void => {
+    stopWaitingForSyncFrame()
     const term = termRef.current
-    if (!term || repaintedRef.current) return
-    repaintedRef.current = true
-    exitSyncWindow(term)
+    if (!term) return
     let repainted = false
     try {
       const rs = (
@@ -72,7 +148,28 @@ export function TerminalView({
       } catch {}
     }
     onRepaintedRef.current?.()
-  }, [])
+  }, [stopWaitingForSyncFrame])
+
+  const forceRepaint = useCallback((): void => {
+    const term = termRef.current
+    if (!term || repaintedRef.current) return
+    repaintedRef.current = true
+    if (!isSyncWindowOpen(term)) {
+      repaint()
+      return
+    }
+    stopWaitingForSyncFrame()
+    syncFrameWaitRef.current = {
+      closed: term.onWriteParsed(() => {
+        if (!isSyncWindowOpen(term)) repaint()
+      }),
+      deadline: setTimeout(() => {
+        // PLATFORM§21
+        exitSyncWindow(term)
+        repaint()
+      }, SYNC_FRAME_NEVER_CLOSED_AFTER_MS)
+    }
+  }, [repaint, stopWaitingForSyncFrame])
 
   const safeFit = useCallback((): void => {
     const el = ref.current
@@ -82,9 +179,17 @@ export function TerminalView({
     // PLATFORM§21
     if (el.clientWidth === 0 || el.clientHeight === 0) return
     try {
-      exitSyncWindow(term)
-      fit.fit()
-      window.api.terminal.resize(id, term.cols, term.rows)
+      const cellWidth = term.dimensions?.css.cell.width
+      if (maxCols && cellWidth) {
+        el.style.maxWidth = `${Math.ceil(maxCols * cellWidth) + CAP_SLACK_AGAINST_FIT_ROUNDING_PX}px`
+      }
+      const fits = fit.proposeDimensions()
+      if (fits && (fits.cols !== term.cols || fits.rows !== term.rows)) {
+        exitSyncWindow(term)
+        term.resize(fits.cols, fits.rows)
+      }
+      if (maxCols) sessionScreen = { cols: term.cols, rows: term.rows }
+      window.api.terminal.resize(id, term.cols, term.rows, !!maxCols)
       screenSizedToPane(id)
       // ADR-0007
       if (consumeAdoptedNudge(id)) {
@@ -94,13 +199,14 @@ export function TerminalView({
         }, ADOPTED_REPAINT_AFTER_MS)
       }
     } catch {}
-  }, [id, forceRepaint])
+  }, [id, forceRepaint, maxCols])
 
   useEffect(() => {
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
+      ...(maxCols ? sessionScreen : null),
       fontSize: useStore.getState().settings.fontSize,
-      fontFamily: useStore.getState().settings.fontFamily,
+      fontFamily: fontFamilyRef.current,
       cursorBlink: true,
       allowProposedApi: true,
       scrollbar: { showScrollbar: scrollbar },
@@ -137,6 +243,7 @@ export function TerminalView({
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
     // CC§12
     suppressXtversionReply(term)
+    if (copiesToClipboard) copyOsc52ToClipboard(term, window.api.terminal.copy)
     term.open(ref.current!)
     termRef.current = term
     fitRef.current = fit
@@ -176,11 +283,12 @@ export function TerminalView({
         }
       }
       const detachWebgl = (): void => {
-        unregisterWebglRepair(id)
-        webglRef.current?.dispose()
+        forgetWebglThatLeftItsAtlasAsItWas(id)
+        const addon = webglRef.current
         webglRef.current = null
+        disposeThenReturnGpuMemory(addon, () => addon?.dispose())
       }
-      acquireWebgl(id, attachWebgl, detachWebgl)
+      enrollWebgl(id, attachWebgl, detachWebgl)
 
       // PLATFORM§20
       let dprMql: MediaQueryList | null = null
@@ -205,7 +313,12 @@ export function TerminalView({
     const compScreen = compView?.closest('.xterm-screen') as HTMLElement | null
     const compositionHelper = (
       term as unknown as {
-        _core?: { _compositionHelper?: { updateCompositionElements(): void } }
+        _core?: {
+          _compositionHelper?: {
+            updateCompositionElements(): void
+            _isSendingComposition?: boolean
+          }
+        }
       }
     )._core?._compositionHelper
 
@@ -258,6 +371,7 @@ export function TerminalView({
         commitGrace = true
         onUserInputRef.current?.()
         window.api.terminal.write(id, data)
+        if (compositionHelper) compositionHelper._isSendingComposition = false
         setTimeout(() => {
           commitGrace = false
         }, 0)
@@ -273,13 +387,25 @@ export function TerminalView({
     ta?.addEventListener('compositionend', onCompEnd)
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown') onUserInputRef.current?.()
-      // CC§12
+      if (e.type === 'keydown') {
+        onUserInputRef.current?.()
+        // PLATFORM§22
+        if (compositionHelper?._isSendingComposition === false) commitGrace = false
+      }
+      // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
         return false
       }
       if (e.type === 'keydown') pendingPunct = false
+      const lineEdit = composing ? undefined : commandKeyLineEdit(e)
+      if (lineEdit !== undefined) {
+        if (e.type === 'keydown') {
+          e.preventDefault()
+          term.input(lineEdit, true)
+        }
+        return false
+      }
       // PLATFORM§22
       if (ta && !e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
         const cc = e.key.charCodeAt(0)
@@ -310,8 +436,9 @@ export function TerminalView({
       if (ackedUtf16Units >= ACK_FLUSH_AT_UTF16_UNITS) flushAck()
       else if (!ackTimer) ackTimer = setTimeout(flushAck, ACK_FLUSH_AFTER_MS)
     }
-    const offData = window.api.terminal.onData((d) => {
-      if (d.id === id) term.write(d.data, () => noteConsumed(d.data.length))
+    const offData = window.api.terminal.onData(id, (data) => {
+      term.write(data, () => noteConsumed(data.length))
+      onOutputRef.current?.()
     })
     window.api.terminal.attach(id)
     // PLATFORM§22
@@ -345,13 +472,16 @@ export function TerminalView({
     const vis = new IntersectionObserver(
       (entries) => {
         const visible = entries[entries.length - 1].isIntersecting
+        window.api.terminal.onScreen(id, visible)
         if (!visible) {
           wasHidden = true
           repaintedRef.current = false
+          stopWaitingForSyncFrame()
           return
         }
         if (!wasHidden) return
         wasHidden = false
+        fitWhenSettled()
         forceRepaint()
       },
       { threshold: 0 }
@@ -362,6 +492,7 @@ export function TerminalView({
       offData()
       flushAck()
       inputSub.dispose()
+      stopWaitingForSyncFrame()
       cancelAnimationFrame(clampRaf)
       clearTimeout(clearTimer)
       clearTimeout(fitTimer)
@@ -376,10 +507,11 @@ export function TerminalView({
       dprCleanup?.()
       unregisterWebglRepair(id)
       releaseWebgl(id)
+      const addon = webglRef.current
       webglRef.current = null
-      term.dispose()
+      disposeThenReturnGpuMemory(addon, () => term.dispose())
     }
-  }, [id, safeFit, forceRepaint])
+  }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
 
   useEffect(() => {
     const term = termRef.current
@@ -391,21 +523,25 @@ export function TerminalView({
 
   // PLATFORM§21
   useEffect(() => {
+    if (!active) firstShow.current = false
     if (active) {
-      touchWebgl(id)
+      showWebgl(id)
       let inner = 0
       const raf = requestAnimationFrame(() => {
         const term = termRef.current
         if (!term) return
         safeFit()
+        const leaveTheOwnerTyping = firstShow.current && ownerTypesInAnotherField()
+        firstShow.current = false
         try {
-          if (autoFocus) term.focus()
+          if (autoFocus && !leaveTheOwnerTyping) term.focus()
         } catch {}
         inner = requestAnimationFrame(() => {
           forceRepaint()
         })
       })
       return () => {
+        hideWebgl(id)
         cancelAnimationFrame(raf)
         cancelAnimationFrame(inner)
       }

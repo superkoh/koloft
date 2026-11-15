@@ -1,15 +1,23 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { TabKind } from '@shared/types'
+import type { ScreenSize, TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
+import { formatRemoteKey } from '@shared/remoteKey'
+import { aboveItsTools } from './agentLift'
 import { OscCwdParser } from './oscCwd'
-import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
-import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
+import {
+  onlyTheTerminalsOwnAnswers,
+  pasteFor,
+  typeKeys,
+  typedPieces,
+  withoutMouseAndFocusReports
+} from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -22,13 +30,19 @@ export interface PtyHandle {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   startedAt: number
+  remoteHost?: string
+  utilMachine?: string
+  title?: string
 }
 
 interface CreateArgs {
   id?: string
   executable?: string
   argv?: string[]
+  aboveItsTools?: boolean
   processEnv?: NodeJS.ProcessEnv
+  koloftShim: false | { hookSettings(tabId: string): string | undefined }
+  finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
   cwd: string
   cols?: number
@@ -39,18 +53,51 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
-  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
+  remoteHost?: string
+  utilMachine?: string
+  banner?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
     KOLOFT_AGENT_PLUGIN?: string
     KOLOFT_AGENT_PROMPT?: string
+    KOLOFT_DOCS_PLUGIN?: string
     KOLOFT_PORT_OFFSET?: string
+    CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
+    CLAUDE_CODE_DECSTBM?: string
   }
 }
 
 const UTIL_TITLE_POLL_MS = 1500
+
+const HANGUP_GRACE_SECONDS = 10
+const KILL_IF_STILL_OURS = `k=$1
+s=$2
+shift 2
+sleep "$s"
+for p in "$@"; do
+  [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p"
+done`
+
+// PLATFORM§41
+function killLaterIfStillOurs(pids: number[]): void {
+  if (!pids.length) return
+  spawn(
+    '/bin/sh',
+    [
+      '-c',
+      KILL_IF_STILL_OURS,
+      'sh',
+      String(process.pid),
+      String(HANGUP_GRACE_SECONDS),
+      ...pids.map(String)
+    ],
+    { detached: true, stdio: 'ignore' }
+  )
+    .on('error', () => {})
+    .unref()
+}
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
@@ -59,25 +106,70 @@ const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
 const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
+const CTRL_C = '\x03'
+// PLATFORM§2 PLATFORM§35 CC§12 CODEX§25 MUSE§11 AGY§27
+const BRACKETED_PASTE_SWITCH = /\x1b\[\?2004([hl])/g
+// CC§12 CC§18
+const A_KEY_SENT_ON_ITS_OWN = /(\x1b\[200~[\s\S]*?\x1b\[201~|(?<!\x1b)\r)/
+const GIVE_THE_HELD_KEYS_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 5000
 
-function typeOnceTheShellReads(
-  write: (text: string) => void,
-  text: string
-): (output: string) => void {
-  if (text === '') return () => {}
-  let typed = false
+interface LinesToType {
+  shellSaid(output: string): void
+  held(data: string): boolean
+  programReads(): Promise<void>
+}
+
+// PLATFORM§2 CC§12 CODEX§25 MUSE§11
+function typeOnceTheShellReads(write: (text: string) => void, text: string): LinesToType {
+  if (text === '') return { shellSaid: () => {}, held: () => false, programReads: async () => {} }
   let tail = ''
-  const type = (): void => {
-    if (typed) return
-    typed = true
+  let early: string | undefined = ''
+  let linesTheShellHasNotTaken: number | undefined
+  let giving = false
+  let ctrlCs = 0
+  const programReads = async (): Promise<void> => {
+    if (linesTheShellHasNotTaken === undefined || giving) return
+    giving = true
+    while (early) {
+      const keys = early.split(A_KEY_SENT_ON_ITS_OWN).filter(Boolean)
+      const ctrlCsBefore = ctrlCs
+      early = ''
+      await typeKeys(write, keys, () => ctrlCs === ctrlCsBefore)
+    }
+    early = undefined
+  }
+  const type = (shellSwitchesBracketedPaste = true): void => {
+    if (early === undefined || linesTheShellHasNotTaken !== undefined) return
     write(text)
+    linesTheShellHasNotTaken = shellSwitchesBracketedPaste ? text.split(/[\r\n]/).length - 1 : 0
+    setTimeout(programReads, GIVE_THE_HELD_KEYS_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   }
   setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
-  return (output) => {
-    if (typed) return
-    const seen = tail + output
-    tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
-    if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+  return {
+    programReads,
+    shellSaid: (output) => {
+      if (early === undefined) return
+      const seen = tail + output
+      tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+      if (linesTheShellHasNotTaken === undefined) {
+        if (LINE_EDITOR_STARTS_READING.test(seen)) type(seen.includes('\x1b[?2004h'))
+        return
+      }
+      for (const [, onOrOff] of seen.matchAll(BRACKETED_PASTE_SWITCH)) {
+        if (onOrOff === 'l') linesTheShellHasNotTaken--
+        else if (linesTheShellHasNotTaken <= 0) return void programReads()
+      }
+    },
+    held: (data) => {
+      if (early === undefined || onlyTheTerminalsOwnAnswers(data)) return false
+      if (data.includes(CTRL_C)) {
+        early = ''
+        ctrlCs++
+        return false
+      }
+      early += withoutMouseAndFocusReports(data)
+      return true
+    }
   }
 }
 
@@ -94,11 +186,13 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
+  sessionScreen?: ScreenSize
 
   private ptys = new Map<string, PtyHandle>()
+  private running = new Set<pty.IPty>()
   private readyWaiters = new Map<string, Set<() => void>>()
   private typing = new Map<string, Promise<void>>()
+  private linesToType = new WeakMap<PtyHandle, LinesToType>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -113,10 +207,7 @@ export class PtyManager extends EventEmitter {
     const shell = args.shell || login.shell
 
     let env: Record<string, string> = {
-      ...((args.kind === 'codex' ? (args.processEnv ?? process.env) : process.env) as Record<
-        string,
-        string
-      >),
+      ...((args.processEnv ?? process.env) as Record<string, string>),
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       KOLOFT_TAB_ID: id,
@@ -153,6 +244,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
         key === 'KOLOFT_AGENT_PROMPT' ||
+        key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
@@ -165,19 +257,13 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
+    if (this.agentDir && args.koloftShim) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
-      args.util || args.kind === 'codex'
-        ? undefined
-        : this.makeHookSettings?.(
-            id,
-            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-            args.conductor === true
-          )
+      args.util || !args.koloftShim ? undefined : args.koloftShim.hookSettings(id)
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
-    if (this.shimDir && !isWin && args.kind !== 'codex')
+    if (this.shimDir && !isWin && args.koloftShim)
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
       for (const k of [
@@ -185,31 +271,35 @@ export class PtyManager extends EventEmitter {
         'KOLOFT_SESSION_NAME',
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
-        'KOLOFT_PORT_OFFSET'
+        'KOLOFT_DOCS_PLUGIN',
+        'KOLOFT_PORT_OFFSET',
+        'CLAUDE_CODE_FORCE_SYNC_OUTPUT',
+        'CLAUDE_CODE_DECSTBM'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v
       }
     }
 
-    if (args.kind === 'codex') {
+    if (args.finishEnv) {
       env = Object.fromEntries(
-        Object.entries(codexEnvironment(env)).filter(
+        Object.entries(args.finishEnv(env)).filter(
           (entry): entry is [string, string] => typeof entry[1] === 'string'
         )
       )
     }
-    const proc = pty.spawn(
-      args.executable ?? shell,
-      args.executable ? (args.argv ?? []) : login.args,
-      {
-        name: 'xterm-256color',
-        cols: args.cols ?? 80,
-        rows: args.rows ?? 24,
-        cwd: args.cwd,
-        env
-      }
-    )
+    const program = args.executable
+      ? [args.executable, ...(args.argv ?? [])]
+      : [shell, ...login.args]
+    const [file, ...fileArgs] = args.aboveItsTools ? aboveItsTools(program) : program
+    const screen = args.util ? undefined : this.sessionScreen
+    const proc = pty.spawn(file, fileArgs, {
+      name: 'xterm-256color',
+      cols: args.cols ?? screen?.cols ?? 80,
+      rows: args.rows ?? screen?.rows ?? 24,
+      cwd: args.cwd,
+      env
+    })
 
     const handle: PtyHandle = {
       id,
@@ -221,9 +311,12 @@ export class PtyManager extends EventEmitter {
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
       resized: args.resized,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      remoteHost: args.remoteHost,
+      utilMachine: args.utilMachine
     }
     this.ptys.set(id, handle)
+    this.track(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -237,7 +330,7 @@ export class PtyManager extends EventEmitter {
       sourcedFiles.push(file)
       return `. ${shq(file)}`
     }
-    const watchForReadyShell = typeOnceTheShellReads(
+    const lines = typeOnceTheShellReads(
       (text) => {
         try {
           proc.write(text)
@@ -248,27 +341,28 @@ export class PtyManager extends EventEmitter {
         .map((command) => shortEnoughToType(command) + '\r')
         .join('')
     )
+    this.linesToType.set(handle, lines)
 
-    const cwdParser = args.util ? new OscCwdParser() : undefined
-    proc.onData((data) => {
-      watchForReadyShell(data)
+    const followsThisMac = args.util && !args.utilMachine
+    const cwdParser = followsThisMac ? new OscCwdParser() : undefined
+    let banner = args.banner ? `${args.banner}\r\n` : ''
+    proc.onData((output) => {
+      const data = banner + output
+      banner = ''
+      lines.shellSaid(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
-      if (cwd && cwd !== handle.cwd) {
-        handle.cwd = cwd
-        this.emit('cwd', { id, cwd })
-      }
+      if (cwd) this.noticeCwd(handle, cwd)
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
-      this.emit('exit', { id, exitCode, signal })
+      this.emit('exit', { id, exitCode, signal, endedByKoloft: this.ptys.get(id) !== handle })
     })
 
-    if (args.util) {
-      let last: string | undefined
+    if (followsThisMac) {
       titlePoll = setInterval(() => {
         let reported: unknown
         try {
@@ -276,18 +370,38 @@ export class PtyManager extends EventEmitter {
         } catch {
           return
         }
-        const name = foregroundName(reported)
-        if (name === null || name === last) return
-        last = name
-        this.emit('process-title', { id, name })
+        this.noticeTitle(handle, reported)
       }, UTIL_TITLE_POLL_MS)
     }
 
     return handle
   }
 
+  shellOnMachineSaid(machine: string, id: string, reported: string, cwd: string): void {
+    const handle = this.ptys.get(id)
+    if (!handle?.alive || handle.utilMachine !== machine) return
+    this.noticeTitle(handle, reported)
+    if (cwd.startsWith('/')) this.noticeCwd(handle, formatRemoteKey(machine, cwd))
+  }
+
+  private noticeTitle(handle: PtyHandle, reported: unknown): void {
+    const name = foregroundName(reported)
+    if (name === null || name === handle.title) return
+    handle.title = name
+    this.emit('process-title', { id: handle.id, name })
+  }
+
+  private noticeCwd(handle: PtyHandle, cwd: string): void {
+    if (cwd === handle.cwd) return
+    handle.cwd = cwd
+    this.emit('cwd', { id: handle.id, cwd })
+  }
+
   write(id: string, data: string): void {
-    this.ptys.get(id)?.proc.write(data)
+    const handle = this.ptys.get(id)
+    if (!handle) return
+    if (!this.linesToType.get(handle)?.held(data)) handle.proc.write(data)
+    if (withoutMouseAndFocusReports(data)) this.emit('typed', id)
   }
 
   exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {
@@ -303,12 +417,12 @@ export class PtyManager extends EventEmitter {
     return turn
   }
 
-  type(id: string, keys: string[]): Promise<void> {
-    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  type(id: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys, stillWanted))
   }
 
-  paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+  async paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    await this.type(id, [pasteFor(text, this.get(id)?.kind), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
@@ -330,6 +444,11 @@ export class PtyManager extends EventEmitter {
       const deadline = setTimeout(() => settle(ready()), ms)
       waiters.add(recheck)
     })
+  }
+
+  agentBound(id: string): void {
+    const handle = this.ptys.get(id)
+    if (handle) void this.linesToType.get(handle)?.programReads()
   }
 
   wakeReady(id: string): void {
@@ -367,11 +486,22 @@ export class PtyManager extends EventEmitter {
   kill(id: string): void {
     const h = this.ptys.get(id)
     if (h) {
-      try {
-        h.proc.kill()
-      } catch {}
+      this.hangUp(h.proc)
       this.ptys.delete(id)
     }
+  }
+
+  // PLATFORM§29
+  hangUp(proc: pty.IPty): void {
+    try {
+      proc.kill()
+    } catch {}
+    killLaterIfStillOurs([proc.pid])
+  }
+
+  track(proc: pty.IPty): void {
+    this.running.add(proc)
+    proc.onExit(() => this.running.delete(proc))
   }
 
   get(id: string): PtyHandle | undefined {
@@ -389,6 +519,15 @@ export class PtyManager extends EventEmitter {
   clearResumeIntent(id: string): void {
     const h = this.ptys.get(id)
     if (h) h.resumeSessionId = undefined
+  }
+
+  moveOwner(oldOwnerTabId: string, newOwnerTabId: string): void {
+    for (const h of this.list()) if (h.ownerTabId === oldOwnerTabId) h.ownerTabId = newOwnerTabId
+  }
+
+  // PLATFORM§41
+  killWhatOutlivesTheQuit(): void {
+    killLaterIfStillOurs([...this.running].map((proc) => proc.pid))
   }
 
   killUtilOrphans(): void {

@@ -1,0 +1,71 @@
+.restore {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.restore-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.restore-row {
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+.restore-row:hover {
+  background: var(--bg-3);
+}
+.restore-row:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.restore-title {
+  font-size: 13px;
+  color: var(--fg-cold);
+  font-style: italic;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.restore-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+.restore-tag {
+  color: var(--amber);
+  background: rgba(240, 168, 48, 0.12);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.restore-snippet {
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.restore-snippet b {
+  color: var(--accent);
+  font-weight: 600;
+}

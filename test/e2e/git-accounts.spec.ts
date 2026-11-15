@@ -108,11 +108,14 @@ function gcmCalls(env: E2EEnv): GcmCall[] {
     .map((l) => JSON.parse(l) as GcmCall)
 }
 
+function fakeGcmStoreFile(env: E2EEnv): string {
+  const dir = path.join(path.dirname(env.keychainFile), 'gcm-store')
+  fs.mkdirSync(dir, { recursive: true })
+  return path.join(dir, 'fake-gcm-store.json')
+}
+
 function gcmStore(env: E2EEnv): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(env.home, 'fake-gcm-store.json'), 'utf8')) as Record<
-    string,
-    unknown
-  >
+  return JSON.parse(fs.readFileSync(fakeGcmStoreFile(env), 'utf8')) as Record<string, unknown>
 }
 
 function seedGcmAccount(
@@ -125,7 +128,7 @@ function seedGcmAccount(
 ): void {
   const namespace = `koloft-dev-git-e2e-${login}`
   fs.writeFileSync(
-    path.join(env.home, 'fake-gcm-store.json'),
+    fakeGcmStoreFile(env),
     JSON.stringify({ [namespace]: { username: 'OAUTH_USER', password: token } })
   )
   const id = `${new URL(url).host}/${login}`
@@ -385,16 +388,17 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(hersPanel.locator('.tbu-act', { hasText: 'Use bob' })).toHaveCount(0)
       await hersPanel.locator('.tbu-act', { hasText: 'Not now' }).click()
       await expect(hersPanel.locator('.fx-note').last()).toHaveText('Uses your own git setup')
-      expect(settingsOnDisk(env).gitSuggestionsDismissed).toEqual([
-        fs.realpathSync(path.join(hers, '.git'))
-      ])
+      await expect
+        .poll(() => settingsOnDisk(env).gitSuggestionsDismissed)
+        .toEqual([fs.realpathSync(path.join(hers, '.git'))])
     } finally {
       await quitAndClose(app)
       await github.close()
     }
   })
 
-  test("GA-06: with the Workbench browser off, a Codex tab in a picked repository loads Koloft's git config and may reach the network; one in another repository loads the config but stays offline", async ({
+  // ADR-0047
+  test("GA-06: with the Workbench browser off, a Codex tab in a picked repository and one in another repository both load Koloft's git config and may reach the network", async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -417,7 +421,7 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
         servers.find((s) => fs.realpathSync(s.cwd) === ws)!
       const master = path.join(env.userData, 'git-accounts', 'config')
       expect(at(env.workspaces.a).argv).toContain('sandbox_workspace_write.network_access=true')
-      expect(at(env.workspaces.b).argv).not.toContain('sandbox_workspace_write.network_access=true')
+      expect(at(env.workspaces.b).argv).toContain('sandbox_workspace_write.network_access=true')
       expect(at(env.workspaces.a).gitConfigIncludes).toContain(master)
       expect(at(env.workspaces.b).gitConfigIncludes).toContain(master)
     } finally {
@@ -547,36 +551,6 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
         username: 'alice',
         password: GITLAB_ALICE_TOKEN
       })
-    } finally {
-      await quitAndClose(app)
-      await forge.close()
-    }
-  })
-
-  test('GA-09: a Codex tab in a repository picked for a Gitea account on a server with a port may reach the network; one in another repository stays offline', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installCodex(env)
-    withFakeGcm(env)
-    const forge = await startFakeForge('gitea')
-    repoOn(env.workspaces.a, `${forge.url}/acme/app.git`)
-    repoOn(env.workspaces.b, `${forge.url}/acme/other.git`)
-    seedGcmAccount(env, 'gitea', forge.url, 'bob', GITEA_BOB_TOKEN, [env.workspaces.a])
-    seedSettings(env, { browserControl: false })
-    const { app, page } = await launched(env)
-    try {
-      await startSessionIn(page, 'ws-a', { method: 'Codex' })
-      await startSessionIn(page, 'ws-b', { method: 'Codex' })
-      const servers = fs
-        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((l) => JSON.parse(l) as { argv: string[]; cwd: string })
-      const at = (ws: string): { argv: string[] } =>
-        servers.find((s) => fs.realpathSync(s.cwd) === ws)!
-      expect(at(env.workspaces.a).argv).toContain('sandbox_workspace_write.network_access=true')
-      expect(at(env.workspaces.b).argv).not.toContain('sandbox_workspace_write.network_access=true')
     } finally {
       await quitAndClose(app)
       await forge.close()
@@ -798,9 +772,9 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(
         panel.locator('.fx-note.warn', { hasText: 'does not know this key' })
       ).toHaveCount(0)
-      expect(settingsOnDisk(env).gitPicks).toEqual([
-        expect.objectContaining({ account: id, sshKey: 'unchecked' })
-      ])
+      await expect
+        .poll(() => settingsOnDisk(env).gitPicks)
+        .toEqual([expect.objectContaining({ account: id, sshKey: 'unchecked' })])
       await panel.locator('.tbu-act', { hasText: 'Open SSH keys page' }).click()
       await expect
         .poll(() => fs.readFileSync(env.externalOpens, 'utf8'))

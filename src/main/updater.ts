@@ -11,7 +11,8 @@ import { leaveForOS } from './osOpen'
 import { withApproval } from './quitGuard'
 import { INSTALL_SCRIPT, pickAppBundle } from './updaterInstall'
 
-const REPO = 'superkoh/koloft-releases'
+// ADR-0037
+const REPO = 'superkoh/koloft'
 const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=100`
 const USER_AGENT_GITHUB_REQUIRES = 'Koloft-Updater'
 
@@ -170,7 +171,7 @@ export function fixturePath(): string | null {
 const FEED_TTL_MS = 60_000
 let feed: { at: number; list: GhRelease[] } | null = null
 
-export async function fetchPublishedReleases(): Promise<GhRelease[]> {
+async function fetchPublishedReleases(): Promise<GhRelease[]> {
   const fixture = fixturePath()
   let list: unknown
   if (fixture) {

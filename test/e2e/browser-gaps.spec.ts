@@ -617,17 +617,17 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     }
   })
 
-  test('BB-C33: with no selected running session the Workbench icon is disabled', async ({
+  test('BB-C33: with no selected running session the Workbench icon is the welcome page workspace’s, and no Preview or Terminal icon shows', async ({
     page
   }) => {
     test.setTimeout(120_000)
     await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 30_000 })
-    await expect(page.locator('.ws-tab')).toHaveCount(0)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
 
     await expect(page.locator('.aux-icons .aux-ico')).toHaveCount(1, { timeout: 20_000 })
     await expect(auxIcon(page, 'Preview')).toHaveCount(0)
     await expect(globeIcon(page)).toBeVisible({ timeout: 20_000 })
-    await expect(globeIcon(page)).toHaveAttribute('aria-disabled', 'true')
+    await expect(globeIcon(page)).toHaveAttribute('aria-disabled', 'false')
     await expect(auxIcon(page, 'Terminal')).toHaveCount(0)
   })
 
@@ -1018,9 +1018,14 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     throw new Error('no proceed affordance to click')
   }
 
-  async function submitBasicAuth(page: Page): Promise<void> {
-    const modal = page.locator(BROWSER.modal)
+  async function shownAuthPrompt(page: Page): Promise<Locator> {
+    const modal = page.locator(BROWSER.modal).filter({ hasText: /username and password/ })
     await expect(modal).toBeVisible({ timeout: 40_000 })
+    return modal
+  }
+
+  async function submitBasicAuth(page: Page): Promise<void> {
+    const modal = await shownAuthPrompt(page)
     const fields = modal.locator('input')
     await fields.nth(0).click()
     await fields.nth(0).fill(BASIC_CREDENTIALS.user)
@@ -1116,9 +1121,14 @@ test.describe('Workbench browser cases between the other browser specs: agent op
         await expect
           .poll(() => server.count('/auth'), { timeout: 40_000 })
           .toBeGreaterThan(authRequestsBefore)
-        expect(lastAuthHeader(server)).toBe('')
-
+        const askAgain = await shownAuthPrompt(page)
+        const authHeadersAfterClear = server
+          .requestsFor('/auth')
+          .slice(authRequestsBefore)
+          .map((r) => r.headers['authorization'] ?? '')
+        expect(authHeadersAfterClear.every((h) => h === '')).toBe(true)
         await page.keyboard.press('Escape')
+        await expect(askAgain).toHaveCount(0, { timeout: 20_000 })
         await typeInAddressBar(page, tls.aliasUrl('koloft-a.test', '/b'))
         await expect.poll(() => proceedCount(app, page), { timeout: 60_000 }).toBeGreaterThan(0)
         expect(tls.count('/b')).toBe(0)
@@ -1149,6 +1159,10 @@ test.describe('Workbench browser cases between the other browser specs: agent op
 
         await agentOpen(page, server.localhostUrl('/a'))
         await expect(openTabs(page)).toHaveCount(1, { timeout: 40_000 })
+        await expect(
+          openTabs(page).first().locator(BROWSER.tabLabel),
+          'the tab has narrowed to the page title, so a click on it cannot land on its close button'
+        ).toHaveText('Page A', { timeout: 40_000 })
 
         await openTabs(page).first().click()
         await expect.poll(() => server.count('/a'), { timeout: 40_000 }).toBe(1)

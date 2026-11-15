@@ -6,24 +6,34 @@ import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpe
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
+  closeKeptTab,
   closeMenu,
   FAKE_SESSION_TITLE,
   type ClaudeCall,
   gitInit,
   gitWorktreeAdd,
   killSession,
+  landsOnTheButler,
   layoutOnDisk,
   menuItemTexts,
   openMenu,
+  openSessionTerminal,
   openWorktreeSession,
+  panelShellPid,
+  panelTerm,
   processAlive,
   readCalls,
   resumedId,
+  runClaudeElsewhere,
   runIn,
   seedJsonl,
+  sendShortcut,
   setNextSessionTitle,
   snap,
   startSessionIn,
+  switchToRow,
+  terminalText,
+  termIds,
   waitBooted,
   waitForCalls,
   wsRows
@@ -43,6 +53,8 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
 const BIND_LATER_THAN_THE_QUIT_MS = 15_000
+const QUITS_WITHIN_MS = 30_000
+const CLOSED_PROGRAM_ENDS_WITHIN_MS = 20_000
 
 function openTabsOnDisk(env: E2EEnv): unknown {
   try {
@@ -75,16 +87,17 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await startSession(page, env, { title: 'Hard session' })
     const [graceful, hard] = await waitForCalls(env, 2)
 
-    const gracefulRow = page.locator('.ws-tab', { hasText: 'Graceful session' })
-    const hardRow = page.locator('.ws-tab', { hasText: 'Hard session' })
+    const gracefulRow = page.locator('.ws .ws-tab', { hasText: 'Graceful session' })
+    const hardRow = page.locator('.ws .ws-tab', { hasText: 'Hard session' })
     await expect(gracefulRow).not.toHaveClass(/\bcold\b/)
     await expect(hardRow).not.toHaveClass(/\bcold\b/)
 
     killSession(hard.pid, env)
     await expect(hardRow).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+    await closeKeptTab(page, hardRow)
+    await landsOnTheButler(page)
 
-    await gracefulRow.click()
-    await expect(centerTerm(page)).toBeVisible()
+    await switchToRow(page, gracefulRow)
     await runIn(page, centerTerm(page), '/open http://127.0.0.1:1/graceful')
     await expect
       .poll(() => persistedTabsOnDisk(env, graceful.sessionId).length, { timeout: 30_000 })
@@ -102,9 +115,11 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       .find((p) => p.endsWith(graceful.sessionId + '.jsonl'))
     expect(jsonl).toBeTruthy()
 
-    await expect(page.locator('.ws-tab')).toHaveCount(1)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
     await expect(
-      page.locator('.ws-tab.st-working, .ws-tab.st-waiting, .ws-tab.st-approval, .ws-tab.st-idle')
+      page.locator(
+        '.ws .ws-tab.st-working, .ws .ws-tab.st-waiting, .ws .ws-tab.st-approval, .ws .ws-tab.st-idle'
+      )
     ).toHaveCount(0)
     await snap(page, 'T-LIFE-04')
 
@@ -119,7 +134,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     test.setTimeout(180_000)
     await startSession(page, env, { title: 'Round trip session' })
     const [first] = await waitForCalls(env, 1)
-    const row = page.locator('.ws-tab', { hasText: 'Round trip session' })
+    const row = page.locator('.ws .ws-tab', { hasText: 'Round trip session' })
 
     await runIn(page, centerTerm(page), '/exit')
     await expect(row).toHaveCount(0, { timeout: 30_000 })
@@ -143,20 +158,80 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     test.setTimeout(180_000)
     await startSession(page, env, { title: 'Hangup session' })
     const [call] = await waitForCalls(env, 1)
-    const row = page.locator('.ws-tab', { hasText: 'Hangup session' })
+    const row = page.locator('.ws .ws-tab', { hasText: 'Hangup session' })
 
-    await row.click()
-    await expect.poll(() => pendingAttention(page), { timeout: 20_000 }).toHaveLength(0)
+    await expect.poll(() => pendingAttention(page), { timeout: 20_000 }).toHaveLength(1)
 
     // CC§1
     process.kill(call.pid, 'SIGHUP')
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
-    await expect(page.locator('.ws-tab')).toHaveCount(1)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
 
     await page.waitForTimeout(SILENCE_LONGER_THAN_TWO_LIVENESS_SWEEPS_OF_2500_MS)
-    expect(await pendingAttention(page)).toHaveLength(0)
-    await expect(page.locator('.ws-tab')).toHaveCount(1)
+    expect(
+      (await pendingAttention(page)).filter((e) => e.sessionId === call.sessionId)
+    ).toHaveLength(0)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
     await expect(row).toHaveClass(/\bcold\b/)
+  })
+
+  test('Koloft still quits, within seconds, when a program in one of its tabs ignores the hangup signal, and that program does not outlive it', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const ignoresHangup = path.join(env.home, 'ignores-hangup.sh')
+    fs.writeFileSync(ignoresHangup, "trap '' HUP\nwhile :; do sleep 1; done\n")
+    const app = await launchApp(env)
+    let pid = 0
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await openSessionTerminal(app, page)
+      pid = await panelShellPid(page, 'HANGUP')
+      await runIn(page, panelTerm(page), `exec sh '${ignoresHangup}'`)
+      await expect
+        .poll(() => execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }))
+        .toContain(ignoresHangup)
+
+      const closed = app.waitForEvent('close', { timeout: QUITS_WITHIN_MS })
+      await page.evaluate(() => window.api.app.approveQuit()).catch(() => {})
+      await closed
+      expect(processAlive(pid)).toBe(false)
+    } finally {
+      await quitAndClose(app).catch(() => {})
+      if (pid) killSession(pid, env)
+    }
+  })
+
+  test('closing a tab whose program ignores the hangup signal still ends that program within seconds, while Koloft keeps running', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const ignoresHangup = path.join(env.home, 'ignores-hangup.sh')
+    fs.writeFileSync(ignoresHangup, "trap '' HUP\nwhile :; do sleep 1; done\n")
+    let pid = 0
+    try {
+      await startSessionIn(page, 'ws-a')
+      await openSessionTerminal(app, page)
+      pid = await panelShellPid(page, 'CLOSEHUP')
+      await runIn(page, panelTerm(page), `exec sh '${ignoresHangup}'`)
+      await expect
+        .poll(() => execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }))
+        .toContain(ignoresHangup)
+
+      await panelTerm(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(panelTerm(page)).toHaveCount(0, { timeout: 20_000 })
+      await expect
+        .poll(() => processAlive(pid), { timeout: CLOSED_PROGRAM_ENDS_WITHIN_MS })
+        .toBe(false)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1)
+    } finally {
+      if (pid) killSession(pid, env)
+    }
   })
 
   test('T-LIFE-16: /compact restarts the session in place, the row does not move, and it ends done, not working', async ({
@@ -167,7 +242,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     test.setTimeout(180_000)
     await startSession(page, env, { title: 'Compacted session' })
     const [call] = await waitForCalls(env, 1)
-    const row = page.locator('.ws-tab', { hasText: 'Compacted session' })
+    const row = page.locator('.ws .ws-tab', { hasText: 'Compacted session' })
     await expect(row).not.toHaveClass(/\bcold\b/)
 
     // CC§1
@@ -177,14 +252,15 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     })
 
     await page.waitForTimeout(ROOM_FOR_A_WRONG_REMOVAL_OR_REBIND_MS)
-    await expect(page.locator('.ws-tab')).toHaveCount(1)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
     await expect(row).not.toHaveClass(/\bcold\b/)
     await expect(row).toHaveClass(/\bst-waiting\b/)
     expect(readCalls(env)).toHaveLength(1)
     expect(layoutOnDisk(env).members).toContain(call.sessionId)
   })
 
-  test('T-LIFE-05: a session that dies closes its tab, says killed by signal in a toast, and leaves a cold, unselected row', async ({
+  test('T-LIFE-05: a session that dies keeps its tab selected and says killed by signal in a toast and on its row; ⌘W then lands on the butler and leaves a cold, unselected row', async ({
+    app,
     page,
     env
   }) => {
@@ -198,12 +274,16 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     killSession(session.pid, env)
     // PLATFORM§29
     await expect(page.locator('.toast-msg')).toContainText('killed by signal', { timeout: 20_000 })
-    await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
-    await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
+    await expect(row.locator('.ws-tab-sub')).toHaveText('main · killed (signal 9)')
+    await expect(row).toHaveClass(/\bcold\b/)
+    await expect(row).toHaveClass(/\bactive\b/)
+    await snap(page, 'T-LIFE-05')
+
+    await sendShortcut(app, 'shortcut:close-tab')
+    await landsOnTheButler(page)
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
     await expect(row).not.toHaveClass(/\bactive\b/)
-
-    await snap(page, 'T-LIFE-05')
+    await expect(row.locator('.ws-tab-sub')).toHaveText('main')
   })
 
   test('T-LIFE-06: a cold row resumes with --resume in its original cwd, mask shown while binding', async ({
@@ -215,7 +295,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await page1.waitForLoadState('domcontentloaded')
     await startSession(page1, env)
     const [first] = await waitForCalls(env, 1)
-    const openRow = page1.locator('.ws-tab', { hasText: 'Fake session: project notes' })
+    const openRow = page1.locator('.ws .ws-tab', { hasText: 'Fake session: project notes' })
     await expect(openRow).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
     await openMenu(page1, openRow)
     await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
@@ -227,7 +307,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     try {
       const page2 = await app2.firstWindow()
       await page2.waitForLoadState('domcontentloaded')
-      const row = page2.locator('.ws-tab', { hasText: 'Fake session: project notes' })
+      const row = page2.locator('.ws .ws-tab', { hasText: 'Fake session: project notes' })
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
@@ -273,7 +353,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Slow to plan session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Slow to plan session' })
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
@@ -292,6 +372,116 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await expect(row).toHaveClass(/\bactive\b/)
     } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§9
+  test('a cold row whose resume stops at Claude asking whether to trust its folder lifts the resume mask to show that question, and once answered the session binds in that tab', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Untrusted resume session' })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws .ws-tab', { hasText: 'Untrusted resume session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const before = new Set(await termIds(page))
+      await row.click()
+
+      const masks = page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
+      await expect(masks.first()).toBeVisible({ timeout: 10_000 })
+      const calls = await waitForCalls(env, 1)
+      expect(resumedId(calls[0])).toBe(id)
+      await expect(masks).toHaveCount(0, { timeout: 15_000 })
+      let tab = ''
+      await expect
+        .poll(
+          async () => {
+            tab = (await termIds(page)).find((t) => !before.has(t)) ?? ''
+            return tab ? terminalText(page, tab) : ''
+          },
+          { timeout: 15_000 }
+        )
+        .toContain('Quick safety check')
+
+      await centerTerm(page).click()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row).toHaveAttribute('data-tab-id', tab)
+      expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§9
+  test('a resume that the person ends at Claude’s folder-trust question says Claude closed before the session started, keeping the exit code', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Declined resume session' })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws .ws-tab', { hasText: 'Declined resume session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const before = new Set(await termIds(page))
+      await row.click()
+      await waitForCalls(env, 1)
+      await expect
+        .poll(
+          async () => {
+            const tab = (await termIds(page)).find((t) => !before.has(t))
+            return tab ? terminalText(page, tab) : ''
+          },
+          { timeout: 15_000 }
+        )
+        .toContain('Quick safety check')
+
+      await centerTerm(page).click()
+      await page.keyboard.press('Enter')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Claude closed before the session started (exit code 1)',
+        { timeout: 20_000 }
+      )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§11
+  test('a cold row whose session another live claude process still runs is not resumed: a notice says so and no claude starts', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Running elsewhere session' })
+    const stopOther = runClaudeElsewhere(env, id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws-tab', { hasText: 'Running elsewhere session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await row.click()
+
+      await expect(page.locator('.toast', { hasText: /still running/ })).toBeVisible({
+        timeout: 10_000
+      })
+      await expect(page.locator('.terminals .empty', { hasText: 'Resuming' })).toHaveCount(0)
+      await expect(row).toHaveClass(/\bcold\b/)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      stopOther()
       await app.close().catch(() => {})
     }
   })
@@ -315,7 +505,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Drifted worktree session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Drifted worktree session' })
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
@@ -344,7 +534,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Shared worktree session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Shared worktree session' })
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await waitBooted(page)
 
@@ -353,7 +543,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await page.keyboard.type('shared')
       await page.keyboard.press('Enter')
       await expect(c8).toHaveCount(0)
-      await expect(page.locator('.ws-tab:not(.cold):not(.st-pending)')).toHaveCount(1, {
+      await expect(page.locator('.ws .ws-tab:not(.cold):not(.st-pending)')).toHaveCount(1, {
         timeout: 60_000
       })
 
@@ -395,7 +585,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Unrebuildable session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Unrebuildable session' })
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
@@ -426,7 +616,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
       seedSettings(env, { hintsOff: true })
       const app1 = await launchApp(env)
-      const row1 = (page: Page, title: string) => page.locator('.ws-tab', { hasText: title })
+      const row1 = (page: Page, title: string) => page.locator('.ws .ws-tab', { hasText: title })
       try {
         const page1 = await app1.firstWindow()
         await page1.waitForLoadState('domcontentloaded')
@@ -514,7 +704,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         await page1.waitForLoadState('domcontentloaded')
         await startSession(page1, env)
         ;[first] = await waitForCalls(env, 1)
-        const row = page1.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+        const row = page1.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
         await openMenu(page1, row)
         await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
@@ -536,7 +726,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         await page2.waitForLoadState('domcontentloaded')
         const calls = await waitForCalls(env, 3)
         expect(resumedId(calls[2])).toBe(first!.sessionId)
-        const row = page2.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+        const row = page2.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
         await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
         await expect(row).toHaveClass(/\bactive\b/)
       } finally {
@@ -558,9 +748,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await startSession(page1, env, { title: 'Plain session', wsName: 'ws-b' })
       const [first] = await waitForCalls(env, 2)
       resident = first.sessionId
-      const residentRow = page1.locator('.ws-tab', { hasText: 'Resident session' })
+      const residentRow = page1.locator('.ws .ws-tab', { hasText: 'Resident session' })
       await expect(residentRow).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
-      await expect(page1.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(
+      await expect(page1.locator('.ws .ws-tab', { hasText: 'Plain session' })).toHaveClass(
         /\bst-waiting\b/,
         { timeout: 30_000 }
       )
@@ -570,9 +760,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(residentRow.locator('.ws-tab-resident')).toBeVisible()
       await expect.poll(() => layoutOnDisk(env).resident).toEqual([resident])
       for (const title of ['Resident session', 'Plain session']) {
-        await openMenu(page1, page1.locator('.ws-tab', { hasText: title }))
+        await openMenu(page1, page1.locator('.ws .ws-tab', { hasText: title }))
         await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
-        await expect(page1.locator('.ws-tab', { hasText: title })).toHaveClass(/\bcold\b/)
+        await expect(page1.locator('.ws .ws-tab', { hasText: title })).toHaveClass(/\bcold\b/)
       }
     } finally {
       await app1.close()
@@ -583,14 +773,16 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     try {
       const page2 = await app2.firstWindow()
       await page2.waitForLoadState('domcontentloaded')
-      const residentRow = page2.locator('.ws-tab', { hasText: 'Resident session' })
+      const residentRow = page2.locator('.ws .ws-tab', { hasText: 'Resident session' })
       await expect(residentRow).toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
       const calls = await waitForCalls(env, 3)
       expect(resumedId(calls[2])).toBe(resident)
 
       await expect(residentRow).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
-      await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
-      await expect(page2.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(/\bcold\b/)
+      await expect(page2.locator('.ws .ws-tab.active')).toHaveCount(0)
+      await expect(page2.locator('.ws .ws-tab', { hasText: 'Plain session' })).toHaveClass(
+        /\bcold\b/
+      )
       await page2.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)
       expect(readCalls(env)).toHaveLength(3)
     } finally {
@@ -622,7 +814,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(
         page.locator('.toast-msg', { hasText: /“Gone-worktree resident session” needs you/ })
       ).toBeVisible({ timeout: 30_000 })
-      const row = page.locator('.ws-tab', { hasText: 'Gone-worktree resident session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Gone-worktree resident session' })
       await expect(row).toHaveClass(/\bcold\b/)
       await expect(row.locator('.ws-tab-resident')).toBeVisible()
       await expect(page.locator('.modal')).toHaveCount(0)
@@ -643,13 +835,13 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
 
-    const row = page.locator('.ws-tab')
+    const row = page.locator('.ws .ws-tab')
     await expect(row).toHaveCount(1, { timeout: 40_000 })
     await expect(row).toHaveClass(/\bst-idle\b/)
     await page.waitForTimeout(ROOM_FOR_A_LATER_TRANSITION_MS)
     await expect(row).toHaveClass(/\bst-idle\b/)
     await expect(
-      page.locator('.ws-tab.st-working, .ws-tab.st-waiting, .ws-tab.st-approval')
+      page.locator('.ws .ws-tab.st-working, .ws-tab.st-waiting, .ws-tab.st-approval')
     ).toHaveCount(0)
     await snap(page, 'T-LIFE-10')
   })
@@ -665,7 +857,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await startSession(page, env, { title: 'Running menu session' })
-      const coldRow = page.locator('.ws-tab', { hasText: 'Cold menu session' })
+      const coldRow = page.locator('.ws .ws-tab', { hasText: 'Cold menu session' })
       await expect(coldRow).toBeVisible({ timeout: 20_000 })
 
       const noForbidden = (items: string[]): void => {
@@ -676,7 +868,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         }
       }
 
-      await openMenu(page, page.locator('.ws-tab', { hasText: 'Running menu session' }))
+      await openMenu(page, page.locator('.ws .ws-tab', { hasText: 'Running menu session' }))
       const running = await menuItemTexts(page)
       expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Keep running', 'Close'])
       noForbidden(running)
@@ -703,15 +895,13 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         'New session⌘N',
         'Restore session…',
         'Scheduled jobs…',
-        'Talk to Assist',
-        'Bind Discord channel…',
         'Remove workspace'
       ])
       noForbidden(ws)
       await closeMenu(page)
 
       const [session] = await waitForCalls(env, 1)
-      const runningRow = page.locator('.ws-tab', { hasText: 'Running menu session' })
+      const runningRow = page.locator('.ws .ws-tab', { hasText: 'Running menu session' })
       await openMenu(page, runningRow)
       await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
       await expect(runningRow).toHaveClass(/\bcold\b/, { timeout: 20_000 })
@@ -729,7 +919,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     test.setTimeout(180_000)
     await startSession(page, env, { title: 'Remove me' })
     const [call] = await waitForCalls(env, 1)
-    const row = page.locator('.ws-tab', { hasText: 'Remove me' })
+    const row = page.locator('.ws .ws-tab', { hasText: 'Remove me' })
 
     await runIn(page, centerTerm(page), '/open http://127.0.0.1:1/removed')
     await expect
@@ -738,6 +928,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
     killSession(call.pid, env)
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+    await closeKeptTab(page, row)
     expect(persistedTabsOnDisk(env, call.sessionId)).toHaveLength(1)
 
     await openMenu(page, row)

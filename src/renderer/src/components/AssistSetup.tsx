@@ -1,35 +1,32 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
 import { accountToSignInAgain } from '@shared/accountUsage'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { assistRunsOn } from '@shared/assistPicks'
+import { settingsPaneName } from '@shared/paletteFeatures'
+import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
+import { assistInputs } from '../butlerRows'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
-import { AddAccountDialog, CodexSignInDialog, LoginDialog } from './settings/AccountsPane'
+import {
+  AddAccountDialog,
+  LoginDialog,
+  SignInDialog,
+  SignInFailedCard,
+  loginRunning,
+  useSignInFailure,
+  type PaneForm
+} from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
 // CC§9 CODEX§15
-export const ASSIST_RUNS_ON: Record<BackendId, string> = {
-  claude: 'Haiku, about 750 tokens a job',
-  codex: 'GPT-6 Luna, a few thousand tokens a job'
-}
-
 export const ASSIST_COST_LINE =
-  'Each Assist job costs a tiny bit of that account’s plan or API balance — far less than one cent.'
+  'Each Assist job costs a little of that account’s plan or API balance: about a cent or less.'
 
 function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
-  const addTab = useStore((s) => s.addTab)
-  const showSignInTab = useStore((s) => s.showSignInTab)
+  const openSignInTab = useStore((s) => s.openSignInTab)
   const install = async (): Promise<void> => {
     const r = await window.api.sessions.installTool(backend)
-    if (!r) return
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `Install ${BACKEND_LABEL[backend]}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    if (r) openSignInTab(r, `Install ${BACKEND_LABEL[backend]}`)
   }
   return (
     <button className="choice" onClick={() => void install()}>
@@ -38,6 +35,8 @@ function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
     </button>
   )
 }
+
+export const NO_AGENT_ON_THIS_MAC = `Koloft runs ${productList(SESSION_BACKENDS, 'or')}, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first.`
 
 export function InstallHint({ children }: { children: string }): JSX.Element {
   return (
@@ -61,31 +60,42 @@ export function AssistSetup({
   offerInstall?: boolean
 }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
+  const runsOn = useStore((s) => assistRunsOn(assistInputs(s)))
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
-  const setBypassAccepted = useStore((s) => s.setBypassAccepted)
+  const clearLogin = useStore((s) => s.clearLogin)
+  const failed = useSignInFailure()
   const update = useSettingsUpdate()
-  const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
-  const [pasting, setPasting] = useState(false)
+  const [form, setForm] = useState<PaneForm | null>(null)
+  const claudeLoginRunning = !!login && loginRunning(login.progress)
+  const closeForms = (): void => {
+    if (login && !claudeLoginRunning) clearLogin()
+    if (failed) window.api.accounts.dismissSignInFailure()
+    setForm(null)
+  }
+  const openForm = (next: PaneForm): void => {
+    closeForms()
+    setForm(next)
+  }
+  const openClaudeSignIn = (again: string | undefined): void => {
+    closeForms()
+    if (!claudeLoginRunning) beginLogin(again)
+  }
+  const signIn = form && 'signIn' in form ? form : null
 
   const pick = (b: BackendId, again: string | undefined): void => {
-    if (setup.usable[b]) update({ assist: { on: true, backend: b } })
-    else if (b === 'claude') beginLogin(again)
-    else setCodexSignIn({ again })
-  }
-  const acceptBypass = async (): Promise<void> => {
-    if (await window.api.accounts.acceptBypass()) setBypassAccepted(true)
-    else update({ skipPermissions: false })
+    if (setup.usable[b]) {
+      closeForms()
+      update({ assist: { ...assist, backend: b } })
+    } else if (b === 'claude') openClaudeSignIn(again)
+    else openForm({ signIn: b, again })
   }
 
   if (setup.noTool)
     return (
       <div className="assist-setup">
-        <InstallHint>
-          Koloft runs Claude Code or Codex, and this Mac has neither yet. Pick one to install: a
-          terminal opens and runs its official installer. Nothing else to set up first.
-        </InstallHint>
+        <InstallHint>{NO_AGENT_ON_THIS_MAC}</InstallHint>
       </div>
     )
 
@@ -104,13 +114,15 @@ export function AssistSetup({
           return (
             <button
               key={b}
-              className={'choice' + (assist?.backend === b && setup.usable[b] ? ' on' : '')}
+              className={'choice' + (runsOn === b && setup.usable[b] ? ' on' : '')}
               onClick={() => pick(b, again)}
             >
               <span className="choice-t">{BACKEND_LABEL[b]}</span>
               <span className="choice-d">
                 {setup.usable[b]
-                  ? `Signed in. Assist uses ${ASSIST_RUNS_ON[b]}.`
+                  ? runsOn === b
+                    ? 'Signed in. Assist runs on it.'
+                    : 'Signed in.'
                   : again
                     ? `"${again}" is not signed in. Click to sign in again.`
                     : 'No account yet. Click to sign in.'}
@@ -120,9 +132,9 @@ export function AssistSetup({
         })}
       </div>
       <div className="quiet">
-        {ASSIST_COST_LINE} Turn it off any time in Settings ▸ Sessions; Koloft then does those jobs
-        without AI. Have a Claude token?{' '}
-        <button className="ob-link" onClick={() => setPasting(true)}>
+        {ASSIST_COST_LINE} Choose what each job runs on in {settingsPaneName('assist')}. Have a
+        Claude token?{' '}
+        <button className="ob-link" onClick={() => openForm({ paste: 'oauth' })}>
           Paste it
         </button>
         .
@@ -130,15 +142,14 @@ export function AssistSetup({
       {setup.askBypass && (
         <>
           <div className="quiet">
-            Koloft starts Claude sessions without asking you before each file change or command. Is
-            that OK?
+            Koloft starts sessions without asking you before each file change or command. Is that
+            OK?
           </div>
           <div className="ob-choices">
-            <button className="choice" onClick={() => void acceptBypass()}>
+            <button className="choice" onClick={() => update({ skipPermissionsAgreed: true })}>
               <span className="choice-t">Yes, don’t ask</span>
               <span className="choice-d">
-                Koloft tells Claude you agreed, so a session started in the background never stops
-                at its warning.
+                Koloft remembers your answer. Your own Claude settings stay as they are.
               </span>
             </button>
             <button className="choice" onClick={() => update({ skipPermissions: false })}>
@@ -148,11 +159,20 @@ export function AssistSetup({
           </div>
         </>
       )}
-      {login && <LoginDialog />}
-      {codexSignIn && (
-        <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
+      {form && 'paste' in form ? (
+        <AddAccountDialog kind={form.paste} onClose={() => setForm(null)} />
+      ) : signIn ? (
+        <SignInDialog
+          key={`${signIn.signIn}:${signIn.again ?? ''}`}
+          backend={signIn.signIn}
+          again={signIn.again}
+          onClose={() => setForm((open) => (open === signIn ? null : open))}
+        />
+      ) : login ? (
+        <LoginDialog key={login.reauthName ?? ''} />
+      ) : (
+        failed && <SignInFailedCard failed={failed} />
       )}
-      {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { WorkspaceRows } from '@shared/types'
+import type { BackendId, WorkspaceRows } from '@shared/types'
 import { pendingOptions } from '../aiStart'
 import type { PendingStart } from '../newSession'
 import type { PickerMode } from '../workspacePicker'
@@ -15,7 +15,8 @@ export function NewSessionDialog({
   onClose,
   onStart,
   launchLock,
-  pending
+  pending,
+  chosen
 }: {
   mode: PickerMode
   initialPath?: string
@@ -24,6 +25,7 @@ export function NewSessionDialog({
   onStart: StartSession
   launchLock: { current: boolean }
   pending?: PendingStart
+  chosen?: BackendId
 }) {
   const [worktreePath, setWorktreePath] = useState(initialPath)
   const lastWsPath = useStore((s) => s.lastWsPath)
@@ -43,6 +45,7 @@ export function NewSessionDialog({
       rows={rows}
       lastWsPath={pending?.path ?? lastWsPath}
       pinned={mode === 'main' ? ws : undefined}
+      chosen={chosen}
       onClose={onClose}
       launchLock={launchLock}
       onConfirm={async (target, backend) => {

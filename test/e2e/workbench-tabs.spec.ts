@@ -1,11 +1,28 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
+  type E2EEnv,
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse
+} from './helpers/env'
+import { startCodex } from './helpers/codex'
+import {
+  agentShell,
   centerTerm,
   clickAppMenuItem,
   focusOwner,
+  gitCommitAll,
+  gitInit,
+  killSession,
+  landsOnTheButler,
+  listeningPortsOf,
+  newSessionInWith,
   openSessionTerminal,
   panelTerm,
   runIn,
@@ -16,13 +33,14 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { addressField, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
-import { startEchoServer } from './helpers/fixtureServer'
+import { BROWSER, addressField, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
+import { portFreeOnTheMac, servesAFolderOn, startEchoServer } from './helpers/fixtureServer'
 import {
   answerFileDialog,
   cancelFileDialog,
   pendingFileDialogAnswers,
   appRegion,
+  browseRow,
   persistedTabsOnDisk,
   WORKBENCH,
   seedWorkbench,
@@ -53,6 +71,11 @@ async function agentOpen(page: Page, target: string): Promise<void> {
 }
 
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+
+const serverWithPidFile = (env: E2EEnv, port: number, pidFile: string): string =>
+  `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${env.home} >/dev/null 2>&1 & echo $! > ${pidFile}`
 
 test.describe('Workbench tab lifecycle: an open forks by target (a web url lands a tab, a file lands none) and by source (agent, or the user’s own shell)', () => {
   test('WB-T02: an agent web open lands in front of its own session, read and loaded, and the caret stays in the terminal', async ({
@@ -74,6 +97,102 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     } finally {
       await srv.close()
     }
+  })
+
+  test('a click on the pinned Changes tab leaves the caret in the session terminal, so the next typed line reaches the session, while a click on a web tab takes it to the panel', async ({
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    await agentOpen(page, 'http://127.0.0.1:1/alpha')
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    expect(await focusOwner(page)).toBe('tui')
+
+    await wbTabs(page).nth(0).click()
+    await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+    expect(await focusOwner(page)).toBe('tui')
+    await page.keyboard.type('/answer looks good')
+    await page.keyboard.press('Enter')
+    await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
+
+    await wbTabs(page).nth(1).click()
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    expect(await focusOwner(page)).toBe('panel')
+  })
+
+  test('a click on the collapsed Workbench’s files button or on one of its docs opens the panel and leaves the caret in the session terminal, so the next typed line reaches the session', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await expect.poll(() => layoutState(page)).toBe('T1')
+      await centerTerm(page).click()
+      expect(await focusOwner(page)).toBe('tui')
+
+      await page.locator(WORKBENCH.previewDiff).click()
+      await expect.poll(() => layoutState(page)).toBe('T2')
+      await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+      expect(await focusOwner(page)).toBe('tui')
+      await page.keyboard.type('/answer looks good')
+      await page.keyboard.press('Enter')
+      await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
+
+      await page.locator('.aux-ico.wb-toggle').click()
+      await expect.poll(() => layoutState(page)).toBe('T1')
+      await centerTerm(page).click()
+      await page.locator(WORKBENCH.previewDocs).filter({ hasText: 'NOTES.md' }).click()
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('NOTES.md')
+      expect(await focusOwner(page)).toBe('tui')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a click on a view switch inside the Changes tab (Diff / Source, Changes / Browse) leaves the caret in the session terminal, so the next typed line reaches the session', async ({
+    page,
+    env
+  }) => {
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    fs.appendFileSync(path.join(env.workspaces.a, 'docs', 'page.html'), '<!-- edited -->\n')
+    await startSessionIn(page, 'ws-a')
+    await wbTabs(page).nth(0).click()
+    expect(await focusOwner(page)).toBe('tui')
+
+    const blockSource = page
+      .locator(`${WORKBENCH.panel} .cv-blk[data-path="docs/page.html"]`)
+      .locator('.seg[aria-label="Block view"] button', { hasText: 'Source' })
+    await blockSource.click({ timeout: 30_000 })
+    await expect(blockSource).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    const browse = page.locator(`${WORKBENCH.panel} .seg[aria-label="Files view"] button`, {
+      hasText: 'Browse'
+    })
+    await browse.click()
+    await expect(browse).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    await browseRow(page, path.join(env.workspaces.a, 'README.md')).click({ timeout: 30_000 })
+    const readingSource = page.locator(
+      `${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] button`,
+      { hasText: 'Source' }
+    )
+    await expect(readingSource).toBeVisible({ timeout: 20_000 })
+    await centerTerm(page).click()
+    expect(await focusOwner(page)).toBe('tui')
+    await readingSource.click()
+    await expect(readingSource).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    await page.keyboard.type('/answer looks good')
+    await page.keyboard.press('Enter')
+    await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
   })
 
   test('WB-T03: an agent re-open brings its existing tab back to the front', async ({ page }) => {
@@ -235,7 +354,8 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await centerTerm(page).click()
     await closeTab(app)
 
-    await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/, { timeout: 20_000 })
+    await landsOnTheButler(page)
   })
 
   test('WB-K01b: with the panel focused the same ⌘W closes a tab and spares the session', async ({
@@ -270,7 +390,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await newTab(page)
     const menu = page.locator('.wb-newmenu')
     await expect(menu).toBeVisible()
-    await expect(menu.locator('.mi')).toHaveCount(3)
+    await expect(menu.locator('button.mi')).toHaveCount(3)
     await expect(menu).toContainText('New web tab')
     await expect(menu).toContainText('Open file…')
     await expect(menu).toContainText(/terminal/i)
@@ -313,6 +433,19 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
       .poll(async () => (await wbTabTitles(page)).slice(1))
       .toEqual(['127.0.0.1:1/b', '127.0.0.1:1/a'])
     await expect(wbTabs(page).nth(0)).toHaveClass(/pinned/)
+  })
+
+  test('WB-T25: a terminal tab drags like the rest', async ({ app, page }) => {
+    test.setTimeout(120_000)
+    await startSessionIn(page, 'ws-a')
+    await agentOpen(page, 'http://127.0.0.1:1/a')
+    await expect(wbTabs(page)).toHaveCount(2)
+    await openSessionTerminal(app, page)
+    await expect(wbTabs(page)).toHaveCount(3)
+    expect((await wbTabTitles(page))[1]).toBe('127.0.0.1:1/a')
+
+    await wbTabs(page).nth(2).dragTo(wbTabs(page).nth(1))
+    await expect.poll(async () => (await wbTabTitles(page))[2]).toBe('127.0.0.1:1/a')
   })
 
   test.describe('the panel belongs to the conversation tab, not to the Claude session id', () => {
@@ -433,6 +566,56 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     expect(shape.handleLast).toBe(true)
     expect(shape.dragCancelled).toBe(true)
   })
+
+  test('WB-T26: a web tab that opens while the pointer is over the strip keeps its place and width there, so a click aimed before its title shortens still lands on the tab, and it narrows once the pointer leaves', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const srv = await startEchoServer()
+    try {
+      const longTitle = 'A page title long enough to fill the whole tab'
+      const shortTitle = 'A'
+      const url = srv.page(
+        '/late-title',
+        `<!doctype html><html><head><title>${longTitle}</title></head><body>late</body></html>`
+      )
+      await startSessionIn(page, 'ws-a')
+      await runIn(page, centerTerm(page), `/open-later ${url}`)
+      await expect(centerTerm(page)).toContainText('armed open', { timeout: 30_000 })
+      const files = page.locator(WORKBENCH.tabFiles)
+      await files.hover()
+
+      fs.writeFileSync(path.join(env.home, 'go-open'), '')
+      const webTab = wbTabs(page).nth(1)
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(longTitle, { timeout: 30_000 })
+      const guest = await guestByUrl(app, '/late-title')
+
+      await files.click()
+      await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+      const held = (await webTab.boundingBox())!
+      const aim = { x: held.x + held.width / 2, y: held.y + held.height / 2 }
+      await page.mouse.move(aim.x, aim.y)
+
+      await guest.evaluate((t) => {
+        document.title = t
+      }, shortTitle)
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(shortTitle)
+      const titled = (await webTab.boundingBox())!
+      expect(titled.x).toBeCloseTo(held.x, 0)
+      expect(titled.width).toBeCloseTo(held.width, 0)
+
+      await page.mouse.click(aim.x, aim.y)
+      await expect(wbActiveTab(page)).toHaveText(shortTitle)
+      await expect(wbTabs(page)).toHaveCount(2)
+
+      await centerTerm(page).hover()
+      await expect.poll(async () => (await webTab.boundingBox())!.width).toBeLessThan(held.width)
+    } finally {
+      await srv.close()
+    }
+  })
 })
 
 test.describe('Workbench commands and the panel’s first mount', () => {
@@ -499,6 +682,216 @@ test.describe('Workbench commands and the panel’s first mount', () => {
       await expect(page.locator(WORKBENCH.newMenu)).toBeVisible()
     } finally {
       await quitAndClose(app)
+    }
+  })
+})
+
+const answers = (port: number): Promise<boolean> =>
+  fetch(`http://127.0.0.1:${port}/`).then(
+    (r) => r.ok,
+    () => false
+  )
+
+async function newTabMenuPorts(page: Page): Promise<Locator> {
+  await page.locator(BROWSER.newTab).click()
+  const menu = page.locator(WORKBENCH.newMenu)
+  await expect(menu.locator('.mi.head')).toBeVisible({ timeout: 15_000 })
+  return menu
+}
+
+async function openThePortItLists(
+  app: ElectronApplication,
+  page: Page,
+  port: number
+): Promise<void> {
+  const menu = await newTabMenuPorts(page)
+  await expect(menu.locator('.mi.head')).toHaveText('Listening ports')
+  const row = menu.locator('button.mi', { hasText: `localhost:${port}` })
+  const pid = Number(/\(pid (\d+)\)$/.exec((await row.getAttribute('title')) ?? '')?.[1])
+  expect(pid).toBeGreaterThan(0)
+  try {
+    await row.click()
+    const guest = await guestByUrl(app, `localhost:${port}/`)
+    await expect(guest.locator('body')).toContainText('Directory listing')
+  } finally {
+    process.kill(pid)
+  }
+}
+
+test.describe('Workbench + menu: the ports a session’s processes listen on', () => {
+  test('WB-T27: a Claude Code session’s + menu says no ports, then lists the server it started, by port with its process on hover, and a click opens it in a web tab', async ({
+    app,
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+    await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText('No listening ports')
+    await page.keyboard.press('Escape')
+
+    const port = await portFreeOnTheMac()
+    await agentShell(page, tabId, 30_000)(servesAFolderOn(port))
+    await expect.poll(() => answers(port)).toBe(true)
+    await openThePortItLists(app, page, port)
+  })
+
+  test('WB-T28: a Codex and a Muse session each list the server it started, though it left its shell', async ({
+    env
+  }) => {
+    installCodex(env)
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const port = await portFreeOnTheMac()
+      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(port)}`)
+      await expect.poll(() => answers(port), { timeout: 30_000 }).toBe(true)
+      await openThePortItLists(app, page, port)
+
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 30_000 })
+      const musePort = await portFreeOnTheMac()
+      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(musePort)}`)
+      await expect.poll(() => answers(musePort), { timeout: 30_000 }).toBe(true)
+      await openThePortItLists(app, page, musePort)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-T29: an Antigravity session’s + menu leaves out the ports agy itself listens on', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await runIn(page, centerTerm(page), 'warm up')
+      await expect(wsRows(page, 'ws-a').filter({ hasText: 'warm up' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
+      await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText(
+        'No listening ports'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-T30: after a Koloft restart a local session comes back under a new tab id, and its ports still list the server it started before the restart', async ({
+    env
+  }) => {
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    let before = ''
+    try {
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a')
+        before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+        await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
+        await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+        await expect
+          .poll(() => {
+            const file = path.join(env.userData, 'open-tabs.json')
+            if (!fs.existsSync(file)) return []
+            const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+              tabs: { tabIds?: string[] }[]
+            }
+            return saved.tabs.flatMap((t) => t.tabIds ?? [])
+          })
+          .toContain(before)
+      } finally {
+        await quitAndClose(app)
+      }
+
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await waitBooted(page2)
+        const row = wsRows(page2, 'ws-a').first()
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+        const after = (await row.getAttribute('data-tab-id'))!
+        expect(after).not.toBe(before)
+        await expect.poll(() => answers(port)).toBe(true)
+        await expect.poll(() => listeningPortsOf(page2, after), { timeout: 30_000 }).toEqual([port])
+      } finally {
+        await quitAndClose(app2)
+      }
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+    }
+  })
+
+  test('WB-T32: a session restarted in its tab comes back under a new tab id, and its ports still list the server it started before the restart', async ({
+    app,
+    page,
+    env
+  }) => {
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    try {
+      await startSessionIn(page, 'ws-a')
+      const row = wsRows(page, 'ws-a').first()
+      const before = (await row.getAttribute('data-tab-id'))!
+      await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
+      await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+      await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
+      )
+      await expect.poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 }).not.toBe(before)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+      const after = (await row.getAttribute('data-tab-id'))!
+      await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+    }
+  })
+
+  test('WB-T31: a local session that went to sleep for being idle wakes under a new tab id, and its ports still list the server it started before it slept', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const port = await portFreeOnTheMac()
+    const pidFile = path.join(env.home, 'server.pid')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const row = wsRows(page, 'ws-a').first()
+      const before = (await row.getAttribute('data-tab-id'))!
+      await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
+      await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
+
+      await startSessionIn(page, 'ws-b')
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.tabId === before && s.alive
+            ),
+          { timeout: 40_000 }
+        )
+        .toBe(false)
+      await row.click()
+      await expect.poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 }).not.toBe(before)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+      const after = (await row.getAttribute('data-tab-id'))!
+      await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
+    } finally {
+      await quitAndClose(app)
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
     }
   })
 })

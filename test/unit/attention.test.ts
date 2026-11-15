@@ -1,9 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { AttentionTracker, type AttentionContext, type SavedMark } from '../../src/main/attention'
+import { describe, it, expect, vi } from 'vitest'
+import { AttentionTracker, type SavedMark } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
-
-const UNFOCUSED: AttentionContext = { windowFocused: false, activeTabId: 'tab-A' }
-const WATCHING_A: AttentionContext = { windowFocused: true, activeTabId: 'tab-A' }
 
 function makeTracker(lastRun?: SavedMark[]): {
   t: AttentionTracker
@@ -17,99 +14,142 @@ function makeTracker(lastRun?: SavedMark[]): {
 describe('attention — raising events from status transitions', () => {
   it('working→waiting pends a turn-done with a raised event', () => {
     const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
+    t.onStatusChange('tab-A', 'working', 'waiting')
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A', kind: 'turn-done' })])
     expect(changes[0].event).toMatchObject({ tabId: 'tab-A', kind: 'turn-done' })
   })
 
   it('any→approval pends approval — even without a working prefix', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
+    t.onStatusChange('tab-A', 'waiting', 'approval')
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
 
   it('waiting→idle is a visual downgrade, not a new event', () => {
     const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'waiting', 'idle', UNFOCUSED)
+    t.onStatusChange('tab-A', 'waiting', 'idle')
     expect(t.list()).toEqual([])
     expect(changes).toEqual([])
   })
 
   it('a hard exit pends exited', () => {
     const { t } = makeTracker()
-    t.onExited('tab-A', UNFOCUSED)
+    t.onExited('tab-A')
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'exited' })])
   })
 
   it('an undefined prev (first report) going to waiting does NOT pend — no turn ran', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', undefined, 'waiting', UNFOCUSED)
+    t.onStatusChange('tab-A', undefined, 'waiting')
     expect(t.list()).toEqual([])
   })
 })
 
-describe('attention — approval→waiting is a finished turn (Stop can beat the jsonl poll)', () => {
-  it('raises turn-done when the approval marker was already consumed', () => {
+describe('attention — a mark stays until the session moves again', () => {
+  it('only the session going back to work clears it, with a clear event', () => {
     const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
-    t.clear('tab-A')
-    t.onStatusChange('tab-A', 'approval', 'waiting', UNFOCUSED)
-    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A', kind: 'turn-done' })])
-    expect(changes.at(-1)?.event).toMatchObject({ kind: 'turn-done' })
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-A', 'waiting', 'idle')
+    expect(t.list()).toEqual([expect.objectContaining({ kind: 'turn-done' })])
+    t.onStatusChange('tab-A', 'idle', 'working')
+    expect(t.list()).toEqual([])
+    expect(changes.at(-1)).toMatchObject({ event: null, pending: [] })
   })
 
-  it('keeps the approval marker when it is STILL pending (TUI nudge, prompt still up)', () => {
+  it('an approval is never downgraded by a turn-done — its prompt may still be up', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
-    t.onStatusChange('tab-A', 'approval', 'waiting', UNFOCUSED)
-    expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
-  })
-})
-
-describe('attention — precedence: approval outranks turn-done, exited replaces all', () => {
-  it('approval is not masked by a later turn-done for the same tab', () => {
-    const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
+    t.onStatusChange('tab-A', 'waiting', 'approval')
+    t.onStatusChange('tab-A', 'approval', 'waiting')
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
 
   it('turn-done upgrades to approval', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
-    t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-A', 'waiting', 'approval')
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
 
   it('exited REPLACES a live approval — a dead session must never advertise a prompt', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
-    t.onExited('tab-A', UNFOCUSED)
+    t.onStatusChange('tab-A', 'waiting', 'approval')
+    t.onExited('tab-A')
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'exited' })])
   })
 
-  it('back to working clears the pending marker and emits a clear', () => {
-    const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
-    t.onStatusChange('tab-A', 'waiting', 'working', UNFOCUSED)
+  it('only an approval holds its tab awake', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-A', 'waiting', 'approval')
+    t.onStatusChange('tab-B', 'working', 'waiting')
+    expect(t.waitsOnApproval('tab-A')).toBe(true)
+    expect(t.waitsOnApproval('tab-B')).toBe(false)
+  })
+})
+
+describe('attention — a turn that only reports goes once it is seen', () => {
+  it('a turn ending while the session waits on other work is only news, and looking at it clears it', () => {
+    const { t } = makeTracker()
+    t.waitsOnAnother = (tabId) => tabId === 'tab-A'
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-B', 'working', 'waiting')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-A', fyi: true }),
+      expect.not.objectContaining({ fyi: true })
+    ])
+    t.seen('tab-A')
+    t.seen('tab-B')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
+  })
+
+  it('news for the tab being watched never shows', () => {
+    const { t } = makeTracker()
+    t.waitsOnAnother = () => true
+    t.watching = () => 'tab-A'
+    t.onStatusChange('tab-A', 'working', 'waiting')
     expect(t.list()).toEqual([])
-    expect(changes.at(-1)).toMatchObject({ event: null, pending: [] })
+  })
+
+  it('a finished turn judged as news later turns into news, or goes at once if it is being watched; an approval is never news', () => {
+    const { t } = makeTracker()
+    let watched: string | null = null
+    t.watching = () => watched
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-B', 'working', 'waiting')
+    t.onStatusChange('tab-C', 'waiting', 'approval')
+    t.markFyi('tab-A')
+    watched = 'tab-B'
+    t.markFyi('tab-B')
+    t.markFyi('tab-C')
+    expect(t.awaitingVerdict('tab-A')).toBe(false)
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-A', fyi: true }),
+      expect.objectContaining({ tabId: 'tab-C', kind: 'approval' })
+    ])
+  })
+
+  it('news on a sleeping tab still goes once it is seen', () => {
+    const { t } = makeTracker()
+    t.asleep = () => true
+    t.waitsOnAnother = () => true
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.seen('tab-A')
+    expect(t.list()).toEqual([])
   })
 })
 
 describe('attention — title and session snapshot survive the session they name', () => {
   it('the raise-time title and session id ride on the event (an exited session is untracked later)', () => {
     const { t } = makeTracker()
-    t.onExited('tab-A', UNFOCUSED, { title: 'Fix the WebGL garbling', sessionId: 'sid-A' })
+    t.onExited('tab-A', { title: 'Fix the WebGL garbling', sessionId: 'sid-A' })
     expect(t.list()).toEqual([
       expect.objectContaining({ title: 'Fix the WebGL garbling', sessionId: 'sid-A' })
     ])
   })
 
-  it('the session binding again anywhere drops its exited mark, whatever tab raised it', () => {
+  it('clearing a session drops its mark, whatever tab raised it', () => {
     const { t, changes } = makeTracker()
-    t.onExited('tab-A', UNFOCUSED, { sessionId: 'sid-A' })
-    t.onExited('tab-B', UNFOCUSED, { sessionId: 'sid-B' })
+    t.onExited('tab-A', { sessionId: 'sid-A' })
+    t.onExited('tab-B', { sessionId: 'sid-B' })
     t.clearSession('sid-A')
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
     expect(changes.at(-1)).toMatchObject({ event: null })
@@ -131,110 +171,187 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     ])
   })
 
-  it('an approval from the last run comes back as turn-done — the prompt died with the process', () => {
+  it('an approval from the last run comes back as turn-done that remembers it was asking — the prompt may have died with the process', () => {
     const { t } = makeTracker(lastRun)
-    expect(t.list().find((e) => e.sessionId === 'sid-2')?.kind).toBe('turn-done')
+    expect(t.list().find((e) => e.sessionId === 'sid-2')).toMatchObject({
+      kind: 'turn-done',
+      wasAsking: true
+    })
+    expect(t.list().find((e) => e.sessionId === 'sid-1')?.wasAsking).toBeUndefined()
   })
-})
 
-describe('attention — a session starting again keeps its unread mark unless the user is watching it', () => {
-  it('moves the mark onto the new tab as turn-done, silently, where visiting clears it', () => {
-    const { t, changes } = makeTracker()
-    t.onExited('tab-old', UNFOCUSED, { title: 'Done one', sessionId: 'sid-1' })
-    const raisedBefore = changes.filter((c) => c.event && !c.event.resurrected).length
-    t.bound('tab-new', 'sid-1', UNFOCUSED)
-    expect(t.list()).toEqual([
-      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one' })
+  it('a session that turns out to still show its ask after the restart raises it again under the same time, so it stays the same ask, and silently, as the owner was told already', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    expect(t.list()).toContainEqual(
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: 2 })
+    )
+    t.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-2' })
+    const again = t.list().find((e) => e.tabId === 'tab-new')
+    expect(again).toMatchObject({ kind: 'approval', at: 2 })
+    expect(again?.wasAsking).toBeUndefined()
+    expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('a reattached tab that shows its ask before it binds keeps asking once bound, as the same ask as before the restart', () => {
+    const { t } = makeTracker(lastRun)
+    t.onStatusChange('tab-new', undefined, 'approval')
+    t.bound('tab-new', 'sid-2')
+    expect(t.list().filter((e) => e.sessionId === 'sid-2')).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'approval', at: 2 })
     ])
-    expect(changes.filter((c) => c.event && !c.event.resurrected)).toHaveLength(raisedBefore)
-    t.clear('tab-new')
-    expect(t.list()).toEqual([])
   })
 
-  it('drops the mark when the session starts in the tab the user is watching', () => {
-    const { t } = makeTracker([{ tabId: 'old-1', kind: 'exited', at: 1, sessionId: 'sid-1' }])
-    t.bound('tab-A', 'sid-1', WATCHING_A)
-    expect(t.list()).toEqual([])
+  it('a reattached tab of a session that outlives Koloft, which works once before it shows its ask again, keeps that ask as the same one, silently; a second working clears it', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.outlivesKoloft = () => true
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', undefined, 'waiting')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    t.onStatusChange('tab-new', 'working', 'approval', { sessionId: 'sid-2' })
+    expect(t.list().find((e) => e.tabId === 'tab-new')).toMatchObject({ kind: 'approval', at: 2 })
+    expect(changes.at(-1)?.event).toBeNull()
+
+    const other = makeTracker(lastRun).t
+    other.outlivesKoloft = () => true
+    other.bound('tab-new', 'sid-2')
+    other.onStatusChange('tab-new', 'waiting', 'working')
+    other.onStatusChange('tab-new', 'working', 'waiting')
+    other.onStatusChange('tab-new', 'waiting', 'working')
+    expect(other.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
+  })
+
+  it('a session that stopped with Koloft clears its ask on its first working, as that is the owner moving on', () => {
+    const { t } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    expect(t.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
+  })
+
+  it('a turn a resumed session finishes after an ask it was asking is new, and notified', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.outlivesKoloft = () => true
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    t.onStatusChange('tab-new', 'working', 'waiting', { sessionId: 'sid-2' })
+    expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'turn-done' })
   })
 })
 
-describe('attention — reconsider (stale-context suppression race)', () => {
-  it('a just-suppressed event is re-raised when the user switches away in time', () => {
-    const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
-    expect(t.list()).toEqual([])
-    t.reconsider('tab-A', { windowFocused: true, activeTabId: 'tab-B' })
-    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A', kind: 'turn-done' })])
+describe('attention — a session starting again keeps its mark', () => {
+  it('moves the mark onto the new tab as turn-done, silently, keeping how long it has waited', () => {
+    const { t, changes } = makeTracker()
+    t.onExited('tab-old', { title: 'Done one', sessionId: 'sid-1' })
+    const since = t.list()[0].at
+    t.bound('tab-new', 'sid-1')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one', at: since })
+    ])
+    expect(changes.at(-1)?.event).toBeNull()
   })
 
-  it('an old suppressed event is NOT resurrected (the user really saw it)', () => {
+  it('a tab restarted while it asks keeps the ask, silently, as one it was asking, through anything that clears its old tab, and the restarted tab takes it with its time; any other mark of it goes', () => {
+    const { t, changes } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    const since = t.list()[0].at
+    t.onStatusChange('tab-news', 'working', 'waiting', { sessionId: 'sid-2' })
+    t.tabStopping('tab-old', true)
+    t.tabStopping('tab-news', true)
+    t.clear('tab-old')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done', wasAsking: true, at: since })
+    ])
+    t.bound('tab-new', 'sid-1')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: since })
+    ])
+    expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('an ask stopped by a restart never comes back on screen: the restarted tab clears it on its first working even on a machine, and a new question there is a new ask', () => {
+    const { t: worked } = makeTracker()
+    worked.outlivesKoloft = () => true
+    worked.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    worked.tabStopping('tab-old', true)
+    worked.bound('tab-new', 'sid-1')
+    worked.onStatusChange('tab-new', 'waiting', 'working')
+    expect(worked.list()).toEqual([])
+
+    const { t: asked, changes } = makeTracker()
+    asked.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    asked.tabStopping('tab-old', true)
+    asked.bound('tab-new', 'sid-1')
+    asked.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
+    expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'approval' })
+    expect(asked.list()[0].stoppedByRestart).toBeUndefined()
+
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1)
+    const { t: early } = makeTracker()
+    early.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    early.tabStopping('tab-old', true)
+    now.mockReturnValue(2)
+    early.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
+    early.bound('tab-new', 'sid-1')
+    now.mockRestore()
+    expect(early.list()).toEqual([expect.objectContaining({ tabId: 'tab-new', at: 2 })])
+  })
+
+  it('an ask stopped by a restart stays one after a Koloft restart', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
-    t.reconsider('tab-A', { windowFocused: true, activeTabId: 'tab-B' }, -1)
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    t.tabStopping('tab-old', true)
+    const saved = t.list() as SavedMark[]
+    expect(makeTracker(saved).t.list()[0].stoppedByRestart).toBe(true)
+  })
+
+  it('a restart that never comes back leaves its ask, through another restart, until its tab is closed', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    t.tabStopping('tab-old', true)
+    t.clear('tab-old')
+    t.tabStopping('tab-old', true)
+    expect(t.list()).toHaveLength(1)
+    t.tabStopping('tab-old', false)
     expect(t.list()).toEqual([])
   })
 
-  it('a new turn obsoletes the swallowed edge — no zombie re-raise after working', () => {
+  it('a tab put to sleep keeps its mark through its process ending, until it is closed', () => {
     const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
-    t.onStatusChange('tab-A', 'waiting', 'working', WATCHING_A)
-    t.reconsider('tab-A', { windowFocused: true, activeTabId: 'tab-B' })
+    const asleep = new Set(['tab-A'])
+    t.asleep = (tabId) => asleep.has(tabId)
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.clear('tab-A')
+    t.clearKeepingExit('tab-A')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A' })])
+    asleep.delete('tab-A')
+    t.clearKeepingExit('tab-A')
     expect(t.list()).toEqual([])
+  })
+
+  it('a sleeping tab woken under a new id takes its mark along, whatever session the mark names', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-asleep', 'working', 'waiting', { sessionId: 'before-clear' })
+    t.rehome('tab-asleep', 'tab-woken')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-woken', kind: 'turn-done' })])
   })
 })
 
 describe('attention — same-kind re-raise refreshes silently', () => {
   it('turn N+1 finishing behind an unconsumed turn-done updates the marker, no new event', () => {
     const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
+    t.onStatusChange('tab-A', 'working', 'waiting')
     const eventsBefore = changes.filter((c) => c.event).length
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
+    t.onStatusChange('tab-A', 'working', 'waiting')
     expect(t.list()).toHaveLength(1)
     expect(changes.filter((c) => c.event).length).toBe(eventsBefore)
-  })
-})
-
-describe('attention — resurrected events carry the flag', () => {
-  it('a reconsider re-raise is marked resurrected so outlets can stay silent', () => {
-    const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
-    t.reconsider('tab-A', { windowFocused: true, activeTabId: 'tab-B' })
-    const raised = changes.filter((c) => c.event).at(-1)?.event
-    expect(raised).toMatchObject({ tabId: 'tab-A', resurrected: true })
-    const { t: t2, changes: ch2 } = makeTracker()
-    t2.onStatusChange('tab-B', 'working', 'waiting', UNFOCUSED)
-    expect(ch2.at(-1)?.event?.resurrected).toBeFalsy()
-  })
-})
-
-describe('attention — the one suppression rule', () => {
-  it('never pends for the tab the user is watching (focused + active)', () => {
-    const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
-    t.onStatusChange('tab-A', 'waiting', 'approval', WATCHING_A)
-    t.onExited('tab-A', WATCHING_A)
-    expect(t.list()).toEqual([])
-    expect(changes).toEqual([])
-  })
-
-  it('a background tab pends even while the window is focused', () => {
-    const { t } = makeTracker()
-    t.onStatusChange('tab-B', 'working', 'waiting', WATCHING_A)
-    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
-  })
-
-  it('the active tab pends when the window is unfocused (user is elsewhere)', () => {
-    const { t } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
-    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A' })])
   })
 })
 
 describe('attention — clearing', () => {
   it('clear removes exactly that tab and emits; clearing nothing stays silent', () => {
     const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
-    t.onStatusChange('tab-B', 'working', 'waiting', UNFOCUSED)
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-B', 'working', 'waiting')
     t.clear('tab-A')
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
     const before = changes.length

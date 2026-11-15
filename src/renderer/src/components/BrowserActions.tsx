@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
-import { LuPuzzle } from 'react-icons/lu'
+import { IconExtensions } from '../icons'
 import { BROWSER_PARTITION } from '@shared/types'
 import { actionView, splitActions, type ActionRowState, type ActionView } from './extensionActions'
 
@@ -130,7 +130,7 @@ export function BrowserActions(): JSX.Element | null {
           title="Extensions"
           onClick={() => setMenuOpen((open) => !open)}
         >
-          <LuPuzzle size={15} />
+          <IconExtensions size={15} />
         </button>
       )}
       {menu && menuOpen && (

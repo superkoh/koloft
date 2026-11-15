@@ -12,8 +12,10 @@ export function useToolsChanged(): number {
 export function useInstalledBackends(recheck = 0): {
   installed: BackendAvailability[] | null
   checkFailed: boolean
+  answeredSinceMount: boolean
 } {
   const [installed, setInstalled] = useState(lastAnswerThisRun)
+  const [answeredSinceMount, setAnswered] = useState(false)
   const [checkFailed, setCheckFailed] = useState(false)
   const toolsChanged = useToolsChanged()
   useEffect(() => {
@@ -22,7 +24,9 @@ export function useInstalledBackends(recheck = 0): {
     void window.api.sessions.backends().then(
       (list) => {
         lastAnswerThisRun = list
-        if (alive) setInstalled(list)
+        if (!alive) return
+        setInstalled(list)
+        setAnswered(true)
       },
       () => {
         if (alive) setCheckFailed(true)
@@ -32,5 +36,5 @@ export function useInstalledBackends(recheck = 0): {
       alive = false
     }
   }, [recheck, toolsChanged])
-  return { installed, checkFailed }
+  return { installed, checkFailed, answeredSinceMount }
 }

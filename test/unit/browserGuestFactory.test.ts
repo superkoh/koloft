@@ -71,6 +71,10 @@ describe('the browser guest factory', () => {
 describe('the browser chrome', () => {
   const CHROME = [
     'WorkbenchPane.tsx',
+    'WorkbenchTabStrip.tsx',
+    'WorkbenchWebGuests.tsx',
+    'WorkbenchMenus.tsx',
+    'WorkbenchFind.tsx',
     'BrowserAddressBar.tsx',
     'BrowserModal.tsx',
     'BrowserGuest.tsx'

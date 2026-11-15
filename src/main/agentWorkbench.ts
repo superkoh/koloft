@@ -4,6 +4,7 @@ import type { ArtifactView } from '@shared/types'
 import { openDropTarget } from './openDrop'
 import {
   answered,
+  errorText,
   EXIT_USAGE,
   NOT_PINNED,
   refused,
@@ -14,6 +15,7 @@ import {
 
 export interface WorkbenchVerbDeps {
   open(tabId: string, target: string, view?: ArtifactView): boolean | Promise<boolean>
+  copyToPhone(tabId: string, target: string, view?: ArtifactView): Promise<string | undefined>
   notesFileOf(tabId: string): string | undefined
 }
 
@@ -36,7 +38,12 @@ async function show(
   const target = openDropTarget(schemeOf(arg) ? { url: arg } : { path: arg, cwd: caller.cwd })
   if (!(await d.open(caller.tabId, target, view)))
     return refused(`koloft: there is no file at ${target} that the Workbench can show.`)
-  return answered(`Opened ${target} in this session's Workbench.`)
+  const copied = await d
+    .copyToPhone(caller.tabId, target, view)
+    .catch((error: unknown) => `Koloft could not also send it to Discord: ${errorText(error)}`)
+  return answered(
+    [`Opened ${target} in this session's Workbench.`, copied].filter(Boolean).join(' ')
+  )
 }
 
 export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {
@@ -54,9 +61,9 @@ export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {
       const file = d.notesFileOf(caller.tabId)
       if (!file) return refused(NOT_PINNED)
       const existing = fs.readFileSync(file, 'utf8')
-      if (sub === undefined) return answered(existing || 'The workspace note is empty.')
+      if (sub === undefined) return answered(existing || 'The note is empty.')
       fs.appendFileSync(file, noteAppendText(existing, text))
-      return answered('Added to the workspace note.')
+      return answered('Added to the note.')
     }
   }
 }

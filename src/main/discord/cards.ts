@@ -3,7 +3,6 @@ import { splitForDiscord } from './split'
 
 export const NO_MENTIONS = { parse: [] }
 export const IS_COMPONENTS_V2 = 1 << 15
-export const SUPPRESS_NOTIFICATIONS = 1 << 12
 export const TEXT_DISPLAY_LIMIT = 4000
 const ACTION_ROW = 1
 const BUTTON = 2
@@ -28,7 +27,6 @@ export interface Card {
   body?: string
   footer?: string
   buttons?: CardButton[]
-  silent?: boolean
 }
 
 export const CONDUCTOR_ACCENT = 0x99aab5
@@ -71,7 +69,6 @@ export function cardMessages(card: Card): CardMessage[] {
   const body = card.body?.trim() ? toDiscordMarkdown(card.body.trim()) : ''
   const parts = body ? splitForDiscord(body, TEXT_DISPLAY_LIMIT - HEADROOM_FOR_THE_HEADER) : []
   const pieces = parts.length ? parts : ['']
-  const flags = IS_COMPONENTS_V2 | (card.silent ? SUPPRESS_NOTIFICATIONS : 0)
   return pieces.map((part, i) => {
     const first = i === 0
     const last = i === pieces.length - 1
@@ -82,7 +79,7 @@ export function cardMessages(card: Card): CardMessage[] {
       ...(last && card.buttons?.length ? rows(card.buttons) : [])
     ]
     return {
-      flags,
+      flags: IS_COMPONENTS_V2,
       allowed_mentions: NO_MENTIONS,
       components: [{ type: CONTAINER, accent_color: card.accent, components: inside }]
     }

@@ -24,7 +24,11 @@ import {
   FABLE_STOP,
   CAP,
   hasUsableAccount,
-  noUsableAccountLead
+  noUsableAccountLead,
+  noAccountMessage,
+  NO_USABLE_ACCOUNT,
+  launchLine,
+  launchUsageProbe
 } from '../../src/shared/accountUsage'
 import { meta } from './helpers/accounts'
 
@@ -43,6 +47,13 @@ describe('hasUsableAccount (whether a Claude or Codex session may start at all)'
     expect(hasUsableAccount([meta({ enabled: false })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'expired' })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'unverified' })], 'claude')).toBe(false)
+  })
+
+  it('lets Muse, like Codex, start only on a Muse account in Koloft, never on the sign-in muse has on this Mac', () => {
+    expect(hasUsableAccount([], 'muse')).toBe(false)
+    expect(noUsableAccountLead([], 'muse')).toBe('No Muse account yet — add one in ')
+    expect(hasUsableAccount([meta({ kind: 'muse-home' })], 'muse')).toBe(true)
+    expect(hasUsableAccount([meta({ kind: 'muse-home' })], 'codex')).toBe(false)
   })
 })
 
@@ -66,6 +77,16 @@ describe('noUsableAccountLead (the line that says why a session cannot start)', 
       noUsableAccountLead([meta({ name: 'me', kind: 'apikey', status: 'unverified' })], 'claude')
     ).toMatch(/^No Claude account can be used/)
   })
+
+  it('a refused launch says the same line the shut buttons show, and the general line only when an account looked usable but none was picked', () => {
+    expect(noAccountMessage([meta({ name: 'me', status: 'expired' })], 'claude')).toBe(
+      '"me" is not signed in — sign in again in Settings ▸ Accounts.'
+    )
+    expect(noAccountMessage([], 'codex')).toBe(
+      'No Codex account yet — add one in Settings ▸ Accounts.'
+    )
+    expect(noAccountMessage([meta({ kind: 'codex-home' })], 'codex')).toBe(NO_USABLE_ACCOUNT.codex)
+  })
 })
 
 const NOW_SEC = 1_700_000_000
@@ -83,6 +104,7 @@ function snap(p: Partial<UsageSnapshot>): UsageSnapshot {
     r7: 0,
     roi: 0,
     overage: '?',
+    has5h: true,
     hasOi: true,
     at: NOW_MS,
     ...p
@@ -283,6 +305,59 @@ describe('capsuleGlyph — the fable layer', () => {
   })
 })
 
+describe('launchLine — the account line a Muse or Antigravity tab prints before its program starts, in the Claude shim’s words', () => {
+  it('names the account and each limit window, flags a reading older than STALE_MS, and is the name alone when there is no reading', () => {
+    const windows = [
+      { minutes: 300, used: 0.104, resetsAt: 0 },
+      { minutes: 10080, used: 0.52, resetsAt: 0 }
+    ]
+    expect(
+      launchLine(view({ name: 'ann', kind: 'muse-home', limits: { windows, at: NOW_MS } }), NOW_MS)
+    ).toBe('koloft: → ann · 5h 10% · 7d 52%')
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(view({ name: 'ann', limits: { windows, at: old } }), NOW_MS)).toMatch(
+      /^koloft: → ann · 5h 10% · 7d 52% · \d+ min ago$/
+    )
+    expect(launchLine(view({ name: 'key', kind: 'agy-home' }), NOW_MS)).toBe('koloft: → key')
+  })
+
+  it('says an API-key account is metered, in the words the Claude shim prints for one', () => {
+    expect(launchLine(view({ name: 'key', kind: 'codex-home', apiKey: true }), NOW_MS)).toBe(
+      'koloft: → key (API key, metered)'
+    )
+  })
+
+  it('reads an Antigravity bucket as one item, so its group and window do not look like two', () => {
+    const quota = [
+      { label: 'Gemini Models · 5h', used: 0.03 },
+      { label: 'Claude and GPT models · 7d', used: 0 }
+    ]
+    expect(launchLine(view({ name: 'g', kind: 'agy-home', quota }), NOW_MS)).toBe(
+      'koloft: → g · Gemini Models 5h 3% · Claude and GPT models 7d 0%'
+    )
+  })
+
+  it('gives no age to a reading that holds no numbers', () => {
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(view({ name: 'g', kind: 'agy-home', quota: [], quotaAt: old }), NOW_MS)).toBe(
+      'koloft: → g'
+    )
+  })
+
+  it('flags an Antigravity quota read longer ago than STALE_MS, and keeps it when the last probe failed to refresh it, as a Codex or Muse limit is kept', () => {
+    const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
+    const agy = (p: Partial<AccountView>) => view({ name: 'g', kind: 'agy-home', quota, ...p })
+    expect(launchLine(agy({ quotaAt: NOW_MS }), NOW_MS)).toBe('koloft: → g · Gemini Models 5h 3%')
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(agy({ quotaAt: old }), NOW_MS)).toMatch(
+      /^koloft: → g · Gemini Models 5h 3% · \d+ min ago$/
+    )
+    expect(launchLine(agy({ quotaAt: old, probeError: 'network' }), NOW_MS)).toMatch(
+      /^koloft: → g · Gemini Models 5h 3% · \d+ min ago$/
+    )
+  })
+})
+
 // CODEX§15
 describe('a Codex account in the capsule', () => {
   const codex = (limits: Partial<CodexLimits>, p: Partial<AccountView> = {}): AccountView =>
@@ -367,6 +442,31 @@ describe('oldestAt', () => {
       view({ name: 'c', usage: snap({ at: NOW_MS - 5_000 }) })
     ]
     expect(oldestAt(rows)).toBe(NOW_MS - 5_000)
+  })
+})
+
+describe('launchUsageProbe — what opening Koloft reads before any tab starts', () => {
+  it('reads every account once a Claude subscription account is on', () => {
+    expect(launchUsageProbe([meta({ kind: 'oauth' }), meta({ kind: 'apikey' })])).toBe(
+      'everyAccount'
+    )
+  })
+
+  it('reads a Codex, Muse or Antigravity account with no Claude subscription, because reading their limits makes no model call', () => {
+    for (const kind of ['codex-home', 'muse-home', 'agy-home'] as const)
+      expect(launchUsageProbe([meta({ kind })])).toBe('signInFoldersOnly')
+  })
+
+  it('reads a metered Claude account on launch only beside a subscription account, as that read is a billed request', () => {
+    expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'codex-home' })])).toBe(
+      'signInFoldersOnly'
+    )
+    expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'custom' })])).toBe(null)
+  })
+
+  it('leaves a switched-off account out', () => {
+    expect(launchUsageProbe([meta({ kind: 'oauth', enabled: false })])).toBe(null)
+    expect(launchUsageProbe([meta({ kind: 'codex-home', enabled: false })])).toBe(null)
   })
 })
 
@@ -632,6 +732,21 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
     expect(p.t5).toBeCloseTo(0.75, 10)
     expect(p.t7).toBeCloseTo(0.75, 10)
   })
+  it('T5 averages only the accounts that have a 5-hour limit, and is null when none has', () => {
+    const mixed = [
+      view({ usage: snap({ u5: 0.6, u7: 0.2 }) }),
+      view({ name: 'b', usage: snap({ u5: 0.2, u7: 0.4 }) }),
+      view({ name: 'ultra', usage: snap({ has5h: false, u7: 0.9 }) })
+    ]
+    const p = poolSnapshot(mixed, NOW_MS)
+    expect(p.t5).toBeCloseTo(0.4, 10)
+    expect(p.t7).toBeCloseTo(0.5, 10)
+    const allUltra = [
+      view({ usage: snap({ has5h: false, u7: 0.3 }) }),
+      view({ name: 'b', usage: snap({ has5h: false, u7: 0.5 }) })
+    ]
+    expect(poolSnapshot(allUltra, NOW_MS).t5).toBeNull()
+  })
   it('a soon/due member is measured and usable, never walled', () => {
     const rows = [
       view({ usage: snap({ s5: 'rejected', r5: NOW_SEC + 60, u5: 1 }) }),
@@ -681,7 +796,7 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
       usable: 1,
       walled: 0,
       tension: 0,
-      t5: 0,
+      t5: null,
       t7: 0,
       tfable: null,
       fableSpentAll: false,

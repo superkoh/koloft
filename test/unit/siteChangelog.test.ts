@@ -23,9 +23,10 @@ function run(page: string, releases: unknown): { status: number | null; page: st
   return { status: result.status, page: fs.readFileSync(pageFile, 'utf8') }
 }
 
-const release = (tag: string, published: string, lines: string[]) => ({
+const release = (tag: string, published: string, lines: string[], repo = 'koloft') => ({
   tag_name: tag,
   published_at: published,
+  html_url: `https://github.com/superkoh/${repo}/releases/tag/${tag}`,
   body: `## What's Changed\n\n${lines.map((l) => `- ${l}`).join('\n')}\n\n${INSTALL}`
 })
 
@@ -60,6 +61,20 @@ describe('site-changelog.mjs', () => {
     )
     expect(page).not.toContain('unsigned')
     expect(page).not.toContain('not a change line')
+  })
+
+  it('lists a version found in both release lists once, linking to the download page in the first list', () => {
+    const { status, page } = run('<main><!-- releases --></main>', [
+      [release('v1.1.0', '2026-02-03T00:05:00Z', ['feat: the bridge'])],
+      [
+        release('v1.1.0', '2026-02-03T00:00:00Z', ['feat: the bridge'], 'koloft-releases'),
+        release('v1.0.0', '2026-01-01T00:00:00Z', ['feat: old'], 'koloft-releases')
+      ]
+    ])
+    expect(status).toBe(0)
+    expect(page.match(/<h2 id="v1\.1\.0">/g)).toHaveLength(1)
+    expect(page).toContain('href="https://github.com/superkoh/koloft/releases/tag/v1.1.0"')
+    expect(page).toContain('href="https://github.com/superkoh/koloft-releases/releases/tag/v1.0.0"')
   })
 
   it('fails instead of publishing an empty changelog', () => {

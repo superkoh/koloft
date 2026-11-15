@@ -8,6 +8,10 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    # The PR title check reads these titles too.
+    commit-message:
+      prefix: build
+      include: scope
     groups:
       # Everything that only matters at build time travels together.
       dev-dependencies:
@@ -34,3 +38,6 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    commit-message:
+      prefix: build
+      include: scope

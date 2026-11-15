@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CronRunner, type RunnerDeps } from '../../src/main/cronRunner'
 import {
   cronVerb,
   formatList,
   formatShow,
   parseCronArgs,
+  CRON_NEEDS_A_WORKSPACE,
   type CronVerbDeps
 } from '../../src/main/agentCron'
 import { EXIT_USAGE, NOT_PINNED } from '../../src/main/agentRequests'
@@ -54,6 +55,10 @@ function cron(
   const verb = cronVerb({
     runner: () => runner,
     pinnedWorkspaceOf: () => HERE,
+    resolveWorkspace: (ref) =>
+      ref === 'elsewhere'
+        ? { ok: true, value: ELSEWHERE }
+        : { ok: false, error: `no workspace "${ref}"` },
     toast: (t) => toasts.push(t),
     now: () => NOW,
     ...over
@@ -140,6 +145,20 @@ describe('koloft cron: reading the command line', () => {
     })
   })
 
+  it('--once takes a day and a time, and --after a wait like --every', () => {
+    expect(parsedPatch(['edit', '1', '--once', '2026-10-25@14:00'])).toEqual({
+      schedule: { kind: 'once', date: '2026-10-25', at: '14:00' }
+    })
+    expect(parsedPatch(['edit', '1', '--after', '45m'])).toEqual({
+      schedule: { kind: 'after', n: 45, unit: 'minutes' }
+    })
+    expect(parseError(['edit', '1', '--once', '14:00'])).toMatch(/--once like 2026-10-25@14:00/)
+    expect(parseError(['edit', '1', '--after', '2d'])).toMatch(/--after like 30m/)
+    expect(parseError(['edit', '1', '--once', '2026-10-25@14:00', '--after', '2h'])).toMatch(
+      /only one/
+    )
+  })
+
   it('a task name with spaces given without quotes is the run of words before an option or --, and a word after an option that follows the name is still refused', () => {
     expect(parseCronArgs(['run', 'nightly', 'tests'])).toEqual({
       ok: true,
@@ -174,7 +193,7 @@ describe('koloft cron: reading the command line', () => {
       /"funday" is not a day/
     )
     expect(parseError(['edit', '1', '--weekly', 'mon'])).toMatch(/--weekly like/)
-    expect(parseError(['edit', '1', '--backend', 'gemini'])).toMatch(/claude or codex/)
+    expect(parseError(['edit', '1', '--backend', 'gemini'])).toMatch(/claude, codex, muse or agy/)
     expect(parseError(['edit', '1', '--effort', 'huge'])).toMatch(/--effort is one of/)
     expect(parseError(['edit', '1', '--permission', 'root'])).toMatch(/--permission is one of/)
     expect(parseError(['edit', '1', '--when-done', 'quit'])).toMatch(/--when-done is one of/)
@@ -218,6 +237,25 @@ describe('koloft cron: changing tasks', () => {
     expect('autoClose' in c.runner.state().jobs[0]).toBe(false)
   })
 
+  it('refuses an --effort the Antigravity model would exit on and names the levels it takes, while an edit that leaves --effort out of an older such task still goes through', async () => {
+    const c = cron([job({ backend: 'agy', effort: 'xhigh' })], { backend: 'agy' })
+    expect(
+      await c.run('add', '--name', 'n2', '--daily', '04:00', '--effort', 'medium', '--', 'Go')
+    ).toEqual({
+      text: 'koloft cron: the default model does not take --effort medium; it takes low, high.',
+      exit: 1
+    })
+    expect(
+      await c.run('edit', 'nightly', '--model', 'gemini-4-argon-low', '--effort', 'high')
+    ).toEqual({
+      text: 'koloft cron: gemini-4-argon-low does not take --effort high; it takes low.',
+      exit: 1
+    })
+    expect((await c.run('edit', 'nightly', '--name', 'renamed')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ name: 'renamed', backend: 'agy' })
+    expect('effort' in c.runner.state().jobs[0]).toBe(false)
+  })
+
   it('reaches only the caller workspace: another workspace’s task is neither listed nor found by name or number', async () => {
     const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })])
     const listed = await c.run('list')
@@ -227,12 +265,26 @@ describe('koloft cron: changing tasks', () => {
     expect(c.runner.state().jobs[0]).toMatchObject({ id: 'other', enabled: true })
   })
 
-  it('refuses every command while the workspace is not pinned', async () => {
-    const c = cron([job()], { pinnedWorkspaceOf: () => undefined })
-    expect(await c.run('list')).toEqual({ text: NOT_PINNED, exit: 1 })
+  it('--workspace reaches another workspace’s tasks, also from a session with no workspace of its own like the butler', async () => {
+    const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })], {
+      pinnedWorkspaceOf: () => undefined
+    })
+    expect((await c.run('list', '--workspace', 'elsewhere')).text).toMatch(/theirs/)
+    expect((await c.run('off', 'theirs', '--workspace', 'elsewhere')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ id: 'other', enabled: false })
+    expect(await c.run('list', '--workspace', 'nowhere')).toEqual({
+      text: 'koloft cron: no workspace "nowhere"',
+      exit: 1
+    })
   })
 
-  it('add saves an enabled task in the caller workspace with the dialog default permission for its backend, and toasts who did it', async () => {
+  it('refuses every command while the workspace is not pinned', async () => {
+    const c = cron([job()], { pinnedWorkspaceOf: () => undefined })
+    expect(await c.run('list')).toEqual({ text: CRON_NEEDS_A_WORKSPACE, exit: 1 })
+    expect(CRON_NEEDS_A_WORKSPACE).toMatch(new RegExp(`^${NOT_PINNED} .*--workspace`))
+  })
+
+  it('add saves an enabled task in the caller workspace on "Same as my other sessions" whatever its backend, and toasts who did it', async () => {
     const c = cron([], { backend: 'codex' })
     const reply = await c.run('add', '--name', 'lint', '--every', '2h', '--', 'Run lint')
     expect(reply.exit).toBe(0)
@@ -241,7 +293,7 @@ describe('koloft cron: changing tasks', () => {
       name: 'lint',
       task: 'Run lint',
       backend: 'codex',
-      permission: 'skipAll',
+      permission: 'same',
       enabled: true
     })
     expect(c.toasts).toEqual([expect.stringMatching(/Fix login.*lint/)])
@@ -270,9 +322,32 @@ describe('koloft cron: changing tasks', () => {
     ])
   })
 
+  it('a once task whose time has passed is not switched on, and says how to give it a new time; editing in a new time switches it on', async () => {
+    const c = cron([
+      job({ schedule: { kind: 'once', date: '2026-09-02', at: '09:00' }, enabled: false })
+    ])
+    const reply = await c.run('on', '1')
+    expect(reply).toMatchObject({ exit: 1, text: expect.stringMatching(/edit 1 --once/) })
+    expect(c.runner.state().jobs[0].enabled).toBe(false)
+    expect((await c.run('edit', '1', '--name', 'Renamed')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ name: 'Renamed', enabled: false })
+    expect((await c.run('edit', '1', '--once', '2026-09-03@09:00')).exit).toBe(0)
+    expect(c.runner.state().jobs[0].enabled).toBe(true)
+  })
+
   it('finds a task whose name has spaces by its unquoted words, not a task named by only the first of them', async () => {
     const c = cron([job({ name: 'Nightly' }), job({ id: 'j2', name: 'Nightly tests' })])
     expect((await c.run('show', 'Nightly', 'tests')).text).toMatch(/^2\. Nightly tests\nId: j2/)
+  })
+
+  it('run refused for want of an account answers with the reason the account check gave', async () => {
+    const c = cron([job()])
+    const why = 'the reason the account check gave'
+    vi.spyOn(c.runner, 'runNow').mockResolvedValue({ ok: false, reason: 'no-account', why })
+    expect(await c.run('run', '1')).toMatchObject({
+      exit: 1,
+      text: `koloft cron: nightly did not start: ${why}`
+    })
   })
 
   it('a bad command line exits with the usage code', async () => {

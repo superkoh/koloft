@@ -21,6 +21,27 @@ method. A recheck adds its date, version and command to the bullet.
   `xcode-select -p` exits non-zero, and `xcode-select --install` opens Apple's own
   install dialog and returns at once (both inferred, not checked: every Mac this was
   developed on has the tools).
+- Since Claude Code 2.1.309, claude itself refuses to run a `git` that resolves to
+  exactly `/usr/bin/git` when `DEVELOPER_DIR` is unset, `/Library/Developer/CommandLineTools`
+  and `/var/db/xcode_select_link` are missing and no `/Applications/Xcode*.app` exists,
+  and prints `git is not installed on this Mac. To install it, run xcode-select
+  --install, then try again.` (exit 127) instead (`strings` of the 2.1.309 binary,
+  2026-10-23, not run; the changelog's fix for the "Install Command Line Developer
+  Tools" dialog opening at every start). In a Koloft tab the bundled git is first on PATH
+  whenever Koloft found git missing, so claude finds that one and this check does not
+  fire (inferred, not checked on a Mac without the tools).
+- **A git only the login shell's PATH holds** (nix's `~/.nix-profile/bin`, pkgsrc's
+  `/opt/pkg/bin`, asdf's and mise's shim folders) is not on the app's PATH at launch.
+  Some of them are not git: an asdf shim is a script starting `#!/usr/bin/env bash` that
+  runs `asdf exec git` (asdf `internal/shims/shims.go`), and a mise shim on macOS is a
+  link to the `mise` program itself, or a script starting `#!/bin/sh` in its `file` mode
+  (mise `src/shims.rs`); both look git up again on PATH, so handing git to one can come
+  back to Koloft's own. nixpkgs' `bin/git` is git's own program behind links into
+  `/nix/store` — its wrappers touch only helpers under `libexec/git-core` (nixpkgs
+  `pkgs/by-name/gi/git/package.nix`). (2026-10-28, read from each project's source on
+  its main branch, not run on a Mac with nix, asdf or mise.) The program Koloft ships,
+  copied elsewhere and run without the launcher's `GIT_EXEC_PATH`, prints
+  `//libexec/git-core` for `--exec-path` (2026-10-28, macOS 27.0, git 2.53.0).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -93,6 +114,22 @@ method. A recheck adds its date, version and command to the bullet.
   `/bin/bash` 3.2.57 and fish 4.9.3 (the release's macOS app) for the first; Ubuntu
   24.04 in Docker: fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master`
   of that day.)
+- **Keys written right behind the launch line reach the program it starts, except a
+  signal key.** At zsh's signal, one write of `export …; clear` CR, `exec <program>` CR
+  and then `hello` CR: the program, which turned raw mode on 1 s after it started
+  (`TCSADRAIN`; which mode libuv uses is not checked), read `hello\r` whole. With the CR written 0.3 s later
+  instead, while the program was still in canonical mode, it read `hello\n` (`ICRNL`).
+  A Ctrl+C written behind the two lines threw the queued `exec` line away and left
+  zsh at its prompt, so the program never started; a Ctrl+Z or Ctrl+\ there reached
+  the program as a byte. (2026-11-01, Python `pty` probe,
+  macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
+  instead threw the queued keys away.)
+- **zsh and bash turn bracketed paste off as they take each typed line.** Two lines
+  written together at the signal (`export …; clear` CR, `exec <agent>` CR) came back as
+  `?2004l`, the shell's next prompt with `?2004h`, `?2004l`, and then the agent's own
+  `?2004h` (2026-11-08, a python `pty`: macOS 27.0 `/bin/zsh` 5.9 with Claude Code
+  2.1.319 and Codex 0.166.0 as the agent; Debian's bash 5 in Docker with Muse Code
+  1.4.11).
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -100,6 +137,10 @@ method. A recheck adds its date, version and command to the bullet.
   running.
 - **A non-interactive bash gives a background job `/dev/null` as stdin.** `<&0` is
   needed to pass the real stdin through.
+- **Ctrl+A and Ctrl+E go to the line's start and end in both shells; Ctrl+U differs.**
+  zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
+  caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
+  `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
 
 ## §3 macOS system tools and limits
 
@@ -117,6 +158,22 @@ method. A recheck adds its date, version and command to the bullet.
   while `claude`, `qemu` and `adb` printed theirs (2026-09-23; rechecked 2026-09-24 on
   macOS 27.0: `ps eww` showed a set env word for `node` and none for `/bin/sleep`). So
   an env-based lookup never sees a leftover that is an Apple binary.
+- **`ps -o lstart` prints the start time in the locale's own date format**, and
+  `LC_ALL` beats `LC_TIME`. Measured 2026-10-17, macOS 27.0, one process each: C and
+  `en_US.UTF-8` print `Sat Oct 17 01:29:13 2026`; `zh_CN.UTF-8` `六 10月/17 01:29:13 2026`;
+  `ja_JP.UTF-8` `土 10/17 …`; `de_DE.UTF-8` `Sa. 17 Okt. …`; `LANG=zh_CN.UTF-8 LC_TIME=C`
+  prints the C form, `LC_ALL=zh_CN.UTF-8 LC_TIME=C` still the Chinese one. The command
+  column follows `LC_CTYPE`: under C (also an empty environment) a non-ASCII argument
+  prints as `M-dM-<…` escapes, under a UTF-8 `LC_CTYPE` as itself. So one `ps` that reads
+  `lstart` and `command` together has to drop `LC_ALL`, carry its value into `LC_CTYPE`
+  and set `LC_TIME=C`. `TZ` moves `lstart` too (`TZ=UTC` printed 08:38 for a local
+  01:38).
+- **`ps -o time` counts a process's own CPU only, never that of its exited children,
+  and `-S` does not change that.** Measured 2026-10-25, macOS 27.0: a `sh` that ran a
+  3-second busy `perl` and reaped it showed `0:00.00` under `ps -o time`, `ps -S -o time`
+  and `ps -S -axo time` alike. So the summed CPU of a process tree drops each time one
+  of its programs exits, and CPU spent over time has to be added up per pid between
+  readings.
 - **macOS has no `timeout(1)`** (2026-09-24, macOS 27.0: `command -v timeout` found
   nothing), and `/usr/bin/security` waits on a GUI unlock or authorization dialog with
   no timeout of its own. A time limit in a shell script has to be a `kill -0` polling
@@ -132,6 +189,13 @@ method. A recheck adds its date, version and command to the bullet.
   attribute (a quarantine flag is enough); `COPYFILE_DISABLE=1` turns this off. Pushed
   to another machine, claude reads `._settings.json` as a second, broken settings file.
   (Reproduced in a unit test with `xattr -w` and real macOS tar.)
+- **macOS `tar` also writes each extended attribute as a `LIBARCHIVE.xattr.<name>` pax
+  header, and GNU tar prints `Ignoring unknown extended header keyword` for each one**
+  as it unpacks. Every file a process here creates gets `com.apple.provenance`, so a
+  package of 5 files and its folder gave 6 such lines; `--no-xattrs` (after `cf -`)
+  leaves the headers out, and the same package then unpacked whole with no output on
+  `debian:bookworm-slim` (GNU tar 1.34) and `alpine:3` (BusyBox). (2026-11-09, bsdtar
+  3.5.3 on macOS 27, piped into `docker run -i <image> tar xzf -`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
@@ -155,6 +219,16 @@ method. A recheck adds its date, version and command to the bullet.
   belong to another process.
 - **On a network share or exFAT, mtime is only precise to 1–2 s.** An edit that keeps
   the same size inside one clock tick changes neither mtime nor size.
+- **Without the Command Line Tools, `/usr/bin/python3` is still there, as a stub.** Run
+  over ssh it prints `xcode-select: note: No developer tools were found, requesting
+  install.` and two more lines, and exits 1 at once; it does not wait. Whether it also
+  puts an install dialog on that Mac's screen was not seen (the VM ran with no display),
+  so each run may do so. With them, it is
+  python 3.9.6, which has `pty` and `termios`. **`/bin/sh` (bash 3.2) remembers where it
+  found `python3`**, stub included, so a `python3` that `brew install` puts earlier on
+  `PATH` is not run by that same shell until `hash -r`: in one script the stub exited 1,
+  then 1 again after Homebrew's `python3` was in place, then 0 after `hash -r`
+  (2026-11-09, a macOS 26.6 VM over ssh, the Command Line Tools moved aside).
 
 ## §4 Electron: app identity, packaging and opening things
 
@@ -208,6 +282,22 @@ method. A recheck adds its date, version and command to the bullet.
   hidden or minimized window (so a renderer's acks slow down) and xterm, which draws on
   rAF, stops drawing. In a window that is never shown, the next animation frame can
   still take a long time to arrive.
+- **`hide()` on a window in macOS fullscreen leaves its Space black.** The window reports
+  `isVisible()` false and `isFullScreen()` true, the screen stays black, and a click on
+  the Dock icon brings nothing back (the Dock is hidden in that Space, and the window
+  stays hidden). Leaving fullscreen first and calling `hide()` in `leave-full-screen`
+  returns to the desktop; `show()` then `setFullScreen(true)` puts it back in fullscreen.
+  Measured 2026-11-10, Electron 43.8.6, macOS 27.0 in a tart VM, real-window layer with
+  screenshots.
+- **A hidden window with background throttling on keeps its terminals current.** With
+  `backgroundThrottling` on (the shipped setting) and the window hidden by `hide()`, a
+  `koloft session screen` read took 0.1 s median, 0.65 s at worst. After 6.5 minutes
+  hidden (past Chromium's five-minute intensive timer throttling), an agent's one-line
+  reply was on screen at the first read 0.08 s after it was typed; 420 KB of output
+  ending in a marker was whole at the first read 0.03 s later; 4.9 MB written to the pty
+  was read mid-way at 0.02 s and 0.63 s and whole by 1.26 s.
+  ⌘Q then got the unsaved-edits answer from the hidden renderer and showed the window
+  with the question. Same machine and version as above, two runs.
 - **After `render-process-gone` Electron does not reload the window by itself**; it stays
   dead until main calls `webContents.reload()`.
 - **`did-start-navigation` for a hard reload fires while the OLD document still runs**,
@@ -230,6 +320,14 @@ method. A recheck adds its date, version and command to the bullet.
   `Error invoking remote method '<channel>': Error: <original message>` (the original
   text is everything after the `': Error: ` that ends this prefix; a message may itself
   contain `Error: `).
+- **A module that two preload inputs both import breaks the sandboxed guest
+  preload.** electron-vite puts the shared module in `out/preload/chunks/<name>.js`
+  and has each preload `require("./chunks/<name>.js")`; the guest frame preload runs
+  sandboxed (§14), cannot load that file, and stops working. Measured 2026-10-19,
+  Electron 43.7.3 / electron-vite 5.0.0: with `src/preload/guest.ts` importing the
+  shared channel table, the built `guest.js` required the chunk and browser-routing's
+  "a middle-click on a link in a guest page opens it as a background tab" failed twice;
+  with the plain strings back it passed.
 
 ## §7 Electron: menus and keys
 
@@ -240,14 +338,36 @@ method. A recheck adds its date, version and command to the bullet.
   a focused `<webview>`, so a role-based ⌘R inside a web page would reload Koloft and
   kill every terminal. The built-in zoom roles step by 0.5 and clamp to Chromium's
   range of -8 to 9.
-- **A menu accelerator is handled natively, before the page.** It fires even while
-  xterm has focus (a plain renderer keydown listener is swallowed by xterm), and it
-  takes its key before a focused guest page or xterm can see it. ``"Control+`"`` parses
-  on every platform.
+- **A menu accelerator is handled natively.** It fires even while xterm has focus (a
+  plain renderer keydown listener is swallowed by xterm), and it takes its key before
+  xterm can see it. ``"Control+`"`` parses on every platform. A focused `<webview>`
+  page sees a menu key before the menu does (below).
+- **⌘⏎ in ⌘P's textarea reaches the page, not the enabled ⌘⏎ menu item.** With Focus
+  Mode's `CmdOrCtrl+Return` item enabled, a real ⌘⏎ typed into ⌘P's textarea did the
+  palette's work and left Focus Mode off. Measured 2026-10-23, Electron 43.7.3, macOS 27.0
+  in a tart VM, keys posted through CGEvent (real-window case "⌘⏎ typed on the keyboard in
+  ⌘P"). Why: the palette's keydown handler calls `preventDefault` — inferred, not
+  checked; in Koloft's own window a ⌘ key the page sees but does not `preventDefault`
+  was not probed (for a `<webview>` page, see below).
 - **Keys typed in a focused `<webview>` never reach the host document's listeners**,
-  capture phase included, and a focused guest swallows the app's menu accelerators;
-  keys with no accelerator (⌘T) never reach the host at all. Main has to catch them on
-  the guest's own `before-input-event`.
+  capture phase included; keys with no accelerator (⌘T) never reach the host at all.
+  So a key Koloft must take for itself — ⌘T, or one that must not go to the page or to
+  its menu item (⌘W closes the web tab, not the session) — is caught in main on the
+  guest's own `before-input-event`; Electron's docs say its `preventDefault` stops both
+  the page's `keydown` and the menu shortcut (not probed here).
+- **A focused `<webview>` page gets a menu key first; the app menu fires only when the
+  page does not `preventDefault` it.** With a Workbench web page focused, real ⌘J, ⌘B,
+  ⌥⌘N and ⌘P each reached the guest's `before-input-event`, then the page's `keydown`
+  listener, and then fired their menu item (Next Waiting Session, Toggle Sidebar, Notes,
+  Command Palette). With the page calling `preventDefault` on every `keydown`, the page
+  still saw each key and no menu item fired. Koloft's guest `before-input-event` handler
+  leaves these four keys alone, so whether a menu key works inside a web page is the
+  page's choice: a plain page lets it through, a page that handles the key keeps it.
+  Measured 2026-10-24, Electron 43.8.1, macOS 27.0 in a tart VM: keys posted through
+  CGEvent (§52), menu item clicks recorded by wrapping each item's `click` in main, a
+  local test page; two runs, the page leaving keys alone and the page calling
+  `preventDefault`; control: ⌘B with the session terminal focused fired Toggle Sidebar
+  in both.
 - **`before-input-event` is fed by native input only.** A key event sent straight into a
   guest's render process, or typed inside an extension's action popup, never passes it;
   only `input-event` sees an injected one. A key that `before-input-event` does not
@@ -274,6 +394,55 @@ method. A recheck adds its date, version and command to the bullet.
   page shown.
 - **A `<webview>` with no `partition` quietly uses the default session**, and nothing
   errors.
+- **Sign-in popups need a real window with an opener.** React 19.3 drops `allowpopups: true`
+  on a `<webview>` (the rendered tag has no such attribute), but Koloft's own
+  `will-attach-webview` sets `disablePopups` false for the browser partition, so every
+  `window.open` still reaches the window-open handler. Answered with `deny` (and opened as a
+  web tab), the page's `window.open` returns `null` and the tab's `window.opener` is `null`,
+  so a page waiting for a sign-in result by `postMessage` never gets it: seen for a sized
+  `window.open`, an unsized one, a `target="_blank"` link and one with `rel="opener"`. A
+  sized `window.open` (`"width=500,height=600"`) arrives with `disposition: 'new-window'`; an
+  unsized one does not. Answered with `allow`, it opens a `BrowserWindow` in the opener's
+  partition whose `window.opener` survives cross-origin redirects, so the last page's
+  `postMessage` reaches the opener. That window's `web-contents-created` fires with
+  `getType()` `'window'`, which electron-chrome-extensions' action popup also has in the same
+  session (its source builds a `BrowserWindow`), so a sign-in window is told apart by the
+  window-open handler that made it, not by type. 2026-10-31, Electron 43.8.1, React 19.3.0,
+  local test pages in an e2e run (BB-M34, BB-M24) and a page on a Docker ssh machine
+  (E-SSH-42).
+- **A sign-in window with an address bar hosts the popup in a view of its own.** An `allow`
+  answer's `createWindow` gets `options.webContents` (missing from Electron's typings): the
+  popup's own, already created `webContents`. Put in `new WebContentsView({ webContents })`
+  under a window whose own page is the address bar, it keeps `window.opener`, the opener's
+  session and its preloads, and `BrowserWindow.fromWebContents` returns the host window. What a
+  plain `allow` window does by itself has to be done by hand: closing the host leaves the
+  view's `webContents` alive until `close()` is called on it, and `window.resizeTo` moves
+  nothing until the view's `content-bounds-updated` (outer bounds, as Chrome's popups count
+  them, address bar included) is passed to the host's `setBounds`; the popup's own
+  `window.close()` destroys the view's `webContents`. A host whose `close` handler calls
+  `preventDefault` (to wait for the page's `beforeunload`) cancels `app.quit()`: Koloft stayed
+  running (BB-M35, measured with that handler in place). URL events on that `webContents`: a 302 fires one `did-navigate` with the
+  final URL; `pushState` fires `did-navigate-in-page`; a refused certificate fires
+  `certificate-error` (main frame) and `did-fail-load`, no `did-navigate`, with `getURL()` the
+  refused URL. Measured in ccremote (its platform ledger §66, Electron 43.8.3) and checked here
+  2026-11-03, Electron 43.8.1, by BB-M35 (redirect, `pushState`, `resizeTo`, a trusted and a
+  refused certificate, `window.close()`).
+- **Chrome's address bar puts no mark on a local address or a failed load.** Chrome's
+  security level (`components/security_state/core/security_state.cc`, `GetSecurityLevel`)
+  marks a major certificate error dangerous first; then a page with no connection info, which
+  an error page has, gets none; https with a certificate gets the lock; and an http page gets
+  "Not secure" only when it is not an error page and `network::IsUrlPotentiallyTrustworthy` is
+  false. That function (`net/base/is_potentially_trustworthy.cc`) counts a host as trustworthy
+  through `net::IsLocalhost` (`net/base/url_util.cc`): `localhost` or a name ending in
+  `.localhost`, either with one trailing dot dropped, any case; or an IP literal for which
+  `IPAddress::IsLoopback` (`net/base/ip_address.cc`) holds: 127.0.0.0/8 and `::1` only, so
+  `::ffff:127.0.0.1` does not count. Read from Chromium's source on `main`, 2026-11-03.
+  On the sign-in view (Electron 43.8.1, 2026-11-03), `did-fail-load` for an https page whose
+  server closed the connection leaves `getURL()` the failed URL, as for a refused certificate
+  (BB-M35). A load that ends without a new page does not fire `did-fail-load` at all, so it
+  never wipes the mark of the page still shown: `window.stop()` while an image still loads, a
+  move to a 204 reply, and a move to a custom-scheme callback (`koloftprobe://cb`) each fired
+  nothing within 10 s (a probe step in BB-M35, then removed).
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,
@@ -314,6 +483,15 @@ method. A recheck adds its date, version and command to the bullet.
   - `disableHtmlFullscreenWindowResize` changes nothing, set on the guest or on the
     host window.
   - A hidden window that is allowed to follow the guest shows itself.
+- **Taking a `<webview>` out of the DOM ends its renderer process and gives its memory
+  back; one that is only `visibility: hidden` keeps both.** With three hidden-or-shown
+  pages on three origins (a title and about 100 KB of text each), `app.getAppMetrics()`
+  listed 7 processes, each page's own at 29 MB by `footprint <pid>`. Three seconds after
+  two of the elements were removed it listed 5, those two pids gone, and the sum of
+  every process's footprint went from 518 to 356 MB (the GPU process alone from 232 to
+  112 MB). Mounting the element again loads the address from the network (the
+  fixture server counted a second request). Measured once, 2026-11-11, Electron 43.8.6, macOS 27.0, in the e2e suite's hidden
+  window.
 
 ## §9 `<webview>`: visibility, frames and capture
 
@@ -364,6 +542,20 @@ method. A recheck adds its date, version and command to the bullet.
   `buttons` 1**, both from a real mouse and from Playwright.
 - **An HTML drag with no `dataTransfer` payload fires no `dragover`**; at least one
   `setData` call is needed.
+- **A focus change inside any `<webview>` ends the input-method word the user is typing
+  in the host.** Measured 2026-10-21, Electron 43.7.3, macOS 27.0 Pinyin through real
+  keys in a tart VM: with "nihao" mid-composition in a host terminal, a guest page's
+  `element.focus()` or `blur()` — from a CDP client (Playwright `click` on a button or
+  a field, `pressSequentially`, `evaluate`), from main's `executeJavaScript`, with or
+  without `Emulation.setFocusEmulationEnabled`, and after main's
+  `webContents.focus()` on the host — left the host with `compositionstart` and no
+  `compositionend`, and the Space that should pick 你好 typed nothing. The guest was
+  hidden (`visibility:hidden`) in another session's Workbench. A navigation with no
+  autofocus, a screenshot, an `evaluate` that moves no focus and a `fill` into the
+  already-focused field kept the word. Plain typing with no word open is not affected.
+  `webContents.getFocusedWebContents()` named that guest the whole time, while the
+  host's xterm textarea held the caret. A guest page's own script moving focus has the
+  same effect and no host-side hook can stop it.
 
 ## §11 `<webview>` guests: permissions
 
@@ -387,6 +579,18 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   that request no user-gesture flag; its own transient user activation lasts 5 s.
 - **`setPermissionCheckHandler` is what `Notification.permission` and
   `navigator.permissions.query()` read**, on page load, with no user action behind it.
+- **The check handler can only say granted or denied, never "prompt".** Returning `false`
+  makes `query()` read `denied` for microphone, camera, geolocation and notifications, so
+  a page that checks before it asks gives up without asking; returning `true` (or setting
+  no check handler) reads `granted` and lets any page list device names before the person
+  said yes (7 of 7 named, against 0 of 3 with `false`). A main-world patch that reads
+  `denied` as `prompt` makes such a page ask, and the request handler runs. Measured
+  2026-10-13 on Electron 43.7.3 in a hidden `BrowserWindow` with the fake media switch,
+  one launch per variant, patching `Permissions.prototype.query`; and 2026-10-14 in this
+  app's own `<webview>` guest, patching the `PermissionStatus.prototype.state` getter
+  (BB-C72: `denied` ×4 without the patch, `prompt` ×4 with it). There `status.name` is
+  Chromium's own name, not the one the page queried: `audio_capture` for `microphone`,
+  `video_capture` for `camera`; `geolocation` and `notifications` keep theirs.
 - **With no audio or video input device, `getUserMedia` rejects with `NotFoundError`
   before the request handler is asked** (measured on a Mac mini whose guest reported
   only `audiooutput`), so no prompt can appear.
@@ -424,6 +628,35 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   Chromium's folder-listing page is not wired in.
   `ses.fetch(request, { bypassCustomProtocolHandlers: true })` reaches that built-in
   loader without calling a custom `file` handler again.
+- **A `protocol.handle` callback that throws shows up as `ERR_UNEXPECTED` (-9)**, not
+  the error it threw. For a `file://` path that does not exist (a missing name, a path
+  through a file, a broken link), that `ses.fetch` rejects with an error whose text
+  holds `net::ERR_FILE_NOT_FOUND`; left uncaught, the guest fails with
+  `-9 ERR_UNEXPECTED`, while without the custom handler it fails with
+  `-6 ERR_FILE_NOT_FOUND`. A `Response` with status 404 and an HTML body is drawn as a
+  page, with no `did-fail-load`.
+- **The partition's `webRequest.onBeforeRequest` sees every `file://` load of a
+  guest, with that guest's `webContentsId`** — a main-frame load (address bar, CDP
+  `Page.navigate`, back/forward), an `<iframe>`, a `fetch` — even with a custom `file`
+  handler installed, and `cancel` stops it before the handler runs. The handler's own
+  `ses.fetch` shows up as a second request with no `webContentsId`. A history step
+  (`goForward`) to a `file://` entry is a fresh request, not a back/forward-cache
+  restore (seen once on 2026-10-25; no test holds it). An `http://` main-frame load started by the page itself (`location.href = …`)
+  and a `fetch` reach it the same way, and answering the callback later, after an async
+  DNS lookup, still holds the load until then. (Measured 2026-10-25, Electron's Chromium
+  in the e2e suite: E-RW-41 fails with either cancel removed.)
+- **No listener that can still cancel a request is told the IP it goes to**: the details
+  of `onBeforeRequest`, `onBeforeSendHeaders` and `onHeadersReceived` carry no `ip`
+  (read in Electron 43.8.1's `electron.d.ts`), and Chromium resolves the name on its own.
+  A host name can only be judged by a separate DNS lookup made first, so a name whose
+  answer changes between the two lookups (DNS rebinding) gets past such a check.
+- **`onBeforeRequest` cannot move a websocket.** A page's `new WebSocket('ws://127.0.0.1:A/x')`
+  reaches the listener with `resourceType: 'webSocket'` and the page's `webContentsId`;
+  answered `{ redirectURL: 'ws://127.0.0.1:B/x' }`, the socket still opens to A, `ws.url`
+  stays A's, and B never sees an upgrade. An http `fetch` redirected the same way reaches B.
+  Answered `{ cancel: true }`, the page gets `error` then `close` 1006 with no reason, and A
+  sees nothing. (2026-10-31, Electron 43.8.1, a hidden window on its own partition and two
+  local servers with a hand-written websocket upgrade; scratch script.)
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
@@ -563,14 +796,101 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `webContents.reload()` / `reloadIgnoringCache()`, an in-page `location.reload()`,
   `Page.navigate`, `Page.stopLoading`, Playwright's back/forward and DevTools' own reload
   of that guest each left the host alone.
+- **A page nobody sees can be captured whole, through CDP.** Measured 2026-10-19,
+  Electron 43.7.3, macOS 27.0 on a Retina screen (device scale 2), by a scratch main
+  script loading a 3200 px tall page (blue top, red bottom) from a `file://` path and
+  from a `127.0.0.1` server, with the Dock icon hidden:
+  - In a `BrowserWindow` built with `show: false`, a `WebContentsView` added to no
+    window (bounds set), and a `WebContentsView` inside a hidden window, `debugger`
+    `Page.captureScreenshot` with `captureBeyondViewport: true` and a clip of
+    `Page.getLayoutMetrics`' `cssContentSize` answered in about 0.2 s with the whole
+    page at device scale (2560×6400, the red bottom present). No window became visible
+    or focused (`getFocusedWindow()` stayed null).
+  - `webContents.capturePage()` gave only the viewport in the hidden window, and threw
+    "Current display surface not available for capture" for a view in no window or in
+    a hidden window. Making the hidden window as tall as the page
+    (`setContentSize`) and then `capturePage()` gave the whole page.
+  - With `paintWhenInitiallyHidden: false`, `capturePage()` threw the same error and the
+    CDP capture never answered. `webPreferences.offscreen: true` captured at scale 1; in
+    a view in no window it ignored the bounds (CDP saw a page 61 px wide) and
+    `capturePage()` came back empty. A view with no bounds set: "Cannot take
+    screenshot with 0 width."
+  - **One capture is at most 16384 device pixels on a side** (the GPU's
+    `max_texture_size`): at device scale 2, an 8000 px tall page captured
+    (2560×16000), an 8400 px one never answered. Past the limit the capture hangs
+    rather than fails, and the GPU process logs "Invalid size … max_texture_size=16384"
+    and restarts. Two ways under it,
+    both measured: `clip.scale` 0.5 (a 16000 px page as 1280×16000), or clips of at
+    most 8000 CSS px down the page (a 40000 px page as five 2560×16000 images in
+    1.3 s, the last ending in red).
+  - **A page that sends itself elsewhere while loading resolves `loadURL` early.**
+    Measured 2026-10-20, same Electron, a `WebContentsView` in no window loading pages
+    from a `127.0.0.1` server: a 302, a `location.replace` in the first script and a
+    `<meta http-equiv="refresh" content="0">` each resolved `loadURL` (none rejected)
+    while `isLoading()` was still true; after `did-stop-loading` the view showed the
+    page it was sent to. A `history.pushState` changed only the address. A redirect
+    from a 300 ms timer had not happened by `did-stop-loading` plus 0.8 s.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
   whichever comes first, and neither is thrown off (measured on Electron 43 /
   Chromium 150).
+- **One `debugger.attach` per guest; two users share it.** A second `attach` on the same
+  guest throws "Debugger is already attached to the target". Measured 2026-10-27,
+  Electron 43.8.1 / Chromium 150.0.7871.250, in the built app: with a real Playwright
+  client attached through Koloft's relay, main ran a whole element pick (below) through
+  the same attachment, with no attach or detach of its own; afterwards the client's
+  click, an element handle taken before the pick, a locator, a screenshot and a
+  navigation all still worked. The pick's `Overlay.*` events reach the client too, and
+  Playwright ignores them.
+- **Picking an element in a guest** (same measurement, plus a scratch main script with a
+  `<webview>` in a `show: false` window, input sent with `Input.dispatchMouseEvent`):
+  `Overlay.setInspectMode {mode: 'searchForNode'}` outlines the element under the mouse
+  and a click sends `Overlay.inspectNodeRequested {backendNodeId}`; the page's own click
+  handler ran 0 times. `CSS.getComputedStyleForNode` gave 481 properties. `DOM.getBoxModel`
+  is in viewport coordinates while the `Page.captureScreenshot` clip is in page
+  coordinates: with the page scrolled 1040 px, a clip straight from the box model came
+  back as an empty transparent picture; adding `Page.getLayoutMetrics`'
+  `cssVisualViewport.pageX/pageY` gave the element.
+- **A cross-origin iframe in a guest is its own target, and inspect mode does not reach
+  it from the guest's session.** Measured 2026-10-28, same Electron, in the built app,
+  with a page on `127.0.0.1` holding an iframe from `localhost` (its own renderer
+  process): with `Overlay.setInspectMode` on the guest's root session only, a click in
+  the iframe reached the iframe's page and no `inspectNodeRequested` came. From the
+  root session, `Target.getTargets` lists every target of the app (the host page too);
+  the iframe is `type: 'iframe'` with `parentId` the guest's own target id
+  (`Target.getTargetInfo`). `Target.attachToTarget {flatten: true}` on it gives a
+  session where the same inspect mode works: the click is held, and
+  `inspectNodeRequested` arrives with that session id. The iframe's box model is in its
+  own viewport; `DOM.getFrameOwner {frameId: <iframe target id>}` on the parent session
+  plus that owner's content box gives the offset in the guest.
+  - That attach sends `Target.attachedToTarget`, and its detach
+    `Target.detachedFromTarget`, on the guest's root session — the session a relay
+    client listens on. Passed on to a Playwright client that drives the page, they made
+    it drop its own frame for that iframe (measured: `frame.isDetached()` came back
+    undefined, the frame gone from `page.frames()`); kept from the client, its frame
+    still evaluated afterwards.
+  - The guest can attach to its own target the same way (`Target.attachToTarget
+    {targetId: <its own id>, flatten: true}` from its root session): inspect mode, DOM and
+    CSS work in that session (measured the same day, e2e BP-01). Iframes attached from
+    that session kept a Playwright client's own iframe frame alive (BP-08), which the
+    root-session attach above did not; that their announcements land on that session
+    rather than the root one is inferred from this, not read off the wire.
+  - `Page.captureScreenshot` from the guest's root session draws the iframe's area
+    transparent (a clip on a red button inside it came back all 0,0,0,0), also with
+    `captureBeyondViewport`. The guest's own `webContents.capturePage(rect)`, with
+    `rect` in the viewport's DIP, drew it (centre pixel the button's red).
+- **An agent's click inside a cross-origin iframe does not land through the relay**
+  (measured the same day: Playwright's `frame.click()` on a button in such an iframe
+  left the page's click counter at 0, with no element pick running).
 
 ## §17 Playwright as a CDP client
 
+- **A snapshot shows what a password box holds, in plain text.** After `playwright-cli
+  fill '#p' <text>` on an `<input type=password>` in a Workbench tab, `playwright-cli
+  snapshot` printed `textbox "pw" [active]: <text>`. So a secret left in a page field
+  reaches the session's transcript the next time it looks at the page. Measured
+  2026-10-15 with Koloft's playwright-cli through its relay on a `data:` page.
 - **What `connectOverCDP` expects** (measured against playwright-core 1.62 where
   marked): right after the handshake it sends `Target.getTargetInfo` with no `targetId`,
   asking for the browser's own target, and drops the connection on an error (measured).
@@ -580,6 +900,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   where two had just opened). A failed `Target.setAutoAttach` reads as "there is no
   browser" and rejects the whole connection. The handshake has 30 s in all, and the
   default command timeout is also 30 s.
+- **`playwright-cli` gives each action 5 s by default** (`timeouts.action: 5e3`,
+  navigation 60 s), read 2026-10-21 in the default config of the playwright-core that
+  `@playwright/cli` bundles in this repo's `node_modules`. A relay that holds a click
+  longer than that makes the agent's action fail on its side while the command still
+  runs later.
 - **Target id must equal main-frame id.** Playwright stores a page's session by target
   id and looks it up by main-frame id (crPage.ts); in Chrome both are the same 32-hex
   string, so made-up target ids break every page action with "Frame has been detached"
@@ -626,6 +951,20 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
   `open file://…` fails with that message on the endpoint alone and succeeds with the
   variable set to `1`).
+- **playwright-cli writes its files into `.playwright-cli/` in the working folder unless
+  `PLAYWRIGHT_MCP_OUTPUT_DIR` names another folder**, which it makes if missing. With the
+  variable unset, `open` in a git repo put its page snapshot at
+  `.playwright-cli/page-<time>.yml`; with it set, `open`'s snapshot (on the Workbench
+  relay and on a browser of its own) and `screenshot`'s png (on a browser of its own; on
+  the relay it hit the 5 s action limit) landed in that folder and the repo got nothing.
+  The daemon keeps the folder it was given at `open`: a later `screenshot` run without
+  the variable still wrote there. An explicit `screenshot --filename=x.png` is still
+  relative to the working folder, and the tracing commands use a fixed
+  `.playwright-cli/trace` (read in `coreBundle.js`, not run). Under Claude Code's own
+  Bash sandbox (`sandbox.enabled`, CC 2.1.310) `open` fails before any of this, with
+  `EPERM` on its daemon file under `~/Library/Caches/ms-playwright/daemon/`, whether the
+  variable is set or not. (Measured 2026-10-25 with @playwright/cli 0.1.22 as Koloft
+  0.54.0 ships it.)
 - **Two installs of playwright-cli share a daemon only through a `.playwright`
   folder.** Without one, each install's own root names its bucket, so the same session
   name in the same folder gave two daemons, each reading its own page. With a
@@ -711,6 +1050,31 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **About 16 live WebGL contexts per renderer process**, shared by every tab in it.
   Past that Chromium kills the oldest ("Too many active WebGL contexts. The oldest
   context will be lost."), which scrambles that terminal's glyphs.
+- **A WebGL terminal canvas costs the GPU process several times its own pixels, and
+  disposing the addon does not give that back.** Read with `footprint <GPU process
+  pid>` on a hidden e2e window, devicePixelRatio 2 (2026-11-11, Electron 43, addon
+  0.20.0-beta.298, macOS 27.0). At a 1080×1632-pixel canvas (7 MB a buffer) four WebGL
+  terminals cost 87 MB more than four DOM-drawn ones and eight cost 114 MB more than
+  four: 22–28 MB each (one run a case; the empty app's own reading moved between 171 and
+  256 MB). At 2100×2720 pixels (23 MB a buffer) three cost about 370 MB:
+  about 124 MB each. Most of it is `IOSurface` (the drawing buffers). The glyph atlas is
+  uploaded into every context too (`GlyphRenderer` keeps one texture per atlas page per
+  canvas), but it is the smaller part: seven 512-pixel pages of CJK added about 50 MB
+  across four canvases. After `WebglAddon.dispose()` on three of four such terminals the
+  footprint was unchanged at 1 s and down 89 MB at 15 s (the canvases wait for garbage
+  collection); with `WEBGL_lose_context.loseContext()` called right after the dispose it
+  was down 155 MB at 1 s and 248 MB at 15 s, back at the empty app's level. Every figure
+  here was resident ("Dirty"); `footprint` printed no swapped column in any run, so
+  this says nothing about memory the system had already compressed. `dispose()` removes the addon's
+  `webglcontextlost` listener first, so a `loseContext()` after it fires no
+  `onContextLoss`.
+- **Giving a hidden terminal a new WebGL context is cheap when the shared atlas is left
+  alone.** Switching to a session tab whose context had been lost and disposed, the
+  first render came 17–37 ms after the click and the longest frame was 24 ms, with a
+  screen of coloured CJK, at both canvas sizes above (15 and 12 switches); a tab that
+  kept its context took 13–24 ms. Clearing the shared atlas 50 ms after each such
+  hand-back made the same switch block for
+  50–60 ms and draw the screen twice (same day and versions).
 - **GPU memory can be lost with no event.** Wake from sleep, screen unlock, and adding,
   removing or changing displays (these come in bursts) can wipe texture memory; a
   minimized or fully covered window can lose its WebGL drawing buffers. No
@@ -740,10 +1104,24 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §21 xterm.js
 
+- **`@xterm/headless` names an entry file it does not ship.** In 6.1.0-beta.302 its
+  `package.json` gives `"module": "lib/xterm.mjs"`, but the package holds only
+  `lib-headless/xterm-headless.js` and `.mjs`; Vite (electron-vite and vitest) picks
+  `module` and fails with "Failed to resolve entry for package" (seen 2026-10-17 on
+  `npm run build`).
+
 - **Write buffer**: xterm takes in about 5–35 MB/s and silently throws away written
   data past a hard cap of about 50 MB (`DISCARD_WATERMARK = 50000000` in
   `src/common/input/WriteBuffer.ts`, read 2026-09-24 in 6.1.0-beta.302). Its
   flow-control guide says to keep about 500 KB or less pending.
+- **A resize drops an empty write's callback.** `write('', cb)` queues an empty chunk;
+  `resize` first runs `WriteBuffer.flushSync()`, whose `while (chunk = shift())` loop
+  stops at that falsy `''` and then empties the queue and its callbacks, so `cb` never
+  runs (read in `lib/xterm.mjs` and `src/common/input/WriteBuffer.ts`,
+  6.1.0-beta.302, 2026-11-10). Seen in `agent-exit.spec.ts`: an agent that exited
+  before its tab's terminal mounted never got its exit notice, because the terminal's
+  first fit resized it right after the empty write. A non-empty write keeps its
+  callback.
 - **Resize inside synchronized output shows black.** xterm holds back every row refresh
   while DEC mode 2026 is on, until `?2026l` or a 1000 ms safety timeout, but
   `RenderService.handleResize` ignores the mode: under WebGL it resets `canvas.width`,
@@ -764,23 +1142,37 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   for an alt-screen TUI the rows that grow back stay blank.
 - **xterm answers some queries by itself** (focus reports, mouse reports, DA/CPR) on the
   same `onData` path as real keys, so pty input alone cannot show that a person typed.
+  Each answer is one `onData` call of its own. The CSI answers end in `R` (cursor
+  position), `c` (device attributes), `n` (status, colour scheme), `$y` (mode report),
+  `t` (window size) or `u` (keyboard flags); the rest are OSC (`ESC ]` … BEL or ST) and
+  DCS (`ESC P` … ST). A person's key can share the `R` shape: xterm sends Shift+F3 as
+  `ESC [ 1 ; 2 R`. (Read from `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`,
+  2026-11-01.)
 - **xterm's hidden textarea keeps the Tab key**: focus that reaches a terminal does not
   move on, so a forward Tab walk has to start past it.
 - **XTVERSION**: the query is `CSI > 0 q` (or `CSI > q`) and a reply is
   `DCS > | <name> ST` (xterm docs); xterm ≥ 6.1 answers `xterm.js(<version>)`. xterm
   always answers DA1 (`CSI 0 c`).
+- **xterm does nothing with OSC 52 (set the clipboard)** unless a handler is registered:
+  its built-in OSC handlers are 0, 1, 2, 4, 8, 10, 11, 12, 104 and 110–112 (read from
+  `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`, 2026-11-05); the clipboard addon is a
+  separate package.
 - **OSC 8 links**: xterm's own OSC 8 provider wins over the web-links addon, and with no
   `linkHandler` it falls back to a native `confirm()` plus `window.open`.
 - **Under the WebGL renderer the terminal has no text nodes**; `innerText` is empty, so
   read the buffer through the xterm instance.
 - **xterm's CSS hard-codes the IME composition box** (`.xterm .composition-view`) to
   `background:#000`, a black box over a themed terminal while typing through an IME.
+- **xterm turns no ⌘ key into a line edit.** With ⌘ held, ←, →, ↑ and ↓ send nothing
+  to the program, and ⌘⌫ sends DEL (0x7f), the same as a plain ⌫, so it deletes one
+  character. Read from xterm 6.1.0-beta.302's `src/common/input/Keyboard.ts`
+  (2026-11-09).
 
 ## §22 xterm.js input method (IME) defects
 
 Defects 1–3 are from the upstream xterm.js issues and PRs named in them. Defects 4–7 come
 from reading `CompositionHelper.ts` and from Koloft's own IME (input method) runs, no date
-recorded; inferred, not checked.
+recorded; inferred, not checked. Defect 8 was measured, as it says.
 
 1. The preedit is anchored to a stale cursor, because `updateCompositionElements`
    returns early while not composing (xtermjs/xterm.js#5454, fixed upstream by #5759).
@@ -803,6 +1195,21 @@ recorded; inferred, not checked.
    by one `setTimeout(0)` drains it without losing the text: xterm's
    `_finalizeComposition` reads the textarea in its own `setTimeout(0)`, queued first
    because its listener was added first (defect 6), so it has sent the text by then.
+8. A key whose keydown is handled before that `setTimeout(0)` runs — the commit and the
+   key queued together on a busy renderer — reaches the app's custom key handler
+   first, then `CompositionHelper.keydown`. Unless its keyCode is 16, 17, 18, 20 or
+   229, and while `_isSendingComposition` is set, that calls
+   `_finalizeComposition(false)`: exactly one `onData` with the composition text (an
+   empty string fires too, as `triggerDataEvent` does not check), and then the key's
+   own data on the same keydown; the timer then sends nothing. So a window that
+   swallows `onData` until the timer drops that key too. Setting
+   `_isSendingComposition` to false once xterm's `compositionend` listener has run
+   stops both sends, the timer's and the keydown's; while it still reads true, a
+   keydown would still send the text again. Measured 2026-11-06 on xterm
+   6.1.0-beta.302, Electron 43.8.6, in the e2e suite: CDP `Input.insertText` and key
+   events sent without waiting between them lost an Enter, and then a letter, 3 of 3
+   times each while the window swallowed what followed (ime-composition.spec.ts); the
+   call order was read in `CoreBrowserTerminal.ts` `_keyDown` and `CompositionHelper.ts`.
 
 State in the shipped `@xterm/xterm` 6.1.0-beta.302 (read 2026-09-24 in
 `src/browser/input/CompositionHelper.ts`): `updateCompositionElements` still returns
@@ -829,12 +1236,51 @@ inferred, not checked.
   fires only from a page merge, once per deleted page, to every addon sharing the atlas.
   After a merge the renderer heals on the NEXT frame, so output that stops on the merge
   frame leaves the screen garbled until something asks for a refresh.
-- **A terminal joining or leaving churns the shared atlas**: pages are added when an
-  xterm mounts and dropped or merged when one is disposed, and a merge that lands on a
-  frame no remaining terminal redraws leaves them garbled (seen: closing a Workbench
-  tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
+- **A terminal joining can churn the shared atlas, and one leaving has been seen to
+  garble the others**: pages are added when an xterm mounts, and a merge that lands on a
+  frame no remaining terminal redraws leaves them garbled (seen, addon version not
+  recorded: closing a Workbench tab scrambled the Claude TUI). The dispose itself
+  changes no page of an atlas that still has an owner (next bullet). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **A renderer disposed while another terminal still owns its atlas leaves that atlas
+  untouched.** `WebglRenderer`'s dispose ends in `removeTerminalFromCache`, which only
+  takes the terminal off the atlas entry's `ownedBy` list; the atlas is disposed only
+  when the leaving terminal was its last owner, and then nothing draws from it. The
+  rest of the dispose deletes that canvas's own program, buffers and textures (read
+  2026-11-11 in `@xterm/addon-webgl` 0.20.0-beta.298: `CharAtlasCache.ts`,
+  `WebglRenderer.ts`, `GlyphRenderer.ts`). In the hidden e2e window, which §20 says has
+  not been seen to show such damage, a shown session terminal kept its picture while a
+  hidden one sharing its atlas was disposed and its context lost, with no atlas clear
+  (`webgl-terminal.spec.ts`, same day).
+- **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
+  `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
+  meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
+  cleared page 0 stays at (0, 0) when new glyphs land on a later page. After heavy CJK
+  output and one earlier clear, page 0 was an 8192-px merged page at (0, 0), so every
+  later clear kept the old cache: glyph textures wiped the way the GPU loses them stayed
+  blank (ink 73410 → 0 → 510 pixels after `webgl:repair`) until the app restarted. Making
+  page 0's `currentRow.x` non-zero before the call lets the clear run (ink back to
+  73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
+  Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
+  the same guard is still on xterm.js master that day.
+- **Session terminals share one atlas; Workbench shells use another.** The two draw on
+  different backgrounds (`#070708` and `#0c0c0d`), and the background is part of the
+  atlas key, so output in a Workbench shell never adds, merges or clears a page of the
+  atlas a Claude Code screen draws from. Measured 2026-11-09, addon 0.20.0-beta.298.
+- **With every Koloft atlas repair switched off, a shown window kept its glyphs.** In a
+  shown (not hidden) window on a real Mac display, 16 terminals, one Claude Code screen
+  of 952 coloured CJK glyphs was grabbed after: opening a session, opening and closing a
+  Workbench shell, 38k distinct coloured CJK glyph keys painted screen by screen into
+  another session tab sharing its atlas (100 page merges), closing a tab, the Workbench
+  opening, going full width, back and closing, and a sleeping tab waking. With join,
+  leave and full repairs all made no-ops, every glyph matched the first grab
+  (per-glyph correlation ≥ 0.88; 3 runs, and the same with the repairs on). The same
+  check flagged 81 of 84 glyphs when three rows were shifted by one glyph, and all 968
+  when the atlas was cleared without the terminal rebuilding its texture coordinates
+  (what addons before `pageLayoutVersion` did) or the glyph textures were wiped.
+  Measured 2026-11-09, Electron 43, addon 0.20.0-beta.298, which makes every renderer
+  sharing an atlas rebuild its model on a clear, merge or eviction.
 
 ## §24 DOM, CSS and form controls in Chromium
 
@@ -870,6 +1316,31 @@ inferred, not checked.
   `<svg><image href="https://…"/></svg>` works as a network beacon.
 - **CSS `image-set('https://…' 1x)` in a `style` attribute fetches from the network
   without ever spelling `url(`.**
+- **A `title` tooltip on macOS shows only now and then while the mouse rests inside the
+  element** (electron/electron#49843). Measured 2026-10-15 in a tart VM (macOS 27.0,
+  Electron 43.7.3, Chromium 150.0.7871.250, `titleBarStyle: 'hiddenInset'`), the real
+  mouse moved with `CGEventPost` and rested 2 s, a tooltip counted when Electron owned a
+  level-103 window (checked against screenshots), 8 hovers per fresh launch: a plain
+  `<button title>` hovered at its centre showed 1, 5 and 1 of 8 in three runs; at its very
+  left or right edge 24 of 24; with `position: relative` and an `::after` cover
+  (`content: ''; position: absolute; inset: 0`) on the element 16 of 16; the same cover
+  with `pointer-events: none` 6 of 16; a `no-drag` button inside a `drag` bar 16 of 16, so
+  the drag region is not the cause.
+- **When an overlay goes away from under a still mouse, the element now under it gets
+  `mouseenter` but no `mousemove`.** Measured 2026-10-31 (Electron 43.8.1, the hidden
+  e2e window, the mouse placed with Playwright): a modal's backdrop closed by Enter
+  over a sidebar row fired the row's `mouseenter`, and no `mousemove` reached `window`
+  until the mouse was moved again (`sidebar-hover-menu.spec.ts` T-HM-04, red before
+  hover-intent waited for a move, green after). Not yet measured with a real mouse on a
+  shown window.
+- **`content-visibility: auto` does not skip anything on the frame an element first
+  appears**: Chromium lays out every such element once before it decides which are off
+  screen. Measured 2026-11-07 (Electron 43.8.6, the hidden e2e window, a Chrome trace of
+  switching to Changes with 100 changed files): placeholders that held each file's code
+  as visible text (100 × 400 lines) cost one 158 ms forced layout of only 434 dirty
+  objects; the same text in a `hidden` element, the placeholder sized by row count, cost
+  no task over 50 ms. A `hidden` element's text is still in the DOM, so a TreeWalker (DOM
+  ⌘F) finds it, but its ranges have no box and copy leaves it out.
 
 ## §25 React and zustand
 
@@ -883,6 +1354,48 @@ inferred, not checked.
   LAST one in its key map and never deletes the first; once the list changes shape
   ahead of it, the first one's nodes stay in the document for good (seen live: one
   session's rows stacked twice).
+- **After a render that did not start from a user event (a promise resolving, a
+  timer), React 19 commits the DOM, yields to the host, and runs that render's
+  `useEffect`s in a later task.** In that gap the screen already shows the new state,
+  while a `window` listener an effect keeps up to date still holds the old one, so a
+  key pressed then is judged by the old state, and a `focus()` an effect makes has not
+  happened yet. `useLayoutEffect` runs inside the commit and has no gap. A render from
+  a click or key runs its effects at the end of the commit, with no gap either.
+  Measured 2026-11-03, react-dom 19.3.1 in headless Chrome 156 (a page bundled with
+  esbuild, driven by Playwright): a `keydown` dispatched from the MutationObserver
+  callback that saw the new text, and again from a `setTimeout(0)` after it, was judged
+  by the old state 3 of 3 runs with `useEffect` and by the new state 3 of 3 runs with
+  `useLayoutEffect`. A ref written in such an effect (as `launchLock` is) lags the same
+  way: read from that MutationObserver callback it still held the old value 3 of 3
+  runs with `useEffect`, the new one 3 of 3 with `useLayoutEffect`. For a click, a
+  `window` click listener added by the effect of the render that click caused receives
+  that same click, with `useEffect` and `useLayoutEffect` alike (3 of 3 each), so moving
+  such an effect to a layout effect does not change what a click does.
+  **A zustand store update has no such gap.** zustand reads the store through
+  `useSyncExternalStore`, whose render React runs on the sync lane and flushes that
+  render's `useEffect`s inside the commit, so only a component's own `useState` set
+  from a promise, an IPC callback or a timer (a hover delay) has the gap. Measured 2026-11-04, react-dom 19.3.1,
+  zustand 5.0.16, in headless Chrome 156 the same way as above, and again in jsdom
+  28.1.0 under vitest with React's `setImmediate` delayed 40 ms: a `window` Escape
+  listener added by `useEffect` received an Escape dispatched from the
+  MutationObserver callback that saw the new element 3 of 3 runs when a store update
+  showed it, and 0 of 3 when a `useState` set from a resolved promise did
+  (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
+  lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
+  `useEffect`. Checked 2026-11-05 the same jsdom way (`ipcShownDialogKeys.test.tsx`):
+  a `useState` set from a `setTimeout` callback lags like one set from a promise. The
+  tip card, shown from a timer, got an Esc in its `useEffect` listener with React's
+  tasks delayed (one run of a throwaway unit case, not kept; not repeated), as its
+  `useLayoutEffect` sets state in the same commit. Why that closes the gap — React runs
+  any waiting `useEffect`s before it starts the next render — is inferred from that one
+  run, not checked.
+- **Chromium drops focus to `body` when the focused field or button becomes
+  `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
+  the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
+  Chrome 156: focus on an input, set `disabled`, and one task later
+  `document.activeElement` is `body`; it stays `body` after `disabled = false`. So a
+  dialog that disables its fields while it works must focus one again when it
+  unlocks, or Enter lands on `body` (`sessionLaunchButtons.test.tsx` acts this out).
 - **zustand's `set()` notifies every subscriber even when nothing changed**, because it
   merges into a new state object (seen: a queued hint card appeared one tick early).
 
@@ -894,13 +1407,41 @@ inferred, not checked.
   `startOnLoad`, `maxTextSize`, `suppressErrorRendering` and `maxEdges` but not
   `htmlLabels` or `themeCSS`, so a document's own `%%{init}%%` can set those two. With
   `htmlLabels` on, labels go in `<foreignObject>`, which DOMPurify strips; in mermaid 11
-  the root key wins, but the flowchart renderer still reads `flowchart.htmlLabels`
-  directly in two places. A document's `%%{init}%%` is applied to the process-wide
-  config at the start of `render()`, so two renders at once can leak settings. Labels
-  are measured with `getBBox`, which needs a laid-out node; with no container argument
-  mermaid adds its own scratch `<div>` to `<body>`. `fontFamily` lands in SVG
-  presentation attributes while widths are measured, and a CSS `var()` there is not
-  reliably honoured.
+  and 12 the root key wins, but the flowchart renderer still reads
+  `flowchart.htmlLabels` directly in two places. A document's `%%{init}%%` is applied
+  to the process-wide config at the start of `render()`, so two renders at once can
+  leak settings. Labels are measured with `getBBox`, which needs a laid-out node; with
+  no container argument mermaid adds its own scratch `<div>` to `<body>`. `fontFamily`
+  lands in SVG presentation attributes while widths are measured, and a CSS `var()`
+  there is not reliably honoured. (All of the above re-read in mermaid 12.3.0's
+  `dist`, 2026-11-12.)
+- **mermaid 12 changed how diagrams look by default** (12.3.0 against 11.17.0,
+  2026-11-12: both default configs dumped from `mermaidAPI.defaultConfig` and diffed,
+  then 34 samples drawn in the built app on each). The root `layout` went from `dagre`
+  to `elk`; the sections `flowchart`, `class`, `state`, `er`, `requirement`,
+  `sequence`, `venn` and `swimlane`, and the new kinds `usecase` and `agentflow`, each
+  got a `look: 'neo'` and a `theme: 'redux-color'` of their own (the root `theme` and
+  `look` stayed `default` and `classic`), and `state` a `layout: 'elk'`;
+  `flowchart.wrappingWidth` went from 200 to 120, and `flowchart`
+  and `state` gained `minNodeWidth: 120` (state labels wrapped at
+  `flowchart.wrappingWidth` in 11, at `state.wrappingWidth` in 12). `theme`, `look` and
+  `layout` are resolved per diagram (`resolveAppearance` in `config.ts`): the
+  document's own directives first, then what `initialize` was given, then the
+  defaults, and inside each of those the diagram's own section beats the root key. So
+  a root `theme` and `look` given to `initialize` beat every section default. A root
+  `layout` given to `initialize` would too, but it also reaches mindmaps, which
+  otherwise draw with `cose-bilkent`: it turns a radial mindmap into a top-down tree,
+  so `layout` is set in each section that draws with it. `flowchart-elk` draws with
+  dagre under that setting, as it did in 11, which shipped no ELK. With all of this
+  set, a top-down state diagram whose edges carry labels is still drawn wider than in
+  11 (the labels of one rank sit side by side in one row, where 11 staggered them),
+  flowchart circles are about 4 px larger, a mindmap's branches land a few px
+  elsewhere, and a swimlane is laid out anew in the same colours; no setting found
+  that undoes these. A document that asks for `layout: elk` itself now gets ELK, where
+  11 fell back to dagre. In Koloft's build ELK is a 3.4 MB chunk of its own, loaded
+  the first time a diagram is laid out with it: one that asks for it, or one of the
+  kinds new in 12 (`usecase`, `agentflow`), which read the root `layout` (read from
+  `dist`, not drawn).
 - **KaTeX**: when it refuses a formula, the `.katex-error` element's text is a
   ParseError message with combining marks stitched through the source; the untouched
   source is in its `title` attribute. Its default `maxSize` is Infinity, so an untrusted
@@ -922,6 +1463,13 @@ inferred, not checked.
   never-answering `ext::` remote.
 - **`execFile` gives the child an open stdin pipe that is never closed**, so a child that
   reads stdin blocks until the timeout.
+- **Input written to a child's stdin that the child exits before reading raises `EPIPE`
+  on the stdin stream, and with no `'error'` listener there it is an uncaught exception.**
+  Measured 2026-10-29 (Node 24.13.0, macOS 27.0): `/usr/bin/ssh -F /dev/null -o
+  BatchMode=yes -p 1 127.0.0.1 cat` (connection refused) given 4 MB through `execFile`
+  then `stdin.end(buf)` raised it in 30 of 30 runs, exit code 255; with
+  `stdin.on('error', () => {})` 0 of 30, same exit code. Pinned by a unit test with a
+  fake `ssh` that exits at once.
 - **`err.code` in `execFile`'s callback**: a number for the child's exit code; a string
   when Node could not run it (missing binary, output past `maxBuffer`); absent when it
   was killed.
@@ -930,6 +1478,13 @@ inferred, not checked.
   20 000-file node_modules was 1 240 022 bytes).
 - **`execFileSync` with `cwd: undefined` quietly runs in `process.cwd()`** (seen: a
   fixture helper ran `git init` and a commit in the checkout it was started from).
+- **On macOS a server holding a port on one address does not stop a bind on another**, so
+  "is this Mac port free" needs a test bind on each of the four. Measured with
+  `net.createServer().listen({ host, port, exclusive: true })`: a server on `::`
+  (Node's default, both families) blocks only a test bind on `::` and on `0.0.0.0`; one on
+  `0.0.0.0` blocks only `0.0.0.0`; one on `127.0.0.1` only `127.0.0.1`; one on `::1` (and one
+  on `localhost`, which lands there) only `::1`. (2026-10-31, Node 24.13.0
+  on macOS 27, a scratch script; pinned by a unit test.)
 - **`https.get` throws synchronously on a non-https URL**; during a redirect that throw
   is inside the parent response callback and escapes to `uncaughtException`.
 - **A failed `fetch`'s error `cause` chain can turn the request options into text,
@@ -955,14 +1510,34 @@ inferred, not checked.
   written 500 ms later it was seen in 40 of 40. The same test failed on the GitHub macOS
   runner in 4 of 5 CI runs that day. A test that drops a file right after starting a
   watcher writes it again until it is seen.
+- **A folder watch reports files renamed into place back to back in the order they were
+  written, but one `fs.readFile` per event finishes in any order.** Three drops written
+  with `writeWholeBeforeVisible` one after another: the watch events came in write
+  order in every one of 600 rounds that saw events, while the handlers, each called
+  when its own read finished, ran out of order in 247 of 300 rounds (under 1 ms apart),
+  133 of 300 (same, 8 CPU burners), 40 of 300 (30 ms apart) and 3 of 300 (100 ms apart).
+  Measured 2026-10-22 (Node 24.13.0 under vitest, macOS 27.0) with a throwaway probe on
+  `watchJsonDrops`. So a reader that must keep write order reads one drop at a time, in
+  event order; the drop's own `ts` is whole seconds and cannot sort them. File mtime
+  can: 1000 rounds of 12 drops written back to back in one process (write a `.tmp`,
+  rename it into place) gave 11,000 neighbour pairs with no tie and none out of order.
+  Measured 2026-10-28 (Node 24.13.0, macOS 27.0, APFS in the temp folder) with a
+  throwaway probe that stat'ed each drop after the round.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
+- **On macOS a recursive folder watch names a changed file in the same Unicode form
+  `readdir` gives it**, so a folder path built from the event matches the one built from
+  a listing: a folder named `データ` made in decomposed form (NFD) and one in composed
+  form (NFC) were both reported for a file written inside them exactly as `readdir`
+  spelled them. Measured 2026-11-07 (Node 24.13.0, macOS 27.0, APFS in the temp folder)
+  with a throwaway probe.
 - **A session's two start notes can go unreported.** With the launch line typed about
   0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
   never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
   while the files were on disk; the tab then never bound. A worktree-exit case that
-  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of both
-  folders finds them.
+  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of the
+  shim's folder finds the registration; claude's start is also a line in the tab's
+  status log (CC§1), which a 1 s poll of every status log finds.
   (2026-10-09, Node 24.13.0 in Electron 43, macOS 27.0.1; files listed from the e2e
   when a row stayed pending.)
 
@@ -975,6 +1550,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **node-pty tears down its socket about 200 ms after exit**
   (`DESTROY_SOCKET_TIMEOUT_MS = 200` in `lib/unixTerminal.js`), so a pty paused at exit
   can lose its last output.
+- **`onData` delivers everything before `onExit`.** Measured 2026-11-07 (Electron 43.8.6
+  run as node, node-pty 1.1.0, macOS 27.0.1): 60 runs of a shell printing 2 MB and
+  exiting at once, watched for 400 ms after `onExit`, got 0 bytes after it. So code
+  that sends a pty's held output at `exit` has seen all of it.
 - **`.process` is typed as string but can be `undefined`** on macOS: it is a native read
   of the tty's foreground process, and returns `undefined` between two commands (the
   darwin branch falls back to the spawn file only for `kernel_task`); it does not
@@ -991,6 +1570,13 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
   Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
   child in the probe.
+- **`kill()` is one SIGHUP and nothing after it.** A pty program that ignores SIGHUP
+  keeps running with its terminal gone. Measured 2026-10-28 (Electron 43.8.1, node-pty
+  1.1.0, macOS 27.0) in the e2e app: a Workbench shell that `exec`ed a script with
+  `trap '' HUP` was still alive 20 s after its tab closed. The pty's pid leads its own
+  process group, so `kill -9 -<pid>` reaches it and whatever it started in that group;
+  a job an interactive shell put in a group of its own is not in it. macOS `pgrep` has
+  no session-id filter (`-s`), so the whole session cannot be listed that way.
 
 ## §30 git
 
@@ -1008,6 +1594,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **`git check-ignore`**: `-z` is only valid with `--stdin` (with pathspecs git exits
   128). It exits 1 with empty
   output when nothing is ignored — a normal answer — and 128 outside a repo.
+  Given names as arguments, it prints any name with a non-ASCII character or a `"`
+  quoted and escaped (`秘密.txt` comes back as `"\347\247\230\345\257\206.txt"`);
+  with `-z --stdin` every name comes back exactly as sent. Outside a repo it exits
+  before reading stdin, so writing 5,000 names (~160 KB) to it fails with `EPIPE`, which
+  crashes Node unless the stdin stream has an `error` handler. With
+  `core.precomposeunicode` (on by default in a macOS repo) git matches ignore rules
+  against the composed (NFC) form of a name, as `git status` and `ls-files` show it;
+  a name read from disk in decomposed (NFD) form and sent on stdin as-is matches no
+  rule, though sent as an argument it is composed first. (Measured, git 2.54.0,
+  macOS, 2026-10-25.)
 - **`git ls-files`**: `--others` (and `--ignored`) prints a nested repository as one
   `dir/` entry. Run with `-C <dir>` it lists only files under that folder, relative to
   it, while `git diff --name-status` prints toplevel-relative paths for the whole repo
@@ -1022,10 +1618,33 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `gitdir: <repo>/.git/worktrees/<name>` (a submodule: `.git/modules/<name>`); the
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
+- **A commit writes nothing inside the checkout's own folder, only under its git dir**
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  there, plus the branch ref, its log and new objects in the common `.git`. For a
+  linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
+  worktree's folder, so a folder watch on the worktree sees no commit at all.
+  **`logs/HEAD` moves on every move of HEAD and only then**: `fs.watchFile` (500 ms
+  poll) on it fired about 260 ms after a commit in a plain checkout and in a linked
+  worktree, and also on `commit --amend` and `reset --hard`; `git status` and
+  `git add` left it alone. **A plain `git status` rewrites `index`** whenever a
+  tracked file's time changed since the index was written (it did so on two runs in
+  a row), while `status` and `diff` run with `GIT_OPTIONAL_LOCKS=0` touched nothing in
+  the git dir — so a watch on `index` would fire on every status line refresh, and one
+  on `logs/HEAD` does not. (Measured 2026-11-08, git 2.54.0, macOS APFS, on a
+  throwaway repo with one linked worktree.)
 - **A worktree made inside the repo (under `.claude/worktrees/`) is not ignored by
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
 - **`git worktree add <path>` refuses a path that already exists.**
+- **`git worktree add <path>` also refuses a path whose folder was deleted with `rm -rf`
+  while git still registers it** ("is a missing but already registered worktree; use
+  'add -f' to override, or 'prune' or 'remove' to clear"; `git worktree list` shows it
+  `prunable`). `git worktree remove <path>` on that missing folder clears the
+  registration and keeps the branch, after which `add` works; it matches the
+  registration through a symlinked spelling of the path (`/var/…` for a tree added as
+  `/private/var/…`), answers "is not a working tree" for a path git never registered,
+  and refuses a locked one. A tree deleted with `git worktree remove` leaves nothing
+  registered. (Measured, git 2.54.0, macOS, 2026-10-18, on a throwaway repo.)
 - **`git worktree remove` (no `--force`) removes a tree whose only extra files are
   ignored** (`node_modules/`, `out/`), and refuses one with uncommitted or untracked
   files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
@@ -1039,10 +1658,67 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
+- **`git worktree remove` that cannot delete a file still unregisters the tree**: a
+  read-only folder anywhere inside (`chmod 555`, ignored or tracked), a read-only parent
+  folder, or a `chflags uchg` file makes it exit 255 with one line on stderr,
+  `error: failed to delete '<tree>': Permission denied` (`Operation not permitted` for
+  `uchg`). By then git has deleted `.git/worktrees/<name>`, so the leftover folder is
+  no worktree: `git worktree list` no longer shows it, its branch stays, and a second
+  `git worktree remove`, `--force --force` too, answers "is not a working tree". Only
+  deleting the folder by hand (after `chmod -R u+w`) finishes it. Whether the tree's
+  own `.git` file is gone follows the folder's read order: on macOS it stayed, so git
+  run inside fails (`status` exits 128); on Linux it went, so git run inside finds the
+  repository above it and reads that one's HEAD and status. A process whose cwd is
+  inside the tree, holding a file there open, does not stop the removal on either.
+  Apple's git prints that line in English even under `LANG=zh_CN.UTF-8`, and the git
+  Koloft ships has no `share/locale`; a remote machine's git with its translations
+  installed is not probed.
+  (Measured 2026-10-27 on throwaway repos as a non-root user: git 2.54.0 on macOS
+  APFS; git 2.39.5 on Debian 12 in the e2e sshd Docker image.)
+- **A half-removed tree can lose its `.git` file first** (seen once in 42 kills of
+  `git worktree remove --force` on git 2.x, 2026-10-24; not again in 186 kills at
+  100–220 ms on git 2.54.0, 2026-10-26). Git run inside that folder then reads the
+  parent checkout around it: `git rev-parse --show-prefix` prints the folder's path
+  inside the parent (`.claude/worktrees/<name>/`) where a worktree's own top prints an
+  empty line, `symbolic-ref HEAD` names the parent's branch, and `status` lists the
+  parent's changes. `git worktree remove [--force]` refuses it (`validation failed,
+  cannot remove working tree: '<path>/.git' does not exist`) and `git worktree list`
+  marks it `prunable`. **`git worktree repair <path>`, run in the parent, writes the
+  `.git` file back but exits non-zero** (`repair: .git file broken: <path>`); afterwards
+  `status` lists the deleted files as ` D` and `git worktree remove --force` removes the
+  folder and its registration. Once the registration under `.git/worktrees/<name>` is
+  gone too, `repair` cannot write the file back. (Measured 2026-10-26
+  with the `.git` file deleted by hand, on git 2.54.0 macOS and git 2.39.5 Debian 12 in
+  Docker, on a throwaway repo.)
+- **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
+  or pruned, and only then**: a repo with none has no such folder, `git worktree add`
+  creates it, and the last `remove` or `prune` deletes it again. A checkout or a lock
+  inside a worktree, `git worktree move`, and an `rm -rf` of a worktree's folder (which
+  `git worktree list` then shows as `prunable`) leave it as it was. (Measured, git 2.54.0,
+  macOS APFS, 2026-10-17, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
-  existence and mtime show whether a fetch ran.
+  existence and mtime show whether a fetch ran. **A failed fetch writes it too** (0
+  bytes), so its mtime says a fetch was tried, not that one worked — read it before
+  fetching. With `BatchMode=yes` and no askpass, a fetch the machine has no credentials
+  for fails at once with exit 128 and never waits: `Host key verification failed.` (ssh
+  origin, host not in `known_hosts`, 0.4 s), `Permission denied (publickey).` (no key,
+  0.6 s), `could not read Username … terminal prompts disabled` (https needing a login,
+  0.3 s). (2026-10-06, git 2.39.5 on Debian 12 in the e2e sshd Docker image, reached
+  with `/usr/bin/ssh` and `SshHost`'s options; a public https origin fetched in 1.6 s.
+  The 0-byte `FETCH_HEAD` also came from a fetch of a missing local path with git 2.54.0
+  on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
+- **After a squash merge, a pruned fetch makes the branch's commits look unpushed**: the
+  squash commit on `main` is a new commit, so the branch's own commits are reachable only
+  from the branch and its `origin/<branch>` copy. Once the server deletes the branch and
+  anything runs `git fetch --prune`, `origin/<branch>` goes, and
+  `git log <branch> --not --exclude=<branch> --branches --remotes` lists every one of
+  them, even after local `main` fast-forwards to the squash commit. A plain
+  `git fetch origin main` leaves `origin/<branch>` in place. `git log --ignore-missing`
+  skips a `^<sha>` whose object the repo does not have instead of exiting 128.
+  (2026-10-22, git 2.54.0, macOS, on a throwaway bare remote with a second clone doing
+  the squash, push and branch delete.)
 
 ## §31 ripgrep and git grep
 
@@ -1137,12 +1813,44 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
   listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
   an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh pr list --repo o/r --state merged --head <branch> --json headRefOid`** still
+  finds a pull request after GitHub deleted its branch on merge, and prints
+  `[{"headRefOid":"<sha>"}]`, the branch tip it was merged from — the same sha
+  `refs/pull/<n>/head` holds. A squash merge keeps that sha only as the pull request's
+  head, never in `main`. (2026-10-22, gh 2.89.0, by hand against superkoh/koloft #934,
+  branch `worktree-cmd-p-at-target-workspace`, deleted on merge.)
+- **Without `--head`, `gh pr list --repo o/r --state merged --limit N --json
+  headRefName,headRefOid`** lists the last N merged pull requests, newest first, one
+  `{"headRefName":"<branch>","headRefOid":"<sha>"}` each, branches deleted on merge
+  included. On superkoh/koloft, 100 reached back three days and 500 about a month
+  (to 2026-09-23); #934's branch was in both. A branch older than the list is missing
+  from it, so missing does not mean "never merged". (2026-10-25, gh 2.89.0, by hand.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
   (`gh issue list --search=-label:bug` listed issues without the label). What a
   successful create prints is not probed (no test repository was used). (2026-10-09, gh
   2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
+- **gh's own top-level commands** are agent-task, alias, api, attestation, auth, browse,
+  cache, co, codespace, completion, config, copilot, discussion, extension, gist, gpg-key,
+  issue, label, licenses, org, pr, preview, project, release, repo, ruleset, run, search,
+  secret, skill, ssh-key, status, variable and workflow (`## gh …` headings of
+  `gh help reference`, 2026-10-19, the gh 2.102.0 Koloft ships), where `co` is a default
+  alias for `pr checkout` that the owner can redefine. Any other first word is
+  an alias or an installed extension. From gh's docs, inferred, not checked: an alias,
+  an extension, `gh copilot`, and the browser, pager or editor named by `gh config set`
+  each run another program, which inherits gh's environment (so `GH_TOKEN`); and a short
+  flag takes its value attached (`-qenv`, `-Ro/r`) as cobra/pflag flags do.
+- **Words after `--` go to another program**: `gh repo clone`, `gh repo fork` and
+  `gh gist clone` hand them to git (`-- <gitflags>`, where git's `--upload-pack=<cmd>`
+  runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
+  `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
+  takes `--`.
+- **`gh issue create` and `gh pr create` are also `gh issue new` and `gh pr new`** (ALIASES
+  in their `--help`), and `-R`/`--repo` may come before the subcommand:
+  `gh issue -R acme/app new --help` prints the create help. Their title and body come from
+  `-t`/`--title`, `-b`/`--body` and `-F`/`--body-file` (`-` is standard input).
+  (2026-11-09, gh 2.89.0, by hand.)
 
 ## §33 ssh
 
@@ -1156,11 +1864,69 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   program**, which can be fish. `~/.local/bin`, `~/.koloft/node/bin` and, on a macOS
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
+- **A program the user's rc files put on PATH is missing from `ssh host cmd`, and the
+  user's own `"$SHELL" -lic` is what finds it.** A fake `gh` only in
+  `/home/linuxbrew/.linuxbrew/bin`, looked for with `command -v gh` inside Koloft's own
+  `sh -c` wrapper (PATH plus `~/.local/bin`, `~/.koloft/node/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`), and again after adding the PATH a login shell printed:
+
+  | login shell, where its PATH line is | plain | `bash -lc` | `"$SHELL" -lic` |
+  |---|---|---|---|
+  | bash, `~/.profile` | missing | found | found |
+  | bash, end of `~/.bashrc` (below Debian's "not interactive: return") | missing | missing | found |
+  | zsh, `~/.zshrc` | missing | missing | found |
+  | fish, `config.fish` | found | found | found |
+  | tcsh, `~/.login` | missing | missing | missing: `Unknown option: -lic`, nothing on stdout |
+  | `/snap/bin` in `/etc/environment`, no rc line | found | found | found |
+
+  `/etc/environment` reaches `ssh host cmd` through sshd's `pam_env`, while Debian's
+  `/etc/profile` sets PATH afresh, so a login shell's PATH there no longer held
+  `/snap/bin` and only the appended PATH kept it. A `.bashrc` that echoes a line puts
+  it on stdout, even for `ssh host cmd`. A `.bashrc` that leaves a job running in the
+  background (`(sleep 20 &)`, `sleep 25 &`) holds a `$(… -lic … | sed …)` open until that
+  job ends: 25.1 s; with the shell's own stdout and stderr sent to `/dev/null` and the
+  PATH written to a file it names instead, the same lookup came back in 109 ms. Each
+  other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
+  macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
+  5.9, reached directly, a scratch node script.)
+- **A remote Codex tab's app-server finds such a program only when its start script is
+  handed that `"$SHELL" -lic` PATH.** A tool only in `/opt/ztools/bin`, and `command -v
+  ztool` run by the fake Codex in a remote Codex tab of a built Koloft:
+
+  | login shell, where its PATH line is | script runs `bash -lc` itself | script is handed the `"$SHELL" -lic` PATH asked over a plain `ssh host cmd` |
+  |---|---|---|
+  | bash, end of `~/.bashrc` | exit 1 | exit 0 |
+  | zsh, `~/.zshrc` (plus an `echo` and a `sleep 25 &`) | exit 1 | exit 0, row bound 1.9 s after the click |
+  | fish, `config.fish` | not run | exit 0 |
+  | tcsh, `~/.login` | not run | exit 1, the tab still starts |
+
+  So the script keeps its own `bash -lc` only for when the handed PATH is empty (tcsh, or
+  a machine the ask could not reach). Running the `-lic` shell inside the script, under the tab's own `ssh -tt` line where it
+  has a terminal, gave the same four results and bound in 1.4 s; it is not used, since an
+  rc file that reads `/dev/tty` there (a passphrase or `compinit` question) could wait
+  for ever with its question sent to `/dev/null` (read from how those tools ask, not
+  run). The fake Codex runs its command with `sh -c` (zsh's `-c` where `/bin/zsh`
+  exists), so this measures the PATH Koloft hands the app-server, not what a real Codex
+  adds. On the bash and zsh machines a fake Claude Code tab's `command -v ztool` did not
+  find the tool: the tab script of Claude Code, Muse Code and Antigravity tabs adds
+  fixed folders only and asks no login shell (Muse Code and Antigravity share that
+  script; not run). What each real agent's own shell tool adds on top was not measured.
+  (2026-11-11, OpenSSH_10.3p1 on macOS 27 to the e2e Docker ssh lab image, Debian
+  bookworm, plus zsh 5.9; a scratch Playwright spec driving a built Koloft.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
   `-o RemoteCommand=none` placed first wins over the config and the command runs.
   (2026-09-29, OpenSSH_10.3p1 on macOS 27 to Ubuntu 24.04.)
+- **What the user's shell prints as it starts lands on `ssh host cmd`'s stdout, in front
+  of the command's own output.** A `sh -c '…'` command run with `ssh -n -o
+  RequestTTY=no`: an `echo` on line 1 of a bash user's `~/.bashrc` (above Debian's "not
+  interactive, do nothing" guard) and an `echo` in a fish user's
+  `~/.config/fish/config.fish` both came back as the first stdout line; an `echo` at the
+  end of `~/.bashrc` (below that guard) and one in `~/.profile` did not. So a script
+  whose output is read prints a mark of its own first, and only what follows the mark is
+  its answer. (2026-11-08, OpenSSH_10.3p1 on macOS 27 to Debian 12 with bash 5.2.15 and
+  fish 3.6.0, the e2e Docker ssh lab image, a scratch node script.)
 - **`RequestTTY force` in the config gives even `ssh -n host cmd` a terminal**, and the
   terminal turns each `\n` of the output into `\r\n` (`printf "a\nb"` came back as
   `a \r \n b`), and a `tar | ssh host 'tar xf -'` push through it fails; `-o
@@ -1177,6 +1943,77 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   held, the 15th printed that line and then `Authenticated … using "publickey"`; with
   10 held, the 11th still rode the master, so the real limit there was not pinned
   down.)
+- **A reverse forward can be added to a live ControlMaster.** `ssh -O forward -R
+  0:127.0.0.1:<port> host` prints the port sshd picked on **stdout** and exits 0; the
+  machine listens on its 127.0.0.1 and ::1 only, and normal commands keep riding the
+  master. `ssh -O check host` prints `Master running (pid=N)` on **stderr**. Facts
+  around it:
+  - `-O cancel -R` must repeat the spec exactly as asked (`0:127.0.0.1:<port>`); with
+    the port sshd picked it prints `port not forwarded` and still **exits 0**, and the
+    forward stays.
+  - When the master goes the forward goes, but a tmux session on the machine stays. A
+    new master can ask for the same machine port by number again — yet asking for a
+    number another program already holds on 127.0.0.1 still exits 0 (sshd got ::1
+    only), and a client to that port reaches the other program. Asking for port `0`
+    every time avoids that.
+  - A port already forwarded on the master cannot be asked for twice (exit 255).
+  - With `AllowTcpForwarding no` on the server, `-O forward` exits 255 with "remote
+    port forwarding failed for listen port 0" and the master stays up for everything
+    else.
+  - Any other account on the machine can connect to the forwarded port.
+  - On Linux the forward's 127.0.0.1 listener shows in `/proc/net/tcp` (state `0A`) with
+    the login user's uid, so a program can tell it from a listener another account
+    opened on the same port after the forward went (measured 2026-10-25, same lab:
+    `playwright-cli` on the machine checked it before connecting, e2e E-SSH-28).
+  - A WebSocket from the machine through it reached a server on the Mac (an 8 MiB reply
+    in 37 ms), and playwright-core `connectOverCDP` and `@playwright/cli` 0.1.22 run on
+    the machine's node 22 drove a headless Chrome on the Mac through it.
+
+  (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
+  ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
+  ssh lab.)
+- **A local forward can be added to a live ControlMaster too, with no new login.**
+  `ssh -O forward -L 127.0.0.1:<mac port>:localhost:<machine port> host` exits 0 at
+  once (4–14 ms over two runs) and prints nothing; sshd's log shows no new `Accepted` line, and
+  normal commands keep riding the master. A page served on the machine's 127.0.0.1 then
+  answers on the Mac at `127.0.0.1:<mac port>` and at `localhost:<mac port>` (30 fetches
+  at once all came back), and `localhost` on the machine side also reaches a server bound
+  to `::1` only. Facts around it:
+  - **`-L` refuses port `0`**: `Bad local forwarding specification`, exit 255 — unlike
+    `-R`, ssh will not pick the Mac port, so the caller picks a free one itself.
+  - The same spec asked twice exits 0 (whether a second listener appeared was not
+    checked). The same Mac port aimed at
+    another machine port, or a Mac port another program already listens on, exits 255
+    with `Port forwarding failed`; the master stays up.
+  - `-O cancel -L` with the spec written without its `127.0.0.1:` prints `port not
+forwarded` and still **exits 0**, and the forward stays; the spec exactly as asked
+    cancels it. A cancel of a forward already gone does the same.
+  - When the master goes (`-O exit`), the forward goes with it (connection refused).
+  - The forward is accepted even when nothing will answer: a machine port nothing listens
+    on, and a login whose sshd has `AllowTcpForwarding no`, both give exit 0 to `-O
+    forward`, and then each connection is reset (`ECONNRESET`). The two give the same
+    exit code, the same (empty) stderr and the same connection error.
+  - With `MaxSessions 2` for that login and two `ssh host 'sleep 30'` started on the
+    master 1.5 s earlier, the forward still carried a page (whether those two had opened
+    their sessions by then was not checked).
+
+  (2026-10-30, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, reached
+  directly, the master opened with Koloft's own ssh options; the e2e Docker ssh lab image;
+  a scratch script.) Through a ProxyJump bastion the same holds: the forward carries the
+  page, a second forward with the same Mac port bound as `[::1]:<mac port>:…` carries it on
+  the Mac's `::1` too, a forward on another Mac port runs beside them, and `-O cancel -L` with the
+  exact spec closes the Mac port (refused on a fresh connection), while a connection
+  already open through it keeps answering. (2026-10-31, same versions, e2e E-SSH-40.)
+- **How long "does the machine answer" (`ssh host true`) takes.** With the master up and
+  the machine up: 7 ms (median of 10, max 8 ms). With no master yet: about 205 ms (it
+  opens one). Machine stopped, master up or not: about 130 ms, exit 255 (`Connection
+  closed by UNKNOWN port 65535`), because the bastion closes the hop at once. Machine
+  frozen so it answers nothing (`docker pause`), master up: ssh never returns on its own
+  — still hung at 60 s, when the probe killed it (§33's no-connect-phase rule) — so
+  Koloft's own 10 s timeout in `runSshBytes` is what ends it. (2026-10-29, OpenSSH_10.3p1
+  on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a ProxyJump bastion, Koloft's
+  `sshOptions` with BatchMode, the e2e Docker ssh lab image, a scratch node script timing
+  `spawnSync`.)
 
 ## §34 rsync
 
@@ -1188,6 +2025,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   pull), and even with it an unchanged file may be touched again, so a watcher can see
   it again.
 - **Mirrored files keep the source machine's mtime**, not the time they arrived.
+- **`--append` breaks a rewritten file, so it cannot go on the transcripts pull**, which
+  also carries the `.title` files: a title rewritten shorter ("Hello world title" →
+  "Hi") was never pulled, and one rewritten longer ("Hi" → "Jo, a longer title") arrived
+  as "Hi, a longer title" — the old head kept, only the new tail sent. On a 20 MB
+  append-only file it did skip the full re-read (`Matched data` 0 instead of ~27 MB a
+  pull). rsync's flags hold for a whole run, so `--append` for the transcripts alone, or
+  `-I` for the hook folder alone, each need a run of their own. (2026-10-17: this Mac's
+  openrsync, protocol 29, pulling from rsync 3.2.7 in the e2e sshd image through
+  `docker exec -i`, not ssh.)
 - **Filter rules anchored with a leading `/`, and `**`, work the same on both ends.**
   `--include=/<slug>*/`, `/<slug>*/*.jsonl`, `/<slug>*/*.title`, `/<slug>*/*/`,
   `/<slug>*/*/**` then `--exclude=*` pulled exactly the workspace's transcripts, their
@@ -1226,6 +2072,43 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
   to the outer terminal untouched** (measured locally in a python pty).
 - **tmux sets `TMUX` and `TMUX_PANE`** for a command inside a session.
+- **`-t <name>` falls back to the start of a session name** when no session has that exact
+  name and only one starts with it (tmux manual, target-session), so a kill aimed at a
+  session that was renamed can hit another whose name it begins.
+- **`allow-passthrough on` lets a pane's `ESC P tmux; … ESC \` reach the terminal outside
+  tmux, and nothing else**: a bare OSC the pane prints stays inside. In tmux 3.3a `all` is
+  not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
+  config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
+  in Docker, probed for remote Muse tabs).
+- **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
+  ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
+  (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq
+  allow-passthrough on` is dropped without a word and no pane is left in a mode; a remote
+  Muse tab's wrapped 7501 frames (idle, working, done) still came out to the outer
+  terminal unwrapped, none left as `ESC P tmux;`. On both, the rest of Koloft's tmux.conf
+  loaded with no error screen, `rename-session -t $TMUX_PANE`, `attach -d` to the renamed
+  session and `set-titles` with `#{pane_title}` worked as on 3.3a (2026-11-09, Docker,
+  Koloft's own tab script, tmux.conf and Muse wrapper, muse 1.4.11 on `--provider echo`,
+  the client run in a python pty with `TERM=xterm-256color`).
+- **A pane's window title (`ESC ] 0 ; … BEL`) reaches the terminal outside tmux only with
+  `set-titles on` and `set-titles-string '#{pane_title}'`**, and an empty one then arrives
+  as `ESC ] 0 ; BEL`. Off (the default) nothing arrives; `set-titles on` alone sends the
+  default string, which is never empty. No `terminal-features` line is needed for
+  `xterm*`: tmux 3.3a's default list already gives it `title`. Both options set with
+  `tmux set -g` on a server already running count for a session started after them
+  (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image, a client attached in a
+  python pty with `TERM=xterm-256color`).
+- **tmux sends a pane's new title when it next redraws the client, after the text that
+  came in the same read.** A program that writes `ESC ] 0 ; BEL` and a line in one write
+  reaches the client as the line, then the title; Claude Code writes them about 10 ms
+  apart, and the title came first in all six runs (2026-10-29, tmux 3.3a in the
+  `koloft-e2e-sshd` image: the real CC 2.1.312, and the e2e fake-claude writing both at
+  once).
+- **A tmux client whose login has no UTF-8 locale gets `_` for a character outside ASCII**,
+  so Claude Code's `Removing worktree…` reaches a Koloft remote tab as `Removing
+  worktree_`. Koloft sets no locale on the machine; the e2e SSH lab's ssh login has none
+  (2026-10-29, E-SSH-33 with the image's fake-claude, tmux 3.3a: the tab's screen read
+  `Removing worktree_`).
 - **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
   config naming them is an `invalid option` error, shown over the first window. `set -q`
   drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).
@@ -1233,19 +2116,157 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `/tmp`, not under `$HOME`** (tmux(1)), so a fake `$HOME` does not isolate it: a real
   tmux run by any test talks to the one server this user already has, shared by every
   run and holding other homes' sessions.
+- **A line printed before `tmux new-session` is out of sight for as long as the session is
+  attached; one printed inside the pane, before the program starts, stays on screen.**
+  tmux switches the outer terminal to its alternate screen (`?1049h`, then `2J`), so the
+  earlier line sits in the normal buffer behind it. With `echo <line>; exec tmux
+  new-session "muse …"` the line was in neither the screen nor its scrollback once Muse
+  drew; with the `echo` inside the session command it was row 0, above Muse's (and agy's)
+  own screen (2026-10-25, tmux 3.3a in the `koloft-muse-probe` Docker image and in the agy
+  probe image, a python pty answering the terminal's queries, its output replayed into
+  `@xterm/headless`). So a remote tab's account line goes in the pane's run lines.
+- **The tmux client exits 0 however the program in the pane ends** — exit 1, SIGKILL, or
+  the session killed from outside — and prints `[exited]`. To pass the program's code on,
+  the pane's shell runs it in a subshell, writes `$?` to a file, and the script that ran
+  the client exits with it; `tmux capture-pane -p` run from that shell after the program
+  ended still holds the program's last screen (2026-10-28, tmux 3.3a in the
+  `koloft-e2e-sshd` Docker image: codes 3, 137 and 0 came through, the screen was captured).
+- **On a machine whose `/bin/sh` is dash, a Ctrl-C reaching the pane kills the waiting
+  shell** once its child exits, even when the child handled the signal, so nothing after the
+  child runs. `trap : INT QUIT` in that shell keeps it alive and still hands the child the
+  default action after `exec` (2026-10-28, dash in the same image, `setsid -w` per case:
+  untrapped, the shell died with 130; trapped, it saw the child's 5; a child that did not
+  handle INT died with 130 as before).
+- **The tmux client passes each key on at once; the pane's own terminal decides the rest.**
+  A program in the pane that put its terminal in raw mode got a single `y` with no Enter,
+  and Enter as `\r`. One that left it as it was read whole lines: `abc`, Ctrl-U, `xy`,
+  Backspace, `z`, Enter reached it as one line `xz\n`, edited by the pane's terminal
+  (2026-11-01, tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run in a python
+  pty with `TERM=xterm-256color`, each pane a python script logging the bytes it read).
+- **What reaches the outer terminal when a pane program sets the clipboard (OSC 52).**
+  Under Koloft's `tmux.conf` (`allow-passthrough on`, `set-clipboard` left at its default)
+  and an outer `TERM=xterm-256color`: a bare `ESC]52;c;<base64>BEL` from the pane is
+  dropped; the same wrapped for passthrough (`ESC Ptmux; ESC ESC]52;c;… BEL ESC \`) comes
+  out unchanged; `tmux load-buffer -w -` comes out as `ESC]52;;<base64>BEL` — an empty
+  first field, not `c`. With `set -g set-clipboard on` added, the bare one comes out too,
+  as `ESC]52;;<base64>BEL`, and the other two come out once each as before (2026-11-05,
+  tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run under `script` with
+  each kind printed in turn, the outer bytes decoded).
+- **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
+  link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
+- **A tmux client whose login names no UTF-8 locale draws `_` for every character
+  outside ASCII**, whatever the program in the pane printed: `中文 ⏺ …` came out as
+  `____ _ _`, and `─` as the line-drawing set (`ESC(0q ESC(B`). The client decides by the
+  first of `LC_ALL`, `LC_CTYPE`, `LANG` that is set: `tmux -u`, or `LANG=C.UTF-8` on the
+  client alone, drew them right; so did a `LANG=en_US.UTF-8` the login was handed though
+  the machine had no such locale (`locale -a`: `C`, `C.utf8`, `POSIX`), with or without
+  `-u`. With no `LANG` at login the pane's program gets none either. `capture-pane -p`
+  run from inside such a pane, with no `LANG` and no `-u`, wrote the characters as they
+  are.
+  - **Whether the login gets a `LANG` is up to the Mac's ssh config and the server.**
+    macOS's own `/etc/ssh/ssh_config.d/100-macos.conf` has `SendEnv LANG LC_*`, and a
+    stock Debian sshd has `AcceptEnv LANG LC_*`: an ssh run with the system config and
+    `LANG=en_US.UTF-8` (what Koloft gives a tab's terminal when the Mac set none) handed
+    the login `LANG=en_US.UTF-8`, also when it rode a ControlMaster that was started with
+    no `LANG` at all — the client's own variables count. An ssh run with `-F <file>`
+    skips the system config, so its `SendEnv` is gone and the login has no `LANG` (the
+    e2e lab's ssh is run that way); so does a server without `AcceptEnv`. The
+    container's own `ENV LANG=C.UTF-8` (seen by `docker exec`) does not reach an ssh
+    login.
+
+  (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
+  reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
+  printing those characters and attached to it, its bytes read back on the Mac.)
+- **Synchronized output (DEC 2026) through tmux.** Measured 2026-11-07 in Docker with
+  Koloft's tmux.conf: tmux 3.3a (Debian 12), 3.4 (Ubuntu 24.04), 3.5a (Debian 13) and
+  3.8 (built from its release tarball), a python pty as the outer terminal answering
+  DECRQM 2026 as xterm.js does; read in each version's source the same day.
+  - **Before 3.7 tmux neither answers a pane's DECRQM `ESC[?2026$p` nor keeps a pane's
+    `?2026h` … `?2026l`**: a program writing 394 such frames got 0 `?2026h` out to the
+    outer terminal on 3.3a, 3.4 and 3.5a. 3.7 and later answer it (`;1$y`/`;2$y`), hold
+    the pane until `?2026l`, and wrap the redraw in the outer terminal's own 2026 after
+    asking that terminal — no `terminal-features` line needed (3.8: 124 windows for the
+    394 frames, fullscreen claude 0 bytes drawn outside one).
+  - **`terminal-features … :sync` does not make tmux frame a pane that sends no 2026.**
+    tmux 3.5a opens a window only when the first thing a read writes out moves the
+    cursor (a scroll, insert or delete line, an erase of the screen); a row rewrite starts
+    with text, so 3.5a wrapped 12 of claude's 83 redraws. 3.3a's `Sync` is the older
+    `DCS = 1 s` form, which xterm.js does not take.
+  - **A passthrough `ESC P tmux; … ESC \` goes out as soon as tmux reads it; text waits
+    until the end of that read.** A `?2026l` passthrough in the same read as the frame's
+    rows reaches the outer terminal before the rows. Sent once tmux has answered a DSR
+    (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
+    105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
+  - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
+- **OSC 8 links from a pane reach the outer terminal from tmux 3.4 on, and only with the
+  `hyperlinks` terminal feature.** Under Koloft's tmux.conf a pane that wrote 160
+  `ESC ] 8 ; ; <url>` links (BEL- and ST-ended alike) got all 160 out on 3.4, 3.5a and
+  3.8, 5 of 5 runs each, and on 3.4 each around its own words (counted there only, 3 of 3
+  runs); tmux adds its own `id=` to each one
+  (`ESC ] 8 ; id=tmux1 ; <url>`). Without the conf's `terminal-features
+  ',xterm*:RGB:hyperlinks'` line, 3.4 got 0 out (3 of 3), and `#{client_termfeatures}`
+  lacked `hyperlinks`.
+  - **tmux 3.3a drops them all**: 0 of 160, from a printing script as from muse 1.4.11
+    (5 of 5 runs each). 3.3a keeps the `hyperlinks` line in `terminal-features` but
+    does not know the feature: `#{client_termfeatures}` has no `hyperlinks`.
+  - **Wrapped for passthrough (`ESC P tmux; ESC ESC ] 8 ; ; <url> BEL ESC \`), 3.3a lets
+    each link's start and end through but not around its words**: 160 starts and 160
+    ends arrived, 0 of them around their text, because a passthrough goes out as soon as
+    tmux reads it and the text only at the end of that read (see the DEC 2026 bullet
+    above).
+
+  (2026-11-08 for muse on 3.3a; 2026-11-09 for the rest: Docker, Debian 12's 3.3a,
+  Ubuntu 24.04's 3.4, Debian 13's 3.5a, 3.8 built from its release tarball; the client
+  started with `TERM=xterm-256color` from a python pty answering like xterm.js; the
+  same script printed the links outside tmux and all 160 arrived on each.)
+- **tmux 3.3a passes on only the pane's own bracketed-paste switch.** Started in a pty
+  as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
+  `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
+  tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
+- **Under Koloft's tmux.conf, with agy or muse in the pane, tmux 3.3a asks the outer
+  terminal only `ESC[>c` (DA2) and `ESC[>q` (XTVERSION), once at attach; the bare
+  questions agy and muse ask in the pane never come out** (neither wraps one for
+  passthrough). With Claude Code in the pane it was not run; CC§12 has tmux answering
+  claude's own questions and claude wrapping only a mod's image for passthrough, so the
+  same is inferred, not checked. Started as Koloft starts a remote
+  tab (`tmux -L koloft -u -f <Koloft's conf> new-session -A -D -s <name> <agent>`) from a
+  python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
+  reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 run directly
+  in the pane (without Koloft's launcher script and status relay), each through start, trust question, a turn with a tool run, a resize,
+  `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
+  only questions the outer terminal got, both in Koloft's off-screen pass-through list
+  (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
+  3.3a, 1 run each).
 
 ## §36 ccstatusline
 
 - **Git-review cache**: pull request state lives in
   `~/.cache/ccstatusline/git-review/*.json`, stale when `now - mtime > 30 000 ms`; a
   `*.json.lock` younger than 30 s stops a refresh (`CACHE_TTL = 30000`,
-  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). Each
-  statusline render starts ccstatusline's own background `gh` fetch.
+  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24; the same
+  in 2.2.32's `dist/ccstatusline-*.js`, read 2026-11-03). Each statusline render
+  starts ccstatusline's own background `gh` fetch.
+- **Its code is split across several files in `dist/`** from 2.2.32 on (2.2.30
+  shipped `dist/ccstatusline.js` alone). The entry `dist/ccstatusline.js` imports
+  `./ccstatusline-<hash>.js` chunks by relative path, so the entry copied alone stops
+  with `ERR_MODULE_NOT_FOUND` before it prints anything (run with node 24,
+  2026-11-03); a copy of the bundle takes every file in `dist/`, about 3 MB in all.
 - **Parsing the 3 MB bundle is most of each render's cost** (2.2.30's
   `dist/ccstatusline.js` is 3 018 224 bytes); `NODE_COMPILE_CACHE` removes it.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+- **It can run inside a process that already read its input.** 2.2.33's entry reads
+  its input only by iterating `process.stdin` (`for await`, unless `isTTY`) and takes
+  `--config` from `process.argv`. A script that sets `process.stdin` to a `Readable`
+  holding the JSON and `process.argv` to `[node, entry, '--config', file]`, then
+  `import()`s the entry, prints byte for byte what a second process given the same
+  JSON prints (2026-11-09, Electron 43.8.6 as node on macOS arm64, 10 renders each,
+  median: 213 ms when the script starts a second process, 186 ms in one process,
+  156 ms in one process with `NODE_COMPILE_CACHE`). The same script as a `.cjs` in a
+  `{"type":"module"}` folder also renders on node 22.12.0 (Docker
+  `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
+  folder itself.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 
@@ -1256,16 +2277,47 @@ command by hand:
 - **`stat` has two dialects.** GNU: `stat -c '%.9Y %s'` prints the last-modified time with
   nanoseconds and the size (`1748674639.260000000 16`). BSD (macOS): the same flags
   fail; `stat -f '%Fm %z'` prints the same shape (`1788431650.000000000 213`). Trying
-  GNU first and falling back to BSD works on both.
+  GNU first and falling back to BSD works on both. With a file name in front
+  (`stat -c %n:%.9Y:%s`, `stat -f %N:%Fm:%z`) and `find … -type f -exec … {} +` piped
+  into `cksum`, the stamp of a whole folder changed on an append, on a same-size rewrite
+  0.25 s apart and on a new file (2026-10-17: dash and GNU stat in the e2e sshd image,
+  and this Mac's BSD tools).
+- **awk reads that time as the same number JavaScript does.** For a `stat` line
+  `S.NNNNNNNNN size`, `awk -v ms=<String(parseFloat(S) * 1000) from Node> '{ $1 * 1000 == ms }'`
+  is true, and false for `ms + 0.001` or `ms - 1`, so a save script can check a file's
+  fingerprint on the machine against the one the editor holds. (2026-10-17: 1500 files,
+  half with times written by the file system in nanoseconds, half set to random
+  microsecond times, through macOS 27's awk and through mawk, gawk and busybox awk on
+  Debian 12 under Node 22; every one agreed.) `mktemp` and `wc -c` work there and in
+  busybox (Alpine 3.13).
 - **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
 - **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
   fallback, and there is no file watcher to lean on.
 - **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
-  (`/etc/profile` there does not set PATH). Debian's `/etc/profile` does set PATH, so
-  there it may be lost — inferred, not checked. On a macOS machine, `path_helper` in
+  (`/etc/profile` there does not set PATH). **On Debian 12 it is lost**: `/etc/profile`
+  sets PATH outright (measured as a non-root user), so `bash -l` and `bash -l -i` start with
+  `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games` and a Workbench shell there
+  said `bash: koloft: command not found`. `bash --init-file <file> -i` that sources
+  `/etc/profile` and the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`, then
+  puts the prefix back, keeps it; fish 3.6 (`fish -l`) and tcsh (`tcsh -l`) keep the
+  prefix with no help (`tcsh -l` takes no `-c`). An exported `KOLOFT_TAB_ID` survives all
+  three. (2026-10-24: the e2e sshd image, `node:22-bookworm-slim`, as users whose login
+  shells are bash, fish and tcsh.) On a macOS machine, `path_helper` in
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
+- **A shell's foreground program and folder, asked from outside it.** `ps -o tpgid= -p <shell pid>`
+  gives the group that owns the shell's terminal, and `ps -o comm= -p <that group>` its name:
+  `bash`, `tcsh`, `fish` at the prompt, `sleep` while `sleep 60` runs. On Linux that name is
+  cut to 15 characters (`a-very-long-pro`), and `readlink /proc/<pid>/cwd` gives the folder,
+  with ` (deleted)` put after it once that folder is removed (`/tmp/gone (deleted)`);
+  Debian 12's slim image has no `lsof`. On macOS there is no `/proc`, `ps -o comm=` may give the
+  full path, and `lsof -a -d cwd -p <pid> -Fn` gives the folder on its `n` line, resolved
+  (`/private/tmp` for `/tmp`), in about 30 ms. Both give the resolved folder, where a shell's
+  own OSC 7 gives `$PWD` with its symlinks kept — inferred, not checked. A shell that `exec`s keeps its pid, so `echo $$` written just
+  before `exec "$SHELL" -l` names the login shell. (2026-10-30: the e2e sshd image, Debian
+  12.15 with procps-ng 4.0.2, as users whose login shells are bash, tcsh and fish; and this
+  Mac, macOS 27, behind the fake ssh.)
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
 - **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
   then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's
@@ -1287,6 +2339,50 @@ command by hand:
   (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
   behind a jump host: file listing and reading, a session start and the session sync
   all worked through a real sshd).
+- **A program on a machine whose login left it no working UTF-8 locale runs in the C
+  locale, and `ls` on a terminal there prints `中文.txt` as
+  `''$'\344\270\255\346\226\207''.txt'`.** That happens with no `LANG`, with `LANG=C`,
+  and with a `LANG` that names a UTF-8 locale the machine lacks (`LANG=en_US.UTF-8`, the
+  one a Mac's ssh hands over, on a box with only `C`, `C.utf8`, `POSIX`). `locale charmap`
+  tells them apart: `UTF-8` when it works, `ANSI_X3.4-1968` for the C locale on glibc
+  (after a `locale: Cannot set …` line when the named locale is missing), `US-ASCII` for
+  it on macOS; it costs about 0.5 ms. A UTF-8 locale picked from `locale -a` (Debian
+  lists `C.utf8`, macOS 27 `C.UTF-8`; one with only `en_US.utf8` gives that) makes `ls`
+  print the name as it is: as `LC_CTYPE` beside no `LANG` or `LANG=C`, but **not beside a
+  `LANG` the machine lacks** — with `LANG=en_US.UTF-8` missing, `LC_CTYPE=C.utf8` left
+  `ls` escaping and perl warning (the whole locale fails), so that `LANG` itself has to go.
+  **A locale name the machine lacks breaks things when no UTF-8 locale is left to fall
+  back on:** with `C.utf8` removed from `/usr/lib/locale`, `LANG=C.UTF-8` left `ls`
+  escaping, made perl print "Setting locale failed" at every start, and made tmux refuse
+  to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`). A set `LC_ALL` (or `LC_CTYPE`)
+  wins over any `LANG`. (2026-11-01: the `koloft-e2e-sshd` image, Debian bookworm, tmux
+  3.3a, probe scripts run with `docker exec -t`, locales removed or copied under
+  `/usr/lib/locale`; and this Mac, macOS 27.) So Koloft's remote scripts act only when
+  `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
+  locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
+  `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **How long a hook line written on the machine takes to turn a remote tab's row in
+  Koloft.** With only the 2-second sync round: a turn's first hook line (the prompt) to
+  the row reading working took 1574, 1867, 2105 and 2055 ms, and the Stop line to the
+  row reading waiting 663, 707, 1004 and 911 ms (a turn kept the 2-second round going
+  the whole time). With a sh loop on the machine that looks at `~/.koloft/hook-sessions`
+  every 0.2 s (`find … -exec stat` piped into `cksum`) and says so over one long-lived
+  `ssh -n`, each line starting a round (at least 0.3 s after the last one ended): 393,
+  814, 804, 423, 373, 437, 529 and 414 ms to working, and 380, 357, 403, 763, 275, 309,
+  378 and 613 ms to waiting; over those runs 20 short turns (a Read, then Stop) each
+  ended on waiting and stayed there. The loop's `sleep 0.2`, `find`, `stat` and `cksum`
+  ran in dash on Debian and in macOS 27's sh. (2026-11-08: the e2e Docker ssh lab, the
+  `kt-key` machine behind the jump host, fake claude's `/busy` turn, four turns without
+  the loop and eight with it, the machine's log and the row each read every 0.1–0.3 s,
+  so each figure is good to about that much.)
+- **`tar xzf -` works even on bare container images.** `gzip` is there in `alpine:3`
+  (BusyBox v1.37.0, whose `tar` lists `-z`), `debian:bookworm-slim` (gzip 1.12),
+  `ubuntu:24.04` (1.12), `fedora:42` (1.13) and `rockylinux:9` (1.12), with nothing
+  installed on top (2026-11-08, `docker run --rm <image> gzip --version`). Koloft's
+  machine package (3.4 MB as a plain tar, 0.67 MB gzipped) therefore goes over gzipped:
+  on the e2e ssh lab with 150 ms added to each round trip (`tc … netem delay 150ms` on
+  the machine), its push took 1.25 s instead of 1.41 s (median of 3; round trips, not
+  bytes, set most of it).
 
 ## §38 ssh through a JumpServer bastion
 
@@ -1364,9 +2460,19 @@ Gateway (the live connection that pushes events):
     `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
   - From the docs, not measured: the first answer must come within 3 s; the token
     works for 15 minutes; a guild can take at most 200 command creates a day; an app
-    with no answer shows "The application did not respond". That two Gateway
-    connections of one bot (two Koloft installs) both receive each interaction is
-    inferred, not checked.
+    with no answer shows "The application did not respond".
+- **Two Gateway connections on one bot token (two Koloft installs on one bot)** —
+  measured 2026-11-02 and 2026-11-03 with the test bot on the test server, a
+  hand-written client (Node `fetch`, Node's built-in `WebSocket`), intents `GUILDS |
+  GUILD_MESSAGES`, the second identify 5.5–6 s after the first:
+  - Both connections got `READY` with `shard: null`; Discord did not close, or send
+    op 7 or op 9 to, the first one when the second identified, and over 60 s both
+    stayed open with every heartbeat acked.
+  - A message the bot posted in a channel both could see arrived as `MESSAGE_CREATE`
+    on both connections, within 5 ms of each other (both runs).
+  - Whether an interaction (a slash command or a button press) reaches both
+    connections or only one is not probed: only a real user can start one, and the
+    owner chose not to. Two Koloft installs sharing one bot are not supported.
 - **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
   on a server where the bot role was the one the invite gave (`101440`) and the owner
   read each message in the Discord app:
@@ -1402,6 +2508,26 @@ Gateway (the live connection that pushes events):
     Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
     up either. A table written as a bold line per row with a `>` quote line per cell
     read well.
+- **A button press answered later** — measured 2026-11-06 with the test bot on the test
+  server (a Node script: REST plus its own Gateway connection, intents `GUILDS`), the owner
+  pressing a plain button on the Discord app:
+  - The press arrived as `INTERACTION_CREATE` type 3 carrying `application_id`. Callback
+    `{type: 6}` (deferred update) answered 204, 0.4 s after the press; Discord showed no
+    "interaction failed".
+  - 5 s later a follow-up `POST /webhooks/{application_id}/{token}` with `flags: 64`
+    answered 200 with `flags: 64`, and the owner saw it as a message only they could see.
+  - The bot's own `PATCH /channels/{channel}/messages/{message}` with new text and
+    `components: []` answered 200; a `GET` of the message then had the new text, an
+    `edited_timestamp` and no components. The owner saw the buttons go; that the new
+    text showed on the phone at once was not seen.
+  - On a real Koloft ask card (Koloft 0.66.0 in the hand-test sandbox, same test bot,
+    the butler's question posted as a Components V2 card, `flags` 32768), the owner
+    pressed a button on the Discord iOS app and stayed in the channel: the buttons went
+    and the new `-# ✅ <choice>` text display showed on the phone at once, without
+    reopening the channel. The bot's `PATCH /channels/{channel}/messages/{message}` of
+    the whole container landed 0.2 s after Claude Code wrote the answer into its
+    transcript (`edited_timestamp` against the transcript's `timestamp`), and a `GET`
+    read the new text back with no buttons.
 - **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
   on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
   name change within a few seconds answered `429` with `retry_after` 599.6 s, though
@@ -1426,6 +2552,45 @@ Gateway (the live connection that pushes events):
   /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
   `204`. Whether re-inviting the bot with a link that asks for more permissions
   updates an existing bot role was not probed.
+- **Week-long threads, and bringing an archived thread back** — measured 2026-10-19 with
+  the test bot on a server with no boosts (`premium_tier` 0, no `features`), REST only,
+  in a channel made for the probe and deleted afterwards:
+  - `auto_archive_duration: 10080` was accepted and kept (read back from `thread_metadata`)
+    on a thread made on a message and on one made with `POST /channels/{id}/threads`
+    (`type: 11`, no opener message); so were 4320, a later `PATCH` of 60 and back to
+    10080, and a channel's `default_auto_archive_duration: 10080`. A value outside the
+    list (5000) answered 400, 50035 `ENUM_TYPE_COERCE`.
+  - Thread creates in that channel drew from one bucket: `x-ratelimit-limit` 50,
+    `reset-after` 300 s (50 creates per 5 minutes), a message-based create and a
+    standalone one alike. Whether a second channel draws from the same bucket was not
+    measured, nor how many active threads a server may hold.
+  - `POST /channels/{thread}/messages` by the bot into a thread it had just archived
+    answered 200, and the thread read back open (`archived: false`, a new
+    `archive_timestamp`). So did a post into a thread archived and `locked` (the bot's
+    role had Manage Threads).
+  - `PATCH /channels/{thread}` with `{archived: false}` answered 200 and a post after it
+    200; `{archived: false, name}` in one call opened it and renamed it (200).
+  - `GET /guilds/{id}/threads/active` answered 200 with `{threads, members, has_more}`;
+    each thread carries `type` (11 public), `parent_id` (its channel) and `owner_id`
+    (the bot for its own threads), and a thread the bot had archived was not listed
+    (2026-10-20, same bot and server). `GET /channels/{thread}` carries the same three;
+    a text channel has `type` 0 and no `owner_id`. A post whose `content` holds
+    `<#channelId>` with `allowed_mentions: {parse: []}` answered 200 and kept the text as
+    sent; that the app shows it as a link to the channel is from Discord's docs.
+  - Archiving and opening one thread back and forth within a second answered 429
+    (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
+    15 s) still had calls left.
+- **Reading a thread's messages back** — measured 2026-11-04 with the test bot on the test
+  server, REST only, in a thread made on a message (`auto_archive_duration: 1440`) with
+  four bot posts in it:
+  - `GET /channels/{thread}/messages?after={id}&limit=100` answered 200 with every message
+    after that id, newest first, like a text channel. `after=` the opener's id also
+    returned the thread's own first message, `type` 21 (the copy of the opener).
+  - Once the thread was archived (`PATCH {archived: true}`, 200), the same `GET` answered
+    200 with the same messages, and `GET /channels/{thread}` afterwards still read
+    `archived: true`: reading does not open it.
+  - `GET /channels/{parent}/messages?after={opener}` listed none of the thread's
+    messages: a thread keeps its own history.
 - **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
   the owner's server, REST only, in a channel no conductor is bound to, with a Components
   V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
@@ -1517,6 +2682,18 @@ Gateway (the live connection that pushes events):
   that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
   that needs no token.
 
+- **A form opened from a button** — measured 2026-10-15 with the same bot, its own Gateway
+  connection, in a channel no conductor is bound to, the owner pressing on their Discord
+  app: a button press (type 3) answered with callback `{type: 9, data: {custom_id, title,
+  components: [action row (1) holding a text input (4): custom_id, label, style 1,
+  required, max_length]}}` got 204 and the form opened. Its submit arrived as
+  `INTERACTION_CREATE` type 5, `data.custom_id` the form's, and the typed text at
+  `data.components[0].components[0].value`, exactly as typed. A type 4 reply with `flags:
+  64` answered it (204). The typed text was not posted as a message: the channel's last
+  ten messages held none with it. The text box shows what is typed in plain text; Discord
+  has no masked text input. From the docs, not measured: newer forms may wrap a text input
+  in a label component (type 18, its input under `component`).
+
 ## §40 Node `fs.watch` on a macOS directory
 
 - **Every event names the file, and appending to a file already there fires one too.**
@@ -1531,6 +2708,15 @@ Gateway (the live connection that pushes events):
   reported `change` and the single ones `rename`. A watcher that must know what
   happened has to look at the file itself.
 - A write inside a subdirectory gave no event at all; creating the subdirectory gave one.
+- **With `recursive: true` every event names the path below the watched folder, and
+  still says `rename` for an append.** Measured 2026-10-27 on macOS 27.0 (APFS) under
+  Electron 43.8.1's own Node 24.22 (`ELECTRON_RUN_AS_NODE=1`): creating
+  `2026/10/27/rollout-new.jsonl` in a new day folder gave `rename` for `2026/10/27` and
+  for the file; a single append, twenty quick appends and five appends 300 ms apart each
+  gave `rename` with the file's path (the twenty folded into one); deleting a file gave
+  `rename`; removing a folder gave `rename` for every file in it and for the folder. So a
+  recursive watcher, too, must look at the file to tell a new or deleted one from an
+  append.
 
 ## §41 What an Electron app's quit does to its children
 
@@ -1543,6 +2729,16 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+- **A pty program that ignores SIGHUP holds the app's quit for good.** While Node shuts
+  down, node-pty joins the thread that waits for the program to exit
+  (`SetupExitCallback` → `std::thread::join` in `pty.node`, seen with `sample`), so the
+  main process never exits while the program lives; JS timers no longer run by then, so
+  only a process outside the app can end the wait, by killing the program. While the
+  app hangs there, the program's parent pid is still the app's main process, and the
+  app's `quit` event has already fired. Measured
+  2026-10-27 (Electron 43.8.1, node-pty 1.1.0, macOS 27.0) in the e2e app: a Workbench
+  shell running `trap '' HUP; exec sleep 600` kept Koloft up past 120 s, the same shell
+  without the trap quit in 88 ms.
 
 ## §42 A Node command-line tool run on Electron's own Node
 
@@ -1868,19 +3064,31 @@ server unless a line says so.
   `/usr/libexec/sshd-session` and `/usr/bin/osascript`; which of them mattered was not
   separated. Before that, a booted clone held a row denying Accessibility to
   `sshd-keygen-wrapper`.
-- **macOS 27 asks about screen capture from SSH, and keeps asking.** A `screencapture`
-  run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
-  system private window picker…' (Allow / Open System Settings) even with the TCC rows
-  above; the capture itself was written. Left alone, the dialog stayed on screen and the
-  real-window cases still passed with it in their screenshots. A real click on Allow
-  closed it, but later captures raised it again. After Allow, macOS records the answer in
+- **macOS 27 asks about screen capture from SSH.** A `screencapture` run over SSH raised
+  a dialog '"com.apple.sshd-session" is requesting to bypass the system private window
+  picker…' (Allow / Open System Settings) even with the TCC rows above; the capture
+  itself was written. macOS keeps the record in
   `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
   keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
   `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,
   `kScreenCapturePrivacyHintDate` (30 days on), `kScreenCapturePrivacyHintPolicy`
   2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
   before boot was replaced when the user logged in (the group container was re-created).
-  macOS 26.6.2 on GitHub's runner did not ask.
+  macOS 26.6.2 on GitHub's runner did not ask. Measured 2026-10-12; on that day a real
+  click on Allow closed the dialog and later captures raised it again.
+- **The screen-capture dialog may be drawn late, stays until answered, and is skipped when
+  the record is already on file** (measured 2026-10-30, macOS 27.0 26A428, same tart base
+  image). The dialog is a `UserNotificationCenter` window; replayd writes the plist entry
+  when it asks, and Allow leaves the entry unchanged. Unanswered, the dialog stays on
+  screen and takes key focus: in two real-window runs the first three captures did not
+  show it and the fourth did, so it landed in the middle of a later case, where it hid
+  the banners and took the Pinyin keys. After Allow, 8 more captures over a minute raised
+  nothing. On a fresh clone, the logged-in user (over SSH, before any capture) creating
+  the group container folder and writing the entry with all five keys (last-alerted and
+  last-used now, privacy-hint date 30 days on, policy 2592000, count 1) stopped the
+  dialog: 18 captures, none asked, and containermanagerd adopted the folder (it added its
+  metadata plist, the usage count kept rising). On a VM whose replayd had already asked,
+  a hand-written entry was overwritten from replayd's memory within a capture.
 - **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
   `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
   its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
@@ -1892,6 +3100,13 @@ server unless a line says so.
   performing Allow answers it. Until it is answered the app's notifications are kept
   as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
   2026-10-12 in the tart VM above.
+- **A freshly re-signed bundle can be unknown to Notification Center until LaunchServices
+  registers it again.** In some tart runs, every `requestAuthorization` from the bundle
+  signed moments before came back `didGrant: 0 hasError: 1` while usernoted logged
+  "Failed to find or validate client of identifier com.github.Electron": no question, no
+  banner for the whole run, though the Dock badge was still drawn. `lsregister -f` on the
+  bundle right after `codesign` gave `didGrant: 1 hasError: 0` and the question. Measured
+  2026-10-30, macOS 27.0 26A428, Electron 43.8.1, in the tart VM above.
 
 ## §53 An SSH remote sent over https, and a server that refuses https
 
@@ -1932,3 +3147,573 @@ server unless a line says so.
 - Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
   `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
   throwaway users and keys.
+
+## §54 One included git config from the environment, on old git
+
+- **`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n` is ignored before git 2.31**: 2.13.7, 2.24.4 and
+  2.30.6 read nothing from it, silently; 2.43.0 does.
+- **`GIT_CONFIG_PARAMETERS="'include.path=<abs path>'"`** (the old one-quote form) loaded
+  the included file on 2.13.7, 2.24.4, 2.30.6 and 2.43.0 alike: an `includeIf
+  "gitdir:<real .git>"` / `"gitdir:<real .git>/"` pair in it matched the main checkout,
+  a subfolder and a linked worktree and no other repository; `credential.<url>.helper`
+  from it answered `git credential fill`; `url.insteadOf` rewrote `ls-remote --get-url`;
+  `user.email` showed; a `git -c alias.k='!git config …' k` child saw it too.
+- **The two-part form `'include.path'='<path>'`** (git ≥ 2.31's own) makes 2.13.7, 2.24.4
+  and 2.30.6 stop with `error: bogus format in GIT_CONFIG_PARAMETERS` / `fatal: unable to
+  parse command-line config` — every git command fails. 2.43.0 reads a value mixing both
+  forms in either order, and when the user runs `git -c core.y=2 …` it passes our
+  one-quote entry on to its children unchanged, with `'core.y'='2'` appended.
+- **An appended entry keeps the user's own**: `'core.x=1' 'include.path=…'` gave both
+  values on every version above.
+- **Below 2.13** `includeIf` does not exist (git's release notes; not run here).
+- `git rev-parse --git-common-dir` prints a path relative to the folder it ran in;
+  `--path-format=absolute` came with git 2.31, so `cd` into it and `pwd -P` works on all
+  of the above.
+- Measured 2026-10-13 in Docker (alpine:3.6 git 2.13.7, alpine:3.11 git 2.24.4,
+  alpine:3.13 git 2.30.6, ubuntu:24.04 git 2.43.0, linux/arm64), with a throwaway repo,
+  worktree and helper script under a plain user's `HOME`. (debian:bullseye-slim's own
+  security mirror answered 404 for git's packages that day, so Debian 11's 2.30.2 was not
+  run; Alpine's 2.30.6 stands in for it.)
+
+## §55 Git Credential Manager's plain-file store, moved to another machine
+
+- **Layout**: with `GCM_CREDENTIAL_STORE=plaintext` and `GCM_PLAINTEXT_STORE_PATH=<dir>`,
+  GCM 3.0.1 on macOS wrote `<dir>/<namespace>/<protocol>/<host>/<account>.credential`
+  holding the secret on line 1, then `service=<protocol>://<host>` and
+  `account=<account>`; for a Gitea refresh token the host folder is
+  `refresh_token.<host>` and the account `OAUTH_USER` (as §50's Keychain item). Nothing
+  reached the Keychain: it ran under a sandbox that denies `/usr/bin/security` and the
+  Security server's mach services.
+- **The folder copied to Linux works there**: GCM 3.0.1 `linux-arm64` with the same
+  namespace and store path, `GCM_PROVIDER=generic`, `GCM_INTERACTIVE=never`, no `DISPLAY`
+  or `WAYLAND_DISPLAY`, and a request carrying `wwwauth[]=Basic realm="Gitea"`, posted
+  `grant_type=refresh_token` with the copied refresh token and Gitea's built-in client id
+  to a stub's `/login/oauth/access_token`, printed the new access token with
+  `username=OAUTH_USER`, exit 0, and wrote the new refresh token back into the same file.
+- **Without libicu the Linux build aborts** (`Couldn't find a valid ICU package installed
+  on the system`, exit 134, core dump) on a Debian 12 slim image;
+  `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` in its environment makes it run.
+- **Release assets of 3.0.1**: `gcm-linux-x64-3.0.1.tar.gz` 31.6 MB,
+  `gcm-linux-arm64-3.0.1.tar.gz` 18.2 MB (44 MB unpacked: the executable, two
+  `.so` files and `NOTICE`), `gcm-osx-x64` and `gcm-osx-arm64` tarballs, no musl build and
+  no checksums file; the sha256 of each comes from the release API's asset `digest`, and
+  the arm64 Linux download matched it.
+- Measured 2026-10-13: the store on macOS 27.0 with the bundled GCM 3.0.1 (a `store` of a
+  fake refresh token, the same code path a sign-in uses to save it), the `get` in Docker
+  `node:22-bookworm-slim` (linux/arm64) with git 2.39.5 against a node stub.
+
+## §56 Reaching the Mac from a container under colima
+
+- Inside a colima container `host.docker.internal` (and `host.lima.internal`) resolve to
+  `192.168.5.2`, and a server listening on the Mac's `127.0.0.1` answered there.
+- Measured 2026-10-13, colima on macOS 27.0, `node:22-bookworm-slim`.
+
+## §57 A folder's last-modified time on Linux and macOS
+
+- **Adding, renaming or removing a file right inside a folder moves the folder's
+  last-modified time.** So does creating a file inside a subfolder for that subfolder.
+- **Writing into a file already there does not move its folder's time, and a change
+  inside a subfolder does not reach the parent folder.** Watching a folder this way sees
+  its own list of names change, nothing deeper.
+- On Linux the folder's size stays `4096` through all of it; on macOS (APFS) the size
+  changes with the number of entries (`96` → `128` → `96`).
+- A missing path prints nothing to stdout from either `stat` dialect (§37).
+- Measured 2026-10-11 with one script that ran the §37 `fp()` (`stat -c '%.9Y %s'`, falling
+  back to `stat -f '%Fm %z'`) on a fresh folder after each step, one second apart: add a
+  file, append to it, rename it, remove it, add a file in a subfolder. Run in a Docker
+  `ubuntu:24.04` container (Linux 6.8.0, GNU coreutils) and on this Mac (macOS 27.0, BSD
+  `stat`). Linux output: `start 1791720666.973637444 4096`, `add file 1791720667.980639518`,
+  `edit file 1791720667.980639518` (unchanged), `rename 1791720670.010643717`,
+  `remove 1791720671.024645823`, `add in sub 1791720671.024645823` (unchanged; the
+  subfolder moved to `1791720672.028647913`).
+
+## §58 sudo with no terminal, and an askpass helper
+
+- **Without a controlling terminal, plain `sudo` fails at once**: `sudo: a terminal is
+  required to read the password; either use the -S option to read from standard input or
+  configure an askpass helper`, exit 1, even with `SUDO_ASKPASS` set. A Claude Code Bash
+  tool call has no controlling terminal (`ps` shows `TTY ??`, its zsh leads a session of
+  its own), so this is what a session's `sudo` meets.
+- **`sudo -A` runs `$SUDO_ASKPASS` with no terminal either** and reads the password from
+  its stdout, up to the newline. The helper gets the prompt as `$1` (`Password:` on macOS,
+  `[sudo] password for <user>: ` on Debian), inherits the caller's environment (a variable
+  set by the caller and `KOLOFT_AGENT_DIR` both arrived), and its `$PPID` is the sudo
+  process, whose `ps -o args=` is the whole command (`/usr/bin/sudo -A -k true`). A helper
+  that exits 1 printing nothing gives `sudo: no password was provided` and exit 1 at once.
+- **No time limit while the helper waits**: a helper that answered after 400 s still let
+  the command run; so did one that answered after 90 s under `Defaults passwd_timeout=1`.
+  The Mac's man page also gives `passwd_timeout` a default of 0 (not measured on the Mac).
+- **The 15-minute credential cache does not span Bash tool calls**: `timestamp_type` is
+  `tty`, which with no terminal falls back to the parent process, so a second `sudo -A`
+  from the same shell skips the helper, while one from a new shell (every Bash tool call)
+  asks again.
+- **Over ssh without `-t` it is the same**: `sudo -A` with the helper on the remote side
+  ran the command; plain `sudo` failed with the terminal message.
+- **A macOS system password dialog takes no posted input.** SecurityAgent's admin dialog
+  (`do shell script … with administrator privileges`) ignored `CGEventPost` keys and
+  Return, System Events `keystroke` stopped at the Automation consent dialog, reading its
+  Accessibility tree hung, and `screencapture` did not draw it; the same `CGEventPost`
+  answered an ordinary `display dialog`. So a password for an admin action reaches it only
+  through a command line such as `sudo -A`.
+- Measured 2026-10-15: on macOS 27.0.1 from a Koloft Claude Code tab (sudo 1.9.17p2, the
+  helper exiting 1); sudo 1.9.13p3 in a Debian bookworm container and over ssh between two
+  containers, with a test user's real password; the dialog in a tart 2.40.1 macOS 27.0 VM
+  with SIP on and Accessibility granted (§52).
+
+## §59 How busy a Mac is, and making work give way
+
+- **Node's `os.freemem()` counts only free pages, which macOS keeps near zero.** With the
+  machine roomy (memory pressure level 1, 61–65% free by `memory_pressure -Q`),
+  `os.freemem()` read 0.25 GB of 16 GB while `vm_stat` free + inactive + speculative +
+  purgeable came to 5.2 GB. So "free memory" for a busy check is read elsewhere.
+- **`sysctl -n kern.memorystatus_vm_pressure_level` is the kernel's own verdict**: 1
+  normal, 2 warning, 4 critical; one read takes about 2 ms. Holding more incompressible
+  memory (random bytes, 512 MB a step, 1.5 s apart) kept it at 1 up to +4.0 GB
+  (`kern.memorystatus_level` 64% → 58%); at +4.5 GB it went to 2 and the free level to
+  36%, the compressor from 3.3 to 7.6 GB. The process exiting put it back at 1 and 62%.
+- **Load averages on a busy night are far above the core count.** The `uptime` lines in
+  this Mac's (10 cores: 4 performance, 6 efficiency) Claude Code transcripts of
+  2026-10-14 to 10-19 read 1.3–15 on ordinary days and 70–200 on the nights it stalled;
+  on 10-17, at load 154, free + inactive memory was still 2.5 GB.
+- **`taskpolicy -b` keeps the foreground fast; `nice` does not.** With 40 CPU-bound node
+  processes started next to a foreground node process, a fixed 230 ms piece of foreground
+  work took 1785 ms at normal priority, 1828 ms with `nice -n 20`, 361 ms with
+  `taskpolicy -c utility`, and 230–236 ms with `taskpolicy -b` — set at launch, by
+  `taskpolicy -b -p <pid>` on running processes, or on a parent before it starts its
+  children (they inherit it).
+- **The cost falls on the work given way**: alone on an idle machine the same work took
+  230–278 ms normally, 1330–1560 ms under `-b` (and under `-c background`), 231–277 ms
+  under `-c utility`. `taskpolicy -B -p <pid>` lifts it at once (240 → 1323 → 257 ms on
+  one running process).
+- **A pty under `-b` still works, but stalls for seconds under load.** A `node -p` run in a
+  node-pty zsh answered in 37 ms idle (plain, `-c utility`) and 95 ms under `-b -p`; with
+  40 busy processes, 37 ms plain, 940 ms (worst 1182) under `-c utility`, 4453 ms (worst
+  7696) under `-b`. `koloft session list` from a `-b` shell with 40 busy processes took
+  258–531 ms. A hidden Electron 43.7.3 window loaded and ran script under `-b` (491 ms against
+  176 ms).
+- **A process's environment can be read after it leaves its parent, but not every
+  process's.** `ps -axEww -o pid=,command=` over about 600 processes took 18 ms and showed
+  the environment of 39; a node process started with `detached: true` from a parent that
+  then exited (its parent became 1) still showed a variable set at its launch. `/bin/sleep`
+  and the 7 Google Chrome processes Playwright started (`channel: 'chrome'`, which stay
+  under the process that launched them, 931 MB in all) showed none.
+- **A colima container is invisible from the Mac, and its VM keeps what it took.** colima's
+  VM is one `com.apple.Virtualization.VirtualMachine` process under launchd (`docker info`:
+  4 CPUs, 4 GB). A container that grew to its 1 GB limit (`tail /dev/zero`) was not in
+  the Mac's `ps`; the VM process went from 142 MB to 1.45 GB resident and stayed there
+  after the container was killed, while `free -m` inside the VM said 280 MB used.
+- Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
+  Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
+  tab.
+- **`taskpolicy -a <program>` puts the program above the ones it starts.** `ps -M` showed
+  the main thread of `/usr/sbin/taskpolicy -a /bin/sh -c '/bin/sleep 3 & /bin/sleep 3 &
+  wait'` at priority 46 and both `sleep` children at 31; without `-a` all three were at
+  31. `taskpolicy` replaces itself with the program: the pid it was started with is the
+  program's, and `ps -o comm=` names the program. It ran without sudo. Only the main
+  thread moves: of the 11 threads of a `node` started that way 1 read 46 and 10 read
+  31, and of the 33 of `codex app-server --stdio` 2 read 46 and 31 read 31.
+- **A program it cannot find ends it with exit code 66**: `taskpolicy -a
+  no-such-program` printed `taskpolicy: posix_spawn: No such file or directory`, where a
+  shell's own `exec` of a missing command ends with 127.
+- **`-a` works only at launch.** `taskpolicy -a -p <pid>` on a running `/bin/sleep`
+  exited 0 and left it at 31. A program started with `-a` went 46 → 4 under `taskpolicy
+  -b -p <pid>` and back to 46 under `-B -p`; nothing moved it to 31.
+- **A real agent started that way keeps the step, and what it starts does not get
+  it.** Claude Code 2.1.322 started as `taskpolicy -a <claude>` in a python pty (a fake
+  Messages API on localhost, a throwaway `CLAUDE_CONFIG_DIR`): its main thread read 46,
+  the zsh of its Bash tool and the python that zsh ran read 31, and a `claude -p` that
+  python started read 31. Codex 0.166.0's TUI started the same way read 46.
+- All three measured 2026-11-11 on the same Mac (macOS 27.0, Darwin 27.0.0), by python
+  scripts run from a Koloft Claude Code tab, one run each. Inferred, not checked: an
+  agent whose command is a launcher that starts the real program as a child — the npm
+  `codex` before 0.166.0 (CODEX§5) — has only the launcher lifted. Not run: the real
+  `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
+  lowers a `-a` program while its app is not frontmost or the screen is locked.
+
+- **`-b -p` moves only that process; what it starts afterwards starts lowered, and
+  lifting it does not lift them.** `/bin/sh -c 'sleep A & sleep 3; sleep B & wait'`,
+  priorities read with `ps -M`: after `taskpolicy -b -p <sh>` the shell read 4 and the
+  already running `sleep A` stayed at 31; `sleep B`, started 3 s later, read 4. After
+  `taskpolicy -B -p <sh>` the shell read 31 and `sleep B` still 4; `-B -p` on `sleep B`
+  itself put it at 31.
+- **A lowered shell that then `exec`s a program through `taskpolicy -a` leaves the
+  program lowered.** `/bin/sh -c 'sleep 2; exec /usr/sbin/taskpolicy -a sleep N'`,
+  lowered with `-b -p` during the first two seconds: after the `exec` the same pid ran
+  `sleep N` at priority 4, not 46; `-B -p` then put it at 46.
+- Both measured 2026-11-12 on the same Mac (macOS 27.0, Darwin 27.0.0), one run each, by
+  a node script from a Koloft Claude Code tab; nothing but `sleep` was lowered.
+- **The same holds for a standard user logged in over SSH.** In a tart VM of macOS 27.0
+  (26A428, the `macos-golden-gate-vanilla` image), as a standard user made with
+  `sysadminctl -addUser` (not an admin) logged in with ssh: a script that did `set --
+  fakeagent --flag; [ -x /usr/sbin/taskpolicy ] && set -- /usr/sbin/taskpolicy -a "$@";
+  exec "$@"`, `fakeagent` a shell script found only on `PATH`, ran as that script at 46
+  and its two `sleep` children at 31. `taskpolicy -a /bin/sh -c 'exec /bin/sleep 20'`
+  left the `sleep` at 46 (the step outlives an `exec`). `( exec nohup /usr/sbin/taskpolicy
+  -a fakeserver ) </dev/null >log 2>&1 &` read 46 and, read from a new login after the
+  first one ended (its parent now 1), still 46 with its child at 31. The image has no
+  `setsid`, no `tmux`, and only the `python3` stub that asks for the developer tools.
+  On this Mac, a python `pty.fork()` child that `execvp`s `/usr/sbin/taskpolicy -a /bin/sh
+  -c '…'` read 46, its children 31 and the python 31. Measured 2026-11-13, one run each.
+- Inferred, not checked: that macOS takes the memory of a `-b` process first when memory
+  is short. Three short runs on 2026-11-11 saw its pages on the background queue twice
+  and compressed no sooner than an unlowered process's once; no run was made under real
+  memory pressure.
+
+Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
+program on this Mac through `taskpolicy -a`, and `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE`
+beside it, which does the same on a machine that has `/usr/sbin/taskpolicy` (§72 for one
+that does not); `ResourceGuard` in
+`src/main/resourceGuard.ts`, which while memory pressure stays at 4 lowers the tools of
+the agent tabs nobody looks at with `-b -p`, never a process Koloft itself started, and
+lifts by reading the process table again (ADR-0042).
+
+## §60 Electron: is someone at the Mac
+
+- **`powerMonitor.getSystemIdleState(seconds)` answers at once and asks for no
+  permission.** It returns `active` when the keyboard or mouse was used within `seconds`
+  (any app), `idle` after that, `locked` while the screen is locked, and `unknown` when it
+  cannot tell. `powerMonitor.getSystemIdleTime()` gives the seconds since the last input
+  (it read 71 while the person waited on a reply).
+- **There is no "went idle" event.** `powerMonitor` emits `lock-screen` and
+  `unlock-screen`, but nothing when input stops, so going idle is only seen by asking
+  again later.
+- Measured 2026-10-23 with Electron 43.7.3 on macOS 27.0 (Darwin 27.0.0), Apple silicon, by
+  a script run under the repo's Electron from a Koloft Claude Code tab.
+- **Injected input looks real inside Electron but not to the Mac.** CDP
+  `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` and `webContents.sendInputEvent`
+  on a hidden `BrowserWindow` fire `input-event` (`mouseMove`, `mouseDown`, `mouseWheel`,
+  `keyDown`, `rawKeyDown`…) and DOM events with `isTrusted: true`, the same as a person's.
+  With the Mac idle 15 s, 25 rounds of such input left `getSystemIdleTime()` at 17: it
+  does not reset the Mac's idle time, which a person's input does. Measured 2026-10-25,
+  Electron 43.8.1, macOS 27.0, a script under the repo's Electron.
+
+## §61 Which gh knows the issues a pull request closes
+
+2026-10-23, the official Linux release builds in Docker, `GH_TOKEN=fake gh pr list --repo
+cli/cli --limit 1 --json number,closingIssuesReferences`:
+
+- **gh 2.71.2** refuses before any network call: `Unknown JSON field:
+  "closingIssuesReferences"`, then the list of fields it knows.
+- **gh 2.72.0** takes the field and goes to GitHub (here `HTTP 401: Bad credentials`).
+
+Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
+field and says so; a remote workspace's pull requests are listed by that machine's gh.
+
+## §62 Node `fs.rmSync` on a symbolic link to a folder
+
+- **Node 24 refuses it without `recursive`.** `fs.rmSync(link, { force: true })`, where
+  `link` is a symbolic link to a folder, throws `ERR_FS_EISDIR` ("Path is a directory") on
+  Node 24.13.0; on Node 22.12.0 (the version CI runs) it removes the link.
+- **With `recursive: true` both remove only the link**: the folder it points to and its
+  files stay.
+- Measured 2026-10-26 with a scratch script: Node 24.13.0 on macOS 27.0, Node 22.12.0 in the
+  `node:22.12.0-bookworm-slim` Docker image.
+
+Koloft dependents: `installFakeRemote` in `test/e2e/helpers/remote.ts`, which a case may
+call twice on one home, the second time over the link the first one made.
+
+## §63 A command line typed into the user's own login shell: `VAR=x exec cmd` in fish
+
+- **fish drops the variable.** `fish -c "A=1 exec fakecli"` ran `fakecli` with `A`
+  empty. `A=1 fakecli` without `exec` got `A=1`.
+- **`exec env A=1 cmd` passes it in fish, zsh and bash**, and the shell ends when `cmd`
+  ends (a `; echo` after it never ran; the exit code was `cmd`'s).
+- **`printf '\033…\007'` prints a real ESC and BEL in all three**, so a marker printed
+  that way differs from its own echo on the typed line.
+- Measured 2026-10-28 in the `debian:bookworm` Docker image: fish 3.6.0, zsh 5.9, the
+  image's bash, `fakecli` a `/bin/sh` script printing `$A`.
+- **zsh's `exec name` runs a function or a `hash` entry called `name`; a program that
+  starts `name` itself never does.** With `claude() { …; command claude --from-function
+  "$@"; }` in `.zshrc`, `zsh -i -c 'exec claude --resume x'` ran the function, and `exec
+  /usr/sbin/taskpolicy -a claude --resume x` ran the `claude` on `PATH` with `--resume x`
+  alone; with `hash claude=/bin/echo` the first ran `/bin/echo`, the second the `claude`
+  on `PATH`. An alias `claude="claude --from-alias"` was used by neither. bash ran the
+  `claude` on `PATH` in all six. Measured 2026-11-11, this Mac's `/bin/zsh` and
+  `/bin/bash`, a scratch `ZDOTDIR`; fish not run.
+
+Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
+Antigravity sign-in into the user's login shell with an account's environment,
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaude` in
+`src/main/host/localHost.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
+no longer runs a zsh function or `hash` entry named `claude`.
+
+## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
+
+- **A hidden `WebContentsView` shows a `.md` file as plain text.** Loaded from a
+  `file://` address, `document.contentType` was `text/markdown` and the body one
+  `<pre>` holding the source: no heading, no table. The Workbench's Markdown layout
+  comes from the renderer, so a picture of the file would show its raw source.
+  Measured 2026-11-04, Electron 43.8.6, a script loading a `.md` with a heading, a
+  table and a mermaid fence into a sandboxed view of its own session.
+- **A ```` ```diff ```` code block shows no colours in Discord's phone app**: added and
+  removed lines read the same. Seen by the owner on their phone, 2026-11-04, on a
+  message the dev test bot posted; a picture with green and red rows was the look
+  picked over an `ansi` block and a coloured square at the start of each line.
+
+Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
+`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+
+## §65 The `electron` npm package loaded by plain Node
+
+- **Loading it downloads the Electron binary when the binary is not there.** Under plain
+  Node, `require('electron')` runs `node_modules/electron/index.js`, which exports the
+  binary's path. When `path.txt` or the binary under `dist/` is missing, it first runs
+  `install.js` (a download from GitHub's releases) with `spawnSync`, and throws `Electron
+  failed to install correctly` if that fails. `npm ci` does not fetch the binary, so a
+  fresh CI runner downloads it again in every vitest worker that loads the package; a
+  GitHub 504 there failed whole unit test files (issue #1496).
+- **`ELECTRON_OVERRIDE_DIST_PATH` skips it.** With the variable set, `index.js` returns
+  that folder joined with `path.txt`'s text (or `electron`) without looking for the
+  binary or downloading it.
+- **A `resolve.alias` cannot do the same.** Vitest leaves `node_modules` packages to
+  plain Node, so a package such as `electron-chrome-extensions` reaches the real
+  `electron` through its own `require`, past any alias.
+- Measured 2026-11-05, electron 43.8.6, vitest 5.0.5, macOS: with `path.txt` moved
+  aside and `ELECTRON_MIRROR` pointing at a closed port, the whole unit suite failed 21
+  files on `Downloading Electron binary...`; with the variable set in `test.env`, all of
+  it passed and nothing downloaded. The third point is read from `index.js` and vitest's
+  defaults, not checked.
+
+Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
+`electronPackage.test.ts` fails if that setting goes.
+
+## §66 Web fonts and the terminal: `document.fonts` and xterm.js
+
+- **`document.fonts.check()` answers `true` for a face that is not loaded.** Measured
+  2026-11-10 (Electron 43.8.6, the hidden e2e window, Koloft's bundled JetBrainsMono
+  Nerd Font faces declared by `@font-face` in `styles.css`): at `DOMContentLoaded`, with
+  every face `unloaded`, `check('italic 400 13px "JetBrainsMono Nerd Font"')` was `true`,
+  with and without system fonts after it in the list; 30 ms later, with the 700 italic
+  face still `unloaded`, `check('italic 700 13px …')` was still `true`. So `check()`
+  cannot tell whether a terminal may be measured yet.
+- **`document.fonts.load(font)` resolves once the matching face is loaded**: in the same
+  run, `load('italic 400 13px …')` resolved with that face `loaded` while the other
+  italic face, not asked for, stayed `unloaded`.
+- **xterm.js measures its cell size and draws glyphs with whatever face is ready at that
+  moment, and does not look again when a web font finishes loading**: nothing in
+  `@xterm/xterm` 6.1.0-beta.302 or `@xterm/addon-webgl` listens to `document.fonts`
+  (read from their sources, not measured). Setting `fontFamily` or `fontSize` to a new
+  value measures again; setting the value it already has does nothing.
+- **Mermaid sizes each label box from its text as measured while it draws**, with
+  `htmlLabels: false`, and does not redraw when a font arrives later (read from
+  `mermaidRender.ts`'s settings, not measured).
+- **Until a web font loads, a page lays out its text with the next font in the list**:
+  the `--mono` list falls to Menlo on macOS (neither SF Mono nor JetBrains Mono is
+  installed), whose glyphs are as wide as JetBrainsMono Nerd Font's within 0.3 %
+  (`↑12 ⑂345 ●6` at bold 12 px: 79.30 px against 79.05 px, measured the same day).
+
+Koloft dependents: `loadMonoFonts` in `src/renderer/src/monoFonts.ts`, which
+`TerminalView` waits on before it builds a terminal and before it hands one a new font,
+and which `mermaidRender` waits on before its first diagram.
+
+## §67 Which ports a tab's processes listen on, on macOS and Linux
+
+- **`lsof` needs `-a` to AND its selectors.** `lsof -p <pids> -iTCP -sTCP:LISTEN`
+  without `-a` ORs them and lists every listening socket of the user; with `-a` it lists
+  only those of the given pids. `-nP` keeps addresses and ports as numbers.
+- **A process's environment shows who started it, even after it leaves its parent.** On
+  macOS, `ps -A -E -ww -o pid= -o command=` appends each process's start-time environment
+  (§59). On Linux, `/proc/<pid>/environ` holds it NUL-separated, and
+  `grep -a -o -s -E 'KOLOFT_TAB_ID=[^[:cntrl:]]+' /proc/[0-9]*/environ` reads every one
+  the user may read in one call. A server started with `nohup … &` (macOS) or
+  `setsid nohup … &` (Linux), whose parent becomes pid 1, still carries the variable.
+- **Linux without `lsof`.** The e2e sshd image (Debian) has no `lsof`. There, the socket
+  inodes of a process are the `socket:[N]` links under `/proc/<pid>/fd`, and
+  `/proc/net/tcp` and `/proc/net/tcp6` list each socket's inode (column 10), state
+  (column 4, `0A` is listening) and local address (column 2, the port in hex after the
+  last `:`).
+- **macOS `awk` (the one-true-awk) refuses a `-v` value with a newline** (`newline in
+  string`), so a list goes to awk on standard input.
+- **Antigravity's `agy` itself listens on two 127.0.0.1 ports** (its own service), so
+  a list of a session's servers leaves out the agent programs' own sockets.
+- Measured 2026-11-06 on macOS 27.0 (Darwin 27.0.0) and in `koloft-e2e-sshd` (Debian,
+  as root, with and without `lsof` on `PATH`): three `python3 -m http.server` listeners
+  started with two different `KOLOFT_TAB_ID` values, one through `nohup` (macOS) or
+  `setsid nohup` (Linux); each tab's scan listed exactly its own ports (about 0.25 s on
+  this Mac), a tab id no process carried listed none. The `agy` point is from
+  `lsof -nP -iTCP -sTCP:LISTEN` on this Mac with a real `agy` tab open. The `-a` point
+  was measured 2026-10-11 on this Mac (a shell's grandchild listener found, every
+  listening socket of the user listed without `-a`); on 2026-11-06 only the `-a` form ran.
+- **A tmux pane keeps the tab id its session started with.** A remote tab that a
+  restarted Koloft attaches to an older tmux session has a new tab id, while every
+  program in that session, and every server it started, still carries the first one.
+  `tmux -L koloft list-panes -s -t '=<name>:' -F '#{pane_pid}'` prints the pane's pid;
+  the `KOLOFT_TAB_ID` its descendants carry is that first id. Measured 2026-11-10 in
+  `koloft-e2e-sshd` (Debian, tmux 3.3a, no `lsof`): a pane whose shell exported
+  `KOLOFT_TAB_ID=pty-old-1`, one server still in the pane and one through
+  `setsid nohup`; a scan for `pty-new-1` with the tmux name listed both, without it
+  none, and a third server with another tab's id was never listed.
+
+Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
+menu's listening ports).
+
+## §68 The text of a selection: `Selection.toString()` against `Range.toString()`
+
+Measured 2026-11-10 in headless Chrome 157 (Playwright, a page with a paragraph, a code
+block whose language label and Copy button carry `user-select: none`, and a second
+paragraph; one range from the first paragraph into the second, added to the selection):
+
+- **`Range.toString()` joins every text node in the range, unselectable ones included,
+  with nothing between blocks**: `wordstsCopyconst x = 1after`.
+- **`Selection.toString()` of that same range leaves out the `user-select: none` text and
+  puts line breaks between blocks**: `words\n\nconst x = 1\nafter`.
+
+Koloft dependents: the ✎ comment on a rendered Markdown file (`PreviewViewer.tsx`) quotes
+the selection's own text, and the rendered code block's chrome is `user-select: none`
+(`previewViewer.css`); `md-comment.spec.ts` checks it in the app's Electron.
+
+## §69 macOS: what a busy disk makes the main thread wait for
+
+Measured 2026-11-11 on macOS 27.0 (Darwin 27.0.0, APFS), Apple silicon, 10 cores, memory
+pressure level 1, load average 2–4. "Busy disk" below is two node processes that each, in
+a loop, write 64 MB, `fsync`, read it back and delete it; no CPU load is added.
+
+In a Node 24.13.0 script, timing a synchronous `fs.realpathSync` of a file three folders
+below a folder D, once every 5 ms:
+
+| what else the same process does | calls | longest | calls over 50 ms |
+|---|---|---|---|
+| nothing, idle disk | 447–461 | 0.14–0.25 ms | 0 |
+| nothing, busy disk | 1225 | 36 ms | 0 |
+| busy disk, and every 20 ms `fs.promises.writeFile` of a new file in D, then a rename onto a file in D (two runs) | 507, 508 | 338 ms, 366 ms | 9, 10 |
+| busy disk, and the same write, but the new file is created in a sibling folder of D and renamed into D (one run) | 1239 | 1.7 ms | 0 |
+
+- **So while a file is being created in a folder and the disk is busy, the first
+  synchronous lookup through that folder waited with it**, though the create itself ran on
+  the libuv pool. With the new file created in another folder the lookups did not wait;
+  that run's one slow call was an asynchronous `fs.promises.realpath` (322 ms), off the
+  main thread.
+- **Which synchronous write is slow on a busy disk** (same script style, 42 rounds, 8 KB
+  of text): creating a new file and writing it, 16 calls over 50 ms (longest 371 ms);
+  writing into an existing empty file, 8 over 50 ms (371 ms); truncating and rewriting a
+  file that already held 8 KB, 1 over 50 ms (314 ms); writing 8 KB in place with `r+` and
+  no truncate, none (longest 6.6 ms); a rename onto an existing file, 1 over 50 ms
+  (406 ms); unlink, none. With an idle disk none of them passed 13 ms.
+- **In Koloft** (Electron 43.8.6, built app, hidden window, six tabs: two Claude, Codex,
+  Muse, an Antigravity tab whose session never bound, and one remote Claude over the fake
+  ssh; a click on the next session row and four keys about every 400 ms; every
+  `fs.*Sync`, `fs.watch`, `FSWatcher.close` and `child_process` call in the main process
+  timed; three rounds of 10 s idle then 10 s busy disk):
+  - Switching and typing only, each background save's temp file next to its target in
+    `userData`: 0 event-loop stalls of 50 ms or more idle, 36 busy (20 of them 150 ms or
+    more, the longest 303 ms), each holding a slow synchronous call: 53
+    `fs.realpathSync` of the workspace note under `userData` (longest 309 ms) and 2
+    `fs.renameSync` (57 ms). With the temp files in a folder of their own: 1 stall
+    (75 ms), `fs.realpathSync` at most 0.1 ms. In these runs `fs.watch(dir, { recursive:
+    true })` took at most 0.3 ms and `FSWatcher.close` at most 16–25 ms, busy or idle.
+  - Adding a process that creates and deletes small files in the two workspace folders
+    (one every 15 ms, as an agent's build does) and a file save through Koloft about
+    every 1.2 s, on the code before this section: 56 stalls of 50 ms or more (37 of
+    150 ms or more, longest 437 ms) in 73 switches; slow calls were `fs.realpathSync`
+    opening a file (41, longest 384 ms), `fs.openSync(…, 'wx')` of a save's temp file in
+    the workspace (11, 403 ms), `fs.fsyncSync` (14, 261 ms), `fs.renameSync` into
+    `userData` (2, 257 ms) and `fs.watch` of the workspace (2, 199 ms; 13 of them,
+    longest 330 ms, in a run where the other calls were already off the main thread). A
+    one-byte asynchronous `fs.write` to `/dev/null` through the libuv pool, every 50 ms,
+    waited up to 384 ms (10 over 20 ms). After, in two runs: 1 stall each (247 ms and
+    91 ms, each an `fs.statSync` of a folder: the first in `dirExistsSync`, the second
+    the check `fileWatch.ts` makes before it reuses a kept watcher) in 100 and 121 switches, the pool write at
+    most 23 ms and 9 ms, the save's `fs.renameSync` in the workspace at most 7 ms. Three
+    rounds a run; the Mac's load average was 9–17 from other work, memory pressure
+    level 1–2.
+  - A settings save (`fs.writeFileSync` of a new `settings.json.tmp` in `userData`, 31
+    of them in the busy 30 s): 19 over 50 ms, longest 315 ms.
+- **What the busy disk did not slow in any of those runs**: `fs.statSync` and
+  `fs.existsSync` (at most 0.2 ms but for the one above), `fs.writeFileSync` over a
+  file already holding text (at most 18 ms), starting a child with `execFile` (at most
+  14 ms).
+
+Koloft dependents: `BackgroundFile` (`backgroundFile.ts`) creates each half-written file
+in a `.koloft-writes` folder inside the target's folder and moves it into place off the
+main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
+`fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
+save's last check and its rename together on the main thread; `signalLog`
+(`machineRoom.ts`) appends to and trims its log through `fs.promises`; `saveSettings`
+writes `settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and
+git-freshness sweeps' "is the workspace folder still there" and the timed look at Muse's
+registry folders stat them through `fs.promises`.
+
+## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
+
+- **While the main process's JavaScript is busy, no key press and no wheel turn reaches
+  a window**, wherever the terminal behind it lives. Electron's own docs (Performance,
+  "Blocking the main process", read 2026-11-12) say the main process "also houses the
+  UI thread" and that blocking it freezes the whole app; Chromium's
+  `render_widget_host_view_cocoa.mm` takes `keyEvent:` and `scrollWheel:` in the
+  browser process's window view before handing them to the renderer, and an input
+  method's text goes the same way. So moving node-pty out of the main process cannot
+  keep typing or scrolling going while the main thread stalls: only a main thread that
+  does not stall can.
+- **What a throwaway Electron 43.8.6 app showed** (hidden window, a `cat` in a node-pty,
+  the main process busy-waiting 1 s): node-pty loads in a `utilityProcess` — from a
+  plain folder and from an `app.asar` with node-pty in `app.asar.unpacked` — and a
+  `MessageChannelMain` port reaches the renderer's preload with context isolation on.
+  Text the page itself wrote over that port came back from the pty with p99 1–8.8 ms
+  during the stall (the same path through the main process: 980–990 ms), and the
+  renderer drew 160 frames in that second. Keys and wheel turns sent through CDP's
+  `Input.dispatchKeyEvent` / `Input.dispatchMouseEvent` reached the page only after
+  the stall (keys p99 938–942 ms over two rounds, wheel p99 946 ms with 16 of 30
+  arriving), but so did a plain `Runtime.evaluate` (896–899 ms): every CDP command
+  waits for the main thread, so these numbers agree with the source above without
+  proving it. Not measured: a real keyboard (it needs a focused window), and whether
+  the frames drawn during the stall reach the screen.
+- **The rest of that app**: the `utilityProcess`'s main thread read priority 47 under
+  `ps -M` (the main process 46, both libuv pools 31). Killing it with SIGKILL gave the
+  main process its `exit` event; a program in its pty died of the hangup, one that
+  ignored SIGHUP lived on with parent 1, and a new fork started fine. Killing the main
+  process with SIGKILL ended the `utilityProcess` too.
+- **Timing the main thread from inside costs little and tells waiting from working.**
+  In a hidden Electron 43.8.6 window (Node 24.22.1), a `setInterval` every 25 ms that
+  reads `performance.now()` and `process.threadCpuUsage()` added 52–56 ms of process
+  CPU per 10 s over three runs (every 10 ms: about 105 ms); the app alone used about
+  10 ms. A 200 ms busy loop showed as a 203–213 ms gap with 197–200 ms of main-thread CPU, a 200 ms
+  `Atomics.wait` as a 212–228 ms gap with under 1 ms of CPU, and 60 s with nothing
+  to do showed no gap over 75 ms. `perf_hooks.monitorEventLoopDelay` at a 10 ms
+  resolution, read every second, reported the wait but not the busy loop in one run.
+- Measured 2026-11-12 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, with
+  `NSApplicationActivationPolicyAccessory` and the window never shown, one or two runs
+  each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
+  app with a Dock icon whose window stays covered for long.
+
+Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
+and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
+`userData` whenever the main thread took no new work for 75 ms or more, with how much
+of that it spent on the CPU.
+
+## §72 Making work give way on a Linux machine, as the user logged in over SSH
+
+How measured: 2026-11-13, a container of the e2e sshd image (Debian 12 bookworm) under
+colima, whose VM runs Linux 6.8.0-117-generic (Ubuntu, `PREEMPT_DYNAMIC`), the container
+pinned to 4 cores (`--cpuset-cpus 0-3`). The user `kuser` (uid 1001, no sudo) logged in
+over ssh to the container's own sshd (PAM on) and ran a python script there. In it, an
+"agent" ran on a pty and echoed each byte typed into it; 20 single keys 300 ms apart
+measured the time from the write to the echo, and 4 times a fixed piece of work (230 ms
+on the idle machine) was asked for. Its "tools" were busy-loop children it forked before
+the measurement. One run per row, except where two are given.
+
+- **Nothing makes a program go above another.** `nice -n -1 true` printed "nice: cannot
+  set niceness: Permission denied"; `renice -n -1` on the user's own shell and
+  `chrt -r 1 true` were refused; writing `-1` to `/proc/self/autogroup` failed with an
+  I/O error. `/usr/sbin/taskpolicy` is macOS-only.
+- **Lowering is one way.** `renice -n 10` on the user's own `sleep` worked;
+  `renice -n 0` on it afterwards was refused (Permission denied). macOS's `taskpolicy -B -p`
+  has no counterpart here.
+- **A key reaches a busy machine's program at once anyway.** Key to echo, median /
+  worst: idle 0.3 / 0.3 ms; with 16 busy tools at the agent's own nice 0.1 / 3.0 ms; with
+  40, 0.1 / 3.0 ms. So the stall ADR-0042 guards against on macOS (two keys read
+  together, §59) did not show.
+- **Work the agent itself does is slowed, and lowering the tools gives it back.** The
+  230 ms piece, 4 runs: 16 busy tools at nice 0 → 810–1210 ms; at nice 10 → 213–383 ms;
+  at nice 19 → 214–228 ms; in a session of their own (`setsid`, autogroups on:
+  `sched_autogroup_enabled` read 1) → 880–979 ms. With 40 busy tools: nice 0 →
+  2499–3674 ms, nice 19 → 276–335 ms.
+- Inferred, not checked: that `setsid` made no difference because a container's tasks sit
+  in a cgroup of their own, and the kernel applies autogroups only to tasks in the root
+  task group (`/proc/self/cgroup` read `0::/`, the container's own namespace). Not probed:
+  a systemd host (where an SSH login sits in `user.slice`), a host whose
+  `/etc/security/limits.conf` gives the user a `nice` limit, the path through tmux and
+  Koloft's status relay (both at the agent's nice), and a real agent's redraw.
+
+Koloft dependents: `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE` in `src/main/agentLift.ts`
+lifts an agent program only on a machine with `/usr/sbin/taskpolicy` (§59); on a Linux
+machine it leaves the agent and its tools as they start.

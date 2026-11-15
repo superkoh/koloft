@@ -12,9 +12,10 @@ describe('a session has finished all its work only once its turn ended and nothi
     expect(await runtime.stillWorking(TAB)).toBe(false)
   })
 
-  it('a session that stopped to ask a question is not finished', async () => {
+  it('a session that stopped to ask a question is not finished, and shows as needing the owner like an approval', async () => {
     runtime.recordTurn(TAB, 'input')
     expect(await runtime.stillWorking(TAB)).toBe(true)
+    expect(runtime.statusOf(TAB)).toBe('approval')
   })
 
   it('a finished turn with background work still listed is not finished, until the list drains', async () => {

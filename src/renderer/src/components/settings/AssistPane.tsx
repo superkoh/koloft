@@ -7,8 +7,8 @@ export function AssistPane(): JSX.Element {
       <div className="set-ph">
         <h3>Assist</h3>
         <p>
-          Koloft’s own AI. It does small jobs for you, and you can talk to it from the sidebar or
-          from Discord.
+          Koloft’s own AI. It does small jobs for you, and it runs your butler, whom you talk to
+          from the top of the sidebar or from Discord.
         </p>
       </div>
       <AssistSection />
