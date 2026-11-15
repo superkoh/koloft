@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
@@ -28,7 +29,6 @@ import {
 import {
   addRemoteWorkspace,
   agyReady,
-  boundRemoteSession,
   killLines,
   launchWithRemote,
   liveTmuxSessions,
@@ -305,12 +305,26 @@ interface TabKind {
 
 const kindName = (kind: TabKind): string => `${kind.remote ? 'remote' : 'local'} ${kind.agent}`
 
-const tabOf = async (page: Page, ws: string): Promise<string> =>
-  (await wsRows(page, ws).first().getAttribute('data-tab-id')) ?? ''
+async function tabOf(page: Page, ws: string): Promise<string> {
+  const tabId = await wsRows(page, ws).first().getAttribute('data-tab-id')
+  expect(tabId).toBeTruthy()
+  return tabId!
+}
 
-const codexServersOnTheMachine = (env: E2EEnv): { pid: number; argv: string[] }[] =>
-  machineCodexLog<{ pid: number; argv: string[] }>(env, 'fake-codex-server-calls.jsonl').filter(
-    (c) => c.argv.includes('--listen')
+// PLATFORM§3
+function stillThisTestsProcess(env: E2EEnv, pid: number): boolean {
+  const res = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' })
+  return processAlive(pid) && res.stdout.includes(env.home)
+}
+
+interface CodexServerCall {
+  pid: number
+  argv: string[]
+}
+
+const codexServersOnTheMachine = (env: E2EEnv): CodexServerCall[] =>
+  machineCodexLog<CodexServerCall>(env, 'fake-codex-server-calls.jsonl').filter((c) =>
+    c.argv.includes('--listen')
   )
 
 const remoteClaudeCalls = (env: E2EEnv): ClaudeCall[] =>
@@ -357,8 +371,11 @@ const TAB_KINDS: TabKind[] = [
         holders: () => [first.pid],
         answers: () =>
           codexAnswers(fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')).join('\n'),
-        asleep: () => !processAlive(first.pid),
-        lastLaunchResumesIt: () => codexCalls(env).at(-1)!.sessionId === first.sessionId
+        asleep: () => !stillThisTestsProcess(env, first.pid),
+        lastLaunchResumesIt: () => {
+          const last = codexCalls(env).at(-1)!
+          return last.method === 'thread/resume' && last.sessionId === first.sessionId
+        }
       }
     }
   },
@@ -383,7 +400,7 @@ const TAB_KINDS: TabKind[] = [
         holders: () => [tui.pid, server.pid],
         answers: () =>
           codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')).join('\n'),
-        asleep: () => !processAlive(server.pid) && !processAlive(tui.pid),
+        asleep: () => !stillThisTestsProcess(env, server.pid),
         lastLaunchResumesIt: () => {
           const last = codexCalls(env).at(-1)!
           return last.method === 'thread/resume' && last.sessionId === tui.sessionId
@@ -406,8 +423,9 @@ const TAB_KINDS: TabKind[] = [
         launches: () => museCalls(env).length,
         holders: () => [first.pid],
         answers: onScreen(page, tabId),
-        asleep: () => !processAlive(first.pid),
-        lastLaunchResumesIt: () => museCalls(env).at(-1)!.sessionId === first.sessionId
+        asleep: () => !stillThisTestsProcess(env, first.pid),
+        lastLaunchResumesIt: () =>
+          museCalls(env).at(-1)!.argv.slice(-2).join(' ') === `resume ${first.sessionId}`
       }
     }
   },
@@ -448,6 +466,7 @@ const TAB_KINDS: TabKind[] = [
       await newSessionInWith(page, ws, 'Antigravity')
       await expect.poll(() => agySessionCalls(env).length).toBe(1)
       const [first] = agySessionCalls(env)
+      await agyReady(page)
       await runIn(page, centerTerm(page), 'first words')
       const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
       return {
@@ -455,7 +474,7 @@ const TAB_KINDS: TabKind[] = [
         launches: () => agySessionCalls(env).length,
         holders: () => [first.pid],
         answers: onScreen(page, tabId),
-        asleep: () => !processAlive(first.pid),
+        asleep: () => !stillThisTestsProcess(env, first.pid),
         lastLaunchResumesIt: () =>
           agySessionCalls(env).at(-1)!.argv.includes(`--conversation=${id}`)
       }
@@ -468,12 +487,9 @@ const TAB_KINDS: TabKind[] = [
     listedTwiceWhileFallingAsleep: true,
     start: async (page, env, ws) => {
       await newSessionInWith(page, ws, 'Antigravity')
-      await agyReady(page)
-      await runIn(page, centerTerm(page), 'first words')
-      const { tabId, id } = await boundRemoteSession(page, 'agy')
-      await expect
-        .poll(onScreen(page, tabId), { timeout: ON_THE_MACHINE_WITHIN_MS })
-        .toContain('Answer to: first words')
+      const { tabId, id } = (await OTHER_AGENTS_ON_THE_MACHINE.find(
+        (a) => a.label === 'Antigravity'
+      )!.bound!(page)) as { tabId: string; id: string }
       const [first] = machineAgyCalls(env)
       return {
         tabId,
@@ -519,6 +535,9 @@ async function startAndSleep(
   ws: string,
   atTheMoment: boolean
 ): Promise<RunningTab> {
+  await startSessionIn(page, 'ws-b', kind.agent === 'Claude' ? {} : { method: 'Claude' })
+  const parked = wsRows(page, 'ws-b').first()
+  await expect(parked).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
   const tab = await kind.start(page, env, ws)
   await switchToRow(page, wsRows(page, ws).first())
   await runIn(page, centerTerm(page), 'before sleep')
@@ -526,9 +545,7 @@ async function startAndSleep(
     .poll(tab.answers, { timeout: ON_THE_MACHINE_WITHIN_MS })
     .toContain(`${kind.replyPrefix}before sleep`)
   const awake = tab.holders()
-  await startSessionIn(page, 'ws-b', kind.agent === 'Claude' ? {} : { method: 'Claude' })
-  const parked = wsRows(page, 'ws-b').first()
-  await expect(parked).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+  expect(awake.every((pid) => stillThisTestsProcess(env, pid))).toBe(true)
   await parked.click()
   if (atTheMoment) {
     expect(tab.asleep(), 'still awake when the watch for the moment starts').toBe(false)
@@ -541,7 +558,9 @@ async function startAndSleep(
     return tab
   }
   await expect.poll(tab.asleep, { timeout: ON_THE_MACHINE_WITHIN_MS }).toBe(true)
-  await expect.poll(() => awake.some(processAlive), { timeout: 30_000 }).toBe(false)
+  await expect
+    .poll(() => awake.some((pid) => stillThisTestsProcess(env, pid)), { timeout: 30_000 })
+    .toBe(false)
   return tab
 }
 
@@ -584,7 +603,7 @@ test.describe('every other kind of session tab is re-adopted by a reload just as
         const links = sshLinksToTab(env, tab.tabId)
         expect(links).toBe(kind.remote ? 1 : 0)
         const holders = tab.holders()
-        expect(holders.every(processAlive)).toBe(true)
+        expect(holders.every((pid) => stillThisTestsProcess(env, pid))).toBe(true)
 
         await page.reload()
         await waitBooted(page)
@@ -601,7 +620,7 @@ test.describe('every other kind of session tab is re-adopted by a reload just as
         expect(tab.launches()).toBe(launches)
         expect(sshLinksToTab(env, tab.tabId)).toBe(links)
         expect(tab.holders()).toEqual(holders)
-        expect(holders.every(processAlive)).toBe(true)
+        expect(holders.every((pid) => stillThisTestsProcess(env, pid))).toBe(true)
       } finally {
         await quitAndClose(app)
       }
