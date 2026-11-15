@@ -87,7 +87,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     waits on a key and `working` after it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
-    `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
+    `-exit` (exits with that code, no hook), `-crash-after-end` (an exit
+    fires SessionEnd as usual, then exits 1.5 s later with that code), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it), `-trust-question` (holds a session id: resuming that id, it
     asks CC's folder-trust question before it binds; ↓ then Enter answers yes, deletes

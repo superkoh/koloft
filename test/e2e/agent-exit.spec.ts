@@ -174,6 +174,43 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
     }
   })
 
+  test('a Claude that ends its session and then exits with an error keeps its row and last screen, as one that crashed mid-session does', async ({
+    env
+  }) => {
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const row = wsRows(page, 'ws-a')
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      const [tabId] = await termIds(page)
+      fs.writeFileSync(path.join(env.home, 'fake-claude-crash-after-end'), '3')
+
+      await runIn(page, centerTerm(page), '/exit')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Claude session ended unexpectedly (exit code 3)',
+        { timeout: 20_000 }
+      )
+      await expect(row).toHaveCount(1)
+      await expect(row.locator('.ws-tab-sub')).toHaveText('main · exited (code 3)')
+      expect(await termIds(page)).toEqual([tabId])
+      await expect
+        .poll(() => terminalText(page, tabId))
+        .toContain('[Koloft] Claude session ended unexpectedly (exit code 3)')
+      await expect(row.locator('.ws-tab-title')).not.toHaveText('Terminal')
+
+      fs.rmSync(path.join(env.home, 'fake-claude-crash-after-end'))
+      const [first] = readCalls(env)
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => readCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(readCalls(env)[1].argv).toContain(first.sessionId)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
     test(`when ${AGENT[backend].label} that koloft session new started dies before it starts, its row stays; ⇧⌘R starts it again in the same tab, still listed under the session that started it`, async ({
       env

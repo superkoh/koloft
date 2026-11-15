@@ -55,6 +55,7 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
+  tabAsItsAgent,
   tabEverBound,
   welcomeWorkbenchKey,
   workbenchStoreKey
@@ -1029,7 +1030,7 @@ export default function App(): JSX.Element {
       if (useStore.getState().terminalExited(e.id)) return
       if (consumeRestartExit(e.id)) return
       if (consumeRestoreExit(e.id)) useStore.getState().showToast(RESTORE_FAILED_NOTICE)
-      const tab = useStore.getState().tabs.find((t) => t.id === e.id)
+      const tab = tabAsItsAgent(useStore.getState().tabs.find((t) => t.id === e.id))
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))

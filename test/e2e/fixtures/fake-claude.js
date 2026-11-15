@@ -609,10 +609,18 @@ function fireWaitingHook(event, payload) {
   })
 }
 
+const CRASH_AFTER_SESSION_END_MS = 1500
+
 function shutdown(reason) {
   waitingHook?.kill('SIGTERM')
   fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason })
-  process.exit(0)
+  let crashCode
+  try {
+    crashCode = Number(fs.readFileSync(path.join(home, 'fake-claude-crash-after-end'), 'utf8'))
+  } catch {
+    process.exit(0)
+  }
+  setTimeout(() => process.exit(crashCode || 1), CRASH_AFTER_SESSION_END_MS)
 }
 
 function dirtyCount() {
