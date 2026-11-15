@@ -104,7 +104,7 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
-import { loginShellIsBash, type OpenShim } from './openShimScript'
+import { bashEnvFileIn, loginShellIsBash } from './openShimScript'
 import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
@@ -906,7 +906,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ? {
           ...this.envFor(home),
           ZDOTDIR: openShim.zdotDir,
-          ...(loginShellIsBash() && !processEnv?.BASH_ENV && { BASH_ENV: openShim.bashEnv })
+          ...(loginShellIsBash() &&
+            !processEnv?.BASH_ENV && { BASH_ENV: bashEnvFileIn(openShim.shimDir) })
         }
       : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')
@@ -1175,12 +1176,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     userZdotdir: string | undefined,
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
-  ): OpenShim & { release(): void } {
+  ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       { backend: 'codex', userZdotdir, open, agent }
     )
-    return { ...shim, release }
+    return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }
 
   // CODEX§34

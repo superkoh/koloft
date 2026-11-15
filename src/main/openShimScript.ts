@@ -125,8 +125,12 @@ export function loginShellIsBash(): boolean {
   return path.basename(os.userInfo().shell ?? '') === 'bash'
 }
 
+export function bashEnvFileIn(shimDir: string): string {
+  return path.join(shimDir, 'bash_env')
+}
+
 // CODEX§12
-function bashEnvFile(shimDir: string): string {
+function bashEnvScript(shimDir: string): string {
   return `if shopt -q login_shell && [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\nexport PATH=${shq(shimDir)}:"$PATH"\n`
 }
 
@@ -147,7 +151,7 @@ export function writeOpenShim(
   const shim = {
     shimDir,
     zdotDir,
-    bashEnv: path.join(shimDir, 'bash_env'),
+    bashEnv: bashEnvFileIn(shimDir),
     requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`)
   }
   try {
@@ -157,7 +161,7 @@ export function writeOpenShim(
     })
     for (const name of ZSH_DOTFILES)
       fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userZdotdir, zdotDir, shimDir))
-    fs.writeFileSync(shim.bashEnv, bashEnvFile(shimDir))
+    fs.writeFileSync(shim.bashEnv, bashEnvScript(shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {
     removeOpenShim(shim)
