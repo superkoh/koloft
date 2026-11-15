@@ -7,6 +7,7 @@ import {
   keptTabsToClose,
   workbenchOwnerLive
 } from '../../src/renderer/src/store'
+import { mainRequest, runResume } from '../../src/renderer/src/resumeFlow'
 import {
   allEditTabs,
   allDirtyTabs,
@@ -788,6 +789,73 @@ describe('restartActiveSession: respawn failure', () => {
       worktreeName: 'feat',
       cwd: '/w'
     })
+  })
+
+  it('"Resume in main" from that dialog resumes the session in the dead tab, even once it has turned back into a shell, and keeps its Workbench', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'dead1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    s.setSessions([
+      session('dead1', {
+        backendId: 'codex',
+        sessionId: 'codex:local:thread-d',
+        title: 'Dead tree',
+        cwd: '/w/.claude/worktrees/feat'
+      })
+    ])
+    useStore.setState({
+      workspaceRows: [
+        { workspace: { path: '/w' }, rows: [{ id: 'codex:local:thread-d' }] }
+      ] as unknown as WorkspaceRows[],
+      workbenchOpen: { dead1: true },
+      workbenchWidths: { dead1: 640 }
+    })
+    createRefuses = 'rebuild-failed'
+    s.restartActiveSession()
+    await settle()
+    useStore.getState().setSessions([])
+    expect(useStore.getState().tabs[0]).toMatchObject({ id: 'dead1', kind: 'shell', alive: false })
+
+    createRefuses = null
+    nextPty = { id: 'dead-new', cwd: '/w' }
+    const escape = useStore.getState().resumeDialog
+    if (escape?.kind !== 'escape') throw new Error('no escape dialog')
+    await runResume(escape.target, mainRequest(escape.target, escape.cwd))
+
+    const resumed = useStore.getState()
+    expect(resumed.tabs).toEqual([
+      expect.objectContaining({
+        id: 'dead-new',
+        kind: 'codex',
+        title: 'Dead tree',
+        sessionId: 'codex:local:thread-d',
+        alive: true,
+        resuming: true
+      })
+    ])
+    expect(resumed.activeTabId).toBe('dead-new')
+    expect(resumed.workbenchOpen).toEqual({ 'dead-new': true })
+    expect(resumed.workbenchWidths['dead-new']).toBe(640)
+    expect(resumed.workbenchWidths).not.toHaveProperty('dead1')
+  })
+
+  it('a tab whose agent quit but whose shell still runs is never taken over by a resume of that session', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'quit1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('quit1', { sessionId: 'sid-Q' })])
+    s.setSessions([])
+    expect(useStore.getState().tabs[0]).toMatchObject({ id: 'quit1', kind: 'shell', alive: true })
+
+    useStore.getState().addTab({
+      id: 'quit2',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      sessionId: 'sid-Q',
+      alive: true,
+      resuming: true
+    })
+
+    expect(useStore.getState().tabs.map((t) => t.id)).toEqual(['quit1', 'quit2'])
   })
 })
 

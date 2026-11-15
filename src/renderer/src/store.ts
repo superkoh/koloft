@@ -402,14 +402,26 @@ function panelStateMoved(
   newId: string
 ): Pick<
   AppState,
-  'openFiles' | 'workbench' | 'workbenchOpen' | 'workbenchFetched' | 'changesBase'
+  | 'openFiles'
+  | 'workbench'
+  | 'workbenchOpen'
+  | 'workbenchFetched'
+  | 'changesBase'
+  | 'workbenchWidths'
+  | 'workbenchLoad'
+  | 'filesReveal'
+  | 'followsAgentBrowser'
 > {
   return {
     openFiles: movedKey(s.openFiles, oldId, newId),
     workbench: movedKey(s.workbench, oldId, newId),
     workbenchOpen: movedKey(s.workbenchOpen, oldId, newId),
     workbenchFetched: movedKey(s.workbenchFetched, oldId, newId),
-    changesBase: movedKey(s.changesBase, oldId, newId)
+    changesBase: movedKey(s.changesBase, oldId, newId),
+    workbenchWidths: movedKey(s.workbenchWidths, oldId, newId),
+    workbenchLoad: movedKey(s.workbenchLoad, oldId, newId),
+    filesReveal: movedKey(s.filesReveal, oldId, newId),
+    followsAgentBrowser: movedKey(s.followsAgentBrowser, oldId, newId)
   }
 }
 
@@ -464,17 +476,21 @@ function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxO
   return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
 }
 
-function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
+function holdRestartsBriefly(tabId: string): void {
+  restarting.add(tabId)
+  setTimeout(() => restarting.delete(tabId), RESTART_COOLDOWN_MS)
+}
+
+function takeOverTab(old: Tab, t: Tab, select: boolean): void {
   useStore.setState((s) => ({
     tabs: s.tabs.map((x) =>
-      x.id === asleep.id ? { ...t, title: asleep.title || t.title, ghost: asleep.id } : x
+      x.id !== old.id ? x : old.asleep ? { ...t, title: old.title || t.title, ghost: old.id } : t
     ),
-    ...(select
-      ? shownTab(t.id)
-      : { activeTabId: s.activeTabId === asleep.id ? t.id : s.activeTabId }),
-    ...panelStateMoved(s, asleep.id, t.id)
+    ...(select ? shownTab(t.id) : { activeTabId: s.activeTabId === old.id ? t.id : s.activeTabId }),
+    ...panelStateMoved(s, old.id, t.id)
   }))
-  tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+  tabStateMoved(old.id, t.id, t.sessionId ?? '')
+  holdRestartsBriefly(t.id)
 }
 
 // CC§9
@@ -496,9 +512,11 @@ export function noteWakingOutput(tabId: string): void {
   )
 }
 
-function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
+function closedTabOfSameSession(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
   return t.sessionId
-    ? s.tabs.find((x) => x.asleep && x.sessionId === t.sessionId && x.id !== t.id)
+    ? s.tabs.find(
+        (x) => !x.alive && x.id !== t.id && (lastSessionId.get(x.id) ?? x.sessionId) === t.sessionId
+      )
     : undefined
 }
 
@@ -730,13 +748,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   addTab: (t) => {
     activateOnceSpawned = null
-    const asleep = asleepTabFor(get(), t)
-    if (asleep) return wakeInto(asleep, t, true)
+    const closed = closedTabOfSameSession(get(), t)
+    if (closed) return takeOverTab(closed, t, true)
     set((s) => ({ tabs: [...s.tabs, t], ...shownTab(t.id) }))
   },
   addTabQuiet: (t) => {
-    const asleep = asleepTabFor(get(), t)
-    if (asleep) return wakeInto(asleep, t, false)
+    const closed = closedTabOfSameSession(get(), t)
+    if (closed) return takeOverTab(closed, t, false)
     const awaited = activateOnceSpawned === t.id
     if (awaited) activateOnceSpawned = null
     set((s) =>
@@ -917,8 +935,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...panelStateMoved(s, oldId, res.id)
       }))
       tabStateMoved(oldId, res.id, patch.sessionId)
-      restarting.add(res.id)
-      setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
+      holdRestartsBriefly(res.id)
     }
     const relaunch = (launch: CreateTabOptions): void => {
       restarting.add(oldId)
