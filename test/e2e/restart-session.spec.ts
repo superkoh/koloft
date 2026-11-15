@@ -712,6 +712,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
           if (via !== 'the restart') {
             await escape.getByRole('button', { name: 'Cancel' }).click()
             await expect(escape).toHaveCount(0)
+            await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
             await row.click()
             await expect(escape.locator('.modal-header')).toHaveText(
               'Could not rebuild the worktree',

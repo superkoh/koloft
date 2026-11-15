@@ -838,6 +838,30 @@ describe('restartActiveSession: respawn failure', () => {
     expect(resumed.workbenchWidths).not.toHaveProperty('dead1')
   })
 
+  it('a restart that only main knew the session of still leaves a dead tab a later resume of that session takes over', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'early1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    mainTrackerSessions = [session('early1', { sessionId: 'sid-E', title: 'Early' })]
+    useStore.setState({
+      workspaceRows: [
+        { workspace: { path: '/w' }, rows: [{ id: 'sid-E' }] }
+      ] as unknown as WorkspaceRows[]
+    })
+    createRefuses = 'rebuild-failed'
+    s.restartActiveSession()
+    await settle()
+    await settle()
+    expect(useStore.getState().resumeDialog?.kind).toBe('escape')
+
+    createRefuses = null
+    nextPty = { id: 'early2', cwd: '/w' }
+    const escape = useStore.getState().resumeDialog
+    if (escape?.kind !== 'escape') throw new Error('no escape dialog')
+    await runResume(escape.target, mainRequest(escape.target, escape.cwd))
+
+    expect(useStore.getState().tabs.map((t) => t.id)).toEqual(['early2'])
+  })
+
   it('a tab whose agent quit but whose shell still runs is never taken over by a resume of that session', () => {
     const s = useStore.getState()
     s.addTab({ id: 'quit1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
