@@ -34,16 +34,15 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { ONLY_ACCOUNT, untilTheActiveTabsTranscriptIsWritten } from './helpers/restartNoAccount'
+import {
+  NO_ACCOUNT_CAN_BE_USED,
+  ONLY_ACCOUNT,
+  untilTheActiveTabsTranscriptIsWritten
+} from './helpers/restartNoAccount'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { SIGN_IN_FOLDER_OF, type AccountKind, type BackendId } from '../../src/shared/types'
 
-const NO_ACCOUNT_CAN_BE_USED: Record<BackendId, string> = {
-  claude: 'No Claude account can be used — check Settings ▸ Accounts.',
-  codex: 'No Codex account can be used — check Settings ▸ Accounts.',
-  muse: 'No Muse account can be used — check Settings ▸ Accounts.',
-  agy: 'No Antigravity account can be used — check Settings ▸ Accounts.'
-}
+const A_STARTED_AGENT_HAS_LOGGED_ITS_LAUNCH_WITHIN_MS = 3_000
 
 const FIRST_PROMPT = 'first words'
 
@@ -120,9 +119,17 @@ const itsOnlyAccount = (backend: BackendId): { name: string; kind: AccountKind }
     ? { name: E2E_CLAUDE_ACCOUNT, kind: 'apikey' }
     : { name: ONLY_ACCOUNT[backend], kind: SIGN_IN_FOLDER_OF[backend] }
 
-const reopenedWhenKoloftStarts = (kind: TabKind): boolean => kind.backend !== 'claude'
+const refusedBeforeAnyTabOpens = (kind: TabKind): boolean => kind.backend !== 'claude'
 
-const shimRefusesInItsOwnTab = (kind: TabKind): boolean => kind.backend === 'claude'
+async function nothingLaunched(
+  page: Page,
+  env: E2EEnv,
+  kind: TabKind,
+  before: number
+): Promise<void> {
+  await page.waitForTimeout(A_STARTED_AGENT_HAS_LOGGED_ITS_LAUNCH_WITHIN_MS)
+  expect(kind.launches(env)).toBe(before)
+}
 
 function openTabsFile(env: E2EEnv): string {
   return path.join(env.userData, 'open-tabs.json')
@@ -165,10 +172,10 @@ test.afterEach(({ env }) => killFakeRemote(env))
 
 for (const kind of TAB_KINDS) {
   const name = `${kind.remote ? 'a remote (ssh)' : 'a local'} ${BACKEND_LABEL[kind.backend]}`
-  const reopenToo = reopenedWhenKoloftStarts(kind)
-    ? ', and so does reopening its tab when Koloft starts again, naming the session'
-    : ''
-  test(`with no usable account, clicking the cold row of ${name} session says why in the toast and starts nothing${reopenToo}`, async ({
+  const outcome = refusedBeforeAnyTabOpens(kind)
+    ? 'says why in the toast and starts nothing, and so does reopening its tab when Koloft starts again, naming the session'
+    : 'says why in the toast and in the tab it opens, where the agent never runs'
+  test(`with no usable account, clicking the cold row of ${name} session ${outcome}`, async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -188,8 +195,9 @@ for (const kind of TAB_KINDS) {
       await START[kind.backend](first.page, wsName)
       const sessionId = await untilTheActiveTabsTranscriptIsWritten(first.page, 90_000)
       await expect(row(first.page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      if (reopenedWhenKoloftStarts(kind))
-        savedOpenTabs = await theOpenTabAsKoloftSavedIt(env, sessionId)
+      savedOpenTabs = refusedBeforeAnyTabOpens(kind)
+        ? await theOpenTabAsKoloftSavedIt(env, sessionId)
+        : JSON.stringify({ tabs: [] })
       await sendShortcut(first.app, 'shortcut:close-tab')
       await expect(row(first.page)).toHaveClass(/\bcold\b/, { timeout: 60_000 })
       title = await row(first.page).locator('.ws-tab-title').innerText()
@@ -201,25 +209,24 @@ for (const kind of TAB_KINDS) {
       await quitAndClose(first.app)
     }
     const launchedBefore = kind.launches(env)
-    if (reopenedWhenKoloftStarts(kind)) fs.writeFileSync(openTabsFile(env), savedOpenTabs)
+    fs.writeFileSync(openTabsFile(env), savedOpenTabs)
 
     const { app, page } = await launch(env)
     try {
-      if (reopenedWhenKoloftStarts(kind)) {
+      if (refusedBeforeAnyTabOpens(kind)) {
         await expect(toastReading(page, `Could not start “${title}” — ${why}`)).toBeVisible({
           timeout: 90_000
         })
-        expect(kind.launches(env)).toBe(launchedBefore)
+        await nothingLaunched(page, env, kind, launchedBefore)
       }
       await waitBooted(page)
       await expect(row(page)).toHaveClass(/\bcold\b/, { timeout: 60_000 })
 
       await row(page).click()
       await expect(toastReading(page, why)).toBeVisible({ timeout: 60_000 })
-      expect(kind.launches(env)).toBe(launchedBefore)
-      if (shimRefusesInItsOwnTab(kind))
-        await expect(centerTerm(page)).toContainText(`[Koloft] ${why}`)
-      else await expect(row(page)).toHaveClass(/\bcold\b/)
+      if (refusedBeforeAnyTabOpens(kind)) await expect(row(page)).toHaveClass(/\bcold\b/)
+      else await expect(centerTerm(page)).toContainText(`[Koloft] ${why}`)
+      await nothingLaunched(page, env, kind, launchedBefore)
     } finally {
       await quitAndClose(app)
     }
