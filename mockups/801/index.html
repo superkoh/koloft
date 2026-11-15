@@ -9356,8 +9356,8 @@ input.switch:focus-visible {
         </tr>
         <tr>
           <td>Size</td>
-          <td>About +40 lines under <code>src/</code>.</td>
-          <td>About +70 lines under <code>src/</code>.</td>
+          <td>About +50 lines under <code>src/</code>.</td>
+          <td>About +80 lines under <code>src/</code>.</td>
         </tr>
       </table>
 
@@ -9371,9 +9371,11 @@ input.switch:focus-visible {
         <tr>
           <td>Claude Code, this Mac</td>
           <td>
-            <code>rebuildWorktree</code> (<code>src/main/backends/claude.ts</code>) keeps the stderr
-            of its failing <code>git worktree add</code>. <code>hostGit()</code> passes git's
-            <code>onFailure</code> on, which <code>localGitOut</code> already supports.
+            <code>rebuildWorktree</code> (<code>src/main/backends/claude.ts</code>) runs three git
+            commands; the first two (<code>rev-parse --verify</code>, <code>worktree remove</code>)
+            often fail on purpose, so only the last one, <code>git worktree add</code>, gets an
+            <code>onFailure</code>. <code>hostGit()</code> passes <code>onFailure</code> on, which
+            <code>localGitOut</code> already supports.
           </td>
           <td>git's error line(s).</td>
         </tr>
@@ -9394,7 +9396,9 @@ input.switch:focus-visible {
           </td>
           <td>
             Koloft's sentence ("The missing worktree is locked; unlock it before rebuilding", "The
-            recorded repository has changed", …) or git's error line(s).
+            recorded repository has changed", …), git's error line(s), or now and then Node's own
+            words (a repository folder that is gone: "ENOENT: no such file or directory, realpath
+            …").
           </td>
         </tr>
         <tr>
@@ -9414,10 +9418,43 @@ input.switch:focus-visible {
 
       <h3>When there is no reason</h3>
       <p>
-        The dialog looks exactly as it does today (no box). That happens when git timed out with no
-        output, and in three Claude Code cases that fail before git runs: the worktree path is not
-        under <code>.claude/worktrees</code>, the branch name is not one Koloft passes to git, or
-        the rebuild plan changed between the click and the resume.
+        The dialog looks exactly as it does today (no box). That happens in three Claude Code cases
+        that fail before git runs: the worktree path is not under <code>.claude/worktrees</code>,
+        the branch name or base commit name is not one Koloft passes to git, or the rebuild plan
+        changed between the click and the resume. It also happens when git printed nothing at all.
+      </p>
+
+      <h3>When git runs out of time</h3>
+      <table>
+        <tr>
+          <th>Tab</th>
+          <th>Time limit on <code>git worktree add</code></th>
+          <th>What the box shows</th>
+        </tr>
+        <tr>
+          <td>Claude Code, this Mac</td>
+          <td>5 s (<code>localGitOut</code>'s default)</td>
+          <td>What git printed so far, often only "Preparing worktree (checking out …)".</td>
+        </tr>
+        <tr>
+          <td>Claude Code, remote</td>
+          <td>10 s (the SSH default)</td>
+          <td>The same.</td>
+        </tr>
+        <tr>
+          <td>Codex, Muse Code, Antigravity — this Mac</td>
+          <td>none</td>
+          <td>Never times out.</td>
+        </tr>
+        <tr>
+          <td>Codex, Muse Code, Antigravity — remote</td>
+          <td>60 s</td>
+          <td>What git printed so far, or "git failed".</td>
+        </tr>
+      </table>
+      <p>
+        The 5 s limit for Claude Code on this Mac may itself be why a big repository cannot be
+        rebuilt; that is its own issue, #1936, not part of this change.
       </p>
 
       <h3>How the text is trimmed</h3>
@@ -9427,16 +9464,56 @@ input.switch:focus-visible {
           before the first <code>fatal:</code> or <code>error:</code> line is dropped.
         </li>
         <li>
+          When there is no such line (a timeout, or a remote machine whose git speaks another
+          language), the whole text is kept.
+        </li>
+        <li>
           A local git failure in Node also says "Command failed: git -C &lt;path&gt; worktree add
           …"; the stored agents use the error's <code>stderr</code>, so that line never shows.
         </li>
         <li>Long text is cut at 400 characters. Paths are kept.</li>
       </ul>
 
-      <h3>Both ways into the dialog</h3>
+      <h3>Every place that reads the result</h3>
+      <table>
+        <tr>
+          <th>Where</th>
+          <th>Today</th>
+          <th>After</th>
+        </tr>
+        <tr>
+          <td>Clicking a sleeping session (<code>runResume</code>, <code>resumeFlow.ts</code>)</td>
+          <td>The dialog, no reason.</td>
+          <td>The dialog with the reason box.</td>
+        </tr>
+        <tr>
+          <td>Restarting a tab (<code>store.ts</code>), main checkout known</td>
+          <td>The dialog, no reason.</td>
+          <td>The dialog with the reason box.</td>
+        </tr>
+        <tr>
+          <td>Restarting a tab, main checkout not known</td>
+          <td>Toast "Resume failed".</td>
+          <td>
+            Toast "Could not rebuild the worktree: &lt;reason&gt;"
+            (<code>resumeFailureMessage</code>).
+          </td>
+        </tr>
+        <tr>
+          <td>
+            Alfred or <code>koloft session resume</code> waking a session (<code>resumeRow</code>,
+            <code>src/main/index.ts</code>)
+          </td>
+          <td>"Could not start "X" — click it to try again."</td>
+          <td>
+            "Could not start "X" — &lt;reason&gt;" (<code>couldNotStart</code> already takes a
+            reason). Nobody watches the screen there, so this is where the reason helps most.
+          </td>
+        </tr>
+      </table>
       <p>
-        The dialog opens from a resume click (<code>runResume</code> in <code>resumeFlow.ts</code>)
-        and from restarting a tab (<code>store.ts</code>). Both pass the result's reason on.
+        The preload and IPC pass the result through as it is; one optional field needs no change
+        there.
       </p>
 
       <h2>What git says (probed)</h2>
@@ -9474,23 +9551,51 @@ input.switch:focus-visible {
         </tr>
       </table>
 
-      <h2>Tests that change</h2>
-      <ul>
-        <li>
-          <code>test/unit/codexSessions.test.ts</code> — the rebuild-failed cases compare the whole
-          result; they gain the reason.
-        </li>
-        <li><code>test/unit/resumeFlow.test.ts</code> — the escape dialog carries the reason.</li>
-        <li>
-          <code>test/unit/restartSession.test.ts</code> — a restart's escape dialog carries the
-          reason.
-        </li>
-        <li>
-          <code>test/e2e/lifecycle.spec.ts</code> — the could-not-rebuild case (path outside
-          <code>.claude/worktrees</code>, no reason, no box) stays; a second case with a locked
-          worktree checks git's line is in the box.
-        </li>
-      </ul>
+      <h2>Tests</h2>
+      <table>
+        <tr>
+          <th>Tab kind</th>
+          <th>Test</th>
+        </tr>
+        <tr>
+          <td>Codex, Muse Code, Antigravity — this Mac</td>
+          <td>
+            <code>test/unit/codexSessions.test.ts</code>: the rebuild-failed cases compare the whole
+            result and gain the reason (git's line and Koloft's own sentence). Muse and Antigravity
+            run the same <code>resumeRun</code> (one base class, no override), so this covers them.
+          </td>
+        </tr>
+        <tr>
+          <td>Codex, Muse Code, Antigravity — remote</td>
+          <td>
+            The same unit file, with a tree whose git throws an error that has only a message, as
+            <code>machineTreeIo</code> does.
+          </td>
+        </tr>
+        <tr>
+          <td>Claude Code, this Mac</td>
+          <td>
+            <code>test/e2e/lifecycle.spec.ts</code>: the could-not-rebuild case (path outside
+            <code>.claude/worktrees</code>, no reason, no box) stays; a new case with a real locked
+            worktree checks git's line is in the box.
+          </td>
+        </tr>
+        <tr>
+          <td>Claude Code, remote</td>
+          <td>
+            <code>test/e2e/remote-worktree.spec.ts</code>: the same locked-worktree case on the fake
+            SSH machine.
+          </td>
+        </tr>
+        <tr>
+          <td>Renderer, all agents</td>
+          <td>
+            <code>test/unit/resumeFlow.test.ts</code> (the dialog carries the reason; line 282 pins
+            "Resume failed" and changes), <code>test/unit/restartSession.test.ts</code> (a restart's
+            dialog carries the reason).
+          </td>
+        </tr>
+      </table>
     </main>
     <!-- prettier-ignore -->
     <template id="t-today"><body>
