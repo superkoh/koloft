@@ -21,7 +21,9 @@ import {
 import {
   centerTerm,
   clickAppMenuItem,
+  gitInit,
   openMenu,
+  openWorktreeSession,
   startSessionIn,
   termIds,
   terminalText,
@@ -940,6 +942,33 @@ test('E13: a workspace limited to one account starts on it although another is l
     const calls = await waitForCalls(env, 2, 45_000)
     expect(calls[1].argv).toContain(first.sessionId)
     expect(calls[1].oauthToken).toBe(TOKENS.alpha)
+  } finally {
+    await app.close().catch(() => {})
+    await mock.close()
+  }
+})
+
+test('E13c: a worktree session in a workspace limited to one account starts on it although another is lighter', async ({
+  env
+}) => {
+  test.setTimeout(150_000)
+  const mock = await startProbeMock()
+  mock.script.set(TOKENS.alpha, { u5: 0.6, u7: 0.7 })
+  mock.script.set(TOKENS.bravo, { u5: 0.1, u7: 0.1 })
+  mock.script.set(TOKENS['charlie'], { u5: 0.1, u7: 0.1 })
+  env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+  gitInit(env.workspaces.a)
+  seedPool(env, { workspaceAccounts: { [env.workspaces.a]: ['oauth:alpha'] } })
+  const { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    const dlg = await openWorktreeSession(page, 'ws-a')
+    await dlg.getByRole('textbox').click()
+    await page.keyboard.type('limited')
+    await page.keyboard.press('Enter')
+    const [first] = await waitForCalls(env, 1)
+    expect(first.argv).toContain('-w')
+    expect(first.oauthToken).toBe(TOKENS.alpha)
   } finally {
     await app.close().catch(() => {})
     await mock.close()

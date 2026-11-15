@@ -143,7 +143,7 @@ test.describe('Workspace management: every add goes through the workspace:add IP
     }
   })
 
-  test('T-WS-08: Accounts… in the workspace menu ticks the accounts it may use, by agent; Save keeps them for that workspace only, the dialog shows them again, Settings ▸ Accounts names the workspace, and removing the workspace forgets them', async ({
+  test('T-WS-08: Accounts… in the workspace menu ticks the accounts it may use, by agent; Save keeps them for that workspace only, the dialog shows them again, Settings ▸ Accounts names the workspace, a listed account since deleted still shows ticked, and removing the workspace forgets its list', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -153,8 +153,10 @@ test.describe('Workspace management: every add goes through the workspace:add IP
         seededAccount('work'),
         seededAccount('personal'),
         seededAccount('codex-work', 'codex-home')
-      ]
+      ],
+      workspaceAccounts: { [env.workspaces.b]: ['oauth:gone'] }
     })
+    const keptForWsB = { [env.workspaces.b]: ['oauth:gone'] }
     const settingsFile = path.join(env.userData, 'settings.json')
     const saved = (): Record<string, string[]> =>
       JSON.parse(fs.readFileSync(settingsFile, 'utf8')).workspaceAccounts ?? {}
@@ -177,7 +179,7 @@ test.describe('Workspace management: every add goes through the workspace:add IP
       await expect(dialog).toHaveCount(0)
       await expect
         .poll(saved)
-        .toEqual({ [env.workspaces.a]: ['oauth:work', 'codex-home:codex-work'] })
+        .toEqual({ ...keptForWsB, [env.workspaces.a]: ['oauth:work', 'codex-home:codex-work'] })
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await page.locator('.menu .mi', { hasText: 'Accounts…' }).click()
@@ -193,9 +195,18 @@ test.describe('Workspace management: every add goes through the workspace:add IP
       ).toBeVisible()
       await page.keyboard.press('Escape')
 
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-b' }))
+      await page.locator('.menu .mi', { hasText: 'Accounts…' }).click()
+      const deletedRow = page
+        .getByRole('dialog', { name: 'Accounts · ws-b' })
+        .locator('.job-row', { hasText: 'gone' })
+      await expect(deletedRow.getByRole('switch', { name: 'Use gone' })).toBeChecked()
+      await expect(deletedRow).toContainText('deleted — sessions here stop')
+      await page.keyboard.press('Escape')
+
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await page.locator('.menu .mi.danger', { hasText: 'Remove workspace' }).click()
-      await expect.poll(saved).toEqual({})
+      await expect.poll(saved).toEqual(keptForWsB)
     } finally {
       await app.close().catch(() => {})
     }

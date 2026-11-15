@@ -402,6 +402,44 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       }
     })
 
+    test('T-WT-05d: codex typed in the terminal tab of a session in a workspace limited to one Codex account runs on that account, though another is listed first', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      addCodexAccount(env, '{}')
+      const listed = path.join(env.userData, 'codex-homes', 'codex-work')
+      fs.mkdirSync(listed, { recursive: true })
+      fs.writeFileSync(path.join(listed, 'auth.json'), '{}', { mode: 0o600 })
+      const accounts = JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8'))
+        .accounts as Record<string, unknown>[]
+      seedSettings(env, {
+        accounts: [...accounts, seededAccount('codex-work', 'codex-home')],
+        workspaceAccounts: { [env.workspaces.a]: ['codex-home:codex-work'] }
+      })
+      const recorders = path.join(env.home, 'recorders')
+      fs.mkdirSync(recorders)
+      fs.writeFileSync(
+        path.join(recorders, 'codex'),
+        `#!/bin/sh\nif [ "$CODEX_HOME" = '${listed}' ]; then echo WT05D_OK; else echo WT05D_BAD; fi\n`,
+        { mode: 0o755 }
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await sessionWithShell(app, page, 'ws-a')
+        await runIn(
+          page,
+          panelTerm(page),
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi`
+        )
+        await expect(panelTerm(page)).toContainText('WT05D_OK', { timeout: 25_000 })
+        await expect(panelTerm(page)).not.toContainText('WT05D_BAD')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
     test('T-WT-05c: with every account of that agent at its limit, codex exec, muse exec and agy -p in a terminal tab each say so on a line of their own, then still run', async ({
       env
     }) => {
