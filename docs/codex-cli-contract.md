@@ -848,6 +848,17 @@ no key.
 - The same table shape (`[projects."<absolute path>"]` / `trust_level = "trusted"`) is
   what Codex itself had written into this Mac's own `~/.codex/config.toml`, read on the
   same day.
+- **Keys typed before the question shows (codex-cli 0.166.0, macOS, 2026-11-15).** The
+  TUI under `--remote` (an app-server already listening, a throwaway `CODEX_HOME` with a
+  made-up API key, a fresh `git init` folder, a pty answering the terminal's queries)
+  draws its "Ask Codex to do anything" composer, banner still "loading", 0.03–0.09 s
+  after it starts, and the question 0.01–0.15 s after that. A key that lands before the
+  question stays in the composer. On the question: letters and a whole bracketed paste
+  in one write change nothing; Enter picks "1. Trust and continue", and the app-server
+  log shows `config/batchWrite` then `thread/start`. A lone Esc (also the first byte of
+  a paste that arrives apart from the rest) or Ctrl+C closes it to "Agent command center
+  … No tasks yet": `config.toml` unchanged, and no `config/batchWrite` and no
+  `thread/start` in the log within 25 s.
 
 These runs started the TUI without `--remote`. Section 9 saw the same question under
 `--remote`; section 14 then checked that a `config.toml` table also stops it there.
