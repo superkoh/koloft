@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useLayoutEffect, useState, type JSX } from 'react'
 import type { AccountView } from '@shared/types'
 import { ACCOUNT_KINDS_OF } from '@shared/accountUsage'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
@@ -31,9 +31,12 @@ export function WorkspaceAccountsDialog({
   const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(saved ?? []))
   const title = 'Accounts · ' + workspaceShortName(wsPath)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -46,15 +49,19 @@ export function WorkspaceAccountsDialog({
     setTicked(next)
   }
 
-  const save = (): void => {
-    void window.api.accounts.limitWorkspace(wsPath, [...ticked])
-    onClose()
-  }
-
   const groups = SESSION_BACKENDS.map((backend) => ({
     backend,
     list: accounts.filter((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind))
   })).filter((g) => g.list.length > 0)
+
+  const save = (): void => {
+    const shown = groups.flatMap((g) => g.list.map(accountId))
+    void window.api.accounts.limitWorkspace(
+      wsPath,
+      shown.filter((id) => ticked.has(id))
+    )
+    onClose()
+  }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

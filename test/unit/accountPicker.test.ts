@@ -806,11 +806,19 @@ describe('a workspace limited to some accounts', () => {
     if (r.account) expect(r.banner).toMatch(/ · the only account acme-api may use$/)
   })
 
-  it('names how many accounts the workspace may use when it lists several', async () => {
-    const h = makeHarness([meta({ name: 'work' }), meta({ name: 'work-2' })])
+  it('names how many listed accounts can run now when it lists several, leaving out a turned-off one', async () => {
+    const h = makeHarness([
+      meta({ name: 'work' }),
+      meta({ name: 'work-2' }),
+      meta({ name: 'work-3', enabled: false })
+    ])
     h.setProbe('work', { ok: true, usage: usage({ u5: 0.6, u7: 0.7 }) })
     h.setProbe('work-2', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
-    const r = await h.picker.pick('tab', undefined, limitTo('oauth:work', 'oauth:work-2'))
+    const r = await h.picker.pick(
+      'tab',
+      undefined,
+      limitTo('oauth:work', 'oauth:work-2', 'oauth:work-3')
+    )
     expect(r.account).toBe('work-2')
     if (r.account) expect(r.banner).toContain(' · one of 2 accounts acme-api may use')
   })

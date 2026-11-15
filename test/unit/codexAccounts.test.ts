@@ -136,7 +136,7 @@ describe('picking a Codex account', () => {
     expect(picker.pick(pool, 'personal', [], limit)?.name).toBe('work')
     expect(picker.peek(pool, limit)?.name).toBe('work')
     expect(allLimitedNotice(work, 'codex', limit)).toMatch(
-      /^Every Codex account acme-api may use is at its limit/
+      /^Every Codex account box:acme-api may use is at its limit/
     )
     expect(picker.pick([account('personal')], undefined, [], limit)).toBeUndefined()
   })

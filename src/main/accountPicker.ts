@@ -221,13 +221,14 @@ export class AccountPicker {
     return a
   }
 
-  async pick(tabId?: string, resumedOn?: string, limit?: WorkspaceLimit): Promise<PickResponse> {
-    const subs = withinLimit(this.eligible('oauth'), limit)
-    const apis = withinLimit(this.eligible('apikey', 'custom'), limit)
+  async pick(tabId?: string, resumedOn?: string, within?: WorkspaceLimit): Promise<PickResponse> {
+    const subs = withinLimit(this.eligible('oauth'), within)
+    const apis = withinLimit(this.eligible('apikey', 'custom'), within)
     if (subs.length === 0 && apis.length === 0)
-      return limit
-        ? { account: null, reason: 'no-usable', message: noAllowedAccountMessage(limit) }
+      return within
+        ? { account: null, reason: 'no-usable', message: noAllowedAccountMessage(within) }
         : { account: null, reason: 'no-accounts' }
+    const limit = within && { ...within, usable: subs.length + apis.length }
 
     if (subs.length > 0 && !subs.every((a) => this.snapshotFor(a, FRESH_CACHE_MS))) {
       const round = this.probeRound(subs)

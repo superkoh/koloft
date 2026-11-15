@@ -387,6 +387,7 @@ import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import {
   limitNote,
   noAllowedAccountMessage,
+  withinLimit,
   workspaceLimit,
   type WorkspaceLimit
 } from '@shared/workspaceAccounts'
@@ -425,6 +426,7 @@ import {
   noAccountLine,
   noAccountMessage,
   SHIM_FOUND_NO_ACCOUNT_EXIT,
+  usableAccounts,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -2297,12 +2299,12 @@ interface UtilTerminalPick {
 
 const utilTerminalPicks: Record<
   Exclude<BackendId, 'claude'>,
-  () => UtilTerminalPick | undefined
+  (workspace: string | undefined) => UtilTerminalPick | undefined
 > = {
-  codex: () => terminalPickOf(pickCodexHome()),
-  muse: () => terminalPickOf(pickMuseHome()),
-  agy: () => {
-    const picked = terminalPickOf(pickAgyHome())
+  codex: (workspace) => terminalPickOf(pickCodexHome(undefined, workspace)),
+  muse: (workspace) => terminalPickOf(pickMuseHome(undefined, workspace)),
+  agy: (workspace) => {
+    const picked = terminalPickOf(pickAgyHome(undefined, false, workspace))
     return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
   }
 }
@@ -2320,11 +2322,18 @@ function terminalPickOf(
   )
 }
 
-function workspaceKeyOf(dir: string | undefined): string | undefined {
-  if (!dir) return undefined
-  return (workspaceMgr?.pinnedPathList() ?? [])
-    .filter((ws) => dir === ws || dir.startsWith(ws.endsWith('/') ? ws : `${ws}/`))
-    .sort((a, b) => b.length - a.length)[0]
+function workspaceOfFolder(dir: string | undefined): string | undefined {
+  return dir ? projectInfoOnHost(dir).root : undefined
+}
+
+function limitNoteAmong(
+  views: AccountView[],
+  limit: WorkspaceLimit | undefined,
+  kind: AccountKind
+): string {
+  return limitNote(
+    limit && { ...limit, usable: usableAccounts(withinLimit(views, limit), [kind]).length }
+  )
 }
 
 const shimAccountRefusals = new Map<string, string>()
@@ -2337,10 +2346,13 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
   const resPath = path.join(pickDir, `res-${id}.json`)
   const backend = backendIdOf(obj.backend)
+  const workspace = workspaceOfFolder(
+    claudeBackend.launchFolderOf(obj.tabId) ?? (tab.utilMachine ? undefined : tab.cwd)
+  )
   if (backend && backend !== 'claude') {
     let picked: UtilTerminalPick | undefined
     try {
-      picked = utilTerminalPicks[backend]()
+      picked = utilTerminalPicks[backend](workspace)
     } catch (err) {
       console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
     }
@@ -2350,11 +2362,7 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     pushAccounts()
     return
   }
-  const { res, endpoint } = await pickForLaunch(
-    obj.tabId,
-    tab.resumeSessionId,
-    workspaceKeyOf(claudeBackend.launchFolderOf(obj.tabId))
-  )
+  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId, workspace)
   const accountIssue =
     res.account === null && (res.message || noAccountLine(listAccounts(), 'claude'))
   if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
@@ -2677,7 +2685,7 @@ function pickCodexHome(
   return {
     account: picked.name,
     home,
-    banner: launchLine(picked, Date.now()) + limitNote(limit),
+    banner: launchLine(picked, Date.now()) + limitNoteAmong(views, limit, 'codex-home'),
     notice: allLimitedNotice(picked, 'codex', limit)
   }
 }
@@ -2880,7 +2888,7 @@ function pickMuseHome(
     account: picked.name,
     home,
     env: museAccountEnv(home),
-    banner: launchLine(picked, Date.now()) + limitNote(limit),
+    banner: launchLine(picked, Date.now()) + limitNoteAmong(views, limit, 'muse-home'),
     notice: allLimitedNotice(picked, 'muse', limit)
   }
 }
@@ -2975,7 +2983,7 @@ function pickAgyHome(
     picked && {
       account: picked.name,
       home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now()) + limitNote(limit),
+      banner: launchLine(picked, Date.now()) + limitNoteAmong(views, limit, 'agy-home'),
       notice: allLimitedNotice(picked, 'agy', limit)
     }
   )
@@ -6523,9 +6531,9 @@ const hosts = new Hosts(
         settings: loadSettings,
         pickAccount: (launchKey, resumeSessionId, workspace) =>
           pickMachineAccount(() =>
-            pickForLaunch(launchKey, resumeSessionId, workspaceKeyOf(workspace))
+            pickForLaunch(launchKey, resumeSessionId, workspaceOfFolder(workspace))
           ),
-        noAccountMessage: (workspace) => noAccountNow('claude', workspaceKeyOf(workspace)),
+        noAccountMessage: (workspace) => noAccountNow('claude', workspaceOfFolder(workspace)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)

@@ -140,7 +140,7 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     const token = await resumeColdRowLastRunOnBravo(
       env,
       (e) => ({ workspaceAccounts: { [remoteKey(e)]: ['oauth:alpha'] } }),
-      `the only account ${REMOTE_WS_NAME} may use`
+      `the only account ${REMOTE_HOST}:${REMOTE_WS_NAME} may use`
     )
     expect(token).toBe(RESUME_TOKENS.alpha)
   })

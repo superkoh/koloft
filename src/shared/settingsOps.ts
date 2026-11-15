@@ -92,7 +92,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
-  merged.workspaceAccounts = sanitizeWorkspaceAccounts(merged.workspaceAccounts, merged.accounts)
+  merged.workspaceAccounts = sanitizeWorkspaceAccounts(merged.workspaceAccounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
   merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)

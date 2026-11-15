@@ -1,13 +1,14 @@
 import { ACCOUNT_KINDS_OF } from './accountUsage'
 import { basename } from './preview'
 import { parseRemoteKey } from './remoteKey'
-import type { AccountKind, AccountMeta, BackendId } from './types'
+import type { AccountKind, BackendId } from './types'
 
 export type WorkspaceAccountLists = Record<string, string[]>
 
 export interface WorkspaceLimit {
   workspace: string
   ids: ReadonlySet<string>
+  usable?: number
 }
 
 export const accountId = (a: { kind: AccountKind; name: string }): string =>
@@ -34,15 +35,19 @@ export function withinLimit<A extends { kind: AccountKind; name: string }>(
 }
 
 export function workspaceShortName(workspace: string): string {
-  return basename(parseRemoteKey(workspace)?.path ?? workspace)
+  const remote = parseRemoteKey(workspace)
+  const folder = remote?.path ?? workspace
+  const name = basename(folder) || folder
+  return remote ? `${remote.host}:${name}` : name
 }
 
 export function limitNote(limit: WorkspaceLimit | undefined): string {
   if (!limit) return ''
   const ws = workspaceShortName(limit.workspace)
-  return limit.ids.size === 1
+  const count = limit.usable ?? limit.ids.size
+  return count === 1
     ? ` · the only account ${ws} may use`
-    : ` · one of ${limit.ids.size} accounts ${ws} may use`
+    : ` · one of ${count} accounts ${ws} may use`
 }
 
 export function everyAllowedAccountWalled(limit: WorkspaceLimit): string {
@@ -53,18 +58,12 @@ export function noAllowedAccountMessage(limit: WorkspaceLimit): string {
   return `No account ${workspaceShortName(limit.workspace)} may use can run this session. Change its list (right-click the workspace ▸ Accounts…) or fix the account in Settings ▸ Accounts.`
 }
 
-export function sanitizeWorkspaceAccounts(
-  raw: unknown,
-  accounts: readonly Pick<AccountMeta, 'kind' | 'name'>[]
-): WorkspaceAccountLists {
+export function sanitizeWorkspaceAccounts(raw: unknown): WorkspaceAccountLists {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const known = new Set(accounts.map(accountId))
   const out: WorkspaceAccountLists = {}
   for (const [workspace, ids] of Object.entries(raw)) {
     if (!Array.isArray(ids)) continue
-    const kept = [...new Set(ids.filter((id): id is string => typeof id === 'string'))].filter(
-      (id) => known.has(id)
-    )
+    const kept = [...new Set(ids.filter((id): id is string => typeof id === 'string'))]
     if (kept.length > 0) out[workspace] = kept
   }
   return out

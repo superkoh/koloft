@@ -295,16 +295,20 @@ describe('sanitizeLoadedSettings and the accounts a workspace may use', () => {
     expect(sanitizeLoadedSettings({ fontSize: 13 }).workspaceAccounts).toEqual({})
   })
 
-  it('drops an account that no longer exists from every list, and a list left empty with it', () => {
+  it('keeps a deleted account in a list, so deleting the only account a workspace may use stops its sessions instead of freeing them onto any account; a malformed list is dropped', () => {
     const loaded = sanitizeLoadedSettings({
       accounts: [{ ...base, name: 'Work', kind: 'oauth' }],
       workspaceAccounts: {
         '/ws/a': ['oauth:work', 'oauth:gone', 7],
         '/ws/b': ['codex-home:gone'],
-        '/ws/c': 'oauth:work'
+        '/ws/c': 'oauth:work',
+        '/ws/d': []
       }
     } as never)
-    expect(loaded.workspaceAccounts).toEqual({ '/ws/a': ['oauth:work'] })
+    expect(loaded.workspaceAccounts).toEqual({
+      '/ws/a': ['oauth:work', 'oauth:gone'],
+      '/ws/b': ['codex-home:gone']
+    })
   })
 
   it('is never written by a settings patch from the window, only by its own call', () => {
