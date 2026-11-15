@@ -252,19 +252,25 @@ export function Welcome({
   const again = accounts ? accountToSignInAgain(accounts, pick) : undefined
   const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
-  const toPin = useMemo(() => (found ? foldersToPin(found, Date.now()) : []), [found])
-  const pinDue = step === 2 && folders.length === 0 && toPin.length > 0 && !pinTried.current
+  const pinDue =
+    step === 2 &&
+    folders.length === 0 &&
+    !pinTried.current &&
+    !!found &&
+    foldersToPin(found, Date.now()).length > 0
   useEffect(() => {
-    if (!pinDue) return
+    if (!pinDue || !found || pinTried.current) return
+    const pins = foldersToPin(found, Date.now())
+    if (pins.length === 0) return
     pinTried.current = true
     setPinning(true)
     window.api.workspace
-      .pinRecent(toPin.map((f) => f.path))
+      .pinRecent(pins.map((f) => f.path))
       .catch(() =>
         useStore.getState().showToast('Some sessions could not be read. The folders are pinned.')
       )
       .finally(() => setPinning(false))
-  }, [pinDue, toPin])
+  }, [pinDue, found])
 
   useEffect(() => {
     if (!signingFor || waiting || signedIn(signingFor)) return

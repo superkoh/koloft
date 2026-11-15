@@ -146,7 +146,7 @@ async function recordEveryChipText(page: Page): Promise<() => Promise<string[]>>
     const seen: string[] = []
     ;(window as unknown as { chipTexts: string[] }).chipTexts = seen
     new MutationObserver(() => {
-      const text = document.querySelector('.wl-chip')?.textContent
+      const text = document.querySelector('.wl[data-step="2"] .wl-chip')?.textContent
       if (text && seen[seen.length - 1] !== text) seen.push(text)
     }).observe(document.body, { subtree: true, childList: true, characterData: true })
   })
