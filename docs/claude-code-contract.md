@@ -1766,7 +1766,8 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   `shell:<b…>:running`. When that shell ended, 22.7 s later, `agent-<a…>.jsonl` grew
   (the subagent woke); 1.7 s later its SubagentStop fired and, 0.04 s after that, the
   main session started a turn from the `<task-notification>`, whose Stop listed `[]`.
-  Nothing grew after that Stop. the main session two turns, and every later
+  Nothing grew after that Stop.
+- **In auto mode one subagent report costs the main session two turns, and every later
   wake of a background agent one more.** Measured 2026-10-27 on CC 2.1.310 and 2.1.311,
   the rig above with `--permission-mode auto`, 1 run per build per case. Only auto-mode
   subagents are told to report through `SubagentHandback` (6 of 6 auto transcripts, 0 of

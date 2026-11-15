@@ -443,28 +443,31 @@ describe('run-state vs background work: any live background task keeps the sessi
   }, 20_000)
 
   // CC§8
-  it('a subagent transcript that keeps growing after a turn end whose list does not name it holds the dot once and rests it once, never blinking', async () => {
+  it('a subagent that keeps writing once the only task its turn end named, its own shell, is gone holds the dot until it goes quiet, then rests it once, never blinking', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabB5b', cwd, initialLines(cwd))
+    const file = await bindCaughtUp(tracker, 'tabB5b', cwd, initialLines(cwd))
     tracker.setStatus('tabB5b', 'working')
-    await tracker.reportTurnEnd('tabB5b', [])
-    expect(status(tracker, 'tabB5b')).toBe('waiting')
+    appendJsonl(file, [commandUseRec('toolu_sh5b', cwd, 'sleep 25'), shellAckRec('toolu_sh5b', cwd)])
+    stageProcs(tracker, { btoolu_sh5b: {} })
+    await tracker.reportTurnEnd('tabB5b', [{ id: 'btoolu_sh5b', type: 'shell' }])
+    expect(status(tracker, 'tabB5b')).toBe('working')
 
     const edges: SessionStatus[] = []
     tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
       if (e.tabId === 'tabB5b') edges.push(e.next)
     })
-    await sleep(RESUME_MS + 300)
-    const growthEnds = Date.now() + 3000
-    const lines: unknown[] = []
+    const lines: unknown[] = [subagentRec(Date.now())]
+    writeSubagentJsonl(cwd, SID, 'agent-unlisted.jsonl', lines)
+    stageProcs(tracker, {})
+    const growthEnds = Date.now() + 2500
     while (Date.now() < growthEnds) {
+      await sleep(50)
       lines.push(subagentRec(Date.now()))
       writeSubagentJsonl(cwd, SID, 'agent-unlisted.jsonl', lines)
-      await sleep(SCAN_MS)
     }
     await waitFor(tracker, (s) => s.tabId === 'tabB5b' && s.status === 'waiting', 8000)
-    expect(edges).toEqual(['working', 'waiting'])
+    expect(edges).toEqual(['waiting'])
   }, 20_000)
 
   it('stale subagent content never promotes (record time, not fold time)', async () => {
