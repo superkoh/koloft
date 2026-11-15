@@ -858,7 +858,10 @@ no key.
   log shows `config/batchWrite` then `thread/start`. A lone Esc (also the first byte of
   a paste that arrives apart from the rest) or Ctrl+C closes it to "Agent command center
   … No tasks yet": `config.toml` unchanged, and no `config/batchWrite` and no
-  `thread/start` in the log within 25 s.
+  `thread/start` in the log within 25 s. A second Esc there goes back to the composer;
+  a message typed and sent with Enter then sits under "Queued follow-up inputs" and is
+  never sent (no `thread/start`, no `turn/start` in the next 14 s), and the question
+  does not come back.
 
 These runs started the TUI without `--remote`. Section 9 saw the same question under
 `--remote`; section 14 then checked that a `config.toml` table also stops it there.
