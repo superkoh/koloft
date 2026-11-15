@@ -5,15 +5,12 @@ import os from 'os'
 import { execFileSync } from 'child_process'
 import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
 
-const TIMEOUT_MS_LONG_ENOUGH_FOR_A_SHELL_TO_START_ON_A_BUSY_MACHINE = 3000
-process.env.KOLOFT_GIT_TIMEOUT_MS = String(
-  TIMEOUT_MS_LONG_ENOUGH_FOR_A_SHELL_TO_START_ON_A_BUSY_MACHINE
-)
+const GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE = 3000
+process.env.KOLOFT_GIT_TIMEOUT_MS = String(GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE)
 const { gitDiff, gitFileDiff, gitNumstat, gitStatus } = await import('../../src/main/gitStatus')
 
-const FAKE_GIT_HANGS_FOR_S = 60
-const REAL_GIT_CUT_OFF_BY_A_BUSY_MOMENT_IS_RETRIED_FOR_MS = 20_000
-const CASE_DEADLINE_MS = 45_000
+const KILL_SLACK_ON_A_BUSY_MACHINE_MS = 10_000
+const CASE_DEADLINE_MS = 30_000
 
 let tmp: string
 let repo: string
@@ -21,14 +18,11 @@ let pids: string
 let envLog: string
 
 function hangingGitOnPath(): void {
-  gitOnPath(
-    tmp,
-    `#!/bin/sh\nprintf '%s\\n' "$$" >> "${pids}"\nexec sleep ${FAKE_GIT_HANGS_FOR_S}\n`
-  )
+  gitOnPath(tmp, `#!/bin/sh\nprintf '%s\\n' "$$" >> "${pids}"\nexec sleep 60\n`)
 }
 
 function cutOffGitOnPath(text: string): void {
-  gitOnPath(tmp, `#!/bin/sh\nprintf '%s\\n' '${text}'\nexec sleep ${FAKE_GIT_HANGS_FOR_S}\n`)
+  gitOnPath(tmp, `#!/bin/sh\nprintf '%s\\n' '${text}'\nexec sleep 60\n`)
 }
 
 function envRecordingGitOnPath(): void {
@@ -40,8 +34,15 @@ function envRecordingGitOnPath(): void {
   )
 }
 
-const withRealGit = <T>(call: () => Promise<T>): Promise<T> =>
-  vi.waitFor(call, { timeout: REAL_GIT_CUT_OFF_BY_A_BUSY_MOMENT_IS_RETRIED_FOR_MS })
+async function withRealGit<T>(call: () => Promise<T>): Promise<T> {
+  for (;;) {
+    try {
+      return await call()
+    } catch (e) {
+      if ((e as { killed?: boolean }).killed !== true) throw e
+    }
+  }
+}
 
 const spawnedPids = (): number[] =>
   fs.readFileSync(pids, 'utf8').split('\n').filter(Boolean).map(Number)
@@ -79,7 +80,9 @@ describe('the git timeout', { timeout: CASE_DEADLINE_MS }, () => {
 
     const t0 = Date.now()
     await expect(gitNumstat(repo, base)).rejects.toThrow()
-    expect(Date.now() - t0).toBeLessThan(FAKE_GIT_HANGS_FOR_S * 1000)
+    expect(Date.now() - t0).toBeLessThan(
+      GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE + KILL_SLACK_ON_A_BUSY_MACHINE_MS
+    )
 
     const [pid, ...rest] = spawnedPids()
     expect(rest).toEqual([])
