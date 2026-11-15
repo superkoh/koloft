@@ -32,7 +32,9 @@ for good.
   trusts the folder (the first is at its limit, say): agy keeps trust per account home
   and asks again in the new one even for a conversation it already ran there (`AGY§5`),
   and a resume often has nobody at the terminal. The yes was the owner's, not the
-  account's, so the resumed folder alone is written into the picked account's list, where
+  account's, so the resumed folder alone is written into the picked account's list, when
+  any account home Koloft keeps trusts it (a removed account's home too, and a yes Koloft
+  wrote under the rules above, since those were the owner's as well), where
   it stays like any yes agy records. A fresh launch never carries trust over: on an
   account that has not had such a resume in the folder, agy still asks.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's

@@ -286,6 +286,7 @@ only downloaded the public release.
   contents of this project?" and B's `trustedWorkspaces` stays empty; with the
   workspace written into B's `settings.json` first, B opens on the history. Trust lives
   only in each folder's own `settings.json`, never with the shared conversation.
+  macOS: not probed.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.
