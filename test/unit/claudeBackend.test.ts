@@ -427,7 +427,7 @@ describe('ClaudeBackend: rebuilding a missing worktree on resume', () => {
       seedRepo(root)
       gitOnPath(
         tmp,
-        `#!/bin/sh\ncase " $* " in *" worktree add "*) sleep ${CHECKOUT_OF_A_BIG_REPO_MS / 1000} ;; esac\nexec "${realGit()}" "$@"\n`
+        `#!/bin/sh\ncase " $* " in *" worktree add "*) "${realGit()}" "$@" || exit $?; exec sleep ${CHECKOUT_OF_A_BIG_REPO_MS / 1000} ;; esac\nexec "${realGit()}" "$@"\n`
       )
       const worktreePath = path.join(root, '.claude', 'worktrees', 'wt')
       try {
