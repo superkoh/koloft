@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { shq } from '@shared/shellQuote'
@@ -94,7 +95,8 @@ ${NO_REPLY_ENV}=1 "$self_dir/koloft" open "$abs$url" >/dev/null 2>&1 || passthro
 exit 0
 `
 
-const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
+const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin', '.zlogout']
+const ZSH_FILES_AFTER_PATH_HELPER = ['.zprofile', '.zshrc', '.zlogin']
 const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
 
 // PLATFORM§2 CODEX§12
@@ -111,14 +113,21 @@ function zdotFile(
     `[ -f ${own} ] && . ${own}`,
     `${USER_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
     `export ZDOTDIR=${shq(zdotDir)}`,
-    ...(name === '.zprofile' ? [`export PATH=${shq(shimDir)}:"$PATH"`] : []),
+    ...(ZSH_FILES_AFTER_PATH_HELPER.includes(name)
+      ? [`path=(${shq(shimDir)} \${path:#${shq(shimDir)}})`]
+      : []),
     ''
   ].join('\n')
 }
 
 // CODEX§12
+export function loginShellIsBash(): boolean {
+  return path.basename(os.userInfo().shell ?? '') === 'bash'
+}
+
+// CODEX§12
 function bashEnvFile(shimDir: string): string {
-  return `export PATH=${shq(shimDir)}:"$PATH"\nunset BASH_ENV\n`
+  return `if shopt -q login_shell && [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\nexport PATH=${shq(shimDir)}:"$PATH"\n`
 }
 
 export interface OpenShim {

@@ -128,7 +128,7 @@ describe('Codex open shim dotfile folder', () => {
     }
   })
 
-  it("keeps the shim first whatever the user's ~/.zshenv does to ZDOTDIR, and runs their files from the folder zsh itself would, with ZDOTDIR as zsh would leave it", () => {
+  it("keeps the shim first whatever the user's ~/.zshenv does to ZDOTDIR and however their later files reorder PATH, and runs their files from the folder zsh itself would, with ZDOTDIR as zsh would leave it", () => {
     const cases = [
       { zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"', dir: '.config/zsh', saw: '.config/zsh' },
       { zshenv: 'unset ZDOTDIR', dir: '', saw: '(unset)' }
@@ -141,6 +141,7 @@ describe('Codex open shim dotfile folder', () => {
         path.join(home, dir, '.zprofile'),
         `export PATH="${path.join(base, 'user-bin')}:$PATH"\nexport ZPROFILE_SAW="\${ZDOTDIR-(unset)}"\n`
       )
+      fs.writeFileSync(path.join(home, dir, '.zlogin'), 'export PATH="/usr/bin:/bin:$PATH"\n')
       const res = spawnSync(
         '/bin/zsh',
         ['-lc', 'command -v open; printf "%s\\n" "$PATH" "$ZPROFILE_SAW"'],
@@ -155,24 +156,37 @@ describe('Codex open shim dotfile folder', () => {
 })
 
 describe('Codex open shim BASH_ENV file', () => {
-  it("puts the shim first in a bash login shell after the user's own profile has run, then unsets BASH_ENV so Codex still loads ~/.bashrc itself and no child bash runs the file again", () => {
+  function bash(flag: '-lc' | '-c', home: string): string[] {
+    const res = spawnSync(
+      '/bin/bash',
+      [flag, 'command -v open; printf "%s\\n" "$PATH" "rc=$FROM_BASHRC"'],
+      {
+        env: { HOME: home, PATH: '/usr/bin:/bin', BASH_ENV: shim.bashEnv },
+        // PLATFORM§2
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8'
+      }
+    )
+    return res.stdout.trim().split('\n')
+  }
+
+  it("puts the shim first in a bash login shell after the user's profile and ~/.bashrc have run, since Codex skips ~/.bashrc once BASH_ENV is set, and loads ~/.bashrc in no other bash", () => {
     const home = path.join(base, 'home-bash')
     fs.mkdirSync(home)
     fs.writeFileSync(
       path.join(home, '.bash_profile'),
       `export PATH="${path.join(base, 'user-bin')}:$PATH"\n`
     )
-    const res = spawnSync(
-      '/bin/bash',
-      ['-lc', 'command -v open; printf "%s\\n" "$PATH" "BASH_ENV=${BASH_ENV-}"'],
-      {
-        env: { HOME: home, PATH: '/usr/bin:/bin', BASH_ENV: shim.bashEnv },
-        encoding: 'utf8'
-      }
+    fs.writeFileSync(
+      path.join(home, '.bashrc'),
+      'export FROM_BASHRC=1\nexport PATH="/usr/bin:/bin:$PATH"\n'
     )
-    const [openPath, pathLine, bashEnv] = res.stdout.trim().split('\n')
+    const [openPath, pathLine, rc] = bash('-lc', home)
     expect(openPath).toBe(path.join(shim.shimDir, 'open'))
     expect(pathLine.split(':')).toContain(path.join(base, 'user-bin'))
-    expect(bashEnv).toBe('BASH_ENV=')
+    expect(rc).toBe('rc=1')
+    const [nonLoginOpen, , nonLoginRc] = bash('-c', home)
+    expect(nonLoginOpen).toBe(path.join(shim.shimDir, 'open'))
+    expect(nonLoginRc).toBe('rc=')
   })
 })

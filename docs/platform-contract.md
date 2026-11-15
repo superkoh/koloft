@@ -79,8 +79,11 @@ method. A recheck adds its date, version and command to the bullet.
   have there (the user's folder, or unset), sources `${ZDOTDIR:-$HOME}/<file>`,
   remembers what that file left in `ZDOTDIR`, and then exports `ZDOTDIR` back to itself.
   So `ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"` and `unset ZDOTDIR` in `~/.zshenv` both
-  lead on to the files zsh would read. (2026-11-15, macOS 27.0 zsh 5.9, in real Codex
-  turns, CODEX§12, and `codexOpenShim.test.ts`.)
+  lead on to the files zsh would read. A user `.zlogin` or `.zshrc` can rebuild `PATH`
+  after `.zprofile`, so the wrapper puts the folder first again at the end of each of
+  the three (`path=(<folder> ${path:#<folder>})`, which also drops the earlier copy).
+  (2026-11-15, macOS 27.0 zsh 5.9, in real Codex turns, CODEX§12, and
+  `codexOpenShim.test.ts`.)
 - **`BASH_ENV` puts a folder first again in `bash -lc`.** A login bash reads
   `/etc/profile` (where `path_helper` runs), then the first of `~/.bash_profile`,
   `~/.bash_login`, `~/.profile`, and only then the file `BASH_ENV` names, so a folder

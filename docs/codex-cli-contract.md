@@ -1079,7 +1079,7 @@ with a throwaway `CODEX_HOME` (a copy of this Mac's login, deleted after), a thr
 | the same, with a wrapper that sets `ZDOTDIR` back after each user file (PLATFORM§2) | the stand-in | `koloft-open:sent`, and `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
 | the same under `-s danger-full-access`, `command -v open` only | the stand-in | not run |
 | zsh, `~/.zshenv` says `ZDOTDIR="${ZDOTDIR:-$HOME/.zsh}"`, the wrapper before this change | the stand-in | `koloft-open:sent`, but `~/.zsh/.zprofile` and `~/.zsh/.zshrc` never ran |
-| the same with the shipped wrapper (`ZDOTDIR` unset while `~/.zshenv` runs) | the stand-in | `koloft-open:sent`, `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
+| the same with the shipped wrapper (`ZDOTDIR` unset while `~/.zshenv` runs), and a `~/.zsh/.zshrc` and `~/.zsh/.zlogin` that put `/usr/bin:/bin` in front of `PATH` | the stand-in | `koloft-open:sent`, `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
 | model asked for `shell: "/bin/bash"`, `--disable shell_snapshot` | `/usr/bin/open` | system `open` ran |
 | the same with `BASH_ENV` naming a file that prepends the folder | the stand-in | `koloft-open:sent`, and `~/.bash_profile` ran |
 
@@ -1105,15 +1105,22 @@ at `/usr/bin/open`, the shim folder only in `BASH_ENV`'s file):
 | unset | system `open` ran | set | empty |
 | a file that only prepends the folder | `koloft-open:sent` | **unset** | not run |
 | a file that also sources `~/.bashrc` in a login shell, then prepends | `koloft-open:sent` | set | not run |
-| a file that prepends the folder, then `unset BASH_ENV` | `koloft-open:sent` | set | empty |
+| a file that prepends the folder, then runs `unset BASH_ENV` | `koloft-open:sent` | set | empty |
 
-Every command was `/bin/bash -lc '…'`. So Koloft's `BASH_ENV` file prepends the folder
-and unsets `BASH_ENV`: Codex's capture then finds it empty and sources `~/.bashrc` as it
-does without Koloft, and no bash the command starts reads the file again (they inherit
-the `PATH`). Koloft sets `BASH_ENV` only when the login environment holds none. Koloft hands Codex the environment its login shell exports
-(`readLoginShell`), so a user whose `~/.zshenv` exports `ZDOTDIR` already reached the
-shim through Koloft's own `ZDOTDIR` handling; the failing case was a `ZDOTDIR` set but
-not exported. Not run: a macOS account whose login shell is bash (the passwd shell of
+Every command was `/bin/bash -lc '…'`. Koloft ships the third file: it loads
+`~/.bashrc` itself in a login shell (the shell Codex captures its snapshot in, which
+then skips `~/.bashrc` because `BASH_ENV` is set) and only after that puts the folder
+first, so a `~/.bashrc` that rebuilds `PATH` cannot push the shim back. The fourth file
+was not shipped: `unset BASH_ENV` lets a `~/.bashrc` that rebuilds `PATH` win, and a
+bash script that starts codex (an asdf-style launcher) would use the file up before the
+app-server starts. Koloft sets `BASH_ENV` only when the account's login shell
+(`os.userInfo().shell`, the passwd entry Codex reads too) is bash, so a zsh user's bash
+scripts, MCP servers and hooks see no change, and only when the login environment holds
+no `BASH_ENV` of its own. With the shell snapshot off, a bash user's `bash -lc` now loads
+`~/.bashrc` once more than without Koloft. Koloft hands Codex the environment its login
+shell exports (`readLoginShell`), which holds a `ZDOTDIR` that `~/.zshenv` exports; the
+wrapper starts from Koloft's own process `ZDOTDIR` instead (unset when Koloft starts from
+the Dock), so `~/.zshenv` itself still runs, as in the user's own terminal. Not run: a macOS account whose login shell is bash (the passwd shell of
 this Mac's account was not changed); that it behaves as the two runs above put together:
 **inferred, not checked**. A login shell of `/bin/sh` maps to `sh -lc`, which reads
 neither `ZDOTDIR` nor `BASH_ENV`: not handled.
