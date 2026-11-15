@@ -325,9 +325,11 @@ export function ArtifactPane({
     setCurHeading(0)
   }, [path])
 
-  const lastReadPath = useRef<string | null>(null)
+  const readPath = useRef<string | null>(null)
+  const lastGoodReadPath = useRef<string | null>(null)
   useEffect(() => {
-    const firstReadOfPath = lastReadPath.current !== path
+    const firstReadOfPath = readPath.current !== path
+    readPath.current = path
     if (editText !== undefined) {
       setState('ok')
       return
@@ -342,13 +344,14 @@ export function ArtifactPane({
       .readText(path)
       .then((t) => {
         if (cancelled) return
-        lastReadPath.current = path
+        lastGoodReadPath.current = path
         setRead({ src: path, text: t })
         setState('ok')
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const next = stateAfterReadError(String((err as Error)?.message ?? ''), firstReadOfPath)
+        const noGoodTextToKeep = lastGoodReadPath.current !== path
+        const next = stateAfterReadError(String((err as Error)?.message ?? ''), noGoodTextToKeep)
         if (next) setState(next)
       })
     return () => {

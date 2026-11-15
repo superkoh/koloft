@@ -42,13 +42,26 @@ function anyApi(): unknown {
   })
 }
 const api = anyApi() as Record<string, unknown>
-const preview = { readText: (p: string): Promise<string> => Promise.resolve(files[p]) }
+const TOO_LARGE = '/ws/huge.log'
+const IPC_ROUND_TRIP_MS = 20
+const preview = {
+  readText: (p: string): Promise<string> =>
+    p === TOO_LARGE
+      ? new Promise((_ok, fail) =>
+          setTimeout(() => fail(new Error('KOLOFT_TOO_LARGE')), IPC_ROUND_TRIP_MS)
+        )
+      : Promise.resolve(files[p])
+}
+let fileChanged: (p: string) => void = () => {}
 const fs = new Proxy(api.fs as Record<string, unknown>, {
   get: (t, k) =>
     k === 'gitFileDiffFull'
       ? () => Promise.resolve({ text: '' })
       : k === 'onFileChange'
-        ? () => () => {}
+        ? (cb: (p: string) => void) => {
+            fileChanged = cb
+            return () => {}
+          }
         : t[k as string]
 })
 ;(window as unknown as { api: unknown }).api = new Proxy(api, {
@@ -109,7 +122,7 @@ async function finishColoring(code: string): Promise<void> {
   coloring.get(code)!(coloredHtml(code))
 }
 
-describe('ArtifactPane: opening a file at a line', () => {
+describe('ArtifactPane: reading the file it shows', () => {
   it('lands on that line of the new file even when React lags and the coloring of the file shown before finishes first', async () => {
     render(<ReadingArea />)
     await finishColoring(files['/ws/a.ts'])
@@ -122,5 +135,21 @@ describe('ArtifactPane: opening a file at a line', () => {
     expectReactTasksLagged()
 
     await waitFor(() => expect(scrolledTo.at(-1)).toBe('const b9 = 9'), { timeout: 3000 })
+  })
+
+  it('a file too large to preview keeps saying so when it changes on disk, never flashing Loading', async () => {
+    const { container } = render(<ReadingArea />)
+    openAt(TOO_LARGE, 1)
+    await waitFor(() => expect(container.textContent).toContain('File too large to preview.'))
+    const seen: string[] = []
+    const watch = new MutationObserver(() => seen.push(container.textContent ?? ''))
+    watch.observe(container, { childList: true, subtree: true, characterData: true })
+    for (let i = 0; i < 3; i++) {
+      fileChanged(TOO_LARGE)
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    watch.disconnect()
+    expect(seen.filter((t) => t.includes('Loading…'))).toEqual([])
+    expect(container.textContent).toContain('File too large to preview.')
   })
 })
