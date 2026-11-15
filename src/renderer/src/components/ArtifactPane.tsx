@@ -251,7 +251,9 @@ export function ArtifactPane({
   const isBinaryKind = kind === 'image' || kind === 'pdf'
 
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [text, setText] = useState('')
+  const [read, setRead] = useState<{ src: string; text: string }>({ src: '', text: '' })
+  const text = read.text
+  const textIsFromAnotherFile = editText === undefined && read.src !== path
   const [state, setState] = useState<TextState>(isBinaryKind ? 'ok' : 'loading')
   const [diff, setDiff] = useState<{ src: string; text: string } | null>(null)
   const changedRef = useRef(changed)
@@ -338,7 +340,7 @@ export function ArtifactPane({
       .readText(path)
       .then((t) => {
         if (cancelled) return
-        setText(t)
+        setRead({ src: path, text: t })
         setState('ok')
       })
       .catch((err: unknown) => {
@@ -582,7 +584,8 @@ export function ArtifactPane({
         />
       )
     }
-    if (state === 'loading') return <div className="code-state">Loading…</div>
+    if (state === 'loading' || textIsFromAnotherFile)
+      return <div className="code-state">Loading…</div>
     if (current === 'diff' && parsed) {
       return <InlineDiff key={path} src={path} parsed={parsed} line={line} />
     }

@@ -75,6 +75,7 @@ async function renderedText(page: Page, marker: string): Promise<string> {
 }
 
 async function scroller(page: Page): Promise<JSHandle<HTMLElement>> {
+  await mdBody(page).waitFor({ state: 'visible', timeout: 30_000 })
   return page.evaluateHandle(() => {
     const bodies = Array.from(document.querySelectorAll<HTMLElement>('.md-body'))
     const body =
@@ -133,6 +134,11 @@ async function scrollStep(page: Page): Promise<boolean> {
     el.scrollTop = Math.min(before + el.clientHeight * 0.6, el.scrollHeight)
     return el.scrollTop <= before
   })
+}
+
+async function scrollStepWrappingToTop(page: Page): Promise<void> {
+  const diagramsScrolledPastUnseenDrawOnlyWhenBackInView = await scrollStep(page)
+  if (diagramsScrolledPastUnseenDrawOnlyWhenBackInView) await setScrollTop(page, 0)
 }
 
 async function scrollToBottom(page: Page, steps = 60, pause = 350): Promise<void> {
@@ -955,7 +961,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect
       .poll(
         async () => {
-          await scrollStep(page)
+          await scrollStepWrappingToTop(page)
           return diagrams(page).count()
         },
         { timeout: 480_000, intervals: [500] }
