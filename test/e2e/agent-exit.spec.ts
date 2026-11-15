@@ -200,7 +200,6 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
         .toContain('[Koloft] Claude session ended unexpectedly (exit code 3)')
       await expect(row.locator('.ws-tab-title')).not.toHaveText('Terminal')
 
-      fs.rmSync(path.join(env.home, 'fake-claude-crash-after-end'))
       const [first] = readCalls(env)
       await sendShortcut(app, 'shortcut:restart-session')
       await expect.poll(() => readCalls(env).length, { timeout: 30_000 }).toBe(2)

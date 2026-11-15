@@ -463,6 +463,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
   watchedSessionEndedIn.delete(oldId)
+  agentBeforeSessionEnded.delete(oldId)
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
@@ -861,18 +862,12 @@ export const useStore = create<AppState>((set, get) => ({
         .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
         .find(({ row }) => row.id === id || row.id === sessionId) ??
       (tab && rowOfTab(s, tab))
-    if (!at) return false
+    if (!at || !tab) return false
+    agentBeforeSessionEnded.delete(id)
     set({
       tabs: s.tabs.map((t) =>
         t.id === id
-          ? {
-              ...t,
-              ...agentBeforeSessionEnded.get(id),
-              alive: false,
-              resuming: undefined,
-              sessionId,
-              ended: { note, ...at }
-            }
+          ? { ...tab, alive: false, resuming: undefined, sessionId, ended: { note, ...at } }
           : t
       )
     })

@@ -614,13 +614,15 @@ const CRASH_AFTER_SESSION_END_MS = 1500
 function shutdown(reason) {
   waitingHook?.kill('SIGTERM')
   fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason })
+  const crashFile = path.join(home, 'fake-claude-crash-after-end')
   let crashCode
   try {
-    crashCode = Number(fs.readFileSync(path.join(home, 'fake-claude-crash-after-end'), 'utf8'))
+    crashCode = Number(fs.readFileSync(crashFile, 'utf8'))
+    fs.rmSync(crashFile)
   } catch {
     process.exit(0)
   }
-  setTimeout(() => process.exit(crashCode || 1), CRASH_AFTER_SESSION_END_MS)
+  setTimeout(() => process.exit(crashCode), CRASH_AFTER_SESSION_END_MS)
 }
 
 function dirtyCount() {
