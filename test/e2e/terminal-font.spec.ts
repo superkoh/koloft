@@ -1,9 +1,35 @@
 import type { Page } from '@playwright/test'
 import type { Terminal } from '@xterm/xterm'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings } from './helpers/env'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import { openSettings } from './helpers/extensions'
-import { notesArea, startSessionIn, waitBooted } from './helpers/p1'
+import { startCodex } from './helpers/codex'
+import {
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  agyReady,
+  killFakeRemote,
+  launchWithRemote
+} from './helpers/remote'
+import {
+  agyConversationOnceFirstTurnEnded,
+  centerTerm,
+  newSessionInWith,
+  notesArea,
+  runIn,
+  startSessionIn,
+  waitBooted,
+  wsRows
+} from './helpers/p1'
 
 const ALL_FOUR_FACES_LOADED = [
   'italic 400 loaded',
@@ -44,9 +70,13 @@ function focusIn(page: Page, selector: string): Promise<boolean> {
   return page.evaluate((s) => !!document.activeElement?.closest(s), selector)
 }
 
-async function restoreWithFacesHeldBack(page: Page, meanwhile: () => Promise<void>) {
+async function restoreWithFacesHeldBack(
+  page: Page,
+  start: (page: Page) => Promise<unknown>,
+  meanwhile: () => Promise<void>
+) {
   await waitBooted(page)
-  await startSessionIn(page, 'ws-a')
+  await start(page)
   await page.addInitScript(() => {
     const w = window as unknown as { __releaseFaces: () => void }
     const released = new Promise<void>((resolve) => (w.__releaseFaces = resolve))
@@ -63,6 +93,105 @@ async function restoreWithFacesHeldBack(page: Page, meanwhile: () => Promise<voi
   await page.evaluate(
     () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   )
+}
+
+type StartTab = (page: Page) => Promise<unknown>
+
+const startClaudeInWsA: StartTab = (page) => startSessionIn(page, 'ws-a')
+
+async function takesTheKeyboardWhenNobodyMovedIt(page: Page, start: StartTab): Promise<void> {
+  await restoreWithFacesHeldBack(page, start, async () => {})
+  await expect.poll(() => focusIn(page, '.xterm')).toBe(true)
+}
+
+async function leavesTheKeyboardInTheClickedNote(page: Page, start: StartTab): Promise<void> {
+  await restoreWithFacesHeldBack(page, start, async () => {
+    await notesArea(page).click()
+    expect(await focusIn(page, '.isl-notes')).toBe(true)
+  })
+  expect(await focusIn(page, '.isl-notes')).toBe(true)
+}
+
+interface OtherTab {
+  name: string
+  remote: boolean
+  install: (env: E2EEnv) => void
+  start: (page: Page, env: E2EEnv) => Promise<unknown>
+}
+
+const OTHER_TABS: OtherTab[] = [
+  {
+    name: 'Codex tab on this Mac',
+    remote: false,
+    install: (env) => installCodex(env),
+    start: (page, env) => startCodex(page, env)
+  },
+  {
+    name: 'Muse tab on this Mac',
+    remote: false,
+    install: (env) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    start: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
+    }
+  },
+  {
+    name: 'Antigravity tab on this Mac',
+    remote: false,
+    install: (env) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    // AGY§8
+    start: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      await agyConversationOnceFirstTurnEnded(page)
+    }
+  },
+  {
+    name: 'Claude tab on a machine reached over SSH',
+    remote: true,
+    install: () => {},
+    start: (page) => startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+  },
+  ...OTHER_AGENTS_ON_THE_MACHINE.map((agent): OtherTab => ({
+    name: `${agent.label} tab on a machine reached over SSH`,
+    remote: true,
+    install: agent.install,
+    start: async (page) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+      await agent.bound?.(page)
+      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/st-waiting/, {
+        timeout: 60_000
+      })
+    }
+  }))
+]
+
+async function withAppFor(
+  env: E2EEnv,
+  tab: OtherTab,
+  body: (page: Page, start: StartTab) => Promise<void>
+): Promise<void> {
+  tab.install(env)
+  seedSettings(env, { hintsOff: true })
+  const { app, page } = tab.remote
+    ? await launchWithRemote(env)
+    : await launchApp(env).then(async (app) => ({ app, page: await app.firstWindow() }))
+  try {
+    if (tab.remote) await addRemoteWorkspace(page, env)
+    await body(page, (p) => tab.start(p, env))
+  } finally {
+    await quitAndClose(app)
+    if (tab.remote) killFakeRemote(env)
+  }
 }
 
 test.describe('the terminal font ships with the app', () => {
@@ -90,19 +219,30 @@ test.describe('the terminal font ships with the app', () => {
   test('a restored terminal built once its faces have loaded takes the keyboard when nobody moved it meanwhile', async ({
     page
   }) => {
-    await restoreWithFacesHeldBack(page, async () => {})
-    await expect.poll(() => focusIn(page, '.xterm')).toBe(true)
+    await takesTheKeyboardWhenNobodyMovedIt(page, startClaudeInWsA)
   })
 
   test('a restored terminal built once its faces have loaded leaves the keyboard in the note the owner clicked meanwhile', async ({
     page
   }) => {
-    await restoreWithFacesHeldBack(page, async () => {
-      await notesArea(page).click()
-      expect(await focusIn(page, '.isl-notes')).toBe(true)
-    })
-    expect(await focusIn(page, '.isl-notes')).toBe(true)
+    await leavesTheKeyboardInTheClickedNote(page, startClaudeInWsA)
   })
+
+  for (const tab of OTHER_TABS) {
+    test(`a restored ${tab.name} built once its faces have loaded takes the keyboard when nobody moved it meanwhile`, async ({
+      env
+    }) => {
+      test.setTimeout(tab.remote ? 240_000 : 120_000)
+      await withAppFor(env, tab, takesTheKeyboardWhenNobodyMovedIt)
+    })
+
+    test(`a restored ${tab.name} built once its faces have loaded leaves the keyboard in the note the owner clicked meanwhile`, async ({
+      env
+    }) => {
+      test.setTimeout(tab.remote ? 240_000 : 120_000)
+      await withAppFor(env, tab, leavesTheKeyboardInTheClickedNote)
+    })
+  }
 
   test('a change from a system font to JetBrainsMono Nerd Font in Settings reaches an open terminal only once its four faces have loaded', async ({
     env
