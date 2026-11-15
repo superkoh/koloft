@@ -1305,8 +1305,10 @@ export class SessionTracker extends SessionRuntime {
       if (s !== 'working' && s !== 'approval') this.judgeReported(t, false)
       return
     }
-    if (!this.judgeReported(t) && Date.now() - t.lastMainActivityTs >= STOP_HOLD_MS)
-      this.applyStatus(t, 'ended')
+    const now = Date.now()
+    // CC§8
+    const quiet = now - Math.max(t.lastMainActivityTs, t.lastBgActivityTs) >= STOP_HOLD_MS
+    if (!this.judgeReported(t) && quiet) this.applyStatus(t, 'ended')
   }
 
   private async ingestMainAppend(t: Tracked, p: string, st: fs.Stats): Promise<boolean> {

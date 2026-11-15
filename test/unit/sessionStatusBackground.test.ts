@@ -442,6 +442,31 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB5' && s.status === 'waiting', 8000)
   }, 20_000)
 
+  // CC§8
+  it('a subagent transcript that keeps growing after a turn end whose list does not name it holds the dot once and rests it once, never blinking', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabB5b', cwd, initialLines(cwd))
+    tracker.setStatus('tabB5b', 'working')
+    await tracker.reportTurnEnd('tabB5b', [])
+    expect(status(tracker, 'tabB5b')).toBe('waiting')
+
+    const edges: SessionStatus[] = []
+    tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
+      if (e.tabId === 'tabB5b') edges.push(e.next)
+    })
+    await sleep(RESUME_MS + 300)
+    const growthEnds = Date.now() + 3000
+    const lines: unknown[] = []
+    while (Date.now() < growthEnds) {
+      lines.push(subagentRec(Date.now()))
+      writeSubagentJsonl(cwd, SID, 'agent-unlisted.jsonl', lines)
+      await sleep(SCAN_MS)
+    }
+    await waitFor(tracker, (s) => s.tabId === 'tabB5b' && s.status === 'waiting', 8000)
+    expect(edges).toEqual(['working', 'waiting'])
+  }, 20_000)
+
   it('stale subagent content never promotes (record time, not fold time)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
