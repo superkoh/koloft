@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  firstWindowBounds,
   fullscreenOption,
   usableBounds,
   usableSessionScreen,
@@ -59,6 +60,16 @@ describe('windowState: saved bounds are restored only while they stay on-screen'
     expect(
       usableBounds({ x: 100, y: 1050, width: 1200, height: 800 }, [LAPTOP_WORKAREA])
     ).toBeNull()
+  })
+
+  it('the window Koloft places itself on a first launch is restored on the next one, even on a display shorter than it', () => {
+    const size = { width: 1440, height: 920 }
+    const fullHd: WinBounds = { x: 0, y: 30, width: 1920, height: 1050 }
+    const short: WinBounds = { x: 0, y: 30, width: 1024, height: 680 }
+    for (const area of [fullHd, short, LAPTOP_WORKAREA]) {
+      const placed = firstWindowBounds(size, area)
+      expect(usableBounds(placed, [area])).toEqual(placed)
+    }
   })
 
   it('rejects malformed state instead of crashing the launch', () => {

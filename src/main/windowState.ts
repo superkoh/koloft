@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ScreenSize } from '@shared/types'
 import {
+  firstWindowBounds,
   usableBounds,
   usableSessionScreen,
   type SavedWindowState,
@@ -27,7 +28,7 @@ function loadState(): SavedWindowState {
 }
 
 export function restoredWindowGeometry(): {
-  bounds: Partial<WinBounds> & { width: number; height: number }
+  bounds: WinBounds
   maximized: boolean
   fullScreen: boolean
   sessionScreen: ScreenSize | undefined
@@ -36,7 +37,7 @@ export function restoredWindowGeometry(): {
   const displays = screen.getAllDisplays().map((d) => d.workArea)
   const bounds = usableBounds(st.bounds, displays)
   return {
-    bounds: bounds ?? DEFAULT_SIZE,
+    bounds: bounds ?? firstWindowBounds(DEFAULT_SIZE, screen.getPrimaryDisplay().workArea),
     maximized: st.maximized === true,
     fullScreen: st.fullScreen === true,
     sessionScreen: bounds ? usableSessionScreen(st.sessionScreen) : undefined
