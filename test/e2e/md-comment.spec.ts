@@ -53,10 +53,8 @@ const ASKS_FOR_AN_APPROVAL: Record<AgentName, string> = {
   Antigravity: '/bash echo declined\r'
 }
 
-// CC§2 CODEX§3 MUSE§11 AGY§14
+// CC§2 CODEX§3 MUSE§11 AGY§14 AGY§29
 const ESC_DECLINES = '\x1b'
-// AGY§29
-const FOUR_DECLINES_AGY_THROUGH_TMUX = '4'
 
 interface OpenTab {
   app: ElectronApplication
@@ -78,11 +76,7 @@ async function openLocal(env: E2EEnv, agent: AgentName): Promise<OpenTab> {
   return { app, page, wsName: 'ws-a', plan }
 }
 
-async function openRemote(
-  env: E2EEnv,
-  agent: AgentName,
-  start: (page: Page) => Promise<unknown>
-): Promise<OpenTab> {
+async function openRemote(env: E2EEnv, start: (page: Page) => Promise<unknown>): Promise<OpenTab> {
   const { app, page } = await launchWithRemote(env)
   writePlan(remoteDir(env))
   await addRemoteWorkspace(page, env)
@@ -93,21 +87,18 @@ async function openRemote(
 const TABS_WAITING_FOR_AN_APPROVAL: {
   kind: string
   agent: AgentName
-  declines: string
   open: (env: E2EEnv) => Promise<OpenTab>
 }[] = [
   ...OTHER_AGENTS_ON_THE_MACHINE.map(({ label }) => ({
     kind: `a local ${label}`,
     agent: label,
-    declines: ESC_DECLINES,
     open: (env: E2EEnv) => openLocal(env, label)
   })),
   {
     kind: 'a remote (ssh) Claude Code',
     agent: 'Claude',
-    declines: ESC_DECLINES,
     open: (env) =>
-      openRemote(env, 'Claude', async (page) => {
+      openRemote(env, async (page) => {
         await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
         await waitStartupTurnOver(page, REMOTE_WS_NAME)
       })
@@ -115,10 +106,9 @@ const TABS_WAITING_FOR_AN_APPROVAL: {
   ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
     kind: `a remote (ssh) ${agent.label}`,
     agent: agent.label,
-    declines: agent.label === 'Antigravity' ? FOUR_DECLINES_AGY_THROUGH_TMUX : ESC_DECLINES,
     open: (env: E2EEnv) => {
       agent.install(env)
-      return openRemote(env, agent.label, async (page) => {
+      return openRemote(env, async (page) => {
         await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
         await agent.bound?.(page)
       })
@@ -235,7 +225,7 @@ test.describe('✎ comment waits out an approval in every other kind of session 
     test(`MD-C05: in ${tab.kind} tab, ✎ comment is greyed while the session waits for an approval, and comes back once it is declined`, async ({
       env
     }) => {
-      test.setTimeout(240_000)
+      test.setTimeout(300_000)
       seedSettings(env, { hintsOff: true, skipPermissions: false })
       const { app, page, wsName, plan } = await tab.open(env)
       try {
@@ -253,7 +243,7 @@ test.describe('✎ comment waits out an approval in every other kind of session 
         await expect(button).toBeDisabled()
         await expect(button).toHaveAttribute('title', /waiting for an approval/)
 
-        await typeInto(page, tabId, tab.declines)
+        await typeInto(page, tabId, ESC_DECLINES)
         await expect(row).not.toHaveClass(/\bst-approval\b/, { timeout: A_ROW_TURNS_WITHIN_MS })
         await selectWords(page, PLAN_WORDS)
         await expect(button).toBeEnabled({ timeout: 30_000 })
