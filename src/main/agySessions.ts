@@ -131,9 +131,9 @@ export interface AgySessionDeps extends StoredSessionDeps {
   scriptsDir: string
   ownersGemini(): string
   pickHome(
-    resumeSessionId: string | undefined,
-    onlyAsking: boolean,
-    workspace: string | undefined
+    resumeSessionId?: string,
+    onlyAsking?: boolean,
+    workspace?: string
   ): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
@@ -501,7 +501,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   trustsFolder(dir: string): boolean | Promise<boolean> {
     const key = parseRemoteKey(dir)
     if (!key && this.trustedHere(undefined, dir)) return true
-    const picked = this.deps.pickHome(undefined, true, this.workspaceFor(dir))
+    const picked = this.deps.pickHome(undefined, true, dir)
     if (!picked) return false
     if (!key) return this.trustedHere(picked.home, dir)
     return this.deps.remote

@@ -8,7 +8,6 @@ export type WorkspaceAccountLists = Record<string, string[]>
 export interface WorkspaceLimit {
   workspace: string
   ids: ReadonlySet<string>
-  usable?: number
 }
 
 export const accountId = (a: { kind: AccountKind; name: string }): string =>
@@ -41,21 +40,23 @@ export function workspaceShortName(workspace: string): string {
   return remote ? `${remote.host}:${name}` : name
 }
 
-export function limitNote(limit: WorkspaceLimit | undefined): string {
+export function allowedBy(limit: WorkspaceLimit): string {
+  return `${workspaceShortName(limit.workspace)} may use`
+}
+
+export function limitNote(limit: WorkspaceLimit | undefined, usable: number): string {
   if (!limit) return ''
-  const ws = workspaceShortName(limit.workspace)
-  const count = limit.usable ?? limit.ids.size
-  return count === 1
-    ? ` · the only account ${ws} may use`
-    : ` · one of ${count} accounts ${ws} may use`
+  return usable === 1
+    ? ` · the only account ${allowedBy(limit)}`
+    : ` · one of ${usable} accounts ${allowedBy(limit)}`
 }
 
 export function everyAllowedAccountWalled(limit: WorkspaceLimit): string {
-  return `every account ${workspaceShortName(limit.workspace)} may use is at its limit`
+  return `every account ${allowedBy(limit)} is at its limit`
 }
 
 export function noAllowedAccountMessage(limit: WorkspaceLimit): string {
-  return `No account ${workspaceShortName(limit.workspace)} may use can run this session. Change its list (right-click the workspace ▸ Accounts…) or fix the account in Settings ▸ Accounts.`
+  return `No account ${allowedBy(limit)} can run this session. Change its list (right-click the workspace ▸ Accounts…) or fix the account in Settings ▸ Accounts.`
 }
 
 export function sanitizeWorkspaceAccounts(raw: unknown): WorkspaceAccountLists {

@@ -6,17 +6,14 @@ import { accountId, workspaceShortName } from '@shared/workspaceAccounts'
 import { IconClose } from '../icons'
 import { useStore } from '../store'
 import { Switch } from './settings/Switch'
+import { ApiKeyBadge } from './accountMeter'
 import '../cronJobs.css'
+import '../accounts.css'
 
 function accountNote(a: AccountView): string {
-  const what =
-    a.kind === 'custom'
-      ? `custom endpoint${a.model ? ` · ${a.model}` : ''}`
-      : a.kind === 'apikey' || a.apiKey
-        ? 'API key'
-        : 'sign-in'
-  if (!a.enabled) return `${what} · turned off`
-  return a.status === 'ok' ? what : `${what} · not signed in`
+  if (!a.enabled) return 'turned off'
+  if (a.status !== 'ok') return 'not signed in'
+  return a.kind === 'custom' ? (a.model ?? '') : ''
 }
 
 export function WorkspaceAccountsDialog({
@@ -100,8 +97,12 @@ export function WorkspaceAccountsDialog({
                       onChange={(next) => flip(id, next)}
                     />
                     <div className="job-main" onClick={() => flip(id, !on)}>
-                      <div className="job-name">{a.name}</div>
-                      <div className="job-task">{accountNote(a)}</div>
+                      <div className="job-name">
+                        {a.name}
+                        {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
+                        {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
+                      </div>
+                      {accountNote(a) && <div className="job-task">{accountNote(a)}</div>}
                     </div>
                   </div>
                 )

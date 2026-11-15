@@ -856,10 +856,11 @@ describe('a workspace limited to some accounts', () => {
     if (r.account) expect(r.banner).toContain('glm-5.2')
   })
 
-  it('no listed account can run: answers with a line that names the workspace and where to change its list', async () => {
+  it('no listed account can run: picks none, never an unlisted one', async () => {
     const h = makeHarness([meta({ name: 'work', enabled: false }), meta({ name: 'personal' })])
-    const r = await h.picker.pick('tab', undefined, limitTo('oauth:work'))
-    expect(r.account).toBeNull()
-    if (r.account === null) expect(r.message).toMatch(/^No account acme-api may use .*Accounts…/)
+    expect(await h.picker.pick('tab', undefined, limitTo('oauth:work'))).toEqual({
+      account: null,
+      reason: 'no-usable'
+    })
   })
 })

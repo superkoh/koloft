@@ -385,9 +385,8 @@ import {
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import {
-  limitNote,
+  accountId,
   noAllowedAccountMessage,
-  withinLimit,
   workspaceLimit,
   type WorkspaceLimit
 } from '@shared/workspaceAccounts'
@@ -426,7 +425,6 @@ import {
   noAccountLine,
   noAccountMessage,
   SHIM_FOUND_NO_ACCOUNT_EXIT,
-  usableAccounts,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -1560,7 +1558,7 @@ let rendererReady = false
 const usageViews = new Map<string, Omit<AccountView, keyof AccountMeta>>()
 
 function viewKey(name: string, kind: AccountKind): string {
-  return `${kind}:${name.toLowerCase()}`
+  return accountId({ kind, name })
 }
 
 function accountViews(): AccountView[] {
@@ -2322,18 +2320,9 @@ function terminalPickOf(
   )
 }
 
-function workspaceOfFolder(dir: string | undefined): string | undefined {
-  return dir ? projectInfoOnHost(dir).root : undefined
-}
-
-function limitNoteAmong(
-  views: AccountView[],
-  limit: WorkspaceLimit | undefined,
-  kind: AccountKind
-): string {
-  return limitNote(
-    limit && { ...limit, usable: usableAccounts(withinLimit(views, limit), [kind]).length }
-  )
+function limitedWorkspaceOf(dir: string | undefined): string | undefined {
+  const anyLimited = Object.keys(loadSettings().workspaceAccounts).length > 0
+  return dir && anyLimited ? projectInfoOnHost(dir).root : undefined
 }
 
 const shimAccountRefusals = new Map<string, string>()
@@ -2346,9 +2335,12 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
   const resPath = path.join(pickDir, `res-${id}.json`)
   const backend = backendIdOf(obj.backend)
-  const workspace = workspaceOfFolder(
-    claudeBackend.launchFolderOf(obj.tabId) ?? (tab.utilMachine ? undefined : tab.cwd)
+  const owner = tab.ownerTabId ?? obj.tabId
+  const workspace = limitedWorkspaceOf(
+    claudeBackend.launchFolderOf(owner) ?? (tab.utilMachine ? undefined : tab.cwd)
   )
+  const refusal = (b: BackendId): { message: string } | undefined =>
+    workspaceLimitOf(workspace, b) && { message: noAccountNow(b, workspace) }
   if (backend && backend !== 'claude') {
     let picked: UtilTerminalPick | undefined
     try {
@@ -2357,17 +2349,18 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
       console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
     }
     try {
-      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? refusal(backend) ?? {}))
     } catch {}
     pushAccounts()
     return
   }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId, workspace)
+  const refused = res.account === null ? refusal('claude') : undefined
   const accountIssue =
-    res.account === null && (res.message || noAccountLine(listAccounts(), 'claude'))
+    res.account === null && (refused?.message || noAccountLine(listAccounts(), 'claude'))
   if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
   else shimAccountRefusals.delete(obj.tabId)
-  const payload: Record<string, unknown> = { ...res }
+  const payload: Record<string, unknown> = { ...res, ...refused }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
@@ -2685,7 +2678,7 @@ function pickCodexHome(
   return {
     account: picked.name,
     home,
-    banner: launchLine(picked, Date.now()) + limitNoteAmong(views, limit, 'codex-home'),
+    banner: launchLine(picked, Date.now()) + codexPicker.limitNote(views, limit),
     notice: allLimitedNotice(picked, 'codex', limit)
   }
 }
@@ -2888,7 +2881,7 @@ function pickMuseHome(
     account: picked.name,
     home,
     env: museAccountEnv(home),
-    banner: launchLine(picked, Date.now()) + limitNoteAmong(views, limit, 'muse-home'),
+    banner: launchLine(picked, Date.now()) + musePicker.limitNote(views, limit),
     notice: allLimitedNotice(picked, 'muse', limit)
   }
 }
@@ -2983,7 +2976,7 @@ function pickAgyHome(
     picked && {
       account: picked.name,
       home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now()) + limitNoteAmong(views, limit, 'agy-home'),
+      banner: launchLine(picked, Date.now()) + agyPicker.limitNote(views, limit),
       notice: allLimitedNotice(picked, 'agy', limit)
     }
   )
@@ -6531,9 +6524,9 @@ const hosts = new Hosts(
         settings: loadSettings,
         pickAccount: (launchKey, resumeSessionId, workspace) =>
           pickMachineAccount(() =>
-            pickForLaunch(launchKey, resumeSessionId, workspaceOfFolder(workspace))
+            pickForLaunch(launchKey, resumeSessionId, limitedWorkspaceOf(workspace))
           ),
-        noAccountMessage: (workspace) => noAccountNow('claude', workspaceOfFolder(workspace)),
+        noAccountMessage: (workspace) => noAccountNow('claude', limitedWorkspaceOf(workspace)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
