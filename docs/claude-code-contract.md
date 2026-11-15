@@ -1720,6 +1720,17 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   whole machine heartbeat took 39–62 ms with that scan against 21–26 ms without it, with
   about 490–540 processes in the VM; on the dev Mac (about 750 processes) 55–63 ms
   against 23–31 ms: `ps -axww` about 25 ms, `lsof` on one pid about 15 ms.
+- **The Bash tool's shell runs with the PATH claude was started with, not the one the
+  user's `~/.zshrc` builds**, and so do the hooks. Measured 2026-11-15 on CC 2.1.325
+  (linux-arm64) in Docker (Debian bookworm, zsh 5.9), a user whose login shell is zsh and
+  whose `~/.zshrc` puts `~/rc-only/bin` first on PATH, claude started directly with
+  `SHELL=/bin/zsh` and the PATH a remote tab's script builds (PLATFORM§33), the model a
+  fake Messages API answering one Bash call `command -v rconly-tool`; 1 run `-p`, 1
+  interactive. Both times the tool was not found, the command saw exactly the PATH
+  claude got, and a `SessionStart` hook's `command -v` did not find it either. The shell
+  snapshot (`~/.claude/shell-snapshots/snapshot-zsh-*.sh`) holds `export PATH=<the PATH
+  claude got>`, so what `.zshrc` adds is put back before each call. With the user's
+  `zsh -lic` PATH appended to claude's own, the Bash call and the hook both found it.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at

@@ -118,6 +118,7 @@ export interface MachineClaudeDeps {
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   noAccountMessage(): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
+  loginPath(): Promise<string>
 }
 
 export interface MuseMachineLaunch {
@@ -1033,7 +1034,7 @@ export class SshHost implements Host {
   // MUSE§17
   async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
     const d = this.deps.claude
-    await this.sshReady()
+    const [loginPath] = await Promise.all([this.loginPath(), this.sshReady()])
     const sid = spec.resumeSessionId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
     const auth = attach ? undefined : spec.account.auth()
@@ -1062,6 +1063,7 @@ export class SshHost implements Host {
           banner: '',
           portOffset: spec.portOffset,
           ownerWords: spec.ownerWords,
+          loginPath,
           program: machineToolProgram(
             'muse',
             museRunLines({
@@ -1086,6 +1088,10 @@ export class SshHost implements Host {
   private async sshReady(): Promise<void> {
     await this.deps.sshEnvReady?.()
     ensureControlDir(this.deps.claude.controlDir)
+  }
+
+  private loginPath(): Promise<string> {
+    return this.deps.claude.loginPath().catch(() => '')
   }
 
   // PLATFORM§35 ADR-0044
@@ -1183,7 +1189,7 @@ export class SshHost implements Host {
 
   async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
     const d = this.deps.claude
-    await this.sshReady()
+    const [loginPath] = await Promise.all([this.loginPath(), this.sshReady()])
     const sid = spec.resumeId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
     const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
@@ -1204,6 +1210,7 @@ export class SshHost implements Host {
           banner: '',
           env: spec.env,
           portOffset: spec.portOffset,
+          loginPath,
           program: attach ? { ...spec.program, files: {} } : spec.program
         })
         return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
@@ -1213,7 +1220,7 @@ export class SshHost implements Host {
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    await this.sshReady()
+    const [loginPath] = await Promise.all([this.loginPath(), this.sshReady()])
     await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()
@@ -1256,7 +1263,8 @@ export class SshHost implements Host {
               banner: account?.banner ?? '',
               env: account?.env,
               portOffset: worktree ? portOffset(worktree) : undefined,
-              ownerWords: spec.ownerWords
+              ownerWords: spec.ownerWords,
+              loginPath
             },
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),

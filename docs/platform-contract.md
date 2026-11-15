@@ -1908,11 +1908,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   run). The fake Codex runs its command with `sh -c` (zsh's `-c` where `/bin/zsh`
   exists), so this measures the PATH Koloft hands the app-server, not what a real Codex
   adds. On the bash and zsh machines a fake Claude Code tab's `command -v ztool` did not
-  find the tool: the tab script of Claude Code, Muse Code and Antigravity tabs adds
-  fixed folders only and asks no login shell (Muse Code and Antigravity share that
-  script; not run). What each real agent's own shell tool adds on top was not measured.
-  (2026-11-11, OpenSSH_10.3p1 on macOS 27 to the e2e Docker ssh lab image, Debian
-  bookworm, plus zsh 5.9; a scratch Playwright spec driving a built Koloft.)
+  find the tool while its tab script added fixed folders only. (2026-11-11, OpenSSH_10.3p1
+  on macOS 27 to the e2e Docker ssh lab image, Debian bookworm, plus zsh 5.9; a scratch
+  Playwright spec driving a built Koloft.)
+- **The real Claude Code, Antigravity and Muse Code shell tools add nothing from the
+  user's rc files either**: started with that fixed-folder PATH and `SHELL=/bin/zsh`, each
+  missed a program only `~/.zshrc` puts on PATH (CC§8, AGY§25, MUSE§17), and Claude Code
+  and Antigravity found it once the `"$SHELL" -lic` PATH was appended. So the tab script
+  of those three is handed that PATH too, the same one as a Codex tab's.
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);

@@ -713,6 +713,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
+  // PLATFORM§33
+  it("runs the agent with the machine's login-shell PATH after every folder Koloft puts on it, so a program only the user's rc file puts on PATH is found while Koloft's own still come first", () => {
+    const b = box(spec({ agentPlugin: true, loginPath: "/opt/rc only/bin:/home/u/it's/bin" }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    const handed = b.env().PATH.split(':')
+    expect(handed.slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
+    expect(handed.slice(-2)).toEqual(['/opt/rc only/bin', "/home/u/it's/bin"])
+  })
+
   it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',

@@ -137,6 +137,7 @@ export interface TabSpec {
   env?: Record<string, string>
   portOffset?: number
   ownerWords?: string
+  loginPath?: string
   program: TabProgram
 }
 
@@ -242,6 +243,8 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
+  // PLATFORM§33 CC§8 AGY§25 MUSE§17
+  const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -249,7 +252,7 @@ T="${T}"
 ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
-  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
+${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT

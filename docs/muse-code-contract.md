@@ -942,6 +942,13 @@ server of the opening note and with `--provider echo`; October 2026.
   `--provider echo`, 2026-11-09): the states reached the outer terminal, the wrapper's
   mirror file got the same ones, and the session was renamed for the bound session id.
 - Attaching to the tmux session again replays no 7501 frame.
+- **The `bash` tool does not read the user's rc files: a program only `~/.zshrc` puts on
+  PATH is not found.** 2026-11-15, `Muse Code 1.4.11 (1.4.11-R6667.1)`
+  (`koloft-muse-probe-1411` plus zsh 5.9), a user whose login shell is zsh and whose
+  `~/.zshrc` puts `~/rc-only/bin` first, `muse exec --approval-mode never
+  --disable-sandbox` started directly with `SHELL=/bin/zsh` and the PATH a remote tab's
+  script builds (PLATFORM§33), the fake model calling `bash` with `command -v
+  rconly-tool`: not found, the command's PATH exactly muse's own (§8).
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
   scrolled (4 of 4 runs; every one of its 171–174 redraws after the answer reached the

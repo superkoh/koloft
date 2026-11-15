@@ -61,6 +61,7 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
       pickAccount: async () => ({ env: {}, banner: '' }),
       noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
       hookSettings: () => ({}),
+      loginPath: async () => '',
       ...claude
     }
   })
@@ -788,7 +789,8 @@ describe('accounts for remote launches started together', () => {
           return { env: {}, banner: '' }
         },
         noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-        hookSettings: () => ({})
+        hookSettings: () => ({}),
+        loginPath: async () => ''
       }
     })
     await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
@@ -854,7 +856,8 @@ describe('accounts for remote launches started together', () => {
         agentTools: () => true,
         pickAccount,
         noAccountMessage: () => why,
-        hookSettings: () => ({})
+        hookSettings: () => ({}),
+        loginPath: async () => ''
       }
     })
     await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(why)

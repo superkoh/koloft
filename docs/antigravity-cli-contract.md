@@ -1398,6 +1398,15 @@ only downloaded the public release.
   10 s in (with `WaitMsBeforeAsync` 30000) the command became a background task, and when
   it ended agy sent the model a `<SYSTEM_MESSAGE>` with its exit and output. So a `/dev/tty`
   that opens inside agy's command is never the owner's terminal. macOS: not probed.
+- **`run_command` does not read the user's rc files: a program only `~/.zshrc` puts on
+  PATH is not found.** 2026-11-15, agy 1.5.7 and 1.5.9 Linux arm64 (1.5.7 from the
+  manifest; it updated itself to 1.5.9 in the container), Docker (Debian bookworm, zsh
+  5.9), a user whose login shell is zsh and whose `~/.zshrc` puts `~/rc-only/bin` first,
+  agy started directly in a python pty with `--dangerously-skip-permissions`,
+  `SHELL=/bin/zsh` and the PATH a remote tab's script builds (PLATFORM§33), a fake Gemini
+  server answering one `run_command` `command -v rconly-tool`: not found on both, the
+  command's PATH agy's own with only `<geminiDir>/antigravity-cli/bin` in front. With the
+  user's `zsh -lic` PATH appended to agy's own, 1.5.9 found it.
 
 ## §26 Approval modes
 
