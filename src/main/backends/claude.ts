@@ -319,6 +319,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     this.d.pty.kill(tabId)
     this.d.tracker.untrack(tabId)
+    this.launchFolders.delete(tabId)
   }
 
   endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {
@@ -389,7 +390,6 @@ export class ClaudeBackend implements SessionBackend {
 
   onPtyExit(tabId: string, crashed: boolean): void {
     this.pickedSkipFlag.delete(tabId)
-    this.launchFolders.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)

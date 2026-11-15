@@ -387,6 +387,7 @@ import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import {
   accountId,
   noAllowedAccountMessage,
+  withinLimit,
   workspaceLimit,
   type WorkspaceLimit
 } from '@shared/workspaceAccounts'
@@ -425,6 +426,7 @@ import {
   noAccountLine,
   noAccountMessage,
   SHIM_FOUND_NO_ACCOUNT_EXIT,
+  usableAccounts,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -2337,10 +2339,17 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   const backend = backendIdOf(obj.backend)
   const owner = tab.ownerTabId ?? obj.tabId
   const workspace = limitedWorkspaceOf(
-    claudeBackend.launchFolderOf(owner) ?? (tab.utilMachine ? undefined : tab.cwd)
+    claudeBackend.launchFolderOf(owner) ??
+      sessionBackends.workspaceOfTab(owner) ??
+      (tab.utilMachine ? undefined : tab.cwd)
   )
-  const refusal = (b: BackendId): { message: string } | undefined =>
-    workspaceLimitOf(workspace, b) && { message: noAccountNow(b, workspace) }
+  const refusal = (b: BackendId): { message: string } | undefined => {
+    const limit = workspaceLimitOf(workspace, b)
+    const listedUsable = limit
+      ? usableAccounts(withinLimit(listAccounts(), limit), ACCOUNT_KINDS_OF[b]).length
+      : 1
+    return limit && listedUsable === 0 ? { message: noAllowedAccountMessage(limit) } : undefined
+  }
   if (backend && backend !== 'claude') {
     let picked: UtilTerminalPick | undefined
     try {

@@ -33,11 +33,13 @@ export function withinLimit<A extends { kind: AccountKind; name: string }>(
   return limit ? accounts.filter((a) => limit.ids.has(accountId(a))) : [...accounts]
 }
 
+const QUOTES_THE_SHIM_CANNOT_READ = /["\\]/g
+
 export function workspaceShortName(workspace: string): string {
   const remote = parseRemoteKey(workspace)
   const folder = remote?.path ?? workspace
   const name = basename(folder) || folder
-  return remote ? `${remote.host}:${name}` : name
+  return (remote ? `${remote.host}:${name}` : name).replace(QUOTES_THE_SHIM_CANNOT_READ, '')
 }
 
 export function allowedBy(limit: WorkspaceLimit): string {

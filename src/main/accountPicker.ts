@@ -76,6 +76,7 @@ export type PickResponse =
       kind: AccountKind
       banner: string
       warning?: string
+      walled?: true
     }
   | { account: null; reason: 'no-accounts' | 'no-usable' }
 
@@ -235,7 +236,7 @@ export class AccountPicker {
 
     const res = this.keepResumed(subs, resumedOn) ?? this.decide(subs, apis, tabId, limit)
     if (tabId && res.account) this.deps.recordPick(tabId, res.account)
-    if (!limit || !res.account || res.banner.includes(everyAllowedAccountWalled(limit))) return res
+    if (!limit || !res.account || res.walled) return res
     return { ...res, banner: res.banner + limitNote(limit, subs.length + apis.length) }
   }
 
@@ -340,7 +341,8 @@ export class AccountPicker {
       return {
         account: win.meta.name,
         kind: 'oauth',
-        banner: `koloft: ${limit ? everyAllowedAccountWalled(limit) : 'every account rate-limited'} → ${win.meta.name} (${fmtReset(r)})`
+        banner: `koloft: ${limit ? everyAllowedAccountWalled(limit) : 'every account rate-limited'} → ${win.meta.name} (${fmtReset(r)})`,
+        walled: true
       }
     }
     return this.subscriptionPick(win.meta.name, win.snap, route === 'fable', nowSec)
