@@ -73,6 +73,9 @@ const { ArtifactPane } = await import('../../src/renderer/src/components/Artifac
 afterEach(() => {
   stopLaggingReactTasks()
   cleanup()
+  scrolledTo.length = 0
+  coloring.clear()
+  coloredAtOnce.clear()
 })
 
 let openAt: (path: string, line: number) => void = () => {}

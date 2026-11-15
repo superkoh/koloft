@@ -136,9 +136,9 @@ async function scrollStep(page: Page): Promise<boolean> {
   })
 }
 
-async function scrollStepWrappingToTop(page: Page): Promise<void> {
-  const diagramsScrolledPastUnseenDrawOnlyWhenBackInView = await scrollStep(page)
-  if (diagramsScrolledPastUnseenDrawOnlyWhenBackInView) await setScrollTop(page, 0)
+async function scrollStepAgainFromTopForDiagramsPassedUnseen(page: Page): Promise<void> {
+  const atEnd = await scrollStep(page)
+  if (atEnd) await setScrollTop(page, 0)
 }
 
 async function scrollToBottom(page: Page, steps = 60, pause = 350): Promise<void> {
@@ -961,7 +961,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect
       .poll(
         async () => {
-          await scrollStepWrappingToTop(page)
+          await scrollStepAgainFromTopForDiagramsPassedUnseen(page)
           return diagrams(page).count()
         },
         { timeout: 480_000, intervals: [500] }
