@@ -822,14 +822,15 @@ describe('accounts for remote launches started together', () => {
     expect(await skips(false, 'bypass')).toBe(true)
   })
 
-  it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
+  it('a remote session resumed after its tmux ended is picked with its own id and its workspace, so it can stay on the account it ran on inside the accounts that workspace may use', async () => {
     const ended = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
     await machine(runOnMachine, { pickAccount }).launch({
-      root: keyed('/w'),
+      root: keyed('/w/.claude/worktrees/x'),
+      fallbackCwd: keyed('/w'),
       resumeSessionId: ended
     })
-    expect(pickAccount).toHaveBeenCalledWith(`launch-${ended}`, ended)
+    expect(pickAccount).toHaveBeenCalledWith(`launch-${ended}`, ended, keyed('/w'))
   })
 
   // ADR-0030

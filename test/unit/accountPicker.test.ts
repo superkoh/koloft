@@ -15,6 +15,7 @@ import {
 } from '../../src/main/accountPicker'
 import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
 import type { ProbeResult } from '../../src/main/usageProbe'
+import type { WorkspaceLimit } from '../../src/shared/workspaceAccounts'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 
 const FABLE_GONE = FABLE_EXHAUSTED_LINE
@@ -787,5 +788,70 @@ describe('a resumed session keeps its account', () => {
     expect(await resumedOn(null)).toBe('same')
     expect(await resumedOn(usage({}), { enabled: false })).toBe('idle')
     expect(await resumedOn(usage({}), { status: 'expired' })).toBe('idle')
+  })
+})
+
+describe('a workspace limited to some accounts', () => {
+  const limitTo = (...ids: string[]): WorkspaceLimit => ({
+    workspace: '/Users/me/acme-api',
+    ids: new Set(ids)
+  })
+
+  it('picks only a listed account, even when an unlisted one is lighter, and says so on the first line', async () => {
+    const h = makeHarness([meta({ name: 'work' }), meta({ name: 'personal' })])
+    h.setProbe('work', { ok: true, usage: usage({ u5: 0.6, u7: 0.7 }) })
+    h.setProbe('personal', { ok: true, usage: usage({ u5: 0, u7: 0 }) })
+    const r = await h.picker.pick('tab', undefined, limitTo('oauth:work'))
+    expect(r.account).toBe('work')
+    if (r.account) expect(r.banner).toMatch(/ · the only account acme-api may use$/)
+  })
+
+  it('names how many accounts the workspace may use when it lists several', async () => {
+    const h = makeHarness([meta({ name: 'work' }), meta({ name: 'work-2' })])
+    h.setProbe('work', { ok: true, usage: usage({ u5: 0.6, u7: 0.7 }) })
+    h.setProbe('work-2', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
+    const r = await h.picker.pick('tab', undefined, limitTo('oauth:work', 'oauth:work-2'))
+    expect(r.account).toBe('work-2')
+    if (r.account) expect(r.banner).toContain(' · one of 2 accounts acme-api may use')
+  })
+
+  it('a resumed session that ran on an unlisted account moves onto a listed one', async () => {
+    const h = makeHarness([meta({ name: 'work' }), meta({ name: 'personal' })])
+    h.setProbe('work', { ok: true, usage: usage({ u5: 0.5 }) })
+    h.setProbe('personal', { ok: true, usage: usage({ u5: 0.1 }) })
+    expect((await h.picker.pick('tab', 'personal', limitTo('oauth:work'))).account).toBe('work')
+  })
+
+  it('every listed account at its limit: starts on the first to reset among them, never on an unlisted one, and names the workspace', async () => {
+    const h = makeHarness([
+      meta({ name: 'work' }),
+      meta({ name: 'work-2' }),
+      meta({ name: 'personal' }),
+      meta({ name: 'api-main', kind: 'apikey' })
+    ])
+    h.setProbe('work', { ok: true, usage: walled({ r5: NOW_S + 7200 }) })
+    h.setProbe('work-2', { ok: true, usage: walled({ r5: NOW_S + 3600 }) })
+    h.setProbe('personal', { ok: true, usage: usage({ u5: 0 }) })
+    const r = await h.picker.pick('tab', undefined, limitTo('oauth:work', 'oauth:work-2'))
+    expect(r.account).toBe('work-2')
+    if (r.account) expect(r.banner).toContain('every account acme-api may use is at its limit')
+  })
+
+  it('a workspace that lists only a custom endpoint runs on it while its subscriptions are healthy', async () => {
+    const h = makeHarness([
+      meta({ name: 'work' }),
+      meta({ name: 'glm', kind: 'custom', model: 'glm-5.2' })
+    ])
+    h.setProbe('work', { ok: true, usage: usage({ u5: 0 }) })
+    const r = await h.picker.pick('tab', undefined, limitTo('custom:glm'))
+    expect(r).toMatchObject({ account: 'glm', kind: 'custom' })
+    if (r.account) expect(r.banner).toContain('glm-5.2')
+  })
+
+  it('no listed account can run: answers with a line that names the workspace and where to change its list', async () => {
+    const h = makeHarness([meta({ name: 'work', enabled: false }), meta({ name: 'personal' })])
+    const r = await h.picker.pick('tab', undefined, limitTo('oauth:work'))
+    expect(r.account).toBeNull()
+    if (r.account === null) expect(r.message).toMatch(/^No account acme-api may use .*Accounts…/)
   })
 })

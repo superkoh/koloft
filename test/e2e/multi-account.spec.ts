@@ -216,7 +216,7 @@ function claudeAccounts(page: Page): Locator {
   return page.locator('.acct-section').first()
 }
 
-test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token), Paste token replacing the Sign in form inside the Claude section, an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
+test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token, Add endpoint), Paste token replacing the Sign in form inside the Claude section, an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -245,7 +245,10 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await expect(
       claudeAccounts(page).locator('.acct-foot button', { hasText: 'Custom endpoint' })
     ).toHaveCount(0)
-    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(2)
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Add endpoint' })
+    ).toBeVisible()
+    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(3)
 
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
@@ -907,6 +910,65 @@ for (const resume of RESUMES) {
     }
   })
 }
+
+test('E13: a workspace limited to one account starts on it although another is lighter, says so on the first line, and a restart once it is past 95% stays on it', async ({
+  env
+}) => {
+  test.setTimeout(150_000)
+  const mock = await startProbeMock()
+  mock.script.set(TOKENS.alpha, { u5: 0.6, u7: 0.7 })
+  mock.script.set(TOKENS.bravo, { u5: 0.1, u7: 0.1 })
+  mock.script.set(TOKENS['charlie'], { u5: 0.1, u7: 0.1 })
+  env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+  seedPool(env, { workspaceAccounts: { [env.workspaces.a]: ['oauth:alpha'] } })
+  const { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const [first] = await waitForCalls(env, 1)
+    expect(first.oauthToken).toBe(TOKENS.alpha)
+    await expect(centerTerm(page)).toContainText('the only account ws-a may use', {
+      timeout: 10_000
+    })
+    await expect(
+      page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
+    ).toBeVisible({ timeout: 40_000 })
+
+    mock.script.set(TOKENS.alpha, { u5: 0.97 })
+    await page.evaluate(() => window.api.accounts.probe())
+    await clickAppMenuItem(app, page, 'restart-session')
+    const calls = await waitForCalls(env, 2, 45_000)
+    expect(calls[1].argv).toContain(first.sessionId)
+    expect(calls[1].oauthToken).toBe(TOKENS.alpha)
+  } finally {
+    await app.close().catch(() => {})
+    await mock.close()
+  }
+})
+
+test('E13b: a workspace whose only listed account is turned off starts no session, and says which workspace and where to change its list — it never borrows another account', async ({
+  env
+}) => {
+  test.setTimeout(120_000)
+  seedKeychain(env)
+  seedSettings(env, {
+    accounts: [acct('alpha'), { ...acct('bravo'), enabled: false }],
+    workspaceAccounts: { [env.workspaces.a]: ['oauth:bravo'] }
+  })
+  const { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+    await page.locator('.menu .mi', { hasText: 'New session' }).click()
+    await expect(page.locator('.toast')).toContainText(
+      'No account ws-a may use can run this session',
+      { timeout: 30_000 }
+    )
+    expect(readCalls(env)).toEqual([])
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
 
 test('E11: an expired account recovers in place via “Sign in again”, keeping its position and the user’s disable', async ({
   env

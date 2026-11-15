@@ -589,6 +589,16 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.stderr).toContain(NO_USABLE_ACCOUNT.claude)
   })
 
+  it('no account the workspace may use → refused with the line the pick answered, which names the workspace', async () => {
+    const message =
+      'No account acme-api may use can run this session. Change its list (right-click the workspace ▸ Accounts…) or fix the account in Settings ▸ Accounts.'
+    const r = await runShimPick([], { account: null, reason: 'no-usable', message })
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(startedClaude(r)).toBe(false)
+    expect(r.stderr).toContain(`koloft: ${message}`)
+    expect(r.stderr).not.toContain(NO_USABLE_ACCOUNT.claude)
+  })
+
   it('hostile account name in the res: quoted everywhere, no side effects, never starts', async () => {
     const pwned = path.join(base, 'pwned-marker')
     const r = await runShimPick([], {

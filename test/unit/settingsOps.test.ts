@@ -288,6 +288,32 @@ describe('sanitizeLoadedSettings and the account list', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and the accounts a workspace may use', () => {
+  const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
+
+  it('a settings.json from before the setting limits no workspace', () => {
+    expect(sanitizeLoadedSettings({ fontSize: 13 }).workspaceAccounts).toEqual({})
+  })
+
+  it('drops an account that no longer exists from every list, and a list left empty with it', () => {
+    const loaded = sanitizeLoadedSettings({
+      accounts: [{ ...base, name: 'Work', kind: 'oauth' }],
+      workspaceAccounts: {
+        '/ws/a': ['oauth:work', 'oauth:gone', 7],
+        '/ws/b': ['codex-home:gone'],
+        '/ws/c': 'oauth:work'
+      }
+    } as never)
+    expect(loaded.workspaceAccounts).toEqual({ '/ws/a': ['oauth:work'] })
+  })
+
+  it('is never written by a settings patch from the window, only by its own call', () => {
+    expect(
+      sanitizeSettingsPatch({ workspaceAccounts: { '/ws/a': ['oauth:work'] }, fontSize: 20 })
+    ).toEqual({ fontSize: 20 })
+  })
+})
+
 describe('clampFontSize (FR-08 edge case)', () => {
   it('passes in-range values through', () => {
     expect(clampFontSize('13')).toBe(13)

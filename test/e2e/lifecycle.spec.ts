@@ -895,6 +895,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         'New session⌘N',
         'Restore session…',
         'Scheduled jobs…',
+        'Accounts…',
         'Remove workspace'
       ])
       noForbidden(ws)

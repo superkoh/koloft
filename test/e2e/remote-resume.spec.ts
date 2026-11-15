@@ -58,11 +58,17 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     }
   })
 
-  test('a cold remote row resumes on the account the session last ran on while it has room, even when another account is lighter', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const tokens = { alpha: 'sk-ant-oat01-fixture-alpha', bravo: 'sk-ant-oat01-fixture-bravo' }
+  const RESUME_TOKENS = {
+    alpha: 'sk-ant-oat01-fixture-alpha',
+    bravo: 'sk-ant-oat01-fixture-bravo'
+  }
+
+  async function resumeColdRowLastRunOnBravo(
+    env: E2EEnv,
+    settings: (env: E2EEnv) => Record<string, unknown> = () => ({}),
+    firstLineSays?: string
+  ): Promise<string | null> {
+    const tokens = RESUME_TOKENS
     const weekUse: Record<string, number> = { [tokens.alpha]: 0.1, [tokens.bravo]: 0.8 }
     const probe = http.createServer((req, res) => {
       const token = String(req.headers['authorization'] ?? '').replace(/^Bearer /, '')
@@ -82,7 +88,10 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     env.launchEnv.KOLOFT_PROBE_BASE_URL = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`
     for (const [name, token] of Object.entries(tokens))
       addKeychainEntry(env, 'koloft-dev-claude-oauth', name, token)
-    seedSettings(env, { accounts: [seededAccount('alpha'), seededAccount('bravo')] })
+    seedSettings(env, {
+      accounts: [seededAccount('alpha'), seededAccount('bravo')],
+      ...settings(env)
+    })
     installFakeRemote(env)
     seedRemoteWorkspace(env)
     const seeded = seedJsonl(env, remoteDir(env), {
@@ -106,11 +115,34 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
       const calls = await waitForCalls(env, 1, 90_000)
       const last = calls[calls.length - 1]
       expect(resumedId(last)).toBe(seeded)
-      expect(last.oauthToken).toBe(tokens.bravo)
+      if (firstLineSays)
+        await expect(page.locator('.term-wrap:visible .xterm')).toContainText(firstLineSays, {
+          timeout: 30_000
+        })
+      return last.oauthToken
     } finally {
       await quitAndClose(app)
       await new Promise((ok) => probe.close(ok))
     }
+  }
+
+  test('a cold remote row resumes on the account the session last ran on while it has room, even when another account is lighter', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    expect(await resumeColdRowLastRunOnBravo(env)).toBe(RESUME_TOKENS.bravo)
+  })
+
+  test('a cold remote row in a workspace limited to one account resumes on that account, though the session last ran on another, and says so on the first line', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const token = await resumeColdRowLastRunOnBravo(
+      env,
+      (e) => ({ workspaceAccounts: { [remoteKey(e)]: ['oauth:alpha'] } }),
+      `the only account ${REMOTE_WS_NAME} may use`
+    )
+    expect(token).toBe(RESUME_TOKENS.alpha)
   })
 
   test('a remote row resumed on a custom endpoint account that pins a model Claude Code does not know runs with the context capped at 200k on the machine', async ({

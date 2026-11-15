@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp } from './helpers/app'
+import { seededAccount, seedSettings } from './helpers/env'
 import {
   addWorkspace,
   closeMenu,
@@ -137,6 +138,61 @@ test.describe('Workspace management: every add goes through the workspace:add IP
       expect(await menuItemTexts(page)).toEqual(['Remove workspace'])
       await snap(page, 'T-WS-04')
       await closeMenu(page)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('T-WS-08: Accounts… in the workspace menu ticks the accounts it may use, by agent; Save keeps them for that workspace only, the dialog shows them again, Settings ▸ Accounts names the workspace, and removing the workspace forgets them', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedSettings(env, {
+      accounts: [
+        seededAccount('work'),
+        seededAccount('personal'),
+        seededAccount('codex-work', 'codex-home')
+      ]
+    })
+    const settingsFile = path.join(env.userData, 'settings.json')
+    const saved = (): Record<string, string[]> =>
+      JSON.parse(fs.readFileSync(settingsFile, 'utf8')).workspaceAccounts ?? {}
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Accounts…' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Accounts · ws-a' })
+      await expect(dialog.locator('.flabel')).toHaveText(['Claude', 'Codex'])
+      await dialog
+        .locator('.job-main', { has: page.locator('.job-name', { hasText: /^work$/ }) })
+        .click()
+      await dialog.getByRole('switch', { name: 'Use codex-work' }).check()
+      await snap(page, 'T-WS-08')
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect
+        .poll(saved)
+        .toEqual({ [env.workspaces.a]: ['oauth:work', 'codex-home:codex-work'] })
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Accounts…' }).click()
+      await expect(dialog.getByRole('switch', { name: 'Use work' })).toBeChecked()
+      await expect(dialog.getByRole('switch', { name: 'Use personal' })).not.toBeChecked()
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+      await page.locator('.tb-ico[title="Settings"]').click()
+      await expect(
+        page.locator('.acct-row', { hasText: 'codex-work' }).locator('.acct-note', {
+          hasText: 'Workspaces limited to it: ws-a'
+        })
+      ).toBeVisible()
+      await page.keyboard.press('Escape')
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi.danger', { hasText: 'Remove workspace' }).click()
+      await expect.poll(saved).toEqual({})
     } finally {
       await app.close().catch(() => {})
     }

@@ -125,6 +125,22 @@ describe('picking a Codex account', () => {
     expect(allLimitedNotice(account('light', { limits: used(0.25) }), 'codex')).toBeUndefined()
   })
 
+  it('in a workspace limited to some accounts, picks and switches only among them, and a resume outside the list moves inside', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const limit = { workspace: 'ssh://box/srv/acme-api', ids: new Set(['codex-home:work']) }
+    const work = account('work', {
+      limits: { windows: [{ minutes: 300, used: 1, resetsAt: 1_900_000_000 }], at: Date.now() }
+    })
+    const pool = [work, account('personal', { limits: used(0) })]
+    expect(picker.pick(pool, undefined, [], limit)?.name).toBe('work')
+    expect(picker.pick(pool, 'personal', [], limit)?.name).toBe('work')
+    expect(picker.peek(pool, limit)?.name).toBe('work')
+    expect(allLimitedNotice(work, 'codex', limit)).toMatch(
+      /^Every Codex account acme-api may use is at its limit/
+    )
+    expect(picker.pick([account('personal')], undefined, [], limit)).toBeUndefined()
+  })
+
   it('steers clear of an account a live session already runs on, the way Claude Code accounts are picked', () => {
     const picker = new HomeAccountPicker('codex-home')
     const on = (name: string, status?: 'working' | 'idle') => [
