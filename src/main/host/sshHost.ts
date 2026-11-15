@@ -1035,9 +1035,10 @@ export class SshHost implements Host {
   async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
     const d = this.deps.claude
     await this.sshReady()
+    const asked = this.loginPath()
     const sid = spec.resumeSessionId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
-    const loginPath = attach ? undefined : await this.loginPath()
+    const loginPath = attach ? '' : await asked
     const auth = attach ? undefined : spec.account.auth()
     const tmuxName = (tabId: string): string =>
       sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
@@ -1191,9 +1192,10 @@ export class SshHost implements Host {
   async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
     const d = this.deps.claude
     await this.sshReady()
+    const asked = this.loginPath()
     const sid = spec.resumeId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
-    const loginPath = attach ? undefined : await this.loginPath()
+    const loginPath = attach ? '' : await asked
     const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const pkg = d.machinePackage()
     const tabDir = tabPackageDir(d.userData, spec.tabId)
@@ -1230,8 +1232,8 @@ export class SshHost implements Host {
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
+    const asked = this.loginPath()
     const mode = await this.attachOrStart(sid)
-    const loginPath = mode === 'start' ? await this.loginPath() : undefined
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
@@ -1243,6 +1245,7 @@ export class SshHost implements Host {
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(d.noAccountMessage())
+    const loginPath = mode === 'start' ? await asked : ''
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))

@@ -811,13 +811,14 @@ describe('accounts for remote launches started together', () => {
   })
 
   // PLATFORM§33
-  it("writes the machine's login-shell PATH into the script of a Claude Code, Muse or Antigravity tab it starts there, and asks for none to re-attach a session still running there", async () => {
+  it("writes the machine's login-shell PATH into the script of a Claude Code, Muse or Antigravity tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
     const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-    const loginPath = vi.fn(async () => '/opt/rc-only/bin')
-    const host = machine(runOnMachine, { loginPath, alive: () => new Set([live]) })
+    const host = machine(runOnMachine, {
+      loginPath: async () => '/opt/rc-only/bin',
+      alive: () => new Set([live])
+    })
     const scriptOf = (tabId: string): string =>
       fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
-    const handed = `PATH="$PATH":'/opt/rc-only/bin'`
     const muse = {
       cwd: keyed('/w'),
       account: { name: 'a', auth: () => '{}' },
@@ -826,20 +827,20 @@ describe('accounts for remote launches started together', () => {
       trust: [],
       koloftSkill: false
     }
-    const claude = await host.launch({ root: keyed('/w') })
-    if (!claude.ok) throw new Error('launch refused')
-    claude.launchCommand('tab-claude')
-    ;(await host.launchMuse(muse)).launchCommand('tab-muse')
     const program = machineToolProgram('agy', '  exec agy\n', {})
-    ;(
-      await host.launchAgy({ tabId: 'tab-agy', cwd: keyed('/w'), env: {}, program })
-    ).launchCommand()
-    for (const tab of ['tab-claude', 'tab-muse', 'tab-agy']) expect(scriptOf(tab)).toContain(handed)
-    expect(loginPath).toHaveBeenCalledTimes(3)
-
-    ;(await host.launchMuse({ ...muse, resumeSessionId: live })).launchCommand('tab-again')
-    expect(scriptOf('tab-again')).not.toContain(handed)
-    expect(loginPath).toHaveBeenCalledTimes(3)
+    const scripts = async (resume?: string): Promise<string[]> => {
+      const tag = resume ? 'again' : 'new'
+      const claude = await host.launch({ root: keyed('/w'), resumeSessionId: resume })
+      if (!claude.ok) throw new Error('launch refused')
+      claude.launchCommand(`claude-${tag}`)
+      ;(await host.launchMuse({ ...muse, resumeSessionId: resume })).launchCommand(`muse-${tag}`)
+      const agy = { tabId: `agy-${tag}`, cwd: keyed('/w'), env: {}, program, resumeId: resume }
+      ;(await host.launchAgy(agy)).launchCommand()
+      return ['claude', 'muse', 'agy'].map((kind) => scriptOf(`${kind}-${tag}`))
+    }
+    const handed = `PATH="$PATH":'/opt/rc-only/bin'`
+    for (const started of await scripts()) expect(started).toContain(handed)
+    for (const reattached of await scripts(live)) expect(reattached).not.toContain(handed)
   })
 
   it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {

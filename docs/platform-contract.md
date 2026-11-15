@@ -1915,7 +1915,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   user's rc files either**: started with that fixed-folder PATH and `SHELL=/bin/zsh`, each
   missed a program only `~/.zshrc` puts on PATH (CC§3, AGY§25, MUSE§17), and each found it
   once the `"$SHELL" -lic` PATH was appended. So the tab script of those three is handed
-  that PATH too, with the same `bash -lc` fallback as a Codex tab's.
+  that PATH too. When the ask gives none they run without it, not with the Codex
+  script's own `bash -lc`: inside tmux nothing would stop that shell if the login files
+  it reads hang (inferred from where it runs, not run).
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
