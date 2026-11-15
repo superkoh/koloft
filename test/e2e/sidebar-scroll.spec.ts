@@ -103,6 +103,7 @@ test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays 
       const before = (await layout(page)).activeTab
       await sendShortcut(app, 'shortcut:next-waiting-session')
       await expect.poll(async () => (await layout(page)).activeTab).not.toBe(before)
+      await afterTheRevealScroll(page)
       await expect
         .poll(async () => {
           const l = await layout(page)
@@ -114,7 +115,6 @@ test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays 
           )
         })
         .toBe(true)
-      await afterTheRevealScroll(page)
     }
 
     await scrollIntoWsARows(page)
