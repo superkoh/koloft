@@ -426,6 +426,7 @@ export async function selectWords(page: Page, words: string, upTo = words): Prom
   await expect(body).toContainText(upTo, { timeout: 30_000 })
   const at = await body.evaluate(
     (el, [first, last]) => {
+      window.getSelection()?.removeAllRanges()
       const find = (w: string, scroll = false): DOMRect | null => {
         const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
         while (walk.nextNode()) {

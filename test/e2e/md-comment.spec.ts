@@ -1,8 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import type { ElectronApplication, Page } from '@playwright/test'
+import { test, expect, quitAndClose } from './helpers/app'
+import { launchSettled } from './helpers/blackbox'
 import {
+  type AgentName,
   agyConversationOnceFirstTurnEnded,
   boundSessionId,
   centerTerm,
@@ -11,6 +13,7 @@ import {
   startSessionIn,
   transcriptFile,
   waitBooted,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import {
@@ -21,8 +24,7 @@ import {
   killFakeRemote,
   launchWithRemote,
   remoteDir,
-  remoteKey,
-  type OtherAgentName
+  remoteKey
 } from './helpers/remote'
 import {
   PLAN_REL,
@@ -42,98 +44,90 @@ import {
 } from './helpers/workbench'
 import { installAgentFor, seedSettings, type E2EEnv } from './helpers/env'
 
-test.afterEach(({ env }) => killFakeRemote(env))
+const A_ROW_TURNS_WITHIN_MS = 60_000
 
-const ON_THE_MACHINE_WITHIN_MS = 60_000
-
-interface ApprovalKeys {
-  asks: string
-  answers: string
-  needsPermissionPrompts?: true
+const ASKS_FOR_AN_APPROVAL: Record<AgentName, string> = {
+  Claude: '/bash rm -rf build\r',
+  Codex: 'approve\r',
+  Muse: '/approve\r',
+  Antigravity: '/bash echo declined\r'
 }
 
-const LOCAL_APPROVAL: Record<OtherAgentName, ApprovalKeys> = {
-  Codex: { asks: 'approve\r', answers: 'y' },
-  Muse: { asks: '/approve\r', answers: 'y' },
-  // AGY§10
-  Antigravity: { asks: '/bash echo declined\r', answers: '\x1b', needsPermissionPrompts: true }
+// CC§2 CODEX§3 MUSE§11 AGY§14
+const ESC_DECLINES = '\x1b'
+// AGY§29
+const FOUR_DECLINES_AGY_THROUGH_TMUX = '4'
+
+interface OpenTab {
+  app: ElectronApplication
+  page: Page
+  wsName: string
+  plan: string
 }
 
-const REMOTE_APPROVAL: Record<OtherAgentName | 'Claude', ApprovalKeys> = {
-  Claude: { asks: '/bash rm -rf build\r', answers: '1\r' },
-  Codex: { asks: 'approve\r', answers: 'y' },
-  Muse: { asks: '/approve\r', answers: 'y' },
-  // AGY§29
-  Antigravity: { asks: '/bash echo declined\r', answers: '4', needsPermissionPrompts: true }
+async function openLocal(env: E2EEnv, agent: AgentName): Promise<OpenTab> {
+  installAgentFor(env, agent, env.workspaces.a)
+  const plan = writePlan(env.workspaces.a)
+  const { app, page } = await launchSettled(env)
+  await newSessionInWith(page, 'ws-a', agent)
+  if (agent === 'Antigravity') {
+    await agyReady(page)
+    await runIn(page, centerTerm(page), 'first words')
+    await agyConversationOnceFirstTurnEnded(page)
+  }
+  return { app, page, wsName: 'ws-a', plan }
 }
 
-function seedFor(env: E2EEnv, keys: ApprovalKeys): void {
-  seedSettings(env, {
-    hintsOff: true,
-    ...(keys.needsPermissionPrompts ? { skipPermissions: false } : {})
-  })
+async function openRemote(
+  env: E2EEnv,
+  agent: AgentName,
+  start: (page: Page) => Promise<unknown>
+): Promise<OpenTab> {
+  const { app, page } = await launchWithRemote(env)
+  writePlan(remoteDir(env))
+  await addRemoteWorkspace(page, env)
+  await start(page)
+  return { app, page, wsName: REMOTE_WS_NAME, plan: `${remoteKey(env)}/${PLAN_REL}` }
 }
 
-async function launchedHere(env: E2EEnv) {
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await waitBooted(page)
-  return { app, page }
-}
-
-const TABS_WAITING_FOR_AN_APPROVAL = [
-  ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
-    kind: `a local ${agent.label}`,
-    keys: LOCAL_APPROVAL[agent.label],
-    open: async (env: E2EEnv) => {
-      installAgentFor(env, agent.label, env.workspaces.a)
-      seedFor(env, LOCAL_APPROVAL[agent.label])
-      const plan = writePlan(env.workspaces.a)
-      const { app, page } = await launchedHere(env)
-      await newSessionInWith(page, 'ws-a', agent.label)
-      if (agent.label === 'Antigravity') {
-        await agyReady(page)
-        await runIn(page, centerTerm(page), 'first words')
-        await agyConversationOnceFirstTurnEnded(page)
-      }
-      return { app, page, wsName: 'ws-a', plan }
-    }
+const TABS_WAITING_FOR_AN_APPROVAL: {
+  kind: string
+  agent: AgentName
+  declines: string
+  open: (env: E2EEnv) => Promise<OpenTab>
+}[] = [
+  ...OTHER_AGENTS_ON_THE_MACHINE.map(({ label }) => ({
+    kind: `a local ${label}`,
+    agent: label,
+    declines: ESC_DECLINES,
+    open: (env: E2EEnv) => openLocal(env, label)
   })),
   {
     kind: 'a remote (ssh) Claude Code',
-    keys: REMOTE_APPROVAL.Claude,
-    open: async (env: E2EEnv) => {
-      seedFor(env, REMOTE_APPROVAL.Claude)
-      const { app, page } = await launchWithRemote(env)
-      writePlan(remoteDir(env))
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      return { app, page, wsName: REMOTE_WS_NAME, plan: `${remoteKey(env)}/${PLAN_REL}` }
-    }
+    agent: 'Claude',
+    declines: ESC_DECLINES,
+    open: (env) =>
+      openRemote(env, 'Claude', async (page) => {
+        await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+        await waitStartupTurnOver(page, REMOTE_WS_NAME)
+      })
   },
   ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
     kind: `a remote (ssh) ${agent.label}`,
-    keys: REMOTE_APPROVAL[agent.label],
-    open: async (env: E2EEnv) => {
+    agent: agent.label,
+    declines: agent.label === 'Antigravity' ? FOUR_DECLINES_AGY_THROUGH_TMUX : ESC_DECLINES,
+    open: (env: E2EEnv) => {
       agent.install(env)
-      seedFor(env, REMOTE_APPROVAL[agent.label])
-      const { app, page } = await launchWithRemote(env)
-      writePlan(remoteDir(env))
-      await addRemoteWorkspace(page, env)
-      await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-      await agent.bound?.(page)
-      return { app, page, wsName: REMOTE_WS_NAME, plan: `${remoteKey(env)}/${PLAN_REL}` }
+      return openRemote(env, agent.label, async (page) => {
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+      })
     }
   }))
 ]
 
 function typeInto(page: Page, tabId: string, keys: string): Promise<void> {
   return page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, keys])
-}
-
-async function selectPlanWordsAfresh(page: Page): Promise<void> {
-  await page.evaluate(() => window.getSelection()?.removeAllRanges())
-  await selectWords(page, PLAN_WORDS)
 }
 
 async function claudeTranscriptOf(page: Page, env: E2EEnv): Promise<string> {
@@ -232,31 +226,36 @@ test.describe('✎ comment on a rendered Markdown file puts the passage in the s
     await selectWords(page, PLAN_WORDS)
     await expect(button).toBeEnabled({ timeout: 30_000 })
   })
+})
+
+test.describe('✎ comment waits out an approval in every other kind of session tab', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
 
   for (const tab of TABS_WAITING_FOR_AN_APPROVAL)
-    test(`MD-C03 in ${tab.kind} tab: ✎ comment is greyed while the session waits for an approval, and comes back once it is answered`, async ({
+    test(`MD-C05: in ${tab.kind} tab, ✎ comment is greyed while the session waits for an approval, and comes back once it is declined`, async ({
       env
     }) => {
       test.setTimeout(240_000)
+      seedSettings(env, { hintsOff: true, skipPermissions: false })
       const { app, page, wsName, plan } = await tab.open(env)
       try {
         const row = wsRows(page, wsName).first()
-        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
-        const tabId = (await row.getAttribute('data-tab-id')) as string
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: A_ROW_TURNS_WITHIN_MS })
+        const tabId = (await row.getAttribute('data-tab-id'))!
         await openInBrowse(page, plan)
-        await selectPlanWordsAfresh(page)
+        await selectWords(page, PLAN_WORDS)
         const button = passageCommentButton(page)
         await expect(button).toBeEnabled({ timeout: 30_000 })
 
-        await typeInto(page, tabId, tab.keys.asks)
-        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
-        await selectPlanWordsAfresh(page)
+        await typeInto(page, tabId, ASKS_FOR_AN_APPROVAL[tab.agent])
+        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: A_ROW_TURNS_WITHIN_MS })
+        await selectWords(page, PLAN_WORDS)
         await expect(button).toBeDisabled()
         await expect(button).toHaveAttribute('title', /waiting for an approval/)
 
-        await typeInto(page, tabId, tab.keys.answers)
-        await expect(row).not.toHaveClass(/\bst-approval\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
-        await selectPlanWordsAfresh(page)
+        await typeInto(page, tabId, tab.declines)
+        await expect(row).not.toHaveClass(/\bst-approval\b/, { timeout: A_ROW_TURNS_WITHIN_MS })
+        await selectWords(page, PLAN_WORDS)
         await expect(button).toBeEnabled({ timeout: 30_000 })
       } finally {
         await quitAndClose(app)
