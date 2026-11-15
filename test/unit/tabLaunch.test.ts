@@ -146,7 +146,7 @@ async function claudeTab(
             pickAccount: async () => ({ env: {}, banner: '' }),
             noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
             hookSettings: () => ({}),
-            loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
+            loginPath: async () => ''
           }
         })
     ),
@@ -451,9 +451,8 @@ it("hands a Claude Code tab on this Mac the koloft-docs plugin with agent tools 
 })
 
 // PLATFORM§33
-it("writes the machine's login-shell PATH into the start script of a Claude Code or Codex tab over SSH", async () => {
-  for (const tab of [claudeTab, codexTab])
-    expect(await tab(`ssh://${MACHINE}${repo}`, {})).toContain(
-      `PATH="$PATH":'${MACHINE_LOGIN_PATH_FOLDERS}'`
-    )
+it("writes the machine's login-shell PATH into the start script of a Codex tab over SSH", async () => {
+  expect(await codexTab(`ssh://${MACHINE}${repo}`, {})).toContain(
+    `PATH="$PATH":'${MACHINE_LOGIN_PATH_FOLDERS}'`
+  )
 })

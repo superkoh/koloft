@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
-import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
+import { killSessionCmd, machineToolProgram, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
@@ -808,6 +808,38 @@ describe('accounts for remote launches started together', () => {
     }
     expect(await tabScript({ ANTHROPIC_MODEL: 'glm-5.2' }, 'tab-pinned')).not.toContain('--model')
     expect(await tabScript({}, 'tab-plain')).toMatch(/'--model' 'opus'|--model opus/)
+  })
+
+  // PLATFORM§33
+  it("writes the machine's login-shell PATH into the script of a Claude Code, Muse or Antigravity tab it starts there, and asks for none to re-attach a session still running there", async () => {
+    const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const loginPath = vi.fn(async () => '/opt/rc-only/bin')
+    const host = machine(runOnMachine, { loginPath, alive: () => new Set([live]) })
+    const scriptOf = (tabId: string): string =>
+      fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
+    const handed = `PATH="$PATH":'/opt/rc-only/bin'`
+    const muse = {
+      cwd: keyed('/w'),
+      account: { name: 'a', auth: () => '{}' },
+      args: [],
+      sandboxed: false,
+      trust: [],
+      koloftSkill: false
+    }
+    const claude = await host.launch({ root: keyed('/w') })
+    if (!claude.ok) throw new Error('launch refused')
+    claude.launchCommand('tab-claude')
+    ;(await host.launchMuse(muse)).launchCommand('tab-muse')
+    const program = machineToolProgram('agy', '  exec agy\n', {})
+    ;(
+      await host.launchAgy({ tabId: 'tab-agy', cwd: keyed('/w'), env: {}, program })
+    ).launchCommand()
+    for (const tab of ['tab-claude', 'tab-muse', 'tab-agy']) expect(scriptOf(tab)).toContain(handed)
+    expect(loginPath).toHaveBeenCalledTimes(3)
+
+    ;(await host.launchMuse({ ...muse, resumeSessionId: live })).launchCommand('tab-again')
+    expect(scriptOf('tab-again')).not.toContain(handed)
+    expect(loginPath).toHaveBeenCalledTimes(3)
   })
 
   it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {

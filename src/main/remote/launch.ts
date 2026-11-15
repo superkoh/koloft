@@ -236,6 +236,13 @@ fi
 
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
 
+// CODEX§16 PLATFORM§33
+const BASH_LOGIN_PATH_WHEN_THE_USERS_SHELL_GAVE_NONE = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
+[ -n "$login_path" ] && PATH="$PATH:$login_path"`
+
+export const loginPathLine = (loginPath: string): string =>
+  loginPath ? `PATH="$PATH":${shq(loginPath)}` : BASH_LOGIN_PATH_WHEN_THE_USERS_SHELL_GAVE_NONE
+
 export function tabScript(spec: TabSpec): string {
   assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
   const T = tabPath(spec.tabId)
@@ -243,8 +250,8 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
-  // PLATFORM§33 CC§8 AGY§25 MUSE§17
-  const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
+  // PLATFORM§33 CC§3 AGY§25 MUSE§17
+  const loginPathToo = spec.loginPath === undefined ? '' : `${loginPathLine(spec.loginPath)}\n`
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"

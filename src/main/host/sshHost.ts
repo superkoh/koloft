@@ -1034,9 +1034,10 @@ export class SshHost implements Host {
   // MUSE§17
   async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
     const d = this.deps.claude
-    const [loginPath] = await Promise.all([this.loginPath(), this.sshReady()])
+    await this.sshReady()
     const sid = spec.resumeSessionId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const loginPath = attach ? undefined : await this.loginPath()
     const auth = attach ? undefined : spec.account.auth()
     const tmuxName = (tabId: string): string =>
       sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
@@ -1189,9 +1190,10 @@ export class SshHost implements Host {
 
   async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
     const d = this.deps.claude
-    const [loginPath] = await Promise.all([this.loginPath(), this.sshReady()])
+    await this.sshReady()
     const sid = spec.resumeId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const loginPath = attach ? undefined : await this.loginPath()
     const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const pkg = d.machinePackage()
     const tabDir = tabPackageDir(d.userData, spec.tabId)
@@ -1220,7 +1222,7 @@ export class SshHost implements Host {
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    const [loginPath] = await Promise.all([this.loginPath(), this.sshReady()])
+    await this.sshReady()
     await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()
@@ -1229,6 +1231,7 @@ export class SshHost implements Host {
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
     const mode = await this.attachOrStart(sid)
+    const loginPath = mode === 'start' ? await this.loginPath() : undefined
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root

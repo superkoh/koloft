@@ -948,7 +948,8 @@ server of the opening note and with `--provider echo`; October 2026.
   `~/.zshrc` puts `~/rc-only/bin` first, `muse exec --approval-mode never
   --disable-sandbox` started directly with `SHELL=/bin/zsh` and the PATH a remote tab's
   script builds (PLATFORM§33), the fake model calling `bash` with `command -v
-  rconly-tool`: not found, the command's PATH exactly muse's own (§8).
+  rconly-tool`: not found, the command's PATH exactly muse's own (§8). With the user's
+  login-shell PATH appended to muse's own, it was found.
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
   scrolled (4 of 4 runs; every one of its 171–174 redraws after the answer reached the
