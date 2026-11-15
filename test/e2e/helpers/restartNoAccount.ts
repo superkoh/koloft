@@ -4,7 +4,7 @@ import { E2E_AGY_ACCOUNT, E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT } from './env'
 import { sendShortcut } from './p1'
 import { SIGN_IN_FOLDER_OF, type SignInBackend } from '../../../src/shared/types'
 
-const ONLY_ACCOUNT: Record<SignInBackend, string> = {
+export const ONLY_ACCOUNT: Record<SignInBackend, string> = {
   codex: E2E_CODEX_ACCOUNT,
   muse: E2E_MUSE_ACCOUNT,
   agy: E2E_AGY_ACCOUNT
@@ -16,23 +16,33 @@ const NO_ACCOUNT_TO_RESTART_ON: Record<SignInBackend, string> = {
   agy: 'No Antigravity account can be used — check Settings ▸ Accounts.'
 }
 
-export async function turnOffItsOnlyAccountRestartAndSeeWhy(
-  app: ElectronApplication,
+export async function untilTheActiveTabsTranscriptIsWritten(
   page: Page,
-  backend: SignInBackend
-): Promise<void> {
+  timeout = 60_000
+): Promise<string> {
   const tabId = await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id')
+  let sessionId = ''
   await expect
     .poll(
       async () => {
         const live = await page.evaluate(() => window.api.sessions.list())
         const s = live.find((x) => x.tabId === tabId && x.sessionId)
         if (!s) return false
+        sessionId = s.sessionId
         return page.evaluate((id) => window.api.sessions.transcriptExists(id), s.sessionId)
       },
-      { timeout: 60_000 }
+      { timeout }
     )
     .toBe(true)
+  return sessionId
+}
+
+export async function turnOffItsOnlyAccountRestartAndSeeWhy(
+  app: ElectronApplication,
+  page: Page,
+  backend: SignInBackend
+): Promise<void> {
+  await untilTheActiveTabsTranscriptIsWritten(page)
   await page.evaluate(([name, kind]) => window.api.accounts.toggle(name, kind, false), [
     ONLY_ACCOUNT[backend],
     SIGN_IN_FOLDER_OF[backend]
