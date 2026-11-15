@@ -52,6 +52,12 @@ const scrollTo = (page: Page, at: number | 'end'): Promise<void> =>
     .locator('.ws-list')
     .evaluate((el, to) => void (el.scrollTop = to === 'end' ? el.scrollHeight : to), at)
 
+const afterTheRevealScroll = (page: Page): Promise<void> =>
+  page.evaluate(
+    () =>
+      new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
+  )
+
 async function scrollIntoWsARows(page: Page): Promise<void> {
   await scrollTo(page, 0)
   const l = await layout(page)
@@ -108,6 +114,7 @@ test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays 
           )
         })
         .toBe(true)
+      await afterTheRevealScroll(page)
     }
 
     await scrollIntoWsARows(page)
