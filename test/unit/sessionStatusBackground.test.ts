@@ -448,7 +448,10 @@ describe('run-state vs background work: any live background task keeps the sessi
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB5b', cwd, initialLines(cwd))
     tracker.setStatus('tabB5b', 'working')
-    appendJsonl(file, [commandUseRec('toolu_sh5b', cwd, 'sleep 25'), shellAckRec('toolu_sh5b', cwd)])
+    appendJsonl(file, [
+      commandUseRec('toolu_sh5b', cwd, 'sleep 25'),
+      shellAckRec('toolu_sh5b', cwd)
+    ])
     stageProcs(tracker, { btoolu_sh5b: {} })
     await tracker.reportTurnEnd('tabB5b', [{ id: 'btoolu_sh5b', type: 'shell' }])
     expect(status(tracker, 'tabB5b')).toBe('working')
