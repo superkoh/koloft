@@ -253,19 +253,13 @@ export function Welcome({
   const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
   const pinDue =
-    step === 2 &&
-    folders.length === 0 &&
-    !pinTried.current &&
-    !!found &&
-    foldersToPin(found, Date.now()).length > 0
+    step === 2 && folders.length === 0 && !pinTried.current && !!found && found.length > 0
   useEffect(() => {
     if (!pinDue || !found || pinTried.current) return
-    const pins = foldersToPin(found, Date.now())
-    if (pins.length === 0) return
     pinTried.current = true
     setPinning(true)
     window.api.workspace
-      .pinRecent(pins.map((f) => f.path))
+      .pinRecent(foldersToPin(found, Date.now()).map((f) => f.path))
       .catch(() =>
         useStore.getState().showToast('Some sessions could not be read. The folders are pinned.')
       )
