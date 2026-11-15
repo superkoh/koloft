@@ -177,10 +177,10 @@ function CodeSource({
   const jumpedLine = useRef<number | null>(null)
   useEffect(() => {
     if (!line || jumpedLine.current === line || !shownHtml) return
-    const target = bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]
-    if (!target) return
     jumpedLine.current = line
-    target.scrollIntoView({ block: 'center' })
+    bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]?.scrollIntoView({
+      block: 'center'
+    })
   }, [line, shownHtml])
 
   return (
@@ -251,7 +251,9 @@ export function ArtifactPane({
   const isBinaryKind = kind === 'image' || kind === 'pdf'
 
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [text, setText] = useState('')
+  const [read, setRead] = useState({ src: '', text: '' })
+  const text = read.text
+  const textIsFromAnotherFile = editText === undefined && read.src !== path
   const [state, setState] = useState<TextState>(isBinaryKind ? 'ok' : 'loading')
   const [diff, setDiff] = useState<{ src: string; text: string } | null>(null)
   const changedRef = useRef(changed)
@@ -291,8 +293,11 @@ export function ArtifactPane({
 
   const shownText = editText ?? text
   const symbols = useMemo(
-    () => (current === 'source' && state === 'ok' ? extractOutline(shownText) : []),
-    [current, state, shownText]
+    () =>
+      current === 'source' && state === 'ok' && !textIsFromAnotherFile
+        ? extractOutline(shownText)
+        : [],
+    [current, state, textIsFromAnotherFile, shownText]
   )
   const hasOutline =
     current === 'source' ? symbols.length > 0 : current === 'render' && mdHeadings.length > 0
@@ -320,10 +325,9 @@ export function ArtifactPane({
     setCurHeading(0)
   }, [path])
 
-  const readPath = useRef<string | null>(null)
+  const lastReadPath = useRef<string | null>(null)
   useEffect(() => {
-    const firstReadOfPath = readPath.current !== path
-    readPath.current = path
+    const firstReadOfPath = lastReadPath.current !== path
     if (editText !== undefined) {
       setState('ok')
       return
@@ -338,7 +342,8 @@ export function ArtifactPane({
       .readText(path)
       .then((t) => {
         if (cancelled) return
-        setText(t)
+        lastReadPath.current = path
+        setRead({ src: path, text: t })
         setState('ok')
       })
       .catch((err: unknown) => {
@@ -597,6 +602,7 @@ export function ArtifactPane({
         />
       )
     }
+    if (textIsFromAnotherFile) return <div className="code-state">Loading…</div>
     return (
       <>
         {editUnsaved && (

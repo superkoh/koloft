@@ -20,7 +20,7 @@ function numbered(name: string, n: number): string {
 }
 
 const files: Record<string, string> = {
-  '/ws/a.ts': numbered('a', 3),
+  '/ws/a.ts': numbered('a', 20),
   '/ws/b.ts': numbered('b', 12)
 }
 
