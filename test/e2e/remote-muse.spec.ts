@@ -254,7 +254,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
-  test('E-RM-16: a Muse session in a remote workspace limited to one Muse account starts on the machine with that account and says so above Muse’s screen, even when the Meta sign-in listed before it has room left', async ({
+  test('E-RM-18: a Muse session in a remote workspace limited to one Muse account starts on the machine with that account and says so above Muse’s screen, even when the Meta sign-in listed before it has room left', async ({
     env
   }) => {
     installMuse(env)
