@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
 import os from 'os'
@@ -20,6 +20,7 @@ let home: string
 let ClaudeBackend: typeof import('../../src/main/backends/claude').ClaudeBackend
 let OLD_CLAUDE_GOES_WITHIN_MS: number
 const children: ChildProcess[] = []
+const realHome = process.env.HOME
 
 beforeAll(async () => {
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-closed-tab-home-')))
@@ -31,6 +32,11 @@ beforeAll(async () => {
 afterEach(() => {
   for (const child of children.splice(0)) child.kill('SIGKILL')
   fs.rmSync(path.join(home, '.claude'), { recursive: true, force: true })
+})
+
+afterAll(() => {
+  process.env.HOME = realHome
+  fs.rmSync(home, { recursive: true, force: true })
 })
 
 function oldClaudeHolding(sessionId: string): ChildProcess {
@@ -81,11 +87,10 @@ describe('a Claude session whose tab Koloft has just closed', () => {
     expect(ms).toBeLessThan(OLD_CLAUDE_GOES_WITHIN_MS / 2)
   })
 
-  it('a claude that took the session up after the close is running elsewhere at once, with no wait for the closed one', async () => {
-    const old = oldClaudeHolding(SID)
+  it('a claude that took the session up after the close is running elsewhere at once, while the closed one is still leaving', async () => {
+    oldClaudeHolding(SID)
     const backend = backendWithTab()
     backend.stop(TAB)
-    old.kill('SIGKILL')
     oldClaudeHolding(SID)
     const { value, ms } = await timed(backend.runningElsewhere(SID))
     expect(value).toBe(true)

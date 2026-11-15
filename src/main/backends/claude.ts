@@ -59,8 +59,8 @@ import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
 import {
   OLD_CLAUDE_GOES_WITHIN_MS,
   claudePeerNames,
-  runningClaudePid,
-  runningClaudePidOnceGone
+  claudePidsHolding,
+  runningClaudePidBesides
 } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import { sharedProcessTable } from '../processTable'
@@ -202,7 +202,7 @@ export class ClaudeBackend implements SessionBackend {
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
-  private closedClaudes = new Map<string, Promise<number | null>>()
+  private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
   agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
 
@@ -263,8 +263,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async runningElsewhere(key: string): Promise<boolean> {
-    const leaving = await this.closedClaudes.get(key)
-    return (await runningClaudePidOnceGone(key, leaving)) !== null
+    const closed = this.closedClaudes.get(key)
+    const pid = await runningClaudePidBesides(key, closed?.pids ?? new Set(), closed?.until ?? 0)
+    return pid !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -326,11 +327,11 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private rememberClosedClaude(sessionId: string): void {
-    const pid = runningClaudePid(sessionId)
-    this.closedClaudes.set(sessionId, pid)
-    setTimeout(() => {
-      if (this.closedClaudes.get(sessionId) === pid) this.closedClaudes.delete(sessionId)
-    }, OLD_CLAUDE_GOES_WITHIN_MS)
+    const now = Date.now()
+    for (const [key, closed] of this.closedClaudes)
+      if (closed.until <= now) this.closedClaudes.delete(key)
+    const pids = claudePidsHolding(sessionId)
+    this.closedClaudes.set(sessionId, { pids, until: now + OLD_CLAUDE_GOES_WITHIN_MS })
   }
 
   endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {

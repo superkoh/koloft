@@ -103,17 +103,26 @@ export async function runningClaudePid(
 export const OLD_CLAUDE_GOES_WITHIN_MS = 2000
 const OLD_CLAUDE_READ_AGAIN_AFTER_MS = 50
 
-export async function runningClaudePidOnceGone(
+export function claudePidsHolding(sessionId: string, dir = REGISTRY_DIR): Set<number> {
+  return new Set((readRegistry(dir).get(sessionId) ?? []).map((entry) => entry.pid))
+}
+
+export async function runningClaudePidBesides(
   sessionId: string,
-  leaving: number | null | undefined,
+  leaving: Set<number>,
+  until: number,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<number | null> {
-  const deadline = Date.now() + OLD_CLAUDE_GOES_WITHIN_MS
   for (;;) {
-    const pid = await runningClaudePid(sessionId, dir, startOf)
-    const left = deadline - Date.now()
-    if (!leaving || pid !== leaving || left <= 0) return pid
+    const entries = readRegistry(dir).get(sessionId) ?? []
+    const left = until - Date.now()
+    const old = left > 0 ? entries.filter((entry) => leaving.has(entry.pid)) : []
+    const other = await liveEntry(
+      entries.filter((entry) => !old.includes(entry)),
+      startOf
+    )
+    if (other || !(await liveEntry(old, startOf))) return other?.pid ?? null
     await sleep(Math.min(OLD_CLAUDE_READ_AGAIN_AFTER_MS, left))
   }
 }
