@@ -98,21 +98,27 @@ const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
 const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
 
 // PLATFORM§2 CODEX§12
-function zdotFile(name: string, userDotDir: string, zdotDir: string, shimDir: string): string {
-  const own = `"$${USER_ZDOTDIR_VAR}/${name}"`
-  const source =
-    name === '.zshenv'
-      ? `${USER_ZDOTDIR_VAR}=${userDotDir}\n[ -f ${own} ] && . ${own}\n[ "$ZDOTDIR" = ${shq(zdotDir)} ] || ${USER_ZDOTDIR_VAR}="$ZDOTDIR"\n`
-      : `ZDOTDIR="$${USER_ZDOTDIR_VAR}"\n[ -f ${own} ] && . ${own}\n${USER_ZDOTDIR_VAR}="$ZDOTDIR"\n`
-  const back = `ZDOTDIR=${shq(zdotDir)}\n`
-  return name === '.zprofile'
-    ? `${source}${back}export PATH=${shq(shimDir)}:"$PATH"\n`
-    : `${source}${back}`
+function zdotFile(
+  name: string,
+  userZdotdir: string | undefined,
+  zdotDir: string,
+  shimDir: string
+): string {
+  const own = `"\${ZDOTDIR:-$HOME}/${name}"`
+  return [
+    ...(name === '.zshenv' ? [`${USER_ZDOTDIR_VAR}=${userZdotdir ? shq(userZdotdir) : "''"}`] : []),
+    `if [ -n "$${USER_ZDOTDIR_VAR}" ]; then ZDOTDIR="$${USER_ZDOTDIR_VAR}"; else unset ZDOTDIR; fi`,
+    `[ -f ${own} ] && . ${own}`,
+    `${USER_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
+    `export ZDOTDIR=${shq(zdotDir)}`,
+    ...(name === '.zprofile' ? [`export PATH=${shq(shimDir)}:"$PATH"`] : []),
+    ''
+  ].join('\n')
 }
 
 // CODEX§12
 function bashEnvFile(shimDir: string): string {
-  return `if shopt -q login_shell && [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\nexport PATH=${shq(shimDir)}:"$PATH"\n`
+  return `export PATH=${shq(shimDir)}:"$PATH"\nunset BASH_ENV\n`
 }
 
 export interface OpenShim {
@@ -140,9 +146,8 @@ export function writeOpenShim(
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {
       mode: 0o755
     })
-    const userDotDir = userZdotdir ? shq(userZdotdir) : '"$HOME"'
     for (const name of ZSH_DOTFILES)
-      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, zdotDir, shimDir))
+      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userZdotdir, zdotDir, shimDir))
     fs.writeFileSync(shim.bashEnv, bashEnvFile(shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {

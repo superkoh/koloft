@@ -1076,8 +1076,10 @@ with a throwaway `CODEX_HOME` (a copy of this Mac's login, deleted after), a thr
 | --- | --- | --- |
 | zsh, no `ZDOTDIR` of the user's own | the stand-in | `koloft-open:sent` |
 | zsh, `~/.zshenv` says `ZDOTDIR="$HOME/.zsh"` (not exported) | `/usr/bin/open` | system `open` ran (`-10661`) |
-| the same, with the wrapper that sets `ZDOTDIR` back after each user file (PLATFORM§2) | the stand-in | `koloft-open:sent`, and `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
+| the same, with a wrapper that sets `ZDOTDIR` back after each user file (PLATFORM§2) | the stand-in | `koloft-open:sent`, and `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
 | the same under `-s danger-full-access`, `command -v open` only | the stand-in | not run |
+| zsh, `~/.zshenv` says `ZDOTDIR="${ZDOTDIR:-$HOME/.zsh}"`, the wrapper before this change | the stand-in | `koloft-open:sent`, but `~/.zsh/.zprofile` and `~/.zsh/.zshrc` never ran |
+| the same with the shipped wrapper (`ZDOTDIR` unset while `~/.zshenv` runs) | the stand-in | `koloft-open:sent`, `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
 | model asked for `shell: "/bin/bash"`, `--disable shell_snapshot` | `/usr/bin/open` | system `open` ran |
 | the same with `BASH_ENV` naming a file that prepends the folder | the stand-in | `koloft-open:sent`, and `~/.bash_profile` ran |
 
@@ -1098,16 +1100,17 @@ A real bash login user, the same day, in Docker (`node:22-bookworm-slim` plus
 `/bin/bash`, a copy of this Mac's login, `-s danger-full-access`, a stand-in system `open`
 at `/usr/bin/open`, the shim folder only in `BASH_ENV`'s file):
 
-| `BASH_ENV` | `open ./report.txt` | a variable `~/.bashrc` exports |
-| --- | --- | --- |
-| unset | system `open` ran | set |
-| a file that only prepends the folder | `koloft-open:sent` | **unset** |
-| a file that also sources `~/.bashrc` in a login shell, then prepends | `koloft-open:sent` | set |
+| `BASH_ENV` | `open ./report.txt` | a variable `~/.bashrc` exports | `BASH_ENV` in a `#!/bin/bash` script the command ran |
+| --- | --- | --- | --- |
+| unset | system `open` ran | set | empty |
+| a file that only prepends the folder | `koloft-open:sent` | **unset** | not run |
+| a file that also sources `~/.bashrc` in a login shell, then prepends | `koloft-open:sent` | set | not run |
+| a file that prepends the folder, then `unset BASH_ENV` | `koloft-open:sent` | set | empty |
 
-Every command was `/bin/bash -lc '…'`. So Koloft's `BASH_ENV` file loads `~/.bashrc`
-itself when `shopt -q login_shell` (the shell Codex captures its snapshot in) and leaves
-it out of every other bash, and Koloft sets `BASH_ENV` only when the login environment
-holds none. Koloft hands Codex the environment its login shell exports
+Every command was `/bin/bash -lc '…'`. So Koloft's `BASH_ENV` file prepends the folder
+and unsets `BASH_ENV`: Codex's capture then finds it empty and sources `~/.bashrc` as it
+does without Koloft, and no bash the command starts reads the file again (they inherit
+the `PATH`). Koloft sets `BASH_ENV` only when the login environment holds none. Koloft hands Codex the environment its login shell exports
 (`readLoginShell`), so a user whose `~/.zshenv` exports `ZDOTDIR` already reached the
 shim through Koloft's own `ZDOTDIR` handling; the failing case was a `ZDOTDIR` set but
 not exported. Not run: a macOS account whose login shell is bash (the passwd shell of
