@@ -846,9 +846,10 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await snap(page, 'T-LIFE-10')
   })
 
-  test("T-LIFE-11: right-click menus carry exactly the per-kind sets, with the A2 negatives, and a running row's Close leaves it cold in place", async ({
+  test("T-LIFE-11: right-click menus carry exactly the per-kind sets, with the A2 negatives — no account item on a session row, only the workspace's own Accounts… list — and a running row's Close leaves it cold in place", async ({
     env
   }) => {
+    const WORKSPACE_ACCOUNT_LIST_IS_SET_PER_WORKSPACE = 'Accounts…'
     test.setTimeout(180_000)
     seedJsonl(env, env.workspaces.b, { summary: 'Cold menu session' })
 
@@ -895,10 +896,10 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         'New session⌘N',
         'Restore session…',
         'Scheduled jobs…',
-        'Accounts…',
+        WORKSPACE_ACCOUNT_LIST_IS_SET_PER_WORKSPACE,
         'Remove workspace'
       ])
-      noForbidden(ws)
+      noForbidden(ws.filter((t) => t !== WORKSPACE_ACCOUNT_LIST_IS_SET_PER_WORKSPACE))
       await closeMenu(page)
 
       const [session] = await waitForCalls(env, 1)

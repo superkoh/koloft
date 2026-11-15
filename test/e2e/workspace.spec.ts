@@ -147,6 +147,7 @@ test.describe('Workspace management: every add goes through the workspace:add IP
     env
   }) => {
     test.setTimeout(120_000)
+    const SWITCH_SLIDE_MS = 250
     seedSettings(env, {
       accounts: [
         seededAccount('work'),
@@ -169,6 +170,8 @@ test.describe('Workspace management: every add goes through the workspace:add IP
         .locator('.job-main', { has: page.locator('.job-name', { hasText: /^work$/ }) })
         .click()
       await dialog.getByRole('switch', { name: 'Use codex-work' }).check()
+      await expect(dialog.getByRole('switch', { name: 'Use work' })).toBeChecked()
+      await page.waitForTimeout(SWITCH_SLIDE_MS)
       await snap(page, 'T-WS-08')
       await dialog.getByRole('button', { name: 'Save' }).click()
       await expect(dialog).toHaveCount(0)
