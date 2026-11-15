@@ -372,6 +372,35 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  test('a new Muse session in a workspace limited to one Muse account runs in that account and says so above Muse’s screen, even when the Meta sign-in listed before it has room left', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+    )
+    addMuseAccount(env, 'metered')
+    seedSettings(env, {
+      hintsOff: true,
+      workspaceAccounts: { [env.workspaces.a]: ['muse-home:metered'] }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect((await startMuse(page, env)).configHome).toBe(
+        path.join(env.userData, 'muse-homes', 'metered')
+      )
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'the only account ws-a may use'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§13
   test('a muse login that fails closes its sign-in tab and brings Settings ▸ Accounts back with muse’s error under “Sign-in did not complete.” and no row for the new account', async ({
     env

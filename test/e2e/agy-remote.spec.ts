@@ -5,6 +5,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
+  addAgyAccount,
   agyTranscriptOf,
   installAgy,
   seedSettings,
@@ -38,6 +39,7 @@ import {
   wsRows
 } from './helpers/p1'
 import {
+  REMOTE_HOST,
   REMOTE_WS_NAME,
   agyReady,
   boundRemoteSession,
@@ -49,6 +51,7 @@ import {
   machineAgyCalls,
   machineHome,
   remoteDir,
+  remoteKey,
   killLines,
   seedRemoteWorkspace,
   sshCommands,
@@ -225,6 +228,30 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row.locator('.ws-tab-act')).toHaveText('Last: Wrote remote-notes.txt', {
         timeout: 60_000
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session in a remote workspace limited to one Antigravity account runs agy on the machine on that account’s folder and says so above agy’s screen, even when another Antigravity account is listed before it', async ({
+    env
+  }) => {
+    setUp(env)
+    addAgyAccount(env, 'metered')
+    seedSettings(env, { workspaceAccounts: { [remoteKey(env)]: ['agy-home:metered'] } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      expect(machineAgyCalls(env)[0].argv[0]).toBe(
+        `--gemini_dir=${path.join(machineHome(env), '.koloft', 'agy', 'metered')}`
+      )
+      await agyReady(page)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `the only account ${REMOTE_HOST}:${REMOTE_WS_NAME} may use`
+      )
     } finally {
       await quitAndClose(app)
     }

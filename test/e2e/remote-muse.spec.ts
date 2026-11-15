@@ -3,7 +3,14 @@ import path from 'path'
 import { execFileSync, spawn } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { E2E_MUSE_ACCOUNT, installMuse, museSaid, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  E2E_MUSE_ACCOUNT,
+  addMuseAccount,
+  installMuse,
+  museSaid,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   addRemoteWorkspace,
   dropTmuxPassthrough,
@@ -16,6 +23,7 @@ import {
   machineMuseCalls,
   remoteDir,
   remoteKey,
+  REMOTE_HOST,
   REMOTE_WS_NAME,
   sshCommands,
   tmuxName,
@@ -241,6 +249,36 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect(row).toHaveClass(/\bst-working\b/)
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(row).toContainText('hello muse')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RM-16: a Muse session in a remote workspace limited to one Muse account starts on the machine with that account and says so above Muse’s screen, even when the Meta sign-in listed before it has room left', async ({
+    env
+  }) => {
+    installMuse(env)
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+    )
+    addMuseAccount(env, 'metered')
+    installFakeRemote(env)
+    installMuseOnMachine(env)
+    seedSettings(env, {
+      hintsOff: true,
+      workspaceAccounts: { [remoteKey(env)]: ['muse-home:metered'] }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await addRemoteWorkspace(page, env)
+      const call = await startRemoteMuse(page, env)
+      expect(call.configHome).toBe(path.join(machineHome(env), '.koloft', 'muse-homes', 'metered'))
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `the only account ${REMOTE_HOST}:${REMOTE_WS_NAME} may use`
+      )
     } finally {
       await quitAndClose(app)
     }

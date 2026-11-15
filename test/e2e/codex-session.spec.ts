@@ -2077,6 +2077,34 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a new Codex session in a workspace limited to one Codex account runs in that account, even when another Codex account has more room left', async ({
+    env
+  }) => {
+    installCodex(env)
+    const homeOf = (name: string) => path.join(env.userData, 'codex-homes', name)
+    const setUsed = (name: string, usedPercent: number) => {
+      fs.mkdirSync(homeOf(name), { recursive: true })
+      fs.writeFileSync(path.join(homeOf(name), 'auth.json'), JSON.stringify({ usedPercent }))
+    }
+    setUsed(E2E_CODEX_ACCOUNT, 10)
+    setUsed('other', 50)
+    const accounts = settingsOnDisk(env).accounts as Record<string, unknown>[]
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [...accounts, seededAccount('other', 'codex-home')],
+      workspaceAccounts: { [env.workspaces.a]: ['codex-home:other'] }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      expect((await startCodex(page, env)).codexHome).toBe(homeOf('other'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('after Koloft is reopened, the first Codex session started before any limit read has answered runs in the account that had room when Koloft was last open, not the full one listed first', async ({
     env
   }) => {

@@ -13,6 +13,7 @@ import {
 import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
+  addAgyAccount,
   agyCalls,
   agySessionCalls as sessionCalls,
   agyTranscriptOf as transcriptOf,
@@ -1235,6 +1236,32 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const page = await app.firstWindow()
       await waitBooted(page)
       expect((await startAgy(page, env)).geminiDir).toBe(homeOf('roomy'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a new Antigravity session in a workspace limited to one Antigravity account runs agy on that account’s folder and says so above agy’s screen, even when the Google sign-in listed before it has room left', async ({
+    env
+  }) => {
+    const binary = path.join(env.fakeBin, 'agy')
+    fs.symlinkSync(FAKE_AGY, binary)
+    env.launchEnv.KOLOFT_AGY_CMD = binary
+    trustInAgy(env, env.workspaces.a)
+    signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    addAgyAccount(env, 'metered')
+    seedSettings(env, { workspaceAccounts: { [env.workspaces.a]: ['agy-home:metered'] } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect((await startAgy(page, env)).geminiDir).toBe(
+        path.join(env.userData, 'agy-homes', 'metered')
+      )
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'the only account ws-a may use'
+      )
     } finally {
       await quitAndClose(app)
     }

@@ -45,7 +45,7 @@ import {
   remoteKey,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
+import { E2E_CODEX_ACCOUNT, seededAccount, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, codexPromptsSent, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
@@ -203,6 +203,45 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         { type: 'apiKey', accessToken: null, accountId: null, apiKey: key }
       ])
       expect(fs.existsSync(path.join(server.codexHome, 'auth.json'))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RC-21: a Codex session in a remote workspace limited to one Codex account signs the machine’s app-server in with that account, even when another Codex account has more room left', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const signIn = (name: string, accessToken: string, usedPercent: number) => {
+      const home = path.join(env.userData, 'codex-homes', name)
+      fs.mkdirSync(home, { recursive: true })
+      fs.writeFileSync(
+        path.join(home, 'auth.json'),
+        JSON.stringify({
+          tokens: { access_token: accessToken, account_id: `${name}-account` },
+          usedPercent
+        })
+      )
+    }
+    signIn(E2E_CODEX_ACCOUNT, MAC_CODEX_ACCESS_TOKEN, 10)
+    signIn('other', 'other-access-token', 50)
+    const accounts = settingsOnDisk(env).accounts as Record<string, unknown>[]
+    seedSettings(env, {
+      accounts: [...accounts, seededAccount('other', 'codex-home')],
+      workspaceAccounts: { [remoteKey(env)]: ['codex-home:other'] }
+    })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await page.evaluate(() => window.api.accounts.probe())
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toEqual([
+        {
+          type: 'chatgptAuthTokens',
+          accessToken: 'other-access-token',
+          accountId: 'other-account'
+        }
+      ])
     } finally {
       await quitAndClose(app)
     }
