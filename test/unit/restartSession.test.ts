@@ -862,6 +862,42 @@ describe('restartActiveSession: respawn failure', () => {
     expect(useStore.getState().tabs.map((t) => t.id)).toEqual(['early2'])
   })
 
+  it('waking an asleep tab lands in it even when a dead tab of the same session comes first', () => {
+    useStore.setState({
+      tabs: [
+        {
+          id: 'both-dead',
+          kind: 'claude',
+          title: 'Dead',
+          cwd: '/w',
+          alive: false,
+          sessionId: 'sid-B'
+        },
+        {
+          id: 'both-asleep',
+          kind: 'claude',
+          title: 'Asleep',
+          cwd: '/w',
+          alive: false,
+          asleep: true,
+          sessionId: 'sid-B'
+        }
+      ]
+    })
+
+    useStore.getState().addTab({
+      id: 'both-woken',
+      kind: 'claude',
+      title: 'Asleep',
+      cwd: '/w',
+      sessionId: 'sid-B',
+      alive: true,
+      resuming: true
+    })
+
+    expect(useStore.getState().tabs.map((t) => t.id)).toEqual(['both-dead', 'both-woken'])
+  })
+
   it('a tab whose agent quit but whose shell still runs is never taken over by a resume of that session', () => {
     const s = useStore.getState()
     s.addTab({ id: 'quit1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })

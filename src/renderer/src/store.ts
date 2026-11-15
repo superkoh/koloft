@@ -473,14 +473,13 @@ function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxO
 }
 
 function takeOverTab(old: Tab, t: Tab, select: boolean): void {
+  const next = old.asleep ? { ...t, title: old.title || t.title, ghost: old.id } : t
   useStore.setState((s) => ({
-    tabs: s.tabs.map((x) =>
-      x.id !== old.id ? x : old.asleep ? { ...t, title: old.title || t.title, ghost: old.id } : t
-    ),
+    tabs: s.tabs.map((x) => (x.id === old.id ? next : x)),
     ...(select ? shownTab(t.id) : { activeTabId: s.activeTabId === old.id ? t.id : s.activeTabId }),
     ...panelStateMoved(s, old.id, t.id)
   }))
-  tabStateMoved(old.id, t.id, t.sessionId ?? '')
+  tabStateMoved(old.id, t.id, t.sessionId)
 }
 
 // CC§9
@@ -503,15 +502,12 @@ export function noteWakingOutput(tabId: string): void {
 }
 
 function closedTabOfSameSession(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
-  return t.sessionId
-    ? s.tabs.find(
-        (x) =>
-          !x.alive &&
-          x.id !== t.id &&
-          !restarting.has(x.id) &&
-          (lastSessionId.get(x.id) ?? x.sessionId) === t.sessionId
-      )
-    : undefined
+  if (!t.sessionId || s.tabs.some((x) => x.id === t.id)) return undefined
+  const closed = s.tabs.filter(
+    (x) =>
+      !x.alive && !restarting.has(x.id) && (lastSessionId.get(x.id) ?? x.sessionId) === t.sessionId
+  )
+  return closed.find((x) => x.asleep) ?? closed[0]
 }
 
 function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
