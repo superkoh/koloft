@@ -260,6 +260,7 @@ export const CH = {
     signInFailure: 'accounts:sign-in-failure',
     dismissSignInFailure: 'accounts:dismiss-sign-in-failure',
     codexUseReset: 'accounts:codex-use-reset',
+    limitWorkspace: 'accounts:limit-workspace',
     loginProgress: 'accounts:login-progress',
     update: 'accounts:update'
   },

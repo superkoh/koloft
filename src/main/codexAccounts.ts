@@ -11,6 +11,7 @@ import {
 } from './accountPicker'
 import { leximaxFinalists, weekUse } from './usageProbe'
 import { withSavedHomeUsage, type SavedHomeUsageOf } from './savedHomeUsage'
+import { withinLimit, type WorkspaceLimit } from '@shared/workspaceAccounts'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -169,9 +170,13 @@ export class HomeAccountPicker {
   pick(
     accounts: AccountView[],
     resumedOn?: string,
-    launched: LaunchedSession[] = []
+    launched: LaunchedSession[] = [],
+    limit?: WorkspaceLimit
   ): AccountView | undefined {
-    const usable = withSavedHomeUsage(usableAccounts(accounts, [this.kind]), this.savedUsageOf)
+    const usable = withSavedHomeUsage(
+      usableAccounts(withinLimit(accounts, limit), [this.kind]),
+      this.savedUsageOf
+    )
     if (usable.length === 0) return undefined
     const nowSec = Math.floor(Date.now() / 1000)
     const all = usable.map((a) => ({ a, room: homeRoom(a, nowSec) }))
@@ -207,9 +212,9 @@ export class HomeAccountPicker {
     return soonest(rooms, ({ room }) => room?.backAt || Infinity).a
   }
 
-  peek(accounts: AccountView[]): AccountView | undefined {
+  peek(accounts: AccountView[], limit?: WorkspaceLimit): AccountView | undefined {
     const turn = this.turn
-    const picked = this.pick(accounts)
+    const picked = this.pick(accounts, undefined, [], limit)
     this.turn = turn
     return picked
   }

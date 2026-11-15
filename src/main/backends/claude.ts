@@ -196,6 +196,7 @@ export class ClaudeBackend implements SessionBackend {
   private watchedHookMirrors = new Map<string, () => void>()
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
+  private launchFolders = new Map<string, string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
   agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
@@ -295,6 +296,10 @@ export class ClaudeBackend implements SessionBackend {
     return findTranscript(root, key)
   }
 
+  launchFolderOf(tabId: string): string | undefined {
+    return this.launchFolders.get(tabId)
+  }
+
   picked(tabId: string, skipFlag: boolean): void {
     if (skipFlag) this.pickedSkipFlag.add(tabId)
     else this.pickedSkipFlag.delete(tabId)
@@ -384,6 +389,7 @@ export class ClaudeBackend implements SessionBackend {
 
   onPtyExit(tabId: string, crashed: boolean): void {
     this.pickedSkipFlag.delete(tabId)
+    this.launchFolders.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
@@ -1093,6 +1099,7 @@ export class ClaudeBackend implements SessionBackend {
       shell: plan.shell,
       extraEnv: plan.extraEnv
     })
+    this.launchFolders.set(handle.id, ws ?? spec.root)
     // ADR-0028
     if (spec.permission === 'bypass' || machine?.skipsPermissionChecks)
       this.launchedBypassing.add(handle.id)

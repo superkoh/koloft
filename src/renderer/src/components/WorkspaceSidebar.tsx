@@ -75,6 +75,7 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
+import { WorkspaceAccountsDialog } from './WorkspaceAccountsDialog'
 import { ButlerRow } from './ButlerRow'
 import { InboxRow } from './Inbox'
 import { everyWorkspaceRows } from '../butlerRows'
@@ -586,6 +587,8 @@ function SidebarFloating({
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
   const accounts = useStore((s) => s.accounts)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [accountsFor, setAccountsFor] = useState<string | null>(null)
+  const closeAccounts = useCallback(() => setAccountsFor(null), [])
   const [fresh, setFresh] = useState<{ path: string; left: number; top: number } | null>(null)
   const [parkedPop, setParkedPop] = useState<{ rowId: string; left: number; top: number } | null>(
     null
@@ -830,6 +833,15 @@ function SidebarFloating({
               >
                 Scheduled jobs…
               </div>
+              <div
+                className="mi"
+                onClick={() => {
+                  setMenu(null)
+                  setAccountsFor(target.wsPath)
+                }}
+              >
+                Accounts…
+              </div>
               <div className="sep" />
             </>
           )}
@@ -1016,6 +1028,11 @@ function SidebarFloating({
       {renderMenu()}
       {renderFresh()}
       {renderParked()}
+      {accountsFor &&
+        createPortal(
+          <WorkspaceAccountsDialog wsPath={accountsFor} onClose={closeAccounts} />,
+          document.body
+        )}
     </>
   )
 }

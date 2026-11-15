@@ -318,7 +318,8 @@ pick_account() {
   pacct="$(pick_field account)"
   if [ -z "$pacct" ]; then
     [ -z "$pjson" ] && refuse "picking an account took too long. Try again."
-    refuse "$2"
+    pmsg="$(pick_field message)"
+    refuse "\${pmsg:-$2}"
   fi
 }
 # PLATFORM§3 PLATFORM§2 ADR-0001

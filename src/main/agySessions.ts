@@ -130,7 +130,11 @@ export interface AgySessionDeps extends StoredSessionDeps {
   openShimRoot: string
   scriptsDir: string
   ownersGemini(): string
-  pickHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined
+  pickHome(
+    resumeSessionId: string | undefined,
+    onlyAsking: boolean,
+    workspace: string | undefined
+  ): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
   browserEndpoint(tabId: string): string
@@ -497,7 +501,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   trustsFolder(dir: string): boolean | Promise<boolean> {
     const key = parseRemoteKey(dir)
     if (!key && this.trustedHere(undefined, dir)) return true
-    const picked = this.deps.pickHome(undefined, true)
+    const picked = this.deps.pickHome(undefined, true, this.workspaceFor(dir))
     if (!picked) return false
     if (!key) return this.trustedHere(picked.home, dir)
     return this.deps.remote
@@ -586,10 +590,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return this.binary
   }
 
-  protected prepare(opts: CreateTabOptions): AgyLaunch {
+  protected prepare(opts: CreateTabOptions, workspace: string): AgyLaunch {
     // ADR-0030
-    const pick = this.deps.pickHome(opts.resumeSessionId)
-    if (!pick) throw new Error(this.deps.noAccountMessage('agy'))
+    const pick = this.deps.pickHome(opts.resumeSessionId, false, workspace)
+    if (!pick) throw new Error(this.deps.noAccountMessage('agy', workspace))
     if (pick.notice) this.deps.error(pick.notice)
     return { binary: this.binary!, pick, env: { ...(this.processEnv ?? process.env) } }
   }

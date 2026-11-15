@@ -367,6 +367,7 @@ export interface Settings {
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
   todoNotes: Record<string, string>
+  workspaceAccounts: Record<string, string[]>
 }
 
 export const ASSIST_JOBS = ['title', 'handover', 'turn', 'docs', 'route'] as const
@@ -514,7 +515,8 @@ export const DEFAULT_SETTINGS: Settings = {
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  todoNotes: {}
+  todoNotes: {},
+  workspaceAccounts: {}
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
@@ -1393,6 +1395,7 @@ export interface KoloftApi {
     onSignInFailure(cb: (f: SignInFailure | null) => void): () => void
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
+    limitWorkspace(wsPath: string, ids: string[]): Promise<void>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }

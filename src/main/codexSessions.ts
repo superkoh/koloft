@@ -279,7 +279,10 @@ function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promi
 export interface CodexSessionDeps extends StoredSessionDeps {
   machine?: CodexMachineDeps
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
+  pickHome(
+    resumeSessionId?: string,
+    workspace?: string
+  ): { account: string; home: string; notice?: string } | undefined
   homeOf(sessionId: string): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   replyLanguageScript: string
@@ -825,10 +828,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return opts.resumeSessionId ? (opts.permission ?? 'default') : super.permissionOf(opts)
   }
 
-  protected prepare(opts: CreateTabOptions): CodexLaunch {
+  protected prepare(opts: CreateTabOptions, workspace: string): CodexLaunch {
     // CODEX§15 CODEX§18 ADR-0030
-    const picked = this.deps.pickHome(opts.resumeSessionId)
-    if (!picked) throw new Error(this.deps.noAccountMessage('codex'))
+    const picked = this.deps.pickHome(opts.resumeSessionId, workspace)
+    if (!picked) throw new Error(this.deps.noAccountMessage('codex', workspace))
     if (picked.notice) this.deps.error(picked.notice)
     return { picked, binary: this.binary!, processEnv: this.processEnv }
   }

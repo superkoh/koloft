@@ -509,6 +509,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.accounts.signInFailure, handler)
     },
     codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),
+    limitWorkspace: (wsPath, ids) => ipcRenderer.invoke(CH.accounts.limitWorkspace, wsPath, ids),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)
       ipcRenderer.on(CH.accounts.loginProgress, handler)

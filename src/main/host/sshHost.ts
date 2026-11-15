@@ -115,8 +115,12 @@ export interface MachineClaudeDeps {
   realPath(p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
-  pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
-  noAccountMessage(): string
+  pickAccount(
+    launchKey: string,
+    resumeSessionId: string | undefined,
+    workspace: string
+  ): Promise<MachineAccount | undefined>
+  noAccountMessage(workspace: string): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
@@ -1230,9 +1234,12 @@ export class SshHost implements Host {
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
-    const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
+    const workspace = spec.fallbackCwd ?? spec.root
+    const account = pickKey
+      ? await d.pickAccount(pickKey, spec.resumeSessionId, workspace)
+      : undefined
     // ADR-0030
-    if (pickKey && !account) throw new Error(d.noAccountMessage())
+    if (pickKey && !account) throw new Error(d.noAccountMessage(workspace))
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))

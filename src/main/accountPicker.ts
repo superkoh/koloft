@@ -26,6 +26,14 @@ import {
   type Score,
   type ScoreRoute
 } from './usageProbe'
+import {
+  everyAllowedAccountWalled,
+  limitNote,
+  noAllowedAccountMessage,
+  withinLimit,
+  workspaceShortName,
+  type WorkspaceLimit
+} from '@shared/workspaceAccounts'
 
 export const SCORE_PER_LIVE_SESSION = 2 * EPS
 
@@ -70,7 +78,7 @@ export type PickResponse =
       banner: string
       warning?: string
     }
-  | { account: null; reason: 'no-accounts' | 'no-usable' }
+  | { account: null; reason: 'no-accounts' | 'no-usable'; message?: string }
 
 function bannerFor(
   name: string,
@@ -87,11 +95,18 @@ function bannerFor(
   return accountLine(name, parts, { at: u.at, nowMs })
 }
 
-export function allLimitedNotice(a: AccountView, backend: BackendId): string | undefined {
+export function allLimitedNotice(
+  a: AccountView,
+  backend: BackendId,
+  limit?: WorkspaceLimit
+): string | undefined {
   const room = homeRoom(a, Math.floor(Date.now() / 1000))
   if (!room?.walled) return undefined
   const agent = BACKEND_LABEL[backend]
-  return `Every ${agent} account is at its limit, so ${agent} runs on ${a.name}, the first to reset (${fmtReset(room.backAt)}).`
+  const every = limit
+    ? `Every ${agent} account ${workspaceShortName(limit.workspace)} may use`
+    : `Every ${agent} account`
+  return `${every} is at its limit, so ${agent} runs on ${a.name}, the first to reset (${fmtReset(room.backAt)}).`
 }
 
 function fallbackTag(a: AccountMeta): string {
@@ -100,8 +115,8 @@ function fallbackTag(a: AccountMeta): string {
     : meteredTag(a.name)
 }
 
-function fallbackBanner(a: AccountMeta): string {
-  return `koloft: → ${fallbackTag(a)}`
+function fallbackBanner(a: AccountMeta, limit?: WorkspaceLimit): string {
+  return `koloft: → ${fallbackTag(a)}${limitNote(limit)}`
 }
 
 function fmtReset(epoch: number): string {
@@ -206,10 +221,13 @@ export class AccountPicker {
     return a
   }
 
-  async pick(tabId?: string, resumedOn?: string): Promise<PickResponse> {
-    const subs = this.eligible('oauth')
-    const apis = this.eligible('apikey', 'custom')
-    if (subs.length === 0 && apis.length === 0) return { account: null, reason: 'no-accounts' }
+  async pick(tabId?: string, resumedOn?: string, limit?: WorkspaceLimit): Promise<PickResponse> {
+    const subs = withinLimit(this.eligible('oauth'), limit)
+    const apis = withinLimit(this.eligible('apikey', 'custom'), limit)
+    if (subs.length === 0 && apis.length === 0)
+      return limit
+        ? { account: null, reason: 'no-usable', message: noAllowedAccountMessage(limit) }
+        : { account: null, reason: 'no-accounts' }
 
     if (subs.length > 0 && !subs.every((a) => this.snapshotFor(a, FRESH_CACHE_MS))) {
       const round = this.probeRound(subs)
@@ -220,39 +238,49 @@ export class AccountPicker {
       }
     }
 
-    const res = this.keepResumed(subs, resumedOn) ?? this.decide(subs, apis, tabId)
+    const res = this.keepResumed(subs, resumedOn, limit) ?? this.decide(subs, apis, tabId, limit)
     if (tabId && res.account) this.deps.recordPick(tabId, res.account)
     return res
   }
 
-  private keepResumed(subs: AccountMeta[], resumedOn?: string): PickResponse | undefined {
+  private keepResumed(
+    subs: AccountMeta[],
+    resumedOn: string | undefined,
+    limit: WorkspaceLimit | undefined
+  ): PickResponse | undefined {
     const name = resumedOn?.toLowerCase()
     const same = name ? subs.find((a) => a.name.toLowerCase() === name) : undefined
     if (!same) return undefined
     const snap = this.snapshotFor(same)
     const nowSec = Math.floor(this.deps.now() / 1000)
     if (snap && !keepsResumedSession(snap, nowSec)) return undefined
-    return this.subscriptionPick(same.name, snap, false, nowSec)
+    return this.subscriptionPick(same.name, snap, false, nowSec, limit)
   }
 
   private subscriptionPick(
     name: string,
     snap: UsageSnapshot | undefined,
     fableRoute: boolean,
-    nowSec: number
+    nowSec: number,
+    limit: WorkspaceLimit | undefined
   ): PickResponse {
     return {
       account: name,
       kind: 'oauth',
-      banner: bannerFor(name, snap, fableRoute, this.deps.now()),
+      banner: bannerFor(name, snap, fableRoute, this.deps.now()) + limitNote(limit),
       ...(!snap || fableFree(snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })
     }
   }
 
-  private decide(subs: AccountMeta[], apis: AccountMeta[], tabId?: string): PickResponse {
+  private decide(
+    subs: AccountMeta[],
+    apis: AccountMeta[],
+    tabId: string | undefined,
+    limit: WorkspaceLimit | undefined
+  ): PickResponse {
     if (subs.length === 0) {
       const a = this.roundRobin(apis)
-      return { account: a.name, kind: a.kind, banner: fallbackBanner(a) }
+      return { account: a.name, kind: a.kind, banner: fallbackBanner(a, limit) }
     }
 
     const nowSec = Math.floor(this.deps.now() / 1000)
@@ -268,7 +296,7 @@ export class AccountPicker {
       return {
         account: a.name,
         kind: 'oauth',
-        banner: `koloft: probe failed, round-robin → ${a.name}`
+        banner: `koloft: probe failed, round-robin → ${a.name}${limitNote(limit)}`
       }
     }
 
@@ -296,7 +324,7 @@ export class AccountPicker {
       return {
         account: a.name,
         kind: a.kind,
-        banner: `koloft: every subscription rate-limited → ${fallbackTag(a)}`
+        banner: `koloft: every subscription rate-limited → ${fallbackTag(a)}${limitNote(limit)}`
       }
     }
 
@@ -321,9 +349,9 @@ export class AccountPicker {
       return {
         account: win.meta.name,
         kind: 'oauth',
-        banner: `koloft: every account rate-limited → ${win.meta.name} (${fmtReset(r)})`
+        banner: `koloft: ${limit ? everyAllowedAccountWalled(limit) : 'every account rate-limited'} → ${win.meta.name} (${fmtReset(r)})`
       }
     }
-    return this.subscriptionPick(win.meta.name, win.snap, route === 'fable', nowSec)
+    return this.subscriptionPick(win.meta.name, win.snap, route === 'fable', nowSec, limit)
   }
 }

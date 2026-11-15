@@ -45,6 +45,7 @@ import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
+import { workspacesLimitedTo } from '@shared/workspaceAccounts'
 import '../../accounts.css'
 
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
@@ -124,6 +125,7 @@ export function AccountsPane(): JSX.Element {
       <AccountRow
         key={key}
         account={a}
+        limitedBy={workspacesLimitedTo(settings.workspaceAccounts, a)}
         confirming={confirmDel === key}
         onToggle={(en) => {
           setAccounts((cur) =>
@@ -257,6 +259,9 @@ export function AccountsPane(): JSX.Element {
           </button>
           <button className="mini" onClick={() => openForm({ paste: 'oauth' })}>
             <IconPlus size={14} /> Paste token
+          </button>
+          <button className="mini" onClick={() => openForm({ paste: 'custom' })}>
+            <IconPlus size={14} /> Add endpoint
           </button>
         </>
       )}
@@ -574,9 +579,11 @@ function AccountRow({
   onAskRemove,
   onCancelRemove,
   onRemove,
-  onRelogin
+  onRelogin,
+  limitedBy
 }: {
   account: AccountView
+  limitedBy: string[]
   confirming: boolean
   onToggle(enabled: boolean): void
   onAskRemove(): void
@@ -705,6 +712,11 @@ function AccountRow({
           <span className="acct-note">
             {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
           </span>
+        </div>
+      )}
+      {limitedBy.length > 0 && (
+        <div className="acct-meters">
+          <span className="acct-note">Workspaces limited to it: {limitedBy.join(', ')}</span>
         </div>
       )}
     </div>
@@ -855,7 +867,8 @@ export function AddAccountDialog({
               : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
-            'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}
+            'subscription is rate-limited, or in a workspace whose Accounts… list holds no ' +
+            'subscription — and it switches the session to that endpoint’s own model.'}
       </span>
     </div>
   )

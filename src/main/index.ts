@@ -384,6 +384,12 @@ import {
   type PermissionName
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
+import {
+  limitNote,
+  noAllowedAccountMessage,
+  workspaceLimit,
+  type WorkspaceLimit
+} from '@shared/workspaceAccounts'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
@@ -753,7 +759,16 @@ function showAskOnItsRow(tabId: string): void {
     sendToRenderer(CH.sessions.update, onSessionsChanged())
 }
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
-const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
+function workspaceLimitOf(
+  workspace: string | undefined,
+  backend: BackendId
+): WorkspaceLimit | undefined {
+  return workspaceLimit(loadSettings().workspaceAccounts, workspace, backend)
+}
+const noAccountNow = (backend: BackendId, workspace?: string): string => {
+  const limit = workspaceLimitOf(workspace, backend)
+  return limit ? noAllowedAccountMessage(limit) : noAccountMessage(listAccounts(), backend)
+}
 sessionBackends.noAccountMessage = noAccountNow
 sessionBackends.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
@@ -2241,14 +2256,19 @@ const agentRequests = new AgentRequests({
 
 async function pickForLaunch(
   tabId?: string,
-  resumeSessionId?: string
+  resumeSessionId?: string,
+  workspace?: string
 ): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
 }> {
   let res: PickResponse
   try {
-    res = await picker.pick(tabId, sessionAccounts?.of('claude', resumeSessionId))
+    res = await picker.pick(
+      tabId,
+      sessionAccounts?.of('claude', resumeSessionId),
+      workspaceLimitOf(workspace, 'claude')
+    )
   } catch {
     res = { account: null, reason: 'no-usable' }
   }
@@ -2300,6 +2320,13 @@ function terminalPickOf(
   )
 }
 
+function workspaceKeyOf(dir: string | undefined): string | undefined {
+  if (!dir) return undefined
+  return (workspaceMgr?.pinnedPathList() ?? [])
+    .filter((ws) => dir === ws || dir.startsWith(ws.endsWith('/') ? ws : `${ws}/`))
+    .sort((a, b) => b.length - a.length)[0]
+}
+
 const shimAccountRefusals = new Map<string, string>()
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -2323,8 +2350,13 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     pushAccounts()
     return
   }
-  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
-  const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
+  const { res, endpoint } = await pickForLaunch(
+    obj.tabId,
+    tab.resumeSessionId,
+    workspaceKeyOf(claudeBackend.launchFolderOf(obj.tabId))
+  )
+  const accountIssue =
+    res.account === null && (res.message || noAccountLine(listAccounts(), 'claude'))
   if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
   else shimAccountRefusals.delete(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
@@ -2625,13 +2657,16 @@ function codexSharedConfig(): string {
 
 // CODEX§15
 function pickCodexHome(
-  resumeSessionId?: string
+  resumeSessionId?: string,
+  workspace?: string
 ): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
+  const limit = workspaceLimitOf(workspace, 'codex')
   const picked = codexPicker.pick(
     views,
     sessionAccounts?.of('codex', resumeSessionId),
-    codexSessions?.launchedSessions()
+    codexSessions?.launchedSessions(),
+    limit
   )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean =>
@@ -2642,8 +2677,8 @@ function pickCodexHome(
   return {
     account: picked.name,
     home,
-    banner: launchLine(picked, Date.now()),
-    notice: allLimitedNotice(picked, 'codex')
+    banner: launchLine(picked, Date.now()) + limitNote(limit),
+    notice: allLimitedNotice(picked, 'codex', limit)
   }
 }
 
@@ -2824,12 +2859,17 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
+function pickMuseHome(
+  resumeSessionId?: string,
+  workspace?: string
+): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
+  const limit = workspaceLimitOf(workspace, 'muse')
   const picked = musePicker.pick(
     views,
     sessionAccounts?.of('muse', resumeSessionId),
-    museSessions?.launchedSessions()
+    museSessions?.launchedSessions(),
+    limit
   )
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
@@ -2840,8 +2880,8 @@ function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string 
     account: picked.name,
     home,
     env: museAccountEnv(home),
-    banner: launchLine(picked, Date.now()),
-    notice: allLimitedNotice(picked, 'muse')
+    banner: launchLine(picked, Date.now()) + limitNote(limit),
+    notice: allLimitedNotice(picked, 'muse', limit)
   }
 }
 
@@ -2912,14 +2952,20 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
+function pickAgyHome(
+  resumeSessionId?: string,
+  onlyAsking?: boolean,
+  workspace?: string
+): AgyHomePick | undefined {
   const views = accountViews()
+  const limit = workspaceLimitOf(workspace, 'agy')
   const picked = onlyAsking
-    ? agyPicker.peek(views)
+    ? agyPicker.peek(views, limit)
     : agyPicker.pick(
         views,
         sessionAccounts?.of('agy', resumeSessionId),
-        agySessions?.launchedSessions()
+        agySessions?.launchedSessions(),
+        limit
       )
   const stale = (a: AccountView): boolean =>
     Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
@@ -2929,8 +2975,8 @@ function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePic
     picked && {
       account: picked.name,
       home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now()),
-      notice: allLimitedNotice(picked, 'agy')
+      banner: launchLine(picked, Date.now()) + limitNote(limit),
+      notice: allLimitedNotice(picked, 'agy', limit)
     }
   )
 }
@@ -6375,6 +6421,15 @@ const resumeProbes: ResumeProbes = {
   ...gitProbes(localGitOut)
 }
 
+function limitWorkspaceAccounts(wsPath: string, ids: string[]): void {
+  const { [wsPath]: _was, ...others } = loadSettings().workspaceAccounts
+  commitSettings({ workspaceAccounts: ids.length > 0 ? { ...others, [wsPath]: ids } : others })
+}
+
+function forgetWorkspaceAccounts(wsPath: string): void {
+  if (loadSettings().workspaceAccounts[wsPath]) limitWorkspaceAccounts(wsPath, [])
+}
+
 function commitSettings(patch: Partial<Settings>): Settings {
   const s = saveSettings(patch)
   sendToRenderer(CH.settings.update, s)
@@ -6466,9 +6521,11 @@ const hosts = new Hosts(
         firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
-        pickAccount: (launchKey, resumeSessionId) =>
-          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
-        noAccountMessage: () => noAccountNow('claude'),
+        pickAccount: (launchKey, resumeSessionId, workspace) =>
+          pickMachineAccount(() =>
+            pickForLaunch(launchKey, resumeSessionId, workspaceKeyOf(workspace))
+          ),
+        noAccountMessage: (workspace) => noAccountNow('claude', workspaceKeyOf(workspace)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
@@ -6764,6 +6821,10 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
+  ipcMain.handle(CH.accounts.limitWorkspace, (_e, wsPath: unknown, ids: unknown) => {
+    if (isText(wsPath) && Array.isArray(ids) && ids.every(isText))
+      limitWorkspaceAccounts(wsPath, ids)
+  })
   ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
@@ -6908,6 +6969,7 @@ function registerIpc(): void {
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
       cronRunner?.removeWorkspace(p)
+      forgetWorkspaceAccounts(p)
       for (const id of marked) attention.clearSession(id)
     }
     return r
@@ -6928,6 +6990,7 @@ function registerIpc(): void {
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
+    forgetWorkspaceAccounts(p)
     for (const id of marked) attention.clearSession(id)
   })
   ipcMain.handle(CH.conductors.bind, (_e, channel: DiscordChannel | undefined) => {

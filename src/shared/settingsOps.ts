@@ -11,6 +11,7 @@ import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
+import { sanitizeWorkspaceAccounts } from './workspaceAccounts'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
@@ -29,9 +30,11 @@ export function buildResetPatch(): Partial<Settings> {
     gitSuggestionsDismissed,
     gitMachines,
     todoNotes,
+    workspaceAccounts,
     ...rest
   } = DEFAULT_SETTINGS
   void todoNotes
+  void workspaceAccounts
   void butler
   void gitAccounts
   void gitPicks
@@ -59,9 +62,11 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
     gitSuggestionsDismissed,
     gitMachines,
     todoNotes,
+    workspaceAccounts,
     ...rest
   } = patch
   void todoNotes
+  void workspaceAccounts
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
@@ -87,6 +92,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
+  merged.workspaceAccounts = sanitizeWorkspaceAccounts(merged.workspaceAccounts, merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
   merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)

@@ -103,7 +103,7 @@ export interface MuseHomePick {
 
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  pickHome(resumeSessionId?: string): MuseHomePick | undefined
+  pickHome(resumeSessionId?: string, workspace?: string): MuseHomePick | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
@@ -552,10 +552,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     return this.binary
   }
 
-  protected prepare(opts: CreateTabOptions): MuseLaunch {
+  protected prepare(opts: CreateTabOptions, workspace: string): MuseLaunch {
     // ADR-0030 MUSE§13
-    const picked = this.deps.pickHome(opts.resumeSessionId)
-    if (!picked) throw new Error(this.deps.noAccountMessage('muse'))
+    const picked = this.deps.pickHome(opts.resumeSessionId, workspace)
+    if (!picked) throw new Error(this.deps.noAccountMessage('muse', workspace))
     if (picked.notice) this.deps.error(picked.notice)
     return {
       binary: this.binary!,

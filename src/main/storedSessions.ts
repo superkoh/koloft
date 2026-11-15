@@ -106,7 +106,7 @@ export interface StoredSessionDeps {
   leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
-  noAccountMessage(backend: BackendId): string
+  noAccountMessage(backend: BackendId, workspace?: string): string
   fallbackBin?: string
   gitBin?: string
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
@@ -238,7 +238,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected abstract startRun(ctx: StartContext, prepared: P): Promise<R>
   protected abstract untestedNotice(version: string): string
 
-  protected prepare(_opts: CreateTabOptions): P {
+  protected prepare(_opts: CreateTabOptions, _workspace: string): P {
     return undefined as P
   }
 
@@ -762,7 +762,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
-    const prepared = this.prepare(opts)
+    const prepared = this.prepare(opts, workspace)
     const starting = { tabId: '', account: this.launchAccount(prepared) }
     this.starting.add(starting)
     let run: R
