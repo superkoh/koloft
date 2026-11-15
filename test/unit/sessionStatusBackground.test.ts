@@ -443,7 +443,7 @@ describe('run-state vs background work: any live background task keeps the sessi
   }, 20_000)
 
   // CC§8
-  it('a subagent that keeps writing once the only task its turn end named, its own shell, is gone holds the dot until it goes quiet, then rests it once, never blinking', async () => {
+  it('a subagent still writing when the only task its turn end named, its own shell, is gone holds the dot until it goes quiet, then rests it once, never blinking', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB5b', cwd, initialLines(cwd))
