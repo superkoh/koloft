@@ -252,19 +252,19 @@ export function Welcome({
   const again = accounts ? accountToSignInAgain(accounts, pick) : undefined
   const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
+  const toPin = useMemo(() => (found ? foldersToPin(found, Date.now()) : []), [found])
+  const pinDue = step === 2 && folders.length === 0 && toPin.length > 0 && !pinTried.current
   useEffect(() => {
-    if (step !== 2 || found === null || folders.length > 0 || pinTried.current) return
-    const pins = foldersToPin(found, Date.now())
-    if (pins.length === 0) return
+    if (!pinDue) return
     pinTried.current = true
     setPinning(true)
     window.api.workspace
-      .pinRecent(pins.map((f) => f.path))
+      .pinRecent(toPin.map((f) => f.path))
       .catch(() =>
         useStore.getState().showToast('Some sessions could not be read. The folders are pinned.')
       )
       .finally(() => setPinning(false))
-  }, [step, found, folders.length])
+  }, [pinDue, toPin])
 
   useEffect(() => {
     if (!signingFor || waiting || signedIn(signingFor)) return
@@ -369,7 +369,7 @@ export function Welcome({
 
   const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'
 
-  const reading = pinning || found === null
+  const reading = pinning || pinDue || found === null
   const primary = ((): { label: string; go: () => void; busy?: boolean; disabled?: boolean } => {
     if (step === 1) return { label: 'Continue', go: () => setStep(2), disabled: installed === null }
     if (step === 2) {
