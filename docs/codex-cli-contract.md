@@ -850,7 +850,9 @@ no key.
   same day.
 - **Keys typed before the question shows (codex-cli 0.166.0, macOS, 2026-11-15).** The
   TUI under `--remote` (an app-server already listening, a throwaway `CODEX_HOME` with a
-  made-up API key, a fresh `git init` folder, a pty answering the terminal's queries)
+  made-up API key, a fresh `git init` folder, a pty answering the terminal's queries,
+  `-c check_for_update_on_startup=false`, with and without
+  `-c disable_paste_burst=true`, the same both ways)
   draws its "Ask Codex to do anything" composer, banner still "loading", 0.03–0.09 s
   after it starts, and the question 0.01–0.15 s after that. A key that lands before the
   question stays in the composer. On the question: letters and a whole bracketed paste
