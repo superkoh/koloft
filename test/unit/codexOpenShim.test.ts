@@ -150,7 +150,8 @@ describe('Codex open shim dotfile folder', () => {
       const [openPath, pathLine, zprofileSaw] = res.stdout.trim().split('\n')
       expect(openPath, zshenv).toBe(path.join(shim.shimDir, 'open'))
       expect(pathLine.split(':'), zshenv).toContain(path.join(base, 'user-bin'))
-      expect(zprofileSaw, zshenv).toBe(saw === '(unset)' ? saw : path.join(home, saw))    }
+      expect(zprofileSaw, zshenv).toBe(saw === '(unset)' ? saw : path.join(home, saw))
+    }
   })
 })
 
