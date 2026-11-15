@@ -278,6 +278,14 @@ only downloaded the public release.
   and with the folder trusted. An id with no stored conversation keeps
   `conversation_id` `""` (§1: a new conversation, no id before the first prompt).
   macOS: not probed.
+- **Resuming from another account folder** (1.3.6, Linux arm64, Docker, no network,
+  tmux, fake Gemini server, 2026-11-15): two `--gemini_dir` folders linked into one
+  `~/.gemini` as in §4, each with `onboarding.json` and `modelProvider`; only folder A
+  trusts the workspace. A conversation started on A resumed with
+  `--conversation=<id>` on A opens on its history; on B it stops on "Do you trust the
+  contents of this project?" and B's `trustedWorkspaces` stays empty; with the
+  workspace written into B's `settings.json` first, B opens on the history. Trust lives
+  only in each folder's own `settings.json`, never with the shared conversation.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.

@@ -28,6 +28,12 @@ for good.
   one run (`AGY§5`), so the worktree folder is written as well. Muse gets the same outcome
   without writing, from `--trust-workspace` for that run. A git worktree the person made
   themselves is not Koloft's and gets agy's own question.
+- an Antigravity resume lands on another Koloft account than one whose home already
+  trusts the folder (the first is at its limit, say): agy keeps trust per account home
+  and asks again in the new one even for a conversation it already ran there (`AGY§5`),
+  and a resume often has nobody at the terminal. The yes was the owner's, not the
+  account's, so the resumed folder alone is written into the picked account's list. A
+  fresh launch on that account still asks.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's
 own question in the terminal, a scheduled run in a workspace the agent does not trust
 keeps the jobs form's warning and stops on the question, and a launch that fell back to

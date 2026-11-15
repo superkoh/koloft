@@ -57,6 +57,7 @@ import {
   agyOnboardingFile,
   agyTokenFile,
   agyTrustsFolder,
+  someAccountBesideTrusts,
   mergeAgyHooks,
   mergeAgySettings,
   mergedAgyHooks,
@@ -666,11 +667,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
       !!resource?.managed && this.trustedHere(pick.home, workspace)
+    const resumeOnAnotherAccount = !!resumeId && someAccountBesideTrusts(pick.home, cwd)
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
           ? trust
-          : [],
+          : resumeOnAnotherAccount
+            ? [cwd]
+            : [],
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey,
@@ -795,10 +799,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       !!resource?.managed && trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
     const trusted = freshWorktree || opts.trustFolder || koloftWorktreeOfTrustedWorkspace
     const trust = [where.path, workspacePath].filter((d, i, all) => all.indexOf(d) === i)
+    const resumeOnAnotherAccount = !!resumeId && trustsIn(where.path, ...config.accountsSettings)
     const m = remote.machineName()
     const agentTools = this.deps.agent.enabled(true)
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
-      trust: trusted ? trust : [],
+      trust: trusted ? trust : resumeOnAnotherAccount ? [where.path] : [],
       titleCommand: runMachineScript(m, AGY_TITLE_FILE),
       statusLine: this.deps.builtInStatusLine(pick.account)
         ? runMachineScript(m, AGY_STATUSLINE_FILE)

@@ -334,3 +334,8 @@ export function trustsIn(dir: string, ...settings: Record<string, unknown>[]): b
 export function agyTrustsFolder(home: string, dir: string): boolean {
   return trustsIn(dir, readJson(settingsFile(home)))
 }
+
+export function someAccountBesideTrusts(home: string, dir: string): boolean {
+  const homes = path.dirname(home)
+  return fs.readdirSync(homes).some((name) => agyTrustsFolder(path.join(homes, name), dir))
+}
