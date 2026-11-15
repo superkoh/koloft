@@ -1,23 +1,62 @@
-import type { ElectronApplication } from '@playwright/test'
+import fs from 'fs'
+import path from 'path'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { seedSettings } from './helpers/env'
 import {
+  agySessionCalls,
+  agyTranscriptOf,
+  installAgy,
+  installMuse,
+  museCalls,
+  museSaid,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
+import {
+  type AgentName,
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
+  newSessionInWith,
   processAlive,
   readCalls,
   resumedId,
   runIn,
   startSessionIn,
+  switchToRow,
+  terminalText,
   termIds,
   waitBooted,
   waitForCalls,
   wsRows
 } from './helpers/p1'
+import {
+  addRemoteWorkspace,
+  agyReady,
+  boundRemoteSession,
+  installCodexOnFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
+  killLines,
+  launchWithRemote,
+  liveTmuxSessions,
+  machineAgyCalls,
+  machineCodexLog,
+  machineHome,
+  machineMuseCalls,
+  REMOTE_WS_NAME,
+  stateDir,
+  tmuxClientsOf,
+  tmuxName
+} from './helpers/remote'
+import { codexAnswers, codexCalls, type CodexWireLine } from './helpers/codex'
 
 const ROOM_FOR_A_WRONG_FORCE_CLOSE_MODAL_MS = 1500
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const ROOM_FOR_A_WRONG_RESTART_MS = 2000
+const ON_THE_MACHINE_WITHIN_MS = 60_000
 
 // PLATFORM§18
 function inRenderer<T>(app: ElectronApplication, expr: string): Promise<T> {
@@ -248,4 +287,330 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
       await quitAndClose(app)
     }
   })
+})
+
+interface RunningTab {
+  tabId: string
+  launches: () => number
+  holders: () => number[]
+  answers: () => Promise<string>
+  reply: (line: string) => string
+  asleep: () => boolean
+  lastLaunchResumesIt: () => boolean
+}
+
+interface TabKind {
+  agent: AgentName
+  remote: boolean
+  install: (env: E2EEnv) => void
+  start: (page: Page, env: E2EEnv) => Promise<RunningTab>
+}
+
+const kindName = (kind: TabKind): string => `${kind.remote ? 'remote' : 'local'} ${kind.agent}`
+
+const tabOf = async (page: Page, ws: string): Promise<string> =>
+  (await wsRows(page, ws).first().getAttribute('data-tab-id')) ?? ''
+
+function tmuxClientsHolding(env: E2EEnv, id: string): number[] {
+  const record = path.join(stateDir(env), 'alive', tmuxName(id))
+  const startedAs = fs.existsSync(record)
+    ? (JSON.parse(fs.readFileSync(record, 'utf8')) as { io: string }).io
+    : tmuxName(id)
+  return [...new Set([...tmuxClientsOf(startedAs), ...tmuxClientsOf(tmuxName(id))])]
+}
+
+const codexServersOnTheMachine = (env: E2EEnv): { pid: number; argv: string[] }[] =>
+  machineCodexLog<{ pid: number; argv: string[] }>(env, 'fake-codex-server-calls.jsonl').filter(
+    (c) => c.argv.includes('--listen')
+  )
+
+const machineAgyTranscriptOf = (env: E2EEnv, id: string): string =>
+  agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini'))
+
+const tmuxTabGone = (env: E2EEnv, id: string): boolean =>
+  killLines(env, id).length === 1 && !liveTmuxSessions(env).includes(tmuxName(id))
+
+const TAB_KINDS: TabKind[] = [
+  {
+    agent: 'Claude',
+    remote: true,
+    install: () => {},
+    start: async (page, env) => {
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const tabId = await tabOf(page, REMOTE_WS_NAME)
+      return {
+        tabId,
+        launches: () => readCalls(env).length,
+        holders: () => [first.pid, ...tmuxClientsHolding(env, first.sessionId)],
+        answers: () => terminalText(page, tabId),
+        reply: (line) => `handled: ${line}`,
+        asleep: () => tmuxTabGone(env, first.sessionId),
+        lastLaunchResumesIt: () => resumedId(readCalls(env).at(-1)!) === first.sessionId
+      }
+    }
+  },
+  {
+    agent: 'Codex',
+    remote: true,
+    install: installCodexOnFakeRemote,
+    start: async (page, env) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      await expect
+        .poll(() => codexServersOnTheMachine(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(1)
+      await expect(
+        wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
+      ).toHaveClass(/st-waiting/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      const server = codexServersOnTheMachine(env)[0]
+      const [tui] = codexCalls(env)
+      return {
+        tabId: await tabOf(page, REMOTE_WS_NAME),
+        launches: () => codexCalls(env).length + codexServersOnTheMachine(env).length,
+        holders: () => [tui.pid, server.pid],
+        answers: async () =>
+          codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')).join('\n'),
+        reply: (line) => `Codex fixture answered: ${line}`,
+        asleep: () => !processAlive(server.pid),
+        lastLaunchResumesIt: () => {
+          const last = codexCalls(env).at(-1)!
+          return last.method === 'thread/resume' && last.sessionId === tui.sessionId
+        }
+      }
+    }
+  },
+  {
+    agent: 'Muse',
+    remote: false,
+    install: (env) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    start: async (page, env) => {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/st-waiting/)
+      const [first] = museCalls(env)
+      return {
+        tabId: await tabOf(page, 'ws-a'),
+        launches: () => museCalls(env).length,
+        holders: () => [first.pid],
+        answers: async () => museSaid(env, first.sessionId).join('\n'),
+        reply: (line) => `echo: ${line}`,
+        asleep: () => !processAlive(first.pid),
+        lastLaunchResumesIt: () => museCalls(env).at(-1)!.sessionId === first.sessionId
+      }
+    }
+  },
+  {
+    agent: 'Muse',
+    remote: true,
+    install: (env) => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    },
+    start: async (page, env) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
+      await expect
+        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(1)
+      const [first] = machineMuseCalls(env)
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toContain(tmuxName(first.sessionId))
+      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      return {
+        tabId: await tabOf(page, REMOTE_WS_NAME),
+        launches: () => machineMuseCalls(env).length,
+        holders: () => [first.pid, ...tmuxClientsHolding(env, first.sessionId)],
+        answers: async () => museSaid(env, first.sessionId, machineHome(env)).join('\n'),
+        reply: (line) => `echo: ${line}`,
+        asleep: () => tmuxTabGone(env, first.sessionId),
+        lastLaunchResumesIt: () =>
+          machineMuseCalls(env).at(-1)!.argv.slice(-2).join(' ') === `resume ${first.sessionId}`
+      }
+    }
+  },
+  {
+    agent: 'Antigravity',
+    remote: false,
+    install: (env) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    start: async (page, env) => {
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const [first] = agySessionCalls(env)
+      await runIn(page, centerTerm(page), 'first words')
+      const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
+      return {
+        tabId,
+        launches: () => agySessionCalls(env).length,
+        holders: () => [first.pid],
+        answers: async () => agyTranscriptOf(env, id),
+        reply: (line) => `Answer to: ${line}`,
+        asleep: () => !processAlive(first.pid),
+        lastLaunchResumesIt: () =>
+          agySessionCalls(env).at(-1)!.argv.includes(`--conversation=${id}`)
+      }
+    }
+  },
+  {
+    agent: 'Antigravity',
+    remote: true,
+    install: (env) => {
+      installAgy(env)
+      installRemoteAgy(env)
+    },
+    start: async (page, env) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      const { tabId, id } = await boundRemoteSession(page, 'agy')
+      await expect
+        .poll(() => machineAgyTranscriptOf(env, id), { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toContain('Answer to: first words')
+      const [first] = machineAgyCalls(env)
+      return {
+        tabId,
+        launches: () => machineAgyCalls(env).length,
+        holders: () => [first.pid, ...tmuxClientsHolding(env, id)],
+        answers: async () => machineAgyTranscriptOf(env, id),
+        reply: (line) => `Answer to: ${line}`,
+        asleep: () => tmuxTabGone(env, id),
+        lastLaunchResumesIt: () =>
+          machineAgyCalls(env).at(-1)!.argv.includes(`--conversation=${id}`)
+      }
+    }
+  }
+]
+
+const THE_MOMENT_IT_FALLS_ASLEEP_MS = 20
+
+const RELOAD_MOMENTS = [
+  { caseId: 'T-REL-08', when: 'once its old terminal has exited' },
+  { caseId: 'T-REL-09', when: 'the moment it falls asleep' }
+] as const
+
+const LISTED_TWICE_WHILE_FALLING_ASLEEP = ['remote Muse', 'remote Antigravity']
+const LISTED_TWICE_ISSUE =
+  'issue #1959: listed both live and asleep while its pty still runs, a reload keeps the live copy and a click no longer wakes it'
+
+async function launchFor(
+  kind: TabKind,
+  env: E2EEnv
+): Promise<{ app: ElectronApplication; page: Page; ws: string }> {
+  kind.install(env)
+  seedSettings(env, { hintsOff: true })
+  if (kind.remote) {
+    const { app, page } = await launchWithRemote(env)
+    await addRemoteWorkspace(page, env)
+    return { app, page, ws: REMOTE_WS_NAME }
+  }
+  const app = await launchApp(env)
+  const page = await app.firstWindow()
+  await page.waitForLoadState('domcontentloaded')
+  await waitBooted(page)
+  return { app, page, ws: 'ws-a' }
+}
+
+test.describe('every other kind of session tab is re-adopted by a reload just as a local Claude Code tab is', () => {
+  for (const kind of TAB_KINDS) {
+    test(`T-REL-07: a reload re-adopts a ${kindName(kind)} tab — same terminal, the same agent and terminal processes, nothing launched again, and typing reaches the agent`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const { app, page, ws } = await launchFor(kind, env)
+      try {
+        const tab = await kind.start(page, env)
+        const row = wsRows(page, ws).first()
+        const idsBefore = await termIds(page)
+        expect(idsBefore).toEqual([tab.tabId])
+        const launches = tab.launches()
+        const holders = tab.holders()
+        expect(holders.length).toBeGreaterThanOrEqual(kind.remote ? 2 : 1)
+        expect(holders.every(processAlive)).toBe(true)
+
+        await page.reload()
+        await waitBooted(page)
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).toEqual(idsBefore)
+        await expect(row).not.toHaveClass(/\bcold\b/)
+        await switchToRow(page, row)
+        await page.waitForTimeout(ROOM_FOR_A_WRONG_FORCE_CLOSE_MODAL_MS)
+        await expect(page.locator('.modal')).toHaveCount(0)
+
+        await runIn(page, centerTerm(page), 'after reload')
+        await expect
+          .poll(tab.answers, { timeout: ON_THE_MACHINE_WITHIN_MS })
+          .toContain(tab.reply('after reload'))
+        expect(tab.launches()).toBe(launches)
+        expect(tab.holders()).toEqual(holders)
+        expect(holders.every(processAlive)).toBe(true)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    for (const moment of RELOAD_MOMENTS) {
+      test(`${moment.caseId}: a reload ${moment.when} keeps a ${kindName(kind)} tab asleep — its row stays, nothing starts again, and clicking it wakes the same session`, async ({
+        env
+      }) => {
+        test.fixme(
+          moment.caseId === 'T-REL-09' &&
+            LISTED_TWICE_WHILE_FALLING_ASLEEP.includes(kindName(kind)),
+          LISTED_TWICE_ISSUE
+        )
+        test.setTimeout(300_000)
+        env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+        const { app, page, ws } = await launchFor(kind, env)
+        try {
+          const tab = await kind.start(page, env)
+          const row = wsRows(page, ws).first()
+          await switchToRow(page, row)
+          await runIn(page, centerTerm(page), 'before sleep')
+          await expect
+            .poll(tab.answers, { timeout: ON_THE_MACHINE_WITHIN_MS })
+            .toContain(tab.reply('before sleep'))
+          const awake = tab.holders()
+          await startSessionIn(page, 'ws-b', kind.agent === 'Claude' ? {} : { method: 'Claude' })
+          const parked = wsRows(page, 'ws-b').first()
+          await expect(parked).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+          await parked.click()
+          await expect
+            .poll(tab.asleep, {
+              timeout: ON_THE_MACHINE_WITHIN_MS,
+              intervals: [THE_MOMENT_IT_FALLS_ASLEEP_MS]
+            })
+            .toBe(true)
+          if (moment.caseId === 'T-REL-08')
+            await expect.poll(() => awake.some(processAlive), { timeout: 30_000 }).toBe(false)
+          const launches = tab.launches()
+
+          await page.reload()
+          await waitBooted(page)
+          await expect.poll(() => termIds(page), { timeout: 30_000 }).toContain(tab.tabId)
+          await expect(row).toHaveClass(/\bst-idle\b/, { timeout: 30_000 })
+          await expect(row).not.toHaveClass(/\bcold\b/)
+          await page.waitForTimeout(ROOM_FOR_A_WRONG_RESTART_MS)
+          expect(tab.launches()).toBe(launches)
+          expect(tab.asleep()).toBe(true)
+
+          await row.click()
+          await expect
+            .poll(tab.launches, { timeout: ON_THE_MACHINE_WITHIN_MS })
+            .toBeGreaterThan(launches)
+          await expect
+            .poll(tab.lastLaunchResumesIt, { timeout: ON_THE_MACHINE_WITHIN_MS })
+            .toBe(true)
+          await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+    }
+  }
 })
