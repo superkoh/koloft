@@ -9,7 +9,8 @@ const GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE = 3000
 process.env.KOLOFT_GIT_TIMEOUT_MS = String(GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE)
 const { gitDiff, gitFileDiff, gitNumstat, gitStatus } = await import('../../src/main/gitStatus')
 
-const KILL_SLACK_ON_A_BUSY_MACHINE_MS = 10_000
+const KILL_SLACK_ON_A_BUSY_MACHINE_MS = 2000
+const REAL_GIT_TRIES_ON_A_BUSY_MACHINE = 3
 const CASE_DEADLINE_MS = 30_000
 
 let tmp: string
@@ -35,11 +36,12 @@ function envRecordingGitOnPath(): void {
 }
 
 async function withRealGit<T>(call: () => Promise<T>): Promise<T> {
-  for (;;) {
+  for (let tries = 1; ; tries++) {
     try {
       return await call()
     } catch (e) {
-      if ((e as { killed?: boolean }).killed !== true) throw e
+      if ((e as { killed?: boolean }).killed !== true || tries === REAL_GIT_TRIES_ON_A_BUSY_MACHINE)
+        throw e
     }
   }
 }
@@ -86,7 +88,9 @@ describe('the git timeout', { timeout: CASE_DEADLINE_MS }, () => {
 
     const [pid, ...rest] = spawnedPids()
     expect(rest).toEqual([])
-    await vi.waitFor(() => expect(alive(pid)).toBe(false))
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), {
+      timeout: KILL_SLACK_ON_A_BUSY_MACHINE_MS
+    })
   })
 
   it('an aggregate diff cut off by the timeout is handed back labelled truncated', async () => {
