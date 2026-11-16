@@ -26,6 +26,11 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
     (backend) => pin(koloftPrompt(backend), `session/${backend}`)
   )
 
+  it.each(SESSION_BACKENDS.filter((backend) => backend !== 'claude'))(
+    "a %s session's prompt in a project with its own rules for picking a model",
+    (backend) => pin(koloftPrompt(backend, RULES), `session/${backend}-project-rules`)
+  )
+
   it('the prompt file a Claude session reads in a project with its own rules for picking a model', () =>
     pin(claudeProjectPrompt(RULES), 'session/claude-project-prompt-file'))
 
