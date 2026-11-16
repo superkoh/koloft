@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendId } from '@shared/types'
+import type { BackendId, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@shared/conductors'
@@ -40,7 +40,6 @@ import {
 import {
   answerKeysOf,
   CODEX_NEEDS_YES_OR_NO,
-  type SessionAskDeps,
   type SessionAsks
 } from '@plugins/sessions/main/sessionAsks'
 
@@ -88,16 +87,14 @@ export interface CaughtUpChannel {
   handsOverTo?: Destination
 }
 
-export interface RelayDeps extends Pick<
-  SessionAskDeps,
-  | 'backendOf'
-  | 'status'
-  | 'awaitsInput'
-  | 'turnOver'
-  | 'type'
-  | 'pendingApproval'
-  | 'pendingQuestion'
-> {
+export interface RelayDeps {
+  backendOf(tabId: string): BackendId | undefined
+  status(tabId: string): SessionStatus | undefined
+  awaitsInput(tabId: string): boolean
+  turnOver(tabId: string): boolean
+  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
+  pendingApproval(tabId: string): CodexApproval | undefined
+  pendingQuestion(tabId: string): CodexQuestion | undefined
   asks: Pick<
     SessionAsks,
     | 'listen'

@@ -4059,19 +4059,23 @@ app.whenReady().then(() => {
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
+  const tabState = {
+    backendOf: (tabId: string) => backendIdOf(ptyMgr.get(tabId)?.kind),
+    status: (tabId: string) => tracker.statusOf(tabId),
+    awaitsInput: (tabId: string) => tracker.awaitsInput(tabId),
+    turnOver: (tabId: string) => tracker.turnOver(tabId),
+    type: (tabId: string, keys: string[], stillWanted?: () => boolean) =>
+      ptyMgr.type(tabId, keys, stillWanted),
+    pendingApproval: (tabId: string) => storedOwnerOf(tabId)?.openApproval(tabId),
+    pendingQuestion: (tabId: string) => storedOwnerOf(tabId)?.openQuestion(tabId)
+  }
   const asks = new SessionAsks({
-    backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
-    status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    turnOver: (tabId) => tracker.turnOver(tabId),
-    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
+    ...tabState,
     touchedSinceAsked: (tabId) => {
       const asked = questionSeenAt(tabId)
       return asked !== undefined && ownerTouchedSince(tabId, asked)
     },
     ownerTouchedSince,
-    pendingApproval: (tabId) => storedOwnerOf(tabId)?.openApproval(tabId),
-    pendingQuestion: (tabId) => storedOwnerOf(tabId)?.openQuestion(tabId),
     answerable: async (tabId) => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
@@ -4155,7 +4159,7 @@ app.whenReady().then(() => {
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await pendingAskOf(tabId)
-    return ask ? codexDialog(ask) : sessionAsks?.dialog(tabId)
+    return ask ? codexDialog(ask) : asks.dialog(tabId)
   }
   const buttons = new AskButtons({
     owner: () => butlerNow.owner(),
@@ -4206,6 +4210,7 @@ app.whenReady().then(() => {
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
+    ...tabState,
     asks,
     link,
     download: async (url) => {
@@ -4264,21 +4269,14 @@ app.whenReady().then(() => {
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     askPlaced: (card, at) => buttons.placed(card, at),
-    backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     showsPromptBeforeBind,
-    status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    turnOver: (tabId) => tracker.turnOver(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-    pendingApproval: (tabId) => storedOwnerOf(tabId)?.openApproval(tabId),
-    pendingQuestion: (tabId) => storedOwnerOf(tabId)?.openQuestion(tabId),
     attachmentsDir
   })
   const relay = discordRelay

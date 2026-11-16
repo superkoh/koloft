@@ -100,16 +100,12 @@ export class SessionAsks {
     this.listeners.push(listener)
   }
 
-  private asksChanged(tab: string): void {
-    for (const l of this.listeners) l.asksChanged?.(tab)
-  }
-
-  private answered(tab: string, reply: string): void {
-    for (const l of this.listeners) l.answered?.(tab, reply)
-  }
-
-  private answerGoingIn(tab: string): void {
-    for (const l of this.listeners) l.answerGoingIn?.(tab)
+  private emit<K extends keyof AskListener>(
+    moment: K,
+    ...args: Parameters<NonNullable<AskListener[K]>>
+  ): void {
+    for (const l of this.listeners)
+      (l[moment] as ((...a: typeof args) => void) | undefined)?.(...args)
   }
 
   dialogOpen(tab: string): boolean {
@@ -142,7 +138,7 @@ export class SessionAsks {
       if (!hook) return null
       if (fs.existsSync(path.join(this.d.regDir, name)))
         return (obj): void => this.onAsk(tab, obj as AskPayload, hook)
-      if (this.askHooks.get(tab)?.delete(hook)) this.asksChanged(tab)
+      if (this.askHooks.get(tab)?.delete(hook)) this.emit('asksChanged', tab)
       return null
     })
   }
@@ -155,8 +151,8 @@ export class SessionAsks {
     if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
     this.asks.set(tab, { payload, hook, raw, at: Date.now() })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
-    this.asksChanged(tab)
-    for (const l of this.listeners) l.asked?.(tab, payload)
+    this.emit('asksChanged', tab)
+    this.emit('asked', tab, payload)
   }
 
   stillAsks(tab: string): () => boolean {
@@ -208,7 +204,7 @@ export class SessionAsks {
   }
 
   private async press(tab: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
-    this.answerGoingIn(tab)
+    this.emit('answerGoingIn', tab)
     await this.d.answerable(tab)
     return this.d.type(tab, keys, stillWanted)
   }
@@ -278,8 +274,8 @@ export class SessionAsks {
       if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
-        this.answerGoingIn(tab)
-        if (inPlace.error === undefined) this.answered(tab, reply)
+        this.emit('answerGoingIn', tab)
+        if (inPlace.error === undefined) this.emit('answered', tab, reply)
         return inPlace
       }
       const label = BACKEND_LABEL[backend]
@@ -288,7 +284,7 @@ export class SessionAsks {
         const key = codexKeyFor(reply)
         if (!key) return { error: toItsCard ? CODEX_NEEDS_YES_OR_NO : takesYesOrNo(label) }
         if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
-        this.answered(tab, reply)
+        this.emit('answered', tab, reply)
         await this.pressOnce(tab, () => this.press(tab, [key]))
         return { watch: true }
       }
@@ -311,10 +307,10 @@ export class SessionAsks {
       if (pressedBefore && !untick) return { error: PICKS_MAY_STILL_BE_TICKED }
       if (ticks !== undefined && (pressedBefore || answers.some((a) => 'picks' in a)))
         this.ticksPressed.set(tab, { ticks, untickedOnce: pressedBefore })
-      this.answered(tab, reply)
+      this.emit('answered', tab, reply)
       const keys = [...(untick ?? []), ...answerKeys(answerKeysFor, question, answers)]
       if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
-      this.answered(tab, NOT_ANSWERED_FROM_HERE)
+      this.emit('answered', tab, NOT_ANSWERED_FROM_HERE)
       return { error: STARTED_IN_THE_TERMINAL }
     }
     const ask = this.openAsk(tab)
@@ -328,7 +324,7 @@ export class SessionAsks {
     // CC§14
     if (ask.hook) {
       this.answer(tab, hookAnswer(ask.payload, reply))
-      this.answered(tab, reply)
+      this.emit('answered', tab, reply)
       return {}
     }
     // CC§12
@@ -345,7 +341,7 @@ export class SessionAsks {
     ask.keysSent = true
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
-    this.answered(tab, reply)
+    this.emit('answered', tab, reply)
     const startedAt = Date.now()
     // CC§14
     const stillWanted = watch
@@ -356,7 +352,7 @@ export class SessionAsks {
       if (!(await this.d.type(tab, keys.value, stillWanted))) {
         const open = this.asks.get(tab) === ask
         ask.typedAt = undefined
-        this.answered(tab, NOT_ANSWERED_FROM_HERE)
+        this.emit('answered', tab, NOT_ANSWERED_FROM_HERE)
         return { error: open ? STARTED_IN_THE_TERMINAL : SHOWS_NO_DIALOG }
       }
     } catch (error) {
