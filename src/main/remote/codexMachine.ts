@@ -30,9 +30,9 @@ import {
   handedOverOwnerWordsFiles,
   NOTICE_ENV,
   remoteNoticeFile,
-  SHELL_WROTE_SUFFIX,
-  TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV
+  SHELL_WROTE_SUFFIX
 } from '../hooks'
+import { OWNING_TAB_ENV } from '../owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
@@ -144,7 +144,7 @@ ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"
   ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
   export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV} ${CODEX_SHELL_WROTE_ENV}
-  ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}=${s.tabId}; export ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}
+  ${OWNING_TAB_ENV}=${s.tabId}; export ${OWNING_TAB_ENV}
   command -v setsid >/dev/null 2>&1 && exec setsid nohup ${serve}
   exec nohup ${serve}
 ) </dev/null >"$S.log" 2>&1 &
