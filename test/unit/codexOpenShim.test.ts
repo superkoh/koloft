@@ -4,7 +4,13 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
-import { removeOpenShim, writeOpenShim, type OpenShim } from '../../src/main/openShimScript'
+import {
+  removeOpenShim,
+  userZdotdirOf,
+  writeOpenShim,
+  zshWrapperEnv,
+  type OpenShim
+} from '../../src/main/openShimScript'
 
 let base: string
 let cwd: string
@@ -154,13 +160,23 @@ describe('Codex open shim dotfile folder', () => {
     }
   })
 
-  it("runs the user's own files once, quietly, when Koloft itself was started from another Koloft's Codex tab and inherited that tab's ZDOTDIR", () => {
+  it("runs the user's own files once, quietly, in a Koloft started from another Koloft's Codex tab, even after that tab has closed", () => {
     const cases = [
-      { zshenv: '', dir: '', outerStartedIn: '' },
-      { zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"', dir: '.config/zsh', outerStartedIn: '' },
-      { zshenv: '', dir: 'own-zdotdir', outerStartedIn: 'own-zdotdir' }
+      { label: 'no ZDOTDIR', zshenv: '', dir: '', outerStartedIn: '' },
+      {
+        label: 'ZDOTDIR set in ~/.zshenv',
+        zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"',
+        dir: '.config/zsh',
+        outerStartedIn: ''
+      },
+      {
+        label: 'outer Koloft started with its own ZDOTDIR',
+        zshenv: '',
+        dir: 'own-zdotdir',
+        outerStartedIn: 'own-zdotdir'
+      }
     ]
-    for (const [i, { zshenv, dir, outerStartedIn }] of cases.entries()) {
+    for (const [i, { label, zshenv, dir, outerStartedIn }] of cases.entries()) {
       const home = path.join(base, `home-nested-${i}`)
       const ran = path.join(home, 'ran.txt')
       fs.mkdirSync(path.join(home, dir), { recursive: true })
@@ -170,27 +186,36 @@ describe('Codex open shim dotfile folder', () => {
       )
       for (const name of ['.zprofile', '.zlogin'])
         fs.writeFileSync(path.join(home, dir, name), `echo ${name} >> ${ran}\n`)
-      const outer = writeOpenShim(
-        path.join(base, `outer-${i}`),
-        randomUUID(),
-        outerStartedIn ? path.join(home, outerStartedIn) : undefined
-      )
-      const inner = writeOpenShim(path.join(base, `inner-${i}`), randomUUID(), outer.zdotDir)
-      try {
-        const res = spawnSync('/bin/zsh', ['-lc', 'command -v open'], {
-          env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: inner.zdotDir },
+      const loginShell = (env: Record<string, string | undefined>, cmd: string) =>
+        spawnSync('/bin/zsh', ['-lc', cmd], {
+          env: { HOME: home, PATH: '/usr/bin:/bin', ...env },
           encoding: 'utf8'
         })
-        expect(res.stderr, zshenv).toBe('')
-        expect(res.stdout.trim(), zshenv).toBe(path.join(inner.shimDir, 'open'))
-        expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean), zshenv).toEqual([
+      const outerUser = userZdotdirOf(
+        outerStartedIn ? { ZDOTDIR: path.join(home, outerStartedIn) } : {}
+      )
+      const outer = writeOpenShim(path.join(base, `outer-${i}`), randomUUID(), outerUser)
+      const innerKoloftEnv = Object.fromEntries(
+        loginShell(zshWrapperEnv(outer.zdotDir, outerUser), '/usr/bin/env')
+          .stdout.split('\n')
+          .filter((line) => line.includes('='))
+          .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])
+      )
+      removeOpenShim(outer)
+      fs.rmSync(ran)
+      const innerUser = userZdotdirOf(innerKoloftEnv)
+      const inner = writeOpenShim(path.join(base, `inner-${i}`), randomUUID(), innerUser)
+      try {
+        const res = loginShell(zshWrapperEnv(inner.zdotDir, innerUser), 'command -v open')
+        expect(res.stderr, label).toBe('')
+        expect(res.stdout.trim(), label).toBe(path.join(inner.shimDir, 'open'))
+        expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean), label).toEqual([
           '.zshenv',
           '.zprofile',
           '.zlogin'
         ])
       } finally {
         removeOpenShim(inner)
-        removeOpenShim(outer)
       }
     }
   })

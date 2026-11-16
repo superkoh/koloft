@@ -97,23 +97,33 @@ exit 0
 
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin', '.zlogout']
 const ZSH_FILES_AFTER_PATH_HELPER = ['.zprofile', '.zshrc', '.zlogin']
-const userZdotdirVarOfOneWrapper = (token: string): string =>
-  `koloft_user_zdotdir_${token.replace(/\W/g, '_')}`
+const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
+const USER_ZDOTDIR_ENV = 'KOLOFT_USER_ZDOTDIR'
+
+export function userZdotdirOf(env: NodeJS.ProcessEnv): string | undefined {
+  return (USER_ZDOTDIR_ENV in env ? env[USER_ZDOTDIR_ENV] : env.ZDOTDIR) || undefined
+}
+
+export function zshWrapperEnv(
+  zdotDir: string,
+  userZdotdir: string | undefined
+): Record<string, string> {
+  return { ZDOTDIR: zdotDir, [USER_ZDOTDIR_ENV]: userZdotdir ?? '' }
+}
 
 // PLATFORM§2 CODEX§12
 function zdotFile(
   name: string,
   userZdotdir: string | undefined,
   zdotDir: string,
-  shimDir: string,
-  userVar: string
+  shimDir: string
 ): string {
   const own = `"\${ZDOTDIR:-$HOME}/${name}"`
   return [
-    ...(name === '.zshenv' ? [`${userVar}=${userZdotdir ? shq(userZdotdir) : "''"}`] : []),
-    `if [ -n "$${userVar}" ]; then ZDOTDIR="$${userVar}"; else unset ZDOTDIR; fi`,
+    ...(name === '.zshenv' ? [`${USER_ZDOTDIR_VAR}=${userZdotdir ? shq(userZdotdir) : "''"}`] : []),
+    `if [ -n "$${USER_ZDOTDIR_VAR}" ]; then ZDOTDIR="$${USER_ZDOTDIR_VAR}"; else unset ZDOTDIR; fi`,
     `[ -f ${own} ] && . ${own}`,
-    `${userVar}="\${ZDOTDIR-}"`,
+    `${USER_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
     `export ZDOTDIR=${shq(zdotDir)}`,
     ...(ZSH_FILES_AFTER_PATH_HELPER.includes(name)
       ? [`path=(${shq(shimDir)} \${path:#${shq(shimDir)}})`]
@@ -161,12 +171,8 @@ export function writeOpenShim(
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {
       mode: 0o755
     })
-    const userVar = userZdotdirVarOfOneWrapper(token)
     for (const name of ZSH_DOTFILES)
-      fs.writeFileSync(
-        path.join(zdotDir, name),
-        zdotFile(name, userZdotdir, zdotDir, shimDir, userVar)
-      )
+      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userZdotdir, zdotDir, shimDir))
     fs.writeFileSync(shim.bashEnv, bashEnvScript(shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {

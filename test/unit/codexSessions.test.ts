@@ -1197,6 +1197,20 @@ describe('CodexSessions', () => {
     expect(script).not.toContain('KOLOFT_')
   })
 
+  it("a Koloft started inside one of its Codex tabs never takes that tab's dotfile folder for the user's own ZDOTDIR", async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const outer = transports[0].options.env!
+    try {
+      for (const [key, value] of Object.entries(outer)) vi.stubEnv(key, value)
+      await sessions.launch({ kind: 'codex', cwd: repo })
+      const innerZdot = transports[1].options.env!.ZDOTDIR!
+      expect(innerZdot).not.toBe(outer.ZDOTDIR)
+      expect(fs.readFileSync(path.join(innerZdot, '.zshenv'), 'utf8')).not.toContain(outer.ZDOTDIR)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("an open the shim drops in the run's request folder reaches that tab's Workbench, and stopping the run removes the shim and the folder", async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
