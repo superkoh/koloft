@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react'
 
 const alias = {
   '@shared': resolve(__dirname, 'src/shared'),
+  '@core': resolve(__dirname, 'src/core'),
+  '@plugins': resolve(__dirname, 'src/plugins'),
   '@renderer': resolve(__dirname, 'src/renderer/src')
 }
 
