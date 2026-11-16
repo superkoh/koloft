@@ -2118,24 +2118,25 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   OpenSSH_10.3p1 to rsync 3.2.7 in the e2e sshd image, reached directly on a published
   port with Koloft's own ssh options, delay added with `tc netem` in the container; a
   scratch node script.)
-- **On a password login, pulls run at once can fill the master and take the whole
-  machine offline.** A built Koloft on a password machine with the default
-  `MaxSessions` 10: one Codex tab, then Claude Code tabs added one by one, the
-  transcripts and both Codex rollout folders kept due by a loop appending to them,
-  every `BatchMode` ssh logged by a stand-in `ssh`. Each tab held one session and the
-  hook bell one more. With the transcripts and the extras two at a time beside them
-  (three pulls at once), six tabs ran clean; with seven, 19 of 54 background commands
-  in 20 s failed — 11 refused by the full master, then `Permission denied (password)`
-  on every command sent to the `%C-spill` master — and the machine's dot read "not
-  connected … Permission denied … sign in there". With one pull at a time, seven tabs
-  stayed connected; with three at once until the first refused pull and one at a time
-  after it, the first refusal came while the sixth tab opened (one pull and one
-  command failed) and seven tabs then stayed connected, 35 pulls one at a time with
-  none failed. In every build an eighth tab did not open, and with one pull at a
-  time a few background commands were still refused while the seventh and eighth
-  tabs opened.
+- **A password machine with the default `MaxSessions` 10 reaches its limit at six to
+  seven tabs, and three pulls at once reach it sooner.** A built Koloft: one Codex
+  tab, then Claude Code tabs added one by one, the transcripts and both Codex rollout
+  folders kept due by a loop appending to them, every `BatchMode` ssh logged by a
+  stand-in `ssh`, the machine's dot read every 250 ms in the second run of each. The
+  machine held one session per tab and one for the hook bell (one more at times with
+  one pull at a time, not explained). Each refusal moved the background commands to
+  the `%C-spill` master, where every one failed with `Permission denied (password)`
+  until a failure cleared the move, so the dot read "not connected … sign in there"
+  in between.
+
+  | Pulls | Tabs that ran clean | Sixth tab | Seventh tab | Eighth tab |
+  |---|---|---|---|---|
+  | one at a time (`main`), 2 runs | 1–5 | run 2: dot "not connected" for 2.5 s while it opened, then clean | run 1: a few refusals while it opened, then connected; run 2: 12 of 20 commands failed in 20 s, dot "not connected" at the end | did not open |
+  | three at once (no fallback), 1 run | 1–6 | clean | 19 of 54 commands failed in 20 s, dot "not connected" | did not open |
+  | three at once until a pull is refused, then one at a time, 2 runs | 1–5 | run 1: one pull and one command failed; run 2: dot "not connected" twice in 7.5 s; then one at a time | run 1: connected, 35 pulls with none failed; run 2: did not open | did not open (run 1) |
+
   (2026-11-15: this Mac's openrsync and OpenSSH_10.3p1 to the e2e sshd image through
-  its jump host, Koloft built from this branch and with `main`'s `sync.ts`; a scratch
+  its jump host, Koloft built from #1868 and with `main`'s `sync.ts`; a scratch
   Playwright spec.)
 
 ## §35 tmux
