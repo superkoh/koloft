@@ -192,6 +192,8 @@ async function screenPointOf(
       for (let i = buf.length - 1; i >= 0; i--) {
         const col = (buf.getLine(i)?.translateToString(true) ?? '').indexOf(text)
         if (col < 0) continue
+        if (i < buf.viewportY || i >= buf.viewportY + term.rows)
+          throw new Error(`the row showing ${text} is scrolled out of view`)
         const screen = term.element.querySelector('.xterm-screen')!.getBoundingClientRect()
         const cellW = screen.width / term.cols
         const cellH = screen.height / term.rows
@@ -438,6 +440,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
   }) => {
     test.setTimeout(300_000)
     const { app, page } = await launchWithRemote(env)
+    const held = path.join(stateDir(env), 'file-lookups-held')
     try {
       const files = Array.from(
         { length: ROWS_SWEPT },
@@ -452,8 +455,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       const points: { x: number; y: number }[] = []
       for (const file of files) points.push(await screenPointOf(page, tabId, `${file}:1`))
 
-      const held = path.join(stateDir(env), 'file-lookups-held')
-      fs.writeFileSync(held, '')
+      fs.writeFileSync(held, '/src/v')
       for (const at of points) {
         await page.mouse.move(at.x, at.y)
         await page.waitForTimeout(MOUSE_PASSING_OVER_A_ROW_MS)
@@ -475,6 +477,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       expect(asked.at(-1)).toBe(restedOn)
       expect(asked.length).toBeLessThanOrEqual(2)
     } finally {
+      fs.rmSync(held, { force: true })
       await quitAndClose(app)
     }
   })

@@ -20,7 +20,6 @@ const FILE_LOOKUP_FRESH_MS = 5000
 const LOOKUPS_KEPT_AT_MOST = 500
 const REST_ON_A_ROW_BEFORE_LOOKING_UP_MS = 100
 const lookups = new Map<string, { at: number; found: Promise<boolean> }>()
-let lookupOnItsWay: Promise<unknown> = Promise.resolve()
 
 function fileThere(src: string): Promise<boolean> {
   const now = Date.now()
@@ -85,6 +84,7 @@ export function fileLinkProvider(
   owner: () => FileLinkOwner | undefined
 ): ILinkProvider {
   let asked = 0
+  let lookupOnItsWay: Promise<unknown> = Promise.resolve()
   return {
     provideLinks(y, callback) {
       const ask = ++asked

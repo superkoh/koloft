@@ -106,7 +106,15 @@ function scriptSentAsBase64() {
 }
 
 const fileLookupsHeld = path.join(STATE, 'file-lookups-held')
-if (fs.existsSync(fileLookupsHeld) && scriptSentAsBase64().includes('test -f "$1"')) {
+function heldLookup() {
+  if (!fs.existsSync(fileLookupsHeld)) return false
+  const script = scriptSentAsBase64()
+  return (
+    script.includes('test -f "$1"') && script.includes(fs.readFileSync(fileLookupsHeld, 'utf8'))
+  )
+}
+
+if (heldLookup()) {
   const nap = new Int32Array(new SharedArrayBuffer(4))
   while (fs.existsSync(fileLookupsHeld)) Atomics.wait(nap, 0, 0, 50)
 }
