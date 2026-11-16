@@ -287,6 +287,7 @@ appendJsonl(sentinel('fake-agy-calls.jsonl'), {
   pid: process.pid,
   argv,
   cwd: process.cwd(),
+  cols: process.stdout.columns ?? null,
   env: {
     ...Object.fromEntries(
       Object.entries(process.env).filter(

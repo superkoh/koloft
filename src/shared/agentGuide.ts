@@ -1,14 +1,14 @@
 import type { BackendId } from './types'
-import { BACKEND_LABEL, SESSION_BACKENDS, messagingOf, namedAtLaunch } from './sessionBackend'
+import {
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  kindsOf,
+  messagingOf,
+  namedAtLaunch
+} from './sessionBackend'
 import { needsModel } from './cronModels'
-import { tierPicksOf } from './sessionPicks'
+import { tiersOf } from './sessionPicks'
 
-const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
-  const labels = backends.map((b) => BACKEND_LABEL[b])
-  return labels.length < 2
-    ? labels.join('')
-    : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
-}
 const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
 const KINDS_BUT_CLAUDE = kindsOf(
@@ -56,10 +56,20 @@ const watchedSessionRule = (backend: BackendId): string =>
 export const PICK_FOR_THE_TASK =
   "Sort the task first. Very simple: do as told, with nothing to decide (fix a typo, change a line of copy, rename something, run a command and report, read a few files and answer). Normal: ordinary work with a clear goal (a small feature, a bug that can be reproduced, tests, a few files). Very hard: work that needs judgment or has no clear shape (a plan or a design, a review, a bug with no known cause, a change that reaches many places, anything the owner will decide on). When unsure, take the harder one. Then use that kind's model and effort; pick another only when the owner or the project's instructions name one."
 
-const tiersOf = (backend: BackendId): string => `${BACKEND_LABEL[backend]}: ${tierPicksOf(backend)}`
+const PROJECT_RULES_LEAD =
+  "The owner wrote this project's own rules for the model and effort of a session started in it. They come first; Koloft's own way, after them, covers only what they leave out."
 
-const pickModelAndEffort = (backend: BackendId): string =>
-  `Every Koloft session you start gets the model and effort that fit its task. ${PICK_FOR_THE_TASK} ${tiersOf(backend)}. koloft help lists the other agents'.`
+export function withProjectRules(rules: string | undefined, ownWay: string, indent = ''): string {
+  if (!rules) return ownWay
+  const lines = rules.split('\n').map((line) => `${indent}    ${line}`)
+  return `${PROJECT_RULES_LEAD}\n${lines.join('\n')}\n${indent}Koloft's own way: ${ownWay}`
+}
+
+const pickModelAndEffort = (backend: BackendId, rules: string | undefined): string =>
+  `Every Koloft session you start gets the model and effort that fit its task. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)} koloft help lists the other agents'.`
+
+export const projectRulesForTheButler = (workspace: string, rules: string): string =>
+  ` (The owner wrote rules for the model and effort of a session started in the workspace ${workspace}. They come first there; Koloft's own way covers only what they leave out: ${rules})`
 
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
@@ -125,7 +135,7 @@ const QUESTION_RULE: Record<BackendId, string> = {
   agy: questionRule(WAITING_QUESTION_TOOL.agy)
 }
 
-export function koloftPrompt(backend: BackendId): string {
+export function koloftPrompt(backend: BackendId, rules?: string): string {
   return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command.
 
 HELPERS
@@ -134,7 +144,7 @@ When you hand work to a helper, take the first rule that fits:
 
 ${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
 
-${pickModelAndEffort(backend)}
+${pickModelAndEffort(backend, rules)}
 
 ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${QUESTION_RULE[backend]}
 
@@ -156,7 +166,9 @@ function fromThePhone(backend: BackendId): string {
 }
 
 // CC§3 CODEX§12 MUSE§8 AGY§25
-export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
+export const agentGuide = (
+  rules?: string
+): string => `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
 
@@ -253,7 +265,7 @@ koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
-    Pick the model and effort that fit the task, every time. ${PICK_FOR_THE_TASK} ${SESSION_BACKENDS.map(tiersOf).join('. ')}. A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, Koloft starts the next best one and says so.
+    Pick the model and effort that fit the task, every time. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${SESSION_BACKENDS.map(tiersOf).join('. ')}.`, '    ')} A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, Koloft starts the next best one and says so.
     Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" --backend claude --model sonnet --effort low -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft --backend codex --model astra --effort high -- "Find why the latest release is missing files."
@@ -391,6 +403,8 @@ To use the web pages in this session's Workbench, drive them with the playwright
     Example: playwright-cli snapshot
 When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A Claude Code session on another machine (over SSH) reaches the Workbench browser too, through Koloft's ssh connection: there playwright-cli reads the address each time it runs, so $KOLOFT_BROWSER_CDP is not set there and Playwright MCP tools cannot use the Workbench browser, and after Koloft restarts or the connection comes back, run "playwright-cli close" and open the page again. From there it cannot open file:// pages, upload files, or open a server of the owner's Mac (the Mac's own network addresses, its other 127.x addresses, names ending in .localhost, or a name that points at the Mac). Other sessions on another machine cannot reach the Workbench browser.
 In a web tab of a session on another machine, only localhost, 127.0.0.1 and [::1] mean the machine, not the owner's Mac (0.0.0.0 does not, nor a name set in the machine's own hosts file): a web server you start there opens at that address, and Koloft brings its port over the ssh connection. If nothing answers on that port, or the machine's ssh server does not allow port forwarding, the page does not open and the owner sees why. If the owner's Mac already uses that port, the page opens on another port number, and what the page still sends to the old port, its websocket too, fails: then start the server on a port the Mac does not use.`
+
+export const AGENT_GUIDE = agentGuide()
 
 export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'

@@ -53,6 +53,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
   mirrorProjectsRoot,
@@ -149,7 +150,11 @@ export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
-  watch(path: string, onChange: (stamp: string) => void): void
+  watch(
+    path: string,
+    onChange: (stamp: string) => void,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): void
   unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
@@ -919,8 +924,16 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  async watchDir(dir: string, onChange: DirChangeListener): Promise<boolean> {
-    this.deps.watch(this.bare(dir), () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }))
+  async watchDir(
+    dir: string,
+    onChange: DirChangeListener,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): Promise<boolean> {
+    this.deps.watch(
+      this.bare(dir),
+      () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }),
+      reportsWhatChangedWhileUnwatched
+    )
     return false
   }
 
@@ -1253,6 +1266,7 @@ export class SshHost implements Host {
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
+    const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -1279,6 +1293,7 @@ export class SshHost implements Host {
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              projectPrompt,
               claudeArgs,
               trustFolder: spec.trustFolder
             }
