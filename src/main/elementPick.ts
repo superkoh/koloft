@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { PICTURE_LINE } from '@shared/pastedPictures'
 import { closeOwnSession, forgetOwnSession, holdDebugger, openOwnSession } from './guestDebugger'
 import { within } from './within'
 
@@ -114,7 +115,7 @@ export function pickText(
     `Page: ${p.url}${p.title ? ` ("${p.title}")` : ''}`,
     ...(p.frame ? [`Inside the frame: ${p.frame}`] : []),
     `Element: ${p.label}, ${Math.round(width)} × ${Math.round(height)} px at (${Math.round(x)}, ${Math.round(y)})`,
-    ...(picture ? [`Picture: ${picture}`] : []),
+    ...(picture ? [PICTURE_LINE + picture] : []),
     'HTML:',
     html,
     'CSS (computed):',

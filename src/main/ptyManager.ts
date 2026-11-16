@@ -60,6 +60,7 @@ interface CreateArgs {
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
+    KOLOFT_PICTURE_FOLDER?: string
     KOLOFT_AGENT_PLUGIN?: string
     KOLOFT_AGENT_PROMPT?: string
     KOLOFT_DOCS_PLUGIN?: string
@@ -240,6 +241,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_HOOK_SETTINGS' ||
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
+        key === 'KOLOFT_PICTURE_FOLDER' ||
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
@@ -269,6 +271,7 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
+        'KOLOFT_PICTURE_FOLDER',
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
         'KOLOFT_DOCS_PLUGIN',

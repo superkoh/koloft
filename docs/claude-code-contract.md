@@ -3814,6 +3814,29 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   element? Answer with the word only." typed after it and a CR: claude ran `Read` on the
   PNG and answered `ZEBRA`. The run was in bypass-permissions mode, so whether default
   mode asks before reading a picture outside the session's folder was not measured.
+- **The same holds for a picture path at the end of the first prompt given as an
+  argument.** Measured 2026-11-14, CC 2.1.325 (Sonnet 5.5) in Koloft's hand-test
+  sandbox, 1 run: ⌘P with the words "What word is in this picture? Answer with the
+  word only." and a pasted PNG of the word ZEBRA, so claude started with `-- "<words>\n\n
+  Picture: <userData>/palette-pictures/<uuid>.png"` in a fresh worktree. The input box
+  showed the path as typed (no `[Image #1]`), claude ran `Read` on the PNG and answered
+  `ZEBRA`; the row's title was the one claude made ("Word identification from picture"),
+  not the path. Bypass-permissions mode.
+- **Without bypass, reading that picture asks first, and `--add-dir <its folder>` takes
+  the ask away.** Measured 2026-11-15, CC 2.1.325, the same sandbox with Skip permission
+  prompts off (the status line read "auto mode on"), the same prompt:
+  - As above, no `--add-dir`: the turn stopped on "Read outside the working directories
+    … Allow this read outside the working directories? 1. Yes, and keep allowing any
+    reads outside the working directories / 2. No, and block reads outside the working
+    directories from now on / 3. No, and ask again next time / 4. Yes, but ask again next
+    time"; Koloft's row read `approval`, "Wants to read: <file>". Key `4`: it read the
+    PNG and answered `ZEBRA`. 1 run.
+  - `claude -p '<the prompt>'` in that worktree: "permission to access the file was
+    denied". `claude -p --add-dir <userData>/palette-pictures -- '<the prompt>'`:
+    `ZEBRA`. 1 run each.
+  - Started by Koloft with `--add-dir <userData>/palette-pictures -- "<prompt>"`: no ask,
+    `Read`, `ZEBRA`. 1 run. `--add-dir` is variadic (§9's flag list), so it sits right
+    before the `--`.
 
 ## §19 The PostToolUse hook adds text after every tool result
 

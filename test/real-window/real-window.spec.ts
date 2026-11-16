@@ -1,4 +1,6 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test as e2eTest, expect, launchApp, quitAndClose } from '../e2e/helpers/app'
 import { seedSettings, type E2EEnv } from '../e2e/helpers/env'
@@ -32,6 +34,7 @@ import {
   KEY_P,
   KEY_RETURN,
   KEY_SPACE,
+  KEY_V,
   PINYIN_SIMPLIFIED,
   accessibilityTrusted,
   bannerShowing,
@@ -213,6 +216,41 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       )
     await page.waitForTimeout(TIME_FOR_A_MENU_KEY_TO_LAND_MS)
     expect(await terminalShown()).toBe(true)
+  })
+
+  test('⌘V in ⌘P with a screenshot on the clipboard, then with a picture file copied as Finder copies one, shows a picture each time and types nothing into the words', async ({
+    shown: { app, page },
+    env
+  }, testInfo) => {
+    await sessionIn(page, 'ws-a')
+    await clickIntoTerminal(app, page)
+    realKey(KEY_P, COMMAND_FLAG)
+    const field = palette(page).getByRole('textbox', { name: 'Ask or jump' })
+    await expect(field).toBeFocused()
+    const pictures = palette(page)
+      .getByRole('list', { name: 'Pasted pictures' })
+      .getByRole('listitem')
+
+    const png = await app.evaluate(({ clipboard, nativeImage }) => {
+      const side = 16
+      const white = nativeImage.createFromBitmap(Buffer.alloc(side * side * 4, 255), {
+        width: side,
+        height: side
+      })
+      clipboard.writeImage(white)
+      return clipboard.readImage().isEmpty() ? '' : white.toPNG().toString('base64')
+    })
+    expect(png).not.toBe('')
+    realKey(KEY_V, COMMAND_FLAG)
+    await expect(pictures).toHaveCount(1)
+
+    const file = path.join(env.home, 'copied in Finder.png')
+    fs.writeFileSync(file, Buffer.from(png, 'base64'))
+    execFileSync('osascript', ['-e', `set the clipboard to (POSIX file "${file}")`])
+    realKey(KEY_V, COMMAND_FLAG)
+    await expect(pictures).toHaveCount(2)
+    await expect(field).toHaveValue('')
+    screenshot(testInfo.outputPath('pasted-pictures.png'))
   })
 
   test('dragging the title bar with the mouse moves the window along with it', async ({

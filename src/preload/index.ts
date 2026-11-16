@@ -213,6 +213,9 @@ const api: KoloftApi = {
     startFresh: () => ipcRenderer.invoke(CH.conductors.startFresh),
     fromPalette: (request) => ipcRenderer.invoke(CH.conductors.fromPalette, request)
   },
+  palette: {
+    savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
+  },
   discord: {
     status: () => ipcRenderer.invoke(CH.discord.status),
     onStatus: (cb) => {

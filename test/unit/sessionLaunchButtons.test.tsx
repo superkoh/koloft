@@ -204,7 +204,7 @@ describe('New Project after a start fails', () => {
     creates = 0
     render(
       <NewProjectDialog
-        seed={{ prompt: '', title: '', machine: 'local', folder: 'demo', why: '' }}
+        seed={{ prompt: '', pictures: [], title: '', machine: 'local', folder: 'demo', why: '' }}
         launchLock={{ current: false }}
         onClose={() => {}}
         onStart={async () => {}}

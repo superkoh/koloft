@@ -28,6 +28,7 @@ import {
 } from '../claudeTrust'
 import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
+import { pictureFolderIn } from '@shared/pastedPictures'
 import { listSkills, type SkillFs } from '../skillList'
 import { AGENT_PROMPT_FILE } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
@@ -135,7 +136,11 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
     extraEnv: {
       // CC§9
       ...(spec.firstPrompt !== undefined || spec.name
-        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
+        ? {
+            KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '',
+            KOLOFT_SESSION_NAME: spec.name ?? '',
+            KOLOFT_PICTURE_FOLDER: pictureFolderIn(spec.firstPrompt ?? '')
+          }
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
       KOLOFT_DOCS_PLUGIN: d.docsPlugin(),

@@ -725,6 +725,21 @@ describe('what a remote launch hands claude', () => {
     })
   })
 
+  it('a first prompt that names a pasted picture also hands claude the picture’s folder on the machine with --add-dir, just before the prompt', () => {
+    const firstPrompt = 'fix it\n\nPicture: /home/me/.koloft/element-picks/a.png'
+    expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
+      ok: true,
+      args: [
+        '--session-id',
+        'sid1',
+        '--add-dir',
+        '/home/me/.koloft/element-picks',
+        '--',
+        firstPrompt
+      ]
+    })
+  })
+
   it('asks as a session you start does when the job keeps the usual permission, and a resume carries no name or prompt', () => {
     expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', true)).toEqual({
       ok: true,
