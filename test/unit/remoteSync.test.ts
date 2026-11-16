@@ -577,6 +577,66 @@ it('copies the extra folders two at a time beside the transcripts, the hooks onl
   expect(started.slice(before)).toEqual(['.muse/sessions'])
 })
 
+it('once a copy is refused by a full ssh master, that machine copies one folder at a time from the next round on: the transcripts, then the hooks, then each extra folder', async () => {
+  sync.stop()
+  const started: string[] = []
+  let inFlight = 0
+  let mostAtOnce = 0
+  let round = 0
+  let refused = false
+  sync = new RemoteSync({
+    run: () => {
+      round++
+      return Promise.resolve(
+        ok(
+          `transcripts ${round} 10\nhooks ${round} 70\nextra ${round} 50\nextra ${round} 60\nk-aaa\n`
+        )
+      )
+    },
+    rsync: (_host, remoteDir) => {
+      started.push(remoteDir)
+      mostAtOnce = Math.max(mostAtOnce, ++inFlight)
+      const answer: RunResult = refused
+        ? ok('')
+        : {
+            code: 255,
+            stdout: '',
+            stderr:
+              'mux_client_request_session: session request failed: Session open refused by peer\npuser@devbox: Permission denied (password).\n'
+          }
+      refused = true
+      return new Promise((done) =>
+        setTimeout(() => {
+          inFlight--
+          done(answer)
+        }, 50)
+      )
+    },
+    listen: () => () => {},
+    targets: () => [target],
+    onChange: () => {}
+  })
+  target.extraPulls = [
+    { from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] },
+    { from: '.muse/sessions', to: '/ud/remote/devbox/muse', flags: [] }
+  ]
+  sync.start()
+  await tick(500)
+  expect(mostAtOnce).toBe(3)
+
+  started.length = 0
+  mostAtOnce = 0
+  await tick(2500)
+  expect(started).toEqual([
+    '.claude/projects',
+    '.koloft/hook-sessions',
+    '.gemini/brain',
+    '.muse/sessions'
+  ])
+  await tick(5000)
+  expect(mostAtOnce).toBe(1)
+})
+
 it('pulls the transcripts again when the pinned path resolves to another folder, even if the stamp matches', async () => {
   let real = '/home/koh/api'
   answerWhenQueueEmpty = () =>

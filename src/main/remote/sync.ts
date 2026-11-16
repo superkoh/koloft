@@ -1,6 +1,6 @@
 import { encodeCwd } from '@shared/cwdKey'
 import { mapAtMost } from '../mapAtMost'
-import { problemOf, type RunResult } from './ssh'
+import { problemOf, refusedByAFullMaster, type RunResult } from './ssh'
 import {
   heartbeatCmd,
   hookBellCmd,
@@ -94,6 +94,7 @@ interface HostState {
   dueAt: number
   fastUntil: number
   pulled: Record<string, string | undefined>
+  pullsOneAtATime: boolean
   running: boolean
   again: boolean
   waitingForNextPull: (() => void)[]
@@ -320,6 +321,7 @@ export class RemoteSync {
           dueAt: 0,
           fastUntil: 0,
           pulled: {},
+          pullsOneAtATime: false,
           running: false,
           again: false,
           waitingForNextPull: [],
@@ -434,11 +436,8 @@ export class RemoteSync {
           target.mirrorProjectsRoot,
           projectFlags(slugs)
         )
-        // PLATFORM§33 PLATFORM§34
-        const extrasPulled = mapAtMost(
-          [...extras.keys()],
-          EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS,
-          (i) =>
+        const pullExtras = (atOnce: number): Promise<(RunResult | undefined)[]> =>
+          mapAtMost([...extras.keys()], atOnce, (i) =>
             pull(
               `extra ${extras[i].from}`,
               mirrors.extras[i],
@@ -446,7 +445,11 @@ export class RemoteSync {
               extras[i].to,
               extras[i].flags
             )
-        )
+          )
+        // PLATFORM§33 PLATFORM§34
+        const extrasPulled = st.pullsOneAtATime
+          ? undefined
+          : pullExtras(EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS)
         const transcripts = await transcriptsPulled
         const hooks = await pull(
           'hooks',
@@ -455,7 +458,9 @@ export class RemoteSync {
           target.mirrorHookDir,
           HOOK_FLAGS
         )
-        const extraResults = await extrasPulled
+        const extraResults = await (extrasPulled ?? pullExtras(1))
+        if ([transcripts, hooks, ...extraResults].some((r) => r && refusedByAFullMaster(r)))
+          st.pullsOneAtATime = true
         const pulls = [
           transcripts,
           hooks,

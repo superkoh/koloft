@@ -41,6 +41,10 @@ export function sshOptions(controlDir: string, batch: boolean, master = SHARED_M
 
 const MASTER_FULL = 'Session open refused by peer'
 
+export function refusedByAFullMaster(r: { stderr: string }): boolean {
+  return r.stderr.includes(MASTER_FULL)
+}
+
 const spilledHosts = new Set<string>()
 
 export function backgroundOptions(host: string, controlDir: string): string[] {
@@ -55,7 +59,7 @@ export function sshLinkBroke(r: { code: number | null }): boolean {
 
 // PLATFORM§33
 function noteMasterRoom<R extends { code: number | null; stderr: string }>(host: string, r: R): R {
-  if (r.stderr.includes(MASTER_FULL)) spilledHosts.add(host)
+  if (refusedByAFullMaster(r)) spilledHosts.add(host)
   else if (r.code === SSH_LINK_BROKE_EXIT) spilledHosts.delete(host)
   return r
 }
@@ -70,11 +74,11 @@ export function needsSignIn(r: { code: number | null; stderr: string }): boolean
 }
 
 export function machineOutOfReach(r: { code: number | null; stderr: string }): boolean {
-  return r.code === SSH_LINK_BROKE_EXIT && !needsSignIn(r) && !r.stderr.includes(MASTER_FULL)
+  return r.code === SSH_LINK_BROKE_EXIT && !needsSignIn(r) && !refusedByAFullMaster(r)
 }
 
 export function problemOf(r: { code: number | null; stderr: string }): string {
-  if (r.stderr.includes(MASTER_FULL))
+  if (refusedByAFullMaster(r))
     return 'Too many tabs share one connection to this machine (its sshd MaxSessions) — close some, or raise MaxSessions there'
   if (SHELL_PRINTS_AT_LOGIN.test(r.stderr))
     return "This machine's shell prints text when it starts (see ~/.bashrc there); session sync needs it to print nothing"
