@@ -1,9 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, quitAndClose, triggerRestart } from './helpers/app'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   type E2EEnv,
+  installAgentFor,
   installAgy,
   installCodex,
   installMuse,
@@ -726,67 +727,72 @@ async function openThePortItLists(
   }
 }
 
-type OtherLocalAgent = {
-  label: Exclude<AgentName, 'Claude'>
-  install: (env: E2EEnv) => void
-  bindsAtItsFirstPrompt: boolean
-  serverStartedBy: 'the session' | 'its Workbench shell'
-  typedToRun?: (command: string) => string
+type LocalAgent = {
+  label: AgentName
+  startsTheServer:
+    { by: 'the session'; typed: (command: string) => string } | { by: 'its Workbench shell' }
 }
 
-const OTHER_LOCAL_AGENTS: OtherLocalAgent[] = [
-  {
-    label: 'Codex',
-    install: installCodex,
-    bindsAtItsFirstPrompt: false,
-    serverStartedBy: 'its Workbench shell'
-  },
-  {
-    label: 'Muse',
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    bindsAtItsFirstPrompt: false,
-    serverStartedBy: 'the session',
-    typedToRun: (command) => `/sh ${command}`
-  },
-  {
-    label: 'Antigravity',
-    install: (env) => {
-      installAgy(env)
-      trustInAgy(env, env.workspaces.a)
-    },
-    bindsAtItsFirstPrompt: true,
-    serverStartedBy: 'the session',
-    typedToRun: (command) => `!${command}`
-  }
+const LOCAL_AGENTS: LocalAgent[] = [
+  { label: 'Claude', startsTheServer: { by: 'the session', typed: (c) => `/sh ${c}` } },
+  { label: 'Codex', startsTheServer: { by: 'its Workbench shell' } },
+  { label: 'Muse', startsTheServer: { by: 'the session', typed: (c) => `/sh ${c}` } },
+  { label: 'Antigravity', startsTheServer: { by: 'the session', typed: (c) => `!${c}` } }
 ]
+
+const AN_AGY_TAB_BINDS_AT_ITS_FIRST_PROMPT = 'warm up'
+const RESTART_WITH_SERVER_UP_MS = 120_000
+
+const serverPidFile = (env: E2EEnv): string => path.join(env.home, 'server.pid')
+
+function stopTheServer(env: E2EEnv): void {
+  const pidFile = serverPidFile(env)
+  if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+}
+
+const thenLeaveTheShellSoItHoldsNoTabAwake = (command: string): string => `${command}; disown; exit`
+
+const newSessionMenuItem = (installed: AgentName, method: AgentName): { method?: AgentName } =>
+  installed === 'Claude' ? {} : { method }
 
 async function startAServerIn(
   app: ElectronApplication,
   page: Page,
   env: E2EEnv,
-  agent: OtherLocalAgent,
-  port: number,
-  pidFile: string
-): Promise<string> {
-  const server = serverWithPidFile(env, port, pidFile)
-  if (agent.bindsAtItsFirstPrompt) await newSessionInWith(page, 'ws-a', agent.label)
-  else await startSessionIn(page, 'ws-a', { method: agent.label })
+  agent: LocalAgent,
+  port: number
+): Promise<{ row: Locator; tabId: string }> {
   const row = wsRows(page, 'ws-a').first()
-  await expect(row).toHaveCount(1, { timeout: 30_000 })
+  if (agent.label === 'Antigravity') {
+    await newSessionInWith(page, 'ws-a', agent.label)
+    await runIn(page, centerTerm(page), AN_AGY_TAB_BINDS_AT_ITS_FIRST_PROMPT)
+    await expect(row.filter({ hasText: AN_AGY_TAB_BINDS_AT_ITS_FIRST_PROMPT })).toHaveClass(
+      /\bst-waiting\b/,
+      { timeout: 30_000 }
+    )
+  } else await startSessionIn(page, 'ws-a', newSessionMenuItem(agent.label, agent.label))
   const tabId = (await row.getAttribute('data-tab-id'))!
-  await runIn(page, centerTerm(page), 'warm up')
-  await expect.poll(() => savedTabIds(env), { timeout: 30_000 }).toContain(tabId)
-  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
-  if (agent.typedToRun) await runIn(page, centerTerm(page), agent.typedToRun(server))
+  const server = serverWithPidFile(env, port, serverPidFile(env))
+  if (agent.startsTheServer.by === 'the session')
+    await runIn(page, centerTerm(page), agent.startsTheServer.typed(server))
   else {
     await openSessionTerminal(app, page)
-    await runIn(page, panelTerm(page), `${server}; disown; exit`)
+    await runIn(page, panelTerm(page), thenLeaveTheShellSoItHoldsNoTabAwake(server))
   }
   await expect.poll(() => listeningPortsOf(page, tabId), { timeout: 30_000 }).toEqual([port])
-  return tabId
+  return { row, tabId }
+}
+
+async function backUnderANewTabId(row: Locator, before: string): Promise<string> {
+  const newTabId = async (): Promise<string | null> => {
+    const id = await row.getAttribute('data-tab-id')
+    return id === before ? null : id
+  }
+  await expect.poll(newTabId, { timeout: 30_000 }).not.toBeNull()
+  await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+  let after: string | null = null
+  await expect.poll(async () => (after = await newTabId()), { timeout: 30_000 }).not.toBeNull()
+  return after!
 }
 
 test.describe('Workbench + menu: the ports a session’s processes listen on', () => {
@@ -856,44 +862,6 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
     }
   })
 
-  test('WB-T30: after a Koloft restart a local session comes back under a new tab id, and its ports still list the server it started before the restart', async ({
-    env
-  }) => {
-    const port = await portFreeOnTheMac()
-    const pidFile = path.join(env.home, 'server.pid')
-    let before = ''
-    try {
-      const app = await launchApp(env)
-      try {
-        const page = await app.firstWindow()
-        await waitBooted(page)
-        await startSessionIn(page, 'ws-a')
-        before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
-        await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
-        await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
-        await expect.poll(() => savedTabIds(env)).toContain(before)
-      } finally {
-        await quitAndClose(app)
-      }
-
-      const app2 = await launchApp(env)
-      try {
-        const page2 = await app2.firstWindow()
-        await waitBooted(page2)
-        const row = wsRows(page2, 'ws-a').first()
-        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-        const after = (await row.getAttribute('data-tab-id'))!
-        expect(after).not.toBe(before)
-        await expect.poll(() => answers(port)).toBe(true)
-        await expect.poll(() => listeningPortsOf(page2, after), { timeout: 30_000 }).toEqual([port])
-      } finally {
-        await quitAndClose(app2)
-      }
-    } finally {
-      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
-    }
-  })
-
   test('WB-T33: after a Koloft restart a session’s ports still list the server started from its Workbench shell before the restart', async ({
     env
   }) => {
@@ -931,84 +899,24 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
     }
   })
 
-  test('WB-T32: a session restarted in its tab comes back under a new tab id, and its ports still list the server it started before the restart', async ({
-    app,
-    page,
-    env
-  }) => {
-    const port = await portFreeOnTheMac()
-    const pidFile = path.join(env.home, 'server.pid')
-    try {
-      await startSessionIn(page, 'ws-a')
-      const row = wsRows(page, 'ws-a').first()
-      const before = (await row.getAttribute('data-tab-id'))!
-      await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
-      await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
-      await app.evaluate(({ Menu }) =>
-        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
-      )
-      await expect.poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 }).not.toBe(before)
-      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-      const after = (await row.getAttribute('data-tab-id'))!
-      await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
-    } finally {
-      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
-    }
-  })
+  for (const agent of LOCAL_AGENTS) {
+    const by = agent.startsTheServer.by
 
-  test('WB-T31: a local session that went to sleep for being idle wakes under a new tab id, and its ports still list the server it started before it slept', async ({
-    env
-  }) => {
-    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
-    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
-    const port = await portFreeOnTheMac()
-    const pidFile = path.join(env.home, 'server.pid')
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await startSessionIn(page, 'ws-a')
-      const row = wsRows(page, 'ws-a').first()
-      const before = (await row.getAttribute('data-tab-id'))!
-      await agentShell(page, before, 30_000)(serverWithPidFile(env, port, pidFile))
-      await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
-
-      await startSessionIn(page, 'ws-b')
-      await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some(
-              (s) => s.tabId === before && s.alive
-            ),
-          { timeout: 40_000 }
-        )
-        .toBe(false)
-      await row.click()
-      await expect.poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 }).not.toBe(before)
-      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-      const after = (await row.getAttribute('data-tab-id'))!
-      await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
-    } finally {
-      await quitAndClose(app)
-      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
-    }
-  })
-
-  for (const agent of OTHER_LOCAL_AGENTS) {
-    test(`WB-T30 for ${agent.label}: after a Koloft restart a local ${agent.label} session comes back under a new tab id, and its ports still list the server ${agent.serverStartedBy} started before the restart`, async ({
+    test(`WB-T30 (${agent.label}): after a Koloft restart a local ${agent.label} session comes back under a new tab id, and its ports still list the server ${by} started before the restart`, async ({
       env
     }) => {
-      agent.install(env)
+      test.setTimeout(RESTART_WITH_SERVER_UP_MS)
+      installAgentFor(env, agent.label, env.workspaces.a)
       seedSettings(env, { hintsOff: true })
       const port = await portFreeOnTheMac()
-      const pidFile = path.join(env.home, 'server.pid')
       try {
         let before = ''
         const app = await launchApp(env)
         try {
           const page = await app.firstWindow()
           await waitBooted(page)
-          before = await startAServerIn(app, page, env, agent, port, pidFile)
+          before = (await startAServerIn(app, page, env, agent, port)).tabId
+          await expect.poll(() => savedTabIds(env), { timeout: 30_000 }).toContain(before)
         } finally {
           await quitAndClose(app)
         }
@@ -1017,10 +925,7 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         try {
           const page2 = await app2.firstWindow()
           await waitBooted(page2)
-          const row = wsRows(page2, 'ws-a').first()
-          await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-          const after = (await row.getAttribute('data-tab-id'))!
-          expect(after).not.toBe(before)
+          const after = await backUnderANewTabId(wsRows(page2, 'ws-a').first(), before)
           await expect.poll(() => answers(port)).toBe(true)
           await expect
             .poll(() => listeningPortsOf(page2, after), { timeout: 30_000 })
@@ -1029,55 +934,47 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
           await quitAndClose(app2)
         }
       } finally {
-        if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+        stopTheServer(env)
       }
     })
 
-    test(`WB-T32 for ${agent.label}: a local ${agent.label} session restarted in its tab comes back under a new tab id, and its ports still list the server ${agent.serverStartedBy} started before the restart`, async ({
+    test(`WB-T32 (${agent.label}): a local ${agent.label} session restarted in its tab comes back under a new tab id, and its ports still list the server ${by} started before the restart`, async ({
       env
     }) => {
-      agent.install(env)
+      test.setTimeout(RESTART_WITH_SERVER_UP_MS)
+      installAgentFor(env, agent.label, env.workspaces.a)
       seedSettings(env, { hintsOff: true })
       const port = await portFreeOnTheMac()
-      const pidFile = path.join(env.home, 'server.pid')
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        const before = await startAServerIn(app, page, env, agent, port, pidFile)
-        const row = wsRows(page, 'ws-a').first()
-        await app.evaluate(({ Menu }) =>
-          Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
-        )
-        await expect
-          .poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 })
-          .not.toBe(before)
-        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-        const after = (await row.getAttribute('data-tab-id'))!
+        const { row, tabId: before } = await startAServerIn(app, page, env, agent, port)
+        await triggerRestart(app)
+        const after = await backUnderANewTabId(row, before)
         await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
       } finally {
         await quitAndClose(app)
-        if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+        stopTheServer(env)
       }
     })
 
-    test(`WB-T31 for ${agent.label}: a local ${agent.label} session that went to sleep for being idle wakes under a new tab id, and its ports still list the server ${agent.serverStartedBy} started before it slept`, async ({
+    test(`WB-T31 (${agent.label}): a local ${agent.label} session that went to sleep for being idle wakes under a new tab id, and its ports still list the server ${by} started before it slept`, async ({
       env
     }) => {
-      agent.install(env)
+      test.setTimeout(RESTART_WITH_SERVER_UP_MS)
+      installAgentFor(env, agent.label, env.workspaces.a)
       seedSettings(env, { hintsOff: true })
       env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
       env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
       const port = await portFreeOnTheMac()
-      const pidFile = path.join(env.home, 'server.pid')
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        const before = await startAServerIn(app, page, env, agent, port, pidFile)
-        const row = wsRows(page, 'ws-a').first()
+        const { row, tabId: before } = await startAServerIn(app, page, env, agent, port)
 
-        await startSessionIn(page, 'ws-b', { method: 'Claude' })
+        await startSessionIn(page, 'ws-b', newSessionMenuItem(agent.label, 'Claude'))
         await expect
           .poll(
             async () =>
@@ -1088,15 +985,11 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
           )
           .toBe(false)
         await row.click()
-        await expect
-          .poll(() => row.getAttribute('data-tab-id'), { timeout: 30_000 })
-          .not.toBe(before)
-        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-        const after = (await row.getAttribute('data-tab-id'))!
+        const after = await backUnderANewTabId(row, before)
         await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
       } finally {
         await quitAndClose(app)
-        if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+        stopTheServer(env)
       }
     })
   }
