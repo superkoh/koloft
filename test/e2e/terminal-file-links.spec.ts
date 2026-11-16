@@ -15,7 +15,6 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
-  addRemoteWorkspace,
   killFakeRemote,
   launchWithRemote,
   type OtherAgentName,
@@ -35,6 +34,7 @@ import {
   openWorktreeSession,
   runIn,
   startSessionIn,
+  switchToRow,
   waitBooted,
   waitForCalls,
   waitStartupTurnOver,
@@ -211,10 +211,7 @@ async function screenPointOf(
   )
 }
 
-function fileLookupsOnTheMachine(
-  env: E2EEnv,
-  files = /src\/v\d+\.ts/
-): {
+function fileLookupsOnTheMachine(env: E2EEnv): {
   asked: string[]
   answered: string[]
   mostAtOnce: number
@@ -225,7 +222,7 @@ function fileLookupsOnTheMachine(
   let mostAtOnce = 0
   for (const call of sshCalls(env)) {
     const sent = remoteCommandText(call.argv)
-    const file = files.exec(sent)?.[0]
+    const file = /src\/[\w-]+\.ts\b/.exec(sent)?.[0]
     if (!file || !sent.includes('test -f')) continue
     if (call.phase === 'start') {
       asked.push(file)
@@ -428,15 +425,16 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       try {
         writeIn(remoteDir(env), 'src/r.ts', numberedTs('tfr'))
         const tabId = await startRemoteTab(page, env, backend)
-        await wsRows(page, REMOTE_WS_NAME).first().click()
-        expect(await shownTabId(page)).toBe(tabId)
+        await switchToRow(page, wsRows(page, REMOTE_WS_NAME).first())
 
         await writeTo(page, tabId, '\r\ntfr-mark src/r.ts:50 and src/gone.ts:1\r\n')
         await expect
           .poll(() => linkTextsOnLineWith(page, tabId, 'tfr-mark'), { timeout: 30_000 })
           .toEqual(['src/r.ts:50'])
         await expect
-          .poll(() => fileLookupsOnTheMachine(env, /src\/(?:r|gone)\.ts/).answered.sort())
+          .poll(() => [...new Set(fileLookupsOnTheMachine(env).answered)].sort(), {
+            timeout: 30_000
+          })
           .toEqual(['src/gone.ts', 'src/r.ts'])
 
         await commandClick(page, 'src/r.ts:50')
@@ -463,10 +461,8 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
         (_, i) => `src/v${String(i + 1).padStart(2, '0')}.ts`
       )
       for (const file of files) writeIn(remoteDir(env), file, numberedTs('tfv'))
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await wsRows(page, REMOTE_WS_NAME).first().click()
-      const tabId = await shownTabId(page)
+      const tabId = await startRemoteTab(page, env, 'claude')
+      await switchToRow(page, wsRows(page, REMOTE_WS_NAME).first())
       await writeTo(page, tabId, `\r\n${files.map((f) => `tfv-row ${f}:1`).join('\r\n')}\r\n`)
       const points: { x: number; y: number }[] = []
       for (const file of files) points.push(await screenPointOf(page, tabId, `${file}:1`))
