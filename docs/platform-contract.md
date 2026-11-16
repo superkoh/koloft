@@ -1978,7 +1978,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-09-29 on an Ubuntu 24.04 box with the stock `sshd_config`: with 14 sessions
   held, the 15th printed that line and then `Authenticated … using "publickey"`; with
   10 held, the 11th still rode the master, so the real limit there was not pinned
-  down.)
+  down.) On a password login with no `MaxSessions` line the limit is exactly 10: with
+  the master opened by a password and nine more `sleep` sessions held on it (Koloft's
+  own ssh options), the 11th `BatchMode` command, and an rsync over it, printed that
+  line, then `Permission denied (password).`, and exited 255; a command on the
+  `%C-spill` master failed the same way, as it has to log in too. Each session showed
+  on the machine as a child of the one `sshd: puser@notty` process. (2026-11-15,
+  OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh
+  lab image reached on a published port, a scratch node script.)
 - **A reverse forward can be added to a live ControlMaster.** `ssh -O forward -R
   0:127.0.0.1:<port> host` prints the port sshd picked on **stdout** and exits 0; the
   machine listens on its 127.0.0.1 and ::1 only, and normal commands keep riding the
@@ -2107,11 +2114,29 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   publickey login with `MaxSessions 2` (the hook bell plus three pulls is four
   sessions) nothing failed, the pulls past the limit made their own logins, and the
   round took longer together than one after another (77 → 136 ms with no added delay).
-  A password login was not tried; by §33 its pulls past the limit cannot log in again.
   (2026-11-13: this Mac's openrsync and
   OpenSSH_10.3p1 to rsync 3.2.7 in the e2e sshd image, reached directly on a published
   port with Koloft's own ssh options, delay added with `tc netem` in the container; a
   scratch node script.)
+- **On a password login, pulls run at once can fill the master and take the whole
+  machine offline.** A built Koloft on a password machine with the default
+  `MaxSessions` 10: one Codex tab, then Claude Code tabs added one by one, the
+  transcripts and both Codex rollout folders kept due by a loop appending to them,
+  every `BatchMode` ssh logged by a stand-in `ssh`. Each tab held one session and the
+  hook bell one more. With the transcripts and the extras two at a time beside them
+  (three pulls at once), six tabs ran clean; with seven, 19 of 54 background commands
+  in 20 s failed — 11 refused by the full master, then `Permission denied (password)`
+  on every command sent to the `%C-spill` master — and the machine's dot read "not
+  connected … Permission denied … sign in there". With one pull at a time, seven tabs
+  stayed connected; with three at once until the first refused pull and one at a time
+  after it, the first refusal came while the sixth tab opened (one pull and one
+  command failed) and seven tabs then stayed connected, 35 pulls one at a time with
+  none failed. In every build an eighth tab did not open, and with one pull at a
+  time a few background commands were still refused while the seventh and eighth
+  tabs opened.
+  (2026-11-15: this Mac's openrsync and OpenSSH_10.3p1 to the e2e sshd image through
+  its jump host, Koloft built from this branch and with `main`'s `sync.ts`; a scratch
+  Playwright spec.)
 
 ## §35 tmux
 
