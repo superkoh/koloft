@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { shq } from '@shared/shellQuote'
-import { CODEX_TMP_DIR } from './leftovers'
+import { CODEX_TMP_DIR, OPEN_SHIM_FOLDER } from './leftovers'
 
 const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
 
@@ -98,17 +98,9 @@ exit 0
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin', '.zlogout']
 const ZSH_FILES_AFTER_PATH_HELPER = ['.zprofile', '.zshrc', '.zlogin']
 const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
-const USER_ZDOTDIR_ENV = 'KOLOFT_USER_ZDOTDIR'
 
-export function userZdotdirOf(env: NodeJS.ProcessEnv): string | undefined {
-  return (USER_ZDOTDIR_ENV in env ? env[USER_ZDOTDIR_ENV] : env.ZDOTDIR) || undefined
-}
-
-export function zshWrapperEnv(
-  zdotDir: string,
-  userZdotdir: string | undefined
-): Record<string, string> {
-  return { ZDOTDIR: zdotDir, [USER_ZDOTDIR_ENV]: userZdotdir ?? '' }
+export function unlessInAKoloftRunsShim(file: string | undefined): string | undefined {
+  return file && OPEN_SHIM_FOLDER.test(path.basename(path.dirname(file))) ? undefined : file
 }
 
 // PLATFORM§2 CODEX§12

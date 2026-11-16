@@ -6,11 +6,11 @@ import { randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
 import {
   removeOpenShim,
-  userZdotdirOf,
+  unlessInAKoloftRunsShim,
   writeOpenShim,
-  zshWrapperEnv,
   type OpenShim
 } from '../../src/main/openShimScript'
+import { ownedByThisRun } from '../../src/main/leftovers'
 
 let base: string
 let cwd: string
@@ -162,51 +162,40 @@ describe('Codex open shim dotfile folder', () => {
 
   it("runs the user's own files once, quietly, in a Koloft started from another Koloft's Codex tab, even after that tab has closed", () => {
     const cases = [
-      { label: 'no ZDOTDIR', zshenv: '', dir: '', outerStartedIn: '' },
+      { label: 'no ZDOTDIR', zshenv: '', dir: '' },
       {
         label: 'ZDOTDIR set in ~/.zshenv',
         zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"',
-        dir: '.config/zsh',
-        outerStartedIn: ''
-      },
-      {
-        label: 'outer Koloft started with its own ZDOTDIR',
-        zshenv: '',
-        dir: 'own-zdotdir',
-        outerStartedIn: 'own-zdotdir'
+        dir: '.config/zsh'
       }
     ]
-    for (const [i, { label, zshenv, dir, outerStartedIn }] of cases.entries()) {
+    for (const [i, { label, zshenv, dir }] of cases.entries()) {
       const home = path.join(base, `home-nested-${i}`)
       const ran = path.join(home, 'ran.txt')
       fs.mkdirSync(path.join(home, dir), { recursive: true })
-      fs.writeFileSync(
-        path.join(home, outerStartedIn, '.zshenv'),
-        `echo .zshenv >> ${ran}\n${zshenv}\n`
-      )
+      fs.writeFileSync(path.join(home, '.zshenv'), `echo .zshenv >> ${ran}\n${zshenv}\n`)
       for (const name of ['.zprofile', '.zlogin'])
         fs.writeFileSync(path.join(home, dir, name), `echo ${name} >> ${ran}\n`)
-      const loginShell = (env: Record<string, string | undefined>, cmd: string) =>
+      const loginShell = (zdotDir: string, cmd: string) =>
         spawnSync('/bin/zsh', ['-lc', cmd], {
-          env: { HOME: home, PATH: '/usr/bin:/bin', ...env },
+          env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: zdotDir },
           encoding: 'utf8'
         })
-      const outerUser = userZdotdirOf(
-        outerStartedIn ? { ZDOTDIR: path.join(home, outerStartedIn) } : {}
+      const outer = writeOpenShim(
+        path.join(base, `outer-${i}`),
+        ownedByThisRun(randomUUID()),
+        undefined
       )
-      const outer = writeOpenShim(path.join(base, `outer-${i}`), randomUUID(), outerUser)
-      const innerKoloftEnv = Object.fromEntries(
-        loginShell(zshWrapperEnv(outer.zdotDir, outerUser), '/usr/bin/env')
-          .stdout.split('\n')
-          .filter((line) => line.includes('='))
-          .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])
-      )
+      const zdotdirInOuterTab = loginShell(outer.zdotDir, 'printf %s "$ZDOTDIR"').stdout
       removeOpenShim(outer)
-      fs.rmSync(ran)
-      const innerUser = userZdotdirOf(innerKoloftEnv)
-      const inner = writeOpenShim(path.join(base, `inner-${i}`), randomUUID(), innerUser)
+      fs.rmSync(ran, { force: true })
+      const inner = writeOpenShim(
+        path.join(base, `inner-${i}`),
+        ownedByThisRun(randomUUID()),
+        unlessInAKoloftRunsShim(zdotdirInOuterTab)
+      )
       try {
-        const res = loginShell(zshWrapperEnv(inner.zdotDir, innerUser), 'command -v open')
+        const res = loginShell(inner.zdotDir, 'command -v open')
         expect(res.stderr, label).toBe('')
         expect(res.stdout.trim(), label).toBe(path.join(inner.shimDir, 'open'))
         expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean), label).toEqual([

@@ -104,7 +104,7 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
-import { bashEnvFileIn, loginShellIsBash, userZdotdirOf, zshWrapperEnv } from './openShimScript'
+import { bashEnvFileIn, loginShellIsBash, unlessInAKoloftRunsShim } from './openShimScript'
 import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
@@ -901,11 +901,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       )
     }
     const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
-    const userZdotdir = userZdotdirOf(process.env)
     const openShim = machine
       ? undefined
       : this.startOpenShim(
-          userZdotdir,
+          unlessInAKoloftRunsShim(process.env.ZDOTDIR),
           (target) => observe({ type: 'open', target }),
           agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
           rules
@@ -913,9 +912,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const env = openShim
       ? {
           ...this.envFor(home),
-          ...zshWrapperEnv(openShim.zdotDir, userZdotdir),
+          ZDOTDIR: openShim.zdotDir,
           ...(loginShellIsBash() &&
-            !processEnv?.BASH_ENV && { BASH_ENV: bashEnvFileIn(openShim.shimDir) })
+            !unlessInAKoloftRunsShim(processEnv?.BASH_ENV) && {
+              BASH_ENV: bashEnvFileIn(openShim.shimDir)
+            })
         }
       : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')

@@ -1197,17 +1197,31 @@ describe('CodexSessions', () => {
     expect(script).not.toContain('KOLOFT_')
   })
 
-  it("a Koloft started inside one of its Codex tabs never takes that tab's dotfile folder for the user's own ZDOTDIR", async () => {
+  it("a Koloft started inside one of its Codex tabs takes neither that tab's dotfile folder for the user's ZDOTDIR nor its BASH_ENV file for the user's own", async () => {
+    const userInfo = os.userInfo()
+    const loginShell = vi.spyOn(os, 'userInfo')
+    loginShell.mockReturnValue({ ...userInfo, shell: '/bin/bash' })
     await sessions.launch({ kind: 'codex', cwd: repo })
     const outer = transports[0].options.env!
     try {
-      for (const [key, value] of Object.entries(outer)) vi.stubEnv(key, value)
+      vi.stubEnv('ZDOTDIR', outer.ZDOTDIR)
+      vi.stubEnv('BASH_ENV', outer.BASH_ENV)
+      mocks.runtime.mockResolvedValue({
+        binary: '/fixture/codex',
+        env: { PATH: '/usr/bin', ZDOTDIR: outer.ZDOTDIR, BASH_ENV: outer.BASH_ENV },
+        version: MIN_CODEX_VERSION,
+        verified: true
+      })
+      vi.mocked(sessions.availability).mockRestore()
       await sessions.launch({ kind: 'codex', cwd: repo })
-      const innerZdot = transports[1].options.env!.ZDOTDIR!
-      expect(innerZdot).not.toBe(outer.ZDOTDIR)
-      expect(fs.readFileSync(path.join(innerZdot, '.zshenv'), 'utf8')).not.toContain(outer.ZDOTDIR)
+      const inner = transports[1].options.env!
+      expect(fs.readFileSync(path.join(inner.ZDOTDIR!, '.zshenv'), 'utf8')).not.toContain(
+        outer.ZDOTDIR
+      )
+      expect(inner.BASH_ENV).toBe(path.join(path.dirname(inner.ZDOTDIR!), 'bash_env'))
     } finally {
       vi.unstubAllEnvs()
+      loginShell.mockRestore()
     }
   })
 
