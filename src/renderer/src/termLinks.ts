@@ -18,7 +18,9 @@ type Ref = ReturnType<typeof findFilePaths>[number]
 
 const FILE_LOOKUP_FRESH_MS = 5000
 const LOOKUPS_KEPT_AT_MOST = 500
+const REST_ON_A_ROW_BEFORE_LOOKING_UP_MS = 100
 const lookups = new Map<string, { at: number; found: Promise<boolean> }>()
+let lookupOnItsWay: Promise<unknown> = Promise.resolve()
 
 function fileThere(src: string): Promise<boolean> {
   const now = Date.now()
@@ -101,11 +103,15 @@ export function fileLinkProvider(
       if (!refs.length) return callback(undefined)
       const drawnWhenAsked = line.translateToString()
       void (async () => {
+        await new Promise((rested) => setTimeout(rested, REST_ON_A_ROW_BEFORE_LOOKING_UP_MS))
         const found: ILink[] = []
         for (const ref of refs) {
+          await lookupOnItsWay
           if (ask !== asked) return
           const src = resolveOnHost(`${folder}/`, ref.path)
-          if (!(await fileThere(src))) continue
+          const there = fileThere(src)
+          lookupOnItsWay = there
+          if (!(await there)) continue
           const last = colOf[ref.end - 1]
           found.push({
             range: {

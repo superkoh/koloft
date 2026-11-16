@@ -18,7 +18,10 @@ import {
   launchWithRemote,
   type OtherAgentName,
   REMOTE_WS_NAME,
-  remoteDir
+  remoteCommandText,
+  remoteDir,
+  sshCalls,
+  stateDir
 } from './helpers/remote'
 import {
   auxIcon,
@@ -38,6 +41,9 @@ import {
 import { WORKBENCH } from './helpers/workbench'
 
 const ROOM_FOR_A_WRONG_OPEN_MS = 1500
+const ROWS_SWEPT = 12
+const MOUSE_PASSING_OVER_A_ROW_MS = 20
+const ROOM_FOR_MORE_LOOKUPS_TO_START_MS = 1500
 
 function numberedTs(tag: string): string {
   return Array.from({ length: 60 }, (_, i) => `export const l${i + 1} = '${tag}-${i + 1}'`).join(
@@ -160,6 +166,68 @@ async function clickLinkCell(
   if (opts.holdingCommand) await page.keyboard.down('Meta')
   await page.mouse.click(at.x, at.y)
   if (opts.holdingCommand) await page.keyboard.up('Meta')
+}
+
+async function screenPointOf(
+  page: Page,
+  tabId: string,
+  text: string
+): Promise<{ x: number; y: number }> {
+  return page.evaluate(
+    ({ id, text }) => {
+      interface Term {
+        cols: number
+        rows: number
+        element: HTMLElement
+        buffer: {
+          active: {
+            length: number
+            viewportY: number
+            getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+          }
+        }
+      }
+      const term = (window as unknown as { __koloftTerms: Record<string, Term> }).__koloftTerms[id]
+      const buf = term.buffer.active
+      for (let i = buf.length - 1; i >= 0; i--) {
+        const col = (buf.getLine(i)?.translateToString(true) ?? '').indexOf(text)
+        if (col < 0) continue
+        const screen = term.element.querySelector('.xterm-screen')!.getBoundingClientRect()
+        const cellW = screen.width / term.cols
+        const cellH = screen.height / term.rows
+        return {
+          x: screen.left + (col + text.length / 2) * cellW,
+          y: screen.top + (i - buf.viewportY + 0.5) * cellH
+        }
+      }
+      throw new Error(`no row shows ${text}`)
+    },
+    { id: tabId, text }
+  )
+}
+
+function fileLookupsOnTheMachine(env: E2EEnv): {
+  asked: string[]
+  answered: string[]
+  mostAtOnce: number
+} {
+  const asked: string[] = []
+  const answered: string[] = []
+  let onTheirWay = 0
+  let mostAtOnce = 0
+  for (const call of sshCalls(env)) {
+    const sent = remoteCommandText(call.argv)
+    const file = /src\/v\d+\.ts/.exec(sent)?.[0]
+    if (!file || !sent.includes('test -f')) continue
+    if (call.phase === 'start') {
+      asked.push(file)
+      mostAtOnce = Math.max(mostAtOnce, ++onTheirWay)
+    } else {
+      answered.push(file)
+      onTheirWay--
+    }
+  }
+  return { asked, answered, mostAtOnce }
 }
 
 async function commandClick(page: Page, text: string): Promise<void> {
@@ -360,6 +428,52 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       await expect(page.locator(WORKBENCH.readingBody).getByText('tfr-50').first()).toBeInViewport({
         timeout: 20_000
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('in a remote tab, the mouse sweeping down rows of paths keeps at most one lookup on its way to the machine, and the rows it left before resting are never asked', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const files = Array.from(
+        { length: ROWS_SWEPT },
+        (_, i) => `src/v${String(i + 1).padStart(2, '0')}.ts`
+      )
+      for (const file of files) writeIn(remoteDir(env), file, numberedTs('tfv'))
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      const tabId = await shownTabId(page)
+      await writeTo(page, tabId, `\r\n${files.map((f) => `tfv-row ${f}:1`).join('\r\n')}\r\n`)
+      const points: { x: number; y: number }[] = []
+      for (const file of files) points.push(await screenPointOf(page, tabId, `${file}:1`))
+
+      const held = path.join(stateDir(env), 'file-lookups-held')
+      fs.writeFileSync(held, '')
+      for (const at of points) {
+        await page.mouse.move(at.x, at.y)
+        await page.waitForTimeout(MOUSE_PASSING_OVER_A_ROW_MS)
+      }
+      await expect
+        .poll(() => fileLookupsOnTheMachine(env).asked.length, { timeout: 20_000 })
+        .toBeGreaterThan(0)
+      await page.waitForTimeout(ROOM_FOR_MORE_LOOKUPS_TO_START_MS)
+      expect(fileLookupsOnTheMachine(env).mostAtOnce).toBe(1)
+
+      fs.rmSync(held)
+      const restedOn = files[files.length - 1]
+      await expect
+        .poll(() => fileLookupsOnTheMachine(env).answered, { timeout: 30_000 })
+        .toContain(restedOn)
+      await page.waitForTimeout(ROOM_FOR_MORE_LOOKUPS_TO_START_MS)
+      const { asked, mostAtOnce } = fileLookupsOnTheMachine(env)
+      expect(mostAtOnce).toBe(1)
+      expect(asked.at(-1)).toBe(restedOn)
+      expect(asked.length).toBeLessThanOrEqual(2)
     } finally {
       await quitAndClose(app)
     }

@@ -99,4 +99,15 @@ if (argv.includes('-O')) {
     process.stdout.write(`${/:(\d+)$/.exec(argv[argv.indexOf('-R') + 1])[1]}\n`)
   done(0)
 }
+
+function scriptSentAsBase64() {
+  const encoded = / ([A-Za-z0-9+/=]+)$/.exec(remoteCmd)
+  return encoded ? Buffer.from(encoded[1], 'base64').toString('utf8') : remoteCmd
+}
+
+const fileLookupsHeld = path.join(STATE, 'file-lookups-held')
+if (fs.existsSync(fileLookupsHeld) && scriptSentAsBase64().includes('test -f "$1"')) {
+  const nap = new Int32Array(new SharedArrayBuffer(4))
+  while (fs.existsSync(fileLookupsHeld)) Atomics.wait(nap, 0, 0, 50)
+}
 done(runSh(remoteCmd, argv.includes('-n') ? 'ignore' : 'inherit'))
