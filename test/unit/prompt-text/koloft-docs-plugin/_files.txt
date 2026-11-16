@@ -1,0 +1,9 @@
+.claude-plugin/plugin.json
+skills/koloft-docs/SKILL.md
+skills/koloft-docs/references/core.md
+skills/koloft-docs/references/diagrams.md
+skills/koloft-docs/references/general.md
+skills/koloft-docs/references/product.md
+skills/koloft-docs/references/system-design.md
+skills/koloft-docs/references/technical.md
+skills/koloft-docs/references/ui-design.md
