@@ -646,7 +646,8 @@ export class DiscordRelay {
   }
 
   private answerDialog(tab: string, m: DiscordMessage): Promise<string | undefined> | undefined {
-    if (this.sessionAsks.claudeAskTakesAnswer(tab)) return this.answerSession(tab, m.content)
+    if (this.sessionAsks.claudeAskAnswerable(tab)) return this.answerSession(tab, m.content)
+    this.sessionAsks.dropClaudeAsk(tab)
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return undefined
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)

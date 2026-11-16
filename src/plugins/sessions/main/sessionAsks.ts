@@ -151,11 +151,13 @@ export class SessionAsks {
   }
 
   // CC§14
-  claudeAskTakesAnswer(tab: string): boolean {
+  claudeAskAnswerable(tab: string): boolean {
     const ask = this.openAsk(tab)
-    if (ask && (ask.hook || !(this.d.turnOver(tab) && !this.d.awaitsInput(tab)))) return true
+    return !!ask && (!!ask.hook || !(this.d.turnOver(tab) && !this.d.awaitsInput(tab)))
+  }
+
+  dropClaudeAsk(tab: string): void {
     this.asks.delete(tab)
-    return false
   }
 
   dialog(tab: string): DialogView | undefined {
