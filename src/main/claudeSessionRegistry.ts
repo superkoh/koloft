@@ -99,6 +99,34 @@ export async function runningClaudePid(
   return (await liveEntryOf(sessionId, dir, startOf))?.pid ?? null
 }
 
+// CC§11
+export const OLD_CLAUDE_GOES_WITHIN_MS = 2000
+const OLD_CLAUDE_READ_AGAIN_AFTER_MS = 50
+
+export function claudePidsHolding(sessionId: string, dir = REGISTRY_DIR): Set<number> {
+  return new Set((readRegistry(dir).get(sessionId) ?? []).map((entry) => entry.pid))
+}
+
+export async function runningClaudePidBesides(
+  sessionId: string,
+  leaving: Set<number>,
+  until: number,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<number | null> {
+  for (;;) {
+    const entries = readRegistry(dir).get(sessionId) ?? []
+    const left = until - Date.now()
+    const old = left > 0 ? entries.filter((entry) => leaving.has(entry.pid)) : []
+    const other = await liveEntry(
+      entries.filter((entry) => !old.includes(entry)),
+      startOf
+    )
+    if (other || !(await liveEntry(old, startOf))) return other?.pid ?? null
+    await sleep(Math.min(OLD_CLAUDE_READ_AGAIN_AFTER_MS, left))
+  }
+}
+
 export async function messagingSocketOf(
   sessionId: string,
   dir = REGISTRY_DIR,

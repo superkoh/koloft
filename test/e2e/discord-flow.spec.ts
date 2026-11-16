@@ -32,7 +32,8 @@ import {
   waitBooted,
   waitConductorStarted,
   waitForCalls,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 import {
   callbackText,
@@ -769,7 +770,10 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
-      fake.say(OWNER, '/koloft session new --name Tidy -- Sort out the to-dos.')
+      fake.say(
+        OWNER,
+        `/koloft session new ${picksFor('claude')} --name Tidy -- Sort out the to-dos.`
+      )
       const helper = async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
         return all.find((s) => s.alive && s.title === 'Tidy' && s.sessionId)
@@ -822,7 +826,10 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {
-      fake.say(OWNER, '/koloft session new --backend codex --name Tidy -- please ask me')
+      fake.say(
+        OWNER,
+        `/koloft session new ${picksFor('codex')} --backend codex --name Tidy -- please ask me`
+      )
       const card = "❓ **Tidy (Alfred's helper)** is waiting for you.\nWhich colour do you prefer?"
       await expect
         .poll(() => said(fake).some((p) => p.startsWith(card)), {
@@ -1556,7 +1563,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       try {
         fake.say(
           OWNER,
-          `/koloft session new --backend ${child} --workspace ws-a -- report back when done`
+          `/koloft session new ${picksFor(child)} --backend ${child} --workspace ws-a -- report back when done`
         )
         const childRow = wsRows(page, 'ws-a').first()
         await expect(childRow).toHaveClass(/st-(waiting|idle)/, {

@@ -8,6 +8,7 @@ import type { Duplex } from 'stream'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
+import { answerStreamOf } from './remote/ssh'
 import { sharedProcessTable, type ProcessRow } from './processTable'
 import { envMs } from './sessionRuntime'
 
@@ -222,7 +223,8 @@ class CodexProcess implements CodexUpstream {
     this.child.stdin.on('error', (error) => this.fail(error))
     this.child.stdout.on('error', (error) => this.fail(error))
     this.child.stderr.resume()
-    this.child.stdout.on('data', (chunk: Buffer) => {
+    const stdout = answerStreamOf(this.child.spawnargs.join(' '), this.child.stdout)
+    stdout.on('data', (chunk: Buffer) => {
       if (this.failed || this.stopping) return
       try {
         let start = 0
@@ -246,7 +248,7 @@ class CodexProcess implements CodexUpstream {
         this.fail(asError(error))
       }
     })
-    this.child.stdout.on('end', () => {
+    stdout.on('end', () => {
       if (!this.stopping && Buffer.concat(this.tail).toString().trim())
         this.fail(new CodexServerExited('Codex exited with an incomplete protocol frame'))
     })

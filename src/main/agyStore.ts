@@ -268,8 +268,8 @@ export interface TokenTotals {
   cacheRead: number
 }
 
-export interface LastTurnAndTokens {
-  turn?: Turn
+export interface TurnsAndTokens {
+  turns: Turn[]
   tokens: TokenTotals
 }
 
@@ -278,25 +278,38 @@ export class TranscriptFollower {
   private cursor: AppendCursor = { offset: 0, tail: [] }
   private turns: Turn[] = []
   private tokens: TokenTotals = { input: 0, output: 0, cacheRead: 0 }
-  private reading: Promise<unknown> = Promise.resolve()
+  private toldReply = new WeakMap<Turn, string>()
+  private historyUnread: boolean
+  private reading: Promise<unknown>
 
-  constructor(readonly file: string) {}
+  constructor(
+    readonly file: string,
+    historyReadable?: Promise<void>
+  ) {
+    this.historyUnread = !!historyReadable
+    this.reading = historyReadable
+      ? historyReadable.then(() => this.readWhatWasAdded(true)).catch(() => {})
+      : Promise.resolve()
+  }
 
-  catchUp(): Promise<LastTurnAndTokens> {
-    const read = this.reading.then(() => this.readWhatWasAdded())
+  catchUp(): Promise<TurnsAndTokens> {
+    const read = this.reading.then(() => this.readWhatWasAdded(false))
     this.reading = read.catch(() => undefined)
     return read
   }
 
-  private async readWhatWasAdded(): Promise<LastTurnAndTokens> {
-    const unreadable = { tokens: { ...this.tokens } }
+  private async readWhatWasAdded(asHistory: boolean): Promise<TurnsAndTokens> {
+    const unreadable = { turns: [], tokens: { ...this.tokens } }
     const size = (await fs.promises.stat(this.file).catch(() => undefined))?.size
-    if (size === undefined) return unreadable
+    if (size === undefined || (asHistory && size === 0)) return unreadable
+    let endedTurnsAreHistory = this.historyUnread
     if (size < this.cursor.offset) {
       this.cursor = { offset: 0, tail: [] }
       this.turns = []
       this.tokens = { input: 0, output: 0, cacheRead: 0 }
+      endedTurnsAreHistory = true
     }
+    const ended: Turn[] = []
     while (this.cursor.offset < size) {
       const from = this.cursor.offset
       const lines = await readAppendedLines(this.file, size, this.cursor)
@@ -304,23 +317,34 @@ export class TranscriptFollower {
       if (this.cursor.offset === from) break
       for (const line of lines) {
         const step = line && stepOf(line)
-        if (step) addLastTurnStep(this.turns, this.tokens, step)
+        if (step) this.add(step, ended)
       }
     }
-    const turns = this.turns.map((turn) => ({ ...turn, said: [...turn.said] }))
-    const tokens = { ...this.tokens }
     const lineWithNoNewlineYet =
       this.cursor.tail.length && stepOf(Buffer.concat(this.cursor.tail).toString('utf8'))
-    if (lineWithNoNewlineYet) addLastTurnStep(turns, tokens, lineWithNoNewlineYet)
-    return { turn: turns[0], tokens }
+    if (lineWithNoNewlineYet) {
+      this.add(lineWithNoNewlineYet, ended)
+      this.cursor.tail = []
+    }
+    const [last] = this.turns
+    const history = [...(endedTurnsAreHistory ? ended : []), ...(asHistory ? this.turns : [])]
+    for (const turn of history) this.toldReply.set(turn, turn.reply)
+    this.historyUnread = false
+    const due = last ? [...ended, last] : ended
+    const turns = due.filter((turn) => this.toldReply.get(turn) !== turn.reply)
+    for (const turn of turns) this.toldReply.set(turn, turn.reply)
+    return {
+      turns: turns.map((turn) => ({ ...turn, said: [...turn.said] })),
+      tokens: { ...this.tokens }
+    }
   }
-}
 
-function addLastTurnStep(turns: Turn[], tokens: TokenTotals, step: TranscriptStep): void {
-  addToTurns(turns, step)
-  if (turns.length > 1) turns.shift()
-  if (step.type !== 'PLANNER_RESPONSE') return
-  tokens.input += step.inputTokens
-  tokens.output += step.outputTokens
-  tokens.cacheRead += step.cacheReadTokens
+  private add(step: TranscriptStep, ended: Turn[]): void {
+    addToTurns(this.turns, step)
+    if (this.turns.length > 1) ended.push(...this.turns.splice(0, 1))
+    if (step.type !== 'PLANNER_RESPONSE') return
+    this.tokens.input += step.inputTokens
+    this.tokens.output += step.outputTokens
+    this.tokens.cacheRead += step.cacheReadTokens
+  }
 }

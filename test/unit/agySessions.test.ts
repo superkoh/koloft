@@ -194,7 +194,7 @@ beforeEach(() => {
   machine = {
     launches: [],
     ended: [],
-    config: { ownersSettings: {}, ownersHooks: {}, ownSettings: {} },
+    config: { ownersSettings: {}, ownersHooks: {}, ownSettings: {}, accountsSettings: [] },
     rows: [],
     held: false,
     alive: new Set(),
@@ -423,6 +423,41 @@ describe('AgySessions launch', () => {
   })
 
   // AGY§5
+  it("a resume on another account trusts the folder there when one of the owner's accounts already trusts it, here and on a remote machine, since agy would stop on its trust question with nobody at the tab; a fresh launch, or a resume in a folder no account trusts, still asks", async () => {
+    storedMember(A)
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(sessions.trustsFolder(repo)).toBe(false)
+    const spent = path.join(home, 'agy-homes', 'spent', 'antigravity-cli')
+    fs.mkdirSync(spent, { recursive: true })
+    fs.writeFileSync(
+      path.join(spent, 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    await launch()
+    expect(sessions.trustsFolder(repo)).toBe(false)
+    storedMember(CHILD)
+    await sessions.resume({ sessionId: agySessionKey(CHILD), cwd: repo })
+    expect(sessions.trustsFolder(repo)).toBe(true)
+
+    machine.config.accountsSettings = [{ trustedWorkspaces: ['/home/me/proj'] }, {}]
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    sessions.store.upsertMember({
+      id: B,
+      key: agySessionKey(B, 'devbox'),
+      workspacePath: REMOTE_WS,
+      cwd: REMOTE_WS,
+      title: 'Remote',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    await sessions.resume({ sessionId: agySessionKey(B, 'devbox'), cwd: REMOTE_WS })
+    const trusted = machine.launches.map(
+      (spec) => JSON.parse(spec.program.files[`${spec.tabId}.settings.json`]).trustedWorkspaces
+    )
+    expect(trusted).toEqual([[], ['/home/me/proj']])
+  })
+
+  // AGY§5
   it('counts a folder the owner’s own agy settings trust as trusted before any launch, as a launch does', () => {
     fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
     fs.writeFileSync(
@@ -484,7 +519,8 @@ describe('AgySessions launch', () => {
     machine.config = {
       ownersSettings: { trustedWorkspaces: ['/home/me/proj'] },
       ownersHooks: {},
-      ownSettings: {}
+      ownSettings: {},
+      accountsSettings: []
     }
     const [trusted, ...after] = await trustedThere()
     expect(after).toContain(trusted)
@@ -1523,7 +1559,8 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     machine.config = {
       ownersSettings: { theme: 'dark', trustedWorkspaces: ['/elsewhere'] },
       ownersHooks: { mine: { Stop: [] } },
-      ownSettings: {}
+      ownSettings: {},
+      accountsSettings: []
     }
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, trustFolder: true, firstPrompt: 'hi' })
     const [spec] = machine.launches

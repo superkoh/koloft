@@ -193,6 +193,11 @@ function slashTextOf(content: string): string | undefined {
   return text.startsWith('/') ? text : undefined
 }
 
+function withoutOne(texts: string[], text: string): string[] {
+  const i = texts.indexOf(text)
+  return i < 0 ? texts : [...texts.slice(0, i), ...texts.slice(i + 1)]
+}
+
 export class DiscordRelay {
   private queues = new Map<string, Inbound[]>()
   private told = 0
@@ -202,7 +207,7 @@ export class DiscordRelay {
   private codexAsks = new Map<string, string | number>()
   private codexTyped = new Map<string, KeysTyped>()
   private ticksPressed = new Map<string, { ticks: string; untickedOnce: boolean }>()
-  private quietReplies = new Set<string>()
+  private quietTexts = new Map<string, string[]>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
   private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
@@ -412,12 +417,18 @@ export class DiscordRelay {
     const text = fromKoloft && dest.ownerIsWhere ? `${said} ${dest.ownerIsWhere()}` : said
     const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
     if (answer) this.answersDiscord(tab, answer)
-    if (item.quiet) this.quietTurns.add(tab)
+    if (item.quiet) {
+      this.quietTurns.add(tab)
+      this.quietTexts.set(tab, [...(this.quietTexts.get(tab) ?? []), said])
+    }
     try {
       await this.hand(dest, tab, item, text)
     } catch (error) {
       if (answer) this.answering.delete(tab)
-      if (item.quiet) this.quietTurns.delete(tab)
+      if (item.quiet) {
+        this.quietTurns.delete(tab)
+        this.quietTexts.set(tab, withoutOne(this.quietTexts.get(tab) ?? [], said))
+      }
       throw error
     }
     // AGY§8
@@ -521,18 +532,7 @@ export class DiscordRelay {
   }
 
   tellQuietly(dest: Destination, text: string): Promise<boolean> {
-    this.quietReplies.add(text)
-    return new Promise((resolve) =>
-      this.tell(
-        dest,
-        text,
-        (told) => {
-          if (!told) this.quietReplies.delete(text)
-          resolve(told)
-        },
-        true
-      )
-    )
+    return new Promise((resolve) => this.tell(dest, text, resolve, true))
   }
 
   turnEnded(tabId: string, turn: Turn): void {
@@ -541,13 +541,15 @@ export class DiscordRelay {
     const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
     const reaches = answers || this.reaches(tabId)
     if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
-    const quiet = [...this.quietReplies].find(
-      (q) => turn.said.length > 0 && turn.said.every((l) => l.text.includes(q))
-    )
-    if (quiet !== undefined) {
-      this.quietReplies.delete(quiet)
-      return
+    const left = [...(this.quietTexts.get(tabId) ?? [])]
+    let quiet = turn.said.length > 0
+    for (const line of turn.said) {
+      const i = left.findIndex((t) => line.text.includes(t))
+      if (i < 0) quiet = false
+      else left.splice(i, 1)
     }
+    this.quietTexts.set(tabId, left)
+    if (quiet) return
     const channelId = this.d.replyChannelOf(tabId)
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
@@ -940,6 +942,7 @@ export class DiscordRelay {
     this.held.delete(tab)
     this.unreadable.delete(tab)
     this.quietTurns.delete(tab)
+    this.quietTexts.delete(tab)
     this.shownNotSent.delete(tab)
     this.sending.delete(tab)
   }
