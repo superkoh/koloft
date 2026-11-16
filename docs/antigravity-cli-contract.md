@@ -1174,6 +1174,23 @@ only downloaded the public release.
 - `ForkConversation {"sourceCascadeId","forkAtStepIndex"}` → `{newCascadeId,
   forkedAtStepIndex, newProjectId}`; the title is copied, no parent id, the TUI stays
   where it was. Forking at a user-message step (0) is refused.
+- **What tells a `/fork` copy from a `/clear` one when the tab moves to it.** 2026-11-15,
+  agy 1.5.7 (Linux arm64, from the manifest) in Docker with no network, the TUI in a
+  python pty, a fake Gemini server; two turns, then `/fork`, one more turn, then
+  `/clear`, the files read every 50 ms. The new id's presence lock (§9) was taken 98 ms
+  after Enter on `/fork` and 86 ms after Enter on `/clear`, and at that moment:
+
+  | | `/fork` | `/clear` |
+  |---|---|---|
+  | `conversations/<new>.db` `steps` | the copied 4 | 0 |
+  | `conversations/<new>.db` `parent_references` | 1 row, a protobuf whose field 6 is the old conversation id | none |
+  | last `history.jsonl` line | `{"display":"/fork","conversationId":"<old id>","type":"slash_command"}` | the same with `/clear` |
+  | summaries row (§8) | none yet; later an empty title, the copied `step_count` (4), `parent_conversation_id` `''` | none yet; later `step_count` 0, times "never" |
+  | `transcript.jsonl`, pbtxt | none | none |
+
+  The old conversation kept its row, `.db` and transcript unchanged. After one more turn
+  the copy's transcript held only that turn's two steps and its `.db` 6. So the copy's
+  own `.db` names its parent from the first moment; the summaries row never does.
 
 ## §19 Artifacts and plan approval
 
