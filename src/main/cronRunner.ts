@@ -157,7 +157,7 @@ export interface RunnerDeps {
   stillWorking(tabId: string): Promise<boolean>
   whatIsLeft(tabId: string, root: string, worktree?: string): Promise<string[]>
   closeForGood(tabId: string, root: string, worktree?: string): Promise<void>
-  tellToCarryOn(tabId: string): Promise<boolean>
+  tellToCarryOn(tabId: string): Promise<void>
   toast(text: string): void
   notify(title: string, body: string): void
   push(state: CronState): void
@@ -657,15 +657,14 @@ export class CronRunner {
   private tellToCarryOn(run: LiveRun): void {
     const { tabId } = run
     this.cutOffByTheRestart.add(tabId)
-    void this.d.tellToCarryOn(tabId).then(async (told) => {
-      if (!this.cutOffByTheRestart.delete(tabId) || this.live.get(tabId) !== run) return
-      if (told && (await this.d.stillWorking(tabId))) return
+    const tellingOver = (): void => {
       const job = this.byId(run.jobId)
-      if (!job || this.live.get(tabId) !== run || run.state !== 'running') return
+      if (!this.cutOffByTheRestart.delete(tabId) || this.live.get(tabId) !== run || !job) return
       run.state = 'done'
       this.closeAtTheNextCheck(run, job)
       this.push()
-    })
+    }
+    void this.d.tellToCarryOn(tabId).then(tellingOver, tellingOver)
   }
 
   reopeningOver(): void {

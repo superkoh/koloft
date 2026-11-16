@@ -4315,8 +4315,9 @@ app.whenReady().then(() => {
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
     tellToCarryOn: async (tabId) => {
+      if (attention.outlivesKoloft(tabId)) return
       await tabReady(tabId, RESUMED_TAB_READY_MS, false)
-      return sessionCommand.tellFromKoloft(tabId, A_RESTART_CUT_THE_RUN_OFF)
+      await sessionCommand.tellFromKoloft(tabId, A_RESTART_CUT_THE_RUN_OFF)
     },
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notify: notifyPlain,
@@ -5775,11 +5776,14 @@ async function whatClosingTheRunWouldLose(
 
 async function runOrASessionItStartedStillWorks(tabId: string): Promise<boolean> {
   if (await tracker.stillWorking(tabId)) return true
-  const run = sessionOfTab(tabId)
-  if (!run?.sessionId) return false
+  const runSession = sessionOfTab(tabId)
+  if (!runSession?.sessionId) return false
   const started = allSessions().filter(
     (s) =>
-      s.alive && s.tabId !== tabId && !asksTheOwner(s.tabId) && startedSessions.startedBy(s, run)
+      s.alive &&
+      s.tabId !== tabId &&
+      !asksTheOwner(s.tabId) &&
+      startedSessions.startedBy(s, runSession)
   )
   const working = await Promise.all(started.map((s) => tracker.stillWorking(s.tabId)))
   return working.some(Boolean)

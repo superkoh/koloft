@@ -111,7 +111,7 @@ function makeHarness(
   })
   const killTab = vi.fn()
   const closeForGood = vi.fn(async () => {})
-  const tellToCarryOn = vi.fn(async (): Promise<boolean> => true)
+  const tellToCarryOn = vi.fn(async (): Promise<void> => {})
   const notify = vi.fn()
   const save = vi.fn()
   const branchExists = vi.fn(async () => false)
@@ -1193,8 +1193,8 @@ describe('CronRunner — quitting', () => {
 
   it('with "Close it" on, a run the relaunch took back in the middle of its work is told once to carry on, no status change closes it before the telling is over, and once it is over with nothing at work it closes at the next check', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
-    let tellingOver: (told: boolean) => void = () => {}
-    h.tellToCarryOn.mockImplementation(() => new Promise<boolean>((done) => (tellingOver = done)))
+    let tellingOver: () => void = () => {}
+    h.tellToCarryOn.mockImplementation(() => new Promise<void>((done) => (tellingOver = done)))
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     h.runner.onBound('tab-back', 's1')
@@ -1205,27 +1205,28 @@ describe('CronRunner — quitting', () => {
     expect(h.closeForGood).not.toHaveBeenCalled()
     expect(h.tellToCarryOn.mock.calls).toEqual([['tab-back']])
 
-    tellingOver(true)
+    tellingOver()
     await flush()
     expect(h.closeForGood).not.toHaveBeenCalled()
     await h.fireTimers(T0 + 2 * MIN)
     expect(h.closeForGood).toHaveBeenCalledTimes(1)
   })
 
-  it('a run the relaunch took back in the middle of its work that took the word to carry on and still works stays open until that turn ends', async () => {
-    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
-    h.flags.busy = true
-    h.runner.expectReopened(['s1'])
-    h.runner.reopenedIn('s1', 'tab-back')
-    await flush()
-    await h.fireTimers(T0 + 1 * MIN)
-    expect(h.runner.state().live[0].state).toBe('running')
+  it('with "Close it" on, a run the relaunch took back in the middle of its work stays open while it still works after the telling, whether or not the word reached it, and closes at a later check once it is idle', async () => {
+    for (const telling of [async () => {}, async () => Promise.reject(new Error('gone'))]) {
+      const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+      h.tellToCarryOn.mockImplementation(telling)
+      h.flags.busy = true
+      h.runner.expectReopened(['s1'])
+      h.runner.reopenedIn('s1', 'tab-back')
+      await flush()
+      await h.fireTimers(T0 + 1 * MIN)
+      expect(h.closeForGood).not.toHaveBeenCalled()
 
-    h.flags.busy = false
-    h.runner.onStatus('tab-back', 'working', 'waiting')
-    await flush()
-    await h.fireTimers(T0 + 2 * MIN)
-    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+      h.flags.busy = false
+      await h.fireTimers(T0 + 2 * MIN)
+      expect(h.closeForGood).toHaveBeenCalledTimes(1)
+    }
   })
 
   it('never tells a run to carry on whose turn had ended before the quit', async () => {
