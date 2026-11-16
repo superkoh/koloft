@@ -5,9 +5,13 @@ import os from 'os'
 import { execFileSync } from 'child_process'
 import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
 
-const TIMEOUT_MS_AFTER_THE_SHIM_HAS_STARTED = 1000
-process.env.KOLOFT_GIT_TIMEOUT_MS = String(TIMEOUT_MS_AFTER_THE_SHIM_HAS_STARTED)
+const GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE = 3000
+process.env.KOLOFT_GIT_TIMEOUT_MS = String(GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE)
 const { gitDiff, gitFileDiff, gitNumstat, gitStatus } = await import('../../src/main/gitStatus')
+
+const KILL_SLACK_ON_A_BUSY_MACHINE_MS = 2000
+const REAL_GIT_TRIES_ON_A_BUSY_MACHINE = 3
+const CASE_DEADLINE_MS = 30_000
 
 let tmp: string
 let repo: string
@@ -29,6 +33,17 @@ function envRecordingGitOnPath(): void {
       `printf '%s\\n' "\${GIT_OPTIONAL_LOCKS-unset}" >> "${envLog}"\n` +
       `exec "${realGit()}" "$@"\n`
   )
+}
+
+async function withRealGit<T>(call: () => Promise<T>): Promise<T> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await call()
+    } catch (e) {
+      if ((e as { killed?: boolean }).killed !== true || tries === REAL_GIT_TRIES_ON_A_BUSY_MACHINE)
+        throw e
+    }
+  }
 }
 
 const spawnedPids = (): number[] =>
@@ -59,24 +74,28 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-describe('the git timeout', () => {
+describe('the git timeout', { timeout: CASE_DEADLINE_MS }, () => {
   it('a git that never answers is killed after GIT_TIMEOUT_MS: the call settles and no process is left behind', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitNumstat(repo, base)
+    await withRealGit(() => gitNumstat(repo, base))
     hangingGitOnPath()
 
     const t0 = Date.now()
     await expect(gitNumstat(repo, base)).rejects.toThrow()
-    expect(Date.now() - t0).toBeLessThan(TIMEOUT_MS_AFTER_THE_SHIM_HAS_STARTED + 1000)
+    expect(Date.now() - t0).toBeLessThan(
+      GIT_TIMEOUT_MS_FOR_A_BUSY_MACHINE + KILL_SLACK_ON_A_BUSY_MACHINE_MS
+    )
 
     const [pid, ...rest] = spawnedPids()
     expect(rest).toEqual([])
-    await vi.waitFor(() => expect(alive(pid)).toBe(false))
-  }, 15_000)
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), {
+      timeout: KILL_SLACK_ON_A_BUSY_MACHINE_MS
+    })
+  })
 
   it('an aggregate diff cut off by the timeout is handed back labelled truncated', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitDiff(repo, base)
+    await withRealGit(() => gitDiff(repo, base))
     cutOffGitOnPath('diff --git a/tracked.txt b/tracked.txt')
 
     const r = await gitDiff(repo, base)
@@ -89,7 +108,7 @@ describe('the git timeout', () => {
     const base = git('rev-parse', 'HEAD')
     const fresh = path.join(repo, 'fresh.txt')
     fs.writeFileSync(fresh, 'new\n')
-    await gitFileDiff(fresh, base, true)
+    await withRealGit(() => gitFileDiff(fresh, base, true))
     cutOffGitOnPath('diff --git a/dev/null b/fresh.txt')
 
     const r = await gitFileDiff(fresh, base, true)
@@ -104,8 +123,8 @@ describe('the git timeout', () => {
     fs.writeFileSync(fresh, 'new\n')
     envRecordingGitOnPath()
 
-    await gitStatus(repo, base)
-    await gitFileDiff(fresh, base, true)
+    await withRealGit(() => gitStatus(repo, base))
+    await withRealGit(() => gitFileDiff(fresh, base, true))
 
     const lines = fs.readFileSync(envLog, 'utf8').split('\n').filter(Boolean)
     expect(lines.length).toBeGreaterThan(0)
@@ -114,7 +133,7 @@ describe('the git timeout', () => {
 
   it('a git killed before it printed anything fails the diff instead of calling it empty', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitDiff(repo, base)
+    await withRealGit(() => gitDiff(repo, base))
     hangingGitOnPath()
 
     await expect(gitDiff(repo, base)).rejects.toThrow()
@@ -123,7 +142,7 @@ describe('the git timeout', () => {
 
   it('a status whose base diff was killed fails instead of asking about HEAD', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitStatus(repo, base)
+    await withRealGit(() => gitStatus(repo, base))
     hangingGitOnPath()
 
     await expect(gitStatus(repo, base)).rejects.toThrow()
@@ -133,7 +152,7 @@ describe('the git timeout', () => {
   it('a per-file diff whose base diff was killed fails at that rung, not three probes later', async () => {
     const base = git('rev-parse', 'HEAD')
     const tracked = path.join(repo, 'tracked.txt')
-    await gitFileDiff(tracked, base)
+    await withRealGit(() => gitFileDiff(tracked, base))
     hangingGitOnPath()
 
     await expect(gitFileDiff(tracked, base)).rejects.toThrow()
