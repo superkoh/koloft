@@ -8,7 +8,9 @@ what the plugin is and what it owns) contains. It is written for someone who has
 Koloft's code. The decision behind the format is
 [ADR-0051](adr/0051-a-plugin-owns-its-feature-and-core-names-none.md) (an architecture
 decision record). A number such as #1969 is an issue in
-[superkoh/koloft](https://github.com/superkoh/koloft/issues) on GitHub.
+[superkoh/koloft](https://github.com/superkoh/koloft/issues) on GitHub. Each issue named
+here is a step of the plan in #1964 that had not landed when this page was written; the
+issue says whether it is done.
 
 - A plugin is one feature of Koloft as one piece. It is a folder, `src/plugins/<id>/`, with
   its manifest in `plugin.ts`.
@@ -23,8 +25,8 @@ decision record). A number such as #1969 is an issue in
   Koloft starts in a terminal tab.
 - **Owner**: the person using Koloft.
 - **Butler**: a long-running session that watches the other sessions for the owner.
-- **Workbench**: the panel beside a session with its changed files, a file browser and web
-  pages.
+- **Workbench**: the panel beside each session tab: its changed files, a file browser, web
+  pages and a shell. Each workspace has one too, without the shell.
 - **Skill**: a set of instructions an agent loads when a task needs it. The `koloft` skill
   tells an agent how to use the `koloft` command, which an agent runs to ask Koloft for
   things.
@@ -35,9 +37,10 @@ decision record). A number such as #1969 is an issue in
 
 ## What a plugin owns
 
-A plugin owns six things. The plan, from issue #1964, is that turning an optional plugin
-off removes its text, commands, listeners, settings and UI entries, and does not start its
-code. Switches are not built yet. The example column says what the Discord plugin is meant
+A plugin owns six things. Switches are not built yet. The plan in #1964 is that when an
+optional plugin is off, sessions started afterwards get none of its text, its commands are
+refused with one sentence, its listeners and code are not started, and its UI entries are
+not shown, except a "Set up" action and its ⌘P item. Its settings and data stay on disk. The example column says what the Discord plugin is meant
 to own once its code moves into its folder.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
@@ -84,30 +87,34 @@ imports which, with the Todo plugin as the example. A dashed arrow is planned, n
 
 ```mermaid
 flowchart LR
+  subgraph core["src/core/"]
+    coreType["plugin.ts<br/>the manifest type"]
+    coreRest["the rest of core"]
+  end
   list["src/plugins/list.ts<br/>the list of plugins"] -->|imports each plugin.ts| manifest
-  list -->|imports the manifest type| coreType["src/core/plugin.ts<br/>the manifest type"]
+  list -->|imports the manifest type| coreType
   manifest -->|imports the manifest type| coreType
   subgraph plugin["src/plugins/todo/"]
     manifest["plugin.ts<br/>the manifest"]
     api["api.ts<br/>what other plugins may use"]
     code["main/, renderer/, shared/<br/>running code"]
   end
-  core["src/core/"] -.->|PLANNED: reads only the list| list
+  coreRest -.->|PLANNED: reads only the list| list
 ```
 
 | Path | What it holds |
 |---|---|
 | `src/core/plugin.ts` | the manifest type `PluginManifest` and `PLUGIN_FORMAT_VERSION` |
-| `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file that names plugins |
+| `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports plugins |
 | `src/plugins/<id>/plugin.ts` | the plugin's manifest |
 | `src/plugins/<id>/api.ts` | what other plugins may import |
 | `src/plugins/<id>/main/` | code that runs in Koloft's main process |
 | `src/plugins/<id>/renderer/` | code that runs in Koloft's window |
 | `src/plugins/<id>/shared/` | code both of them use |
 
-Today each plugin folder holds only its `plugin.ts`. Koloft's type-check settings already
-know the other folders: code in `main/` is checked only as main-process code, and code in
-`renderer/` only as window code. The plan in #1964 also names `prompts/` and `skill/` folders
+Today each plugin folder holds only its `plugin.ts`. Koloft's main-process type check skips
+every plugin's `renderer/` folder, and its window type check skips every `main/` folder;
+both read the rest of a plugin folder. The plan in #1964 also names `prompts/` and `skill/` folders
 inside a plugin; nothing in the code knows them yet.
 
 ## The manifest
@@ -158,7 +165,7 @@ time.
 | Field | Type | Meaning |
 |---|---|---|
 | `text` | list of `TextBlock` | text the plugin adds to agents' prompts |
-| `skills` | list of strings | names of whole skills the plugin owns, such as `koloft-docs` |
+| `skills` | list of strings | names of whole skills the plugin owns, such as `koloft-docs` (Koloft's skill for writing documents) |
 | `commands` | list of `{ verb, summary }` | each `koloft <verb> …` command, with a one-line summary |
 | `channels` | list of strings | names of the IPC channels the plugin uses |
 | `moments` | `{ announces?, listens? }`, each a list of strings | names of the session moments the plugin announces and those it listens to |
@@ -174,7 +181,8 @@ A `TextBlock` is a piece of text and the slot it fills:
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
   `codex`, `muse` or `agy` (Antigravity).
-- `byModel`: optional; text to use instead for some models, keyed by model id.
+- `byModel`: optional; text to use instead for some models, keyed by model id. Nothing
+  checks the key against a list of models.
 
 The shape of `TextBlock` is being decided in #1969: how a block is added only when a
 condition holds, and how a text carries values only known at run time (the butler's name, a
@@ -183,7 +191,8 @@ project's rules). The type in `src/core/plugin.ts` is the shape in the code toda
 ## Format version
 
 `PLUGIN_FORMAT_VERSION` in `src/core/plugin.ts` is `1`. A built-in manifest writes
-`formatVersion: PLUGIN_FORMAT_VERSION`, so it always carries the current version. The field's
+`formatVersion: PLUGIN_FORMAT_VERSION`, so a bump moves every built-in manifest to the new
+version at once. The field's
 type is the number itself, so a manifest that names any other version fails Koloft's type
 check. The version is there for manifests written outside Koloft later: such a manifest would
 write the number it was written for.
@@ -192,13 +201,15 @@ The version goes up when a manifest written for the old version would no longer 
 thing:
 
 - A new optional field: an old manifest without it means what it did. No bump.
-- A field renamed, removed, or read differently: an old manifest would mean something else.
-  Bump.
+- A new required field, or a field renamed, removed, or read differently: an old manifest
+  would no longer be valid, or would mean something else. Bump.
 
-This rule starts once a test fails whenever the manifest's shape changes; that test is
-#1989. Until then the shape may still change at version 1.
+This rule starts with #1989, which writes down how a plugin registers and adds a test that
+fails whenever the manifest's shape changes. Until then the shape may still change at
+version 1.
 
-What Koloft does with a manifest written for an older version, after a bump, is not decided.
+Not decided: what Koloft does with a manifest written for an older version after a bump, and
+what an older Koloft does with a manifest that uses a field or value added later.
 
 ## The import rule
 
@@ -210,14 +221,16 @@ A plugin imports only:
   count: if A needs B and B needs C, A may import B's `api.ts` but not C's, unless A lists C
   too.
 
-Outside `src/plugins/`, Koloft imports no plugin, except through the list,
-`src/plugins/list.ts`. The list imports each plugin's `plugin.ts`.
+Outside `src/plugins/`, the app's source imports no plugin, except through the list,
+`src/plugins/list.ts`. The list imports each plugin's `plugin.ts`. The rule covers the
+source under `src/`; tests may import a plugin's files.
 
-Whether `src/shared/` (code Koloft's main process and window share today) counts as core is
-not decided.
+`src/shared/` holds code Koloft's main process and window share today, and
+`src/core/plugin.ts` itself imports a type from it. Whether a plugin may import
+`src/shared/` directly is not decided.
 
-#1967 adds a check that reports each import breaking this rule; #1991 makes it fail the
-build.
+Nothing enforces the rule yet. #1967 adds a check that reports each import breaking it;
+#1991 makes that check fail the build.
 
 ## Not promised yet
 
@@ -232,8 +245,8 @@ promised, and no design for them exists:
   which; it does not limit what code does when it runs.
 - **Permissions.** There is no permission model. A plugin's code can do anything Koloft can.
 - **A stable way to register.** How a plugin's code registers its commands, channels,
-  moments, settings, UI entries and Assist jobs is built in #1983 to #1988. It is written
-  down and kept stable from #1989 on.
+  moments, settings, UI entries and Assist jobs is built in #1983 to #1988, and kept stable
+  from #1989 on.
 
 The owner decided that the format is built so that people outside the repository can write
 plugins later. That is why the manifest carries a format version and this page exists.
