@@ -217,13 +217,14 @@ A plugin imports only:
 
 - core, `src/core/`;
 - its own folder, `src/plugins/<id>/`;
-- the `api.ts` of a plugin listed in its own `needs`. The needs of those plugins do not
-  count: if A needs B and B needs C, A may import B's `api.ts` but not C's, unless A lists C
-  too.
+- the `api.ts` of a plugin listed in its own `needs`.
+
+If A needs B and B needs C, whether A may import C's `api.ts` without listing C is not
+decided. The check in #1967 allows only the plugins A lists itself.
 
 Outside `src/plugins/`, the app's source imports no plugin, except through the list,
-`src/plugins/list.ts`. The list imports each plugin's `plugin.ts`. The rule covers the
-source under `src/`; tests may import a plugin's files.
+`src/plugins/list.ts`. The list imports each plugin's `plugin.ts`. The check in #1967 reads
+only the source under `src/`, not the tests.
 
 `src/shared/` holds code Koloft's main process and window share today, and
 `src/core/plugin.ts` itself imports a type from it. Whether a plugin may import
