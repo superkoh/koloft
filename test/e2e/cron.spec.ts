@@ -873,7 +873,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
       await fillForm(dlg, {
         name: 'Nightly report',
-        task: `/run koloft session new --name kid -- hello; ${untilThere('go-run')}`
+        task: `/run koloft session new --model sonnet --effort low --name kid -- hello; ${untilThere('go-run')}`
       })
       await dlg.locator('.chip', { hasText: 'Close it' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
