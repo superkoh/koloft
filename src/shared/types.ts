@@ -1308,7 +1308,7 @@ export interface KoloftApi {
     ): Promise<{ hits: SearchHit[]; truncated: boolean }>
     gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     gitHeadLog(root: string): Promise<string | null>
-    watchDir(root: string): Promise<boolean>
+    watchDir(root: string, reportsWhatChangedWhileUnwatched?: boolean): Promise<boolean>
     unwatchDir(root: string): void
     onDirChange(cb: DirChangeListener): () => void
     watchFile(path: string): void
@@ -1368,7 +1368,7 @@ export interface KoloftApi {
     removeConfirmed(path: string): Promise<void>
     move(path: string, before: string | null): Promise<void>
     worktrees(path: string): Promise<WorktreeInfo[]>
-    historyRows(path: string): Promise<SessionRow[]>
+    historyRows(path: string, opts?: { quiet: boolean }): Promise<SessionRow[]>
     rows(): Promise<WorkspaceRows[]>
     onRows(cb: (rows: WorkspaceRows[]) => void): () => void
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>

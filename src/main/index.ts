@@ -6580,7 +6580,8 @@ const hosts = new Hosts(
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
       sshEnvReady: loginEnvReady,
-      watch: (p, onChange) => remoteSync?.watch(machine, p, onChange),
+      watch: (p, onChange, reportsWhatChangedWhileUnwatched) =>
+        remoteSync?.watch(machine, p, onChange, reportsWhatChangedWhileUnwatched),
       unwatch: (p) => remoteSync?.unwatch(machine, p),
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
@@ -7237,8 +7238,8 @@ function registerIpc(): void {
     return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
-  ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
-    sessionBackends.historyRows(p, historyPartlyUnread)
+  ipcMain.handle(CH.workspace.historyRows, (_e, p: string, opts?: { quiet: boolean }) =>
+    sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({
@@ -7635,9 +7636,15 @@ function registerIpc(): void {
         ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
-  ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
+  ipcMain.handle(CH.fs.watchDir, (_e, root: string, reportsWhatChangedWhileUnwatched: unknown) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes))
+      ? hosts
+          .of(root)
+          .watchDir(
+            root,
+            (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes),
+            reportsWhatChangedWhileUnwatched === true
+          )
       : false
   )
   ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {
