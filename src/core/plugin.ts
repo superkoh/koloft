@@ -3,18 +3,11 @@ import type { BackendId } from '@shared/types'
 
 export const PLUGIN_FORMAT_VERSION = 1
 
-export type TextReader = 'butler' | 'helper' | 'session' | 'skill'
-
-export interface TextVariants {
-  byAgent?: Partial<Record<BackendId, string>>
-  byModel?: Readonly<Record<string, string>>
-}
-
 export interface TextBlock {
-  reader: TextReader
   slot: string
   text: string
-  variants?: TextVariants
+  byAgent?: Partial<Record<BackendId, string>>
+  byModel?: Partial<Record<string, string>>
 }
 
 export interface PluginCommand {

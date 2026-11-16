@@ -20,6 +20,5 @@
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/**/*", "src/plugins/**/*"],
-  "exclude": ["src/plugins/*/main/**"]
+  "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/**/*", "src/plugins/**/*"]
 }
