@@ -435,7 +435,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
     }
   })
 
-  test('in a remote tab, the mouse sweeping down rows of paths asks only the row it rests on, and a row rested on while that lookup is on its way to the machine waits for it to come back', async ({
+  test('in a remote tab, the mouse sweeping down rows of paths keeps one lookup on its way to the machine; the rows it passes meanwhile are never asked, and a row it then rests on waits for that lookup to come back', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -443,7 +443,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
     const held = path.join(stateDir(env), 'file-lookups-held')
     try {
       const files = Array.from(
-        { length: ROWS_SWEPT },
+        { length: ROWS_SWEPT + 1 },
         (_, i) => `src/v${String(i + 1).padStart(2, '0')}.ts`
       )
       for (const file of files) writeIn(remoteDir(env), file, numberedTs('tfv'))
@@ -454,33 +454,30 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       await writeTo(page, tabId, `\r\n${files.map((f) => `tfv-row ${f}:1`).join('\r\n')}\r\n`)
       const points: { x: number; y: number }[] = []
       for (const file of files) points.push(await screenPointOf(page, tabId, `${file}:1`))
+      const restedOnAfter = files[ROWS_SWEPT]
 
       fs.writeFileSync(held, '/src/v')
-      for (const at of points) await page.mouse.move(at.x, at.y)
-      const sweptTo = files[files.length - 1]
+      for (const at of points.slice(0, ROWS_SWEPT)) await page.mouse.move(at.x, at.y)
       await expect
         .poll(() => fileLookupsOnTheMachine(env).asked.length, { timeout: 20_000 })
         .toBeGreaterThan(0)
       await page.waitForTimeout(ROOM_FOR_MORE_LOOKUPS_TO_START_MS)
-      expect(fileLookupsOnTheMachine(env)).toEqual({
-        asked: [sweptTo],
-        answered: [],
-        mostAtOnce: 1
-      })
+      const [heldLookup, ...more] = fileLookupsOnTheMachine(env).asked
+      expect(more).toEqual([])
+      expect(fileLookupsOnTheMachine(env).answered).toEqual([])
 
-      const restedOnNext = files[2]
-      await page.mouse.move(points[2].x, points[2].y)
+      await page.mouse.move(points[ROWS_SWEPT].x, points[ROWS_SWEPT].y)
       await page.waitForTimeout(RESTING_LONGER_THAN_THE_LOOKUP_WAITS_MS)
-      expect(fileLookupsOnTheMachine(env).asked).toEqual([sweptTo])
+      expect(fileLookupsOnTheMachine(env).asked).toEqual([heldLookup])
 
       fs.rmSync(held)
       await expect
         .poll(() => fileLookupsOnTheMachine(env).answered, { timeout: 30_000 })
-        .toContain(restedOnNext)
+        .toContain(restedOnAfter)
       await page.waitForTimeout(ROOM_FOR_MORE_LOOKUPS_TO_START_MS)
       expect(fileLookupsOnTheMachine(env)).toEqual({
-        asked: [sweptTo, restedOnNext],
-        answered: [sweptTo, restedOnNext],
+        asked: [heldLookup, restedOnAfter],
+        answered: [heldLookup, restedOnAfter],
         mostAtOnce: 1
       })
     } finally {
