@@ -36,8 +36,6 @@ jobs:
 
       - run: npm run check:comments
 
-      # Report only for now: it lists each import that breaks the plugin import rule
-      # and exits 0. A later step of the Plugins milestone makes it fail the run.
       - run: npm run check:plugin-imports
 
       - run: npm run typecheck

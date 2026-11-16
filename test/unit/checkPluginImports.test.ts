@@ -4,7 +4,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-const repoRoot = path.resolve(__dirname, '../..')
+const script = path.resolve(__dirname, '../../scripts/check-plugin-imports.mjs')
 
 const createdDirs: string[] = []
 afterEach(() => {
@@ -12,28 +12,17 @@ afterEach(() => {
 })
 
 const manifest = (id: string, needs: string[]): string =>
-  `export const plugin = { formatVersion: 1, id: '${id}', name: '${id}', mandatory: false, needs: ${JSON.stringify(needs)} }\n`
+  `export const plugin = { id: '${id}', needs: ${JSON.stringify(needs)} }\n`
 
 function fixtureRepo(files: Record<string, string>): string {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-plugin-imports-')))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-plugin-imports-'))
   createdDirs.push(dir)
-  fs.mkdirSync(path.join(dir, 'scripts'))
-  fs.copyFileSync(
-    path.join(repoRoot, 'scripts/check-plugin-imports.mjs'),
-    path.join(dir, 'scripts/check-plugin-imports.mjs')
-  )
-  fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'))
   const all: Record<string, string> = {
-    'src/core/plugin.ts': 'export const PLUGIN_FORMAT_VERSION = 1\n',
-    'src/shared/types.ts': 'export type Id = string\n',
     'src/main/index.ts': "import { PLUGINS } from '@plugins/list'\n",
     'src/plugins/list.ts':
       "import { plugin as a } from './a/plugin'\nimport { plugin as b } from './b/plugin'\nimport { plugin as c } from './c/plugin'\nexport const PLUGINS = [a, b, c]\n",
     'src/plugins/a/plugin.ts': manifest('a', []),
-    'src/plugins/a/api.ts': 'export const fromA = 1\n',
-    'src/plugins/a/main/inner.ts': 'export const inner = 1\n',
     'src/plugins/b/plugin.ts': manifest('b', ['a']),
-    'src/plugins/b/api.ts': 'export const fromB = 1\n',
     'src/plugins/c/plugin.ts': manifest('c', ['b']),
     ...files
   }
@@ -45,13 +34,10 @@ function fixtureRepo(files: Record<string, string>): string {
 }
 
 function check(dir: string): { code: number | null; reported: string[] } {
-  const r = spawnSync('node', [path.join(dir, 'scripts/check-plugin-imports.mjs')], {
-    cwd: dir,
-    encoding: 'utf8'
-  })
+  const r = spawnSync('node', [script], { cwd: dir, encoding: 'utf8' })
   return {
     code: r.status,
-    reported: [...r.stdout.matchAll(/^ {2}(\S+:\d+) {2}(\S+)/gm)].map((m) => `${m[1]} ${m[2]}`)
+    reported: [...r.stdout.matchAll(/^ {2}(\S+) +(\S+)/gm)].map((m) => `${m[1]} ${m[2]}`)
   }
 }
 
@@ -73,31 +59,37 @@ describe('check-plugin-imports', () => {
     expect(check(dir)).toEqual({ code: 0, reported: [] })
   })
 
-  it('reports each import that breaks the rule, in every import form, and still exits 0', () => {
+  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, and still exits 0', () => {
     const dir = fixtureRepo({
       'src/plugins/c/main/bad.ts': lines(
         "import { inner } from '@plugins/a/main/inner'",
         "import type { fromA } from '@plugins/a/api'",
         "import { PLUGINS } from '../../list'",
         "export * from '@shared/types'",
-        "const app = require('../../../main/index')",
+        "import { app } from '../../../main/index'",
         "const plugin = import('@plugins/b')",
-        "type T = import('@plugins/a/api').X"
+        "import { sneak } from '@core/../plugins/b/main/inner'"
       ),
       'src/core/bad.ts': "import { fromA } from '@plugins/a/api'\n",
-      'src/renderer/src/bad.tsx': "const b = import('../../plugins/b/api')\n"
+      'src/renderer/src/bad.tsx': "const b = import('../../plugins/b/api')\n",
+      'src/plugins/list.ts':
+        "import { plugin as a } from './a/plugin'\nimport { plugin as b } from './b/plugin'\nimport { plugin as c } from './c/plugin'\nimport { start } from './a/main/start'\nexport const PLUGINS = [a, b, c]\n",
+      'src/plugins/a/main/start.ts': 'export const start = 1\n',
+      'src/plugins/a/broken.ts': 'import {\n'
     })
     expect(check(dir)).toEqual({
       code: 0,
       reported: [
         'src/core/bad.ts:1 @plugins/a/api',
+        'src/plugins/a/broken.ts: cannot',
         'src/plugins/c/main/bad.ts:1 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:2 @plugins/a/api',
         'src/plugins/c/main/bad.ts:3 ../../list',
         'src/plugins/c/main/bad.ts:4 @shared/types',
         'src/plugins/c/main/bad.ts:5 ../../../main/index',
         'src/plugins/c/main/bad.ts:6 @plugins/b',
-        'src/plugins/c/main/bad.ts:7 @plugins/a/api',
+        'src/plugins/c/main/bad.ts:7 @core/../plugins/b/main/inner',
+        'src/plugins/list.ts:4 ./a/main/start',
         'src/renderer/src/bad.tsx:1 ../../plugins/b/api'
       ]
     })
