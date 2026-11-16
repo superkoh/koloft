@@ -149,6 +149,15 @@
             <code>This session needs you to finish this sign-in here.</code> Sign in there; once it
             lands on that last page, Koloft is done, with nothing for you to paste
           </li>
+          <li id="page-tap">
+            <code>koloft page tap "&lt;css selector&gt;" -- "&lt;what to do&gt;"</code> — a robot
+            check ("I'm not a robot", a picture puzzle), or anything else on a web page in its
+            Workbench that only you may click. The agent is told never to click such a check itself.
+            That page comes to the front with the bar
+            <code>This session needs you to click on this page: &lt;what to do&gt;</code>. Click it
+            in the page, then press <code>Done</code>. From Discord you tap squares on a picture of
+            it instead (see <a href="../discord/#page-tap">robot checks on Discord</a>)
+          </li>
         </ul>
         <p>
           <code>Cancel</code> (or <kbd>Esc</kbd> in the box) tells the session you turned it down.
@@ -158,12 +167,13 @@
           the first answer wins. The other one closes. With no Discord set up, the box and the bar
           still work. Koloft does this the same way for every agent, on this Mac and in a
           <a href="../remote/">remote folder</a>. While you
-          <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), all three are
+          <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), all four are
           refused at once:
           <code
             >koloft: the owner is asleep and cannot give a password or a code now. Skip this step,
             go on with the rest, and say in your report that it waits for the owner.</code
           >
+          (for <code class="nowrap">page tap</code>: <code>cannot tap the page now</code>).
         </p>
 
         <h3>Scheduled jobs</h3>
@@ -192,8 +202,11 @@
             <code>koloft session new</code> — start a session of the same kind (a Claude session
             starts Claude, and so on), or the kind <code class="nowrap">--backend</code> picks, on
             the model and effort the agent picks for the task with
-            <code class="nowrap">--model</code> and <code class="nowrap">--effort</code>; in its own
-            git worktree with <code class="nowrap">-w</code>; a worktree name already in use gets
+            <code class="nowrap">--model</code> and <code class="nowrap">--effort</code> (by the
+            rules you wrote in the folder's
+            <a href="../sessions/#session-defaults">Session defaults…</a>, or else by Koloft's own
+            pick for a very simple, normal or very hard task); in its own git worktree with
+            <code class="nowrap">-w</code>; a worktree name already in use gets
             <code class="nowrap">-2</code> after it. When your butler (see below) starts one in a
             folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
             worktree (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs

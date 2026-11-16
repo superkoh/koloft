@@ -112,7 +112,9 @@
             the model, and how hard it thinks. For Claude Code, Codex and Antigravity, pick a model
             from a short list, or type another under <code>Other…</code>. For Muse, keep
             <code>Default</code> or type a name under <code>Other…</code>. Antigravity shows only
-            the thinking levels its model takes.
+            the thinking levels its model takes. <code>Default</code> means what a new session in
+            this folder would use (see
+            <a href="../sessions/#session-defaults">Session defaults…</a>).
           </li>
           <li>the permission it gets</li>
           <li>when it is done: Leave it open (the default), or Close it</li>
@@ -308,7 +310,10 @@
         <p>A run stays open, and says why, when:</p>
         <ul class="dash">
           <li>it stops to ask you something, such as asking for your OK</li>
-          <li>it still has work running</li>
+          <li>
+            it still has work running, or a session it started (or one that session started) is
+            still at work; one that only waits on you does not keep the run open
+          </li>
           <li>closing it would lose a change that is not committed, or a commit</li>
           <li>a file in its Workbench is not saved</li>
         </ul>
@@ -340,8 +345,9 @@
               <tr>
                 <td>Done — still finishing</td>
                 <td>
-                  The run's turn is over, but work it started still runs in the background. Close it
-                  cleans up once that work is over; Koloft looks again every minute.
+                  The run's turn is over, but work it started still runs: in the background, or in a
+                  session it started. Close it cleans up once that work is over; Koloft looks again
+                  every minute.
                 </td>
               </tr>
               <tr>
@@ -413,7 +419,19 @@
           If you quit Koloft while a run that had started working is open and awake (not asleep),
           its tab comes back when Koloft opens. It still counts as the job's open run, so the next
           time is skipped until it closes. A Close it run that had finished closes itself about a
-          minute later; one cut off mid-work stays open for you.
+          minute later.
+        </p>
+        <p>
+          A run cut off in the middle of its work is told so once its tab is back:
+          <code
+            >Koloft restarted while this scheduled run was working, which also stopped any helper or
+            command you had running in the background. Carry on with the task: check what got done,
+            start again what was cut off, and finish it.</code
+          >
+          It goes on, then closes or stays open as its job says. If the message cannot reach it,
+          Koloft says <code>Could not deliver to …</code>, and the run counts as finished. A Claude,
+          Muse or Antigravity run in a <a href="../remote/">remote folder</a> is not told: it kept
+          working on the machine while Koloft was closed.
         </p>
         <p>
           Close it works the same for a Claude, Codex or Muse job, on this Mac and in a

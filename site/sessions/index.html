@@ -119,6 +119,14 @@
           A session you started in a plain terminal is not listed by itself. To bring it back,
           right-click the folder and pick <code>Restore session…</code>.
         </p>
+        <p>
+          Or click the folder's name. When the folder has no sessions of its own in the list yet,
+          its page shows <code>Past sessions</code> under the buttons that start a new one: the
+          newest three, each with its name, where it ran and how long ago. Click one and it goes on
+          where it left off, and its row joins the list. With more than three, a last row,
+          <code>All N past sessions…</code>, opens <code>Restore session…</code>. This works for
+          every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
+        </p>
 
         <h2>Start and resume</h2>
         <ul class="dash">
@@ -130,6 +138,19 @@
             same list; with exactly two agents, and the other one able to run, it starts that one at
             once. An agent that cannot run says why in the list (<code>Unavailable</code>,
             <code>No account</code>). Pick the default in Settings ▸ Sessions ▸ Default method.
+          </li>
+          <li id="session-defaults">
+            Each folder can set the model its new sessions start on, and how hard they think:
+            right-click the folder ▸ <code>Session defaults…</code>. Pick an agent, then a model and
+            a thinking level. One left on <code>Default</code> starts the way that agent always
+            does. This counts for a session you start yourself (the + button, <kbd>⌘N</kbd>,
+            <kbd>⇧⌘N</kbd>, <kbd>⌘P</kbd>) and for a <a href="../scheduled/">scheduled job</a> left
+            on <code>Default</code>. A resume, a restart and a session an agent starts do not take
+            it. If the model does not take that thinking level, the session starts without it. The
+            same box has a place for rules: how this folder's agents pick the model and thinking of
+            a session they start (see <a href="../agents/">agents</a>). Left empty, they use
+            Koloft's own pick. Every agent gets this, on your Mac and in a
+            <a href="../remote/">remote folder</a>.
           </li>
           <li>Click an old row to resume that session.</li>
           <li id="sleep">
@@ -237,16 +258,17 @@
             Looking at the session does not clear the dot. It goes when the session works again: you
             send it something, answer its question or give your OK, or another session or your
             butler does. It also goes when you close the tab or archive the session. It is still
-            there after you quit and reopen Koloft.
+            there after you quit and reopen Koloft. The Mac's own notification for it is different:
+            once you have looked at the session, it leaves Notification Center, while the dot stays.
           </li>
           <li>
             One kind of dot goes once you look at it: a turn that only reports. A turn only reports
-            when it ends while the session waits on other work Koloft can see (a session it started
-            or wrote to that is still busy, or a background job it left running), or when its last
-            line is a set phrase saying nothing is left for you, such as
-            <code>Next for you: nothing.</code> Koloft spots that phrase itself, with no AI. It also
-            counts when Assist reads the reply as asking you for nothing. Hover the dot: it says
-            "just letting you know".
+            when it ends while the session waits on other work Koloft can see (a session it started,
+            or wrote to with <code>koloft session send</code> or Claude's own SendMessage, that is
+            still busy; or a background job it left running), or when its last line is a set phrase
+            saying nothing is left for you, such as <code>Next for you: nothing.</code> Koloft spots
+            that phrase itself, with no AI. It also counts when Assist reads the reply as asking you
+            for nothing. Hover the dot: it says "just letting you know".
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
@@ -736,7 +758,7 @@
                 <td>Koloft gives it, even for a step that cannot be undone.</td>
               </tr>
               <tr>
-                <td>needs a password, a code or a sign-in</td>
+                <td>needs a password, a code, a sign-in or a click on a web page</td>
                 <td>
                   Koloft says no at once, and tells it to skip that step and say it waits for you
                   (see <a href="../agents/#secrets">passwords and codes</a>).
@@ -773,6 +795,10 @@
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
             Restore session… <span class="why">— bring back a session that is not listed</span>
+          </li>
+          <li>
+            <a href="#session-defaults">Session defaults…</a>
+            <span class="why">— the model and thinking its new sessions start on</span>
           </li>
           <li>
             <a href="../scheduled/">Scheduled jobs…</a>
