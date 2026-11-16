@@ -3517,6 +3517,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
     memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
+    // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
         .map((s) => s.tabId)
@@ -6610,7 +6611,8 @@ const hosts = new Hosts(
         noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
+        loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })
 )

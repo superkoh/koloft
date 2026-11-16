@@ -1,6 +1,7 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
 import { spawn } from 'child_process'
+import { randomInt } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -9,6 +10,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
+import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
@@ -180,6 +182,13 @@ export function foregroundName(reported: unknown): string | null {
   return name === '' ? null : name
 }
 
+const RUN_PART_LENGTH = 4
+
+const randomRunPart = (): string =>
+  randomInt(36 ** RUN_PART_LENGTH)
+    .toString(36)
+    .padStart(RUN_PART_LENGTH, '0')
+
 export class PtyManager extends EventEmitter {
   shimDir?: string
   regDir?: string
@@ -195,7 +204,7 @@ export class PtyManager extends EventEmitter {
   private typing = new Map<string, Promise<void>>()
   private linesToType = new WeakMap<PtyHandle, LinesToType>()
   private counter = 0
-  private instanceTag = process.pid.toString(36)
+  private instanceTag = `${process.pid.toString(36)}-${randomRunPart()}`
 
   nextId(): string {
     return `pty-${this.instanceTag}-${++this.counter}`
@@ -248,6 +257,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AGENT_PROMPT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
+        key === OWNING_TAB_ENV ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -255,6 +265,8 @@ export class PtyManager extends EventEmitter {
       }
     }
     if (args.util) env.KOLOFT_UTIL = '1'
+    if (args.util && args.ownerTabId && this.ptys.has(args.ownerTabId))
+      env[OWNING_TAB_ENV] = args.ownerTabId
     if (this.regDir && !args.util) env.KOLOFT_SESSION_DIR = this.regDir
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir

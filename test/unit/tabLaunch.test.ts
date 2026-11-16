@@ -145,7 +145,8 @@ async function claudeTab(
             agentTools: () => true,
             pickAccount: async () => ({ env: {}, banner: '' }),
             noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-            hookSettings: () => ({})
+            hookSettings: () => ({}),
+            loginPath: async () => ''
           }
         })
     ),

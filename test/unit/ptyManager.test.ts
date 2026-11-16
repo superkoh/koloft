@@ -48,6 +48,7 @@ const POLLUTANTS = {
   KOLOFT_AGENT_DIR: '/parent-koloft/agent',
   KOLOFT_AGENT_PLUGIN: '/parent-koloft/agent-plugin',
   KOLOFT_DOCS_PLUGIN: '/parent-koloft/docs-plugin',
+  KOLOFT_HOLD_TAB: 'pty-parent-1',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -88,6 +89,18 @@ describe('PtyManager per-tab environment', () => {
     const env = spawnedEnv()
     for (const k of Object.keys(POLLUTANTS)) expect(env[k]).toBeUndefined()
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
+  })
+
+  it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a placeholder id such as a sleeping tab's asleep-1, which later runs hand out again, is never carried", () => {
+    const mgr = new PtyManager()
+    const session = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+    const envOf = (ownerTabId: string): Record<string, string> => {
+      mocks.spawn.mockClear()
+      mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true, ownerTabId })
+      return spawnedEnv()
+    }
+    expect(envOf(session.id).KOLOFT_HOLD_TAB).toBe(session.id)
+    expect(envOf('asleep-1').KOLOFT_HOLD_TAB).toBeUndefined()
   })
 
   it("a Claude launch's synchronized-output switches outlive the strip of every inherited CLAUDE_CODE_* variable", () => {
@@ -664,6 +677,16 @@ describe('tabInstancePid', () => {
     expect(tabInstancePid('tab-1')).toBeNull()
     expect(tabInstancePid('pty-')).toBeNull()
     expect(tabInstancePid('pty-0-1')).toBeNull()
+  })
+})
+
+describe('PtyManager.nextId', () => {
+  it('two Koloft runs that get the same pid mint different tab ids, so an id saved before a restart never names a tab of a later run', () => {
+    const earlierRun = new PtyManager()
+    const laterRun = new PtyManager()
+    const earlierIds = [earlierRun.nextId(), earlierRun.nextId()]
+    const laterIds = [laterRun.nextId(), laterRun.nextId()]
+    expect(laterIds.filter((id) => earlierIds.includes(id))).toEqual([])
   })
 })
 

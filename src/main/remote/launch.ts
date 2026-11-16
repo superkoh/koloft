@@ -12,6 +12,7 @@ import {
   remoteShCommand
 } from './install'
 import { remotePtsFile } from './paths'
+import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
@@ -137,6 +138,7 @@ export interface TabSpec {
   env?: Record<string, string>
   portOffset?: number
   ownerWords?: string
+  loginPath?: string
   program: TabProgram
 }
 
@@ -250,6 +252,8 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
+  // PLATFORM§33 CC§3 AGY§25 MUSE§17
+  const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -257,7 +261,7 @@ T="${T}"
 ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
-  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
+${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
@@ -377,9 +381,10 @@ const NO_MACHINE_PACKAGE_EXIT = 97
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
   const m = `"$HOME/.koloft/${s.machine.name}"`
-  const run = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
+  const untilOwningTab = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; env ${OWNING_TAB_ENV}=`
+  const afterOwningTab = ` sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
   const ssh = `${s.sshOptions.join(' ')} ${shq(s.host)}`
-  const shell = `ssh -t ${ssh} ${shq(run)}" $COLUMNS $LINES"`
+  const shell = `ssh -t ${ssh} ${shq(untilOwningTab)}"$${OWNING_TAB_ENV}"${shq(afterOwningTab)}" $COLUMNS $LINES"`
   const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
     `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +

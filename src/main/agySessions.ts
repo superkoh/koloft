@@ -57,6 +57,7 @@ import {
   agyOnboardingFile,
   agyTokenFile,
   agyTrustsFolder,
+  anyAccountHomeTrusts,
   mergeAgyHooks,
   mergeAgySettings,
   mergedAgyHooks,
@@ -151,7 +152,7 @@ export interface AgyMachine {
   agyHeldElsewhere(conversationId: string): Promise<boolean>
   agyConversations(): Promise<SummaryRow[]>
   agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
-  endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined>
   endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -666,11 +667,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
       !!resource?.managed && this.trustedHere(pick.home, workspace)
+    const resumeInFolderAnAccountTrusts = (): boolean =>
+      !!resumeId && anyAccountHomeTrusts(pick.home, cwd)
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
           ? trust
-          : [],
+          : resumeInFolderAnAccountTrusts()
+            ? [cwd]
+            : [],
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey,
@@ -796,10 +801,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       !!resource?.managed && trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
     const trusted = freshWorktree || opts.trustFolder || koloftWorktreeOfTrustedWorkspace
     const trust = [where.path, workspacePath].filter((d, i, all) => all.indexOf(d) === i)
+    // ADR-0026 AGY§5
+    const resumeInFolderAnAccountTrusts =
+      !!resumeId && trustsIn(where.path, ...config.accountsSettings)
     const m = remote.machineName()
     const agentTools = this.deps.agent.enabled(true)
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
-      trust: trusted ? trust : [],
+      trust: trusted ? trust : resumeInFolderAnAccountTrusts ? [where.path] : [],
       titleCommand: runMachineScript(m, AGY_TITLE_FILE),
       statusLine: this.deps.builtInStatusLine(pick.account)
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
@@ -903,8 +911,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run.remote || this.shuttingDown) return
     const { host, tmuxName } = run.remote
     const machine = this.deps.remote.machine(host)
+    // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
-    const problem = await machine.endTmuxSession(named?.trim() || tmuxName)
+    const problem = await machine.endTmuxSession(named?.trim() || tmuxName, run.tabId)
     if (problem)
       this.deps.error(
         `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`
