@@ -54,10 +54,8 @@ import {
 } from './helpers/restartNoAccount'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 import { barePath } from '../../src/shared/remoteKey'
-import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId } from '../../src/shared/types'
-
-test.afterEach(({ env }) => killFakeRemote(env))
 
 const SESSION_TITLE = 'Fake session: project notes'
 const FAKE_CLAUDE_READLINE_ATTACH_MS = 1500
@@ -237,21 +235,16 @@ interface TabKind {
   install: (env: E2EEnv) => void
 }
 
-const backendOf = (agent: AgentName): BackendId =>
-  (Object.keys(BACKEND_LABEL) as BackendId[]).find((b) => BACKEND_LABEL[b] === agent)!
-
 const EVERY_TAB_KIND_BUT_LOCAL_CLAUDE: TabKind[] = [
-  ...(Object.keys(BACKEND_LABEL) as BackendId[])
-    .filter((backend) => backend !== 'claude')
-    .map((backend) => ({
-      backend,
-      remote: false,
-      install: (env: E2EEnv) =>
-        installAgentFor(env, BACKEND_LABEL[backend] as AgentName, env.workspaces.a)
-    })),
+  ...SESSION_BACKENDS.filter((backend) => backend !== 'claude').map((backend) => ({
+    backend,
+    remote: false,
+    install: (env: E2EEnv) =>
+      installAgentFor(env, BACKEND_LABEL[backend] as AgentName, env.workspaces.a)
+  })),
   { backend: 'claude', remote: true, install: () => {} },
   ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
-    backend: backendOf(agent.label),
+    backend: SESSION_BACKENDS.find((b) => BACKEND_LABEL[b] === agent.label)!,
     remote: true,
     install: agent.install
   }))
@@ -260,13 +253,13 @@ const EVERY_TAB_KIND_BUT_LOCAL_CLAUDE: TabKind[] = [
 const kindName = (kind: TabKind): string =>
   `${kind.remote ? 'remote' : 'local'} ${BACKEND_LABEL[kind.backend]}`
 
-async function sessionInTheRow(
+async function liveSessionInTheRows(
   page: Page,
-  row: Locator
+  rows: Locator
 ): Promise<{ sessionId: string; folder: string } | undefined> {
-  const tabId = await row.getAttribute('data-tab-id')
+  const tabIds = await rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-tab-id')))
   const all = await page.evaluate(() => window.api.sessions.list())
-  const s = all.find((x) => x.tabId === tabId && x.alive && x.sessionId)
+  const s = all.find((x) => tabIds.includes(x.tabId) && x.alive && x.sessionId)
   if (!s) return undefined
   const dir = barePath(s.cwd)
   return { sessionId: s.sessionId, folder: fs.existsSync(dir) ? fs.realpathSync(dir) : dir }
@@ -298,7 +291,7 @@ async function startWorktreeTabWithATranscript(
     if (kind.backend === 'agy') await agyReady(page)
     else await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
     await runIn(page, centerTerm(page), 'one turn')
-    await expect(row.filter({ hasText: 'one turn' })).toHaveClass(/\bst-waiting\b/, {
+    await expect(row.filter({ hasText: 'one turn' }).locator('.ws-tab-unread')).toHaveCount(1, {
       timeout: 60_000
     })
   }
@@ -840,40 +833,43 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       })
     }
 
-    for (const kind of EVERY_TAB_KIND_BUT_LOCAL_CLAUDE)
-      for (const via of RESUME_IN_MAIN_VIAS) {
-        test(`T18: in a ${kindName(kind)} tab, when the deleted worktree cannot be rebuilt, "Resume in main without isolation" from ${via} resumes the same session in the same tab, leaving no dead one beside it`, async ({
-          env
-        }) => {
-          test.setTimeout(300_000)
-          kind.install(env)
-          seedSettings(env, { hintsOff: true })
-          const repo = gitRepoIgnoringNotes(kind.remote ? remoteDir(env) : env.workspaces.a)
-          const { app, page } = kind.remote ? await launchWithRemote(env) : await launch(env)
-          try {
-            const { row, sessionId, wtDir } = await startWorktreeTabWithATranscript(
-              page,
-              env,
-              kind,
-              repo,
-              'locked'
-            )
-            expect(await termIds(page)).toHaveLength(1)
+    test.describe('T18 on every other kind of session tab', () => {
+      test.afterEach(({ env }) => killFakeRemote(env))
+      for (const kind of EVERY_TAB_KIND_BUT_LOCAL_CLAUDE)
+        for (const via of RESUME_IN_MAIN_VIAS) {
+          test(`T18: in a ${kindName(kind)} tab, when the deleted worktree cannot be rebuilt, "Resume in main without isolation" from ${via} resumes the same session in the same tab, leaving no dead one beside it`, async ({
+            env
+          }) => {
+            test.setTimeout(300_000)
+            kind.install(env)
+            seedSettings(env, { hintsOff: true })
+            const repo = gitRepoIgnoringNotes(kind.remote ? remoteDir(env) : env.workspaces.a)
+            const { app, page } = kind.remote ? await launchWithRemote(env) : await launch(env)
+            try {
+              const { row, sessionId, wtDir } = await startWorktreeTabWithATranscript(
+                page,
+                env,
+                kind,
+                repo,
+                'locked'
+              )
+              expect(await termIds(page)).toHaveLength(1)
 
-            await lockAndDeleteTheWorktreeThenResumeInMain(app, page, repo, wtDir, row, via)
+              await lockAndDeleteTheWorktreeThenResumeInMain(app, page, repo, wtDir, row, via)
 
-            await expect
-              .poll(() => sessionInTheRow(page, row), { timeout: 60_000 })
-              .toEqual({ sessionId, folder: fs.realpathSync(repo) })
-            await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
-            await expect.poll(() => termIds(page)).toHaveLength(1)
-            await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
-            expect(fs.existsSync(wtDir)).toBe(false)
-          } finally {
-            await quitAndClose(app)
-          }
-        })
-      }
+              await expect
+                .poll(() => liveSessionInTheRows(page, row), { timeout: 60_000 })
+                .toEqual({ sessionId, folder: fs.realpathSync(repo) })
+              await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
+              await expect.poll(() => termIds(page)).toHaveLength(1)
+              await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+              expect(fs.existsSync(wtDir)).toBe(false)
+            } finally {
+              await quitAndClose(app)
+            }
+          })
+        }
+    })
   })
 
   test.describe('fault tolerance', () => {
