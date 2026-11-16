@@ -1160,17 +1160,86 @@ kept. The app-server hands `PATH` and `ZDOTDIR` from its own environment to the 
 shell unchanged (both showed up in `echo "$PATH"` and in the shim's log). The shim ran
 (`status: "completed"`, `exitCode: 0`) and could write under the turn's folder and under
 `/tmp` but not under `~/Library/Application Support` (`Operation not permitted`). Under
-`read-only` the shim could write nowhere, in the folder or `/tmp`. Not probed yet: a
-user whose login shell is not zsh (for bash or fish `ZDOTDIR` means nothing,
-**inferred, not checked**).
+`read-only` the shim could write nowhere, in the folder or `/tmp`.
+
+**The model's shell is the account's login shell, and bash needs `BASH_ENV`.** Checked
+2026-11-15 with codex-cli 0.166.0: `codex exec --json --ephemeral --ignore-user-config`
+with a throwaway `CODEX_HOME` (a copy of this Mac's login, deleted after), a throwaway
+`HOME`, a stand-in `open` (prints `koloft-open:sent`) in a folder that a Koloft-style
+`ZDOTDIR` wrapper puts first, and `-s workspace-write`, where the system `open` fails with
+`-10661` and so shows which `open` ran without opening anything:
+
+| setup | `command -v open` | `open ./report.txt` |
+| --- | --- | --- |
+| zsh, no `ZDOTDIR` of the user's own | the stand-in | `koloft-open:sent` |
+| zsh, `~/.zshenv` says `ZDOTDIR="$HOME/.zsh"` (not exported) | `/usr/bin/open` | system `open` ran (`-10661`) |
+| the same, with a wrapper that sets `ZDOTDIR` back after each user file (PLATFORM§2) | the stand-in | `koloft-open:sent`, and `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
+| the same under `-s danger-full-access`, `command -v open` only | the stand-in | not run |
+| zsh, `~/.zshenv` says `ZDOTDIR="${ZDOTDIR:-$HOME/.zsh}"`, the wrapper before this change | the stand-in | `koloft-open:sent`, but `~/.zsh/.zprofile` and `~/.zsh/.zshrc` never ran |
+| the same with the shipped wrapper (`ZDOTDIR` unset while `~/.zshenv` runs), and a `~/.zsh/.zshrc` and `~/.zsh/.zlogin` that put `/usr/bin:/bin` in front of `PATH` | the stand-in | `koloft-open:sent`, `~/.zsh/.zprofile` saw `ZDOTDIR=~/.zsh`, `~/.zsh/.zshrc` ran |
+| model asked for `shell: "/bin/bash"`, `--disable shell_snapshot` | `/usr/bin/open` | system `open` ran |
+| the same with `BASH_ENV` naming a file that prepends the folder | the stand-in | `koloft-open:sent`, and `~/.bash_profile` ran |
+
+`SHELL=/bin/bash` in the environment changed nothing: the command was still `/bin/zsh
+-lc`. Codex's source at the `rust-v0.166.0` tag (`shell-command/src/shell_detect.rs`)
+picks the shell from the passwd entry (`getpwuid_r`), never `$SHELL`; `fish` (or any
+name it does not know) maps to no shell type and macOS then falls back to `/bin/zsh`, so
+a fish user gets `zsh -lc` and the `ZDOTDIR` wrapper (fish is not installed on this Mac,
+so this is read from the source, **not run**). On Linux the fallback is bash: run
+2026-11-15 in Docker (`node:22-bookworm-slim` with fish, tcsh and zsh installed, the
+`linux-arm64` build of 0.166.0, no login), users whose passwd shell is `/usr/bin/fish`
+or `/usr/bin/tcsh` each had their `~/.bash_profile` run when `codex exec` started, and
+no `~/.zshenv`, `~/.zprofile`, fish `config.fish` or tcsh `~/.login`. With the shell
+snapshot on (the default, feature `shell_snapshot`), a command is run as `<session shell> -c '. <snapshot>; exec
+<shell> -c <script>'` (`core/src/tools/runtimes/mod.rs`); the snapshot is captured in
+`<session shell> -lc`, so a model-picked bash under a zsh session got zsh's snapshot,
+with the shim already first. The bash capture script sources `~/.bashrc` only when
+`BASH_ENV` is unset (`shell-command/src/startup.rs`).
+
+A real bash login user, the same day, in Docker (`node:22-bookworm-slim` plus
+`ca-certificates`, the `linux-arm64` build of 0.166.0, a user whose passwd shell is
+`/bin/bash`, a copy of this Mac's login, `-s danger-full-access`, a stand-in system `open`
+at `/usr/bin/open`, the shim folder only in `BASH_ENV`'s file):
+
+| `BASH_ENV` | `open ./report.txt` | a variable `~/.bashrc` exports | `BASH_ENV` in a `#!/bin/bash` script the command ran |
+| --- | --- | --- | --- |
+| unset | system `open` ran | set | empty |
+| a file that only prepends the folder | `koloft-open:sent` | **unset** | not run |
+| a file that also sources `~/.bashrc` in a login shell, then prepends | `koloft-open:sent` | set | not run |
+| a file that prepends the folder, then runs `unset BASH_ENV` | `koloft-open:sent` | set | empty |
+
+Every command was `/bin/bash -lc '…'`. Koloft ships the third file: it loads
+`~/.bashrc` itself in a login shell (the shell Codex captures its snapshot in, which
+then skips `~/.bashrc` because `BASH_ENV` is set) and only after that puts the folder
+first, so a `~/.bashrc` that rebuilds `PATH` cannot push the shim back. The fourth file
+was not shipped: `unset BASH_ENV` lets a `~/.bashrc` that rebuilds `PATH` win, and a
+bash script that starts codex (an asdf-style launcher) would use the file up before the
+app-server starts. Koloft sets `BASH_ENV` only when the account's login shell
+(`os.userInfo().shell`, the passwd entry Codex reads too) is bash, so a zsh user's bash
+scripts, MCP servers and hooks see no change, and only when the login environment holds
+no `BASH_ENV` of its own. With the shell snapshot off, a bash user's `bash -lc` now loads
+`~/.bashrc` once more than without Koloft. Koloft hands Codex the environment its login
+shell exports (`readLoginShell`), which holds a `ZDOTDIR` that `~/.zshenv` exports; the
+wrapper starts from Koloft's own process `ZDOTDIR` instead (unset when Koloft starts from
+the Dock), so `~/.zshenv` itself still runs, as in the user's own terminal. Not run: a
+macOS account whose login shell is bash (the passwd shell of
+this Mac's account was not changed); that it behaves as the two runs above put together:
+**inferred, not checked**. Its shell half with the snapshot on was run on this Mac with
+`/bin/bash` 3.2.57 and the real `/etc/profile`, a throwaway `HOME` and Koloft's
+`BASH_ENV` file, in the shape the source describes (Codex itself not running): a capture
+in `bash -lc` ran `~/.bash_profile` and `~/.bashrc` once each, and `bash -c '. <snapshot>;
+exec bash -c "command -v open"'` found the shim, kept a variable `~/.bashrc` exported, and
+ran neither file again. A login shell of `/bin/sh` maps to `sh -lc`, which reads
+neither `ZDOTDIR` nor `BASH_ENV`: not handled.
 
 So Koloft handles an `open` three ways. Under `workspace-write` and `danger-full-access`
-its own shim (put first through `ZDOTDIR`) writes the request into `/tmp`, never runs the
-system `open`, and prints `koloft-open:sent`, and Koloft then skips that item's frame
-(the shim under `danger-full-access` was not run: **inferred, not checked**). Under
-`read-only` the shim can write nowhere, prints `koloft-open:blocked`, and Koloft opens the
-file from the `item/completed` frame. A shell that is not zsh never reaches the shim, so
-its item has neither line and Koloft opens from the frame too.
+its own shim (put first through `ZDOTDIR` for zsh and `BASH_ENV` for bash) writes the
+request into `/tmp`, never runs the system `open`, and prints `koloft-open:sent`, and
+Koloft then skips that item's frame (under `danger-full-access` only `command -v open`
+was run on the Mac, and found the shim). Under `read-only` the shim can write nowhere, prints
+`koloft-open:blocked`, and Koloft opens the file from the `item/completed` frame. A shell
+that reaches neither (`sh`) never runs the shim, so its item has neither line and Koloft
+opens from the frame too.
 
 **Where a command may write, by sandbox.** Checked 2026-10-08 with codex-cli 0.159.3, one
 real model turn each through `codex exec --ephemeral --ignore-user-config -C <folder>

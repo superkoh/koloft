@@ -1,8 +1,9 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { shq } from '@shared/shellQuote'
-import { CODEX_TMP_DIR } from './leftovers'
+import { CODEX_TMP_DIR, OPEN_SHIM_FOLDER } from './leftovers'
 
 const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
 
@@ -94,18 +95,57 @@ ${NO_REPLY_ENV}=1 "$self_dir/koloft" open "$abs$url" >/dev/null 2>&1 || passthro
 exit 0
 `
 
-const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
+const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin', '.zlogout']
+const ZSH_FILES_AFTER_PATH_HELPER = ['.zprofile', '.zshrc', '.zlogin']
+const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
+const FOUND_ZDOTDIR_VAR = 'koloft_found_zdotdir'
 
-// PLATFORM§2
-function zdotFile(name: string, userDotDir: string, shimDir: string): string {
-  const own = `${userDotDir}/${name}`
-  const source = `[ -f ${own} ] && . ${own}\n`
-  return name === '.zprofile' ? `${source}export PATH=${shq(shimDir)}:"$PATH"\n` : source
+export function unlessInAKoloftRunsShim(file: string | undefined): string | undefined {
+  return file && OPEN_SHIM_FOLDER.test(path.basename(path.dirname(file))) ? undefined : file
+}
+
+// PLATFORM§2 CODEX§12
+function zdotFile(
+  name: string,
+  userZdotdir: string | undefined,
+  zdotDir: string,
+  shimDir: string
+): string {
+  const own = `"\${ZDOTDIR:-$HOME}/${name}"`
+  return [
+    `${FOUND_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
+    ...(name === '.zshenv' ? [`${USER_ZDOTDIR_VAR}=${userZdotdir ? shq(userZdotdir) : "''"}`] : []),
+    `if [ -n "$${USER_ZDOTDIR_VAR}" ]; then ZDOTDIR="$${USER_ZDOTDIR_VAR}"; else unset ZDOTDIR; fi`,
+    `[ -f ${own} ] && . ${own}`,
+    `${USER_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
+    `export ZDOTDIR="$${FOUND_ZDOTDIR_VAR}"`,
+    ...(ZSH_FILES_AFTER_PATH_HELPER.includes(name)
+      ? [
+          `if [ "$ZDOTDIR" = ${shq(zdotDir)} ]; then path=(${shq(shimDir)} \${path:#${shq(shimDir)}}); fi`
+        ]
+      : []),
+    ''
+  ].join('\n')
+}
+
+// CODEX§12
+export function loginShellIsBash(): boolean {
+  return path.basename(os.userInfo().shell ?? '') === 'bash'
+}
+
+export function bashEnvFileIn(shimDir: string): string {
+  return path.join(shimDir, 'bash_env')
+}
+
+// CODEX§12
+function bashEnvScript(shimDir: string): string {
+  return `if shopt -q login_shell && [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\nexport PATH=${shq(shimDir)}:"$PATH"\n`
 }
 
 export interface OpenShim {
   shimDir: string
   zdotDir: string
+  bashEnv: string
   requestDir: string
 }
 
@@ -116,15 +156,20 @@ export function writeOpenShim(
 ): OpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
-  const shim = { shimDir, zdotDir, requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`) }
+  const shim = {
+    shimDir,
+    zdotDir,
+    bashEnv: bashEnvFileIn(shimDir),
+    requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`)
+  }
   try {
     fs.mkdirSync(zdotDir, { recursive: true })
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {
       mode: 0o755
     })
-    const userDotDir = userZdotdir ? shq(userZdotdir) : '"$HOME"'
     for (const name of ZSH_DOTFILES)
-      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, shimDir))
+      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userZdotdir, zdotDir, shimDir))
+    fs.writeFileSync(shim.bashEnv, bashEnvScript(shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {
     removeOpenShim(shim)
