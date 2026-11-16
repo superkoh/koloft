@@ -57,17 +57,17 @@ export class SleepingTabs {
     return undefined
   }
 
-  settle(live: LiveTab[]): { oldId: string; newId: string }[] {
+  settle(live: LiveTab[]): { oldId: string; newId: string; tab: OpenTab }[] {
     if (!this.tabs.size) return []
     const tabOfSession = new Map<string, string>()
     for (const s of live) if (s.alive && s.sessionId) tabOfSession.set(s.sessionId, s.tabId)
-    const woken: { oldId: string; newId: string }[] = []
+    const woken: { oldId: string; newId: string; tab: OpenTab }[] = []
     for (const [oldId, t] of this.tabs) {
       const newId = tabOfSession.get(t.sessionId)
       if (!newId || newId === oldId) continue
       this.tabs.delete(oldId)
       this.wokenAs.set(oldId, newId)
-      woken.push({ oldId, newId })
+      woken.push({ oldId, newId, tab: t })
       void this.handOverTyping(oldId, newId)
     }
     return woken

@@ -363,8 +363,6 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           }
         })
       }
-      if (text.startsWith('/sh '))
-        execFile('/bin/sh', ['-c', text.slice('/sh '.length)], { cwd: thread.cwd }, () => {})
       if (text.startsWith('/write ')) {
         const target = path.join(thread.cwd, text.slice('/write '.length).trim())
         const diff = 'written by Codex\n'

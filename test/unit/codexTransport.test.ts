@@ -131,6 +131,17 @@ describe('Codex stdio reads', () => {
     await expect(client.request('turn/start', {})).rejects.toThrow('does not allow')
   })
 
+  // CODEX§15
+  it('a side connection resumes a thread only to load it into its home, never through a plain request, which the long-lived side connections send', async () => {
+    const client = rpc()
+    await expect(client.request('thread/resume', { threadId: 't' })).rejects.toThrow(
+      'does not allow thread/resume'
+    )
+    await client.loadThreadIntoThisHome('t')
+    const after = await client.request<{ seen: string[] }>('thread/list')
+    expect(after.seen.slice(-2)).toEqual(['thread/resume', 'thread/list'])
+  })
+
   // CODEX§24
   it('lets a side connection ask the two checks a search makes of each thread: which of its own words hold the term, and whether Codex indexed it', async () => {
     const client = rpc()

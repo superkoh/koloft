@@ -558,7 +558,9 @@ export function accountLine(
   return [
     `koloft: → ${name}`,
     ...parts.map((p) => `${p.label} ${Math.round(p.used * 100)}%`),
-    ...(read && read.nowMs - read.at > STALE_MS ? [ageLabel(read.at, read.nowMs)] : [])
+    ...(read && parts.length > 0 && read.nowMs - read.at > STALE_MS
+      ? [ageLabel(read.at, read.nowMs)]
+      : [])
   ].join(' · ')
 }
 
@@ -576,9 +578,9 @@ export function launchLine(a: AccountView, nowMs: number): string {
       a.limits.windows.map((w) => ({ label: windowLabel(w.minutes), used: w.used })),
       { at: a.limits.at, nowMs }
     )
-  const quota = a.probeError ? [] : (a.quota ?? [])
   return accountLine(
     a.name,
-    quota.map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used }))
+    (a.quota ?? []).map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used })),
+    a.quotaAt === undefined ? undefined : { at: a.quotaAt, nowMs }
   )
 }

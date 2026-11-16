@@ -9,6 +9,7 @@ export interface OpenTab {
   title: string
   cwd: string
   asleep?: true
+  tabIds?: string[]
 }
 
 export interface OpenTabs {
@@ -26,7 +27,10 @@ function isOpenTab(v: unknown): v is OpenTab {
     !!t.sessionId &&
     backendIdOf(t.kind) !== undefined &&
     typeof t.title === 'string' &&
-    typeof t.cwd === 'string'
+    typeof t.cwd === 'string' &&
+    (t.tabIds === undefined ||
+      (Array.isArray(t.tabIds) &&
+        t.tabIds.every((id) => typeof id === 'string' && /^\S+$/.test(id))))
   )
 }
 

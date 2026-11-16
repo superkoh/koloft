@@ -293,6 +293,7 @@ export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
   quota?: QuotaBucket[]
+  quotaAt?: number
   probeError?: ProbeErrorKind
   apiKey?: true
 }
@@ -474,6 +475,7 @@ export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; err
 
 export interface PaletteRequest {
   words: string
+  pictures: string[]
   backend: BackendId
   title?: string
   about?: string
@@ -561,6 +563,11 @@ export interface SessionMethods {
   enabled: Record<BackendId, boolean>
 }
 export type TabKind = 'shell' | BackendId
+
+export interface ScreenSize {
+  cols: number
+  rows: number
+}
 
 export interface BackendAvailability {
   id: BackendId
@@ -736,6 +743,7 @@ export interface AttentionEvent extends AttentionSubject {
   at: number
   fyi?: boolean
   wasAsking?: boolean
+  stoppedByRestart?: boolean
 }
 
 export interface OsOutletsSeenByTests {
@@ -1158,7 +1166,7 @@ export interface KoloftApi {
     attach(id: string): void
     onScreen(id: string, onScreen: boolean): void
     flowStats(): Promise<FlowStats[]>
-    resize(id: string, cols: number, rows: number): void
+    resize(id: string, cols: number, rows: number, sessionScreen: boolean): void
     kill(id: string, restarting?: boolean): void
     onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
@@ -1238,6 +1246,7 @@ export interface KoloftApi {
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number
+  sessionScreenAtLoad: ScreenSize | null
   browserTabCap: number
   browser: {
     onOpenRequest(cb: (r: BrowserOpenRequest) => void): () => void
@@ -1501,6 +1510,9 @@ export interface KoloftApi {
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
     fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
+  }
+  palette: {
+    savePicture(dataUrl: string): Promise<string | null>
   }
   discord: {
     status(): Promise<DiscordStatus>

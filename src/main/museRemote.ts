@@ -1,4 +1,5 @@
 import { shq } from '@shared/shellQuote'
+import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from './agentLift'
 import {
   CHILD_IN_A_PTY_PY,
   pyBytes,
@@ -97,7 +98,8 @@ if doc is not None:
     out['projects'] = projects
     write_whole(os.path.realpath(trust_file), json.dumps(out, indent=2))
 if trust_if and trusted(trust_if):
-    args = args[:1] + ['--trust-workspace'] + args[1:]
+    after_muse = args.index('muse') + 1
+    args = args[:after_muse] + ['--trust-workspace'] + args[after_muse:]
 
 os.makedirs(hook_dir, exist_ok=True)
 mirror = os.open(os.path.join(hook_dir, run_id + '${MIRROR_SUFFIX}'), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -334,6 +336,8 @@ export function museRunLines(s: MuseRunSpec): string {
   done
   XDG_CONFIG_HOME="$A"; TBH_CREDENTIAL_BACKEND=file; TBH_MANAGED_HOOKS_PATH="$T.hooks.json"
   export XDG_CONFIG_HOME TBH_CREDENTIAL_BACKEND TBH_MANAGED_HOOKS_PATH
-  exec python3 "$M/${MUSE_WRAP_FILE}" "${REMOTE_HOOK_DIR}" ${s.tabId} ${options.map(shq).join(' ')} -- muse ${s.args.map(shq).join(' ')}
+  set -- muse ${s.args.map(shq).join(' ')}
+  ${ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE}
+  exec python3 "$M/${MUSE_WRAP_FILE}" "${REMOTE_HOOK_DIR}" ${s.tabId} ${options.map(shq).join(' ')} -- "$@"
 `
 }

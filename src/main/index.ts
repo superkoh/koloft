@@ -195,6 +195,7 @@ import {
   UTIL_BIN_DIR,
   utilShellLine,
   CLAUDE_AUTH_ENV_VARS,
+  claudeCodeGuessesWindowOf,
   type MachinePackage
 } from './remote/launch'
 import {
@@ -334,7 +335,7 @@ import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from '.
 import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
-import { fullscreenOption, windowMinWidth } from './windowBounds'
+import { fullscreenOption, usableSessionScreen, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
@@ -381,6 +382,7 @@ import {
   type RelayDeps
 } from './cdpRelay'
 import { pickElement, pickText, stopPick } from './elementPick'
+import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -859,7 +861,8 @@ tracker.heldTabs = () => {
     if (
       butler?.channelOfTab(s.tabId) ||
       roomOfTab(s.tabId) ||
-      workspaceMgr?.isResident(s.sessionId)
+      workspaceMgr?.isResident(s.sessionId) ||
+      cronRunner?.holdsOpenRunThatClosesItself(s.tabId)
     )
       held.add(s.tabId)
   return held
@@ -946,6 +949,11 @@ const attention = new AttentionTracker((pending, event) => {
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
+// ADR-0039
+attention.outlivesKoloft = (tabId) => {
+  const s = sessionOfTab(tabId)
+  return !!s?.remote && s.backendId !== 'codex'
+}
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (
@@ -981,13 +989,28 @@ let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
+const TAB_IDS_KEPT_PER_TAB = 8
+const earlierTabIds = new Map<string, string[]>()
+
+const tabIdsOf = (tabId: string): string[] =>
+  [tabId, ...(earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])].slice(
+    0,
+    TAB_IDS_KEPT_PER_TAB
+  )
+
+function carryTabIds(newId: string, ids: string[]): void {
+  const merged = new Set([...(earlierTabIds.get(newId) ?? []), ...ids])
+  merged.delete(newId)
+  earlierTabIds.set(newId, [...merged].slice(0, TAB_IDS_KEPT_PER_TAB - 1))
+}
 
 function openTabOf(s: SessionInfo): OpenTab {
   return {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
+    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
+    tabIds: tabIdsOf(s.tabId)
   }
 }
 
@@ -1001,7 +1024,8 @@ function rememberOpenTabs(all = allSessions()): void {
       sessionId: h.resumeSessionId,
       kind,
       title: '',
-      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd
+      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd,
+      tabIds: tabIdsOf(h.id)
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -1062,7 +1086,10 @@ function forgetSleeper(tabId: string): void {
 
 function settleWokenSleepers(all: SessionInfo[]): void {
   const woken = sleepers.settle(all)
-  for (const { oldId, newId } of woken) attention.rehome(oldId, newId)
+  for (const { oldId, newId, tab } of woken) {
+    attention.rehome(oldId, newId)
+    if (tab.tabIds) carryTabIds(newId, tab.tabIds)
+  }
   if (woken.length) tabLifecycle.emit('woken')
 }
 
@@ -1489,11 +1516,53 @@ function elementPicksDir(): string {
   return path.join(app.getPath('userData'), 'element-picks')
 }
 
-async function savePickOnThisMac(png: Buffer): Promise<string> {
-  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
-  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
-  await fs.promises.writeFile(file, png)
+async function savePictureIn(dir: string, extension: string, picture: Buffer): Promise<string> {
+  await fs.promises.mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${crypto.randomUUID()}.${extension}`)
+  await fs.promises.writeFile(file, picture)
   return file
+}
+
+function savePickOnThisMac(png: Buffer): Promise<string> {
+  return savePictureIn(elementPicksDir(), 'png', png)
+}
+
+const PASTED_PICTURES_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const PASTED_PICTURES_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+
+function pastedPicturesDir(): string {
+  return path.join(app.getPath('userData'), 'palette-pictures')
+}
+
+async function savePastedPicture(dataUrl: string): Promise<string | null> {
+  const [, mime, picture] = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl) ?? []
+  if (!Object.hasOwn(PASTED_PICTURE_EXTENSIONS, mime ?? '')) return null
+  return savePictureIn(
+    pastedPicturesDir(),
+    PASTED_PICTURE_EXTENSIONS[mime],
+    Buffer.from(picture, 'base64')
+  )
+}
+
+async function withPastedPicturesOnItsMachine(
+  options: CreateTabOptions
+): Promise<CreateTabOptions> {
+  const machine = typeof options.cwd === 'string' ? parseRemoteKey(options.cwd)?.host : undefined
+  if (!machine || !options.firstPrompt) return options
+  let firstPrompt = options.firstPrompt
+  await Promise.all(
+    pastedPicturesIn(firstPrompt, pastedPicturesDir()).map(async (file) => {
+      try {
+        const picture = await fs.promises.readFile(file)
+        const there = await hosts.machine(machine).savePick(path.basename(file), picture)
+        firstPrompt = firstPrompt.replaceAll(file, there)
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
+      }
+    })
+  )
+  return { ...options, firstPrompt }
 }
 
 // CODEX§3 CODEX§20 MUSE§5
@@ -1595,7 +1664,7 @@ function savedHomeUsageOf(a: AccountView): HomeUsage | undefined {
 function pushHomeAccount(name: string, kind: SignInFolderKind): void {
   const key = viewKey(name, kind)
   if (findAccount(name, kind)?.status === 'ok')
-    saveHomeUsage(savedHomeUsage, key, usageViews.get(key), Date.now())
+    saveHomeUsage(savedHomeUsage, key, usageViews.get(key))
   pushAccounts()
 }
 
@@ -2380,7 +2449,10 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
-  if (endpoint?.model) payload.model = endpoint.model
+  if (endpoint?.model) {
+    payload.model = endpoint.model
+    if (claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
+  }
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -2994,7 +3066,10 @@ async function probeAgyAccount(name: string): Promise<void> {
   if (apiKey) usageViews.set(key, { apiKey: true })
   else if (signedIn) {
     const quota = await agyUsage(home)
-    usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
+    usageViews.set(
+      key,
+      quota ? { quota, quotaAt: Date.now() } : { ...usageViews.get(key), probeError: 'network' }
+    )
   }
   pushHomeAccount(name, 'agy-home')
 }
@@ -3239,7 +3314,8 @@ function createWindow(): void {
   trackWindowState(
     mainWindow,
     OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined,
-    () => hiddenFromFullScreen
+    () => hiddenFromFullScreen,
+    () => ptyMgr.sessionScreen
   )
 
   // PLATFORM§5
@@ -3302,6 +3378,7 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
   const stalls = new StallWatchWhileFocused(
     signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
   )
@@ -3369,6 +3446,10 @@ app.whenReady().then(() => {
   const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
   pruneElementPicks()
   setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
+  const prunePastedPictures = (): void =>
+    pruneStale(pastedPicturesDir(), PASTED_PICTURES_KEPT_MS, true)
+  prunePastedPictures()
+  setInterval(prunePastedPictures, PASTED_PICTURES_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -3506,6 +3587,7 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
+    if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
@@ -5569,7 +5651,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  tabLifecycle.emit('stopping', tabId)
+  tabLifecycle.emit('stopping', tabId, restarting)
   boundSessions.delete(tabId)
   return stopped.then(
     () => true,
@@ -5727,7 +5809,7 @@ async function removeUntouchedWorktree(
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.holdsFolder(tree)) return
+  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
@@ -5826,7 +5908,7 @@ async function launchQuietTab(
   title: string,
   more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
-  const r = await sessionBackends.create(options)
+  const r = await sessionBackends.create(await withPastedPicturesOnItsMachine(options))
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
   sendToRenderer(CH.terminal.spawned, spawned)
@@ -5880,6 +5962,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
       if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
     }
+    const ranUnder = savedOpenTabs.tabs.find((t) => t.sessionId === id)?.tabIds
+    if (ranUnder && reopenedTab) carryTabIds(reopenedTab, ranUnder)
     if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
@@ -6100,7 +6184,8 @@ async function copyToPhone(
           throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
         }),
     fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-    send: (files, parts) => relay.sendParts(channelId, files, parts)
+    send: (files, parts) => relay.sendParts(channelId, files, parts),
+    cardsWaitFor: (copy) => relay.cardsWaitFor(tabId, copy)
   })
   if (!relay.reaches(tabId)) {
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
@@ -6324,14 +6409,17 @@ function commandIntoButler(text: string): string {
 }
 
 function fromPalette(
-  { words, backend, about, at }: PaletteRequest,
+  { words, pictures, backend, about, at }: PaletteRequest,
   rules: string | undefined
 ): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
   const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
   const picks = about && rules ? projectRulesForTheButler(about, rules) : ''
-  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}${picks}`
+  return withPictures(
+    `The owner typed this in ⌘P: ${words}${where}${routed}${agent}${picks}`,
+    pictures
+  )
 }
 
 async function startHelper(
@@ -6565,7 +6653,10 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (opts.kind !== 'shell') return sessionBackends.create(await withOwnDefaults(opts))
+      if (opts.kind !== 'shell')
+        return sessionBackends.create(
+          await withPastedPicturesOnItsMachine(await withOwnDefaults(opts))
+        )
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
@@ -6626,9 +6717,17 @@ function registerIpc(): void {
       terminalOutput.onScreen(id, onScreen)
   })
   ipcMain.handle(CH.terminal.flowStats, () => terminalOutput.stats())
-  ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
-    ptyMgr.resize(id, cols, rows)
+  ipcMain.on(
+    CH.terminal.resize,
+    (_e, id: string, cols: number, rows: number, sessionScreen: unknown) => {
+      ptyMgr.resize(id, cols, rows)
+      const fitted = sessionScreen === true && usableSessionScreen({ cols, rows })
+      if (fitted) ptyMgr.sessionScreen = fitted
+    }
   )
+  ipcMain.on(CH.terminal.sessionScreen, (e) => {
+    e.returnValue = ptyMgr.sessionScreen ?? null
+  })
   ipcMain.on(
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
@@ -6643,6 +6742,10 @@ function registerIpc(): void {
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
+    if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
+      carryTabIds(newTabId, tabIdsOf(oldTabId))
+      earlierTabIds.delete(oldTabId)
+    }
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
@@ -7203,7 +7306,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
     if (typeof tabId !== 'string') return null
     const tags = [
-      tabId,
+      ...tabIdsOf(tabId),
       ...ptyMgr
         .list()
         .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
@@ -7344,6 +7447,9 @@ function registerIpc(): void {
       : null
     return pickText(picked, picture)
   })
+  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
+  )
   ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
     if (typeof id === 'number') stopPick(id)
   })

@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose, runInTerminal } from './helpers/app'
+import { test, expect, launchApp, quitAndClose, runInTerminal, triggerRestart } from './helpers/app'
 import {
   agySessionCalls,
   E2E_CLAUDE_ACCOUNT,
@@ -97,16 +97,6 @@ function normalizeAccelerator(accel: string): string {
     .filter(Boolean)
     .sort()
     .join('+')
-}
-
-async function triggerRestart(app: ElectronApplication, times = 1): Promise<void> {
-  await app.evaluate(({ Menu }, count) => {
-    for (let i = 0; i < count; i++) {
-      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
-      if (!item) throw new Error('no application-menu item with id "restart-session"')
-      item.click()
-    }
-  }, times)
 }
 
 // PLATFORM§6

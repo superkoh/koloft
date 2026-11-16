@@ -780,6 +780,11 @@ export class CronRunner {
     return !!run && this.runStarted(run)
   }
 
+  holdsOpenRunThatClosesItself(tabId: string): boolean {
+    const run = this.live.get(tabId)
+    return !!run && this.runStarted(run) && !!this.byId(run.jobId)?.autoClose
+  }
+
   private runStarted(run: LiveRun): boolean {
     return run.state === 'running' || run.state === 'done'
   }
@@ -841,8 +846,26 @@ export class CronRunner {
     }
   }
 
-  holdsFolder(folder: string): boolean {
+  private holdsFolder(folder: string): boolean {
     return [...this.kept.values()].some((k) => runFolder(k.root, k.worktree) === folder)
+  }
+
+  private boundFolderOf(run: LiveRun): string | undefined {
+    const held = run.sessionId ? this.folderOf(run) : undefined
+    return held && runFolder(held.root, held.worktree)
+  }
+
+  tidiesFolder(folder: string): boolean {
+    return (
+      this.holdsFolder(folder) ||
+      [...this.live.values()].some((run) => this.boundFolderOf(run) === folder) ||
+      this.jobs.some((job) =>
+        job.history.some(
+          (h) =>
+            !!h.worktree && !!h.sessionId && runFolder(job.workspacePath, h.worktree) === folder
+        )
+      )
+    )
   }
 
   tabMoved(oldTabId: string, newTabId: string): void {

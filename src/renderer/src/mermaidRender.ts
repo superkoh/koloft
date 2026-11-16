@@ -116,6 +116,14 @@ function messageOf(err: unknown): string {
   return raw.trim() || 'The diagram could not be rendered.'
 }
 
+function svgFromCache(key: string, id: string): string | undefined {
+  return cache.get(key)?.split(ID_SLOT).join(selectorSafeId(id))
+}
+
+export function cachedDiagram(code: string, id: string): string | undefined {
+  return svgFromCache(hashCode(code.trim()), id)
+}
+
 export async function renderDiagram(
   code: string,
   id: string
@@ -130,8 +138,8 @@ export async function renderDiagram(
   }
 
   const key = hashCode(src)
-  const cached = cache.get(key)
-  if (cached !== undefined) return { ok: true, svg: cached.split(ID_SLOT).join(selectorSafeId(id)) }
+  const cached = svgFromCache(key, id)
+  if (cached !== undefined) return { ok: true, svg: cached }
 
   let mermaid: MermaidApi
   try {

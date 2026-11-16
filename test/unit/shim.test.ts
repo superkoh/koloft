@@ -452,15 +452,17 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.stderr).toContain('metered')
   })
 
-  it("custom endpoint injects BASE_URL + AUTH_TOKEN, pins every model slot to the endpoint's model and clears the native credentials", async () => {
+  it("custom endpoint injects BASE_URL + AUTH_TOKEN, pins every model slot to the endpoint's model, caps the context at 200k when Koloft says CC would guess its window, and clears the native credentials", async () => {
     token('glm', 'endpoint-key-fixture')
     const r = await runShimPick([], {
       account: 'glm',
       kind: 'custom',
       banner: 'koloft: → glm (custom endpoint · glm-5.2)',
       baseUrl: 'https://example.test/api/anthropic',
-      model: 'glm-5.2'
+      model: 'glm-5.2',
+      disable1mContext: true
     })
+    expect(r.realEnv?.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe('1')
     expect(r.realEnv?.ANTHROPIC_AUTH_TOKEN).toBe('endpoint-key-fixture')
     expect(r.realEnv?.ANTHROPIC_BASE_URL).toBe('https://example.test/api/anthropic')
     expect(r.realEnv?.ANTHROPIC_MODEL).toBe('glm-5.2')
@@ -485,6 +487,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.realEnv?.ANTHROPIC_BASE_URL).toBe('https://proxy.test')
     expect(r.realEnv?.ANTHROPIC_MODEL).toBeUndefined()
     expect(r.realEnv?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBeUndefined()
+    expect(r.realEnv?.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBeUndefined()
   })
 
   it('a --model Koloft put on the line (a scheduled job, koloft session new) yields to a custom endpoint that pins its own model, and stays for one that does not', async () => {
@@ -968,6 +971,13 @@ describe('claude shim (scheduled jobs: first prompt + session name ride env vars
       TASK
     ])
     expect(r.realArgs0?.[r.realArgs0.length - 1]).toBe(TASK)
+  })
+
+  it('a first prompt that names a pasted picture also hands claude the picture’s folder with --add-dir, just before the prompt, and that variable does not reach claude either', () => {
+    const folder = '/Users/me/Library/Application Support/Koloft/palette-pictures'
+    const r = runShim(['-w', 'n1'], { ...CRON, KOLOFT_PICTURE_FOLDER: folder })
+    expect(norm(r).slice(-6)).toEqual(['--name', NAME, '--add-dir', folder, '--', TASK])
+    expect(r.realEnv?.KOLOFT_PICTURE_FOLDER).toBeUndefined()
   })
 
   it('BB-E19 neither variable reaches the launched claude', () => {

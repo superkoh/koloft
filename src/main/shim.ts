@@ -532,6 +532,9 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
       export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+      case "$pjson" in
+        *'"disable1mContext":true'*) export CLAUDE_CODE_DISABLE_1M_CONTEXT=1 ;;
+      esac
       # CC§9
       kargs=()
       kdrop=0
@@ -557,7 +560,8 @@ fi
 # CC§7 CC§9
 kfp="$KOLOFT_FIRST_PROMPT"
 ksn="$KOLOFT_SESSION_NAME"
-unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME
+kpf="$KOLOFT_PICTURE_FOLDER"
+unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME KOLOFT_PICTURE_FOLDER
 
 if [ "$skip" = "1" ]; then
   exec "$real" "\${inj[@]}" "$@"
@@ -581,6 +585,8 @@ if [ -n "$nid" ]; then
   register "$nid" "$nid" "new"
   extra=()
   [ -n "$ksn" ] && extra+=(--name "$ksn")
+  # CC§18
+  [ -n "$kfp" ] && [ -n "$kpf" ] && extra+=(--add-dir "$kpf")
   [ -n "$kfp" ] && extra+=(-- "$kfp")
   exec "$real" "\${pre[@]}" "\${inj[@]}" --session-id "$nid" "$@" "\${extra[@]}"
 fi

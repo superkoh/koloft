@@ -163,14 +163,28 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
       app.evaluate(({ BrowserWindow }) => {
         BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer()
       })
-    const crashed = (): Promise<boolean> =>
+    await app.evaluate(({ BrowserWindow }) => {
+      const seen = { crashes: 0, reloads: 0 }
+      ;(globalThis as { rendererSeen?: typeof seen }).rendererSeen = seen
+      const contents = BrowserWindow.getAllWindows()[0]!.webContents
+      contents.on('did-start-navigation', (details) => {
+        if (details.isMainFrame && !details.isSameDocument) seen.reloads += 1
+      })
+      contents.on('render-process-gone', () => {
+        seen.crashes += 1
+      })
+    })
+    const rendererSeen = (): Promise<{ crashes: number; reloads: number } | undefined> =>
       app.evaluate(
-        ({ BrowserWindow }) => !!BrowserWindow.getAllWindows()[0]?.webContents.isCrashed()
+        () => (globalThis as { rendererSeen?: { crashes: number; reloads: number } }).rendererSeen
       )
-    for (const reloads of [true, true, false]) {
+    for (const [round, reloads] of [true, true, false].entries()) {
       await crash()
-      await expect.poll(crashed).toBe(true)
-      if (!reloads) continue
+      await expect.poll(async () => (await rendererSeen())?.crashes).toBe(round + 1)
+      if (!reloads) {
+        expect((await rendererSeen())?.reloads).toBe(round)
+        continue
+      }
       await expect
         .poll(
           () =>

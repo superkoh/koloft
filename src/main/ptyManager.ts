@@ -4,7 +4,7 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { TabKind } from '@shared/types'
+import type { ScreenSize, TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
@@ -60,6 +60,7 @@ interface CreateArgs {
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
+    KOLOFT_PICTURE_FOLDER?: string
     KOLOFT_AGENT_PLUGIN?: string
     KOLOFT_AGENT_PROMPT?: string
     KOLOFT_DOCS_PLUGIN?: string
@@ -186,6 +187,7 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
+  sessionScreen?: ScreenSize
 
   private ptys = new Map<string, PtyHandle>()
   private running = new Set<pty.IPty>()
@@ -239,6 +241,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_HOOK_SETTINGS' ||
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
+        key === 'KOLOFT_PICTURE_FOLDER' ||
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
@@ -268,6 +271,7 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
+        'KOLOFT_PICTURE_FOLDER',
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
         'KOLOFT_DOCS_PLUGIN',
@@ -291,10 +295,11 @@ export class PtyManager extends EventEmitter {
       ? [args.executable, ...(args.argv ?? [])]
       : [shell, ...login.args]
     const [file, ...fileArgs] = args.aboveItsTools ? aboveItsTools(program) : program
+    const screen = args.util ? undefined : this.sessionScreen
     const proc = pty.spawn(file, fileArgs, {
       name: 'xterm-256color',
-      cols: args.cols ?? 80,
-      rows: args.rows ?? 24,
+      cols: args.cols ?? screen?.cols ?? 80,
+      rows: args.rows ?? screen?.rows ?? 24,
       cwd: args.cwd,
       env
     })

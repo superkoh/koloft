@@ -1,7 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
-import { ANSWER_STARTS } from './ssh'
+import { ECHO_THE_MARK } from './ssh'
 import {
   ENSURE_AGY_MINIMUM_FN,
   ENSURE_CLAUDE_MINIMUM_FN,
@@ -75,7 +75,7 @@ export function remoteShCommand(script: string, args: string[] = [], first = '')
 
 // PLATFORM§33
 export function remoteAnswerCommand(script: string, args: string[] = []): string {
-  return remoteShCommand(script, args, `echo ${ANSWER_STARTS}; `)
+  return remoteShCommand(script, args, ECHO_THE_MARK)
 }
 
 const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
@@ -343,8 +343,10 @@ const SHELL_LINE = 'shell '
 const TOOL_SHELL_LINE = 'toolshell '
 // CC§8
 const TOOL_SHELLS_IN_FLIGHT =
-  `[ -d /proc ] && find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%h %l\\n' 2>/dev/null | ` +
-  `while read -r td tl; do grep -qs shell-snapshots "\${td%/fd}/cmdline" && echo "${TOOL_SHELL_LINE}$tl"; done`
+  `if [ -d /proc ]; then find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%h %l\\n' 2>/dev/null | ` +
+  `while read -r td tl; do grep -qs shell-snapshots "\${td%/fd}/cmdline" && echo "${TOOL_SHELL_LINE}$tl"; done; ` +
+  `else ts="$(ps -axww -o pid= -o command= | awk '/shell-snap[s]hots/ { printf "%s%s", c, $1; c = "," }')"; ` +
+  `[ -n "$ts" ] && lsof -n -P -a -p "$ts" -d 1 -Fn 2>/dev/null | sed -n 's|^n\\(.*/tasks/.*\\.output\\)$|${TOOL_SHELL_LINE}\\1|p'; fi`
 // PLATFORM§37
 const EACH_SHELLS_FOREGROUND_AND_FOLDER =
   `k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "${remoteShellPidFile('$1')}"; ` +

@@ -251,7 +251,9 @@ export function ArtifactPane({
   const isBinaryKind = kind === 'image' || kind === 'pdf'
 
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [text, setText] = useState('')
+  const [read, setRead] = useState({ src: '', text: '' })
+  const text = read.text
+  const textIsFromAnotherFile = editText === undefined && read.src !== path
   const [state, setState] = useState<TextState>(isBinaryKind ? 'ok' : 'loading')
   const [diff, setDiff] = useState<{ src: string; text: string } | null>(null)
   const changedRef = useRef(changed)
@@ -291,8 +293,11 @@ export function ArtifactPane({
 
   const shownText = editText ?? text
   const symbols = useMemo(
-    () => (current === 'source' && state === 'ok' ? extractOutline(shownText) : []),
-    [current, state, shownText]
+    () =>
+      current === 'source' && state === 'ok' && !textIsFromAnotherFile
+        ? extractOutline(shownText)
+        : [],
+    [current, state, textIsFromAnotherFile, shownText]
   )
   const hasOutline =
     current === 'source' ? symbols.length > 0 : current === 'render' && mdHeadings.length > 0
@@ -321,6 +326,7 @@ export function ArtifactPane({
   }, [path])
 
   const readPath = useRef<string | null>(null)
+  const lastGoodReadPath = useRef<string | null>(null)
   useEffect(() => {
     const firstReadOfPath = readPath.current !== path
     readPath.current = path
@@ -338,12 +344,14 @@ export function ArtifactPane({
       .readText(path)
       .then((t) => {
         if (cancelled) return
-        setText(t)
+        lastGoodReadPath.current = path
+        setRead({ src: path, text: t })
         setState('ok')
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const next = stateAfterReadError(String((err as Error)?.message ?? ''), firstReadOfPath)
+        const noGoodTextToKeep = lastGoodReadPath.current !== path
+        const next = stateAfterReadError(String((err as Error)?.message ?? ''), noGoodTextToKeep)
         if (next) setState(next)
       })
     return () => {
@@ -597,6 +605,7 @@ export function ArtifactPane({
         />
       )
     }
+    if (textIsFromAnotherFile) return <div className="code-state">Loading…</div>
     return (
       <>
         {editUnsaved && (

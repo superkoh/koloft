@@ -102,7 +102,7 @@ export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): stri
   return data.slice(0, endsMidPair(data, maxUnits) ? maxUnits - 1 : maxUnits)
 }
 
-// PLATFORM§21
+// PLATFORM§21 PLATFORM§35 CODEX§37 MUSE§23 AGY§33
 const QUESTION_FOR_THE_TERMINAL =
   /\x1b\[(?:[?>=]?[\d;]*[cn]|\??[\d;]*\$p|>[\d;]*q|\?u|(?:1[1-9]|2[01])(?:;[\d;]*)?t)|\x1b\]\d+;(?:[^\x07\x1b]*;)?\?(?:\x07|\x1b\\)|\x1bP[$+]q/
 

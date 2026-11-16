@@ -1,3 +1,4 @@
+import { withoutPictures } from '@shared/pastedPictures'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import type { TranscriptRecord } from './transcriptRecord'
 
@@ -24,7 +25,7 @@ export class TitleSources {
   }
 
   notePrompt(p: PromptTitles): void {
-    if (p.title && !this.firstPrompt) this.firstPrompt = p.title
+    if (p.title && !this.firstPrompt) this.firstPrompt = withoutPictures(p.title)
     if (p.commandArgs && !this.commandArgs) this.commandArgs = p.commandArgs
     if (p.commandName && !this.commandName) this.commandName = p.commandName
   }

@@ -705,6 +705,12 @@ export class CodexRpc {
     return (await this.send(method, params)) as T
   }
 
+  // CODEX§15
+  async loadThreadIntoThisHome(threadId: string): Promise<void> {
+    await this.initialized
+    await this.send('thread/resume', { threadId })
+  }
+
   private send(method: string, params: unknown): Promise<unknown> {
     if (this.closed) return Promise.reject(new Error('Codex RPC connection is closed'))
     return sendRequest(

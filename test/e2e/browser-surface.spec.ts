@@ -1,6 +1,6 @@
 import http from 'http'
 import type { Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, fillsItsTrack, launchApp } from './helpers/app'
 import { setGuestLimit, type E2EEnv } from './helpers/env'
 import { gitInit, startSessionIn } from './helpers/p1'
 import {
@@ -235,7 +235,7 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
     }
   })
 
-  test('BB-M10: a load in progress shows a progress indicator that clears on completion, and with Reduce motion on the indicator stays but stands still', async ({
+  test('BB-M10: a load in progress shows a progress indicator that clears on completion, and with Reduce motion on the indicator stays but stands still across the whole bar, so it cannot read as a part done', async ({
     app,
     page,
     env
@@ -253,9 +253,11 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
       await expect(progress).toBeVisible({ timeout: 20_000 })
       const moving = (): Promise<number> => progress.evaluate((el) => el.getAnimations().length)
       expect(await moving()).toBe(1)
+      expect(await fillsItsTrack(progress)).toBe(false)
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await expect.poll(moving).toBe(0)
       await expect(progress).toBeVisible()
+      expect(await fillsItsTrack(progress)).toBe(true)
       await page.emulateMedia({ reducedMotion: null })
 
       await expect(guest.locator('#slow-done')).toBeVisible({ timeout: 40_000 })

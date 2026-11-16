@@ -13,6 +13,7 @@ import {
   saidInTranscript,
   TranscriptFollower
 } from '../../src/main/agyStore'
+import type { Turn } from '../../src/shared/turns'
 import { appendTranscript, ownerTyped, writeSummaries } from './helpers/agyStore'
 
 let gemini: string
@@ -220,7 +221,73 @@ describe('the transcript (AGY§8)', () => {
     })
   })
 
-  it('reading only what each turn added, through a tool output longer than one read piece and a last line whose newline is not written yet, gives the same last turn and tokens as reading the whole transcript once', async () => {
+  it('two turns that both ended before one read come out once each, oldest first, and a read that finds nothing new gives no turn', async () => {
+    const follower = new TranscriptFollower(transcript)
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('the task') },
+      { type: 'PLANNER_RESPONSE', content: 'task done' },
+      { type: 'USER_INPUT', content: ownerTyped('a quick question') },
+      { type: 'PLANNER_RESPONSE', content: 'quick answer' }
+    ])
+    const replies = (await follower.catchUp()).turns.map((t) => t.reply)
+    expect(replies).toEqual(['task done', 'quick answer'])
+    expect((await follower.catchUp()).turns).toEqual([])
+  })
+
+  it('a turn whose answer has not landed at one read comes out at the read that finds it', async () => {
+    const follower = new TranscriptFollower(transcript)
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('first') },
+      { type: 'PLANNER_RESPONSE', content: 'one' },
+      { type: 'USER_INPUT', content: ownerTyped('second') }
+    ])
+    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['one', ''])
+    appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'two' }])
+    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['two'])
+  })
+
+  it('a resumed conversation whose transcript was not there to read when it was opened gives only its last turn at the first read, not its history', async () => {
+    const follower = new TranscriptFollower(transcript, Promise.resolve())
+    expect((await follower.catchUp()).turns).toEqual([])
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('long ago') },
+      { type: 'PLANNER_RESPONSE', content: 'old answer' },
+      { type: 'USER_INPUT', content: ownerTyped('just now') },
+      { type: 'PLANNER_RESPONSE', content: 'new answer' }
+    ])
+    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['new answer'])
+  })
+
+  it('a last line whose newline is not written yet comes out once, not again when its newline lands', async () => {
+    const follower = new TranscriptFollower(transcript)
+    const line = JSON.stringify({ type: 'PLANNER_RESPONSE', content: 'done' })
+    fs.mkdirSync(path.dirname(transcript), { recursive: true })
+    fs.writeFileSync(transcript, line)
+    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['done'])
+    fs.appendFileSync(transcript, '\n')
+    expect((await follower.catchUp()).turns).toEqual([])
+  })
+
+  it('a resumed conversation gives none of the turns it had when it was opened, only the ones after', async () => {
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('long ago') },
+      { type: 'PLANNER_RESPONSE', content: 'old answer' },
+      { type: 'USER_INPUT', content: ownerTyped('just before') },
+      { type: 'PLANNER_RESPONSE', content: 'older answer' }
+    ])
+    const follower = new TranscriptFollower(transcript, Promise.resolve())
+    expect((await follower.catchUp()).turns).toEqual([])
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('next') },
+      { type: 'PLANNER_RESPONSE', content: 'next answer' },
+      { type: 'USER_INPUT', content: ownerTyped('and next') },
+      { type: 'PLANNER_RESPONSE', content: 'last answer' }
+    ])
+    const later = (await follower.catchUp()).turns.map((t) => t.reply)
+    expect(later).toEqual(['next answer', 'last answer'])
+  })
+
+  it('reading only what each turn added, through a tool output longer than one read piece and a last line whose newline is not written yet, ends on the same last turn and tokens as reading the whole transcript once', async () => {
     const longerThanOneReadPiece = 'x'.repeat(300 * 1024)
     const steps = [
       { type: 'USER_INPUT', content: ownerTyped('first') },
@@ -234,42 +301,50 @@ describe('the transcript (AGY§8)', () => {
     const full = path.join(gemini, 'whole.jsonl')
     fs.writeFileSync(full, whole)
     const once = await new TranscriptFollower(full).catchUp()
-    expect(once.turn?.reply).toBe('part a\n\npart b')
+    expect(once.turns.at(-1)?.reply).toBe('part a\n\npart b')
     expect(once.tokens).toEqual({ input: 111, output: 22, cacheRead: 5 })
     fs.mkdirSync(path.dirname(transcript), { recursive: true })
     const follower = new TranscriptFollower(transcript)
     const longLineMiddle = whole.indexOf(longerThanOneReadPiece) + 200 * 1024
-    for (const cut of [37, 120, 121, longLineMiddle, whole.length - 1]) {
+    const told: Turn[] = []
+    let tokens = once.tokens
+    for (const cut of [37, 120, 121, longLineMiddle, whole.length - 1, whole.length]) {
       fs.writeFileSync(transcript, whole.slice(0, cut))
-      await follower.catchUp()
+      const read = await follower.catchUp()
+      told.push(...read.turns)
+      tokens = read.tokens
     }
-    expect(await follower.catchUp()).toEqual(once)
-    fs.writeFileSync(transcript, whole)
-    expect(await follower.catchUp()).toEqual(once)
+    expect([told.at(-1), tokens]).toEqual([once.turns.at(-1), once.tokens])
   })
 
   it('a transcript it cannot read gives no turn and the tokens read before, neither the last turn again nor zero tokens', async () => {
     const follower = new TranscriptFollower(transcript)
-    expect(await follower.catchUp()).toEqual({ tokens: { input: 0, output: 0, cacheRead: 0 } })
+    const none = { input: 0, output: 0, cacheRead: 0 }
+    expect(await follower.catchUp()).toEqual({ turns: [], tokens: none })
     appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'kept', input_tokens: 9 }])
-    expect((await follower.catchUp()).turn?.reply).toBe('kept')
+    expect((await follower.catchUp()).turns.map((t) => t.reply)).toEqual(['kept'])
     fs.renameSync(transcript, transcript + '.away')
-    expect(await follower.catchUp()).toEqual({ tokens: { input: 9, output: 0, cacheRead: 0 } })
+    expect(await follower.catchUp()).toEqual({ turns: [], tokens: { ...none, input: 9 } })
     fs.renameSync(transcript + '.away', transcript)
     appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'more', input_tokens: 1 }])
     expect((await follower.catchUp()).tokens.input).toBe(10)
   })
 
-  it('reads a transcript again from the start once it got shorter', async () => {
+  it('reads a transcript again from the start once it got shorter, giving only its last turn', async () => {
     const follower = new TranscriptFollower(transcript)
     appendTranscript(transcript, [
       { type: 'USER_INPUT', content: ownerTyped('long gone') },
-      { type: 'PLANNER_RESPONSE', content: 'old reply', input_tokens: 500 }
+      { type: 'PLANNER_RESPONSE', content: 'old reply '.repeat(100), input_tokens: 500 }
     ])
     await follower.catchUp()
     fs.writeFileSync(transcript, '')
-    appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'new', input_tokens: 7 }])
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('kept from before') },
+      { type: 'PLANNER_RESPONSE', content: 'rewritten', input_tokens: 3 },
+      { type: 'USER_INPUT', content: ownerTyped('latest') },
+      { type: 'PLANNER_RESPONSE', content: 'new', input_tokens: 7 }
+    ])
     const read = await follower.catchUp()
-    expect([read.turn?.reply, read.tokens.input]).toEqual(['new', 7])
+    expect([read.turns.map((t) => t.reply), read.tokens.input]).toEqual([['new'], 10])
   })
 })

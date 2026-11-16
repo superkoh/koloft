@@ -1,10 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import {
+  firstWindowBounds,
   fullscreenOption,
   usableBounds,
+  usableSessionScreen,
   windowMinWidth,
   type WinBounds
 } from '../../src/main/windowBounds'
+
+describe('windowState: the saved session screen size opens a terminal only when it is whole cells', () => {
+  it('keeps a size of whole positive cells, and drops a missing, partial or broken one', () => {
+    expect(usableSessionScreen({ cols: 140, rows: 49 })).toEqual({ cols: 140, rows: 49 })
+    for (const broken of [
+      undefined,
+      'wat',
+      { cols: 140 },
+      { cols: 0, rows: 49 },
+      { cols: 1.5, rows: 49 }
+    ])
+      expect(usableSessionScreen(broken)).toBeUndefined()
+  })
+})
 
 // PLATFORM§5
 describe('windowState: fullscreen restore must never pass an explicit false', () => {
@@ -46,6 +62,18 @@ describe('windowState: saved bounds are restored only while they stay on-screen'
     ).toBeNull()
   })
 
+  it('the window Koloft places itself on a first launch starts with its top-left corner on the display and is restored on the next launch, even on a display smaller than it', () => {
+    const size = { width: 1440, height: 920 }
+    const fullHd: WinBounds = { x: 0, y: 30, width: 1920, height: 1050 }
+    const small: WinBounds = { x: 0, y: 30, width: 1024, height: 680 }
+    for (const area of [fullHd, small, LAPTOP_WORKAREA, EXTERNAL_TO_THE_RIGHT]) {
+      const placed = firstWindowBounds(size, area)
+      expect(placed.x).toBeGreaterThanOrEqual(area.x)
+      expect(placed.y).toBeGreaterThanOrEqual(area.y)
+      expect(usableBounds(placed, [area])).toEqual(placed)
+    }
+  })
+
   it('rejects malformed state instead of crashing the launch', () => {
     expect(usableBounds(undefined, [LAPTOP_WORKAREA])).toBeNull()
     expect(usableBounds('wat', [LAPTOP_WORKAREA])).toBeNull()
@@ -57,8 +85,7 @@ describe('windowState: saved bounds are restored only while they stay on-screen'
 
 // PLATFORM§5
 describe('windowState (B1/BB-C55): the 1020 minimum must not force-resize an older saved window', () => {
-  it('applies the full minimum to a default or wider-than-minimum launch', () => {
-    expect(windowMinWidth(undefined)).toBe(1020)
+  it('applies the full minimum to a window at least as wide as it, the 1440 first-launch window included', () => {
     expect(windowMinWidth(1440)).toBe(1020)
     expect(windowMinWidth(1020)).toBe(1020)
   })

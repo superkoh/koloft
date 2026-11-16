@@ -204,6 +204,7 @@ interface AgyRun extends StoredRun {
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
+  titleChase?: { id: string; readsLeft: number }
   touched: Map<string, FileAcc>
   liveWrites: number
   background?: BackgroundItem
@@ -247,6 +248,7 @@ const COMPACTION_SHOWS_AFTER_MS = 500
 const CONTEXT_SUMMARY = 'context_summary'
 // AGY§8
 const LISTED_TITLE_AFTER_PROMPT_MS = 1000
+const LISTED_TITLE_REREADS_AFTER_A_TURN = 10
 // AGY§14 AGY§26
 const KEYS = { yes: '1', noCommand: '4', noEdit: '2', noCreateOrRead: '\x1b' } as const
 const TOOL_IN_BLOCKED_MESSAGE_RE = /^Approve (\w+):/
@@ -493,14 +495,20 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§5
   trustsFolder(dir: string): boolean | Promise<boolean> {
+    const key = parseRemoteKey(dir)
+    if (!key && this.trustedHere(undefined, dir)) return true
     const picked = this.deps.pickHome(undefined, true)
     if (!picked) return false
-    const key = parseRemoteKey(dir)
-    if (!key) return agyTrustsFolder(picked.home, dir)
+    if (!key) return this.trustedHere(picked.home, dir)
     return this.deps.remote
       .machine(key.host)
       .readAgyConfig(picked.account)
       .then((config) => trustsIn(key.path, config.ownSettings, config.ownersSettings))
+  }
+
+  // AGY§5
+  private trustedHere(accountHome: string | undefined, dir: string): boolean {
+    return [this.gemini, accountHome].some((home) => !!home && agyTrustsFolder(home, dir))
   }
 
   protected async listHistory(): Promise<HistoryListing<HistoryEntry>> {
@@ -657,7 +665,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
-      !!resource?.managed && [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
+      !!resource?.managed && this.trustedHere(pick.home, workspace)
     mergeAgySettings(pick.home, gemini, {
       trust:
         freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
@@ -1094,6 +1102,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
+    const resumed = !!known || (!!run.resumeKey && this.nativeId(run.resumeKey) === conversationId)
+    const historyReadable = !resumed
+      ? undefined
+      : run.remote
+        ? this.deps.remote.nextPull(run.remote.host)
+        : Promise.resolve()
+    run.transcript = new TranscriptFollower(
+      agyTranscript(this.geminiOf(run.cwd), conversationId),
+      historyReadable
+    )
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
     if (run.commands?.size) this.publishBackground(run)
     if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
@@ -1264,14 +1282,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    void this.takeListedTitle(run, id, true)
+    const chasing = run.titleChase?.id === id
+    run.titleChase = { id, readsLeft: LISTED_TITLE_REREADS_AFTER_A_TURN }
+    if (!chasing) void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
-    const file = agyTranscript(this.geminiOf(run.cwd), id)
-    if (run.transcript?.file !== file) run.transcript = new TranscriptFollower(file)
+    if (!run.transcript || run.info?.nativeSessionId !== id) return
     const read = await run.transcript.catchUp().catch(() => undefined)
     if (!read) return
-    const { turn, tokens: t } = read
-    if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
+    const { turns, tokens: t } = read
+    for (const turn of turns)
+      if (turn.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
     const tokens = {
       inTok: t.input,
       outTok: t.output,
@@ -1305,7 +1325,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8 AGY§11
-  private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
+  private async takeListedTitle(run: AgyRun, id: string, chase = false): Promise<void> {
     const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
@@ -1313,9 +1333,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           .agyConversations()
           .then((rows) => historyEntries(rows))
       : listAgyConversations(this.gemini)
-    const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
-    if (!name && again) this.takeListedTitleSoon(run, id)
-    if (!name || run.info?.nativeSessionId !== id) return
+    const rows = await listed.catch(() => undefined)
+    const name = rows?.find((e) => e.id === id)?.name
+    const current = this.runs.get(run.tabId) === run && run.info?.nativeSessionId === id
+    const chased = chase && run.titleChase?.id === id ? run.titleChase : undefined
+    if (chased) {
+      if (current && !name && chased.readsLeft-- > 0) return this.takeListedTitleSoon(run, id, true)
+      run.titleChase = undefined
+    }
+    if (!current || !name || !run.info) return
     if (!given) {
       if (name !== run.info.title) this.retitle(run.info, name)
       return
@@ -1326,8 +1352,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8
-  private takeListedTitleSoon(run: AgyRun, id: string): void {
-    setTimeout(() => void this.takeListedTitle(run, id), LISTED_TITLE_AFTER_PROMPT_MS).unref?.()
+  private takeListedTitleSoon(run: AgyRun, id: string, chase = false): void {
+    setTimeout(
+      () => void this.takeListedTitle(run, id, chase),
+      LISTED_TITLE_AFTER_PROMPT_MS
+    ).unref?.()
   }
 
   // AGY§17

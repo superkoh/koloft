@@ -11,6 +11,8 @@ import {
   addCodexAccount,
   addMuseAccount,
   addKeychainEntry,
+  killEveryProcessNaming,
+  processesNaming,
   seededAccount,
   seedSettings,
   setupE2EEnv,
@@ -389,32 +391,6 @@ function alive(pid: number): boolean {
   }
 }
 
-function thisScriptAndItsParents(): Set<number> {
-  const parentOf = new Map(
-    execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
-      .trim()
-      .split('\n')
-      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
-  )
-  const chain = new Set<number>()
-  for (let pid: number | undefined = process.pid; pid && !chain.has(pid); pid = parentOf.get(pid))
-    chain.add(pid)
-  return chain
-}
-
-function processesUnder(home: string): number[] {
-  const mine = thisScriptAndItsParents()
-  try {
-    return execFileSync('pgrep', ['-f', home], { encoding: 'utf8' })
-      .trim()
-      .split('\n')
-      .map(Number)
-      .filter((pid) => pid && !mine.has(pid))
-  } catch {
-    return []
-  }
-}
-
 async function evaluate(webSocketDebuggerUrl: string, expression: string): Promise<unknown> {
   const ws = new WebSocket(webSocketDebuggerUrl)
   await new Promise((resolve, reject) => {
@@ -460,10 +436,10 @@ async function stop(home: string): Promise<void> {
     const deadline = Date.now() + QUIT_DEADLINE_MS
     while (alive(state.pid) && Date.now() < deadline) await wait(POLL_MS)
   }
-  for (const pid of processesUnder(home)) process.kill(pid, 'SIGKILL')
+  killEveryProcessNaming(home)
   if (state?.lab) stopSshLab(state.lab, defaultControlDir())
   fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
-  console.log(JSON.stringify({ stopped: home, left: processesUnder(home) }))
+  console.log(JSON.stringify({ stopped: home, left: processesNaming(home) }))
 }
 
 const { positionals, values } = parseArgs({

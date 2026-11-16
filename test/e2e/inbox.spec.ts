@@ -1,7 +1,15 @@
 import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  launchApp,
+  osOutlets,
+  pretendWindowFocused,
+  quitAndClose,
+  triggerRestart
+} from './helpers/app'
 import {
   installAgy,
   installCodex,
@@ -773,7 +781,7 @@ test('a question and a finished turn of Claude Code still waiting on the owner s
   }
 })
 
-test('a question a remote Claude Code session still shows after a Koloft restart is still a card in Needs you, and picking an answer there reaches the session', async ({
+test('a question a remote Claude Code session still shows after a Koloft restart is still the one card in Needs you, not notified again, and picking an answer there reaches the session and moves that one card to Done', async ({
   env
 }) => {
   test.setTimeout(180_000)
@@ -801,16 +809,110 @@ test('a question a remote Claude Code session still shows after a Koloft restart
     const asker = wsRows(page, REMOTE_WS_NAME).first()
     await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
     const tabId = (await asker.getAttribute('data-tab-id')) as string
+    expect((await osOutlets(app)).notifications).toEqual([])
     await openInbox(page)
     await page.locator('.inbox-page .ibx-choice', { hasText: 'Green' }).click({ timeout: 30_000 })
     await expect
       .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
       .toMatch(/Picked: Green/)
     await expect(inboxCard(page, 'asks a question')).toHaveCount(0)
+    await expect(await doneStatus(page, 'asks a question')).toContainText('Answered')
+    await expect(inboxCard(page, 'asks a question')).toHaveCount(1)
   } finally {
     await quitAndClose(app)
   }
 })
+
+test('a question of a Claude Code session still waiting on the owner stays in Needs you when the owner restarts its tab, and a pick there then reaches the restarted session as a message', async ({
+  app,
+  page,
+  env
+}) => {
+  test.setTimeout(150_000)
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const asker = wsRows(page, 'ws-a').first()
+  await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+  await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+  await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+  await openInbox(page)
+  const question = inboxCard(page, 'asks a question')
+  await expect(question).toBeVisible({ timeout: 15_000 })
+  fs.writeFileSync(path.join(env.home, 'fake-claude-no-status'), '')
+  await triggerRestart(app)
+  await waitForCalls(env, 2)
+  await expect(question).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 30_000 })
+  await question.locator('.ibx-choice', { hasText: 'Green' }).click()
+  await expect
+    .poll(() => peerMessages(env), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
+    .toContain('Which colour? «Green»')
+  await expect(await doneStatus(page, 'asks a question')).toContainText('Answered')
+})
+
+test('a question of a remote Claude Code session still waiting on the owner stays in Needs you when the owner restarts its tab, which stops it on the machine, and a pick there then reaches the restarted session as a message', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  installFakeRemote(env)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await addRemoteWorkspace(page, env)
+    await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    const question = inboxCard(page, 'asks a question')
+    await expect(question).toBeVisible({ timeout: 15_000 })
+    fs.writeFileSync(path.join(machineHome(env), 'fake-claude-no-status'), '')
+    await triggerRestart(app)
+    await expect(question).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 30_000 })
+    await question.locator('.ibx-choice', { hasText: 'Green' }).click()
+    await expect
+      .poll(() => peerMessages(env, machineHome(env)), {
+        timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
+      })
+      .toContain('Which colour? «Green»')
+    await expect(await doneStatus(page, 'asks a question')).toContainText('Answered')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+for (const agent of OTHER_AGENTS) {
+  test(`a question or command of a session in ${agent.name} still waiting on the owner stays in Needs you when the owner restarts its tab, and the owner’s answer there then reaches the restarted session as a message`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    agent.install(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', agent.name)
+      await sayToTheAgent(page, agent, agent.askLine)
+      await openInbox(page)
+      const card = inboxCard(page, agent.askTitle)
+      await expect(card.locator('.ibx-btn, .ibx-choice').first()).toBeVisible({ timeout: 30_000 })
+      await triggerRestart(app)
+      await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 60_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await agent.answerAfterRestart(card).click()
+      const tabId = await tabOf(page, agent)
+      await expect
+        .poll(async () => (await agent.got(env, page, tabId)).replace(/\s+/g, ''), {
+          timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
+        })
+        .toContain(agent.messageAfterRestart.replace(/\s+/g, ''))
+      await expect(await doneStatus(page, agent.askTitle)).toContainText('Answered')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
 
 async function tabOf(page: Page, agent: (typeof OTHER_AGENTS)[number]): Promise<string> {
   return (await page.evaluate(() => window.api.sessions.list())).find(

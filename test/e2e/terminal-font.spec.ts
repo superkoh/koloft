@@ -3,7 +3,7 @@ import type { Terminal } from '@xterm/xterm'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings } from './helpers/env'
 import { openSettings } from './helpers/extensions'
-import { startSessionIn, waitBooted } from './helpers/p1'
+import { notesArea, startSessionIn, waitBooted } from './helpers/p1'
 
 const ALL_FOUR_FACES_LOADED = [
   'italic 400 loaded',
@@ -40,6 +40,31 @@ function recorded(page: Page, name: keyof FontProbeWindow): Promise<unknown> {
     .then((faces) => faces.jsonValue())
 }
 
+function focusIn(page: Page, selector: string): Promise<boolean> {
+  return page.evaluate((s) => !!document.activeElement?.closest(s), selector)
+}
+
+async function restoreWithFacesHeldBack(page: Page, meanwhile: () => Promise<void>) {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  await page.addInitScript(() => {
+    const w = window as unknown as { __releaseFaces: () => void }
+    const released = new Promise<void>((resolve) => (w.__releaseFaces = resolve))
+    const load = document.fonts.load.bind(document.fonts)
+    document.fonts.load = (...args) => released.then(() => load(...args))
+  })
+  await page.reload()
+  await waitBooted(page)
+  await expect(page.locator('.term').first()).toBeAttached()
+  await meanwhile()
+  expect(await page.locator('.xterm').count()).toBe(0)
+  await page.evaluate(() => (window as unknown as { __releaseFaces: () => void }).__releaseFaces())
+  await expect(page.locator('.xterm').first()).toBeAttached({ timeout: 30_000 })
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  )
+}
+
 test.describe('the terminal font ships with the app', () => {
   test('the four JetBrainsMono Nerd Font faces a terminal draws with (regular, bold, italic, bold italic) have loaded before the first terminal opens', async ({
     page
@@ -60,6 +85,23 @@ test.describe('the terminal font ships with the app', () => {
     await page.reload()
 
     expect(await recorded(page, '__bundledFacesAtFirstTerminal')).toEqual(ALL_FOUR_FACES_LOADED)
+  })
+
+  test('a restored terminal built once its faces have loaded takes the keyboard when nobody moved it meanwhile', async ({
+    page
+  }) => {
+    await restoreWithFacesHeldBack(page, async () => {})
+    await expect.poll(() => focusIn(page, '.xterm')).toBe(true)
+  })
+
+  test('a restored terminal built once its faces have loaded leaves the keyboard in the note the owner clicked meanwhile', async ({
+    page
+  }) => {
+    await restoreWithFacesHeldBack(page, async () => {
+      await notesArea(page).click()
+      expect(await focusIn(page, '.isl-notes')).toBe(true)
+    })
+    expect(await focusIn(page, '.isl-notes')).toBe(true)
   })
 
   test('a change from a system font to JetBrainsMono Nerd Font in Settings reaches an open terminal only once its four faces have loaded', async ({

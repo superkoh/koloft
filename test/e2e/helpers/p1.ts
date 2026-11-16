@@ -36,7 +36,9 @@ export interface ClaudeCall {
   sessionId: string
   firstPrompt?: string | null
   ts: number
+  cols?: number | null
   oauthToken: string | null
+  disable1mContext?: string | null
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
@@ -498,6 +500,10 @@ export function notesIsland(page: Page): Locator {
   return page.locator('.isl-notes')
 }
 
+export function notesGutter(page: Page): Locator {
+  return page.locator('.gutter-h:has(+ .isl-notes)')
+}
+
 export function notesArea(page: Page): Locator {
   return notesIsland(page).locator('.ed-area')
 }
@@ -692,18 +698,20 @@ export function centerTerm(page: Page): Locator {
   return page.locator('.term-island .term-wrap:visible .xterm')
 }
 
-export function shownCenterTerm(page: Page): Promise<{ cols: number; left: number } | undefined> {
+export function shownCenterTerm(
+  page: Page
+): Promise<{ id: string; cols: number; rows: number; left: number } | undefined> {
   return page.evaluate(() => {
     const terms = (
       window as unknown as {
-        __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
+        __koloftTerms?: Record<string, { cols: number; rows: number; element?: HTMLElement }>
       }
     ).__koloftTerms
-    for (const t of Object.values(terms ?? {})) {
+    for (const [id, t] of Object.entries(terms ?? {})) {
       const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
       if (wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden') {
         const left = wrap.querySelector('.term')!.getBoundingClientRect().left
-        return { cols: t.cols, left: Math.round(left) }
+        return { id, cols: t.cols, rows: t.rows, left: Math.round(left) }
       }
     }
     return undefined

@@ -1163,7 +1163,7 @@ export default function App(): JSX.Element {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
 
-  const paletteRouted: PaletteRouted = (prompt, backend, route) => {
+  const paletteRouted: PaletteRouted = (prompt, backend, route, pictures) => {
     setPaletteOpen(false)
     if (route?.kind === 'project') {
       const where = useStore.getState().settings.newProjectFolders[route.machine]
@@ -1171,7 +1171,7 @@ export default function App(): JSX.Element {
       const folder = route.folder
       if (parentKey && folder) {
         startNow(hostOf(parentKey), backend, () =>
-          projectOptions(parentKey, folder, { prompt, title: route.title })
+          projectOptions(parentKey, folder, { prompt, title: route.title, pictures })
         )
         return
       }
@@ -1179,6 +1179,7 @@ export default function App(): JSX.Element {
         id: ++newRequestId.current,
         seed: {
           prompt,
+          pictures,
           title: route.title,
           machine: route.machine,
           folder: folder ?? '',
@@ -1197,6 +1198,7 @@ export default function App(): JSX.Element {
       const at = activeTabWs ?? undefined
       const request = {
         words: prompt,
+        pictures: pictures.map((p) => p.path),
         backend,
         title: title || undefined,
         about: about ?? undefined,
@@ -1205,7 +1207,12 @@ export default function App(): JSX.Element {
       void window.api.conductors.fromPalette(request).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
+        requestNew(
+          'main',
+          undefined,
+          { prompt, title, pictures, path: about, worktree: null },
+          backend
+        )
       })
     }
     if (route?.kind === 'feature') {
@@ -1227,7 +1234,7 @@ export default function App(): JSX.Element {
       return
     }
     if (!route && !someAccountCanRunAssist(useStore.getState())) {
-      pickWorkspaceForTyped({ prompt, title: '' }, backend)
+      pickWorkspaceForTyped({ prompt, title: '', pictures }, backend)
       return
     }
     const ws =
@@ -1239,6 +1246,7 @@ export default function App(): JSX.Element {
     }
     const pending: PendingStart = {
       prompt,
+      pictures,
       title: route.title,
       path: route.path,
       worktree: route.worktree
@@ -1418,6 +1426,7 @@ export default function App(): JSX.Element {
   const [sbDragging, setSbDragging] = useState(false)
   const dockRef = useRef<HTMLDivElement>(null)
   const sideRef = useRef<HTMLDivElement>(null)
+  const notesRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   // ADR-0011
   const shownWidth = useRef(0)
@@ -1503,15 +1512,18 @@ export default function App(): JSX.Element {
     const box = dockRef.current?.getBoundingClientRect()
     const bottom = box?.bottom ?? window.innerHeight
     const room = box?.height ?? window.innerHeight
+    let live = useStore.getState().notesHeight
     const onMove = (ev: globalThis.MouseEvent): void => {
-      setNotesHeight(notesHeightFromDrag(bottom, room, ev.clientY))
+      live = notesHeightFromDrag(bottom, room, ev.clientY)
+      if (notesRef.current) notesRef.current.style.height = `${live}px`
     }
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      setNotesHeight(live)
       setNbDragging(false)
       endLayoutDrag()
-      void window.api.settings.set({ notesHeight: useStore.getState().notesHeight })
+      void window.api.settings.set({ notesHeight: live })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
@@ -1639,6 +1651,7 @@ export default function App(): JSX.Element {
             />
           )}
           <NotesIsland
+            ref={notesRef}
             wsPath={notesWs}
             height={dockHeight ? clampNotesHeight(notesHeight, notesRoom) : notesHeight}
             folded={notesFolded}

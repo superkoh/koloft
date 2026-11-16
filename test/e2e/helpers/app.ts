@@ -1,4 +1,10 @@
-import { test as base, expect, type ElectronApplication, type Page } from '@playwright/test'
+import {
+  test as base,
+  expect,
+  type ElectronApplication,
+  type Locator,
+  type Page
+} from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import fs from 'fs'
 import path from 'path'
@@ -73,6 +79,12 @@ export async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<voi
   }
 }
 
+export async function fillsItsTrack(bar: Locator): Promise<boolean> {
+  return bar.evaluate(
+    (el) => Math.abs(el.getBoundingClientRect().width - el.parentElement!.clientWidth) < 1
+  )
+}
+
 export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {
   return page.evaluate(() => window.api.attention.list())
 }
@@ -81,6 +93,16 @@ export async function osOutlets(app: ElectronApplication): Promise<OsOutletsSeen
   return app.evaluate(
     () => (globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets!
   )
+}
+
+export async function triggerRestart(app: ElectronApplication, times = 1): Promise<void> {
+  await app.evaluate(({ Menu }, count) => {
+    for (let i = 0; i < count; i++) {
+      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
+      if (!item) throw new Error('no application-menu item with id "restart-session"')
+      item.click()
+    }
+  }, times)
 }
 
 export async function pretendWindowFocused(app: ElectronApplication): Promise<void> {

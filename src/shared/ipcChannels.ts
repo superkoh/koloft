@@ -10,6 +10,7 @@ export const CH = {
     onScreen: 'terminal:on-screen',
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
+    sessionScreen: 'terminal:session-screen',
     kill: 'terminal:kill',
     exit: 'terminal:exit',
     processTitle: 'terminal:processTitle',
@@ -98,6 +99,9 @@ export const CH = {
     open: 'conductors:open',
     startFresh: 'conductors:startFresh',
     fromPalette: 'conductors:fromPalette'
+  },
+  palette: {
+    savePicture: 'palette:savePicture'
   },
   discord: {
     status: 'discord:status',
