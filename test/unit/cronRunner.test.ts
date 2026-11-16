@@ -57,6 +57,7 @@ function makeHarness(
     folders: string[]
     branches: string[] | null
     busy: boolean
+    turnUnderWay: boolean
     left: string[]
     quitting: boolean
     inUse: string[]
@@ -91,6 +92,7 @@ function makeHarness(
     folders: [] as string[],
     branches: null as string[] | null,
     busy: false,
+    turnUnderWay: false,
     left: [] as string[],
     quitting: false,
     inUse: [] as string[]
@@ -111,7 +113,7 @@ function makeHarness(
   })
   const killTab = vi.fn()
   const closeForGood = vi.fn(async () => {})
-  const tellToCarryOn = vi.fn(async (): Promise<void> => {})
+  const tellToCarryOn = vi.fn(async (): Promise<boolean> => true)
   const notify = vi.fn()
   const save = vi.fn()
   const branchExists = vi.fn(async () => false)
@@ -142,6 +144,7 @@ function makeHarness(
     whatIsLeft: async () => flags.left,
     closeForGood,
     tellToCarryOn,
+    turnUnderWay: () => flags.turnUnderWay,
     toast: (t: string) => {
       toasts.push(t)
     },
@@ -1193,8 +1196,8 @@ describe('CronRunner — quitting', () => {
 
   it('with "Close it" on, a run the relaunch took back in the middle of its work is told once to carry on, no status change closes it before the telling is over, and once it is over with nothing at work it closes at the next check', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
-    let tellingOver: () => void = () => {}
-    h.tellToCarryOn.mockImplementation(() => new Promise<void>((done) => (tellingOver = done)))
+    let tellingOver: (stopped: boolean) => void = () => {}
+    h.tellToCarryOn.mockImplementation(() => new Promise<boolean>((done) => (tellingOver = done)))
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     h.runner.onBound('tab-back', 's1')
@@ -1205,7 +1208,7 @@ describe('CronRunner — quitting', () => {
     expect(h.closeForGood).not.toHaveBeenCalled()
     expect(h.tellToCarryOn.mock.calls).toEqual([['tab-back']])
 
-    tellingOver()
+    tellingOver(true)
     await flush()
     expect(h.closeForGood).not.toHaveBeenCalled()
     await h.fireTimers(T0 + 2 * MIN)
@@ -1213,7 +1216,7 @@ describe('CronRunner — quitting', () => {
   })
 
   it('with "Close it" on, a run the relaunch took back in the middle of its work stays open while it still works after the telling, whether or not the word reached it, and closes at a later check once it is idle', async () => {
-    for (const telling of [async () => {}, async () => Promise.reject(new Error('gone'))]) {
+    for (const telling of [async () => true, async () => Promise.reject(new Error('gone'))]) {
       const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
       h.tellToCarryOn.mockImplementation(telling)
       h.flags.busy = true
@@ -1227,6 +1230,33 @@ describe('CronRunner — quitting', () => {
       await h.fireTimers(T0 + 2 * MIN)
       expect(h.closeForGood).toHaveBeenCalledTimes(1)
     }
+  })
+
+  it('with "Close it" on, a run whose carry-on turn is under way when the telling ends reads working, and closes once that turn ends', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.flags.turnUnderWay = true
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    expect(h.runner.state().live[0].state).toBe('running')
+
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await flush()
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('with "Close it" on, a run whose agent lived through the restart is left to end its turn on its own', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.tellToCarryOn.mockImplementation(async () => false)
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.runner.state().live[0].state).toBe('running')
+
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await flush()
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
   })
 
   it('never tells a run to carry on whose turn had ended before the quit', async () => {

@@ -4315,9 +4315,14 @@ app.whenReady().then(() => {
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
     tellToCarryOn: async (tabId) => {
-      if (attention.outlivesKoloft(tabId)) return
+      if (attention.outlivesKoloft(tabId)) return false
       await tabReady(tabId, RESUMED_TAB_READY_MS, false)
       await sessionCommand.tellFromKoloft(tabId, A_RESTART_CUT_THE_RUN_OFF)
+      return true
+    },
+    turnUnderWay: (tabId) => {
+      const status = tracker.statusOf(tabId)
+      return status === 'working' || status === 'approval'
     },
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notify: notifyPlain,
