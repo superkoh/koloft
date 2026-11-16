@@ -173,8 +173,8 @@ Working principles:
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
   one line apiece. Before `gh pr create`, `git fetch origin` and make sure the branch
   merges clean with `origin/main`; a conflict is resolved and the affected checks
-  re-run first. The reply that hands the PR back repeats the six lines and what
-  ran — the owner reads the reply, not the PR.
+  re-run first. Each PR hand-back, a sub-session's too, repeats the six lines and
+  what ran: the owner reads it, not the PR.
 - Carry agreed work through without asking: commit, push the branch, open the PR,
   file a GitHub issue for each leftover, and once it merges remove what it left —
   the local branch, the worktree (after leaving it), the ones your agents made, any
