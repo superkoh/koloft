@@ -50,12 +50,10 @@ const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 
 export interface SessionAskDeps {
-  answered(tabId: string, reply: string): void
   backendOf(tabId: string): BackendId | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
   turnOver(tabId: string): boolean
-  asksChanged(tabId: string): void
   type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
   touchedSinceAsked(tabId: string): boolean
   ownerTouchedSince(tabId: string, at: number): boolean
@@ -68,8 +66,10 @@ export interface SessionAskDeps {
 }
 
 export interface AskListener {
-  asked(tabId: string, payload: AskPayload): void
-  answerGoingIn(tabId: string): void
+  asksChanged?(tabId: string): void
+  asked?(tabId: string, payload: AskPayload): void
+  answered?(tabId: string, reply: string): void
+  answerGoingIn?(tabId: string): void
 }
 
 interface KeysTyped {
@@ -92,11 +92,25 @@ export class SessionAsks {
   private codexTyped = new Map<string, KeysTyped>()
   private ticksPressed = new Map<string, { ticks: string; untickedOnce: boolean }>()
   private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
+  private listeners: AskListener[] = []
 
-  constructor(
-    private d: SessionAskDeps,
-    private on: AskListener
-  ) {}
+  constructor(private d: SessionAskDeps) {}
+
+  listen(listener: AskListener): void {
+    this.listeners.push(listener)
+  }
+
+  private asksChanged(tab: string): void {
+    for (const l of this.listeners) l.asksChanged?.(tab)
+  }
+
+  private answered(tab: string, reply: string): void {
+    for (const l of this.listeners) l.answered?.(tab, reply)
+  }
+
+  private answerGoingIn(tab: string): void {
+    for (const l of this.listeners) l.answerGoingIn?.(tab)
+  }
 
   dialogOpen(tab: string): boolean {
     return !!this.openAsk(tab) || !!this.d.pendingApproval(tab) || !!this.d.pendingQuestion(tab)
@@ -128,7 +142,7 @@ export class SessionAsks {
       if (!hook) return null
       if (fs.existsSync(path.join(this.d.regDir, name)))
         return (obj): void => this.onAsk(tab, obj as AskPayload, hook)
-      if (this.askHooks.get(tab)?.delete(hook)) this.d.asksChanged(tab)
+      if (this.askHooks.get(tab)?.delete(hook)) this.asksChanged(tab)
       return null
     })
   }
@@ -141,8 +155,8 @@ export class SessionAsks {
     if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
     this.asks.set(tab, { payload, hook, raw, at: Date.now() })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
-    this.d.asksChanged(tab)
-    this.on.asked(tab, payload)
+    this.asksChanged(tab)
+    for (const l of this.listeners) l.asked?.(tab, payload)
   }
 
   stillAsks(tab: string): () => boolean {
@@ -194,7 +208,7 @@ export class SessionAsks {
   }
 
   private async press(tab: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
-    this.on.answerGoingIn(tab)
+    this.answerGoingIn(tab)
     await this.d.answerable(tab)
     return this.d.type(tab, keys, stillWanted)
   }
@@ -264,8 +278,8 @@ export class SessionAsks {
       if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
-        this.on.answerGoingIn(tab)
-        if (inPlace.error === undefined) this.d.answered(tab, reply)
+        this.answerGoingIn(tab)
+        if (inPlace.error === undefined) this.answered(tab, reply)
         return inPlace
       }
       const label = BACKEND_LABEL[backend]
@@ -274,7 +288,7 @@ export class SessionAsks {
         const key = codexKeyFor(reply)
         if (!key) return { error: toItsCard ? CODEX_NEEDS_YES_OR_NO : takesYesOrNo(label) }
         if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
-        this.d.answered(tab, reply)
+        this.answered(tab, reply)
         await this.pressOnce(tab, () => this.press(tab, [key]))
         return { watch: true }
       }
@@ -297,10 +311,10 @@ export class SessionAsks {
       if (pressedBefore && !untick) return { error: PICKS_MAY_STILL_BE_TICKED }
       if (ticks !== undefined && (pressedBefore || answers.some((a) => 'picks' in a)))
         this.ticksPressed.set(tab, { ticks, untickedOnce: pressedBefore })
-      this.d.answered(tab, reply)
+      this.answered(tab, reply)
       const keys = [...(untick ?? []), ...answerKeys(answerKeysFor, question, answers)]
       if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
-      this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
+      this.answered(tab, NOT_ANSWERED_FROM_HERE)
       return { error: STARTED_IN_THE_TERMINAL }
     }
     const ask = this.openAsk(tab)
@@ -314,7 +328,7 @@ export class SessionAsks {
     // CC§14
     if (ask.hook) {
       this.answer(tab, hookAnswer(ask.payload, reply))
-      this.d.answered(tab, reply)
+      this.answered(tab, reply)
       return {}
     }
     // CC§12
@@ -331,7 +345,7 @@ export class SessionAsks {
     ask.keysSent = true
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
-    this.d.answered(tab, reply)
+    this.answered(tab, reply)
     const startedAt = Date.now()
     // CC§14
     const stillWanted = watch
@@ -342,7 +356,7 @@ export class SessionAsks {
       if (!(await this.d.type(tab, keys.value, stillWanted))) {
         const open = this.asks.get(tab) === ask
         ask.typedAt = undefined
-        this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
+        this.answered(tab, NOT_ANSWERED_FROM_HERE)
         return { error: open ? STARTED_IN_THE_TERMINAL : SHOWS_NO_DIALOG }
       }
     } catch (error) {

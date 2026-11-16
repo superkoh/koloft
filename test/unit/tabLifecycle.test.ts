@@ -28,6 +28,7 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     }),
     toast: say('toast'),
     typing: () => ({ forget: say('typing.forget') }),
+    asks: () => ({ forget: say('asks.forget') }),
     relay: () => ({ forget: say('relay.forget') }),
     buttons: () => ({ forget: say('buttons.forget') }),
     secrets: () => ({ forget: say('secrets.forget') }),
@@ -59,13 +60,14 @@ describe('TabLifecycle', () => {
     }
   })
 
-  it('an exit, asleep or not, makes each Discord part forget the tab', () => {
+  it('an exit, asleep or not, makes what the session was asking and each Discord part forget the tab', () => {
     for (const asleep of [false, true]) {
       const { lifecycle, calls } = wired()
       lifecycle.emit('exit', exitOf({ asleep }))
       expect(calls).toEqual([
         'slash.closed t1',
         'typing.forget t1',
+        'asks.forget t1',
         'relay.forget t1',
         'buttons.forget t1',
         'secrets.forget t1'

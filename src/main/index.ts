@@ -536,6 +536,7 @@ import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
+import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import {
   SECRET_ID_PREFIX,
   SecretAsks,
@@ -757,7 +758,7 @@ const sessionBackends = new SessionBackends({
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
     koloftInbox.asked(tabId)
-    if (discordRelay) discordRelay.onAsk(tabId, ask)
+    if (sessionAsks) sessionAsks.onAsk(tabId, ask)
     else showAskOnItsRow(tabId)
   },
   clearAttention: (tabId) => attention.clear(tabId),
@@ -773,7 +774,7 @@ sessionBackends.askingOf = (tabId) => {
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
-  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
+  const ask = claudeAsks.get(tabId) ?? sessionAsks?.heldAsk(tabId)
   return ask && claudeAskLine(ask)
 }
 function showAskOnItsRow(tabId: string): void {
@@ -797,7 +798,7 @@ const newsJudge = new NewsJudge({
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
-  return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
+  return tracker.statusOf(tabId) === 'approval' || !!sessionAsks?.dialogOpen(tabId)
 }
 
 type PanelOpen = (
@@ -1159,8 +1160,8 @@ const ownerAsleep = new OwnerAsleep(
         return { question: questions > 0, questions, text: codexDialog(stored).text }
       }
       const claude =
-        discordRelay?.heldAsk(tabId) ??
-        (tracker.statusOf(tabId) === 'approval' ? discordRelay?.askOf(tabId) : undefined)
+        sessionAsks?.heldAsk(tabId) ??
+        (tracker.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
       if (!claude) return undefined
       const questions = questionsOf(claude).length
       return { question: questions > 0, questions, text: claudeDialog(claude).text }
@@ -1523,6 +1524,7 @@ let cronRunner: CronRunner | null = null
 let butler: Butler | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
+let sessionAsks: SessionAsks | null = null
 let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
 let rooms: Rooms | null = null
@@ -2270,11 +2272,11 @@ tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
   questionSeen.delete(tabId)
-  discordRelay?.dialogGone(tabId, dialogClosed)
+  sessionAsks?.dialogGone(tabId, dialogClosed)
 }
 
 async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
-  return discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING
+  return sessionAsks ? sessionAsks.answerSession(tabId, reply) : STILL_STARTING
 }
 
 const ownerAsks = {
@@ -3613,6 +3615,7 @@ app.whenReady().then(() => {
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.cron.toast, message),
     typing: () => discordTyping,
+    asks: () => sessionAsks,
     relay: () => discordRelay,
     buttons: () => askButtons,
     secrets: () => secretAsks,
@@ -3712,7 +3715,7 @@ app.whenReady().then(() => {
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
     if (ask && isAskedCall(ask, call)) askEnded(tabId)
-    discordRelay?.toolDone(tabId, call)
+    sessionAsks?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
@@ -4056,6 +4059,37 @@ app.whenReady().then(() => {
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
+  const asks = new SessionAsks({
+    backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
+    status: (tabId) => tracker.statusOf(tabId),
+    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    turnOver: (tabId) => tracker.turnOver(tabId),
+    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
+    touchedSinceAsked: (tabId) => {
+      const asked = questionSeenAt(tabId)
+      return asked !== undefined && ownerTouchedSince(tabId, asked)
+    },
+    ownerTouchedSince,
+    pendingApproval: (tabId) => storedOwnerOf(tabId)?.openApproval(tabId),
+    pendingQuestion: (tabId) => storedOwnerOf(tabId)?.openQuestion(tabId),
+    answerable: async (tabId) => {
+      await storedOwnerOf(tabId)?.answerable?.(tabId)
+    },
+    answerInPlace: async (tabId, reply) => {
+      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+    },
+    showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
+    regDir: hookPaths.regDir
+  })
+  asks.listen({
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      showAskOnItsRow(tabId)
+      void ownerAsleep.asks(tabId)
+    }
+  })
+  sessionAsks = asks
+  asks.watchAsks()
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4121,7 +4155,7 @@ app.whenReady().then(() => {
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await pendingAskOf(tabId)
-    return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
+    return ask ? codexDialog(ask) : sessionAsks?.dialog(tabId)
   }
   const buttons = new AskButtons({
     owner: () => butlerNow.owner(),
@@ -4132,6 +4166,10 @@ app.whenReady().then(() => {
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
+  asks.listen({
+    asksChanged: (tabId) => void buttons.check(tabId),
+    answered: (tabId, reply) => buttons.answered(tabId, reply)
+  })
   const secrets = new SecretAsks({
     owner: () => butlerNow.owner(),
     cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
@@ -4168,6 +4206,7 @@ app.whenReady().then(() => {
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
+    asks,
     link,
     download: async (url) => {
       const res = await fetch(url)
@@ -4225,7 +4264,6 @@ app.whenReady().then(() => {
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     askPlaced: (card, at) => buttons.placed(card, at),
-    answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     showsPromptBeforeBind,
@@ -4234,35 +4272,15 @@ app.whenReady().then(() => {
     turnOver: (tabId) => tracker.turnOver(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    asksChanged: (tabId) => {
-      ptyMgr.wakeReady(tabId)
-      void buttons.check(tabId)
-      showAskOnItsRow(tabId)
-      void ownerAsleep.asks(tabId)
-    },
     type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
-    touchedSinceAsked: (tabId) => {
-      const asked = questionSeenAt(tabId)
-      return asked !== undefined && ownerTouchedSince(tabId, asked)
-    },
-    ownerTouchedSince,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     pendingApproval: (tabId) => storedOwnerOf(tabId)?.openApproval(tabId),
     pendingQuestion: (tabId) => storedOwnerOf(tabId)?.openQuestion(tabId),
-    answerable: async (tabId) => {
-      await storedOwnerOf(tabId)?.answerable?.(tabId)
-    },
-    answerInPlace: async (tabId, reply) => {
-      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
-    },
-    showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
-    regDir: hookPaths.regDir,
     attachmentsDir
   })
-  discordRelay.watchAsks()
   const relay = discordRelay
   awayDigest = new AwayDigest({
     away: ownerAway,
