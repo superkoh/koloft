@@ -7,6 +7,7 @@ import {
   agySessionCalls,
   E2E_CLAUDE_ACCOUNT,
   installAgy,
+  installCodex,
   installMuse,
   museCalls,
   seedSettings,
@@ -17,6 +18,7 @@ import {
 } from './helpers/env'
 import {
   centerTerm,
+  chooseBackend,
   ENDED_ROW_NOTE,
   gitCommitAll,
   gitInit,
@@ -32,10 +34,21 @@ import {
   termIds,
   waitBooted,
   waitForCalls,
+  wsMenuTexts,
   wsRows,
+  type AgentName,
   type ClaudeCall
 } from './helpers/p1'
-import { agyReady } from './helpers/remote'
+import {
+  addRemoteWorkspace,
+  agyReady,
+  installFakeRemote,
+  killFakeRemote,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME,
+  remoteDir
+} from './helpers/remote'
+import type { BackendId } from '../../src/shared/types'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
@@ -179,6 +192,135 @@ async function startWorktreeSession(
   await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
   const [first] = await waitForCalls(env, 1)
   return { row, first, wtDir: path.join(env.workspaces.a, '.claude', 'worktrees', name) }
+}
+
+interface TabKind {
+  name: string
+  backend: BackendId
+  agent: AgentName
+  remote: boolean
+  install: (env: E2EEnv) => void
+}
+
+function onTheMachine(label: Exclude<AgentName, 'Claude'>): (env: E2EEnv) => void {
+  const agent = OTHER_AGENTS_ON_THE_MACHINE.find((a) => a.label === label)!
+  return (env) => {
+    installFakeRemote(env)
+    agent.install(env)
+  }
+}
+
+const EVERY_TAB_KIND_BUT_LOCAL_CLAUDE: TabKind[] = [
+  {
+    name: 'local Codex',
+    backend: 'codex',
+    agent: 'Codex',
+    remote: false,
+    install: (env) => installCodex(env)
+  },
+  {
+    name: 'local Muse',
+    backend: 'muse',
+    agent: 'Muse',
+    remote: false,
+    install: (env) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    }
+  },
+  {
+    name: 'local Antigravity',
+    backend: 'agy',
+    agent: 'Antigravity',
+    remote: false,
+    install: (env) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    }
+  },
+  {
+    name: 'remote Claude',
+    backend: 'claude',
+    agent: 'Claude',
+    remote: true,
+    install: installFakeRemote
+  },
+  {
+    name: 'remote Codex',
+    backend: 'codex',
+    agent: 'Codex',
+    remote: true,
+    install: onTheMachine('Codex')
+  },
+  {
+    name: 'remote Muse',
+    backend: 'muse',
+    agent: 'Muse',
+    remote: true,
+    install: onTheMachine('Muse')
+  },
+  {
+    name: 'remote Antigravity',
+    backend: 'agy',
+    agent: 'Antigravity',
+    remote: true,
+    install: onTheMachine('Antigravity')
+  }
+]
+
+async function liveSessionOf(
+  page: Page,
+  backend: BackendId
+): Promise<{ sessionId: string; folder: string } | undefined> {
+  const all = await page.evaluate(() => window.api.sessions.list())
+  const s = all.find((x) => x.backendId === backend && x.alive && x.sessionId)
+  if (!s) return undefined
+  const dir = s.cwd.replace(/^ssh:\/\/[^/]+/, '')
+  return { sessionId: s.sessionId, folder: fs.existsSync(dir) ? fs.realpathSync(dir) : dir }
+}
+
+async function startWorktreeTabWithATranscript(
+  page: Page,
+  env: E2EEnv,
+  kind: TabKind,
+  name: string
+): Promise<{ row: Locator; sessionId: string; wtDir: string }> {
+  const wsName = kind.remote ? REMOTE_WS_NAME : 'ws-a'
+  await waitBooted(page)
+  if (kind.remote) {
+    await addRemoteWorkspace(page, env)
+    await expect
+      .poll(async () => (await wsMenuTexts(page, wsName)).join(' | '), { timeout: 60_000 })
+      .toContain('New worktree session')
+  }
+  const dlg = await openWorktreeSession(page, wsName)
+  await dlg.locator('input').fill(name)
+  await chooseBackend(page, kind.agent === 'Claude' ? 'default' : kind.agent)
+  const row = wsRows(page, wsName)
+  if (kind.backend === 'agy') await agyReady(page)
+  else await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
+  if (kind.backend !== 'claude') await runIn(page, centerTerm(page), 'one turn')
+  let sessionId = ''
+  await expect
+    .poll(
+      async () => {
+        sessionId = (await liveSessionOf(page, kind.backend))?.sessionId ?? ''
+        return (
+          !!sessionId && page.evaluate((id) => window.api.sessions.transcriptExists(id), sessionId)
+        )
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true)
+  await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
+  const wtDir = path.join(
+    kind.remote ? remoteDir(env) : env.workspaces.a,
+    '.claude',
+    'worktrees',
+    name
+  )
+  expect(fs.existsSync(wtDir)).toBe(true)
+  return { row, sessionId, wtDir }
 }
 
 async function backAfterRelaunch(page: Page, title: string): Promise<void> {
@@ -733,6 +875,70 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         }
       })
     }
+
+    for (const kind of EVERY_TAB_KIND_BUT_LOCAL_CLAUDE)
+      for (const via of ['the restart', 'its row, after cancelling the restart']) {
+        test(`T18: in a ${kind.name} tab, when the deleted worktree cannot be rebuilt, "Resume in main without isolation" from ${via} resumes the same session in the same tab, leaving no dead one beside it`, async ({
+          env
+        }) => {
+          test.setTimeout(240_000)
+          const main = kind.remote ? remoteDir(env) : env.workspaces.a
+          kind.install(env)
+          seedSettings(env, { hintsOff: true })
+          fs.mkdirSync(main, { recursive: true })
+          fs.writeFileSync(path.join(main, '.gitignore'), 'NOTES.md\n')
+          gitInit(main)
+          gitCommitAll(main)
+          const { app, page } = await launch(env)
+          try {
+            const { row, sessionId, wtDir } = await startWorktreeTabWithATranscript(
+              page,
+              env,
+              kind,
+              'locked'
+            )
+            expect(await termIds(page)).toHaveLength(1)
+
+            execFileSync('git', ['-C', main, 'worktree', 'lock', wtDir])
+            fs.rmSync(wtDir, { recursive: true, force: true })
+            await triggerRestart(app)
+
+            const escape = page.locator('.modal.lifecycle-modal')
+            await expect(escape.locator('.modal-header')).toHaveText(
+              'Could not rebuild the worktree',
+              { timeout: 60_000 }
+            )
+            if (via !== 'the restart') {
+              await escape.getByRole('button', { name: 'Cancel' }).click()
+              await expect(escape).toHaveCount(0)
+              await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+              await row.click()
+              await expect(escape.locator('.modal-header')).toHaveText(
+                'Could not rebuild the worktree',
+                { timeout: 60_000 }
+              )
+            }
+            await escape.getByRole('button', { name: 'Resume in main without isolation' }).click()
+
+            await expect
+              .poll(
+                async () => {
+                  const s = await liveSessionOf(page, kind.backend)
+                  return s && { sessionId: s.sessionId, folder: s.folder }
+                },
+                { timeout: 60_000 }
+              )
+              .toEqual({ sessionId, folder: fs.realpathSync(main) })
+            await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
+            await expect.poll(() => termIds(page)).toHaveLength(1)
+            await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+            expect(fs.existsSync(wtDir)).toBe(false)
+          } finally {
+            await quitAndClose(app)
+            if (kind.remote) killFakeRemote(env)
+          }
+        })
+      }
   })
 
   test.describe('fault tolerance', () => {
