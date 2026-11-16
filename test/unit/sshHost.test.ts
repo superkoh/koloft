@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
-import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
+import { killSessionCmd, machineToolProgram, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
@@ -61,6 +61,7 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
       pickAccount: async () => ({ env: {}, banner: '' }),
       noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
       hookSettings: () => ({}),
+      loginPath: async () => '',
       ...claude
     }
   })
@@ -803,7 +804,8 @@ describe('accounts for remote launches started together', () => {
           return { env: {}, banner: '' }
         },
         noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-        hookSettings: () => ({})
+        hookSettings: () => ({}),
+        loginPath: async () => ''
       }
     })
     await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
@@ -821,6 +823,39 @@ describe('accounts for remote launches started together', () => {
     }
     expect(await tabScript({ ANTHROPIC_MODEL: 'glm-5.2' }, 'tab-pinned')).not.toContain('--model')
     expect(await tabScript({}, 'tab-plain')).toMatch(/'--model' 'opus'|--model opus/)
+  })
+
+  // PLATFORM§33
+  it("writes the machine's login-shell PATH into the script of a Claude Code, Muse or Antigravity tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
+    const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const host = machine(runOnMachine, {
+      loginPath: async () => '/opt/rc-only/bin',
+      alive: () => new Set([live])
+    })
+    const scriptOf = (tabId: string): string =>
+      fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
+    const muse = {
+      cwd: keyed('/w'),
+      account: { name: 'a', auth: () => '{}' },
+      args: [],
+      sandboxed: false,
+      trust: [],
+      koloftSkill: false
+    }
+    const program = machineToolProgram('agy', '  exec agy\n', {})
+    const scripts = async (resume?: string): Promise<string[]> => {
+      const tag = resume ? 'again' : 'new'
+      const claude = await host.launch({ root: keyed('/w'), resumeSessionId: resume })
+      if (!claude.ok) throw new Error('launch refused')
+      claude.launchCommand(`claude-${tag}`)
+      ;(await host.launchMuse({ ...muse, resumeSessionId: resume })).launchCommand(`muse-${tag}`)
+      const agy = { tabId: `agy-${tag}`, cwd: keyed('/w'), env: {}, program, resumeId: resume }
+      ;(await host.launchAgy(agy)).launchCommand()
+      return ['claude', 'muse', 'agy'].map((kind) => scriptOf(`${kind}-${tag}`))
+    }
+    const handed = `PATH="$PATH":'/opt/rc-only/bin'`
+    for (const started of await scripts()) expect(started).toContain(handed)
+    for (const reattached of await scripts(live)) expect(reattached).not.toContain(handed)
   })
 
   it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {
@@ -869,7 +904,8 @@ describe('accounts for remote launches started together', () => {
         agentTools: () => true,
         pickAccount,
         noAccountMessage: () => why,
-        hookSettings: () => ({})
+        hookSettings: () => ({}),
+        loginPath: async () => ''
       }
     })
     await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(why)

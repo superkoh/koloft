@@ -794,6 +794,17 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   E-SSH-C2 (a conductor's typed message answered, its question answered by `koloft
   session answer`). E-SSH-11 and E-SSH-15 passed again on 2.1.306 (2026-10-21) and on
   2.1.308 (2026-10-22).
+- **That env's PATH is what the Bash tool and the hooks get, not the one the user's
+  `~/.zshrc` builds.** Measured 2026-11-15 on CC 2.1.325 (linux-arm64) in Docker (Debian
+  bookworm, zsh 5.9), a user whose login shell is zsh and whose `~/.zshrc` puts
+  `~/rc-only/bin` first on PATH, claude started directly with `SHELL=/bin/zsh` and the
+  PATH a remote tab's script builds (PLATFORM§33), the model a fake Messages API answering
+  one Bash call `command -v rconly-tool`; 1 run `-p`, 1 interactive. Both times the tool
+  was not found, the command saw exactly the PATH claude got, and a `SessionStart` hook's
+  `command -v` did not find it either. The shell snapshot
+  (`~/.claude/shell-snapshots/snapshot-zsh-*.sh`) holds `export PATH=<the PATH claude
+  got>`, so what `.zshrc` adds is put back before each call. With the user's `zsh -lic`
+  PATH appended to claude's own, the Bash call and the hook both found it.
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.

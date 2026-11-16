@@ -6549,7 +6549,8 @@ const hosts = new Hosts(
         noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
+        loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })
 )
