@@ -16,7 +16,8 @@ import {
   processAlive,
   readCalls,
   terminalText,
-  wsGroup
+  wsGroup,
+  picksFor
 } from './helpers/p1'
 import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
 import {
@@ -187,9 +188,13 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         const parentPid = machineProcessOf(env, backend, parentId)
         if (backend !== 'codex') expect(parentPid).toBeDefined()
 
-        expect(await koloftInSession(page, parentTab, 'session new -- report back when done')).toBe(
-          '0'
-        )
+        expect(
+          await koloftInSession(
+            page,
+            parentTab,
+            `session new ${picksFor(backend)} -- report back when done`
+          )
+        ).toBe('0')
         const kidRow = wsGroup(page, REMOTE_WS_NAME).locator(
           `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
         )

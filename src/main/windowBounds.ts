@@ -31,8 +31,20 @@ const SIDEBAR_PX = 200
 const TUI_FLOOR_PX = 380
 const MIN_WIDTH = SIDEBAR_PX + TUI_FLOOR_PX + WORKBENCH_WIDTH_FLOOR
 
-export function windowMinWidth(restoredWidth: number | undefined): number {
-  return restoredWidth === undefined ? MIN_WIDTH : Math.min(MIN_WIDTH, restoredWidth)
+export function windowMinWidth(restoredWidth: number): number {
+  return Math.min(MIN_WIDTH, restoredWidth)
+}
+
+export function firstWindowBounds(
+  size: { width: number; height: number },
+  workArea: WinBounds
+): WinBounds {
+  return {
+    x: workArea.x + Math.max(0, Math.round((workArea.width - size.width) / 2)),
+    y: workArea.y + Math.max(0, Math.round((workArea.height - size.height) / 2)),
+    width: size.width,
+    height: size.height
+  }
 }
 
 const MIN_RESTORABLE_SIDE_PX = 200

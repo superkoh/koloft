@@ -1,0 +1,2 @@
+// PLATFORM§67
+export const OWNING_TAB_ENV = 'KOLOFT_HOLD_TAB'
