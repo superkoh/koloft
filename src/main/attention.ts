@@ -2,6 +2,9 @@ import type { AttentionEvent, AttentionKind, AttentionSubject, SessionStatus } f
 
 export type SavedMark = AttentionEvent & { sessionId: string }
 
+const PARKED_WHILE_ITS_TAB_RESTARTS = ':restarting'
+const STOPPED_BY_A_RESTART = { kind: 'turn-done', wasAsking: true, stoppedByRestart: true } as const
+
 export function edgeAttention(
   prev: SessionStatus | undefined,
   next: SessionStatus
@@ -13,16 +16,18 @@ export function edgeAttention(
 
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
+  private askKeptThroughWorking = new Set<string>()
   asleep: (tabId: string) => boolean = () => false
   waitsOnAnother: (tabId: string) => boolean = () => false
   watching: () => string | null = () => null
   turnDone: (tabId: string) => void = () => {}
+  outlivesKoloft: (tabId: string) => boolean = () => false
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
     lastRun: SavedMark[] = []
   ) {
-    for (const { tabId, kind, at, title, sessionId, fyi, wasAsking } of lastRun) {
+    for (const { tabId, kind, at, title, sessionId, fyi, wasAsking, stoppedByRestart } of lastRun) {
       const deadKind = kind === 'approval' ? 'turn-done' : kind
       this.pending.set(tabId, {
         tabId,
@@ -31,7 +36,8 @@ export class AttentionTracker {
         title,
         sessionId,
         fyi,
-        ...((kind === 'approval' || wasAsking) && { wasAsking: true })
+        ...((kind === 'approval' || wasAsking) && { wasAsking: true }),
+        ...(stoppedByRestart && { stoppedByRestart })
       })
     }
   }
@@ -42,10 +48,11 @@ export class AttentionTracker {
     const askingHere = this.pending.get(tabId)
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
     const wasAsking = carried.kind === 'approval' || carried.wasAsking
+    const sameAsk = wasAsking && !carried.stoppedByRestart
     this.pending.set(
       tabId,
       askingHere?.kind === 'approval' && askingHere !== carried
-        ? { ...askingHere, sessionId, ...(wasAsking && { at: carried.at }) }
+        ? { ...askingHere, sessionId, ...(sameAsk && { at: carried.at }) }
         : { ...carried, tabId, kind: 'turn-done', ...(wasAsking && { wasAsking: true }) }
     )
     this.onChange(this.list(), null)
@@ -66,7 +73,10 @@ export class AttentionTracker {
     subject: AttentionSubject = {}
   ): void {
     if (next === 'working') {
-      this.clear(tabId)
+      const cur = this.pending.get(tabId)
+      const mayAskAgain = cur?.wasAsking && !cur.stoppedByRestart && this.outlivesKoloft(tabId)
+      if (!mayAskAgain || this.askKeptThroughWorking.has(tabId)) this.clear(tabId)
+      else this.askKeptThroughWorking.add(tabId)
       return
     }
     const kind = edgeAttention(prev, next)
@@ -119,6 +129,17 @@ export class AttentionTracker {
     if (this.pending.get(tabId)?.kind !== 'exited') this.clear(tabId)
   }
 
+  tabStopping(tabId: string, restarting: boolean): void {
+    const cur = this.pending.get(tabId)
+    const asking = cur?.kind === 'approval' || cur?.wasAsking
+    const parked = tabId + PARKED_WHILE_ITS_TAB_RESTARTS
+    if (!restarting) this.drop(parked)
+    if (!restarting || !asking || !cur.sessionId) return this.clearKeepingExit(tabId)
+    this.pending.delete(tabId)
+    this.pending.set(parked, { ...cur, ...STOPPED_BY_A_RESTART, tabId: parked })
+    this.onChange(this.list(), null)
+  }
+
   clearSession(sessionId: string): void {
     const stale = this.list().filter((e) => e.sessionId === sessionId)
     for (const e of stale) this.pending.delete(e.tabId)
@@ -137,13 +158,15 @@ export class AttentionTracker {
   ): void {
     const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
     const cur = this.pending.get(tabId)
-    const sameAskAsBefore = kind === 'approval' && sameAsk && cur?.wasAsking
+    const sameAskAsBefore =
+      kind === 'approval' && sameAsk && cur?.wasAsking && !cur.stoppedByRestart
     const at = sameAskAsBefore ? cur.at : Date.now()
     const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, event)
-    this.onChange(this.list(), cur?.kind === kind || sameAskAsBefore ? null : event)
+    const alreadySaid = cur?.kind === kind && !cur.wasAsking
+    this.onChange(this.list(), alreadySaid || sameAskAsBefore ? null : event)
     if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
   }
 }

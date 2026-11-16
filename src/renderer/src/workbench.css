@@ -522,6 +522,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .prog {
+    width: 100%;
+    opacity: var(--unknown-length-bar-at-rest-opacity);
     animation: none;
   }
 }

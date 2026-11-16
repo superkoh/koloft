@@ -1,14 +1,16 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
 import { spawn } from 'child_process'
+import { randomInt } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { TabKind } from '@shared/types'
+import type { ScreenSize, TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
+import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
@@ -60,6 +62,7 @@ interface CreateArgs {
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
+    KOLOFT_PICTURE_FOLDER?: string
     KOLOFT_AGENT_PLUGIN?: string
     KOLOFT_AGENT_PROMPT?: string
     KOLOFT_DOCS_PLUGIN?: string
@@ -179,6 +182,13 @@ export function foregroundName(reported: unknown): string | null {
   return name === '' ? null : name
 }
 
+const RUN_PART_LENGTH = 4
+
+const randomRunPart = (): string =>
+  randomInt(36 ** RUN_PART_LENGTH)
+    .toString(36)
+    .padStart(RUN_PART_LENGTH, '0')
+
 export class PtyManager extends EventEmitter {
   shimDir?: string
   regDir?: string
@@ -186,6 +196,7 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
+  sessionScreen?: ScreenSize
 
   private ptys = new Map<string, PtyHandle>()
   private running = new Set<pty.IPty>()
@@ -193,7 +204,7 @@ export class PtyManager extends EventEmitter {
   private typing = new Map<string, Promise<void>>()
   private linesToType = new WeakMap<PtyHandle, LinesToType>()
   private counter = 0
-  private instanceTag = process.pid.toString(36)
+  private instanceTag = `${process.pid.toString(36)}-${randomRunPart()}`
 
   nextId(): string {
     return `pty-${this.instanceTag}-${++this.counter}`
@@ -239,12 +250,14 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_HOOK_SETTINGS' ||
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
+        key === 'KOLOFT_PICTURE_FOLDER' ||
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
         key === 'KOLOFT_AGENT_PROMPT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
+        key === OWNING_TAB_ENV ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -252,6 +265,8 @@ export class PtyManager extends EventEmitter {
       }
     }
     if (args.util) env.KOLOFT_UTIL = '1'
+    if (args.util && args.ownerTabId && this.ptys.has(args.ownerTabId))
+      env[OWNING_TAB_ENV] = args.ownerTabId
     if (this.regDir && !args.util) env.KOLOFT_SESSION_DIR = this.regDir
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
@@ -268,6 +283,7 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
+        'KOLOFT_PICTURE_FOLDER',
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
         'KOLOFT_DOCS_PLUGIN',
@@ -291,10 +307,11 @@ export class PtyManager extends EventEmitter {
       ? [args.executable, ...(args.argv ?? [])]
       : [shell, ...login.args]
     const [file, ...fileArgs] = args.aboveItsTools ? aboveItsTools(program) : program
+    const screen = args.util ? undefined : this.sessionScreen
     const proc = pty.spawn(file, fileArgs, {
       name: 'xterm-256color',
-      cols: args.cols ?? 80,
-      rows: args.rows ?? 24,
+      cols: args.cols ?? screen?.cols ?? 80,
+      rows: args.rows ?? screen?.rows ?? 24,
       cwd: args.cwd,
       env
     })

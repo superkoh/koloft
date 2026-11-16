@@ -141,6 +141,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
 }
 
 const CONFIG_SPLIT = '\u0001'
+const ACCOUNT_SPLIT = '\u0002'
 
 // AGY§4 AGY§5
 export function readAgyConfigCmd(account: string): string {
@@ -150,7 +151,8 @@ export function readAgyConfigCmd(account: string): string {
       `A=${remoteAgyHome(account)}`,
       f(`${REMOTE_GEMINI}/${AGY_APP_DIR}/settings.json`),
       f(`${REMOTE_GEMINI}/config/hooks.json`),
-      f(`$A/${AGY_APP_DIR}/settings.json`)
+      f(`$A/${AGY_APP_DIR}/settings.json`),
+      `for s in "${REMOTE_HOME}/agy"/*/${AGY_APP_DIR}/settings.json; do cat "$s" 2>/dev/null; printf '${ACCOUNT_SPLIT}'; done`
     ].join('\n')
   )
 }
@@ -159,20 +161,23 @@ export interface RemoteAgyConfig {
   ownersSettings: Record<string, unknown>
   ownersHooks: Record<string, unknown>
   ownSettings: Record<string, unknown>
+  accountsSettings: Record<string, unknown>[]
 }
 
 export function parseAgyConfig(stdout: string): RemoteAgyConfig {
-  const [ownersSettings, ownersHooks, ownSettings] = stdout.split(CONFIG_SPLIT).map((text) => {
+  const parsed = (text = ''): Record<string, unknown> => {
     try {
       return record(JSON.parse(text))
     } catch {
       return {}
     }
-  })
+  }
+  const [ownersSettings, ownersHooks, ownSettings, accounts = ''] = stdout.split(CONFIG_SPLIT)
   return {
-    ownersSettings: record(ownersSettings),
-    ownersHooks: record(ownersHooks),
-    ownSettings: record(ownSettings)
+    ownersSettings: parsed(ownersSettings),
+    ownersHooks: parsed(ownersHooks),
+    ownSettings: parsed(ownSettings),
+    accountsSettings: accounts.split(ACCOUNT_SPLIT).filter(Boolean).map(parsed)
   }
 }
 
@@ -225,7 +230,7 @@ for (let size = 0; size !== tree.size; ) {
   size = tree.size
   for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
 }
-const isTheRelay = (args) => args.includes('/${STATUS_RELAY_FILE} agy ')
+const isTheRelay = (args) => args.includes('/${STATUS_RELAY_FILE} ')
 const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args) && !isTheRelay(p.args))
 if (!agy) process.exit(1)
 const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]

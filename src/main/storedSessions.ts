@@ -101,6 +101,7 @@ export interface StoredSessionDeps {
   pty: PtyManager
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
+  projectRules?(workspace: string): Promise<string | undefined>
   changed(): void
   replaced?(oldKey: string, newKey: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
@@ -123,6 +124,7 @@ export interface StartContext {
   workspace: string
   resource?: WorktreeResource
   freshWorktree: boolean
+  rules?: string
 }
 
 export interface SessionsWithStore {
@@ -781,8 +783,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
         resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
       }
+      const rules = await this.deps.projectRules?.(workspace)
       this.assertStarting()
-      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
+      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree, rules }, prepared)
       this.runs.set(run.tabId, run)
     } finally {
       this.starting.delete(starting)

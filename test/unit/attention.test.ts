@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AttentionTracker, type SavedMark } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
 
@@ -201,6 +201,41 @@ describe('attention — unread marks outlive a Koloft restart', () => {
       expect.objectContaining({ tabId: 'tab-new', kind: 'approval', at: 2 })
     ])
   })
+
+  it('a reattached tab of a session that outlives Koloft, which works once before it shows its ask again, keeps that ask as the same one, silently; a second working clears it', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.outlivesKoloft = () => true
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', undefined, 'waiting')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    t.onStatusChange('tab-new', 'working', 'approval', { sessionId: 'sid-2' })
+    expect(t.list().find((e) => e.tabId === 'tab-new')).toMatchObject({ kind: 'approval', at: 2 })
+    expect(changes.at(-1)?.event).toBeNull()
+
+    const other = makeTracker(lastRun).t
+    other.outlivesKoloft = () => true
+    other.bound('tab-new', 'sid-2')
+    other.onStatusChange('tab-new', 'waiting', 'working')
+    other.onStatusChange('tab-new', 'working', 'waiting')
+    other.onStatusChange('tab-new', 'waiting', 'working')
+    expect(other.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
+  })
+
+  it('a session that stopped with Koloft clears its ask on its first working, as that is the owner moving on', () => {
+    const { t } = makeTracker(lastRun)
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    expect(t.list().filter((e) => e.sessionId === 'sid-2')).toEqual([])
+  })
+
+  it('a turn a resumed session finishes after an ask it was asking is new, and notified', () => {
+    const { t, changes } = makeTracker(lastRun)
+    t.outlivesKoloft = () => true
+    t.bound('tab-new', 'sid-2')
+    t.onStatusChange('tab-new', 'waiting', 'working')
+    t.onStatusChange('tab-new', 'working', 'waiting', { sessionId: 'sid-2' })
+    expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'turn-done' })
+  })
 })
 
 describe('attention — a session starting again keeps its mark', () => {
@@ -213,6 +248,71 @@ describe('attention — a session starting again keeps its mark', () => {
       expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one', at: since })
     ])
     expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('a tab restarted while it asks keeps the ask, silently, as one it was asking, through anything that clears its old tab, and the restarted tab takes it with its time; any other mark of it goes', () => {
+    const { t, changes } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    const since = t.list()[0].at
+    t.onStatusChange('tab-news', 'working', 'waiting', { sessionId: 'sid-2' })
+    t.tabStopping('tab-old', true)
+    t.tabStopping('tab-news', true)
+    t.clear('tab-old')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done', wasAsking: true, at: since })
+    ])
+    t.bound('tab-new', 'sid-1')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: since })
+    ])
+    expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('an ask stopped by a restart never comes back on screen: the restarted tab clears it on its first working even on a machine, and a new question there is a new ask', () => {
+    const { t: worked } = makeTracker()
+    worked.outlivesKoloft = () => true
+    worked.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    worked.tabStopping('tab-old', true)
+    worked.bound('tab-new', 'sid-1')
+    worked.onStatusChange('tab-new', 'waiting', 'working')
+    expect(worked.list()).toEqual([])
+
+    const { t: asked, changes } = makeTracker()
+    asked.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    asked.tabStopping('tab-old', true)
+    asked.bound('tab-new', 'sid-1')
+    asked.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
+    expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'approval' })
+    expect(asked.list()[0].stoppedByRestart).toBeUndefined()
+
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1)
+    const { t: early } = makeTracker()
+    early.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    early.tabStopping('tab-old', true)
+    now.mockReturnValue(2)
+    early.onStatusChange('tab-new', 'waiting', 'approval', { sessionId: 'sid-1' })
+    early.bound('tab-new', 'sid-1')
+    now.mockRestore()
+    expect(early.list()).toEqual([expect.objectContaining({ tabId: 'tab-new', at: 2 })])
+  })
+
+  it('an ask stopped by a restart stays one after a Koloft restart', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    t.tabStopping('tab-old', true)
+    const saved = t.list() as SavedMark[]
+    expect(makeTracker(saved).t.list()[0].stoppedByRestart).toBe(true)
+  })
+
+  it('a restart that never comes back leaves its ask, through another restart, until its tab is closed', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-old', 'working', 'approval', { sessionId: 'sid-1' })
+    t.tabStopping('tab-old', true)
+    t.clear('tab-old')
+    t.tabStopping('tab-old', true)
+    expect(t.list()).toHaveLength(1)
+    t.tabStopping('tab-old', false)
+    expect(t.list()).toEqual([])
   })
 
   it('a tab put to sleep keeps its mark through its process ending, until it is closed', () => {

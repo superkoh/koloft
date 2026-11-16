@@ -11,6 +11,7 @@ import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
+import { sanitizeSessionDefaults } from './sessionDefaults'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
@@ -29,9 +30,11 @@ export function buildResetPatch(): Partial<Settings> {
     gitSuggestionsDismissed,
     gitMachines,
     todoNotes,
+    sessionDefaults,
     ...rest
   } = DEFAULT_SETTINGS
   void todoNotes
+  void sessionDefaults
   void butler
   void gitAccounts
   void gitPicks
@@ -59,9 +62,11 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
     gitSuggestionsDismissed,
     gitMachines,
     todoNotes,
+    sessionDefaults,
     ...rest
   } = patch
   void todoNotes
+  void sessionDefaults
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
@@ -100,6 +105,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
   merged.todoNotes = sanitizeTextMap(merged.todoNotes)
+  merged.sessionDefaults = sanitizeSessionDefaults(merged.sessionDefaults)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth

@@ -10,6 +10,8 @@ import {
   writeLineInTurn
 } from '../../src/main/crossSessionMessage'
 
+const BODY_LARGER_THAN_ANY_SOCKET_BUFFER = 4 * 1024 * 1024
+
 let dir: string | undefined
 let server: net.Server | undefined
 
@@ -64,6 +66,43 @@ describe('a message to another Claude session, the way Claude sessions send one'
     await writeLine(sock, line)
     expect(received).toBe(line)
   })
+
+  it('counts as taken once every byte is written, though the session keeps its end open past the wait', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kx-'))
+    const sock = path.join(dir, 's.sock')
+    let received = ''
+    let held: net.Socket | undefined
+    server = net.createServer({ allowHalfOpen: true }, (c) => {
+      held = c
+      c.on('data', (b) => (received += b.toString()))
+    })
+    await new Promise<void>((resolve) => server!.listen(sock, resolve))
+    const line = crossSessionLine('bypass', 'show the plan again', 'k-1')
+    try {
+      await expect(writeLine(sock, line)).resolves.toBeUndefined()
+      expect(received).toBe(line)
+    } finally {
+      held?.destroy()
+    }
+  }, 10_000)
+
+  it('still fails when the session reads nothing and the line never fits in the socket, so that one can be retried', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kx-'))
+    const sock = path.join(dir, 's.sock')
+    let held: net.Socket | undefined
+    server = net.createServer({ allowHalfOpen: true, pauseOnConnect: true }, (c) => (held = c))
+    await new Promise<void>((resolve) => server!.listen(sock, resolve))
+    try {
+      await expect(
+        writeLine(
+          sock,
+          crossSessionLine('bypass', 'x'.repeat(BODY_LARGER_THAN_ANY_SOCKET_BUFFER), 'k-1')
+        )
+      ).rejects.toThrow('did not take the message in time')
+    } finally {
+      held?.destroy()
+    }
+  }, 10_000)
 
   it('fails when nothing listens on the socket', async () => {
     await expect(writeLine(path.join(os.tmpdir(), 'kx-nobody.sock'), 'x\n')).rejects.toThrow()

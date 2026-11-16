@@ -287,6 +287,7 @@ appendJsonl(sentinel('fake-agy-calls.jsonl'), {
   pid: process.pid,
   argv,
   cwd: process.cwd(),
+  cols: process.stdout.columns ?? null,
   env: {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
@@ -1656,6 +1657,7 @@ async function compactScenario(turn) {
 async function promptScenario(turn, text) {
   return finishTurn(turn, `Answer to: ${text}`)
 }
+const ASKED_FOR_THE_PLAN_AGAIN = 'approve the same plan again'
 const SCENARIOS = {
   '/write': writeScenario,
   '/edit': editScenario,
@@ -1677,7 +1679,7 @@ async function runTurn(text, origin = {}) {
   const turn = { conv: c, invocation: 0, origin }
   const command = text.split(/\s/)[0]
   const argument = text.slice(command.length).trim()
-  const scenario = SCENARIOS[command]
+  const scenario = text.includes(ASKED_FOR_THE_PLAN_AGAIN) ? planScenario : SCENARIOS[command]
   try {
     sendFrame('working', null, c.conversationTitle || undefined)
     setAgentState('working')

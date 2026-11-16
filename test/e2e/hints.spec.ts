@@ -1,21 +1,73 @@
 import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { installAgentFor, seedSettings, type E2EEnv } from './helpers/env'
 import {
+  type AgentName,
   centerTerm,
   clickAppMenuItem,
   focusOwner,
+  newSessionInWith,
   runIn,
   settingsOnDisk,
   snap,
   startSessionIn,
   waitBooted
 } from './helpers/p1'
+import {
+  addRemoteWorkspace,
+  installFakeRemote,
+  killFakeRemote,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 import { layoutState, seedWorkbenchDefault, WORKBENCH } from './helpers/workbench'
 
 const BACKDROP_OUTSET_PX = 4
 const QUEUED_HINT_HOLD_BACK_MS = 1900
+const A_REMOTE_ROW_FOLLOWS_WITHIN_MS = 90_000
+
+test.afterEach(({ env }) => killFakeRemote(env))
+
+interface TabKind {
+  kind: string
+  agent: AgentName
+  remote: boolean
+  install: (env: E2EEnv) => void
+  bound?: (page: Page) => Promise<unknown>
+}
+
+const ASKS_FOR_APPROVAL: Record<AgentName, string> = {
+  Claude: '/bash rm -rf build',
+  Codex: 'approve',
+  Muse: '/approve',
+  Antigravity: '/plan'
+}
+
+const TABS_BEYOND_LOCAL_CLAUDE: TabKind[] = [
+  ...(['Codex', 'Muse', 'Antigravity'] as const).map((agent) => ({
+    kind: `local ${agent}`,
+    agent,
+    remote: false,
+    install: (env: E2EEnv) => installAgentFor(env, agent, env.workspaces.a),
+    bound:
+      agent === 'Antigravity'
+        ? (page: Page) => runIn(page, centerTerm(page), 'first words')
+        : undefined
+  })),
+  { kind: 'remote Claude', agent: 'Claude', remote: true, install: () => {} },
+  ...OTHER_AGENTS_ON_THE_MACHINE.map((a) => ({
+    kind: `remote ${a.label}`,
+    agent: a.label,
+    remote: true,
+    install: a.install,
+    bound: a.bound
+  }))
+]
+
+const TABS_CODEX_SESSION_SPEC_LEAVES_OUT = TABS_BEYOND_LOCAL_CLAUDE.filter(
+  (t) => t.remote || t.agent !== 'Codex'
+)
 
 async function toggleWorkbenchWithoutClicking(app: ElectronApplication, page: Page): Promise<void> {
   await clickAppMenuItem(app, page, 'toggle-browser')
@@ -42,6 +94,33 @@ async function start(
   await page.waitForLoadState('domcontentloaded')
   await waitBooted(page)
   return { app, page }
+}
+
+async function startFor(
+  env: E2EEnv,
+  tab: TabKind,
+  opts: { panelOpen?: boolean } = {}
+): Promise<{ app: ElectronApplication; page: Page; ws: string }> {
+  tab.install(env)
+  if (tab.remote) installFakeRemote(env)
+  const { app, page } = await start(env, opts)
+  if (!tab.remote) return { app, page, ws: 'ws-a' }
+  await addRemoteWorkspace(page, env)
+  return { app, page, ws: REMOTE_WS_NAME }
+}
+
+async function startTab(page: Page, tab: TabKind, ws: string): Promise<void> {
+  if (tab.agent === 'Claude') await startSessionIn(page, ws, { remote: tab.remote })
+  else await newSessionInWith(page, ws, tab.agent)
+}
+
+async function startTabAndLetItSettle(page: Page, tab: TabKind, ws: string): Promise<string> {
+  await startTab(page, tab, ws)
+  if (tab.bound) await tab.bound(page)
+  await expect(page.locator('.ws .ws-tab.active')).toHaveClass(/\bst-waiting\b/, {
+    timeout: A_REMOTE_ROW_FOLLOWS_WITHIN_MS
+  })
+  return shownTabId(page)
 }
 
 function card(page: Page, id?: string): ReturnType<Page['locator']> {
@@ -450,4 +529,70 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await quitAndClose(app)
     }
   })
+
+  for (const tab of TABS_BEYOND_LOCAL_CLAUDE) {
+    test(`a file a ${tab.kind} tab writes raises the workbench hint, named for ${tab.agent}, under the Workbench button`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const { app, page, ws } = await startFor(env, tab, { panelOpen: false })
+      try {
+        await startTabAndLetItSettle(page, tab, ws)
+        await runIn(page, centerTerm(page), '/write hinted.md')
+        await expect(card(page, 'workbench')).toBeVisible({
+          timeout: A_REMOTE_ROW_FOLLOWS_WITHIN_MS
+        })
+        await expect(card(page, 'workbench').locator('.h')).toHaveText(
+          `${tab.agent} changed a file`
+        )
+        await expectWorkbenchCardUnderItsButtonWithNothingDimmed(page)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  for (const tab of TABS_CODEX_SESSION_SPEC_LEAVES_OUT) {
+    test(`a ${tab.kind} row that waits for an OK while another tab is on screen raises the approval hint at its row`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const { app, page, ws } = await startFor(env, tab)
+      try {
+        const asking = await startTabAndLetItSettle(page, tab, ws)
+        await startSessionIn(page, 'ws-b', tab.agent === 'Claude' ? {} : { method: 'Claude' })
+        expect(await shownTabId(page)).not.toBe(asking)
+
+        await typeIntoHiddenRow(page, asking, ASKS_FOR_APPROVAL[tab.agent])
+        await expect(page.locator(rowSel(asking))).toHaveClass(/\bst-approval\b/, {
+          timeout: A_REMOTE_ROW_FOLLOWS_WITHIN_MS
+        })
+        await expect(card(page, 'approval')).toBeVisible({ timeout: 30_000 })
+        await expectAnchoredAt(page, rowSel(asking))
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test(`a lone ${tab.kind} session raises no worktree hint, and a second one in the same workspace raises it at its row`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const { app, page, ws } = await startFor(env, tab)
+      try {
+        const first = await startTabAndLetItSettle(page, tab, ws)
+        await stayAbsentPastPumpGap(page)
+        expect(settingsOnDisk(env).hintsSeen).not.toContain('worktree')
+        await startTab(page, tab, ws)
+        await expect(card(page, 'worktree')).toBeVisible({
+          timeout: A_REMOTE_ROW_FOLLOWS_WITHIN_MS
+        })
+        const second = await shownTabId(page)
+        expect(second).not.toBe(first)
+        await expectAnchoredAt(page, rowSel(second))
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 })
