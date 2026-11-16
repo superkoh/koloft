@@ -136,25 +136,26 @@ function startTakenFromTheStatusLog(note: unknown): boolean {
   const n = note as { event?: string; [START_IN_STATUS_LOG]?: unknown } | null
   return n?.event === 'start' && n[START_IN_STATUS_LOG] === true
 }
-async function rebuildWorktree(
+export async function rebuildWorktree(
   spec: {
     worktreePath: string
     branch: string
     baseRef: string
   },
-  git: GitOut,
+  host: Host,
   machine: ScriptRunner | undefined
 ): Promise<boolean> {
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
+  const at = host.keyed(root)
   const branchLives =
-    (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
+    (await host.gitOut(at, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
-  await git(root, ['worktree', 'remove', spec.worktreePath])
+  await host.gitRun(at, ['worktree', 'remove', spec.worktreePath])
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  if ((await git(root, args)) === null) return false
+  if ((await host.gitRun(at, args)).code !== 0) return false
   await copyWorktreeIncludes(root, spec.worktreePath, machine)
   return true
 }
@@ -983,7 +984,7 @@ export class ClaudeBackend implements SessionBackend {
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, hostGit(host), this.d.hosts.machineOf(home ?? asked)))
+          !(await rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked)))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }

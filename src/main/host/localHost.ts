@@ -47,7 +47,7 @@ const skillFs: SkillFs = {
   }
 }
 
-const GIT_CALL_TIMEOUT_MS = 5000
+export const GIT_CALL_TIMEOUT_MS = 5000
 export function localGitOut(
   cwd: string,
   args: string[],
