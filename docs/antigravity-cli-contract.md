@@ -278,6 +278,15 @@ only downloaded the public release.
   and with the folder trusted. An id with no stored conversation keeps
   `conversation_id` `""` (§1: a new conversation, no id before the first prompt).
   macOS: not probed.
+- **Resuming from another account folder** (1.3.6, Linux arm64, Docker, no network,
+  tmux, fake Gemini server, 2026-11-15): two `--gemini_dir` folders linked into one
+  `~/.gemini` as in §4, each with `onboarding.json` and `modelProvider`; only folder A
+  trusts the workspace. A conversation started on A resumed with
+  `--conversation=<id>` on A opens on its history; on B it stops on "Do you trust the
+  contents of this project?" and B's `trustedWorkspaces` stays empty; with the
+  workspace written into B's `settings.json` first, B opens on the history. Trust lives
+  only in each folder's own `settings.json`, never with the shared conversation.
+  macOS: not probed.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.
@@ -1174,6 +1183,23 @@ only downloaded the public release.
 - `ForkConversation {"sourceCascadeId","forkAtStepIndex"}` → `{newCascadeId,
   forkedAtStepIndex, newProjectId}`; the title is copied, no parent id, the TUI stays
   where it was. Forking at a user-message step (0) is refused.
+- **What tells a `/fork` copy from a `/clear` one when the tab moves to it.** 2026-11-15,
+  agy 1.5.7 (Linux arm64, from the manifest) in Docker with no network, the TUI in a
+  python pty, a fake Gemini server; two turns, then `/fork`, one more turn, then
+  `/clear`, the files read every 50 ms. The new id's presence lock (§9) was taken 98 ms
+  after Enter on `/fork` and 86 ms after Enter on `/clear`, and at that moment:
+
+  | | `/fork` | `/clear` |
+  |---|---|---|
+  | `conversations/<new>.db` `steps` | the copied 4 | 0 |
+  | `conversations/<new>.db` `parent_references` | 1 row, a protobuf whose field 6 is the old conversation id | none |
+  | last `history.jsonl` line | `{"display":"/fork","conversationId":"<old id>","type":"slash_command"}` | the same with `/clear` |
+  | summaries row (§8) | none yet; later an empty title, the copied `step_count` (4), `parent_conversation_id` `''` | none yet; later `step_count` 0, times "never" |
+  | `transcript.jsonl`, pbtxt | none | none |
+
+  The old conversation kept its row, `.db` and transcript unchanged. After one more turn
+  the copy's transcript held only that turn's two steps and its `.db` 6. So the copy's
+  own `.db` names its parent from the first moment; the summaries row never does.
 
 ## §19 Artifacts and plan approval
 
@@ -1261,8 +1287,17 @@ only downloaded the public release.
   no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with
   --effort=<e>`.
 - On the Google route the list comes from `fetchAvailableModels`; an empty answer
-  gives `no model configuration is available for this account`, and the real shape
-  is not probed.
+  gives `no model configuration is available for this account`.
+- **`agy models` on a real Google account** (2026-11-12, agy on macOS, a copy of a
+  signed-in token file in a throwaway `--gemini_dir`, `WSL_INTEROP` set): exit 0, the
+  same `id\tlabel` rows, then a blank line and `Fetching available models...` on stdout.
+  16 rows: `gemini-4-carbon-{medium,high,low}`, `gemini-4-argon-{medium,high,low}`,
+  `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`,
+  `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`; no `gemini-3.1-pro`.
+  The list is the account's: Carbon was not open to every account that day. Koloft
+  reads it to turn a family name (`flash`, `argon`, `carbon`) into the newest id the
+  account has. `--model gemini-4-carbon --effort high -p "Reply with exactly: OK"` on
+  that account exited 0 with `OK` (24 thinking tokens).
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
@@ -1407,6 +1442,15 @@ only downloaded the public release.
   10 s in (with `WaitMsBeforeAsync` 30000) the command became a background task, and when
   it ended agy sent the model a `<SYSTEM_MESSAGE>` with its exit and output. So a `/dev/tty`
   that opens inside agy's command is never the owner's terminal. macOS: not probed.
+- **`run_command` does not read the user's rc files: a program only `~/.zshrc` puts on
+  PATH is not found.** 2026-11-15, agy 1.5.7 and 1.5.9 Linux arm64 (1.5.7 from the
+  manifest; it updated itself to 1.5.9 in the container), Docker (Debian bookworm, zsh
+  5.9), a user whose login shell is zsh and whose `~/.zshrc` puts `~/rc-only/bin` first,
+  agy started directly in a python pty with `--dangerously-skip-permissions`,
+  `SHELL=/bin/zsh` and the PATH a remote tab's script builds (PLATFORM§33), a fake Gemini
+  server answering one `run_command` `command -v rconly-tool`: not found on both, the
+  command's PATH agy's own with only `<geminiDir>/antigravity-cli/bin` in front. With the
+  user's `zsh -lic` PATH appended to agy's own, 1.5.9 found it.
 
 ## §26 Approval modes
 

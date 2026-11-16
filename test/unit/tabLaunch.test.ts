@@ -145,7 +145,8 @@ async function claudeTab(
             agentTools: () => true,
             pickAccount: async () => ({ env: {}, banner: '' }),
             noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-            hookSettings: () => ({})
+            hookSettings: () => ({}),
+            loginPath: async () => ''
           }
         })
     ),
@@ -259,7 +260,10 @@ type Kind = keyof typeof KINDS
 
 type Landing = { handed: string[]; dropped?: string[] } | { takesNothing: string }
 
-type LaunchFeature = Exclude<keyof ClaudeLaunch, 'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId'>
+type LaunchFeature = Exclude<
+  keyof ClaudeLaunch,
+  'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId' | 'projectRules'
+>
 
 const CONDUCTORS_RUN_ON_THIS_MAC: Landing = {
   takesNothing: 'a conductor always runs on this Mac, in a folder under Koloft’s data'

@@ -3,6 +3,7 @@ import type { SessionInfo, UpdateCheckResult, WorkspaceRows } from '@shared/type
 import {
   boundSessionId,
   launchToStartAgain,
+  tabAsItsAgent,
   tabForSession,
   useStore,
   openInterceptedFile,
@@ -94,6 +95,33 @@ describe('store: claude → shell revert, only after a session actually bound', 
       ended: { note: 'exited (code 1)', wsPath: '/w', row }
     })
   })
+
+  for (const kind of ['claude', 'codex', 'muse', 'agy'] as const)
+    it(`a ${kind} tab whose session left the list before its terminal exited is still that agent on the exit path, and an unexpected exit keeps it as that agent`, () => {
+      useStore.setState({
+        butlerWorkspace: null,
+        workspaceRows: [
+          { workspace: { path: '/w', missing: false, isGit: true, hasHistory: true }, rows: [] }
+        ]
+      })
+      const id = `crash-after-end-${kind}`
+      const s = useStore.getState()
+      s.addTab({ id, kind, title: 'My run', cwd: '/w', alive: true })
+      s.setSessions([{ ...session(id), backendId: kind }])
+      s.setSessions([])
+      const reverted = useStore.getState().tabs.find((x) => x.id === id)
+      expect(reverted?.kind).toBe('shell')
+      expect(tabAsItsAgent(reverted)).toMatchObject({ kind, sessionId: `sid-${id}` })
+
+      expect(s.keepEndedTab(id, 'exited (code 3)')).toBe(true)
+      expect(useStore.getState().tabs.find((x) => x.id === id)).toMatchObject({
+        kind,
+        title: 'My run',
+        alive: false,
+        sessionId: `sid-${id}`,
+        ended: { note: 'exited (code 3)', wsPath: '/w' }
+      })
+    })
 
   it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace holding its folder', () => {
     useStore.setState({

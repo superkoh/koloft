@@ -190,10 +190,12 @@
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (a Claude session
-            starts Claude, and so on), or the kind <code class="nowrap">--backend</code> picks; in
-            its own git worktree with <code class="nowrap">-w</code>; a worktree name already in use
-            gets <code class="nowrap">-2</code> after it. When your butler (see below) starts one in
-            a folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
+            starts Claude, and so on), or the kind <code class="nowrap">--backend</code> picks, on
+            the model and effort the agent picks for the task with
+            <code class="nowrap">--model</code> and <code class="nowrap">--effort</code>; in its own
+            git worktree with <code class="nowrap">-w</code>; a worktree name already in use gets
+            <code class="nowrap">-2</code> after it. When your butler (see below) starts one in a
+            folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
             worktree (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs
             under the session that started it (see
             <a href="../sessions/#session-tree">sessions an agent starts</a>). A session it starts

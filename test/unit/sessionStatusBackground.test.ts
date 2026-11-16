@@ -442,6 +442,37 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB5' && s.status === 'waiting', 8000)
   }, 20_000)
 
+  // CC§8
+  it('a subagent still writing when the only task its turn end named, its own shell, is gone holds the dot until it goes quiet, then rests it once, never blinking', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabB5b', cwd, initialLines(cwd))
+    tracker.setStatus('tabB5b', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_sh5b', cwd, 'sleep 25'),
+      shellAckRec('toolu_sh5b', cwd)
+    ])
+    stageProcs(tracker, { btoolu_sh5b: {} })
+    await tracker.reportTurnEnd('tabB5b', [{ id: 'btoolu_sh5b', type: 'shell' }])
+    expect(status(tracker, 'tabB5b')).toBe('working')
+
+    const edges: SessionStatus[] = []
+    tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
+      if (e.tabId === 'tabB5b') edges.push(e.next)
+    })
+    const lines: unknown[] = [subagentRec(Date.now())]
+    writeSubagentJsonl(cwd, SID, 'agent-unlisted.jsonl', lines)
+    stageProcs(tracker, {})
+    const growthEnds = Date.now() + 2500
+    while (Date.now() < growthEnds) {
+      await sleep(50)
+      lines.push(subagentRec(Date.now()))
+      writeSubagentJsonl(cwd, SID, 'agent-unlisted.jsonl', lines)
+    }
+    await waitFor(tracker, (s) => s.tabId === 'tabB5b' && s.status === 'waiting', 8000)
+    expect(edges).toEqual(['waiting'])
+  }, 20_000)
+
   it('stale subagent content never promotes (record time, not fold time)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()

@@ -30,7 +30,7 @@ import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
 import { listSkills, type SkillFs } from '../skillList'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
@@ -47,7 +47,7 @@ const skillFs: SkillFs = {
   }
 }
 
-const GIT_CALL_TIMEOUT_MS = 5000
+export const GIT_CALL_TIMEOUT_MS = 5000
 export function localGitOut(
   cwd: string,
   args: string[],
@@ -122,6 +122,11 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
   const agentPlugin = d.agentPlugin()
+  const prompt =
+    agentPlugin && !conductor
+      ? (spec.projectRules && projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
+        path.join(agentPlugin, AGENT_PROMPT_FILE)
+      : undefined
   return {
     ok: true,
     spawnCwd: cwd,
@@ -150,7 +155,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
+            KOLOFT_AGENT_PROMPT: prompt
           }
         : {})
     }

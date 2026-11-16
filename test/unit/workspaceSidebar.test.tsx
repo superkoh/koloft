@@ -83,6 +83,7 @@ describe('WorkspaceSidebar (C2): a row redraws only when what it shows changes',
         launchable={onlyClaude}
         onNewWorktreeSession={() => {}}
         onRestoreSession={() => {}}
+        onSessionDefaults={() => {}}
         onScheduledJobs={() => {}}
       />
     )
@@ -112,6 +113,7 @@ function renderSidebar(): HTMLElement {
       launchable={onlyClaude}
       onNewWorktreeSession={() => {}}
       onRestoreSession={() => {}}
+      onSessionDefaults={() => {}}
       onScheduledJobs={() => {}}
     />
   ).container

@@ -55,6 +55,7 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
+  tabAsItsAgent,
   tabEverBound,
   welcomeWorkbenchKey,
   workbenchStoreKey
@@ -127,6 +128,7 @@ import { butlerSetUp, everyWorkspaceRows, isButlerTab, someAccountCanRunAssist }
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
+import { SessionDefaultsDialog } from './components/SessionDefaultsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf, isRemoteKey } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
@@ -325,6 +327,7 @@ export default function App(): JSX.Element {
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
   const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
+  const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -1029,7 +1032,8 @@ export default function App(): JSX.Element {
       if (useStore.getState().terminalExited(e.id)) return
       if (consumeRestartExit(e.id)) return
       if (consumeRestoreExit(e.id)) useStore.getState().showToast(RESTORE_FAILED_NOTICE)
-      const tab = useStore.getState().tabs.find((t) => t.id === e.id)
+      const found = useStore.getState().tabs.find((t) => t.id === e.id)
+      const tab = e.unexpected ? tabAsItsAgent(found) : found
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
@@ -1623,6 +1627,7 @@ export default function App(): JSX.Element {
             launchable={launchable}
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
+            onSessionDefaults={setDefaultsWs}
             onScheduledJobs={openScheduledJobs}
           />
           {updateOffer && (
@@ -2047,6 +2052,13 @@ export default function App(): JSX.Element {
               wsPath={cronWs.path}
               initialJobId={cronWs.jobId}
               onClose={() => setCronWs(null)}
+            />
+          )}
+          {defaultsWs && (
+            <SessionDefaultsDialog
+              key={defaultsWs}
+              wsPath={defaultsWs}
+              onClose={() => setDefaultsWs(null)}
             />
           )}
           <ResumeDialog />
