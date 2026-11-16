@@ -12,7 +12,9 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "paths": {
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@core/*": ["./src/core/*"],
+      "@plugins/*": ["./src/plugins/*"]
     }
   },
   "include": [

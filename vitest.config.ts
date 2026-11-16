@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
+      '@core': resolve(__dirname, 'src/core'),
+      '@plugins': resolve(__dirname, 'src/plugins'),
       // PLATFORM§21
       '@xterm/headless': resolve(
         __dirname,
