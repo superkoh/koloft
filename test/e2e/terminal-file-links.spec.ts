@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
 import { clickTerminalLink } from './helpers/browser'
@@ -15,6 +16,7 @@ import {
 } from './helpers/env'
 import {
   addRemoteWorkspace,
+  killFakeRemote,
   launchWithRemote,
   type OtherAgentName,
   REMOTE_WS_NAME,
@@ -23,6 +25,7 @@ import {
   sshCalls,
   stateDir
 } from './helpers/remote'
+import { installOnTheMachine, startRemoteTab } from './helpers/remoteTab'
 import {
   auxIcon,
   centerTerm,
@@ -208,7 +211,10 @@ async function screenPointOf(
   )
 }
 
-function fileLookupsOnTheMachine(env: E2EEnv): {
+function fileLookupsOnTheMachine(
+  env: E2EEnv,
+  files = /src\/v\d+\.ts/
+): {
   asked: string[]
   answered: string[]
   mostAtOnce: number
@@ -219,7 +225,7 @@ function fileLookupsOnTheMachine(env: E2EEnv): {
   let mostAtOnce = 0
   for (const call of sshCalls(env)) {
     const sent = remoteCommandText(call.argv)
-    const file = /src\/v\d+\.ts/.exec(sent)?.[0]
+    const file = files.exec(sent)?.[0]
     if (!file || !sent.includes('test -f')) continue
     if (call.phase === 'start') {
       asked.push(file)
@@ -273,6 +279,8 @@ const LOCAL_OTHER_AGENTS: {
 ]
 
 test.describe('a file path an agent printed in its terminal opens in the Workbench on ⌘-click', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
+
   test('a path that exists becomes a link; a missing one, a label naming the path after it and the rest of a path broken at the row above do not; a plain click opens nothing, ⌘-click opens the file at its line', async ({
     page,
     env
@@ -410,30 +418,38 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
     }
   })
 
-  test('in a remote tab, the path is looked up and opened on the machine', async ({ env }) => {
-    test.setTimeout(300_000)
-    const { app, page } = await launchWithRemote(env)
-    try {
-      writeIn(remoteDir(env), 'src/r.ts', numberedTs('tfr'))
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await wsRows(page, REMOTE_WS_NAME).first().click()
-      const tabId = await shownTabId(page)
+  for (const backend of SESSION_BACKENDS)
+    test(`in a remote ${BACKEND_LABEL[backend]} tab, the path is looked up and opened on the machine`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installOnTheMachine(env, backend)
+      const { app, page } = await launchWithRemote(env)
+      try {
+        writeIn(remoteDir(env), 'src/r.ts', numberedTs('tfr'))
+        const tabId = await startRemoteTab(page, env, backend)
+        await wsRows(page, REMOTE_WS_NAME).first().click()
+        expect(await shownTabId(page)).toBe(tabId)
 
-      await writeTo(page, tabId, '\r\ntfr-mark src/r.ts:50 and src/gone.ts:1\r\n')
-      await expect
-        .poll(() => linkTextsOnLineWith(page, tabId, 'tfr-mark'), { timeout: 30_000 })
-        .toEqual(['src/r.ts:50'])
+        await writeTo(page, tabId, '\r\ntfr-mark src/r.ts:50 and src/gone.ts:1\r\n')
+        await expect
+          .poll(() => linkTextsOnLineWith(page, tabId, 'tfr-mark'), { timeout: 30_000 })
+          .toEqual(['src/r.ts:50'])
+        await expect
+          .poll(() => fileLookupsOnTheMachine(env, /src\/(?:r|gone)\.ts/).answered.sort())
+          .toEqual(['src/gone.ts', 'src/r.ts'])
 
-      await commandClick(page, 'src/r.ts:50')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('r.ts', { timeout: 30_000 })
-      await expect(page.locator(WORKBENCH.readingBody).getByText('tfr-50').first()).toBeInViewport({
-        timeout: 20_000
-      })
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+        await commandClick(page, 'src/r.ts:50')
+        await expect(page.locator(WORKBENCH.readingTitle)).toContainText('r.ts', {
+          timeout: 30_000
+        })
+        await expect(
+          page.locator(WORKBENCH.readingBody).getByText('tfr-50').first()
+        ).toBeInViewport({ timeout: 20_000 })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('in a remote tab, the mouse sweeping down rows of paths keeps one lookup on its way to the machine; the rows it passes meanwhile are never asked, and a row it then rests on waits for that lookup to come back', async ({
     env
