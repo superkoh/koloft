@@ -975,7 +975,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
   sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
-  tellFromKoloft(tabId: string, text: string): Promise<void>
+  tellFromKoloft(tabId: string, text: string): Promise<boolean>
   startFromInbox(
     aboutRef: string | undefined,
     spec: StartSpec,
@@ -1187,16 +1187,20 @@ export function sessionVerb(d: SessionVerbDeps): {
       .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
       .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
 
-  const tellFromKoloft = async (tabId: string, text: string): Promise<void> => {
+  const tellFromKoloft = async (tabId: string, text: string): Promise<boolean> => {
     const session = d.allSessions().find((s) => s.tabId === tabId)
-    if (!session) return
+    if (!session) return false
     const to = openTarget(session)
     const said = `${FROM_KOLOFT}${text}`
     const mode = messagingOf(to.backend, !!to.remote) === 'peerLine' ? d.modeOf(tabId) : undefined
     const line = mode && peerLineFrom(() => mode, said, 'koloft')(tabId)
-    await sendInto(to, tabId, said, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS).catch(
-      (error: unknown) => d.undelivered(tabId, to, errorText(error))
-    )
+    try {
+      await sendInto(to, tabId, said, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS)
+      return true
+    } catch (error) {
+      d.undelivered(tabId, to, errorText(error))
+      return false
+    }
   }
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {

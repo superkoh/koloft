@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CronRunner,
   worktreeNameFor,
+  type CarryOn,
   type LaunchRequest,
   type LaunchResult,
   type RunnerDeps
@@ -113,7 +114,7 @@ function makeHarness(
   })
   const killTab = vi.fn()
   const closeForGood = vi.fn(async () => {})
-  const tellToCarryOn = vi.fn(async (): Promise<boolean> => true)
+  const tellToCarryOn = vi.fn(async (): Promise<CarryOn> => 'told')
   const notify = vi.fn()
   const save = vi.fn()
   const branchExists = vi.fn(async () => false)
@@ -1196,8 +1197,8 @@ describe('CronRunner — quitting', () => {
 
   it('with "Close it" on, a run the relaunch took back in the middle of its work is told once to carry on, no status change closes it before the telling is over, and once it is over with nothing at work it closes at the next check', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
-    let tellingOver: (stopped: boolean) => void = () => {}
-    h.tellToCarryOn.mockImplementation(() => new Promise<boolean>((done) => (tellingOver = done)))
+    let tellingOver: (told: CarryOn) => void = () => {}
+    h.tellToCarryOn.mockImplementation(() => new Promise<CarryOn>((done) => (tellingOver = done)))
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     h.runner.onBound('tab-back', 's1')
@@ -1208,7 +1209,7 @@ describe('CronRunner — quitting', () => {
     expect(h.closeForGood).not.toHaveBeenCalled()
     expect(h.tellToCarryOn.mock.calls).toEqual([['tab-back']])
 
-    tellingOver(true)
+    tellingOver('told')
     await flush()
     expect(h.closeForGood).not.toHaveBeenCalled()
     await h.fireTimers(T0 + 2 * MIN)
@@ -1216,7 +1217,11 @@ describe('CronRunner — quitting', () => {
   })
 
   it('with "Close it" on, a run the relaunch took back in the middle of its work stays open while it still works after the telling, whether or not the word reached it, and closes at a later check once it is idle', async () => {
-    for (const telling of [async () => true, async () => Promise.reject(new Error('gone'))]) {
+    for (const telling of [
+      async (): Promise<CarryOn> => 'told',
+      async (): Promise<CarryOn> => 'undelivered',
+      async (): Promise<CarryOn> => Promise.reject(new Error('gone'))
+    ]) {
       const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
       h.tellToCarryOn.mockImplementation(telling)
       h.flags.busy = true
@@ -1245,9 +1250,20 @@ describe('CronRunner — quitting', () => {
     expect(h.closeForGood).toHaveBeenCalledTimes(1)
   })
 
+  it('with "Close it" on, a run the word to carry on could not reach is handled as finished, even while its status still reads working from before the restart', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.tellToCarryOn.mockImplementation(async (): Promise<CarryOn> => 'undelivered')
+    h.flags.turnUnderWay = true
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
   it('with "Close it" on, a run whose agent lived through the restart is left to end its turn on its own', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
-    h.tellToCarryOn.mockImplementation(async () => false)
+    h.tellToCarryOn.mockImplementation(async (): Promise<CarryOn> => 'outlived')
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     await flush()
@@ -1314,7 +1330,7 @@ describe('CronRunner — quitting', () => {
 
   it('with "Close it" on, a reopened run the quit cut off mid-turn stays open while it is being told to carry on, and stays marked mid-turn through another quit meanwhile', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
-    h.tellToCarryOn.mockImplementation(() => new Promise<boolean>(() => {}))
+    h.tellToCarryOn.mockImplementation(() => new Promise<CarryOn>(() => {}))
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     h.runner.onBound('tab-back', 's1')

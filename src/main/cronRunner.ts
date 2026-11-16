@@ -125,6 +125,8 @@ export interface LaunchRequest {
 
 type MaybeAsync<T> = T | Promise<T>
 
+export type CarryOn = 'told' | 'undelivered' | 'outlived'
+
 function whenSettled<T>(value: MaybeAsync<T>, then: (settled: T) => void): void {
   if (value instanceof Promise) void value.then(then)
   else then(value)
@@ -157,7 +159,7 @@ export interface RunnerDeps {
   stillWorking(tabId: string): Promise<boolean>
   whatIsLeft(tabId: string, root: string, worktree?: string): Promise<string[]>
   closeForGood(tabId: string, root: string, worktree?: string): Promise<void>
-  tellToCarryOn(tabId: string): Promise<boolean>
+  tellToCarryOn(tabId: string): Promise<CarryOn>
   turnUnderWay(tabId: string): boolean
   toast(text: string): void
   notify(title: string, body: string): void
@@ -658,20 +660,15 @@ export class CronRunner {
   private tellToCarryOn(run: LiveRun): void {
     const { tabId } = run
     this.cutOffByTheRestart.add(tabId)
-    const tellingOver = (): void => {
+    const tellingOver = (told: CarryOn): void => {
       const job = this.byId(run.jobId)
       if (!this.cutOffByTheRestart.delete(tabId) || this.live.get(tabId) !== run || !job) return
-      if (this.d.turnUnderWay(tabId)) return
+      if (told === 'outlived' || (told === 'told' && this.d.turnUnderWay(tabId))) return
       run.state = 'done'
       this.closeAtTheNextCheck(run, job)
       this.push()
     }
-    void this.d
-      .tellToCarryOn(tabId)
-      .then(
-        (stopped) => (stopped ? tellingOver() : void this.cutOffByTheRestart.delete(tabId)),
-        tellingOver
-      )
+    void this.d.tellToCarryOn(tabId).then(tellingOver, () => tellingOver('undelivered'))
   }
 
   reopeningOver(): void {

@@ -4315,10 +4315,11 @@ app.whenReady().then(() => {
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
     tellToCarryOn: async (tabId) => {
-      if (attention.outlivesKoloft(tabId)) return false
+      if (attention.outlivesKoloft(tabId)) return 'outlived'
       await tabReady(tabId, RESUMED_TAB_READY_MS, false)
-      await sessionCommand.tellFromKoloft(tabId, A_RESTART_CUT_THE_RUN_OFF)
-      return true
+      return (await sessionCommand.tellFromKoloft(tabId, A_RESTART_CUT_THE_RUN_OFF))
+        ? 'told'
+        : 'undelivered'
     },
     turnUnderWay: (tabId) => {
       const status = tracker.statusOf(tabId)
