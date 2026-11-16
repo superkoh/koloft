@@ -448,8 +448,17 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       this.store.nameOfLeftMember(key) ||
       t.name ||
       t.preview?.slice(0, 100) ||
+      this.store.getMember(key)?.title ||
       PLACEHOLDER_TITLES[this.id]
     )
+  }
+  private rememberListedTitles(): void {
+    for (const m of this.store.listMembers()) {
+      const t = this.history.get(m.key)
+      if (!t || (this.keepsItsOwnTitle && m.named)) continue
+      const title = this.titleOf(m.key, t)
+      if (title !== m.title) this.store.updateMember(m.key, { title })
+    }
   }
   adopt(keys: string[]): void {
     let adopted = 0
@@ -625,6 +634,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.places.clear()
     this.archivedIds = archivedIds
     for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
+    this.rememberListedTitles()
     this.historyError = undefined
     this.changed()
   }
