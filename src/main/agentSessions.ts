@@ -1040,6 +1040,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
+  messaged(tabId: string, fromSessionId: string): void
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
   sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
@@ -1065,6 +1066,9 @@ export function sessionVerb(d: SessionVerbDeps): {
   const replyOwed = new Map<string, OwedReply>()
   const inboxOwed = new Map<string, (reply: string) => void>()
   const messagedBy = new Map<string, Set<string>>()
+  const messaged = (tab: string, from: string): void => {
+    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
+  }
 
   // ADR-0031
   const ownerWordsOf = async (
@@ -1139,7 +1143,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         }
       : undefined
     const sent = await owing(tab, owed, () => sendInto(t, tab, text, line, until))
-    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
+    messaged(tab, from)
     return sent
   }
 
@@ -1504,6 +1508,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       inboxOwed.delete(oldTabId)
       inboxOwed.set(newTabId, inbox)
     }
+    const senders = messagedBy.get(oldTabId)
+    if (senders) {
+      messagedBy.delete(oldTabId)
+      messagedBy.set(newTabId, senders)
+    }
   }
 
   const targetOf = (ref: string): Target | undefined => {
@@ -1599,6 +1608,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     verb,
     turnEnded,
     waitsOnAnother,
+    messaged,
     startButlerHelper,
     tabMoved,
     sendFromInbox,

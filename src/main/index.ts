@@ -6659,6 +6659,7 @@ const claudeBackend = new ClaudeBackend({
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
+  messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.cron.toast, message),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>

@@ -445,13 +445,25 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       return workspace && title !== undefined ? { workspace, title } : undefined
     }
   }
-  private titleOf(key: string, t: H): string {
+  private titleOf(key: string, t: H, member = this.store.getMember(key)): string {
     return (
       this.store.nameOfLeftMember(key) ||
       t.name ||
       t.preview?.slice(0, 100) ||
+      member?.title ||
       PLACEHOLDER_TITLES[this.id]
     )
+  }
+  protected rememberListedTitles(listingStartedAt: number, machine?: string): void {
+    const titles = new Map<string, string>()
+    for (const m of this.store.listMembers()) {
+      const t = this.history.get(m.key)
+      if (!t || m.updatedAt >= listingStartedAt || (this.keepsItsOwnTitle && m.named)) continue
+      if (machine !== undefined && hostOfKey(m.key) !== machine) continue
+      const title = this.titleOf(m.key, t, m)
+      if (title !== m.title) titles.set(m.key, title)
+    }
+    this.store.retitleMembers(titles)
   }
   adopt(keys: string[]): void {
     let adopted = 0
@@ -627,6 +639,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.places.clear()
     this.archivedIds = archivedIds
     for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
+    this.rememberListedTitles(startedAt)
     this.historyError = undefined
     this.changed()
   }
