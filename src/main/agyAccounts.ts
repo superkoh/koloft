@@ -4,6 +4,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import type { QuotaBucket } from '@shared/types'
 import { FIVE_HOUR_MINUTES, WEEK_MINUTES, windowLabel } from '@shared/accountUsage'
+import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
 import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
@@ -210,6 +211,22 @@ export function readAgyQuota(
   })
 }
 
+// AGY§21
+export function readAgyModels(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+  signedInArgs: string[]
+): Promise<ListedModel[] | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      binary,
+      [...signedInArgs, 'models'],
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      (error, stdout) => resolve(error ? undefined : agyListedModels(stdout))
+    ).stdin?.end()
+  })
+}
+
 // AGY§23
 const WINDOW_MINUTES: Record<string, number> = { weekly: WEEK_MINUTES, '5h': FIVE_HOUR_MINUTES }
 
@@ -333,4 +350,10 @@ export function trustsIn(dir: string, ...settings: Record<string, unknown>[]): b
 
 export function agyTrustsFolder(home: string, dir: string): boolean {
   return trustsIn(dir, readJson(settingsFile(home)))
+}
+
+// ADR-0026 AGY§5
+export function anyAccountHomeTrusts(home: string, dir: string): boolean {
+  const homes = path.dirname(home)
+  return fs.readdirSync(homes).some((name) => agyTrustsFolder(path.join(homes, name), dir))
 }

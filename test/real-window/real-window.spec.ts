@@ -1,5 +1,8 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { ATTENTION_REASON } from '../../src/shared/types'
 import { test as e2eTest, expect, launchApp, quitAndClose } from '../e2e/helpers/app'
 import { seedSettings, type E2EEnv } from '../e2e/helpers/env'
 import {
@@ -32,6 +35,7 @@ import {
   KEY_P,
   KEY_RETURN,
   KEY_SPACE,
+  KEY_V,
   PINYIN_SIMPLIFIED,
   accessibilityTrusted,
   bannerShowing,
@@ -110,6 +114,7 @@ const MAC_DRAG_SLACK_PX = 6
 const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
 const TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS = 3_000
 const TIME_FOR_A_MENU_KEY_TO_LAND_MS = 1_500
+const PAST_KOLOFTS_GUARD_AGAINST_REPEATING_A_NOTICE_MS = 6_000
 
 async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
   await expect
@@ -215,6 +220,41 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     expect(await terminalShown()).toBe(true)
   })
 
+  test('⌘V in ⌘P with a screenshot on the clipboard, then with a picture file copied as Finder copies one, shows a picture each time and types nothing into the words', async ({
+    shown: { app, page },
+    env
+  }, testInfo) => {
+    await sessionIn(page, 'ws-a')
+    await clickIntoTerminal(app, page)
+    realKey(KEY_P, COMMAND_FLAG)
+    const field = palette(page).getByRole('textbox', { name: 'Ask or jump' })
+    await expect(field).toBeFocused()
+    const pictures = palette(page)
+      .getByRole('list', { name: 'Pasted pictures' })
+      .getByRole('listitem')
+
+    const png = await app.evaluate(({ clipboard, nativeImage }) => {
+      const side = 16
+      const white = nativeImage.createFromBitmap(Buffer.alloc(side * side * 4, 255), {
+        width: side,
+        height: side
+      })
+      clipboard.writeImage(white)
+      return clipboard.readImage().isEmpty() ? '' : white.toPNG().toString('base64')
+    })
+    expect(png).not.toBe('')
+    realKey(KEY_V, COMMAND_FLAG)
+    await expect(pictures).toHaveCount(1)
+
+    const file = path.join(env.home, 'copied in Finder.png')
+    fs.writeFileSync(file, Buffer.from(png, 'base64'))
+    execFileSync('osascript', ['-e', `set the clipboard to (POSIX file "${file}")`])
+    realKey(KEY_V, COMMAND_FLAG)
+    await expect(pictures).toHaveCount(2)
+    await expect(field).toHaveValue('')
+    screenshot(testInfo.outputPath('pasted-pictures.png'))
+  })
+
   test('dragging the title bar with the mouse moves the window along with it', async ({
     shown: { app, page }
   }, testInfo) => {
@@ -311,6 +351,38 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       .toContain('turn done — your move · ws-b')
     expect(bannerTexts()).toContain(FAKE_SESSION_TITLE)
     screenshot(testInfo.outputPath('banner.png'))
+  })
+
+  test('a session’s notification leaves Notification Center once its tab has been on screen in the focused window: coming back with one session showing takes out its notification and leaves the other’s, until that tab is opened too', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    // PLATFORM§52
+    test.skip(
+      !notificationCenterRunning(),
+      'this Mac runs no Notification Center to hold notifications'
+    )
+    const inNotificationCenter = (): Promise<string[]> =>
+      app.evaluate(async ({ Notification }) =>
+        (await Notification.getHistory()).map((n) => n.body).sort()
+      )
+    const turnDoneIn = (ws: string): string => `${ATTENTION_REASON['turn-done']} · ${ws}`
+    const first = await sessionIn(page, 'ws-a')
+    const second = await sessionIn(page, 'ws-b')
+    await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+    await endATurnWhileInBackground(app, page, first)
+    await allowNotificationsWhenMacOSAsks(() => bannerTexts().includes(FAKE_SESSION_TITLE))
+    await app.evaluate(({ Notification }) => Notification.removeAll())
+    await page.waitForTimeout(PAST_KOLOFTS_GUARD_AGAINST_REPEATING_A_NOTICE_MS)
+    await endTurn(page, first)
+    await endTurn(page, second)
+    await expect
+      .poll(inNotificationCenter, { timeout: 30_000 })
+      .toEqual([turnDoneIn('ws-a'), turnDoneIn('ws-b')])
+    await comeBackThroughTheDock(app)
+    await expect.poll(inNotificationCenter).toEqual([turnDoneIn('ws-a')])
+    screenshot(testInfo.outputPath('one-withdrawn.png'))
+    await wsRows(page, 'ws-a').first().click()
+    await expect.poll(inNotificationCenter).toEqual([])
   })
 
   test('with macOS Pinyin, Return while composing puts the letters in the line without sending it, and Space picks 你好 for the next Return to send', async ({

@@ -6,12 +6,17 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect, launchApp, pendingAttention } from './app'
 import { seedSettings, type E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
+import { TIER_PICKS, pickFlags } from '../../../src/shared/sessionPicks'
 import type {
   BackendAvailability,
+  BackendId,
   ButlerSession,
   DiscordSettings,
   SessionWorkbenchState
 } from '../../../src/shared/types'
+
+export const picksFor = (backend: BackendId): string =>
+  pickFlags(TIER_PICKS[backend]['very simple'])
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 export const SCREEN_DIR = path.join(REPO_ROOT, 'test-results', 'p1-screens')
@@ -693,18 +698,20 @@ export function centerTerm(page: Page): Locator {
   return page.locator('.term-island .term-wrap:visible .xterm')
 }
 
-export function shownCenterTerm(page: Page): Promise<{ cols: number; left: number } | undefined> {
+export function shownCenterTerm(
+  page: Page
+): Promise<{ id: string; cols: number; rows: number; left: number } | undefined> {
   return page.evaluate(() => {
     const terms = (
       window as unknown as {
-        __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
+        __koloftTerms?: Record<string, { cols: number; rows: number; element?: HTMLElement }>
       }
     ).__koloftTerms
-    for (const t of Object.values(terms ?? {})) {
+    for (const [id, t] of Object.entries(terms ?? {})) {
       const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
       if (wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden') {
         const left = wrap.querySelector('.term')!.getBoundingClientRect().left
-        return { cols: t.cols, left: Math.round(left) }
+        return { id, cols: t.cols, rows: t.rows, left: Math.round(left) }
       }
     }
     return undefined

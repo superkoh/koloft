@@ -35,6 +35,7 @@ export function startToolShim(
     open: (target: string) => void
     agent?: (dir: string, name: string, raw: unknown) => void
     drop?: DropHandlerFor
+    rules?: string
   }
 ): ToolShim {
   removeFoldersLeftByEndedRuns(deps.openShimRoot, OPEN_SHIM_FOLDER)
@@ -49,7 +50,7 @@ export function startToolShim(
     if (deps.gitBin) fs.symlinkSync(path.join(deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
     fs.symlinkSync(deps.ghWrapper, path.join(shim.shimDir, 'gh'))
     const { agent } = opts
-    if (agent) writeAgentShim(shim.shimDir, shim.requestDir, opts.backend)
+    if (agent) writeAgentShim(shim.shimDir, shim.requestDir, opts.backend, opts.rules)
     const opens = oncePerName(() => openDropHandler(opts.open))
     const dropped = opts.drop && oncePerName(opts.drop)
     const isOpenDrop = (name: string): boolean =>
