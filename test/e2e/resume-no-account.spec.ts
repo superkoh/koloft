@@ -22,6 +22,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { codexCalls, fakeCodexLog } from './helpers/codex'
+import { exactText } from './helpers/blackbox'
 import {
   agyConversationOnceFirstTurnEnded,
   type AgentName,
@@ -162,10 +163,8 @@ async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Pa
   return { app, page }
 }
 
-const asLiteralRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
 function toastReading(page: Page, text: string): Locator {
-  return page.locator('.toast-msg').filter({ hasText: new RegExp(`^${asLiteralRegex(text)}$`) })
+  return page.locator('.toast-msg').filter({ hasText: exactText(text) })
 }
 
 test.afterEach(({ env }) => killFakeRemote(env))

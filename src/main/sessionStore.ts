@@ -169,6 +169,14 @@ export class SessionStore {
     return updated
   }
 
+  retitleMembers(titles: Map<string, string>): void {
+    if (!titles.size) return
+    const next = structuredClone(this.data)
+    for (const [key, title] of titles)
+      if (Object.hasOwn(next.members, key)) next.members[key].title = title
+    this.commit(next)
+  }
+
   removeMember(key: string): boolean {
     if (!Object.hasOwn(this.data.members, key)) return false
     const next = structuredClone(this.data)

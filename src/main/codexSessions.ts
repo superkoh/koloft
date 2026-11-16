@@ -679,6 +679,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     }
     if (homeThere) this.listedAt.set(machine, startedAt)
     else this.listedAt.delete(machine)
+    this.rememberListedTitles(startedAt)
     this.changed()
   }
 

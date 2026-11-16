@@ -454,12 +454,18 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       PLACEHOLDER_TITLES[this.id]
     )
   }
-  private rememberListedTitles(): void {
+  protected rememberListedTitles(listingStartedAt: number): void {
+    const titles = new Map<string, string>()
     for (const m of this.store.listMembers()) {
       const t = this.history.get(m.key)
-      if (!t || (this.keepsItsOwnTitle && m.named)) continue
+      if (!t || m.updatedAt > listingStartedAt || (this.keepsItsOwnTitle && m.named)) continue
       const title = this.titleOf(m.key, t)
-      if (title !== m.title) this.store.updateMember(m.key, { title })
+      if (title !== m.title) titles.set(m.key, title)
+    }
+    try {
+      this.store.retitleMembers(titles)
+    } catch (e) {
+      this.deps.error(String(e))
     }
   }
   adopt(keys: string[]): void {
@@ -636,7 +642,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.places.clear()
     this.archivedIds = archivedIds
     for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
-    this.rememberListedTitles()
+    this.rememberListedTitles(startedAt)
     this.historyError = undefined
     this.changed()
   }
