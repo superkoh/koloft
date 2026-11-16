@@ -35,6 +35,7 @@ import {
   newSessionInWith,
   openMenu,
   openSessionTerminal,
+  picksFor,
   readCalls,
   runIn,
   sendShortcut,
@@ -480,7 +481,7 @@ test.describe('the center session terminal stops at 140 columns and sits centred
         const where = tab.remote ? ` --workspace ${remoteKey(env)}` : ''
         await page.evaluate(([id, line]) => window.api.terminal.write(id, line), [
           onScreen!,
-          `/koloft session new --backend ${tab.backend}${where} -- hello\r`
+          `/koloft session new ${picksFor(tab.backend)} --backend ${tab.backend}${where} -- hello\r`
         ] as const)
         await expect
           .poll(() => tab.startWidths.read(env)[before], { timeout: 60_000 })
