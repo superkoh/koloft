@@ -303,6 +303,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
     `~/.ssh/id_rsa` ("That path holds credentials …", refused).
   - So no read asks, and a file in an ask is always one muse would write. Not probed:
     `search` with `paths` outside the workspace, MCP tools' approvals (§21).
+- **A picture path at the end of the first prompt is read as a picture, with no ask.**
+  Measured 2026-11-15, Muse Code 1.4.20 (`muse-wonder-1.0`, a real Meta sign-in) in
+  Koloft's hand-test sandbox with Skip permission prompts off, 1 run: ⌘P with "What word
+  is in this picture? Answer with the word only." and a pasted PNG of the word ZEBRA, so
+  the TUI started with the prompt `<words>\n\nPicture:
+  <userData>/palette-pictures/<uuid>.png` in a fresh worktree. It printed "Read <path>"
+  and answered `ZEBRA`, the file being outside the workspace. Muse made no title of its
+  own, so Koloft's row was titled from the prompt's first characters.
 
 ## §6 tmux swallows OSC 7501
 

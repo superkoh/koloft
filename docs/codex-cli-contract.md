@@ -2751,6 +2751,13 @@ message" (3 runs).
   the word only.": it answered `ZEBRA`. The interactive TUI was not used for this: on
   start it asked "Background server has incompatible feature settings" with a "Restart
   with these settings" choice that would reach the other Codex sessions on the same Mac.
+- **In the TUI too, with the path ending the first prompt, and with no ask.** Measured
+  2026-11-15, Codex CLI 0.166.0 (ChatGPT sign-in, GPT-6.1) in Koloft's hand-test sandbox
+  with Skip permission prompts off, 1 run: ⌘P with "What word is in this picture? Answer
+  with the word only." and a pasted PNG of the word ZEBRA, so the TUI started with the
+  prompt `<words>\n\nPicture: <userData>/palette-pictures/<uuid>.png` in a fresh
+  worktree. It printed "Viewed image <uuid>.png" and answered `ZEBRA`, with no approval
+  in between, the file being outside the workspace.
 
 ## 24. Searching the words of every thread
 

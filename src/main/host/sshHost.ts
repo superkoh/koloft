@@ -17,6 +17,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 import { portOffset } from '@shared/worktreeName'
+import { pictureFolderIn } from '@shared/pastedPictures'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
   MAX_READ_BYTES,
@@ -177,11 +178,14 @@ export function machineClaudeArgs(
   })
   if (!argv.ok) return argv
   const fresh = !spec.resumeSessionId
+  const pictures = fresh && spec.firstPrompt ? pictureFolderIn(spec.firstPrompt) : undefined
   return {
     ok: true,
     args: [
       ...argv.argv.slice(1),
       ...(fresh && spec.name ? ['--name', spec.name] : []),
+      // CC§18
+      ...(pictures ? ['--add-dir', pictures] : []),
       ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
     ]
   }

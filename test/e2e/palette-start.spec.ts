@@ -970,12 +970,16 @@ function expectThePastedPictureUnder(folder: string, prompt: string): void {
   expect(fs.readFileSync(file).toString('base64')).toBe(ONE_PIXEL_PNG)
 }
 
+function folderClaudeMayRead(call: ClaudeCall): string | undefined {
+  return call.argv[call.argv.indexOf('--add-dir') + 1]
+}
+
 const picturesOnThisMac = (env: E2EEnv): string => path.join(env.userData, 'palette-pictures')
 const picturesOnTheMachine = (env: E2EEnv): string =>
   path.join(machineHome(env), '.koloft', 'element-picks')
 
 test.describe('a picture pasted in ⌘P goes with the words to the session that takes them', () => {
-  test('local Claude: each pasted picture shows under the words, also one copied with a browser’s Copy Image, while cells copied with their text stay a text paste; × takes one away; a picture with no words cannot start; ⏎ sends the words with a "Picture:" line naming the saved file, and Assist is asked about the words only', async ({
+  test('local Claude: each pasted picture shows under the words, also one copied with a browser’s Copy Image, while cells copied with their text stay a text paste; × takes one away; a picture with no words cannot start; ⏎ sends the words with a "Picture:" line naming the saved file and lets Claude read that folder without asking, and Assist is asked about the words only', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -1003,6 +1007,7 @@ test.describe('a picture pasted in ⌘P goes with the words to the session that 
       const sent = textAfterDashes(call)
       expect(sent.startsWith(`${PROMPT}\n\n${PICTURE_LINE}`)).toBe(true)
       expectThePastedPictureUnder(picturesOnThisMac(env), sent)
+      expect(folderClaudeMayRead(call)).toBe(fs.realpathSync(picturesOnThisMac(env)))
       expect(assistWasAsked(env)).toContain(PROMPT)
       expect(assistWasAsked(env)).not.toContain(PICTURE_LINE)
     } finally {
@@ -1103,6 +1108,7 @@ test.describe('a picture pasted in ⌘P goes with the words to the session that 
         const [onRemote] = await waitForAllCalls(env, 1, 90_000)
         expect(onRemote.cwd).toBe(remoteDir(env))
         expectThePastedPictureUnder(picturesOnTheMachine(env), textAfterDashes(onRemote))
+        expect(folderClaudeMayRead(onRemote)).toBe(fs.realpathSync(picturesOnTheMachine(env)))
       } finally {
         await quitAndClose(app)
       }

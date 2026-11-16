@@ -12,10 +12,23 @@ export const PASTED_PICTURE_EXTENSIONS: Record<string, string> = {
 
 export const PICTURE_LINE = 'Picture: '
 
-// CC§18 CODEX§23 AGY§13
+// CC§18 CODEX§23 AGY§13 MUSE§5
 export function withPictures(words: string, paths: readonly string[]): string {
   const lines = paths.map((p) => PICTURE_LINE + p).join('\n')
   return [words, lines].filter(Boolean).join('\n\n')
+}
+
+export function withoutPictures(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !line.startsWith(PICTURE_LINE))
+    .join('\n')
+    .trim()
+}
+
+export function pictureFolderIn(prompt: string): string | undefined {
+  const line = prompt.split('\n').find((l) => l.startsWith(`${PICTURE_LINE}/`))
+  return line?.slice(PICTURE_LINE.length, line.lastIndexOf('/'))
 }
 
 export function pastedPicturesIn(text: string, dir: string): string[] {

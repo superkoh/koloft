@@ -72,6 +72,7 @@ export type ClaudeLaunchPlan =
       extraEnv?: {
         KOLOFT_FIRST_PROMPT?: string
         KOLOFT_SESSION_NAME?: string
+        KOLOFT_PICTURE_FOLDER?: string
         KOLOFT_PORT_OFFSET?: string
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
