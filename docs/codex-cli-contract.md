@@ -1185,7 +1185,11 @@ with a throwaway `CODEX_HOME` (a copy of this Mac's login, deleted after), a thr
 picks the shell from the passwd entry (`getpwuid_r`), never `$SHELL`; `fish` (or any
 name it does not know) maps to no shell type and macOS then falls back to `/bin/zsh`, so
 a fish user gets `zsh -lc` and the `ZDOTDIR` wrapper (fish is not installed on this Mac,
-so this is read from the source, **not run**). With the shell snapshot on (the default,
+so this is read from the source, **not run**). On Linux the fallback is bash: run
+2026-11-15 in Docker (`node:22-bookworm-slim` with fish, tcsh and zsh installed, the
+`linux-arm64` build of 0.166.0, no login), users whose passwd shell is `/usr/bin/fish`
+or `/usr/bin/tcsh` each had their `~/.bash_profile` run when `codex exec` started, and
+no `~/.zshenv`, `~/.zprofile`, fish `config.fish` or tcsh `~/.login`. With the shell snapshot on (the default,
 feature `shell_snapshot`), a command is run as `<session shell> -c '. <snapshot>; exec
 <shell> -c <script>'` (`core/src/tools/runtimes/mod.rs`); the snapshot is captured in
 `<session shell> -lc`, so a model-picked bash under a zsh session got zsh's snapshot,
@@ -1217,9 +1221,20 @@ no `BASH_ENV` of its own. With the shell snapshot off, a bash user's `bash -lc` 
 `~/.bashrc` once more than without Koloft. Koloft hands Codex the environment its login
 shell exports (`readLoginShell`), which holds a `ZDOTDIR` that `~/.zshenv` exports; the
 wrapper starts from Koloft's own process `ZDOTDIR` instead (unset when Koloft starts from
-the Dock), so `~/.zshenv` itself still runs, as in the user's own terminal. Not run: a macOS account whose login shell is bash (the passwd shell of
+the Dock), so `~/.zshenv` itself still runs, as in the user's own terminal. A Koloft
+started from another Koloft's Codex tab (a dev build, an e2e run, the hand-test sandbox)
+inherits that tab's `ZDOTDIR`, the outer wrapper folder, and its wrapper then runs the
+outer one's files: each wrapper keeps the user's `ZDOTDIR` in a variable of its own,
+since with one shared name the outer `.zprofile` and `.zlogin` sourced themselves until
+zsh stopped them (`job table full or recursion limit exceeded`, the user's `~/.zprofile`
+never ran). Not run: a macOS account whose login shell is bash (the passwd shell of
 this Mac's account was not changed); that it behaves as the two runs above put together:
-**inferred, not checked**. A login shell of `/bin/sh` maps to `sh -lc`, which reads
+**inferred, not checked**. Its shell half with the snapshot on was run on this Mac with
+`/bin/bash` 3.2.57 and the real `/etc/profile`, a throwaway `HOME` and Koloft's
+`BASH_ENV` file, in the shape the source describes (Codex itself not running): a capture
+in `bash -lc` ran `~/.bash_profile` and `~/.bashrc` once each, and `bash -c '. <snapshot>;
+exec bash -c "command -v open"'` found the shim, kept a variable `~/.bashrc` exported, and
+ran neither file again. A login shell of `/bin/sh` maps to `sh -lc`, which reads
 neither `ZDOTDIR` nor `BASH_ENV`: not handled.
 
 So Koloft handles an `open` three ways. Under `workspace-write` and `danger-full-access`

@@ -153,6 +153,47 @@ describe('Codex open shim dotfile folder', () => {
       expect(zprofileSaw, zshenv).toBe(saw === '(unset)' ? saw : path.join(home, saw))
     }
   })
+
+  it("runs the user's own files once, quietly, when Koloft itself was started from another Koloft's Codex tab and inherited that tab's ZDOTDIR", () => {
+    const cases = [
+      { zshenv: '', dir: '', outerStartedIn: '' },
+      { zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"', dir: '.config/zsh', outerStartedIn: '' },
+      { zshenv: '', dir: 'own-zdotdir', outerStartedIn: 'own-zdotdir' }
+    ]
+    for (const [i, { zshenv, dir, outerStartedIn }] of cases.entries()) {
+      const home = path.join(base, `home-nested-${i}`)
+      const ran = path.join(home, 'ran.txt')
+      fs.mkdirSync(path.join(home, dir), { recursive: true })
+      fs.writeFileSync(
+        path.join(home, outerStartedIn, '.zshenv'),
+        `echo .zshenv >> ${ran}\n${zshenv}\n`
+      )
+      for (const name of ['.zprofile', '.zlogin'])
+        fs.writeFileSync(path.join(home, dir, name), `echo ${name} >> ${ran}\n`)
+      const outer = writeOpenShim(
+        path.join(base, `outer-${i}`),
+        randomUUID(),
+        outerStartedIn ? path.join(home, outerStartedIn) : undefined
+      )
+      const inner = writeOpenShim(path.join(base, `inner-${i}`), randomUUID(), outer.zdotDir)
+      try {
+        const res = spawnSync('/bin/zsh', ['-lc', 'command -v open'], {
+          env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: inner.zdotDir },
+          encoding: 'utf8'
+        })
+        expect(res.stderr, zshenv).toBe('')
+        expect(res.stdout.trim(), zshenv).toBe(path.join(inner.shimDir, 'open'))
+        expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean), zshenv).toEqual([
+          '.zshenv',
+          '.zprofile',
+          '.zlogin'
+        ])
+      } finally {
+        removeOpenShim(inner)
+        removeOpenShim(outer)
+      }
+    }
+  })
 })
 
 describe('Codex open shim BASH_ENV file', () => {
