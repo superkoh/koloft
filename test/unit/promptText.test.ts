@@ -6,9 +6,9 @@ import {
   koloftPrompt,
   ownerSays,
   projectRulesForTheButler,
-  TODO_METHOD,
-  TODO_NOTICE
+  TODO_METHOD
 } from '../../src/shared/agentGuide'
+import { TODO_NOTICE } from '../../src/plugins/todo/prompts/text'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
 import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'

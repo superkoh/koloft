@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import {
-  AGENT_GUIDE,
-  agentGuide,
-  DISCORD_PREFIX,
-  koloftPrompt,
-  WAITING_QUESTION_TOOL
-} from '../../src/shared/agentGuide'
+import { AGENT_GUIDE, agentGuide, koloftPrompt } from '../../src/shared/agentGuide'
+import { WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/prompts/text'
+import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 
 describe('koloftPrompt on Discord', () => {
@@ -37,6 +33,11 @@ describe("a project's own rules for picking a session's model and effort", () =>
       expect(koloftPrompt(backend)).not.toContain("Koloft's own way")
     }
   )
+
+  it('reach the prompt exactly as the owner wrote them, even when they hold {{…}} or $ patterns', () => {
+    const odd = 'Name it {{butler-name}} or {{session}}; replace $& with $1 and $$.'
+    expect(koloftPrompt('claude', odd)).toContain(`    ${odd}\nKoloft's own way:`)
+  })
 
   it('come first in koloft help under session new, indented with it, and are not in the help of a project without rules', () => {
     const help = agentGuide(RULES)

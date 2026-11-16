@@ -6,7 +6,7 @@ import type { KoloftHook } from './codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
-import { DISCORD_PREFIX } from '@shared/agentGuide'
+import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { writeWholeBeforeVisible } from './jsonDrops'
 

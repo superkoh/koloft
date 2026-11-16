@@ -19,8 +19,8 @@ export const PLUGINS: readonly PluginManifest[] = [
   butler,
   inbox,
   scheduledTasks,
-  discord,
   github,
+  discord,
   todo,
   passwords,
   docsWriting
