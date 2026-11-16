@@ -1,0 +1,3 @@
+.claude-plugin/plugin.json
+koloft-prompt.md
+skills/koloft/SKILL.md

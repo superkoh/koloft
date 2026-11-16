@@ -1,0 +1,2 @@
+ (The owner wrote rules for the model and effort of a session started in the workspace koloft. They come first there; Koloft's own way covers only what they leave out: Docs: sonnet, low.
+Never start a Codex session for work in src/renderer.)

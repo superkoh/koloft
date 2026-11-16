@@ -1,0 +1,1 @@
+Koloft got a new command after this conversation began: koloft todo. When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints. There is nothing to answer now.
