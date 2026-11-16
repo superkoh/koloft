@@ -1,13 +1,13 @@
 import type { BackendId } from '@shared/types'
 import { composePrompt } from '@core/prompt'
-import { withProjectRules } from './prompts/text'
-
-export {
+import {
   PICKED_FLAGS,
   PICK_FOR_THE_TASK,
   WAITING_QUESTION_TOOL,
   withProjectRules
 } from './prompts/text'
+
+export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

@@ -3,7 +3,7 @@ import type { BackendId } from '@shared/types'
 import { needsModel } from '@shared/cronModels'
 import { tiersOf } from '@shared/sessionPicks'
 
-export const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =
+const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =
   'Write the task you give a Koloft session, and every message you send one, in the language the owner writes to you, even though these instructions are in English.'
 
 export const PICKED_FLAGS = '--model <model> --effort <effort>'
