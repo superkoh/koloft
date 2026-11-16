@@ -100,9 +100,15 @@ log="$${AGY_LOG_ENV}"
 [ -n "$log" ] && printf '%s\\n' "$(printf '%s' "$input" | tr -d '\\n')" >> "$log" 2>/dev/null
 if [ "$KOLOFT_TMUX_FOLLOW" = 1 ] && [ -n "$TMUX" ]; then
   id="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"conversation_id" *: *"\\([0-9a-f-][0-9a-f-]*\\)".*/\\1/p')"
-  # ADR-0044
-  [ -n "$id" ] && printf 'k-%s' "$id" > "$HOME/.koloft/tabs/$KOLOFT_TAB_ID.tmux"
-  [ -n "$id" ] && [ "$(tmux display-message -p '#S' 2>/dev/null)" != "k-$id" ] && tmux rename-session -t "$TMUX_PANE" "k-$id" 2>/dev/null
+  if [ -n "$id" ]; then
+    # ADR-0044
+    nf="$HOME/.koloft/tabs/$KOLOFT_TAB_ID.tmux"
+    was="$(cat "$nf" 2>/dev/null)"
+    printf 'k-%s' "$id" > "$nf"
+    if [ "$(tmux display-message -p '#S' 2>/dev/null)" != "k-$id" ] && ! tmux rename-session -t "$TMUX_PANE" "k-$id" 2>/dev/null; then
+      if [ -n "$was" ]; then printf '%s' "$was" > "$nf"; else rm -f "$nf"; fi
+    fi
+  fi
   [ -n "$id" ] && [ -n "$log" ] && printf '%s' "$(basename "$log")" > "$(dirname "$log")/k-$id${AGY_LOG_POINTER_SUFFIX}"
 fi
 [ -n "$${AGY_OWNER_TITLE_ENV}" ] && printf '%s' "$input" | sh -c "$${AGY_OWNER_TITLE_ENV}"
