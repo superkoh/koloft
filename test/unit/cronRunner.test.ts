@@ -70,6 +70,7 @@ function makeHarness(
   launch: ReturnType<typeof vi.fn>
   killTab: ReturnType<typeof vi.fn>
   closeForGood: ReturnType<typeof vi.fn>
+  tellToCarryOn: ReturnType<typeof vi.fn>
   notify: ReturnType<typeof vi.fn>
   save: ReturnType<typeof vi.fn>
   branchExists: ReturnType<typeof vi.fn>
@@ -110,6 +111,7 @@ function makeHarness(
   })
   const killTab = vi.fn()
   const closeForGood = vi.fn(async () => {})
+  const tellToCarryOn = vi.fn(async (): Promise<boolean> => true)
   const notify = vi.fn()
   const save = vi.fn()
   const branchExists = vi.fn(async () => false)
@@ -139,6 +141,7 @@ function makeHarness(
     stillWorking: async () => flags.busy,
     whatIsLeft: async () => flags.left,
     closeForGood,
+    tellToCarryOn,
     toast: (t: string) => {
       toasts.push(t)
     },
@@ -185,6 +188,7 @@ function makeHarness(
     launch,
     killTab,
     closeForGood,
+    tellToCarryOn,
     notify,
     save,
     branchExists,
@@ -1187,6 +1191,51 @@ describe('CronRunner — quitting', () => {
     })
   })
 
+  it('with "Close it" on, a run the relaunch took back in the middle of its work is told once to carry on, no status change closes it before the telling is over, and once it is over with nothing at work it closes at the next check', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    let tellingOver: (told: boolean) => void = () => {}
+    h.tellToCarryOn.mockImplementation(() => new Promise<boolean>((done) => (tellingOver = done)))
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    h.runner.onBound('tab-back', 's1')
+    h.runner.onStatus('tab-back', undefined, 'waiting')
+    h.runner.onStatus('tab-back', 'waiting', 'working')
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.closeForGood).not.toHaveBeenCalled()
+    expect(h.tellToCarryOn.mock.calls).toEqual([['tab-back']])
+
+    tellingOver(true)
+    await flush()
+    expect(h.closeForGood).not.toHaveBeenCalled()
+    await h.fireTimers(T0 + 2 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('a run the relaunch took back in the middle of its work that took the word to carry on and still works stays open until that turn ends', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.flags.busy = true
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.runner.state().live[0].state).toBe('running')
+
+    h.flags.busy = false
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await flush()
+    await h.fireTimers(T0 + 2 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('never tells a run to carry on whose turn had ended before the quit', async () => {
+    const finished = await relaunchedAfterQuittingOnARun(makeJob(), { turnOverBeforeQuit: true })
+    finished.runner.expectReopened(['s1'])
+    finished.runner.reopenedIn('s1', 'tab-back')
+    finished.runner.onBound('tab-back', 's1')
+    expect(finished.tellToCarryOn).not.toHaveBeenCalled()
+  })
+
   it('takes nothing back when its session is opened again some other way than the relaunch reopening its tab', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob())
     h.runner.reopenedIn('s1', 'tab-by-hand')
@@ -1232,8 +1281,9 @@ describe('CronRunner — quitting', () => {
     expect(h.runner.state().live).toEqual([])
   })
 
-  it('with "Close it" on, a reopened run the quit cut off mid-turn stays open, and stays marked mid-turn through another quit', async () => {
+  it('with "Close it" on, a reopened run the quit cut off mid-turn stays open while it is being told to carry on, and stays marked mid-turn through another quit meanwhile', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.tellToCarryOn.mockImplementation(() => new Promise<boolean>(() => {}))
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     h.runner.onBound('tab-back', 's1')

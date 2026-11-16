@@ -4311,9 +4311,13 @@ app.whenReady().then(() => {
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
     killTab: (tabId) => void killTabPty(tabId),
-    stillWorking: (tabId) => tracker.stillWorking(tabId),
+    stillWorking: runOrASessionItStartedStillWorks,
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
+    tellToCarryOn: async (tabId) => {
+      await tabReady(tabId, RESUMED_TAB_READY_MS, false)
+      return sessionCommand.tellFromKoloft(tabId, A_RESTART_CUT_THE_RUN_OFF)
+    },
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notify: notifyPlain,
     push: (state) => sendToRenderer(CH.cron.state, state),
@@ -5768,6 +5772,21 @@ async function whatClosingTheRunWouldLose(
     Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
   )
 }
+
+async function runOrASessionItStartedStillWorks(tabId: string): Promise<boolean> {
+  if (await tracker.stillWorking(tabId)) return true
+  const run = sessionOfTab(tabId)
+  if (!run?.sessionId) return false
+  const started = allSessions().filter(
+    (s) =>
+      s.alive && s.tabId !== tabId && !asksTheOwner(s.tabId) && startedSessions.startedBy(s, run)
+  )
+  const working = await Promise.all(started.map((s) => tracker.stillWorking(s.tabId)))
+  return working.some(Boolean)
+}
+
+const A_RESTART_CUT_THE_RUN_OFF =
+  'Koloft restarted while this scheduled run was working, which also stopped any helper or command you had running in the background. Carry on with the task: check what got done, start again what was cut off, and finish it.'
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
   const session = sessionOfTab(tabId)

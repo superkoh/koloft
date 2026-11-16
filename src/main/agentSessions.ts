@@ -975,6 +975,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
   sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
+  tellFromKoloft(tabId: string, text: string): Promise<boolean>
   startFromInbox(
     aboutRef: string | undefined,
     spec: StartSpec,
@@ -1185,6 +1186,21 @@ export function sessionVerb(d: SessionVerbDeps): {
     void deliver('send', to, text, from, false)
       .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
       .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
+
+  const tellFromKoloft = async (tabId: string, text: string): Promise<boolean> => {
+    const session = d.allSessions().find((s) => s.tabId === tabId)
+    if (!session) return false
+    const to = openTarget(session)
+    const reply = await deliver(
+      'send',
+      to,
+      `${FROM_KOLOFT}${text}`,
+      { tabId, session },
+      false
+    ).catch((error: unknown) => refused(errorText(error)))
+    if (reply.exit !== 0) d.undelivered(tabId, to, reply.text)
+    return reply.exit === 0
+  }
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
     const butler = d.butlerTarget(caller.session.sessionId)
@@ -1529,6 +1545,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     startButlerHelper,
     tabMoved,
     sendFromInbox,
+    tellFromKoloft,
     startFromInbox
   }
 }
