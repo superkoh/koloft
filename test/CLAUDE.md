@@ -206,7 +206,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   installed whatever the developer's own login shell has. A Codex tab on the fake remote
   needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
   the machine and gives the Mac account a token; what the machine's app-server did lands
-  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
+  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`). While
+  `<home>/fake-codex-renamed-elsewhere` exists, `thread/list` names every thread with its
+  text, as a rename made in another Codex client would, with no event to an open tab.
 - Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
   (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
   Muse reads as not installed. It asks Muse's trust question unless `trust.json` under

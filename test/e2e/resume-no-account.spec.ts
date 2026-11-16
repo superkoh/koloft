@@ -1,6 +1,6 @@
 import fs from 'fs'
-import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import type { Locator, Page } from '@playwright/test'
+import { test, expect, quitAndClose } from './helpers/app'
 import {
   agySessionCalls,
   E2E_CLAUDE_ACCOUNT,
@@ -37,10 +37,9 @@ import {
 import {
   NO_ACCOUNT_CAN_BE_USED,
   ONLY_ACCOUNT,
-  openTabsFile,
-  theOpenTabAsKoloftSavedIt,
   untilTheActiveTabsTranscriptIsWritten
 } from './helpers/restartNoAccount'
+import { launch, openTabsFile, theOpenTabAsKoloftSavedIt } from './helpers/restartTabs'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { SIGN_IN_FOLDER_OF, type AccountKind, type BackendId } from '../../src/shared/types'
 
@@ -131,13 +130,6 @@ async function nothingLaunched(
 ): Promise<void> {
   await page.waitForTimeout(A_STARTED_AGENT_HAS_LOGGED_ITS_LAUNCH_WITHIN_MS)
   expect(kind.launches(env)).toBe(before)
-}
-
-async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  return { app, page }
 }
 
 function toastReading(page: Page, text: string): Locator {
