@@ -56,7 +56,12 @@ import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
-import { claudePeerNames, runningClaudePid } from '../claudeSessionRegistry'
+import {
+  OLD_CLAUDE_GOES_WITHIN_MS,
+  claudePeerNames,
+  claudePidsHolding,
+  runningClaudePidBesides
+} from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import { sharedProcessTable } from '../processTable'
 import {
@@ -197,6 +202,7 @@ export class ClaudeBackend implements SessionBackend {
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
+  private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
   agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
 
@@ -257,7 +263,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async runningElsewhere(key: string): Promise<boolean> {
-    return (await runningClaudePid(key)) !== null
+    const closed = this.closedClaudes.get(key)
+    const pid = await runningClaudePidBesides(key, closed?.pids ?? new Set(), closed?.until ?? 0)
+    return pid !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -307,13 +315,23 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   stop(tabId: string): void {
+    const sessionId = this.sessionIdOf(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
+    if (sessionId && !remote) this.rememberClosedClaude(sessionId)
     if (remote) {
       this.endRemoteTmux(remote.host, remote.tmuxName, tabId)
       fs.rmSync(tabPackageDir(this.d.userData(), tabId), { recursive: true, force: true })
     }
     this.d.pty.kill(tabId)
     this.d.tracker.untrack(tabId)
+  }
+
+  private rememberClosedClaude(sessionId: string): void {
+    const now = Date.now()
+    for (const [key, closed] of this.closedClaudes)
+      if (closed.until <= now) this.closedClaudes.delete(key)
+    const pids = claudePidsHolding(sessionId)
+    this.closedClaudes.set(sessionId, { pids, until: now + OLD_CLAUDE_GOES_WITHIN_MS })
   }
 
   endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {
