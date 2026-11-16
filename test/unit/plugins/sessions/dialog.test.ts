@@ -9,7 +9,7 @@ import {
   hookAnswer,
   PLAN_IS_IN_ITS_SESSION,
   isAskedCall
-} from '../../src/main/discord/dialog'
+} from '../../../../src/plugins/sessions/main/dialog'
 
 const colour = {
   tool_name: 'AskUserQuestion',

@@ -103,7 +103,7 @@ import {
   type CodexQuestion,
   type Question,
   type SentAnswer
-} from './discord/dialog'
+} from '@plugins/sessions/main/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
 import { agyToolDid } from './rowActivity'

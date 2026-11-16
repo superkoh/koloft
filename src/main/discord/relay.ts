@@ -1,11 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendId, SessionStatus } from '@shared/types'
+import type { BackendId } from '@shared/types'
 import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@shared/conductors'
 import { safeDownloadName } from '@shared/downloadName'
-import { watchJsonDrops, writeWholeBeforeVisible } from '../jsonDrops'
 import { errorText } from '../agentRequests'
 import { sleep } from '../codexTransport'
 import {
@@ -30,54 +29,29 @@ import {
   type ModeClass
 } from '../crossSessionMessage'
 import {
-  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN,
-  answerKeys,
-  ANSWER_KEYS,
   askHow,
-  cannotAnswer,
   claudeDialog,
-  claudeKeysFor,
-  claudeResultComesAtOnce,
   codexDialog,
-  codexKeyFor,
-  hookAnswer,
   howToAnswer,
-  isAskedCall,
-  questionAnswers,
-  takesSeveralPicks,
-  type AnswerKeys,
-  type SentAnswer,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
-} from './dialog'
+} from '@plugins/sessions/main/dialog'
+import {
+  answerKeysOf,
+  CODEX_NEEDS_YES_OR_NO,
+  SessionAsks,
+  type SessionAskDeps
+} from '@plugins/sessions/main/sessionAsks'
 
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
-export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
-export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
-export const ANSWER_ON_ITS_WAY =
-  'Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.'
-// MUSE§3
-export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
-  'It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.'
-export const inputNotProbed = (label: string): string =>
-  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
 const helperOf = (helper: string, butler: string): string => `${helper} (${butler}'s helper)`
 export const unreadableInRoom = (butler: string, lobby: string | undefined): string =>
   `Koloft cannot read this question from here. Ask ${butler}${lobby ? ` in ${lobby}` : ''} to press its keys for you.`
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
-const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
-const NOT_ANSWERED_FROM_HERE = ''
-export const STARTED_IN_THE_TERMINAL =
-  'You already started on this question in the terminal, so Koloft leaves it to you there.'
-export const PICKS_MAY_STILL_BE_TICKED =
-  'Koloft already pressed picks into this question and the session did not take them, so some may still be ticked. Koloft leaves it to you in the terminal.'
-
-const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
-  backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
 
 // MUSE§7 AGY§15
 const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
@@ -88,8 +62,6 @@ const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
 }
 const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
   !backend || TYPED_INTO_WHILE_WORKING[backend]
-const ASK_SUFFIX = '.ask.json'
-const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
 const DELIVERED = '✅'
 const PAGE = 100
@@ -117,7 +89,7 @@ export interface CaughtUpChannel {
   handsOverTo?: Destination
 }
 
-export interface RelayDeps {
+export interface RelayDeps extends SessionAskDeps {
   link: Pick<DiscordLink, 'post' | 'upload' | 'react' | 'messages' | 'card'>
   download(url: string): Promise<Buffer>
   owner(): string | undefined
@@ -135,29 +107,14 @@ export interface RelayDeps {
   inRoom(tabId: string): boolean
   withButtons(tabId: string, view: DialogView, card: Card): Card
   askPlaced(card: Card, at: PlacedAsk | undefined): void
-  answered(tabId: string, reply: string): void
-  backendOf(tabId: string): BackendId | undefined
   boundKey(tabId: string): string | undefined
   showsPromptBeforeBind(tabId: string): boolean
-  status(tabId: string): SessionStatus | undefined
-  awaitsInput(tabId: string): boolean
-  turnOver(tabId: string): boolean
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
-  asksChanged(tabId: string): void
-  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
-  touchedSinceAsked(tabId: string): boolean
-  ownerTouchedSince(tabId: string, at: number): boolean
   queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   modeOf(tabId: string): ModeClass
-  pendingApproval(tabId: string): CodexApproval | undefined
-  pendingQuestion(tabId: string): CodexQuestion | undefined
-  answerable(tabId: string): Promise<void>
-  answerInPlace(tabId: string, reply: string): Promise<SentAnswer | false>
-  showsDialogsClosing(tabId: string): boolean
-  regDir: string
   attachmentsDir: string
 }
 
@@ -174,20 +131,6 @@ type DiscordAnswer = 'message' | 'turn'
 
 type SendTo = (channelId: string) => Promise<void>
 
-interface KeysTyped {
-  at?: number
-}
-
-interface OpenClaudeAsk {
-  payload: AskPayload
-  hook?: string
-  raw: string
-  at: number
-  typedAt?: number
-  typing?: boolean
-  keysSent?: boolean
-}
-
 function slashTextOf(content: string): string | undefined {
   const text = content.trim()
   return text.startsWith('/') ? text : undefined
@@ -202,22 +145,23 @@ export class DiscordRelay {
   private queues = new Map<string, Inbound[]>()
   private told = 0
   private seenLive = new Set<string>()
-  private asks = new Map<string, OpenClaudeAsk>()
-  private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
-  private codexTyped = new Map<string, KeysTyped>()
-  private ticksPressed = new Map<string, { ticks: string; untickedOnce: boolean }>()
   private quietTexts = new Map<string, string[]>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
-  private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
   private held = new Set<string>()
   private unreadable = new Set<string>()
   private shownNotSent = new Map<string, SendTo[]>()
   private sending = new Map<string, Promise<void>>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
+  private sessionAsks: SessionAsks
 
-  constructor(private d: RelayDeps) {}
+  constructor(private d: RelayDeps) {
+    this.sessionAsks = new SessionAsks(d, {
+      asked: (tab, payload) => this.postClaudeAsk(tab, payload),
+      answerGoingIn: (tab) => void this.codexAsks.delete(tab)
+    })
+  }
 
   answeringDiscord(tab: string): boolean {
     return this.answering.has(tab)
@@ -260,8 +204,8 @@ export class DiscordRelay {
   }
 
   private postOpenAsk(tab: string): void {
-    const ask = this.openAsk(tab)
-    if (ask) return this.postClaudeAsk(tab, ask.payload)
+    const asked = this.sessionAsks.askOf(tab)
+    if (asked) return this.postClaudeAsk(tab, asked)
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
     if (open) return this.codexAsked(tab, open)
     if (this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)) this.asksUnreadably(tab)
@@ -489,7 +433,7 @@ export class DiscordRelay {
       status !== undefined &&
       status !== 'approval' &&
       !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
-      !this.hookWaits(tab)
+      !this.sessionAsks.hookWaits(tab)
     )
   }
 
@@ -505,15 +449,7 @@ export class DiscordRelay {
   }
 
   dialogOpen(tab: string): boolean {
-    return !!this.openAsk(tab) || !!this.d.pendingApproval(tab) || !!this.d.pendingQuestion(tab)
-  }
-
-  private hookWaits(tab: string): boolean {
-    const hooks = this.askHooks.get(tab)
-    if (!hooks) return false
-    for (const hook of hooks)
-      if (!fs.existsSync(this.hookFile(tab, hook, ASK_SUFFIX))) hooks.delete(hook)
-    return hooks.size > 0
+    return this.sessionAsks.dialogOpen(tab)
   }
 
   private async textOf(m: DiscordMessage): Promise<string> {
@@ -554,27 +490,8 @@ export class DiscordRelay {
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
-  private hookFile(tab: string, hook: string, suffix: string): string {
-    return path.join(this.d.regDir, `${tab}.${hook}${suffix}`)
-  }
-
-  private openAsk(tab: string): OpenClaudeAsk | undefined {
-    const ask = this.asks.get(tab)
-    if (!ask?.hook) return ask
-    return fs.existsSync(this.hookFile(tab, ask.hook, ASK_SUFFIX)) ? ask : undefined
-  }
-
-  // CC§14
   watchAsks(): fs.FSWatcher | null {
-    return watchJsonDrops(this.d.regDir, (name) => {
-      if (!name.endsWith(ASK_SUFFIX)) return null
-      const [tab, hook] = name.slice(0, -ASK_SUFFIX.length).split('.')
-      if (!hook) return null
-      if (fs.existsSync(path.join(this.d.regDir, name)))
-        return (obj): void => this.onAsk(tab, obj as AskPayload, hook)
-      if (this.askHooks.get(tab)?.delete(hook)) this.d.asksChanged(tab)
-      return null
-    })
+    return this.sessionAsks.watchAsks()
   }
 
   private askerName(tab: string): string {
@@ -671,230 +588,43 @@ export class DiscordRelay {
   }
 
   onAsk(tab: string, payload: AskPayload, hook?: string): void {
-    const raw = JSON.stringify(payload)
-    const before = this.asks.get(tab)
-    const same = before && before.hook === hook && before.raw === raw
-    if (same && (before.typedAt === undefined || before.typing)) return
-    if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
-    this.asks.set(tab, { payload, hook, raw, at: Date.now() })
-    if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
-    this.d.asksChanged(tab)
-    this.postClaudeAsk(tab, payload)
+    this.sessionAsks.onAsk(tab, payload, hook)
   }
 
   private postClaudeAsk(tab: string, payload: AskPayload): void {
     const channelId = this.d.askChannelOf(tab)
-    const ask = this.asks.get(tab)
+    const stillAsked = this.sessionAsks.stillAsks(tab)
     if (channelId && !this.holds(tab))
       this.postAsk(
         tab,
         channelId,
         this.askCard(tab, claudeDialog(payload), askHow(payload)),
-        () => !!ask && this.openAsk(tab) === ask
+        stillAsked
       )
   }
 
   dialog(tab: string): DialogView | undefined {
-    const ask = this.openAsk(tab)
-    return ask && claudeDialog(ask.payload)
+    return this.sessionAsks.dialog(tab)
   }
 
   askOf(tab: string): AskPayload | undefined {
-    return this.openAsk(tab)?.payload
+    return this.sessionAsks.askOf(tab)
   }
 
   heldAsk(tab: string): AskPayload | undefined {
-    const ask = this.openAsk(tab)
-    return ask?.hook ? ask.payload : undefined
+    return this.sessionAsks.heldAsk(tab)
   }
 
-  private release(tab: string, hook: string, output: unknown = {}): void {
-    if (!fs.existsSync(this.hookFile(tab, hook, ASK_SUFFIX))) return
-    try {
-      writeWholeBeforeVisible(this.hookFile(tab, hook, ANSWER_SUFFIX), JSON.stringify(output))
-    } catch {}
-  }
-
-  private answer(tab: string, output: unknown): void {
-    const hook = this.asks.get(tab)?.hook
-    this.asks.delete(tab)
-    if (hook) this.release(tab, hook, output)
-  }
-
-  // CC§14
   toolDone(tab: string, call: ToolCall): void {
-    const ask = this.asks.get(tab)
-    if (ask && isAskedCall(ask.payload, call)) this.answer(tab, {})
-  }
-
-  private async press(tab: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
-    this.codexAsks.delete(tab)
-    await this.d.answerable(tab)
-    return this.d.type(tab, keys, stillWanted)
-  }
-
-  // CODEX§20 MUSE§11 AGY§14
-  private pressAnswer(tab: string, keys: string[]): Promise<boolean> {
-    return this.press(tab, keys, () => !this.d.touchedSinceAsked(tab))
-  }
-
-  private codexOnItsWay(tab: string): boolean {
-    const typed = this.codexTyped.get(tab)
-    if (!typed) return false
-    return typed.at === undefined || Date.now() - typed.at < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
-  }
-
-  private async pressOnce(tab: string, press: () => Promise<boolean>): Promise<boolean> {
-    const typed: KeysTyped = {}
-    this.codexTyped.set(tab, typed)
-    const ours = (): boolean => this.codexTyped.get(tab) === typed
-    try {
-      const pressed = await press()
-      if (pressed) typed.at = Date.now()
-      else if (ours()) this.codexTyped.delete(tab)
-      return pressed
-    } catch (error) {
-      if (ours()) this.codexTyped.delete(tab)
-      throw error
-    }
+    this.sessionAsks.toolDone(tab, call)
   }
 
   answerSession(tab: string, reply: string, toItsCard = false): Promise<string | undefined> {
-    return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard))
-  }
-
-  // CC§14 CODEX§3 MUSE§11 AGY§14
-  private async answerTaken(
-    tab: string,
-    send: () => Promise<SentAnswer>
-  ): Promise<string | undefined> {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let resolve!: (taken: boolean) => void
-    const took = new Promise<boolean>((r) => (resolve = r))
-    const waiting = this.awaitingTaken.get(tab) ?? new Set()
-    const settle = (taken: boolean): void => {
-      clearTimeout(timer)
-      waiting.delete(settle)
-      if (!waiting.size && this.awaitingTaken.get(tab) === waiting) this.awaitingTaken.delete(tab)
-      resolve(taken)
-    }
-    this.awaitingTaken.set(tab, waiting.add(settle))
-    const sent = await send().catch((e: unknown) => {
-      settle(false)
-      throw e
-    })
-    if (sent.error !== undefined || !sent.watch) {
-      settle(sent.error === undefined)
-      return sent.error
-    }
-    if (waiting.has(settle)) timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-    return (await took) ? undefined : ANSWER_NOT_TAKEN
-  }
-
-  private async sendAnswer(tab: string, reply: string, toItsCard: boolean): Promise<SentAnswer> {
-    const backend = this.d.backendOf(tab)
-    const answerKeysFor = answerKeysOf(backend)
-    if (backend && answerKeysFor) {
-      if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
-      const inPlace = await this.d.answerInPlace(tab, reply)
-      if (inPlace !== false) {
-        this.codexAsks.delete(tab)
-        if (inPlace.error === undefined) this.d.answered(tab, reply)
-        return inPlace
-      }
-      const label = BACKEND_LABEL[backend]
-      const approval = this.d.pendingApproval(tab)
-      if (approval) {
-        const key = codexKeyFor(reply)
-        if (!key) return { error: toItsCard ? CODEX_NEEDS_YES_OR_NO : takesYesOrNo(label) }
-        if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
-        this.d.answered(tab, reply)
-        await this.pressOnce(tab, () => this.press(tab, [key]))
-        return { watch: true }
-      }
-      const question = this.d.pendingQuestion(tab)
-      if (!question)
-        return { error: this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG }
-      const answers = questionAnswers(question, reply)
-      if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
-      // CODEX§20 MUSE§11 AGY§14
-      if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
-      if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
-      // MUSE§11 AGY§14
-      const ticks = question.questions.some((q) => q.multiSelect)
-        ? JSON.stringify(question.questions)
-        : undefined
-      const before = ticks === undefined ? undefined : this.ticksPressed.get(tab)
-      const pressedBefore = before !== undefined && before.ticks === ticks
-      const untick =
-        pressedBefore && !before.untickedOnce ? answerKeysFor.untickAll?.(question) : undefined
-      if (pressedBefore && !untick) return { error: PICKS_MAY_STILL_BE_TICKED }
-      if (ticks !== undefined && (pressedBefore || answers.some((a) => 'picks' in a)))
-        this.ticksPressed.set(tab, { ticks, untickedOnce: pressedBefore })
-      this.d.answered(tab, reply)
-      const keys = [...(untick ?? []), ...answerKeys(answerKeysFor, question, answers)]
-      if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
-      this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
-      return { error: STARTED_IN_THE_TERMINAL }
-    }
-    const ask = this.openAsk(tab)
-    if (!ask)
-      return {
-        error:
-          this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)
-            ? ASKS_WHAT_KOLOFT_CANNOT_SEE
-            : SHOWS_NO_DIALOG
-      }
-    // CC§14
-    if (ask.hook) {
-      this.answer(tab, hookAnswer(ask.payload, reply))
-      this.d.answered(tab, reply)
-      return {}
-    }
-    // CC§12
-    const watch = claudeResultComesAtOnce(ask.payload, reply) || this.d.showsDialogsClosing(tab)
-    if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return { error: SHOWS_NO_DIALOG }
-    const onItsWay =
-      ask.typedAt !== undefined && Date.now() - ask.typedAt < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
-    if (ask.typing || onItsWay) return { error: ANSWER_ON_ITS_WAY }
-    const ownerTouchedIt = this.d.ownerTouchedSince(tab, ask.at)
-    const keys = claudeKeysFor(ask.payload, reply, ownerTouchedIt || !!ask.keysSent)
-    if (!keys.ok) return { error: keys.error }
-    // CC§14
-    if (takesSeveralPicks(ask.payload) && ownerTouchedIt) return { error: STARTED_IN_THE_TERMINAL }
-    ask.keysSent = true
-    if (watch) ask.typedAt = Date.now()
-    else this.asks.delete(tab)
-    this.d.answered(tab, reply)
-    const startedAt = Date.now()
-    // CC§14
-    const stillWanted = watch
-      ? (): boolean => this.asks.get(tab) === ask && !this.d.ownerTouchedSince(tab, startedAt)
-      : undefined
-    ask.typing = true
-    try {
-      if (!(await this.d.type(tab, keys.value, stillWanted))) {
-        const open = this.asks.get(tab) === ask
-        ask.typedAt = undefined
-        this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
-        return { error: open ? STARTED_IN_THE_TERMINAL : SHOWS_NO_DIALOG }
-      }
-    } catch (error) {
-      ask.typedAt = undefined
-      throw error
-    } finally {
-      ask.typing = false
-    }
-    if (watch) ask.typedAt = Date.now()
-    return { watch }
+    return this.sessionAsks.answerSession(tab, reply, toItsCard)
   }
 
   dialogGone(tab: string, closed: boolean): void {
-    for (const settle of this.awaitingTaken.get(tab) ?? []) settle(true)
-    this.codexTyped.delete(tab)
-    this.ticksPressed.delete(tab)
-    const ask = this.asks.get(tab)
-    if (ask && !ask.hook && (closed || ask.typedAt !== undefined)) this.asks.delete(tab)
+    this.sessionAsks.dialogGone(tab, closed)
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
@@ -916,11 +646,7 @@ export class DiscordRelay {
   }
 
   private answerDialog(tab: string, m: DiscordMessage): Promise<string | undefined> | undefined {
-    const ask = this.openAsk(tab)
-    // CC§14
-    if (ask && (ask.hook || !(this.d.turnOver(tab) && !this.d.awaitsInput(tab))))
-      return this.answerSession(tab, m.content)
-    this.asks.delete(tab)
+    if (this.sessionAsks.claudeAskTakesAnswer(tab)) return this.answerSession(tab, m.content)
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return undefined
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
@@ -932,12 +658,8 @@ export class DiscordRelay {
   }
 
   forget(tab: string): void {
-    for (const settle of this.awaitingTaken.get(tab) ?? []) settle(false)
-    this.answer(tab, {})
+    this.sessionAsks.forget(tab)
     this.codexAsks.delete(tab)
-    this.codexTyped.delete(tab)
-    this.ticksPressed.delete(tab)
-    this.askHooks.delete(tab)
     this.answering.delete(tab)
     this.held.delete(tab)
     this.unreadable.delete(tab)

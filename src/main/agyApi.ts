@@ -2,7 +2,7 @@ import http from 'http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { record } from './codexObservation'
-import type { QuestionAnswer } from './discord/dialog'
+import type { QuestionAnswer } from '@plugins/sessions/main/dialog'
 
 const exec = promisify(execFile)
 

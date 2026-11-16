@@ -111,7 +111,7 @@ import { koloftPrompt } from '@shared/agentGuide'
 import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
-import type { CodexApproval, CodexQuestion } from './discord/dialog'
+import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
 import {
   StoredSessions,
   hostOfKey,

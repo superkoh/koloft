@@ -577,7 +577,7 @@ import {
   type CodexApproval,
   type CodexQuestion,
   type DialogView
-} from './discord/dialog'
+} from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'

@@ -9,8 +9,8 @@ import {
   type ButtonDeps
 } from '../../src/main/discord/buttons'
 import { privately, type DiscordInteraction } from '../../src/main/discord/link'
-import { ANSWER_NOT_TAKEN, YES_OR_NO } from '../../src/main/discord/dialog'
-import { ANSWER_ON_ITS_WAY } from '../../src/main/discord/relay'
+import { ANSWER_NOT_TAKEN, YES_OR_NO } from '../../src/plugins/sessions/main/dialog'
+import { ANSWER_ON_ITS_WAY } from '../../src/plugins/sessions/main/sessionAsks'
 
 const OWNER = '555'
 const PLACED = { channelId: '333', messageId: '900' }
