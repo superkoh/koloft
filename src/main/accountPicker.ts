@@ -200,6 +200,18 @@ export class AccountPicker {
     return this.deps.now() - snap.at <= maxAgeMs ? snap : undefined
   }
 
+  fableLeft(): boolean {
+    const nowSec = Math.floor(this.deps.now() / 1000)
+    const subs = this.eligible('oauth')
+    return (
+      subs.length === 0 ||
+      subs.some((a) => {
+        const snap = this.snapshotFor(a)
+        return !snap || fableFree(snap, nowSec)
+      })
+    )
+  }
+
   private roundRobin(accounts: AccountMeta[]): AccountMeta {
     const a = accounts[this.rrCursor % accounts.length]
     this.rrCursor = (this.rrCursor + 1) % Math.max(1, accounts.length)

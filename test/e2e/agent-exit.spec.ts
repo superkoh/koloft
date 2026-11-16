@@ -31,7 +31,8 @@ import {
   terminalText,
   waitBooted,
   wsGroup,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 
 test.setTimeout(120_000)
@@ -192,7 +193,7 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
         await runIn(
           page,
           centerTerm(page),
-          `/koloft session new --backend ${backend} --name kid -- hello`
+          `/koloft session new ${picksFor(backend)} --backend ${backend} --name kid -- hello`
         )
         const kid = wsRows(page, 'ws-a').filter({ hasText: 'kid' })
         await expect(kid.locator('.ws-tab-sub')).toContainText('exited (code 1)', {
