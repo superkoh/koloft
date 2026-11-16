@@ -1,5 +1,4 @@
 import fs from 'fs'
-import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
@@ -38,6 +37,8 @@ import {
 import {
   NO_ACCOUNT_CAN_BE_USED,
   ONLY_ACCOUNT,
+  openTabsFile,
+  theOpenTabAsKoloftSavedIt,
   untilTheActiveTabsTranscriptIsWritten
 } from './helpers/restartNoAccount'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
@@ -130,30 +131,6 @@ async function nothingLaunched(
 ): Promise<void> {
   await page.waitForTimeout(A_STARTED_AGENT_HAS_LOGGED_ITS_LAUNCH_WITHIN_MS)
   expect(kind.launches(env)).toBe(before)
-}
-
-function openTabsFile(env: E2EEnv): string {
-  return path.join(env.userData, 'open-tabs.json')
-}
-
-async function theOpenTabAsKoloftSavedIt(env: E2EEnv, sessionId: string): Promise<string> {
-  let saved = ''
-  await expect
-    .poll(
-      () => {
-        try {
-          saved = fs.readFileSync(openTabsFile(env), 'utf8')
-          const tabs = (JSON.parse(saved) as { tabs: { sessionId: string; asleep?: boolean }[] })
-            .tabs
-          return tabs.length === 1 && tabs[0].sessionId === sessionId && !tabs[0].asleep
-        } catch {
-          return false
-        }
-      },
-      { timeout: 30_000 }
-    )
-    .toBe(true)
-  return saved
 }
 
 async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {

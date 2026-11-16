@@ -1,6 +1,8 @@
+import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect } from './app'
-import { E2E_AGY_ACCOUNT, E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT } from './env'
+import { E2E_AGY_ACCOUNT, E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT, type E2EEnv } from './env'
 import { sendShortcut } from './p1'
 import { SIGN_IN_FOLDER_OF, type BackendId, type SignInBackend } from '../../../src/shared/types'
 
@@ -36,6 +38,30 @@ export async function untilTheActiveTabsTranscriptIsWritten(
     )
     .toBe(true)
   return sessionId
+}
+
+export function openTabsFile(env: E2EEnv): string {
+  return path.join(env.userData, 'open-tabs.json')
+}
+
+export async function theOpenTabAsKoloftSavedIt(env: E2EEnv, sessionId: string): Promise<string> {
+  let saved = ''
+  await expect
+    .poll(
+      () => {
+        try {
+          saved = fs.readFileSync(openTabsFile(env), 'utf8')
+          const tabs = (JSON.parse(saved) as { tabs: { sessionId: string; asleep?: boolean }[] })
+            .tabs
+          return tabs.length === 1 && tabs[0].sessionId === sessionId && !tabs[0].asleep
+        } catch {
+          return false
+        }
+      },
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+  return saved
 }
 
 export async function turnOffItsOnlyAccountRestartAndSeeWhy(
