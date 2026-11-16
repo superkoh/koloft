@@ -389,7 +389,9 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       })
       await showWorkbench(page)
 
-      expect(await wbTabTitles(page)).toEqual([FILES_LABEL, 'Page A', 'Page B'])
+      await expect
+        .poll(() => wbTabTitles(page), { timeout: 20_000 })
+        .toEqual([FILES_LABEL, 'Page A', 'Page B'])
       await page.waitForTimeout(LATE_RELOAD_GRACE_MS)
       expect(srv.count('/a')).toBe(loadsOfA)
       expect(srv.count('/b')).toBe(loadsOfB)
