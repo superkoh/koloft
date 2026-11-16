@@ -872,6 +872,7 @@ describe('MuseSessions turns from hooks', () => {
       { id: B, cwd: repo, name: null },
       { id: C, cwd: repo, name: 'iron-libra' }
     ])
+    await new Promise((resolve) => setTimeout(resolve, 5))
     await sessions.refreshHistory()
     const shown = Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
     await BackgroundFile.whenAllWritten()
