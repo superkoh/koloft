@@ -179,11 +179,11 @@ describe.skipIf(!PYTHON_WITH_PTY)(
     }, 15_000)
 
     // ADR-0044
-    it("leaves the tab's tmux name file as it found it when the rename fails, so a reconnect and a close still find the session under the name it still has", async () => {
-      const failingRename = (m: { bin: string }): void =>
+    it("puts the name the session still has in the tab's tmux name file when the rename fails, so a reconnect and a close reach this tab's session, not the one that has the new name", async () => {
+      const failingRename = (m: { bin: string }, sessionNamedNow: string): void =>
         fs.writeFileSync(
           path.join(m.bin, 'tmux'),
-          `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HOME/tmux-calls"\n[ "$1" = rename-session ] && exit 1\nexit 0\n`,
+          `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HOME/tmux-calls"\n[ "$1" = rename-session ] && exit 1\n[ "$1" = display-message ] && echo '${sessionNamedNow}'\nexit 0\n`,
           { mode: 0o755 }
         )
       const nameFile = (m: { home: string }): string =>
@@ -191,18 +191,16 @@ describe.skipIf(!PYTHON_WITH_PTY)(
 
       const named = machine()
       installFakeMuse(named)
-      failingRename(named)
-      fs.mkdirSync(path.dirname(nameFile(named)), { recursive: true })
-      fs.writeFileSync(nameFile(named), 'k-before')
+      failingRename(named, 'k-before')
       await runWrapper(named, [])
       expect(fs.readFileSync(path.join(named.home, 'tmux-calls'), 'utf8')).toBe(
-        `rename-session -t %7 k-${SID}\n`
+        `rename-session -t %7 k-${SID}\ndisplay-message -p -t %7 #S\n`
       )
       expect(fs.readFileSync(nameFile(named), 'utf8')).toBe('k-before')
 
       const unnamed = machine()
       installFakeMuse(unnamed)
-      failingRename(unnamed)
+      failingRename(unnamed, '')
       await runWrapper(unnamed, [])
       expect(fs.existsSync(nameFile(unnamed))).toBe(false)
     }, 20_000)
