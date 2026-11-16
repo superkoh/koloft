@@ -1,4 +1,3 @@
-import type { BackendId } from './types'
 import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
@@ -7,14 +6,7 @@ import {
   namedAtLaunch
 } from './sessionBackend'
 import { tiersOf } from './sessionPicks'
-import { composePrompt } from '@core/prompt'
-import {
-  PICKED_FLAGS,
-  PICK_FOR_THE_TASK,
-  projectRulesFirst,
-  withProjectRules
-} from '@plugins/sessions/prompts/text'
-import { DISCORD_BOUND } from '@plugins/discord/api'
+import { PICKED_FLAGS, PICK_FOR_THE_TASK, withProjectRules } from '@plugins/sessions/api'
 
 const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
@@ -48,21 +40,6 @@ export function ownerSays(text: string): string {
 
 export const projectRulesForTheButler = (workspace: string, rules: string): string =>
   ` (The owner wrote rules for the model and effort of a session started in the workspace ${workspace}. They come first there; Koloft's own way covers only what they leave out: ${rules})`
-
-export const koloftPrompt = (backend: BackendId, rules?: string): string =>
-  composePrompt('session', {
-    agent: backend,
-    values: { 'project-rules': projectRulesFirst(rules) }
-  })
-
-export const butlerRole = (name: string, onDiscord: boolean): string =>
-  composePrompt('butler', {
-    values: { 'butler-name': name },
-    facts: onDiscord ? [DISCORD_BOUND] : []
-  })
-
-export const butlerHelperRole = (name: string): string =>
-  composePrompt('butler-helper', { values: { 'butler-name': name } })
 
 // CC§3 CODEX§12 MUSE§8 AGY§25
 export const agentGuide = (

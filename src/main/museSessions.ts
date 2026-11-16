@@ -12,7 +12,7 @@ import type {
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from './sessionBackends'
-import { koloftPrompt } from '@shared/agentGuide'
+import { koloftPrompt } from '@plugins/sessions/api'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'

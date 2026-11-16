@@ -1,4 +1,4 @@
-import { WAITING_QUESTION_TOOL as ASK } from '@plugins/sessions/prompts/text'
+import { WAITING_QUESTION_TOOL as ASK } from '@plugins/sessions/api'
 import { channelLabel, ownedGuilds } from '@shared/conductors'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'
 

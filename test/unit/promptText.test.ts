@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   agentGuide,
-  butlerHelperRole,
-  butlerRole,
-  koloftPrompt,
   ownerSays,
   projectRulesForTheButler,
   TODO_METHOD
 } from '../../src/shared/agentGuide'
-import { TODO_NOTICE } from '../../src/plugins/todo/prompts/text'
+import { koloftPrompt } from '../../src/plugins/sessions/api'
+import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
+import { DISCORD_BOUND } from '../../src/plugins/discord/api'
+import { TODO_NOTICE } from '../../src/plugins/todo/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
 import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
@@ -35,8 +35,8 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
     pin(claudeProjectPrompt(RULES), 'session/claude-project-prompt-file'))
 
   it('the butler, with Discord bound and without, and the helper it starts in its own folder', async () => {
-    await pin(butlerRole(BUTLER, true), 'butler/butler-discord-bound')
-    await pin(butlerRole(BUTLER, false), 'butler/butler-discord-not-bound')
+    await pin(butlerRole(BUTLER, [DISCORD_BOUND]), 'butler/butler-discord-bound')
+    await pin(butlerRole(BUTLER), 'butler/butler-discord-not-bound')
     await pin(butlerHelperRole(BUTLER), 'butler/helper')
     await pin(projectRulesForTheButler('koloft', RULES), 'butler/project-rules')
     await pin(ownerSays('«Merge it.»'), 'butler/message-for-the-owner')

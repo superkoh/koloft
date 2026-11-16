@@ -23,14 +23,11 @@ export const PICK_FOR_THE_TASK =
 const PROJECT_RULES_LEAD =
   "The owner wrote this project's own rules for the model and effort of a session started in it. They come first; Koloft's own way, after them, covers only what they leave out."
 
-export function projectRulesFirst(rules: string | undefined, indent = ''): string {
-  if (!rules) return ''
+export function withProjectRules(rules: string | undefined, ownWay: string, indent = ''): string {
+  if (!rules) return ownWay
   const lines = rules.split('\n').map((line) => `${indent}    ${line}`)
-  return `${PROJECT_RULES_LEAD}\n${lines.join('\n')}\n${indent}Koloft's own way: `
+  return `${PROJECT_RULES_LEAD}\n${lines.join('\n')}\n${indent}Koloft's own way: ${ownWay}`
 }
-
-export const withProjectRules = (rules: string | undefined, ownWay: string, indent = ''): string =>
-  `${projectRulesFirst(rules, indent)}${ownWay}`
 
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { AGENT_GUIDE, agentGuide, koloftPrompt } from '../../src/shared/agentGuide'
-import { WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/prompts/text'
+import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { koloftPrompt, WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/api'
 import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 

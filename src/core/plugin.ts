@@ -1,6 +1,6 @@
 // ADR-0051
 import type { BackendId } from '@shared/types'
-import { SESSION_BACKENDS } from '@shared/sessionBackend'
+import { SESSION_BACKENDS, byBackend } from '@shared/sessionBackend'
 
 export const PLUGIN_FORMAT_VERSION = 1
 
@@ -15,7 +15,7 @@ export interface TextBlock {
 export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): TextBlock => ({
   slot,
   text: textOf(SESSION_BACKENDS[0]),
-  byAgent: Object.fromEntries(SESSION_BACKENDS.slice(1).map((agent) => [agent, textOf(agent)]))
+  byAgent: byBackend(textOf)
 })
 
 export interface PluginCommand {

@@ -12,7 +12,7 @@ import {
 import { EXIT_USAGE } from '../../src/main/agentRequests'
 import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
 import type { DiscordFile } from '../../src/main/discord/link'
-import { WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/prompts/text'
+import { WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/api'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 
 let cwd: string
