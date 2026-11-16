@@ -408,14 +408,22 @@ function panelStateMoved(
   newId: string
 ): Pick<
   AppState,
-  'openFiles' | 'workbench' | 'workbenchOpen' | 'workbenchFetched' | 'changesBase'
+  | 'openFiles'
+  | 'workbench'
+  | 'workbenchOpen'
+  | 'workbenchFetched'
+  | 'changesBase'
+  | 'workbenchWidths'
+  | 'followsAgentBrowser'
 > {
   return {
     openFiles: movedKey(s.openFiles, oldId, newId),
     workbench: movedKey(s.workbench, oldId, newId),
     workbenchOpen: movedKey(s.workbenchOpen, oldId, newId),
     workbenchFetched: movedKey(s.workbenchFetched, oldId, newId),
-    changesBase: movedKey(s.changesBase, oldId, newId)
+    changesBase: movedKey(s.changesBase, oldId, newId),
+    workbenchWidths: movedKey(s.workbenchWidths, oldId, newId),
+    followsAgentBrowser: movedKey(s.followsAgentBrowser, oldId, newId)
   }
 }
 
@@ -471,17 +479,14 @@ function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxO
   return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
 }
 
-function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
+function takeOverTab(old: Tab, t: Tab, select: boolean): void {
+  const next = old.asleep ? { ...t, title: old.title || t.title, ghost: old.id } : t
   useStore.setState((s) => ({
-    tabs: s.tabs.map((x) =>
-      x.id === asleep.id ? { ...t, title: asleep.title || t.title, ghost: asleep.id } : x
-    ),
-    ...(select
-      ? shownTab(t.id)
-      : { activeTabId: s.activeTabId === asleep.id ? t.id : s.activeTabId }),
-    ...panelStateMoved(s, asleep.id, t.id)
+    tabs: s.tabs.map((x) => (x.id === old.id ? next : x)),
+    ...(select ? shownTab(t.id) : { activeTabId: s.activeTabId === old.id ? t.id : s.activeTabId }),
+    ...panelStateMoved(s, old.id, t.id)
   }))
-  tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+  tabStateMoved(old.id, t.id, t.sessionId)
 }
 
 // CC§9
@@ -503,10 +508,13 @@ export function noteWakingOutput(tabId: string): void {
   )
 }
 
-function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
-  return t.sessionId
-    ? s.tabs.find((x) => x.asleep && x.sessionId === t.sessionId && x.id !== t.id)
-    : undefined
+function closedTabOfSameSession(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
+  if (!t.sessionId || s.tabs.some((x) => x.id === t.id)) return undefined
+  const closed = s.tabs.filter(
+    (x) =>
+      !x.alive && !restarting.has(x.id) && (lastSessionId.get(x.id) ?? x.sessionId) === t.sessionId
+  )
+  return closed.find((x) => x.asleep) ?? closed[0]
 }
 
 function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
@@ -737,15 +745,15 @@ export const useStore = create<AppState>((set, get) => ({
 
   addTab: (t) => {
     activateOnceSpawned = null
-    const asleep = asleepTabFor(get(), t)
-    if (asleep) return wakeInto(asleep, t, true)
+    const closed = closedTabOfSameSession(get(), t)
+    if (closed) return takeOverTab(closed, t, true)
     set((s) => ({ tabs: [...s.tabs, t], ...shownTab(t.id) }))
   },
   addTabQuiet: (t) => {
-    const asleep = asleepTabFor(get(), t)
-    if (asleep) return wakeInto(asleep, t, false)
     const awaited = activateOnceSpawned === t.id
     if (awaited) activateOnceSpawned = null
+    const closed = closedTabOfSameSession(get(), t)
+    if (closed) return takeOverTab(closed, t, awaited)
     set((s) =>
       s.tabs.some((x) => x.id === t.id)
         ? s
@@ -981,7 +989,9 @@ export const useStore = create<AppState>((set, get) => ({
       }))
       window.api.terminal.kill(oldId, true)
       const failed = (why?: string): void => {
-        if (why && get().tabs.some((x) => x.id === oldId)) get().showToast(why)
+        if (!get().tabs.some((x) => x.id === oldId)) return
+        lastSessionId.set(oldId, resumeId)
+        if (why) get().showToast(why)
         set((s) => ({
           tabs: s.tabs.map((x) =>
             x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
