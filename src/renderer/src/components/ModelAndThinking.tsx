@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, JSX } from 'react'
+import { useState, type InputHTMLAttributes, type JSX } from 'react'
 import type { NamedModel } from '@shared/cronModels'
 import { CRON_EFFORTS, type CronEffort } from '@shared/types'
 
@@ -14,6 +14,20 @@ const EFFORT_LABEL: Record<CronEffort, string> = {
 
 export function effortLabel(effort: CronEffort): string {
   return EFFORT_LABEL[effort]
+}
+
+export function useFieldFocus(): {
+  inputCls(key: string): string
+  focusProps(key: string): { onFocus: () => void; onBlur: () => void }
+} {
+  const [focused, setFocused] = useState('')
+  return {
+    inputCls: (key) => 'cb-input' + (focused === key ? ' focus' : ''),
+    focusProps: (key) => ({
+      onFocus: () => setFocused(key),
+      onBlur: () => setFocused((k) => (k === key ? '' : k))
+    })
+  }
 }
 
 export function ModelAndThinking(p: {
