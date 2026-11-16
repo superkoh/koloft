@@ -125,6 +125,8 @@ export interface LaunchRequest {
 
 type MaybeAsync<T> = T | Promise<T>
 
+export type CarryOn = 'told' | 'undelivered' | 'outlived'
+
 function whenSettled<T>(value: MaybeAsync<T>, then: (settled: T) => void): void {
   if (value instanceof Promise) void value.then(then)
   else then(value)
@@ -157,6 +159,8 @@ export interface RunnerDeps {
   stillWorking(tabId: string): Promise<boolean>
   whatIsLeft(tabId: string, root: string, worktree?: string): Promise<string[]>
   closeForGood(tabId: string, root: string, worktree?: string): Promise<void>
+  tellToCarryOn(tabId: string): Promise<CarryOn>
+  turnUnderWay(tabId: string): boolean
   toast(text: string): void
   notify(title: string, body: string): void
   push(state: CronState): void
@@ -315,6 +319,7 @@ export class CronRunner {
   private inFlight = new Set<string>()
   private launching = new Set<string>()
   private reopening = new Set<string>()
+  private cutOffByTheRestart = new Set<string>()
   private held = new Map<string, Due[]>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
@@ -390,6 +395,7 @@ export class CronRunner {
 
   private dropRun(run: LiveRun): void {
     this.live.delete(run.tabId)
+    this.cutOffByTheRestart.delete(run.tabId)
     this.restartWait(run.jobId)
   }
 
@@ -638,14 +644,31 @@ export class CronRunner {
         startedAt: this.d.now()
       }
       this.live.set(tabId, run)
-      if (run.state === 'done') {
-        if (job.autoClose) run.closing = 'soon'
-        this.armTimer(tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
-      }
+      if (run.state === 'done') this.closeAtTheNextCheck(run, job)
+      else if (run.state === 'running') this.tellToCarryOn(run)
       this.d.store.save(this.jobs)
       this.push()
       return
     }
+  }
+
+  private closeAtTheNextCheck(run: LiveRun, job: CronJob): void {
+    if (job.autoClose) run.closing = 'soon'
+    this.armTimer(run.tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
+  }
+
+  private tellToCarryOn(run: LiveRun): void {
+    const { tabId } = run
+    this.cutOffByTheRestart.add(tabId)
+    const tellingOver = (told: CarryOn): void => {
+      const job = this.byId(run.jobId)
+      if (!this.cutOffByTheRestart.delete(tabId) || this.live.get(tabId) !== run || !job) return
+      if (told === 'outlived' || (told === 'told' && this.d.turnUnderWay(tabId))) return
+      run.state = 'done'
+      this.closeAtTheNextCheck(run, job)
+      this.push()
+    }
+    void this.d.tellToCarryOn(tabId).then(tellingOver, () => tellingOver('undelivered'))
   }
 
   reopeningOver(): void {
@@ -674,7 +697,7 @@ export class CronRunner {
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
     const run = this.live.get(tabId)
-    if (!run) return
+    if (!run || this.cutOffByTheRestart.has(tabId)) return
     let changed = false
     if (
       next === 'waiting' &&

@@ -223,6 +223,7 @@ const DUE_PLUS_WINDOW_FIRST_TICKS_MS = 150_000
 const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
 const CLOSE_RECHECK_MS = 2_000
+const SEVERAL_CLOSE_CHECKS_MS = CLOSE_RECHECK_MS * 4
 const TUI_GIVES_UP_ON_A_QUESTION_MS = 1_500
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
 const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
@@ -854,6 +855,59 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M37: with "Close it" on, a run whose own turn has ended stays open while a session it started is still working, and closes for good once that session’s turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const untilThere = (file: string): string =>
+      `while [ ! -f ${path.join(env.home, file)} ]; do sleep 0.2; done`
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, {
+        name: 'Nightly report',
+        task: `/run koloft session new --model sonnet --effort low --name kid -- hello; ${untilThere('go-run')}`
+      })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+
+      const [run] = await waitForCalls(env, 2)
+      const kidRow = plainRows(page, 'ws-a').filter({ hasText: 'kid' })
+      await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kidTab = await kidRow.getAttribute('data-tab-id')
+      await page.evaluate(([tab, line]) => window.api.terminal.write(tab!, line + '\r'), [
+        kidTab,
+        `/run ${untilThere('go-kid')}`
+      ] as const)
+      await expect(kidRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+      fs.writeFileSync(path.join(env.home, 'go-run'), '')
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — still finishing',
+        { timeout: 60_000 }
+      )
+      await page.waitForTimeout(SEVERAL_CLOSE_CHECKS_MS)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — still finishing'
+      )
+      expect(fs.existsSync(runTree(env.workspaces.a, worktreeOf(run)))).toBe(true)
+
+      fs.writeFileSync(path.join(env.home, 'go-kid'), '')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — closed itself')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('BB-M30: closing a run yourself keeps a folder that holds a file not committed, and its History line says why', async ({
     env
   }) => {
@@ -1154,6 +1208,50 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(dlg).toBeVisible()
       await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 60_000 })
       await expect(cronRows(page, 'ws-a')).toHaveCount(2, { timeout: 60_000 })
+    } finally {
+      await app2.close().catch(() => {})
+    }
+  })
+
+  test('BB-M38: a "Close it" run that Koloft quit on in the middle of its work is told to carry on when the relaunch reopens it, and closes for good once that turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
+    const app1 = await launchApp(env)
+    try {
+      const page = await app1.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: '/busy' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+      await waitNewCall(env, 0)
+      await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+    } finally {
+      await app1.close().catch(() => {})
+    }
+    expect(fs.existsSync(peerLog)).toBe(false)
+
+    const app2 = await launchApp(env)
+    try {
+      const page = await app2.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await expect
+        .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
+          timeout: 60_000
+        })
+        .toContain('Koloft restarted while this scheduled run was working')
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — closed itself')
     } finally {
       await app2.close().catch(() => {})
     }
