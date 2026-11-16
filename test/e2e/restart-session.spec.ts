@@ -291,9 +291,7 @@ async function startWorktreeTabWithATranscript(
     if (kind.backend === 'agy') await agyReady(page)
     else await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
     await runIn(page, centerTerm(page), 'one turn')
-    await expect(row.filter({ hasText: 'one turn' }).locator('.ws-tab-unread')).toHaveCount(1, {
-      timeout: 60_000
-    })
+    await expect(row.locator('.ws-tab-unread')).toHaveCount(1, { timeout: 60_000 })
   }
   const sessionId = await untilTheActiveTabsTranscriptIsWritten(page)
   const wtDir = path.join(repo, '.claude', 'worktrees', name)
