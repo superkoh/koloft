@@ -12,8 +12,7 @@ runs (handlers, React parts) stays in the plugin's own `main/`, `renderer/` and 
 folders and registers itself; it is never put into the manifest. `src/core/` and the rest
 of the app never name a plugin: the one file that names plugins is the list,
 `src/plugins/list.ts`, and core reads only that list. So a text block names no reader: it
-names the slot it fills, and a slot belongs to a text core owns (the session prompt, the
-`koloft` skill) or to a plugin the block's plugin needs (the butler's prompt). A plugin
+names the slot it fills, and core keeps no list of readers. A plugin
 imports core, the `api.ts` of the plugins it says it needs, and itself. Until a test holds
 the manifest's shape, that shape may still change at version 1; once one does, the
 version goes up whenever a manifest written for the old version would no longer mean the
