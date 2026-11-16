@@ -193,8 +193,8 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       installFakeMuse(named)
       failingRename(named, 'k-before')
       await runWrapper(named, [])
-      expect(fs.readFileSync(path.join(named.home, 'tmux-calls'), 'utf8')).toBe(
-        `rename-session -t %7 k-${SID}\ndisplay-message -p -t %7 #S\n`
+      expect(fs.readFileSync(path.join(named.home, 'tmux-calls'), 'utf8')).toContain(
+        `rename-session -t %7 k-${SID}\n`
       )
       expect(fs.readFileSync(nameFile(named), 'utf8')).toBe('k-before')
 

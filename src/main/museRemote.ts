@@ -211,7 +211,7 @@ def bind(sid):
         if subprocess.call(['tmux', 'rename-session', '-t', pane, name], stdout=quiet, stderr=quiet) == 0:
             return
         try:
-            now = subprocess.check_output(['tmux', 'display-message', '-p', '-t', pane, '#S'], stderr=quiet).decode().strip()
+            now = subprocess.check_output(['tmux', 'display-message', '-p', '-t', pane, '#S'], stderr=quiet).decode('utf-8', 'replace').strip()
         except (OSError, subprocess.CalledProcessError):
             now = ''
     if now:
