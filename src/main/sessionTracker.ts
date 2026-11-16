@@ -61,6 +61,7 @@ const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
 const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
 // CC§2
 const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
+const A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS = 60_000
 
 export { encodeCwd }
 
@@ -468,6 +469,8 @@ interface Tracked {
   turns: TurnLog
   replyDone: boolean
   endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
+  stopsBeforeTheirLines: number[]
+  promptSinceLastStop: boolean
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -566,6 +569,8 @@ export class SessionTracker extends SessionRuntime {
       rootPinAwaitingCatchup: false,
       turns: new TurnLog(),
       replyDone: false,
+      stopsBeforeTheirLines: [],
+      promptSinceLastStop: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -597,7 +602,12 @@ export class SessionTracker extends SessionRuntime {
       t.compactingFrom = undefined
       t.idleCompaction = false
     }
-    if (event.type === 'stop') void this.endTurn(tabId)
+    if (event.type === 'prompt' && t) t.promptSinceLastStop = true
+    if (event.type === 'stop') {
+      const hasAPromptOfItsOwn = !!t?.promptSinceLastStop
+      if (t) t.promptSinceLastStop = false
+      void this.endTurn(tabId, hasAPromptOfItsOwn)
+    }
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
@@ -692,19 +702,31 @@ export class SessionTracker extends SessionRuntime {
     this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
-  // CC§2
-  private async endTurn(tabId: string): Promise<void> {
+  // CC§2 CC§21
+  private async endTurn(tabId: string, hasAPromptOfItsOwn: boolean): Promise<void> {
     const t = this.tracked.get(tabId)
     if (!t) return
     await this.parse(t).catch(() => {})
+    if (this.tracked.get(tabId) !== t) return
     const turn = t.turns.open()
-    if (this.tracked.get(tabId) !== t || !turn) return
+    if (turn) this.endOpenTurn(t, turn)
+    else if (t.remote && hasAPromptOfItsOwn) t.stopsBeforeTheirLines.push(Date.now())
+  }
+
+  private endOpenTurn(t: Tracked, turn: TalkTurn): void {
     if (t.replyDone) return this.finishTurn(t, turn)
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = {
       turn,
       deadline: setTimeout(() => this.finishTurn(t, turn), TURN_TEXT_WAIT_MS)
     }
+  }
+
+  private takeStopBeforeItsLines(t: Tracked, turn: TalkTurn): boolean {
+    const kept = t.stopsBeforeTheirLines
+    const now = Date.now()
+    while (kept.length && now - kept[0] >= A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS) kept.shift()
+    return turn.at >= t.bindMs && kept.shift() !== undefined
   }
 
   private finishTurn(t: Tracked, turn: TalkTurn): void {
@@ -1091,6 +1113,7 @@ export class SessionTracker extends SessionRuntime {
     t.replyDone = false
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = undefined
+    t.stopsBeforeTheirLines = []
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -1342,6 +1365,8 @@ export class SessionTracker extends SessionRuntime {
       if (history && history.at < t.bindMs) t.turns.end(history)
       t.caughtUp = true
     }
+    const open = t.turns.open()
+    if (open && this.takeStopBeforeItsLines(t, open)) this.endOpenTurn(t, open)
     return true
   }
 
@@ -1515,7 +1540,10 @@ export class SessionTracker extends SessionRuntime {
     for (const piece of claudeTurnPieces(obj)) {
       if (piece === 'tool') t.replyDone = false
       else {
+        const before = t.turns.open()
         t.turns.add(piece.line, piece.midTurn)
+        if (before && before !== t.turns.open() && this.takeStopBeforeItsLines(t, before))
+          this.finishTurn(t, before)
         t.replyDone = piece.line.who === 'assistant'
       }
     }
