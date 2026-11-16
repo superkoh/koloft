@@ -351,3 +351,9 @@ export function trustsIn(dir: string, ...settings: Record<string, unknown>[]): b
 export function agyTrustsFolder(home: string, dir: string): boolean {
   return trustsIn(dir, readJson(settingsFile(home)))
 }
+
+// ADR-0026 AGY§5
+export function anyAccountHomeTrusts(home: string, dir: string): boolean {
+  const homes = path.dirname(home)
+  return fs.readdirSync(homes).some((name) => agyTrustsFolder(path.join(homes, name), dir))
+}
