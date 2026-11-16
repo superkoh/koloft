@@ -1,5 +1,6 @@
 import { encodeCwd } from '@shared/cwdKey'
-import { problemOf, type RunResult } from './ssh'
+import { mapAtMost } from '../mapAtMost'
+import { problemOf, refusedByAFullMaster, type RunResult } from './ssh'
 import {
   heartbeatCmd,
   hookBellCmd,
@@ -44,6 +45,9 @@ const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
 const ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS = 300
 const A_WORKING_BELL_LIVES_AT_LEAST_MS = 10_000
 const BELL_TRIED_AGAIN_AFTER_A_QUICK_END_MS = 60_000
+const EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS = 2
+
+const failedRun = (e: unknown): RunResult => ({ code: null, stdout: '', stderr: String(e) })
 
 export interface ExtraPull {
   from: string
@@ -90,6 +94,7 @@ interface HostState {
   dueAt: number
   fastUntil: number
   pulled: Record<string, string | undefined>
+  pullsOneAtATime: boolean
   running: boolean
   again: boolean
   waitingForNextPull: (() => void)[]
@@ -316,6 +321,7 @@ export class RemoteSync {
           dueAt: 0,
           fastUntil: 0,
           pulled: {},
+          pullsOneAtATime: false,
           running: false,
           again: false,
           waitingForNextPull: [],
@@ -381,7 +387,7 @@ export class RemoteSync {
             target.shellTabs
           )
         )
-        .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
+        .catch(failedRun)
       let mirrors: MirrorStamps = { extras: [] }
       if (hb.code === 0) {
         st.connected = true
@@ -418,18 +424,33 @@ export class RemoteSync {
         ): Promise<RunResult | undefined> => {
           if (stamp === NO_FILES_THERE) return undefined
           if (stamp !== undefined && st.pulled[which] === stamp) return undefined
-          const r = await this.deps.rsync(host, remoteDir, localDir, flags)
+          const r = await this.deps.rsync(host, remoteDir, localDir, flags).catch(failedRun)
           st.pulled[which] = r.code === 0 ? stamp : undefined
           return r
         }
         const slugs = slugsNow()
-        const transcripts = await pull(
+        const transcriptsPulled = pull(
           'transcripts',
           mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
           REMOTE_CLAUDE_PROJECTS,
           target.mirrorProjectsRoot,
           projectFlags(slugs)
         )
+        const pullExtras = (atOnce: number): Promise<(RunResult | undefined)[]> =>
+          mapAtMost([...extras.keys()], atOnce, (i) =>
+            pull(
+              `extra ${extras[i].from}`,
+              mirrors.extras[i],
+              extras[i].from,
+              extras[i].to,
+              extras[i].flags
+            )
+          )
+        // PLATFORM§33 PLATFORM§34
+        const extrasPulled = st.pullsOneAtATime
+          ? undefined
+          : pullExtras(EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS)
+        const transcripts = await transcriptsPulled
         const hooks = await pull(
           'hooks',
           mirrors.hooks,
@@ -437,17 +458,14 @@ export class RemoteSync {
           target.mirrorHookDir,
           HOOK_FLAGS
         )
-        const pulls = [transcripts, hooks]
-        for (const [i, extra] of extras.entries()) {
-          const r = await pull(
-            `extra ${extra.from}`,
-            mirrors.extras[i],
-            extra.from,
-            extra.to,
-            extra.flags
-          )
-          if (!extra.failsQuietly) pulls.push(r)
-        }
+        const extraResults = await (extrasPulled ?? pullExtras(1))
+        if ([transcripts, hooks, ...extraResults].some((r) => r && refusedByAFullMaster(r)))
+          st.pullsOneAtATime = true
+        const pulls = [
+          transcripts,
+          hooks,
+          ...extraResults.filter((_, i) => !extras[i].failsQuietly)
+        ]
         const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
         if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)

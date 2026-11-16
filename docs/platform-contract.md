@@ -2003,7 +2003,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-09-29 on an Ubuntu 24.04 box with the stock `sshd_config`: with 14 sessions
   held, the 15th printed that line and then `Authenticated … using "publickey"`; with
   10 held, the 11th still rode the master, so the real limit there was not pinned
-  down.)
+  down.) On a password login with no `MaxSessions` line the limit is exactly 10: with
+  the master opened by a password and nine more `sleep` sessions held on it (Koloft's
+  own ssh options), the 11th `BatchMode` command, and an rsync over it, printed that
+  line, then `Permission denied (password).`, and exited 255; a command on the
+  `%C-spill` master failed the same way, as it has to log in too. Each session showed
+  on the machine as a child of the one `sshd: puser@notty` process. (2026-11-15,
+  OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh
+  lab image reached on a published port, a scratch node script.)
 - **A reverse forward can be added to a live ControlMaster.** `ssh -O forward -R
   0:127.0.0.1:<port> host` prints the port sshd picked on **stdout** and exits 0; the
   machine listens on its 127.0.0.1 and ::1 only, and normal commands keep riding the
@@ -2117,6 +2124,45 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   macOS, and on Debian 12 under bash, tcsh and fish. (2026-09-30: this Mac's openrsync
   through a stand-in ssh that logs its argv; Debian 12 `node:22-bookworm-slim`
   containers.)
+- **Each rsync over a ControlMaster costs several round trips, so pulls run at once end
+  far sooner than the same pulls one after another**, and nothing broke with them
+  together. A sync round (the real heartbeat, then the transcript, hook and agy-brain
+  pulls, each with one file appended so all three were due; 15 rounds a way, medians),
+  one after another against all at once: 66 → 35 ms with no added delay, 978 → 389 ms
+  with 30 ms added round trip, 2877 → 1111 ms with 100 ms. Against the transcripts and
+  then the hooks in turn, with the brain beside them: 67 → 49, 999 → 693, 2841 →
+  1959 ms. With all seven pulls a round can carry (adding Codex `sessions` and
+  `archived_sessions`, Muse `sessions`, agy `conversations`; 10 rounds, 30 ms): 2327 →
+  411 ms all at once, 2216 → 1008 ms with the transcripts then the hooks in turn and
+  the extras two at a time beside them. Every pull exited 0 and the mirrored transcript
+  matched the machine's size. Each pull at once is one more session on the master (§33): on a
+  publickey login with `MaxSessions 2` (the hook bell plus three pulls is four
+  sessions) nothing failed, the pulls past the limit made their own logins, and the
+  round took longer together than one after another (77 → 136 ms with no added delay).
+  (2026-11-13: this Mac's openrsync and
+  OpenSSH_10.3p1 to rsync 3.2.7 in the e2e sshd image, reached directly on a published
+  port with Koloft's own ssh options, delay added with `tc netem` in the container; a
+  scratch node script.)
+- **A password machine with the default `MaxSessions` 10 reaches its limit at six to
+  seven tabs, and three pulls at once reach it sooner.** A built Koloft: one Codex
+  tab, then Claude Code tabs added one by one, the transcripts and both Codex rollout
+  folders kept due by a loop appending to them, every `BatchMode` ssh logged by a
+  stand-in `ssh`, the machine's dot read every 250 ms in the second run of each. The
+  machine held one session per tab and one for the hook bell (one more at times with
+  one pull at a time, not explained). Each refusal moved the background commands to
+  the `%C-spill` master, where every one failed with `Permission denied (password)`
+  until a failure cleared the move, so the dot read "not connected … sign in there"
+  in between.
+
+  | Pulls | Tabs that ran clean | Sixth tab | Seventh tab | Eighth tab |
+  |---|---|---|---|---|
+  | one at a time (`main`), 2 runs | 1–5 | run 2: dot "not connected" for 2.5 s while it opened, then clean | run 1: a few refusals while it opened, then connected; run 2: 12 of 20 commands failed in 20 s, dot "not connected" at the end | did not open |
+  | three at once (no fallback), 1 run | 1–6 | clean | 19 of 54 commands failed in 20 s, dot "not connected" | did not open |
+  | three at once until a pull is refused, then one at a time, 2 runs | 1–5 | run 1: one pull and one command failed; run 2: dot "not connected" twice in 7.5 s; then one at a time | run 1: connected, 35 pulls with none failed; run 2: did not open | did not open (run 1) |
+
+  (2026-11-15: this Mac's openrsync and OpenSSH_10.3p1 to the e2e sshd image through
+  its jump host, Koloft built from #1868 and with `main`'s `sync.ts`; a scratch
+  Playwright spec.)
 
 ## §35 tmux
 

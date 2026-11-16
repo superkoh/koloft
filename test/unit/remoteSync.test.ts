@@ -511,15 +511,130 @@ it('pulls an extra folder (agy’s brain) only when its own stamp changed, with 
   await tick(1)
   expect(rsyncs).toEqual([
     'devbox .claude/projects',
-    'devbox .koloft/hook-sessions',
-    'devbox .gemini/brain'
+    'devbox .gemini/brain',
+    'devbox .koloft/hook-sessions'
   ])
-  expect(rsyncFlags[2]).toEqual(['-m'])
+  expect(rsyncFlags[1]).toEqual(['-m'])
   expect(scriptSent(runsFull[0])).toContain("'1' '.gemini/brain'")
   expect(await pulledInRound()).toEqual([])
 
   brain = '6 51'
   expect(await pulledInRound()).toEqual(['devbox .gemini/brain'])
+})
+
+it('copies the extra folders two at a time beside the transcripts, the hooks only once the transcripts are in, and follows the copies once all have ended, a copy that threw included and tried again next round', async () => {
+  sync.stop()
+  const started: string[] = []
+  const finish = new Map<string, () => void>()
+  const followed: string[] = []
+  sync = new RemoteSync({
+    run: () =>
+      Promise.resolve(
+        ok('transcripts 1 10\nhooks 7 70\nextra 5 50\nextra 6 60\nextra 8 80\nk-aaa\n')
+      ),
+    rsync: (_host, remoteDir) => {
+      started.push(remoteDir)
+      return new Promise((done, fail) =>
+        finish.set(remoteDir, () =>
+          remoteDir === '.muse/sessions' ? fail(new Error('EACCES: mkdir')) : done(ok(''))
+        )
+      )
+    },
+    listen: () => () => {},
+    targets: () => [target],
+    onChange: () => {},
+    onHooksPulled: (host) => followed.push(host)
+  })
+  target.extraPulls = [
+    { from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] },
+    { from: '.muse/sessions', to: '/ud/remote/devbox/muse', flags: [] },
+    { from: '.codex/sessions', to: '/ud/remote/devbox/codex', flags: [] }
+  ]
+  sync.start()
+  await tick(1)
+  expect(started).toEqual(['.claude/projects', '.gemini/brain', '.muse/sessions'])
+
+  finish.get('.muse/sessions')?.()
+  await tick(1)
+  expect(started.at(-1)).toBe('.codex/sessions')
+
+  finish.get('.claude/projects')?.()
+  await tick(1)
+  expect(started.at(-1)).toBe('.koloft/hook-sessions')
+
+  finish.get('.koloft/hook-sessions')?.()
+  finish.get('.gemini/brain')?.()
+  await tick(1)
+  expect(followed).toEqual([])
+
+  finish.get('.codex/sessions')?.()
+  await tick(1)
+  expect(followed).toEqual(['devbox'])
+  expect(sync.problem('devbox')).toContain('EACCES')
+
+  const before = started.length
+  await tick(2000)
+  expect(started.slice(before)).toEqual(['.muse/sessions'])
+})
+
+it('once a copy is refused by a full ssh master, that machine copies one folder at a time from the next round on: the transcripts, then the hooks, then each extra folder', async () => {
+  sync.stop()
+  const started: string[] = []
+  let inFlight = 0
+  let mostAtOnce = 0
+  let round = 0
+  let refused = false
+  sync = new RemoteSync({
+    run: () => {
+      round++
+      return Promise.resolve(
+        ok(
+          `transcripts ${round} 10\nhooks ${round} 70\nextra ${round} 50\nextra ${round} 60\nk-aaa\n`
+        )
+      )
+    },
+    rsync: (_host, remoteDir) => {
+      started.push(remoteDir)
+      mostAtOnce = Math.max(mostAtOnce, ++inFlight)
+      const answer: RunResult = refused
+        ? ok('')
+        : {
+            code: 255,
+            stdout: '',
+            stderr:
+              'mux_client_request_session: session request failed: Session open refused by peer\npuser@devbox: Permission denied (password).\n'
+          }
+      refused = true
+      return new Promise((done) =>
+        setTimeout(() => {
+          inFlight--
+          done(answer)
+        }, 50)
+      )
+    },
+    listen: () => () => {},
+    targets: () => [target],
+    onChange: () => {}
+  })
+  target.extraPulls = [
+    { from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] },
+    { from: '.muse/sessions', to: '/ud/remote/devbox/muse', flags: [] }
+  ]
+  sync.start()
+  await tick(500)
+  expect(mostAtOnce).toBe(3)
+
+  started.length = 0
+  mostAtOnce = 0
+  await tick(2500)
+  expect(started).toEqual([
+    '.claude/projects',
+    '.koloft/hook-sessions',
+    '.gemini/brain',
+    '.muse/sessions'
+  ])
+  await tick(5000)
+  expect(mostAtOnce).toBe(1)
 })
 
 it('pulls the transcripts again when the pinned path resolves to another folder, even if the stamp matches', async () => {
