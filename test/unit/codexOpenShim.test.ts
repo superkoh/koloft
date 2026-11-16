@@ -208,6 +208,45 @@ describe('Codex open shim dotfile folder', () => {
       }
     }
   })
+
+  it("lets an older Koloft started from one of its Codex tabs, whose wrapper sources this one's files as the user's, put its own shim first", () => {
+    const home = path.join(base, 'home-older-inner')
+    const ran = path.join(home, 'ran.txt')
+    fs.mkdirSync(home, { recursive: true })
+    for (const name of ['.zshenv', '.zprofile', '.zlogin'])
+      fs.writeFileSync(path.join(home, name), `echo ${name} >> ${ran}\n`)
+    const outer = writeOpenShim(
+      path.join(base, 'outer-of-older'),
+      ownedByThisRun(randomUUID()),
+      undefined
+    )
+    const olderShim = path.join(base, 'older-inner', ownedByThisRun(randomUUID()))
+    const olderZdot = path.join(olderShim, 'zdot')
+    fs.mkdirSync(olderZdot, { recursive: true })
+    fs.writeFileSync(path.join(olderShim, 'open'), '#!/bin/sh\n', { mode: 0o755 })
+    for (const name of ['.zshenv', '.zprofile', '.zshrc', '.zlogin']) {
+      const source = `[ -f '${outer.zdotDir}'/${name} ] && . '${outer.zdotDir}'/${name}\n`
+      fs.writeFileSync(
+        path.join(olderZdot, name),
+        name === '.zprofile' ? `${source}export PATH='${olderShim}':"$PATH"\n` : source
+      )
+    }
+    try {
+      const res = spawnSync('/bin/zsh', ['-lc', 'command -v open'], {
+        env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: olderZdot },
+        encoding: 'utf8'
+      })
+      expect(res.stderr).toBe('')
+      expect(res.stdout.trim()).toBe(path.join(olderShim, 'open'))
+      expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean)).toEqual([
+        '.zshenv',
+        '.zprofile',
+        '.zlogin'
+      ])
+    } finally {
+      removeOpenShim(outer)
+    }
+  })
 })
 
 describe('Codex open shim BASH_ENV file', () => {

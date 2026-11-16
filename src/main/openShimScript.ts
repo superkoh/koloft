@@ -98,6 +98,7 @@ exit 0
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin', '.zlogout']
 const ZSH_FILES_AFTER_PATH_HELPER = ['.zprofile', '.zshrc', '.zlogin']
 const USER_ZDOTDIR_VAR = 'koloft_user_zdotdir'
+const FOUND_ZDOTDIR_VAR = 'koloft_found_zdotdir'
 
 export function unlessInAKoloftRunsShim(file: string | undefined): string | undefined {
   return file && OPEN_SHIM_FOLDER.test(path.basename(path.dirname(file))) ? undefined : file
@@ -112,13 +113,16 @@ function zdotFile(
 ): string {
   const own = `"\${ZDOTDIR:-$HOME}/${name}"`
   return [
+    `${FOUND_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
     ...(name === '.zshenv' ? [`${USER_ZDOTDIR_VAR}=${userZdotdir ? shq(userZdotdir) : "''"}`] : []),
     `if [ -n "$${USER_ZDOTDIR_VAR}" ]; then ZDOTDIR="$${USER_ZDOTDIR_VAR}"; else unset ZDOTDIR; fi`,
     `[ -f ${own} ] && . ${own}`,
     `${USER_ZDOTDIR_VAR}="\${ZDOTDIR-}"`,
-    `export ZDOTDIR=${shq(zdotDir)}`,
+    `export ZDOTDIR="$${FOUND_ZDOTDIR_VAR}"`,
     ...(ZSH_FILES_AFTER_PATH_HELPER.includes(name)
-      ? [`path=(${shq(shimDir)} \${path:#${shq(shimDir)}})`]
+      ? [
+          `if [ "$ZDOTDIR" = ${shq(zdotDir)} ]; then path=(${shq(shimDir)} \${path:#${shq(shimDir)}}); fi`
+        ]
       : []),
     ''
   ].join('\n')

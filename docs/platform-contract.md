@@ -77,11 +77,15 @@ method. A recheck adds its date, version and command to the bullet.
   `~/.config/zsh/.zprofile`, and the folder is never put first. The wrapper holds when
   each of its files, `.zshenv` included, first gives `ZDOTDIR` the value zsh itself would
   have there (the user's folder, or unset), sources `${ZDOTDIR:-$HOME}/<file>`,
-  remembers what that file left in `ZDOTDIR`, and then exports `ZDOTDIR` back to itself.
-  So `ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"` and `unset ZDOTDIR` in `~/.zshenv` both
+  remembers what that file left in `ZDOTDIR`, and then exports `ZDOTDIR` back to what it
+  held when the file began: itself when zsh read the file, or the folder of another
+  wrapper that sourced it as the user's (a wrapper exporting itself there sends zsh's
+  next file to it, past the other wrapper's own). So
+  `ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"` and `unset ZDOTDIR` in `~/.zshenv` both
   lead on to the files zsh would read. A user `.zlogin` or `.zshrc` can rebuild `PATH`
   after `.zprofile`, so the wrapper puts the folder first again at the end of each of
-  the three (`path=(<folder> ${path:#<folder>})`, which also drops the earlier copy).
+  the three (`path=(<folder> ${path:#<folder>})`, which also drops the earlier copy),
+  only when zsh read the file itself.
   (2026-11-15, macOS 27.0 zsh 5.9, in real Codex turns, CODEX§12, and
   `codexOpenShim.test.ts`.)
 - **`BASH_ENV` puts a folder first again in `bash -lc`.** A login bash reads
