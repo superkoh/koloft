@@ -78,6 +78,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `/responses` model streaming the answer in 4-line pieces 60 ms apart, then 60 wheel
   notches and 8 PageUp/PageDown. Not run: macOS muse, muse 1.4.14. A remote tab's muse
   sees `TERM_PROGRAM=tmux` instead (§17).
+- **A file path in a reply is plain text, and muse breaks long lines itself.** A reply
+  holding `src/util.ts:7`, a bare `src/app.ts`, `[app.ts](<abs>/src/app.ts:42)`,
+  `[util](src/util.ts:7)` and a long relative and absolute path wrote 0 OSC 8 links,
+  with `TERM_PROGRAM` unset and with `Apple_Terminal`. A markdown file link drops its
+  label and shows only its target, coloured, made relative to the folder
+  (`src/app.ts:42`). Each row is placed with `ESC[<row>;1H`, and a path wider than the
+  line is cut at the last column, so the terminal holds two unwrapped lines. 2026-11-14,
+  muse 1.4.11 (`koloft-muse-probe-1411`, Linux arm64, no network), `--base-url` at a
+  fake `/responses` model, `--trust-workspace`, a python pty at 100×40; 1 run each.
 - **Those unframed redraws are small, and none was shown half drawn in a Koloft
   terminal.** The same scroll recorded again (2026-11-09, same image and fake model,
   `TERM_PROGRAM=Apple_Terminal`): run straight in the pty (3 runs) muse sent 228–231

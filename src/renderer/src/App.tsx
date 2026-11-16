@@ -1766,6 +1766,7 @@ export default function App(): JSX.Element {
                           focusSignal={tuiFocus}
                           maxCols={CENTER_TERMINAL_MAX_COLS}
                           copiesToClipboard={isRemoteKey(t.cwd)}
+                          fileLinksFrom={{ tabId: t.id, cwd: t.cwd }}
                         />
                       </div>
                     ),
@@ -1784,6 +1785,7 @@ export default function App(): JSX.Element {
                         scrollbar={false}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
                         copiesToClipboard={isRemoteKey(t.cwd)}
+                        fileLinksFrom={{ tabId: t.id, cwd: t.cwd }}
                         onUserInput={
                           isSessionKind(t.kind)
                             ? () => window.api.sessions.noteActivity(t.id)

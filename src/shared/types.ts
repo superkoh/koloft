@@ -1302,6 +1302,7 @@ export interface KoloftApi {
   fs: {
     listDir(path: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]>
     dirExists(path: string): Promise<boolean>
+    fileExists(path: string): Promise<boolean>
     search(
       path: string,
       query: string,

@@ -1,20 +1,24 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import type { Terminal } from '@xterm/xterm'
+import { formatRemoteKey } from '@shared/remoteKey'
 import type { SessionInfo } from '@shared/types'
 
 const setState = vi.fn()
 const osOpen = vi.fn()
+const fileExists = vi.fn((_file: string) => Promise.resolve(true))
 
 vi.stubGlobal('window', {
   api: {
     workbench: { setState },
     preview: { osOpen },
     settings: { set: vi.fn() },
-    terminal: { kill: vi.fn() }
+    terminal: { kill: vi.fn() },
+    fs: { fileExists }
   }
 })
 
 const { useStore } = await import('../../src/renderer/src/store')
-const { activateTerminalLink } = await import('../../src/renderer/src/termLinks')
+const { activateTerminalLink, fileLinkProvider } = await import('../../src/renderer/src/termLinks')
 
 const SID = 'sess-1'
 const TAB = 'pty-1'
@@ -57,5 +61,61 @@ describe('activateTerminalLink: a URL clicked in the terminal is a user open (§
       'https://example.com/pr/1'
     ])
     expect(osOpen).not.toHaveBeenCalled()
+  })
+})
+
+const COLS = 80
+const REMOTE_REST_MS = 100
+
+function terminalShowing(rows: string[]): Terminal {
+  const lineOf = (text: string) => {
+    const chars = [...text.padEnd(COLS)]
+    const cell = { x: 0, getWidth: () => 1, getChars: () => chars[cell.x] }
+    return {
+      length: COLS,
+      getCell: (x: number) => {
+        cell.x = x
+        return cell
+      },
+      translateToString: (trim?: boolean) => (trim ? text : text.padEnd(COLS))
+    }
+  }
+  return {
+    cols: COLS,
+    buffer: {
+      active: { getLine: (i: number) => (rows[i] === undefined ? undefined : lineOf(rows[i])) }
+    }
+  } as unknown as Terminal
+}
+
+describe('fileLinkProvider: when a hovered row is looked up', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    fileExists.mockClear()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('in a local tab, asks at once, with no rest on the row', async () => {
+    const term = terminalShowing(['see src/local-at-once.ts:3'])
+    fileLinkProvider(term, () => ({ tabId: 'pty-local', cwd: '/ws' })).provideLinks(1, () => {})
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fileExists).toHaveBeenCalledWith('/ws/src/local-at-once.ts')
+  })
+
+  it('in a remote tab, asks only once the mouse has rested 100 ms on a row, and never asks a row it left sooner', async () => {
+    const term = terminalShowing(['see src/remote-left.ts:3', 'see src/remote-rested.ts:4'])
+    const provider = fileLinkProvider(term, () => ({
+      tabId: 'pty-remote',
+      cwd: formatRemoteKey('box', '/home/u/p')
+    }))
+    provider.provideLinks(1, () => {})
+    await vi.advanceTimersByTimeAsync(REMOTE_REST_MS / 2)
+    provider.provideLinks(2, () => {})
+    await vi.advanceTimersByTimeAsync(REMOTE_REST_MS - 1)
+    expect(fileExists).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fileExists.mock.calls).toEqual([
+      [formatRemoteKey('box', '/home/u/p/src/remote-rested.ts')]
+    ])
   })
 })
