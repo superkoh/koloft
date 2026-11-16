@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'child_process'
 import fs from 'fs'
 import readline from 'readline'
+import { pipeline, Transform, type Readable, type TransformCallback } from 'stream'
 
 // PLATFORM§3
 export function defaultControlDir(): string {
@@ -40,6 +41,10 @@ export function sshOptions(controlDir: string, batch: boolean, master = SHARED_M
 
 const MASTER_FULL = 'Session open refused by peer'
 
+export function refusedByAFullMaster(r: { stderr: string }): boolean {
+  return r.stderr.includes(MASTER_FULL)
+}
+
 const spilledHosts = new Set<string>()
 
 export function backgroundOptions(host: string, controlDir: string): string[] {
@@ -54,7 +59,7 @@ export function sshLinkBroke(r: { code: number | null }): boolean {
 
 // PLATFORM§33
 function noteMasterRoom<R extends { code: number | null; stderr: string }>(host: string, r: R): R {
-  if (r.stderr.includes(MASTER_FULL)) spilledHosts.add(host)
+  if (refusedByAFullMaster(r)) spilledHosts.add(host)
   else if (r.code === SSH_LINK_BROKE_EXIT) spilledHosts.delete(host)
   return r
 }
@@ -69,11 +74,11 @@ export function needsSignIn(r: { code: number | null; stderr: string }): boolean
 }
 
 export function machineOutOfReach(r: { code: number | null; stderr: string }): boolean {
-  return r.code === SSH_LINK_BROKE_EXIT && !needsSignIn(r) && !r.stderr.includes(MASTER_FULL)
+  return r.code === SSH_LINK_BROKE_EXIT && !needsSignIn(r) && !refusedByAFullMaster(r)
 }
 
 export function problemOf(r: { code: number | null; stderr: string }): string {
-  if (r.stderr.includes(MASTER_FULL))
+  if (refusedByAFullMaster(r))
     return 'Too many tabs share one connection to this machine (its sshd MaxSessions) — close some, or raise MaxSessions there'
   if (SHELL_PRINTS_AT_LOGIN.test(r.stderr))
     return "This machine's shell prints text when it starts (see ~/.bashrc there); session sync needs it to print nothing"
@@ -89,11 +94,32 @@ export function problemOf(r: { code: number | null; stderr: string }): string {
 }
 
 export const ANSWER_STARTS = 'koloft-answer-starts-here'
+const ANSWER_LINE = `${ANSWER_STARTS}\n`
+export const ECHO_THE_MARK = `echo ${ANSWER_STARTS}; `
 
 // PLATFORM§33
 export function answerOf(remoteCmd: string, stdout: Buffer): Buffer {
-  const at = remoteCmd.includes(ANSWER_STARTS) ? stdout.indexOf(`${ANSWER_STARTS}\n`) : -1
-  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
+  const at = remoteCmd.includes(ANSWER_STARTS) ? stdout.indexOf(ANSWER_LINE) : -1
+  return at < 0 ? stdout : stdout.subarray(at + ANSWER_LINE.length)
+}
+
+// PLATFORM§33
+export function answerStreamOf(remoteCmd: string, stdout: Readable): Readable {
+  if (!remoteCmd.includes(ANSWER_STARTS)) return stdout
+  let markMayStartIn: Buffer | null = Buffer.alloc(0)
+  const transform = (chunk: Buffer, _: unknown, done: TransformCallback): void => {
+    if (!markMayStartIn) return done(null, chunk)
+    const seen = Buffer.concat([markMayStartIn, chunk])
+    const at = seen.indexOf(ANSWER_LINE)
+    if (at < 0) {
+      markMayStartIn = seen.subarray(Math.max(0, seen.length - ANSWER_LINE.length + 1))
+      return done()
+    }
+    markMayStartIn = null
+    const answer = seen.subarray(at + ANSWER_LINE.length)
+    done(null, answer.length ? answer : undefined)
+  }
+  return pipeline(stdout, new Transform({ transform }), () => {})
 }
 
 export interface RunResult {
@@ -181,17 +207,23 @@ export function runSshBytes(
   remoteCmd: string,
   opts: { controlDir: string; timeoutMs?: number; input?: Buffer; maxBuffer?: number }
 ): Promise<BytesResult> {
+  const sent = markedFirst(remoteCmd)
   const args = [
     ...(opts.input ? [] : ['-n']),
     ...backgroundOptions(host, opts.controlDir),
     host,
-    remoteCmd
+    sent
   ]
   return runBytes('ssh', args, {
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(remoteCmd, r.stdout) }))
+  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerOf(sent, r.stdout) }))
+}
+
+// PLATFORM§33
+function markedFirst(remoteCmd: string): string {
+  return remoteCmd.includes(ECHO_THE_MARK) ? remoteCmd : `${ECHO_THE_MARK}${remoteCmd}`
 }
 
 const STDERR_TAIL_KEPT = 4096
@@ -203,11 +235,16 @@ export function listenOverSsh(
   onLine: (line: string) => void,
   onEnd: () => void
 ): () => void {
-  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, remoteCmd], {
+  const sent = markedFirst(remoteCmd)
+  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, sent], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
   let stderr = ''
-  readline.createInterface({ input: child.stdout }).on('line', onLine)
+  let answering = false
+  readline.createInterface({ input: child.stdout }).on('line', (line) => {
+    if (answering) onLine(line)
+    else answering = line.endsWith(ANSWER_STARTS)
+  })
   child.stderr
     .setEncoding('utf8')
     .on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-STDERR_TAIL_KEPT)))

@@ -28,8 +28,9 @@ import {
 } from '../claudeTrust'
 import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
+import { pictureFolderIn } from '@shared/pastedPictures'
 import { listSkills, type SkillFs } from '../skillList'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
@@ -46,7 +47,7 @@ const skillFs: SkillFs = {
   }
 }
 
-const GIT_CALL_TIMEOUT_MS = 5000
+export const GIT_CALL_TIMEOUT_MS = 5000
 export function localGitOut(
   cwd: string,
   args: string[],
@@ -121,6 +122,11 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
   const agentPlugin = d.agentPlugin()
+  const prompt =
+    agentPlugin && !conductor
+      ? (spec.projectRules && projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
+        path.join(agentPlugin, AGENT_PROMPT_FILE)
+      : undefined
   return {
     ok: true,
     spawnCwd: cwd,
@@ -135,7 +141,11 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
     extraEnv: {
       // CC§9
       ...(spec.firstPrompt !== undefined || spec.name
-        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
+        ? {
+            KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '',
+            KOLOFT_SESSION_NAME: spec.name ?? '',
+            KOLOFT_PICTURE_FOLDER: pictureFolderIn(spec.firstPrompt ?? '')
+          }
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
       KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
@@ -145,7 +155,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
+            KOLOFT_AGENT_PROMPT: prompt
           }
         : {})
     }
@@ -180,6 +190,11 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     listDir,
     dirExists,
     dirExistsOrThrow: dirExists,
+    fileExists: (file) =>
+      fs.promises.stat(file).then(
+        (st) => st.isFile(),
+        () => false
+      ),
     makeDir: (dir) =>
       fs.promises.mkdir(dir).then(
         () => true,
@@ -204,7 +219,7 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     readBytes: (p) => fs.promises.readFile(p),
     openForEdit: (p) => openForEdit(p),
     writeText: (p, text, expect, opts) => writeText(p, text, expect, opts),
-    createFile: async (dir, name) => createFile(dir, name),
+    createFile,
     watchDir,
     unwatchDir,
     watchFile: (p, onChange) =>

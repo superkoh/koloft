@@ -1,8 +1,8 @@
 import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose, runInTerminal } from './helpers/app'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import { test, expect, launchApp, quitAndClose, runInTerminal, triggerRestart } from './helpers/app'
 import {
   agySessionCalls,
   E2E_CLAUDE_ACCOUNT,
@@ -29,6 +29,7 @@ import {
   runIn,
   setNextSessionTitle,
   startSessionIn,
+  termIds,
   waitBooted,
   waitForCalls,
   wsRows,
@@ -99,16 +100,6 @@ function normalizeAccelerator(accel: string): string {
     .join('+')
 }
 
-async function triggerRestart(app: ElectronApplication, times = 1): Promise<void> {
-  await app.evaluate(({ Menu }, count) => {
-    for (let i = 0; i < count; i++) {
-      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
-      if (!item) throw new Error('no application-menu item with id "restart-session"')
-      item.click()
-    }
-  }, times)
-}
-
 // PLATFORM§6
 async function waitForShortcutsReady(page: Page): Promise<void> {
   await page.waitForFunction(
@@ -163,6 +154,31 @@ async function startClaudeTab(
   await waitBooted(page)
   await startSessionIn(page, opts.wsName ?? 'ws-a')
   await expect(page.locator('.ws-tab-title', { hasText: title })).toBeVisible({ timeout: 40_000 })
+}
+
+function gitWorkspaceA(env: E2EEnv): string {
+  const ws = env.workspaces.a
+  gitInit(ws)
+  fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n')
+  gitCommitAll(ws)
+  return ws
+}
+
+async function startWorktreeSession(
+  page: Page,
+  env: E2EEnv,
+  name: string
+): Promise<{ row: Locator; first: ClaudeCall; wtDir: string }> {
+  await waitBooted(page)
+  const dlg = await openWorktreeSession(page, 'ws-a')
+  await dlg.getByRole('textbox').click()
+  await page.keyboard.type(name)
+  await page.keyboard.press('Enter')
+  await expect(dlg).toHaveCount(0)
+  const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
+  await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+  const [first] = await waitForCalls(env, 1)
+  return { row, first, wtDir: path.join(env.workspaces.a, '.claude', 'worktrees', name) }
 }
 
 async function backAfterRelaunch(page: Page, title: string): Promise<void> {
@@ -652,23 +668,11 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         env
       }) => {
         test.setTimeout(180_000)
-        const ws = env.workspaces.a
-        gitInit(ws)
-        fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n')
-        gitCommitAll(ws)
+        const ws = gitWorkspaceA(env)
         const { app, page } = await launch(env)
         try {
-          await waitBooted(page)
-          const dlg = await openWorktreeSession(page, 'ws-a')
-          await dlg.getByRole('textbox').click()
-          await page.keyboard.type('gone')
-          await page.keyboard.press('Enter')
-          await expect(dlg).toHaveCount(0)
-          const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
-          await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
-          const [first] = await waitForCalls(env, 1)
+          const { first, wtDir } = await startWorktreeSession(page, env, 'gone')
 
-          const wtDir = path.join(ws, '.claude', 'worktrees', 'gone')
           deleteTree(ws, wtDir)
           expect(fs.existsSync(wtDir)).toBe(false)
           await triggerRestart(app)
@@ -678,6 +682,52 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
           expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(wtDir))
           await expect(page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
           await backAfterRelaunch(page, SESSION_TITLE)
+        } finally {
+          await app.close().catch(() => {})
+        }
+      })
+    }
+
+    for (const via of ['the restart', 'its row, after cancelling the restart']) {
+      test(`T18: when the deleted worktree cannot be rebuilt, "Resume in main without isolation" from ${via} resumes the same session in the same tab, leaving no dead one beside it`, async ({
+        env
+      }) => {
+        test.setTimeout(180_000)
+        const ws = gitWorkspaceA(env)
+        const { app, page } = await launch(env)
+        try {
+          const { row, first, wtDir } = await startWorktreeSession(page, env, 'locked')
+          expect(await termIds(page)).toHaveLength(1)
+
+          execFileSync('git', ['-C', ws, 'worktree', 'lock', wtDir])
+          fs.rmSync(wtDir, { recursive: true, force: true })
+          await triggerRestart(app)
+
+          const escape = page.locator('.modal.lifecycle-modal')
+          await expect(escape.locator('.modal-header')).toHaveText(
+            'Could not rebuild the worktree',
+            {
+              timeout: 30_000
+            }
+          )
+          if (via !== 'the restart') {
+            await escape.getByRole('button', { name: 'Cancel' }).click()
+            await expect(escape).toHaveCount(0)
+            await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+            await row.click()
+            await expect(escape.locator('.modal-header')).toHaveText(
+              'Could not rebuild the worktree',
+              { timeout: 30_000 }
+            )
+          }
+          await escape.getByRole('button', { name: 'Resume in main without isolation' }).click()
+
+          const calls = await waitForCalls(env, 2, 60_000)
+          expect(resumedId(calls[1])).toBe(first.sessionId)
+          expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(ws))
+          await backAfterRelaunch(page, SESSION_TITLE)
+          await expect.poll(() => termIds(page)).toHaveLength(1)
+          await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
         } finally {
           await app.close().catch(() => {})
         }

@@ -1,5 +1,6 @@
 import { encodeCwd } from '@shared/cwdKey'
-import { problemOf, type RunResult } from './ssh'
+import { mapAtMost } from '../mapAtMost'
+import { problemOf, refusedByAFullMaster, type RunResult } from './ssh'
 import {
   heartbeatCmd,
   hookBellCmd,
@@ -44,6 +45,9 @@ const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
 const ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS = 300
 const A_WORKING_BELL_LIVES_AT_LEAST_MS = 10_000
 const BELL_TRIED_AGAIN_AFTER_A_QUICK_END_MS = 60_000
+const EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS = 2
+
+const failedRun = (e: unknown): RunResult => ({ code: null, stdout: '', stderr: String(e) })
 
 export interface ExtraPull {
   from: string
@@ -90,6 +94,7 @@ interface HostState {
   dueAt: number
   fastUntil: number
   pulled: Record<string, string | undefined>
+  pullsOneAtATime: boolean
   running: boolean
   again: boolean
   waitingForNextPull: (() => void)[]
@@ -104,8 +109,12 @@ interface HostState {
 interface Watch {
   count: number
   stamp?: string
+  keepsStampAcrossUnwatch: boolean
+  catchUpFrom?: string
   onChange: (stamp: string) => void
 }
+
+const UNWATCHED_BEFORE_ITS_FIRST_STAMP = '\0'
 
 function gitKey(git: Map<string, RemoteGitInfo>): string {
   return JSON.stringify([...git])
@@ -114,6 +123,7 @@ function gitKey(git: Map<string, RemoteGitInfo>): string {
 export class RemoteSync {
   private hosts = new Map<string, HostState>()
   private watches = new Map<string, Map<string, Watch>>()
+  private stampsOfUnwatched = new Map<string, Map<string, string>>()
   private stopped = true
 
   constructor(private deps: RemoteSyncDeps) {}
@@ -154,22 +164,51 @@ export class RemoteSync {
     return this.hosts.get(host)?.problem
   }
 
-  watch(host: string, path: string, onChange: (stamp: string) => void): void {
+  watch(
+    host: string,
+    path: string,
+    onChange: (stamp: string) => void,
+    reportsWhatChangedWhileUnwatched = false
+  ): void {
     let paths = this.watches.get(host)
     if (!paths) this.watches.set(host, (paths = new Map()))
-    const w = paths.get(path)
-    if (w) w.count++
-    else paths.set(path, { count: 1, onChange })
+    let w = paths.get(path)
+    if (w) {
+      w.count++
+      w.keepsStampAcrossUnwatch ||= reportsWhatChangedWhileUnwatched
+    } else {
+      w = { count: 1, keepsStampAcrossUnwatch: reportsWhatChangedWhileUnwatched, onChange }
+      paths.set(path, w)
+    }
+    if (!reportsWhatChangedWhileUnwatched) return
+    const kept = this.stampsOfUnwatched.get(host)
+    const stampWhenUnwatched = kept?.get(path)
+    if (stampWhenUnwatched === undefined) return
+    kept?.delete(path)
+    w.catchUpFrom = stampWhenUnwatched
+    this.askSoon(host)
   }
 
   unwatch(host: string, path: string): void {
     const paths = this.watches.get(host)
     const w = paths?.get(path)
-    if (paths && w && --w.count <= 0) paths.delete(path)
+    if (!paths || !w || --w.count > 0) return
+    paths.delete(path)
+    if (!w.keepsStampAcrossUnwatch) return
+    let kept = this.stampsOfUnwatched.get(host)
+    if (!kept) this.stampsOfUnwatched.set(host, (kept = new Map()))
+    kept.set(path, w.catchUpFrom ?? w.stamp ?? UNWATCHED_BEFORE_ITS_FIRST_STAMP)
+  }
+
+  private askSoon(host: string): void {
+    const st = this.hosts.get(host)
+    if (this.stopped || !st || st.running || st.failures) return
+    if (st.dueAt - Date.now() > FAST_INTERVAL_MS) this.next(host, st, 0)
   }
 
   unwatchAll(): void {
     this.watches.clear()
+    this.stampsOfUnwatched.clear()
   }
 
   private noticeStamps(host: string, asked: string[], stamps: string[]): void {
@@ -178,8 +217,9 @@ export class RemoteSync {
       const w = paths?.get(path)
       const stamp = stamps[i]
       if (!w || stamp === undefined) return
-      const before = w.stamp
+      const before = w.catchUpFrom ?? w.stamp
       w.stamp = stamp
+      w.catchUpFrom = undefined
       if (before !== undefined && before !== stamp) w.onChange(stamp)
     })
   }
@@ -281,6 +321,7 @@ export class RemoteSync {
           dueAt: 0,
           fastUntil: 0,
           pulled: {},
+          pullsOneAtATime: false,
           running: false,
           again: false,
           waitingForNextPull: [],
@@ -305,6 +346,7 @@ export class RemoteSync {
         this.silenceBell(st)
         this.roundOver(st)
         this.hosts.delete(host)
+        this.stampsOfUnwatched.delete(host)
       }
       for (const host of hosts) {
         const st = this.state(host)
@@ -345,7 +387,7 @@ export class RemoteSync {
             target.shellTabs
           )
         )
-        .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
+        .catch(failedRun)
       let mirrors: MirrorStamps = { extras: [] }
       if (hb.code === 0) {
         st.connected = true
@@ -382,18 +424,33 @@ export class RemoteSync {
         ): Promise<RunResult | undefined> => {
           if (stamp === NO_FILES_THERE) return undefined
           if (stamp !== undefined && st.pulled[which] === stamp) return undefined
-          const r = await this.deps.rsync(host, remoteDir, localDir, flags)
+          const r = await this.deps.rsync(host, remoteDir, localDir, flags).catch(failedRun)
           st.pulled[which] = r.code === 0 ? stamp : undefined
           return r
         }
         const slugs = slugsNow()
-        const transcripts = await pull(
+        const transcriptsPulled = pull(
           'transcripts',
           mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
           REMOTE_CLAUDE_PROJECTS,
           target.mirrorProjectsRoot,
           projectFlags(slugs)
         )
+        const pullExtras = (atOnce: number): Promise<(RunResult | undefined)[]> =>
+          mapAtMost([...extras.keys()], atOnce, (i) =>
+            pull(
+              `extra ${extras[i].from}`,
+              mirrors.extras[i],
+              extras[i].from,
+              extras[i].to,
+              extras[i].flags
+            )
+          )
+        // PLATFORM§33 PLATFORM§34
+        const extrasPulled = st.pullsOneAtATime
+          ? undefined
+          : pullExtras(EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS)
+        const transcripts = await transcriptsPulled
         const hooks = await pull(
           'hooks',
           mirrors.hooks,
@@ -401,17 +458,14 @@ export class RemoteSync {
           target.mirrorHookDir,
           HOOK_FLAGS
         )
-        const pulls = [transcripts, hooks]
-        for (const [i, extra] of extras.entries()) {
-          const r = await pull(
-            `extra ${extra.from}`,
-            mirrors.extras[i],
-            extra.from,
-            extra.to,
-            extra.flags
-          )
-          if (!extra.failsQuietly) pulls.push(r)
-        }
+        const extraResults = await (extrasPulled ?? pullExtras(1))
+        if ([transcripts, hooks, ...extraResults].some((r) => r && refusedByAFullMaster(r)))
+          st.pullsOneAtATime = true
+        const pulls = [
+          transcripts,
+          hooks,
+          ...extraResults.filter((_, i) => !extras[i].failsQuietly)
+        ]
         const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
         if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)

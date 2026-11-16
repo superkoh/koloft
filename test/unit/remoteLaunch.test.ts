@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'child_process'
 
 import {
   accountEnv,
+  claudeCodeGuessesWindowOf,
   buildMachinePackage,
   claudeTabSpec,
   killSessionCmd,
@@ -26,6 +27,9 @@ import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
+const PYTHON_WITH_PTY = spawnSync('python3', ['-c', 'import pty, termios']).status === 0
+const TASKPOLICY = '/usr/sbin/taskpolicy'
+const TASKPOLICY_HERE = fs.existsSync(TASKPOLICY)
 const tmpRoots: string[] = []
 const mkroot = (tag: string): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), `koloft-${tag}-`))
@@ -344,7 +348,7 @@ describe('the Workbench shell of a remote session', () => {
       sshOptions: ['-o', 'ControlPath=/tmp/koloft-1/%C'],
       machine: buildMachinePackage(path.join(r.dir, 'pkg'), {
         'util.sh':
-          'echo "shell up in $1 for $2"\nexit "$(cat "$HOME/shell-exit" 2>/dev/null || echo 0)"\n'
+          'echo "shell up in $1 for $2, owned by $KOLOFT_HOLD_TAB"\nexit "$(cat "$HOME/shell-exit" 2>/dev/null || echo 0)"\n'
       }),
       tabId: 'W',
       dir: "/srv/it's here"
@@ -362,6 +366,13 @@ describe('the Workbench shell of a remote session', () => {
     expect(again.status).toBe(0)
     expect(again.stdout).toContain("shell up in /srv/it's here for W")
     expect(r.calls()).toBe(5)
+  })
+
+  it("hands the machine the session tab's id this Mac gave the shell, so a server started there still counts as the session's after a Koloft restart", () => {
+    const r = remote()
+    typeLine(r, shellLine(r))
+    const res = typeLine(r, `KOLOFT_HOLD_TAB=pty-owner-1\n${shellLine(r)}`)
+    expect(res.stdout).toContain('for W, owned by pty-owner-1')
   })
 
   it('a shell the owner ends with the same code Koloft uses for a missing package just ends, with nothing sent and no second shell', () => {
@@ -603,7 +614,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§12 AGY§29 PLATFORM§35
-  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0).each([
+  it.skipIf(!PYTHON_WITH_PTY).each([
     { agent: 'claude', boxed: (): Box => box(spec()), arg: [0, '--settings'] as const },
     {
       agent: 'agy',
@@ -647,6 +658,40 @@ describe('U-TAB-*: the tab script on the machine', () => {
     }
   )
 
+  // ADR-0042 PLATFORM§59 PLATFORM§72
+  it.for([
+    { through: 'through the status relay', relayed: true, runs: PYTHON_WITH_PTY },
+    { through: 'started on its own', relayed: false, runs: true }
+  ])(
+    'on a Mac machine the agent sits above the tools it starts, as taskpolicy -a puts a program there, $through',
+    ({ relayed, runs }, ctx) => {
+      const asTaskpolicyLiftsHere = TASKPOLICY_HERE
+        ? spawnSync(
+            TASKPOLICY,
+            ['-a', '/bin/sh', '-c', `ps -o pri= -p $$; /bin/sh -c 'ps -o pri= -p $$; :'`],
+            { encoding: 'utf8' }
+          )
+            .stdout.trim()
+            .split(/\s+/)
+        : []
+      if (!runs || asTaskpolicyLiftsHere[0] === asTaskpolicyLiftsHere[1]) ctx.skip()
+      const b = box(spec())
+      if (!relayed)
+        fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+          mode: 0o755
+        })
+      fs.writeFileSync(
+        path.join(b.home, '.local', 'bin', 'claude'),
+        `#!/bin/sh\nps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'agent'))}\n/bin/sh -c 'ps -o pri= -p $$ > ${JSON.stringify(path.join(b.logs, 'tool'))}; :'\n`,
+        { mode: 0o755 }
+      )
+      expect(b.run().status).toBe(0)
+      expect(
+        ['agent', 'tool'].map((n) => fs.readFileSync(path.join(b.logs, n), 'utf8').trim())
+      ).toEqual(asTaskpolicyLiftsHere)
+    }
+  )
+
   it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
     const b = box(
       spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'], portOffset: 42 })
@@ -673,6 +718,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
+  // PLATFORM§33
+  it("runs the agent with the machine's login-shell PATH after every folder Koloft puts on it, so a program only the user's rc file puts on PATH is found while Koloft's own still come first", () => {
+    const b = box(spec({ agentPlugin: true, loginPath: "/opt/rc only/bin:/home/u/it's/bin" }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    const handed = b.env().PATH.split(':')
+    expect(handed.slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
+    expect(handed.slice(-2)).toEqual(['/opt/rc only/bin', "/home/u/it's/bin"])
   })
 
   it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
@@ -711,6 +766,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       `${b.home}/.koloft/hook-sessions`,
       'T',
       '--',
+      ...(TASKPOLICY_HERE ? [TASKPOLICY, '-a'] : []),
       'muse',
       '--approval-judge',
       'off',
@@ -922,18 +978,23 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
   })
 
-  it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {
+  it("clears the tab's leftover hook reports and tmux name before starting, since tab ids are reused across Koloft runs and a close ends the session that name file names, but not on a reconnect", () => {
     const b = box(spec())
     const hooks = path.join(b.home, '.koloft', 'hook-sessions')
     fs.mkdirSync(hooks, { recursive: true })
-    const stale = [path.join(hooks, 'T.json'), path.join(hooks, 'T.status.jsonl')]
+    fs.mkdirSync(path.join(b.home, '.koloft', 'tabs'), { recursive: true })
+    const stale = [
+      path.join(hooks, 'T.json'),
+      path.join(hooks, 'T.status.jsonl'),
+      path.join(b.home, '.koloft', 'tabs', 'T.tmux')
+    ]
     for (const f of stale) fs.writeFileSync(f, '{"event":"end"}\n')
     expect(b.run().status).toBe(0)
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false, false])
 
     for (const f of stale) fs.writeFileSync(f, '{"event":"start"}\n')
     b.run('attach')
-    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true])
+    expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true, true])
   })
 
   // CC§10
@@ -1128,14 +1189,46 @@ describe('U-ENV-1: what a tab sends about the account', () => {
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
       'ANTHROPIC_MODEL',
       'ANT_ACCOUNT',
+      'CLAUDE_CODE_DISABLE_1M_CONTEXT',
       'CLAUDE_CODE_SUBAGENT_MODEL',
       'CLAUDE_CODE_SUBAGENT_MODEL_FORCE'
     ])
     expect(custom.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5.2')
     expect(custom.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe('1')
+    expect(custom.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe('1')
     expect(
       Object.keys(accountEnv('custom', 'p', 't', { baseUrl: 'https://p.test' })).sort()
     ).toEqual(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANT_ACCOUNT'])
+  })
+
+  it('caps the context at 200k for pinned names CC 2.1.323 guesses a 1M window for that have no "claude" in them and no [1m] the owner asked for, and never for a name CC knows', () => {
+    const guessed = [
+      'glm-4.6',
+      'deepseek-chat',
+      'kimi-k2-0905-preview',
+      'qwen3-coder-plus',
+      'openai/gpt-5',
+      'opus',
+      'sonnet',
+      'haiku'
+    ]
+    const ownWindow = [
+      'claude-sonnet-4-5',
+      'Claude-Sonnet-4-5',
+      'claude-sonnet-4.5',
+      'anthropic/claude-sonnet-4.5',
+      'anthropic/claude-sonnet-4',
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'claude-3-5-sonnet-20241022',
+      'claude-opus-4-1',
+      'claude-opus-5-5',
+      'claude-fable-5-2',
+      'claude-sonnet-4-5[1m]',
+      'opus[1m]',
+      'glm-4.6[1m]'
+    ]
+    expect(guessed.filter((m) => !claudeCodeGuessesWindowOf(m))).toEqual([])
+    expect(ownWindow.filter(claudeCodeGuessesWindowOf)).toEqual([])
   })
 
   it('lands on disk readable by nobody else, quotes and all', () => {

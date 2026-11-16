@@ -71,6 +71,31 @@ method. A recheck adds its date, version and command to the bullet.
   `zsh -lc`, with the user's own `PATH` additions kept. (2026-09-25, macOS 27.0, zsh:
   `command -v open` printed the wrapper's `open`; `command -v codex` still printed
   `~/.local/bin/codex`, which the user's `~/.zprofile` adds.)
+- **A `~/.zshenv` that sets `ZDOTDIR` takes zsh past such a wrapper.** zsh reads each
+  later dotfile from whatever `ZDOTDIR` holds at that moment, so a user `~/.zshenv`
+  (sourced by the wrapper's `.zshenv`) that says `ZDOTDIR=~/.config/zsh` sends zsh to
+  `~/.config/zsh/.zprofile`, and the folder is never put first. The wrapper holds when
+  each of its files, `.zshenv` included, first gives `ZDOTDIR` the value zsh itself would
+  have there (the user's folder, or unset), sources `${ZDOTDIR:-$HOME}/<file>`,
+  remembers what that file left in `ZDOTDIR`, and then exports `ZDOTDIR` back to what it
+  held when the file began: itself when zsh read the file, or the folder of another
+  wrapper that sourced it as the user's (a wrapper exporting itself there sends zsh's
+  next file to it, past the other wrapper's own). So
+  `ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"` and `unset ZDOTDIR` in `~/.zshenv` both
+  lead on to the files zsh would read. A user `.zlogin` or `.zshrc` can rebuild `PATH`
+  after `.zprofile`, so the wrapper puts the folder first again at the end of each of
+  the three (`path=(<folder> ${path:#<folder>})`, which also drops the earlier copy),
+  only when zsh read the file itself.
+  (2026-11-15, macOS 27.0 zsh 5.9, in real Codex turns, CODEX§12, and
+  `codexOpenShim.test.ts`.)
+- **`BASH_ENV` puts a folder first again in `bash -lc`.** A login bash reads
+  `/etc/profile` (where `path_helper` runs), then the first of `~/.bash_profile`,
+  `~/.bash_login`, `~/.profile`, and only then the file `BASH_ENV` names, so a folder
+  that file prepends wins and the user's profile still runs. macOS's own `/bin/bash`
+  3.2.57 reads `BASH_ENV` in `bash -c` too, except when its stdin is a socket: then it
+  takes bash's "started by sshd" branch, sources `~/.bashrc` and skips `BASH_ENV`.
+  Node's `spawnSync` pipes on macOS count as a socket; with `stdio: ['ignore', …]` the
+  same `bash -c` read `BASH_ENV`. (2026-11-15, macOS 27.0, a scratch node script.)
 - **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive), so a
   `command -v` run through it can miss a tool that every interactive session finds.
   Only `zsh -l -i` loads the user's full profile. (2026-09-24, macOS 27.0, zsh with a
@@ -250,6 +275,22 @@ method. A recheck adds its date, version and command to the bullet.
   the first window show still makes the app active and takes focus.
 - **A Notification that nothing holds on to can be garbage-collected** while its banner
   is still in Notification Center; its `click` handler then never fires.
+- **On macOS `Notification.close()` takes a delivered notification out of Notification
+  Center and emits `close` before it returns.** `Notification::Close` calls
+  `CocoaNotification::Dismiss`, which calls `UNUserNotificationCenter
+  removeDeliveredNotificationsWithIdentifiers:` with the notification's id and then
+  `NotificationDismissed`, which emits `close`. Nothing else emits `close` for a
+  notification with no actions: a banner that times out into Notification Center emits
+  nothing, and the user swiping it away reaches the app only for a category with a
+  custom dismiss action, which only a notification with actions, a reply or a close
+  button gets. Read in Electron 43.8.7's source
+  (`shell/browser/api/electron_api_notification.cc`,
+  `shell/browser/notifications/mac/cocoa_notification.mm`,
+  `notification_center_delegate.mm`) on 2026-11-14; the selector is in the shipped
+  `Electron Framework` binary's strings. Measured the same day in the tart VM below
+  (macOS 27.0, the ad-hoc signed Electron 43.8.7): with two delivered notifications,
+  `close()` on one took it out of `Notification.getHistory()` (the app's delivered list)
+  within a poll, while the other stayed listed until it was closed too.
 - **`shell.openPath` and `shell.openExternal` go through LaunchServices, not PATH**, so
   a fake `open` on PATH cannot catch them. `openPath` does not reject on failure: it
   resolves with an error string (empty on success). `openExternal` and
@@ -769,6 +810,21 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   not load.
 - **A content script with `run_at: document_start` can run before
   `document.documentElement` exists.**
+- **Native messaging (read 2026-11-13 in electron-chrome-extensions 4.9.0's
+  `dist/cjs/index.js`):** on macOS the library reads `<host>.json` from
+  `/Library/Google/Chrome/NativeMessagingHosts`, then
+  `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`, then
+  `NativeMessagingHosts` in the app's `userData`, and takes the first file that reads
+  and has a valid shape; a missing or broken one is skipped with only a debug line. It
+  spawns the host from the main process with the extension origin as its one argument —
+  so the host's parent is the app itself. Two differences from Chrome, not yet seen
+  happening: `receive`, a stdout `data` listener in the main process with no
+  `try`, reads one message per chunk, so a message split over two chunks (or a chunk
+  under 4 bytes) throws there, an uncaught exception in the main process, and a second
+  message in the same chunk is dropped; `send` writes `message.length` (UTF-16 units,
+  not bytes) as the length, so a message with non-ASCII text is cut short. On a Mac
+  without Chrome, whether a host's installer writes to any of those folders is not
+  probed.
 
 ## §16 CDP through `webContents.debugger`
 
@@ -1240,7 +1296,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`, 2026-11-05); the clipboard addon is a
   separate package.
 - **OSC 8 links**: xterm's own OSC 8 provider wins over the web-links addon, and with no
-  `linkHandler` it falls back to a native `confirm()` plus `window.open`.
+  `linkHandler` it falls back to a native `confirm()` plus `window.open`. Unless the
+  `linkHandler` sets `allowNonHttpProtocols`, it drops every OSC 8 address that is not
+  an `http:` or `https:` URL, a bare path and `file://` included, so the cells under
+  such a link go to the other link providers as plain text (read from `@xterm/xterm`
+  `src/browser/OscLinkProvider.ts`, 2026-11-14).
 - **Under the WebGL renderer the terminal has no text nodes**; `innerText` is empty, so
   read the buffer through the xterm instance.
 - **xterm's CSS hard-codes the IME composition box** (`.xterm .composition-view`) to
@@ -1489,13 +1549,41 @@ inferred, not checked.
   `startOnLoad`, `maxTextSize`, `suppressErrorRendering` and `maxEdges` but not
   `htmlLabels` or `themeCSS`, so a document's own `%%{init}%%` can set those two. With
   `htmlLabels` on, labels go in `<foreignObject>`, which DOMPurify strips; in mermaid 11
-  the root key wins, but the flowchart renderer still reads `flowchart.htmlLabels`
-  directly in two places. A document's `%%{init}%%` is applied to the process-wide
-  config at the start of `render()`, so two renders at once can leak settings. Labels
-  are measured with `getBBox`, which needs a laid-out node; with no container argument
-  mermaid adds its own scratch `<div>` to `<body>`. `fontFamily` lands in SVG
-  presentation attributes while widths are measured, and a CSS `var()` there is not
-  reliably honoured.
+  and 12 the root key wins, but the flowchart renderer still reads
+  `flowchart.htmlLabels` directly in two places. A document's `%%{init}%%` is applied
+  to the process-wide config at the start of `render()`, so two renders at once can
+  leak settings. Labels are measured with `getBBox`, which needs a laid-out node; with
+  no container argument mermaid adds its own scratch `<div>` to `<body>`. `fontFamily`
+  lands in SVG presentation attributes while widths are measured, and a CSS `var()`
+  there is not reliably honoured. (All of the above re-read in mermaid 12.3.0's
+  `dist`, 2026-11-12.)
+- **mermaid 12 changed how diagrams look by default** (12.3.0 against 11.17.0,
+  2026-11-12: both default configs dumped from `mermaidAPI.defaultConfig` and diffed,
+  then 34 samples drawn in the built app on each). The root `layout` went from `dagre`
+  to `elk`; the sections `flowchart`, `class`, `state`, `er`, `requirement`,
+  `sequence`, `venn` and `swimlane`, and the new kinds `usecase` and `agentflow`, each
+  got a `look: 'neo'` and a `theme: 'redux-color'` of their own (the root `theme` and
+  `look` stayed `default` and `classic`), and `state` a `layout: 'elk'`;
+  `flowchart.wrappingWidth` went from 200 to 120, and `flowchart`
+  and `state` gained `minNodeWidth: 120` (state labels wrapped at
+  `flowchart.wrappingWidth` in 11, at `state.wrappingWidth` in 12). `theme`, `look` and
+  `layout` are resolved per diagram (`resolveAppearance` in `config.ts`): the
+  document's own directives first, then what `initialize` was given, then the
+  defaults, and inside each of those the diagram's own section beats the root key. So
+  a root `theme` and `look` given to `initialize` beat every section default. A root
+  `layout` given to `initialize` would too, but it also reaches mindmaps, which
+  otherwise draw with `cose-bilkent`: it turns a radial mindmap into a top-down tree,
+  so `layout` is set in each section that draws with it. `flowchart-elk` draws with
+  dagre under that setting, as it did in 11, which shipped no ELK. With all of this
+  set, a top-down state diagram whose edges carry labels is still drawn wider than in
+  11 (the labels of one rank sit side by side in one row, where 11 staggered them),
+  flowchart circles are about 4 px larger, a mindmap's branches land a few px
+  elsewhere, and a swimlane is laid out anew in the same colours; no setting found
+  that undoes these. A document that asks for `layout: elk` itself now gets ELK, where
+  11 fell back to dagre. In Koloft's build ELK is a 3.4 MB chunk of its own, loaded
+  the first time a diagram is laid out with it: one that asks for it, or one of the
+  kinds new in 12 (`usecase`, `agentflow`), which read the root `layout` (read from
+  `dist`, not drawn).
 - **KaTeX**: when it refuses a formula, the `.katex-error` element's text is a
   ParseError message with combining marks stitched through the source; the untouched
   source is in its `title` attribute. Its default `maxSize` is Infinity, so an untrusted
@@ -1962,11 +2050,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   run). The fake Codex runs its command with `sh -c` (zsh's `-c` where `/bin/zsh`
   exists), so this measures the PATH Koloft hands the app-server, not what a real Codex
   adds. On the bash and zsh machines a fake Claude Code tab's `command -v ztool` did not
-  find the tool: the tab script of Claude Code, Muse Code and Antigravity tabs adds
-  fixed folders only and asks no login shell (Muse Code and Antigravity share that
-  script; not run). What each real agent's own shell tool adds on top was not measured.
-  (2026-11-11, OpenSSH_10.3p1 on macOS 27 to the e2e Docker ssh lab image, Debian
-  bookworm, plus zsh 5.9; a scratch Playwright spec driving a built Koloft.)
+  find the tool while its tab script added fixed folders only. (2026-11-11, OpenSSH_10.3p1
+  on macOS 27 to the e2e Docker ssh lab image, Debian bookworm, plus zsh 5.9; a scratch
+  Playwright spec driving a built Koloft.)
+- **The real Claude Code, Antigravity and Muse Code shell tools add nothing from the
+  user's rc files either**: started with that fixed-folder PATH and `SHELL=/bin/zsh`, each
+  missed a program only `~/.zshrc` puts on PATH (CC§3, AGY§25, MUSE§17), and each found it
+  once the `"$SHELL" -lic` PATH was appended. So the tab script of those three is handed
+  that PATH too. When the ask gives none they run without it, not with the Codex
+  script's own `bash -lc`: inside tmux nothing would stop that shell if the login files
+  it reads hang (inferred from where it runs, not run).
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
@@ -1996,7 +2089,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-09-29 on an Ubuntu 24.04 box with the stock `sshd_config`: with 14 sessions
   held, the 15th printed that line and then `Authenticated … using "publickey"`; with
   10 held, the 11th still rode the master, so the real limit there was not pinned
-  down.)
+  down.) On a password login with no `MaxSessions` line the limit is exactly 10: with
+  the master opened by a password and nine more `sleep` sessions held on it (Koloft's
+  own ssh options), the 11th `BatchMode` command, and an rsync over it, printed that
+  line, then `Permission denied (password).`, and exited 255; a command on the
+  `%C-spill` master failed the same way, as it has to log in too. Each session showed
+  on the machine as a child of the one `sshd: puser@notty` process. (2026-11-15,
+  OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh
+  lab image reached on a published port, a scratch node script.)
 - **A reverse forward can be added to a live ControlMaster.** `ssh -O forward -R
   0:127.0.0.1:<port> host` prints the port sshd picked on **stdout** and exits 0; the
   machine listens on its 127.0.0.1 and ::1 only, and normal commands keep riding the
@@ -2110,6 +2210,45 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   macOS, and on Debian 12 under bash, tcsh and fish. (2026-09-30: this Mac's openrsync
   through a stand-in ssh that logs its argv; Debian 12 `node:22-bookworm-slim`
   containers.)
+- **Each rsync over a ControlMaster costs several round trips, so pulls run at once end
+  far sooner than the same pulls one after another**, and nothing broke with them
+  together. A sync round (the real heartbeat, then the transcript, hook and agy-brain
+  pulls, each with one file appended so all three were due; 15 rounds a way, medians),
+  one after another against all at once: 66 → 35 ms with no added delay, 978 → 389 ms
+  with 30 ms added round trip, 2877 → 1111 ms with 100 ms. Against the transcripts and
+  then the hooks in turn, with the brain beside them: 67 → 49, 999 → 693, 2841 →
+  1959 ms. With all seven pulls a round can carry (adding Codex `sessions` and
+  `archived_sessions`, Muse `sessions`, agy `conversations`; 10 rounds, 30 ms): 2327 →
+  411 ms all at once, 2216 → 1008 ms with the transcripts then the hooks in turn and
+  the extras two at a time beside them. Every pull exited 0 and the mirrored transcript
+  matched the machine's size. Each pull at once is one more session on the master (§33): on a
+  publickey login with `MaxSessions 2` (the hook bell plus three pulls is four
+  sessions) nothing failed, the pulls past the limit made their own logins, and the
+  round took longer together than one after another (77 → 136 ms with no added delay).
+  (2026-11-13: this Mac's openrsync and
+  OpenSSH_10.3p1 to rsync 3.2.7 in the e2e sshd image, reached directly on a published
+  port with Koloft's own ssh options, delay added with `tc netem` in the container; a
+  scratch node script.)
+- **A password machine with the default `MaxSessions` 10 reaches its limit at six to
+  seven tabs, and three pulls at once reach it sooner.** A built Koloft: one Codex
+  tab, then Claude Code tabs added one by one, the transcripts and both Codex rollout
+  folders kept due by a loop appending to them, every `BatchMode` ssh logged by a
+  stand-in `ssh`, the machine's dot read every 250 ms in the second run of each. The
+  machine held one session per tab and one for the hook bell (one more at times with
+  one pull at a time, not explained). Each refusal moved the background commands to
+  the `%C-spill` master, where every one failed with `Permission denied (password)`
+  until a failure cleared the move, so the dot read "not connected … sign in there"
+  in between.
+
+  | Pulls | Tabs that ran clean | Sixth tab | Seventh tab | Eighth tab |
+  |---|---|---|---|---|
+  | one at a time (`main`), 2 runs | 1–5 | run 2: dot "not connected" for 2.5 s while it opened, then clean | run 1: a few refusals while it opened, then connected; run 2: 12 of 20 commands failed in 20 s, dot "not connected" at the end | did not open |
+  | three at once (no fallback), 1 run | 1–6 | clean | 19 of 54 commands failed in 20 s, dot "not connected" | did not open |
+  | three at once until a pull is refused, then one at a time, 2 runs | 1–5 | run 1: one pull and one command failed; run 2: dot "not connected" twice in 7.5 s; then one at a time | run 1: connected, 35 pulls with none failed; run 2: did not open | did not open (run 1) |
+
+  (2026-11-15: this Mac's openrsync and OpenSSH_10.3p1 to the e2e sshd image through
+  its jump host, Koloft built from #1868 and with `main`'s `sync.ts`; a scratch
+  Playwright spec.)
 
 ## §35 tmux
 
@@ -2121,6 +2260,15 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   255 alone says the kill did not reach the machine: `can't find session: <name>` with
   a server running, `error connecting to …` with none (2026-10-10, tmux 3.3a in the
   e2e sshd Docker image, run directly).
+- **A session's id (`#{session_id}`, `$N`) stays the same through `rename-session`, and
+  `kill-session -t '$N'` ends that session alone**; an id with no session exits 1
+  (`can't find session`). A pane can read its own session's id with `display-message
+  -p`, no client attached. Ids are per server and start again at `$0` once the server
+  restarts, so an id kept from before a restart can name another session: pair it with
+  `#{session_created}` and match both in `list-sessions -F`. `display-message -t '$N'`
+  for an id with no session prints an empty line and exits 0 from 3.2a on (1 in 2.6), so
+  it cannot tell whether the id is alive. (2026-11-14, tmux 2.6, 3.2a, 3.3a, 3.4, 3.5a and
+  3.8 in Docker, two detached sessions on one `-L` socket, 1 run each.)
 - **With no `default-shell`, tmux runs the new-session command through `$SHELL`**, the
   login shell — for a fish user, sh syntax is a syntax error.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
@@ -2277,6 +2425,20 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
   `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
   tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
+- **Under Koloft's tmux.conf, with agy or muse in the pane, tmux 3.3a asks the outer
+  terminal only `ESC[>c` (DA2) and `ESC[>q` (XTVERSION), once at attach; the bare
+  questions agy and muse ask in the pane never come out** (neither wraps one for
+  passthrough). With Claude Code in the pane it was not run; CC§12 has tmux answering
+  claude's own questions and claude wrapping only a mod's image for passthrough, so the
+  same is inferred, not checked. Started as Koloft starts a remote
+  tab (`tmux -L koloft -u -f <Koloft's conf> new-session -A -D -s <name> <agent>`) from a
+  python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
+  reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 run directly
+  in the pane (without Koloft's launcher script and status relay), each through start, trust question, a turn with a tool run, a resize,
+  `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
+  only questions the outer terminal got, both in Koloft's off-screen pass-through list
+  (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
+  3.3a, 1 run each).
 
 ## §36 ccstatusline
 
@@ -3370,8 +3532,42 @@ server unless a line says so.
   `muse` and `agy`, so whether theirs is such a launcher is not known. Not probed: whether macOS
   lowers a `-a` program while its app is not frontmost or the screen is locked.
 
+- **`-b -p` moves only that process; what it starts afterwards starts lowered, and
+  lifting it does not lift them.** `/bin/sh -c 'sleep A & sleep 3; sleep B & wait'`,
+  priorities read with `ps -M`: after `taskpolicy -b -p <sh>` the shell read 4 and the
+  already running `sleep A` stayed at 31; `sleep B`, started 3 s later, read 4. After
+  `taskpolicy -B -p <sh>` the shell read 31 and `sleep B` still 4; `-B -p` on `sleep B`
+  itself put it at 31.
+- **A lowered shell that then `exec`s a program through `taskpolicy -a` leaves the
+  program lowered.** `/bin/sh -c 'sleep 2; exec /usr/sbin/taskpolicy -a sleep N'`,
+  lowered with `-b -p` during the first two seconds: after the `exec` the same pid ran
+  `sleep N` at priority 4, not 46; `-B -p` then put it at 46.
+- Both measured 2026-11-12 on the same Mac (macOS 27.0, Darwin 27.0.0), one run each, by
+  a node script from a Koloft Claude Code tab; nothing but `sleep` was lowered.
+- **The same holds for a standard user logged in over SSH.** In a tart VM of macOS 27.0
+  (26A428, the `macos-golden-gate-vanilla` image), as a standard user made with
+  `sysadminctl -addUser` (not an admin) logged in with ssh: a script that did `set --
+  fakeagent --flag; [ -x /usr/sbin/taskpolicy ] && set -- /usr/sbin/taskpolicy -a "$@";
+  exec "$@"`, `fakeagent` a shell script found only on `PATH`, ran as that script at 46
+  and its two `sleep` children at 31. `taskpolicy -a /bin/sh -c 'exec /bin/sleep 20'`
+  left the `sleep` at 46 (the step outlives an `exec`). `( exec nohup /usr/sbin/taskpolicy
+  -a fakeserver ) </dev/null >log 2>&1 &` read 46 and, read from a new login after the
+  first one ended (its parent now 1), still 46 with its child at 31. The image has no
+  `setsid`, no `tmux`, and only the `python3` stub that asks for the developer tools.
+  On this Mac, a python `pty.fork()` child that `execvp`s `/usr/sbin/taskpolicy -a /bin/sh
+  -c '…'` read 46, its children 31 and the python 31. Measured 2026-11-13, one run each.
+- Inferred, not checked: that macOS takes the memory of a `-b` process first when memory
+  is short. Three short runs on 2026-11-11 saw its pages on the background queue twice
+  and compressed no sooner than an unlowered process's once; no run was made under real
+  memory pressure.
+
 Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
-program on this Mac through `taskpolicy -a` (ADR-0042).
+program on this Mac through `taskpolicy -a`, and `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE`
+beside it, which does the same on a machine that has `/usr/sbin/taskpolicy` (§72 for one
+that does not); `ResourceGuard` in
+`src/main/resourceGuard.ts`, which while memory pressure stays at 4 lowers the tools of
+the agent tabs nobody looks at with `-b -p`, never a process Koloft itself started, and
+lifts by reading the process table again (ADR-0042).
 
 ## §60 Electron: is someone at the Mac
 
@@ -3532,6 +3728,13 @@ and which `mermaidRender` waits on before its first diagram.
   string`), so a list goes to awk on standard input.
 - **Antigravity's `agy` itself listens on two 127.0.0.1 ports** (its own service), so
   a list of a session's servers leaves out the agent programs' own sockets.
+- **Any variable carries the same way.** A process may carry a second one,
+  `KOLOFT_HOLD_TAB`, naming the session tab it belongs to when `KOLOFT_TAB_ID` names
+  something else (a remote Codex app-server, a Workbench shell); the scan reads both.
+  Measured 2026-11-14 on macOS 27.0 and through the e2e fake remote: a
+  `nohup python3 -m http.server … &` started in a Workbench shell carried the shell's
+  `KOLOFT_HOLD_TAB` after the shell and Koloft quit, and the restarted Koloft's scan
+  for the session listed it.
 - Measured 2026-11-06 on macOS 27.0 (Darwin 27.0.0) and in `koloft-e2e-sshd` (Debian,
   as root, with and without `lsof` on `PATH`): three `python3 -m http.server` listeners
   started with two different `KOLOFT_TAB_ID` values, one through `nohup` (macOS) or
@@ -3551,7 +3754,8 @@ and which `mermaidRender` waits on before its first diagram.
   none, and a third server with another tab's id was never listed.
 
 Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
-menu's listening ports).
+menu's listening ports); `OWNING_TAB_ENV` in `src/main/owningTabEnv.ts`, set by
+`ptyManager.ts` and `remote/launch.ts` (Workbench shells) and `remote/codexMachine.ts`.
 
 ## §68 The text of a selection: `Selection.toString()` against `Range.toString()`
 
@@ -3634,7 +3838,10 @@ in a `.koloft-writes` folder inside the target's folder and moves it into place 
 main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer leaves;
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
 save's last check and its rename together on the main thread; `signalLog`
-(`machineRoom.ts`) appends to and trims its log through `fs.promises`.
+(`machineRoom.ts`) appends to and trims its log through `fs.promises`; `saveSettings`
+writes `settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and
+git-freshness sweeps' "is the workspace folder still there" and the timed look at Muse's
+registry folders stat them through `fs.promises`.
 
 ## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
 
@@ -3682,3 +3889,111 @@ Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so Ap
 and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
 of that it spent on the CPU.
+
+## §71 1Password for Mac: which browsers its app lets the extension in
+
+How established: read 2026-11-13 on 1Password for Mac 8.12.44, macOS 27.0 (Darwin
+27.0.0), with `strings` on the host binary `1Password-BrowserSupport` (inside
+`1Password Browser Helper.app`, under the app's `Contents/Library/LoginItems`) and on
+`Contents/Frameworks/index.node`, plus `ps`, `pgrep` and the macOS unified log
+(`log show`). 1Password was not opened, and its settings, data and own log files were
+not read.
+
+- **The extension talks to the app through a native messaging host.** 1Password puts a
+  `com.1password.1password.json` host file in each browser's `NativeMessagingHosts`
+  folder. Chrome's copy points at `1Password-BrowserSupport` and allows six extension
+  origins, among them the store build (`aeblfdkhhhdcdjpifhhbdiojplfjncoa`) and the
+  Nightly build (`gejiddohjgogedgjnonbofjigllpkmbf`). The host is started with the
+  extension's origin as its one argument. In Chrome, the host's parent process is
+  Chrome's main process, and it stays up for as long as Chrome does (`ps`).
+- **The host checks the browser that started it before it talks to the app.** Its
+  strings name `browser_verification/apple.rs` and messages such as "BrowserSupport was
+  not part of the main browser's tree", "BrowserSupport spawned by misplaced
+  intermediate process", "encountered unsupported browser, attempting to check for a
+  helper", "browser was unsigned, rejecting it", "no possible browser subprocesses
+  matched the users approval list" and "Browser process validation failed". Other early
+  exits it names: "Settings file wasn't readable", "Settings file was invalid.",
+  "failed to get path to grandparent process", "Couldn't find any running application,
+  or failed to get its code signature".
+- **A built-in list of 24 bundle ids from 7 makers** passes that check: Firefox (3),
+  Vivaldi (2), Microsoft Edge (4), The Browser Company (Arc and Dia, 2), Perplexity Comet
+  (1), Google Chrome (4) and Brave (8). Elsewhere in the binary sit 24 team ids in groups
+  of the same sizes; that each bundle id is paired with its maker's team id is inferred
+  from the counts, not checked. Safari (`com.apple.Safari` and two variants) is handled
+  apart. `ai.koloft.app` is in neither binary (`grep -c` gives 0).
+- **Any other browser must be on the user's own approval list.** The official page
+  "Connect additional browsers to the 1Password app"
+  (https://support.1password.com/additional-browsers/, read 2026-11-13) gives the way:
+  Settings ▸ Browser ▸ Add Browser, then "choose a browser that's code signed by Apple
+  in the Applications folder". The same page warns that a connected browser "will
+  receive full access to the information saved in 1Password when the 1Password app is
+  unlocked". The strings show each entry holds a bundle id and a
+  code-signing requirement string ("requirements string from user settings was
+  corrupt"); that the stored string is the app's designated requirement is inferred,
+  not checked. Ways an addition is refused: "The selected application was signed in an
+  unsupported way or may be missing a required identifier.", `NotInApplicationsDirectory`,
+  `AppBundleIsSymlinked`, `AppBundleDoesNotExistOnDisk`, `UnableToGetMetadata`. Adding
+  needs 1Password unlocked ("trusted browsers can only be added while unlocked"), an
+  account that signs in with SSO needs biometrics on ("adding browsers with SSO
+  authorization is not supported. Please enable biometrics"), an admin can push entries
+  (`AdminDeployedBrowserProperties`) and custom browsers can be turned off
+  ("custom-browsers-unavailable-alert").
+- **A partner browser can be approved from the extension's side**:
+  `TrustedBrowserAddReason::Partner`, "received request to add a (most likely) partner
+  browser", "running browser is not signed by the expected team" and, in the host,
+  "waiting for potential partner browser authorization from B5X". `Partner` is the only
+  variant found. Which browsers count as partners, and whether an unknown browser is
+  ever offered this way, is not probed.
+- **A browser off both lists, as seen 2026-11-13 with Koloft 0.71.0** (the Developer
+  ID-signed, notarized release in `/Applications`) and the 1Password
+  Nightly extension installed in its Workbench browser: Koloft's main process starts
+  `1Password-BrowserSupport chrome-extension://gejiddohjgogedgjnonbofjigllpkmbf/`
+  (caught with `pgrep -P <Koloft pid>`), the same parent shape as Chrome. `log show`
+  lists one such host every minute since Koloft's last launch; each is gone 25–30 ms
+  after its first log line, which is about checking a code signature
+  (`SecTrustEvaluateIfNecessary`; whose signature, not checked). That it exits because
+  Koloft is on neither list is inferred, not checked: the other early exits above were
+  not ruled out, since 1Password's own log files were not read. Not probed: whether Add Browser
+  takes Koloft, and what the extension shows once the host stays up.
+
+Koloft dependents: the Workbench browser's extensions (`extensionManager.ts`) reach
+1Password only through the host above; how the extension library finds and starts a
+host is §15.
+
+## §72 Making work give way on a Linux machine, as the user logged in over SSH
+
+How measured: 2026-11-13, a container of the e2e sshd image (Debian 12 bookworm) under
+colima, whose VM runs Linux 6.8.0-117-generic (Ubuntu, `PREEMPT_DYNAMIC`), the container
+pinned to 4 cores (`--cpuset-cpus 0-3`). The user `kuser` (uid 1001, no sudo) logged in
+over ssh to the container's own sshd (PAM on) and ran a python script there. In it, an
+"agent" ran on a pty and echoed each byte typed into it; 20 single keys 300 ms apart
+measured the time from the write to the echo, and 4 times a fixed piece of work (230 ms
+on the idle machine) was asked for. Its "tools" were busy-loop children it forked before
+the measurement. One run per row, except where two are given.
+
+- **Nothing makes a program go above another.** `nice -n -1 true` printed "nice: cannot
+  set niceness: Permission denied"; `renice -n -1` on the user's own shell and
+  `chrt -r 1 true` were refused; writing `-1` to `/proc/self/autogroup` failed with an
+  I/O error. `/usr/sbin/taskpolicy` is macOS-only.
+- **Lowering is one way.** `renice -n 10` on the user's own `sleep` worked;
+  `renice -n 0` on it afterwards was refused (Permission denied). macOS's `taskpolicy -B -p`
+  has no counterpart here.
+- **A key reaches a busy machine's program at once anyway.** Key to echo, median /
+  worst: idle 0.3 / 0.3 ms; with 16 busy tools at the agent's own nice 0.1 / 3.0 ms; with
+  40, 0.1 / 3.0 ms. So the stall ADR-0042 guards against on macOS (two keys read
+  together, §59) did not show.
+- **Work the agent itself does is slowed, and lowering the tools gives it back.** The
+  230 ms piece, 4 runs: 16 busy tools at nice 0 → 810–1210 ms; at nice 10 → 213–383 ms;
+  at nice 19 → 214–228 ms; in a session of their own (`setsid`, autogroups on:
+  `sched_autogroup_enabled` read 1) → 880–979 ms. With 40 busy tools: nice 0 →
+  2499–3674 ms, nice 19 → 276–335 ms.
+- Inferred, not checked: that `setsid` made no difference because a container's tasks sit
+  in a cgroup of their own, and the kernel applies autogroups only to tasks in the root
+  task group (`/proc/self/cgroup` read `0::/`, the container's own namespace). Not probed:
+  a systemd host (where an SSH login sits in `user.slice`), a host whose
+  `/etc/security/limits.conf` gives the user a `nice` limit, the path through tmux and
+  Koloft's status relay (both at the agent's nice), and a real agent's redraw.
+
+Koloft dependents: `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE` in `src/main/agentLift.ts`
+lifts an agent program only on a machine with `/usr/sbin/taskpolicy` (§59); on a Linux
+machine it leaves the agent and its tools as they start.

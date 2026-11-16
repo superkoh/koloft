@@ -4,7 +4,7 @@ import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import type { SourceLines } from '../markdown/lines'
-import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import { cachedDiagram, MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
 import { CommentBox, type CommentTarget } from './CommentBox'
 import { CHANGES_MSG, passageAt, passagePrompt, type Passage } from './changesModel'
 import { findInBlocks, linesOfRange, selectedRangeIn, swapMark, type DrawnBlock } from './mdPassage'
@@ -26,6 +26,7 @@ const COMMENT_BUTTON_H_PX = 26
 const COMMENT_BUTTON_GAP_PX = 4
 
 type DrawnDoc = RenderedDoc & { text: string }
+type Drawn = Awaited<ReturnType<typeof renderDiagram>>
 
 const UNREADABLE: DrawnDoc = {
   blocks: ['<p>Failed to read file.</p>'],
@@ -88,6 +89,22 @@ function settleDiagram(el: HTMLElement): void {
   el.tabIndex = 0
   el.setAttribute('role', 'button')
   el.setAttribute('aria-label', 'Zoom diagram')
+}
+
+function showDrawn(el: HTMLElement, drawn: Drawn, code: string): void {
+  if (!drawn.ok) fillError(el, drawn.message, code, TOKEN)
+  else {
+    el.innerHTML = drawn.svg
+    settleDiagram(el)
+  }
+  el.dataset.state = 'done'
+}
+
+function fillAtOnce(el: HTMLElement): boolean {
+  const code = codeOf(el)
+  const svg = cachedDiagram(code, `d${++mermaidTempIdSeq}`)
+  if (svg !== undefined) showDrawn(el, { ok: true, svg }, code)
+  return svg !== undefined
 }
 
 function blockImage(img: HTMLImageElement): void {
@@ -236,7 +253,8 @@ export function PreviewViewer({
 
     const watch = (b: Shown): void => {
       for (const el of b.el.querySelectorAll<HTMLElement>('.mmd'))
-        if (el.dataset.k === TOKEN && !el.dataset.state) diagrams.current.watch(el)
+        if (el.dataset.k === TOKEN && !el.dataset.state && !fillAtOnce(el))
+          diagrams.current.watch(el)
     }
 
     const painted = (): void => {
@@ -304,13 +322,7 @@ export function PreviewViewer({
       }
       const res = await renderDiagram(code, `d${++mermaidTempIdSeq}`)
       if (disposed || !el.isConnected) return
-      if (res.ok) {
-        el.innerHTML = res.svg
-        settleDiagram(el)
-      } else {
-        fillError(el, res.message, code, TOKEN)
-      }
-      el.dataset.state = 'done'
+      showDrawn(el, res, code)
     }
 
     const io = new IntersectionObserver(

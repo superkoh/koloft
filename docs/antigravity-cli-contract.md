@@ -278,6 +278,15 @@ only downloaded the public release.
   and with the folder trusted. An id with no stored conversation keeps
   `conversation_id` `""` (§1: a new conversation, no id before the first prompt).
   macOS: not probed.
+- **Resuming from another account folder** (1.3.6, Linux arm64, Docker, no network,
+  tmux, fake Gemini server, 2026-11-15): two `--gemini_dir` folders linked into one
+  `~/.gemini` as in §4, each with `onboarding.json` and `modelProvider`; only folder A
+  trusts the workspace. A conversation started on A resumed with
+  `--conversation=<id>` on A opens on its history; on B it stops on "Do you trust the
+  contents of this project?" and B's `trustedWorkspaces` stays empty; with the
+  workspace written into B's `settings.json` first, B opens on the history. Trust lives
+  only in each folder's own `settings.json`, never with the shared conversation.
+  macOS: not probed.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.
@@ -842,6 +851,15 @@ only downloaded the public release.
     commands ending started no turn: their `PostToolUse` and the title scripts came, no
     model request and no `Stop` in the next 40 s. A decline followed by a typed prompt
     that ran a command left that next command's ending its turn as usual.
+- **A picture path in the prompt is opened and read as a picture.** Measured 2026-11-14,
+  agy 1.5.9 on macOS with a real signed-in account (a copy of the sign-in file in a
+  `--gemini_dir` of its own, `WSL_INTEROP=koloft`), `agy -p … --output-format json`, 1 run
+  each. The prompt was "What word is in this picture? Answer with the word only." then a
+  blank line and `Picture: <path>` naming a PNG with the word ZEBRA drawn on it (the
+  word nowhere in the text or the file name). With the PNG inside the folder agy ran
+  in, the answer was `ZEBRA`. With the PNG outside it, `-p` produced no answer and
+  listed `denied_actions: [{action: "read_file"}]`: the outside-workspace ask of §26,
+  which headless mode cannot show. Not run: the same in the TUI, where that ask shows.
 
 ## §14 Asks in the terminal and the keys that answer them
 
@@ -893,6 +911,19 @@ only downloaded the public release.
   Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
   time. An option whose own text holds a comma runs into the next one (`Red, dark` and
   `Blue` sent `A1: Red, dark, Blue`).
+- **No key unticks a several-pick question's options at once, so keys cannot redo an
+  answer whose ticks went in but were not sent; the Connect API can.** agy 1.5.8 (build
+  `1.5.8-4602374149505024`, Linux arm64 from the manifest, sha512 checked), Docker
+  `--network none` (`agy-a-img`, tmux 3.3a, 160×50), a fresh `--gemini_dir`, a fake
+  Gemini server answering with `ask_question` (`is_multi_select: true`, Apple / Banana
+  / Cherry), keys by `tmux send-keys` 300 ms apart from 1.5 s after `blocked`,
+  2026-11-13; one run per line. With Apple and Cherry ticked, Ctrl+U, Backspace,
+  Delete, Tab, ←, →, Home, `0` and Ctrl+A changed nothing; `4` opened "Your answer:"
+  with the ticks kept and Esc went back to the list with them still kept; `1` unticked
+  Apple only and Enter then sent `A1: Cherry`. The options have no "none" row that
+  unticks the rest, as Muse's has (MUSE§11), and Esc on the list skips the question. With
+  the same two ticked on screen, `HandleCascadeUserInteraction` with `selectedOptionIds:
+  ["2"]` sent `A1: Banana`.
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
@@ -1152,6 +1183,23 @@ only downloaded the public release.
 - `ForkConversation {"sourceCascadeId","forkAtStepIndex"}` → `{newCascadeId,
   forkedAtStepIndex, newProjectId}`; the title is copied, no parent id, the TUI stays
   where it was. Forking at a user-message step (0) is refused.
+- **What tells a `/fork` copy from a `/clear` one when the tab moves to it.** 2026-11-15,
+  agy 1.5.7 (Linux arm64, from the manifest) in Docker with no network, the TUI in a
+  python pty, a fake Gemini server; two turns, then `/fork`, one more turn, then
+  `/clear`, the files read every 50 ms. The new id's presence lock (§9) was taken 98 ms
+  after Enter on `/fork` and 86 ms after Enter on `/clear`, and at that moment:
+
+  | | `/fork` | `/clear` |
+  |---|---|---|
+  | `conversations/<new>.db` `steps` | the copied 4 | 0 |
+  | `conversations/<new>.db` `parent_references` | 1 row, a protobuf whose field 6 is the old conversation id | none |
+  | last `history.jsonl` line | `{"display":"/fork","conversationId":"<old id>","type":"slash_command"}` | the same with `/clear` |
+  | summaries row (§8) | none yet; later an empty title, the copied `step_count` (4), `parent_conversation_id` `''` | none yet; later `step_count` 0, times "never" |
+  | `transcript.jsonl`, pbtxt | none | none |
+
+  The old conversation kept its row, `.db` and transcript unchanged. After one more turn
+  the copy's transcript held only that turn's two steps and its `.db` 6. So the copy's
+  own `.db` names its parent from the first moment; the summaries row never does.
 
 ## §19 Artifacts and plan approval
 
@@ -1239,8 +1287,17 @@ only downloaded the public release.
   no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with
   --effort=<e>`.
 - On the Google route the list comes from `fetchAvailableModels`; an empty answer
-  gives `no model configuration is available for this account`, and the real shape
-  is not probed.
+  gives `no model configuration is available for this account`.
+- **`agy models` on a real Google account** (2026-11-12, agy on macOS, a copy of a
+  signed-in token file in a throwaway `--gemini_dir`, `WSL_INTEROP` set): exit 0, the
+  same `id\tlabel` rows, then a blank line and `Fetching available models...` on stdout.
+  16 rows: `gemini-4-carbon-{medium,high,low}`, `gemini-4-argon-{medium,high,low}`,
+  `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`,
+  `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`; no `gemini-3.1-pro`.
+  The list is the account's: Carbon was not open to every account that day. Koloft
+  reads it to turn a family name (`flash`, `argon`, `carbon`) into the newest id the
+  account has. `--model gemini-4-carbon --effort high -p "Reply with exactly: OK"` on
+  that account exited 0 with `OK` (24 thinking tokens).
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
@@ -1385,6 +1442,15 @@ only downloaded the public release.
   10 s in (with `WaitMsBeforeAsync` 30000) the command became a background task, and when
   it ended agy sent the model a `<SYSTEM_MESSAGE>` with its exit and output. So a `/dev/tty`
   that opens inside agy's command is never the owner's terminal. macOS: not probed.
+- **`run_command` does not read the user's rc files: a program only `~/.zshrc` puts on
+  PATH is not found.** 2026-11-15, agy 1.5.7 and 1.5.9 Linux arm64 (1.5.7 from the
+  manifest; it updated itself to 1.5.9 in the container), Docker (Debian bookworm, zsh
+  5.9), a user whose login shell is zsh and whose `~/.zshrc` puts `~/rc-only/bin` first,
+  agy started directly in a python pty with `--dangerously-skip-permissions`,
+  `SHELL=/bin/zsh` and the PATH a remote tab's script builds (PLATFORM§33), a fake Gemini
+  server answering one `run_command` `command -v rconly-tool`: not found on both, the
+  command's PATH agy's own with only `<geminiDir>/antigravity-cli/bin` in front. With the
+  user's `zsh -lic` PATH appended to agy's own, 1.5.9 found it.
 
 ## §26 Approval modes
 
@@ -1549,6 +1615,18 @@ only downloaded the public release.
   `doc 152` opened nothing; without it 49 of 49 redraws framed, 370 OSC 8 links, and the
   click opened `/link-152` in the Workbench. The links about double what the scroll
   sends (20.5 KB to 44.3 KB for the 60 notches); the 49 paints stayed 49.
+- **A file path is a link only inside a markdown link, and then its address is the bare
+  path.** With `TERM_PROGRAM` unset, a reply holding `src/util.ts:7`, a bare
+  `src/app.ts`, `[app.ts](<abs>/src/app.ts:42)`, `[util](src/util.ts:7)` and a long
+  relative and absolute path wrote OSC 8 links only for the two markdown links, with the
+  target as written for the address (`<abs>/src/app.ts:42`, `src/util.ts:7`: no
+  `file://`, the `:line` kept). Each shows as its bold label, a space and its underlined
+  target, both carrying the link; `[util](src/util.ts:7)` showed as
+  `util /src/util.ts:7`, a `/` added on screen but not in the address. agy breaks a long
+  line itself with `\r\n` and a two-space indent, after a space or a `-`, so the terminal
+  holds two unwrapped lines. 2026-11-14, agy 1.3.6 (`agy-a-img`, Linux, no network),
+  the fake Gemini server above, a python pty at 100×40 answering its queries; 2 runs,
+  the same.
 
 ## §28 Telemetry
 
@@ -1842,3 +1920,32 @@ repository, like the butler's.
 
 Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
 starts, as a Codex one does (`src/main/assistMemory.ts`).
+
+## §33 What agy asks the terminal
+
+**Every question agy asks its terminal is one Koloft's off-screen batching lets through
+at once.** Measured 2026-11-12 on agy 1.5.7 (Linux arm64 from the manifest, sha512
+checked) in Docker with no network: a python pty at 120×40 that answered as Koloft's
+terminal does (DA1, DA2, cursor position, DECRQM with 2026 known and 2027 not, OSC 4 and
+10–12, `?996n`, OSC 7501 with Koloft's reply) and left XTVERSION and `?u` unanswered as
+Koloft does (CODEX§37), a temp `HOME` with `modelProvider` and
+`onboarding.json` seeded (§5), a made-up `GEMINI_API_KEY` and the fake Gemini server
+answering a `run_command` (`touch`) and then text, `TERM_PROGRAM` unset as in a Koloft
+tab (§27). One run: the trust question (Enter), one prompt, Enter on the run, a resize
+to 100×30, `/clear`, Ctrl+C twice. An earlier run that answered `?u` (`?0u`) and every
+DECRQM as known asked exactly the same.
+
+- At start: `ESC[>q`, `ESC[c`, `ESC[?2026$p`, `ESC[?2027$p`, `ESC]7501;?BEL`,
+  `ESC]11;?BEL`, `ESC[?u`.
+- `ESC[?u` again when the prompt first draws, after the resize and after `/clear`.
+- Nothing else: no OSC 10 or OSC 4, no DCS or APC question, and nothing new during the
+  turn. `ESC[?5W`, `ESC[=5;1u`, `ESC[>5u` and `ESC[>4;2m` set modes and ask nothing.
+- The run's reads, replayed in order and at their recorded times into Koloft's
+  `TerminalOutput` for a tab off screen, sent all 6 reads holding a question at once.
+- The OSC 7501 question is answered by Koloft's main process straight from the pty
+  output (§10), and `ESC[?u` gets no answer in a Koloft tab, so the batching delays
+  neither; the rest are answered by the terminal and need the early send.
+
+Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
+
+Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.

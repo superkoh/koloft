@@ -43,6 +43,7 @@ import {
   menuItemTexts,
   openMenu,
   openWorktreeSession,
+  processAlive,
   readCalls,
   resumedId,
   sendShortcut,
@@ -222,9 +223,13 @@ const DUE_PLUS_WINDOW_FIRST_TICKS_MS = 150_000
 const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
 const CLOSE_RECHECK_MS = 2_000
+const SEVERAL_CLOSE_CHECKS_MS = CLOSE_RECHECK_MS * 4
 const TUI_GIVES_UP_ON_A_QUESTION_MS = 1_500
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
 const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const ANOTHER_ROUND_OF_IDLE_SLEEP_MS = WAITING_TO_IDLE_MS + IDLE_TO_SLEEP_MS * 2
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -291,14 +296,14 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       expect(await menuItemTexts(page)).toEqual(
-        expect.arrayContaining(['Scheduled jobs…', 'Remove workspace'])
+        expect.arrayContaining(['Session defaults…', 'Scheduled jobs…', 'Remove workspace'])
       )
       const shape = await page
         .locator('.menu')
         .evaluate((el) =>
           Array.from(el.children).map((c) => (c.classList.contains('sep') ? 'sep' : 'mi'))
         )
-      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
+      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
 
       await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
       await expect(cronDialog(page)).toBeVisible()
@@ -739,7 +744,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model, and its History line says the endpoint set the model', async ({
+  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model and with the context capped at 200k, and its History line says the endpoint set the model', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -774,6 +779,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       const call = await waitNewCall(env, 0)
       expect(call.argv).not.toContain('--model')
+      expect(call.disable1mContext).toBe('1')
       const row = cronRows(page, 'ws-a')
       await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
@@ -844,6 +850,59 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         state: 'Done — closed itself',
         folder: ''
       })
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M37: with "Close it" on, a run whose own turn has ended stays open while a session it started is still working, and closes for good once that session’s turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const untilThere = (file: string): string =>
+      `while [ ! -f ${path.join(env.home, file)} ]; do sleep 0.2; done`
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, {
+        name: 'Nightly report',
+        task: `/run koloft session new --model sonnet --effort low --name kid -- hello; ${untilThere('go-run')}`
+      })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+
+      const [run] = await waitForCalls(env, 2)
+      const kidRow = plainRows(page, 'ws-a').filter({ hasText: 'kid' })
+      await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kidTab = await kidRow.getAttribute('data-tab-id')
+      await page.evaluate(([tab, line]) => window.api.terminal.write(tab!, line + '\r'), [
+        kidTab,
+        `/run ${untilThere('go-kid')}`
+      ] as const)
+      await expect(kidRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+      fs.writeFileSync(path.join(env.home, 'go-run'), '')
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — still finishing',
+        { timeout: 60_000 }
+      )
+      await page.waitForTimeout(SEVERAL_CLOSE_CHECKS_MS)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — still finishing'
+      )
+      expect(fs.existsSync(runTree(env.workspaces.a, worktreeOf(run)))).toBe(true)
+
+      fs.writeFileSync(path.join(env.home, 'go-kid'), '')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — closed itself')
     } finally {
       await app.close().catch(() => {})
     }
@@ -1154,6 +1213,50 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M38: a "Close it" run that Koloft quit on in the middle of its work is told to carry on when the relaunch reopens it, and closes for good once that turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
+    const app1 = await launchApp(env)
+    try {
+      const page = await app1.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: '/busy' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+      await waitNewCall(env, 0)
+      await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+    } finally {
+      await app1.close().catch(() => {})
+    }
+    expect(fs.existsSync(peerLog)).toBe(false)
+
+    const app2 = await launchApp(env)
+    try {
+      const page = await app2.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await expect
+        .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
+          timeout: 60_000
+        })
+        .toContain('Koloft restarted while this scheduled run was working')
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — closed itself')
+    } finally {
+      await app2.close().catch(() => {})
+    }
+  })
+
   const agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree = (env: E2EEnv): void => {
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
@@ -1275,6 +1378,70 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         expect(launches(env)).toBe(launchesWhileOpen)
       } finally {
         await app2.close().catch(() => {})
+      }
+    })
+  }
+
+  const IDLE_RUNS: {
+    agent?: 'Codex'
+    setUp: (env: E2EEnv) => void
+    runPid: (env: E2EEnv) => Promise<number>
+  }[] = [
+    { setUp: () => {}, runPid: async (env) => (await waitNewCall(env, 0)).pid },
+    {
+      agent: 'Codex',
+      setUp: installCodex,
+      runPid: async (env) => {
+        await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(1)
+        return codexCalls(env)[0].pid
+      }
+    }
+  ]
+  for (const { agent, setUp, runPid } of IDLE_RUNS) {
+    test(`while idle${agent ? ` in ${agent}` : ''}, a "Close it" run held open by a file not committed keeps its tab awake while an idle plain tab goes to sleep, so it stays the open run and is not written closed`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      setUp(env)
+      gitInit(env.workspaces.a)
+      seedSettings(env, { hintsOff: true })
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent, name: 'Nightly report', task: '/write report.md' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Nightly report')
+        const run = await runPid(env)
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+          .toBe('Done — not closed: Changes not committed')
+        await closeCron(page)
+
+        const plain = agent ? { method: 'Claude' as const } : {}
+        await startSessionIn(page, 'ws-b', plain)
+        await startSessionIn(page, 'ws-a', plain)
+        const wsB = fs.realpathSync(env.workspaces.b)
+        const idlePlainTab = (): ClaudeCall | undefined =>
+          readCalls(env).find((c) => fs.realpathSync(c.cwd) === wsB)
+        await expect.poll(() => idlePlainTab(), { timeout: 30_000 }).toBeTruthy()
+        await expect.poll(() => processAlive(idlePlainTab()!.pid), { timeout: 30_000 }).toBe(false)
+        await page.waitForTimeout(ANOTHER_ROUND_OF_IDLE_SLEEP_MS)
+
+        expect(processAlive(run)).toBe(true)
+        await openCron(page, 'ws-a')
+        expect((await histLines(page))[0]?.state).toBe('Done — not closed: Changes not committed')
+        await clickRunNow(page, 'Nightly report')
+        await expect(toastMsg(page)).toHaveText(
+          '⏰ Nightly report skipped: the last run is still open'
+        )
+      } finally {
+        await quitAndClose(app)
       }
     })
   }
@@ -1607,7 +1774,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     },
     {
       agent: 'Antigravity',
-      repo: false,
+      repo: true,
       setUp: (env) => {
         installAgy(env)
         installRemoteAgy(env)

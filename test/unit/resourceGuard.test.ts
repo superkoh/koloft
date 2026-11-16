@@ -1,20 +1,10 @@
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { MachineState } from '../../src/shared/types'
 import { ownerTyped, ResourceGuard } from '../../src/main/resourceGuard'
-import { BUSY_MARKER } from '../../src/main/machineRoom'
 import type { TaggedProcess } from '../../src/main/machineTrees'
 
-let regDir: string
-
-beforeEach(() => {
-  regDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-guard-'))
-})
-
-afterEach(() => {
-  fs.rmSync(regDir, { recursive: true, force: true })
-})
+const KOLOFT = 1
+const STARTED = 'Thu Nov 12 00:51:03 2026'
 
 const proc = (
   pid: number,
@@ -26,177 +16,282 @@ const proc = (
   ppid,
   tab,
   rssBytes: 100 * 2 ** 20,
-  cpuPercent: 0,
+  started: STARTED,
   agent: false,
-  vm: false,
   ...opts
 })
 
-function setup(rows: TaggedProcess[], freeOnMachine = async (): Promise<void> => {}) {
-  const reading = { pressure: 2, load1: 1 }
+const TWO_TABS_EACH_RUNNING_A_TOOL = (): TaggedProcess[] => [
+  proc(10, KOLOFT, 'away'),
+  proc(11, 10, undefined),
+  proc(20, KOLOFT, 'watched'),
+  proc(21, 20, undefined)
+]
+
+function setup(rows: TaggedProcess[], tabs = ['away', 'watched']) {
+  const world = { pressure: 1, rows, tabs, lookedAt: 'watched' as string | null }
   const ways: string[] = []
-  const clock = { now: 1_000_000 }
+  const lines: string[] = []
+  const states: MachineState[] = []
   const guard = new ResourceGuard({
-    regDir,
-    cores: 10,
-    read: async () => reading,
-    now: () => clock.now,
-    log: () => {},
-    heldDirs: () => [],
-    freeOnMachine,
-    isRemote: (tab) => tab === 'remote',
-    changed: () => {},
-    readTrees: async () => rows,
+    koloftPid: KOLOFT,
+    read: async () => ({ pressure: world.pressure }),
+    log: (line) => lines.push(line),
+    agentTabsOnThisMac: () => world.tabs,
+    lookedAt: () => world.lookedAt,
+    changed: (s) => states.push(s),
+    readTrees: async () => world.rows,
     giveWay: async (pid, on) => {
       ways.push(`${on ? '-b' : '-B'} ${pid}`)
     }
   })
-  return { guard, ways, reading, clock }
+  const critical = async (): Promise<void> => {
+    world.pressure = 4
+    await guard.tick()
+    await guard.tick()
+  }
+  return { guard, ways, lines, world, states, critical }
 }
 
-const busyMarked = (): boolean => fs.existsSync(path.join(regDir, BUSY_MARKER))
-
-describe('giving way while the machine is busy', () => {
-  it('slows only the tools of background sessions, never the agent program itself nor the owner’s sessions', async () => {
-    const rows = [
-      proc(10, 1, 'bg', { agent: true }),
-      proc(11, 10, undefined, { cpuPercent: 300 }),
-      proc(20, 1, 'mine', { agent: true }),
-      proc(21, 20, undefined, { cpuPercent: 300 })
-    ]
-    const { guard, ways } = setup(rows)
-    guard.launchInBackground(
-      { tabId: 'bg', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'bg'
-    )
-    await guard.tick()
+describe('giving way while memory stays critical', () => {
+  it('slows only the tools of the tabs nobody looks at, never an agent and never the tab on screen', async () => {
+    const { guard, ways, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
     expect(ways).toEqual(['-b 11'])
+    expect(guard.state().slowed).toEqual(['away'])
   })
 
-  it('a tool already slowed is not slowed again, and every slowed tool is lifted once the machine is roomy', async () => {
-    const { guard, ways, reading, clock } = setup([
-      proc(10, 1, 'bg', { agent: true }),
-      proc(11, 10, undefined, { cpuPercent: 300 })
-    ])
-    guard.launchInBackground(
-      { tabId: 'bg', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'bg'
-    )
+  it('does nothing at a single critical reading, nor at warning however long it lasts', async () => {
+    const { guard, ways, world, states } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    world.pressure = 4
     await guard.tick()
-    await guard.tick()
-    expect(ways).toEqual(['-b 11'])
-    reading.pressure = 1
-    for (let i = 0; i < 20; i++) {
-      clock.now += 5_000
-      await guard.tick()
-    }
-    expect(guard.room.busy).toBe(false)
-    expect(ways).toEqual(['-b 11', '-B 11'])
-  })
-
-  it('a slowed tool that later drops out of the tree, or a ps read that fails, is still lifted when the machine is roomy', async () => {
-    const rows = [proc(10, 1, 'bg', { agent: true }), proc(11, 10, undefined, { cpuPercent: 300 })]
-    const { guard, ways, reading, clock } = setup(rows)
-    guard.launchInBackground(
-      { tabId: 'bg', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'bg'
-    )
-    await guard.tick()
-    rows.splice(1, 1, proc(11, 1, undefined, { cpuPercent: 300 }))
-    await guard.tick()
-    rows.splice(0, rows.length)
-    await guard.tick()
-    reading.pressure = 1
-    for (let i = 0; i < 20; i++) {
-      clock.now += 5_000
-      await guard.tick()
-    }
-    expect(ways).toEqual(['-b 11', '-B 11'])
-  })
-
-  it('the owner freeing a background session lifts its tools at once', async () => {
-    const { guard, ways } = setup([
-      proc(10, 1, 'bg', { agent: true }),
-      proc(11, 10, undefined, { cpuPercent: 300 })
-    ])
-    guard.launchInBackground(
-      { tabId: 'bg', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'bg'
-    )
-    await guard.tick()
-    await guard.free('bg')
-    expect(ways).toEqual(['-b 11', '-B 11'])
-    expect(fs.existsSync(path.join(regDir, 'bg.free'))).toBe(true)
-  })
-
-  it('a session started on a remote machine never queues for this Mac, yet still counts as background there', async () => {
-    const { guard } = setup([])
-    await guard.tick()
-    const turn = guard.launchInBackground(
-      { tabId: 'remote', kind: 'claude', cwd: 'ssh://box/srv', title: 't' },
-      async () => 'remote',
-      false
-    )
-    expect(turn.queued).toBe(false)
-    expect(await turn.outcome).toBe('started')
-    expect(guard.isBackground('remote')).toBe(true)
-  })
-
-  it('the owner typing a line into a remote background session frees it on its machine once, not once per key', async () => {
-    let calls = 0
-    let answer!: () => void
-    const { guard } = setup([], () => {
-      calls++
-      return new Promise((resolve) => (answer = resolve))
-    })
-    guard.launchInBackground(
-      { tabId: 'remote', kind: 'claude', cwd: 'ssh://box/srv', title: 't' },
-      async () => 'remote',
-      false
-    )
-    const keys = [guard.free('remote'), guard.free('remote'), guard.free('remote')]
-    answer()
-    expect(await Promise.all(keys)).toEqual([true, false, false])
-    expect(calls).toBe(1)
-    expect(guard.isBackground('remote')).toBe(false)
-  })
-
-  it('a remote session’s tools run on its own machine, so nothing here is slowed for it', async () => {
-    const { guard, ways } = setup([proc(30, 1, 'remote', { cpuPercent: 300 })])
-    guard.launchInBackground(
-      { tabId: 'remote', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'remote'
-    )
-    await guard.tick()
+    world.pressure = 2
+    for (let i = 0; i < 20; i++) await guard.tick()
     expect(ways).toEqual([])
+    expect(states.every((s) => !s.critical && !s.slowed.length)).toBe(true)
+  })
+
+  it('reads the process table only while memory stays critical', async () => {
+    const { guard, world } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    let reads = 0
+    Object.defineProperty(world, 'rows', {
+      get: () => (reads++, TWO_TABS_EACH_RUNNING_A_TOOL())
+    })
+    world.pressure = 2
+    for (let i = 0; i < 5; i++) await guard.tick()
+    expect(reads).toBe(0)
+  })
+
+  it('leaves alone a tab that is not a bound agent tab on this Mac: a remote one, a Workbench shell', async () => {
+    const { ways, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL(), ['watched'])
+    await critical()
+    expect(ways).toEqual([])
+  })
+
+  it('a tool that starts later is slowed on the next look, and one already slowed is not slowed twice', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(12, 11, undefined)]
+    await guard.tick()
+    expect(ways).toEqual(['-b 11', '-b 12'])
+  })
+
+  it('a tab with no tool running carries no mark', async () => {
+    const { guard, critical } = setup([proc(10, KOLOFT, 'away'), proc(20, KOLOFT, 'watched')])
+    await critical()
+    expect(guard.state()).toMatchObject({ critical: true, slowed: [] })
+  })
+
+  it('shows each tab’s memory only while memory stays critical', async () => {
+    const { guard, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    expect(guard.state().memory).toEqual({})
+    await critical()
+    expect(guard.state().memory.away).toBe(200 * 2 ** 20)
+    world.pressure = 2
+    await guard.tick()
+    expect(guard.state().memory).toEqual({})
   })
 })
 
-describe('holding only while background work is what keeps the machine busy', () => {
-  it('holds while background tools use a core or more', async () => {
-    const { guard } = setup([
-      proc(10, 1, 'bg', { agent: true }),
-      proc(11, 10, undefined, { cpuPercent: 150 })
-    ])
-    guard.launchInBackground(
-      { tabId: 'bg', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'bg'
-    )
-    await guard.tick()
-    expect(guard.room.holding).toBe(true)
-    expect(busyMarked()).toBe(true)
+describe('getting a slowed tab back to full speed', () => {
+  it('the owner opening the row lifts it at once, the tools that started since the last look too', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(13, 11, undefined)]
+    ways.length = 0
+    expect(await guard.free('away')).toBe(true)
+    expect(ways.sort()).toEqual(['-B 11', '-B 13'])
+    expect(guard.state().slowed).toEqual([])
   })
 
-  it('lets held work go, one at a time, when the machine is busy but no background tool is working', async () => {
-    const { guard } = setup([proc(10, 1, 'bg', { agent: true }), proc(11, 10, undefined)])
-    guard.launchInBackground(
-      { tabId: 'bg', kind: 'claude', cwd: '/w', title: 't' },
-      async () => 'bg'
-    )
+  it('a tab the owner opened or typed into stays at full speed for the rest of this critical spell', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    await guard.free('away')
+    ways.length = 0
+    world.rows = [...world.rows, proc(14, 10, undefined)]
+    for (let i = 0; i < 3; i++) await guard.tick()
+    expect(ways).toEqual([])
+  })
+
+  it('a tab that was only on screen is slowed once the owner moves to another', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    await guard.free('away')
+    world.lookedAt = 'away'
+    ways.length = 0
     await guard.tick()
-    expect(guard.room.busy).toBe(true)
-    expect(guard.room.holding).toBe(false)
-    expect(busyMarked()).toBe(false)
+    expect(ways).toEqual(['-b 21'])
+  })
+
+  it('a slowed tab that comes on screen without a click is lifted at the next look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.lookedAt = 'away'
+    ways.length = 0
+    await guard.tick()
+    expect(ways).toContain('-B 11')
+    expect(guard.state().slowed).toEqual(['watched'])
+  })
+
+  it('the first reading below critical lifts everything, and the next critical spell starts afresh', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    await guard.free('away')
+    world.lookedAt = 'away'
+    await guard.tick()
+    ways.length = 0
+    world.pressure = 2
+    await guard.tick()
+    expect(ways).toEqual(['-B 21'])
+    expect(guard.state()).toEqual({ critical: false, slowed: [], memory: {} })
+    world.lookedAt = 'watched'
+    ways.length = 0
+    await critical()
+    expect(ways).toEqual(['-b 11'])
+  })
+
+  it('lifts a slowed tool that left its tab’s tree, but not another program that took its process id', async () => {
+    const { guard, ways, world, critical } = setup([
+      ...TWO_TABS_EACH_RUNNING_A_TOOL(),
+      proc(15, 11, undefined)
+    ])
+    await critical()
+    world.rows = [
+      proc(10, KOLOFT, 'away'),
+      proc(11, 999, undefined),
+      proc(15, 998, undefined, { started: 'Thu Nov 12 01:00:00 2026' }),
+      proc(20, KOLOFT, 'watched'),
+      proc(21, 20, undefined)
+    ]
+    ways.length = 0
+    await guard.free('away')
+    expect(ways).toEqual(['-B 11'])
+  })
+
+  it('lifts a claude -p that a slowed tool started, which was born slowed though Koloft never slowed it itself', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(16, 11, undefined, { agent: true })]
+    await guard.tick()
+    expect(ways).toEqual(['-b 11'])
+    ways.length = 0
+    await guard.free('away')
+    expect(ways.sort()).toEqual(['-B 11', '-B 16'])
+  })
+
+  it('leaves alone a tool of the tab that it never slowed: one the agent started after the last look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(17, 10, undefined)]
+    ways.length = 0
+    await guard.free('away')
+    expect(ways).toEqual(['-B 11'])
+  })
+
+  it('a slowed tab that comes on screen is lifted at once, without waiting for the next look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.lookedAt = 'away'
+    ways.length = 0
+    guard.lookedAtChanged()
+    await vi.waitFor(() => expect(ways).toContain('-B 11'))
+  })
+
+  it('a process table that cannot be read is logged, and the next look goes on as usual', async () => {
+    const { guard, ways, world, lines } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    world.pressure = 4
+    await guard.tick()
+    const rows = world.rows
+    Object.defineProperty(world, 'rows', {
+      configurable: true,
+      get: () => {
+        throw new Error('ps failed')
+      }
+    })
+    await guard.tick()
+    expect(lines.join('\n')).toContain('could not look at the machine: Error: ps failed')
+    Object.defineProperty(world, 'rows', { configurable: true, value: rows })
+    await guard.tick()
+    expect(ways).toEqual(['-b 11'])
+  })
+
+  it('a slowed shell that has since become an agent program is lifted at the next look and left alone after', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = world.rows.map((p) => (p.pid === 11 ? { ...p, agent: true } : p))
+    ways.length = 0
+    await guard.tick()
+    await guard.tick()
+    expect(ways).toEqual(['-B 11'])
+    expect(guard.state().slowed).toEqual([])
+  })
+
+  it('when the process table comes back empty as memory calms, the slowed tools are remembered and lifted at the next look', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    const rows = world.rows
+    world.rows = []
+    world.pressure = 2
+    ways.length = 0
+    await guard.tick()
+    expect(ways).toEqual([])
+    expect(guard.state().slowed).toEqual(['away'])
+    world.rows = rows
+    await guard.tick()
+    expect(ways).toEqual(['-B 11'])
+    expect(guard.state().slowed).toEqual([])
+  })
+
+  it('opening a row does nothing while memory is not critical', async () => {
+    const { guard, ways } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    expect(await guard.free('away')).toBe(false)
+    expect(ways).toEqual([])
+  })
+
+  it('a tab that closes has its surviving tools lifted', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.tabs = ['watched']
+    world.rows = [proc(11, 999, undefined), proc(20, KOLOFT, 'watched'), proc(21, 20, undefined)]
+    ways.length = 0
+    guard.forget('away')
+    await guard.tick()
+    expect(ways).toEqual(['-B 11'])
+    expect(guard.state().slowed).toEqual([])
+  })
+
+  it('quitting lifts every tool it slowed and what those started since, and slows nothing afterwards', async () => {
+    const { guard, ways, world, critical } = setup(TWO_TABS_EACH_RUNNING_A_TOOL())
+    await critical()
+    world.rows = [...world.rows, proc(18, 11, undefined)]
+    ways.length = 0
+    guard.liftAllBeforeQuitting()
+    expect(ways).toEqual(['-B 11'])
+    await vi.waitFor(() => expect(ways).toContain('-B 18'))
+    world.rows = [...world.rows, proc(19, 10, undefined)]
+    await guard.tick()
+    expect(ways.filter((w) => w.startsWith('-b'))).toEqual([])
   })
 })
 

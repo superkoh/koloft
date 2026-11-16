@@ -24,6 +24,7 @@ import type {
   TerminalExit,
   TerminalCwd,
   ScreenRequest,
+  ScreenSize,
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
@@ -78,7 +79,8 @@ const api: KoloftApi = {
     attach: (id) => ipcRenderer.send(CH.terminal.attach, id),
     onScreen: (id, onScreen) => ipcRenderer.send(CH.terminal.onScreen, id, onScreen),
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
-    resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
+    resize: (id, cols, rows, sessionScreen) =>
+      ipcRenderer.send(CH.terminal.resize, id, cols, rows, sessionScreen),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),
     onData: (id, cb) => terminalDataSinks.listen(id, cb),
     onExit: (cb) => {
@@ -194,6 +196,11 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.cron.toast, handler)
     }
   },
+  sessionDefaults: {
+    read: (workspacePath) => ipcRenderer.invoke(CH.sessionDefaults.read, workspacePath),
+    write: (workspacePath, defaults) =>
+      ipcRenderer.invoke(CH.sessionDefaults.write, workspacePath, defaults)
+  },
   machine: {
     onState: (cb) => {
       const handler = (_e: unknown, s: MachineState): void => cb(s)
@@ -201,8 +208,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.machine.state, handler)
     },
     now: () => ipcRenderer.invoke(CH.machine.now),
-    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId),
-    drop: (tabId) => ipcRenderer.invoke(CH.machine.drop, tabId)
+    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId)
   },
   conductors: {
     bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),
@@ -211,6 +217,9 @@ const api: KoloftApi = {
     open: () => ipcRenderer.invoke(CH.conductors.open),
     startFresh: () => ipcRenderer.invoke(CH.conductors.startFresh),
     fromPalette: (request) => ipcRenderer.invoke(CH.conductors.fromPalette, request)
+  },
+  palette: {
+    savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
   },
   discord: {
     status: () => ipcRenderer.invoke(CH.discord.status),
@@ -276,6 +285,7 @@ const api: KoloftApi = {
     }
   },
   browserGuestLimit: ipcRenderer.sendSync(CH.browser.guestLimit) as number,
+  sessionScreenAtLoad: ipcRenderer.sendSync(CH.terminal.sessionScreen) as ScreenSize | null,
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
   browser: {
     onOpenRequest: (cb) => {
@@ -401,10 +411,12 @@ const api: KoloftApi = {
   fs: {
     listDir: (p, opts) => ipcRenderer.invoke(CH.fs.listDir, p, opts),
     dirExists: (p) => ipcRenderer.invoke(CH.fs.dirExists, p),
+    fileExists: (p) => ipcRenderer.invoke(CH.fs.fileExists, p),
     search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
     gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
     gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),
-    watchDir: (root) => ipcRenderer.invoke(CH.fs.watchDir, root),
+    watchDir: (root, reportsWhatChangedWhileUnwatched) =>
+      ipcRenderer.invoke(CH.fs.watchDir, root, reportsWhatChangedWhileUnwatched),
     unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
     onDirChange: (cb) => {
       const handler = (_e: unknown, root: string, changes?: DirChanges): void => cb(root, changes)
@@ -455,7 +467,7 @@ const api: KoloftApi = {
     removeConfirmed: (p) => ipcRenderer.invoke(CH.workspace.removeConfirmed, p),
     move: (p, before) => ipcRenderer.invoke(CH.workspace.move, p, before),
     worktrees: (p) => ipcRenderer.invoke(CH.workspace.worktrees, p),
-    historyRows: (p) => ipcRenderer.invoke(CH.workspace.historyRows, p),
+    historyRows: (p, opts) => ipcRenderer.invoke(CH.workspace.historyRows, p, opts),
     rows: () => ipcRenderer.invoke(CH.workspace.rows),
     onRows: (cb) => {
       const handler = (_e: unknown, rows: WorkspaceRows[]): void => cb(rows)

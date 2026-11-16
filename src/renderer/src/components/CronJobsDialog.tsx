@@ -47,7 +47,7 @@ import {
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { mixesBackends } from '../sessionRows'
-import { ModelAndThinking } from './ModelAndThinking'
+import { ModelAndThinking, useFieldFocus } from './ModelAndThinking'
 import { Switch } from './settings/Switch'
 import '../cronJobs.css'
 
@@ -156,7 +156,7 @@ export function CronJobsDialog({
   const [skills, setSkills] = useState<SkillSuggestion[]>([])
   const [trusted, setTrusted] = useState<boolean | null>(null)
   const [hot, setHot] = useState(0)
-  const [focusKey, setFocusKey] = useState('')
+  const { inputCls, focusProps } = useFieldFocus()
   const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -289,12 +289,6 @@ export function CronJobsDialog({
       pick(sugs[Math.min(hot, sugs.length - 1)])
     }
   }
-
-  const inputCls = (key: string): string => 'cb-input' + (focusKey === key ? ' focus' : '')
-  const focusProps = (key: string): { onFocus: () => void; onBlur: () => void } => ({
-    onFocus: () => setFocusKey(key),
-    onBlur: () => setFocusKey((k) => (k === key ? '' : k))
-  })
 
   const lastLine = (job: CronJob): JSX.Element => {
     const folders = cron.folders[job.id] ?? 0

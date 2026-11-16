@@ -35,7 +35,6 @@ import {
   MUSE_HOOKS_ENV,
   museHook,
   writeMuseHooks,
-  type MuseHold,
   type MuseRelayFiles,
   type MuseHook
 } from './museHooks'
@@ -122,7 +121,7 @@ export interface MuseMachine {
   launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan>
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
-  endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined>
   endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -246,6 +245,30 @@ function registryDirs(env: NodeJS.ProcessEnv): string[] {
   ]
 }
 
+interface RegistryDir {
+  dir: string
+  changed: number
+}
+
+function registryDirsChangedNow(env: NodeJS.ProcessEnv): RegistryDir[] {
+  return registryDirs(env).flatMap((dir) => {
+    const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
+    return changed === undefined ? [] : [{ dir, changed }]
+  })
+}
+
+async function registryDirsChanged(env: NodeJS.ProcessEnv): Promise<RegistryDir[]> {
+  const seen = await Promise.all(
+    registryDirs(env).map((dir) =>
+      fs.promises.stat(dir).then(
+        (st) => [{ dir, changed: st.mtimeMs }],
+        () => []
+      )
+    )
+  )
+  return seen.flat()
+}
+
 // MUSE§2 MUSE§10
 function trustFile(env: NodeJS.ProcessEnv): string {
   return path.join(museConfigHome(env), 'muse', 'trust.json')
@@ -332,6 +355,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
+  private registryLooking = false
+  private registryLooks = 0
   private registrySeenAt?: number
   private unreadable = new Set<string>()
   private remoteHistory = new Map<string, MuseHistoryEntry[]>()
@@ -620,7 +645,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     ctx: StartContext,
     { account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const { opts, cwd, workspace, resource, freshWorktree } = ctx
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     const remote = this.deps.remote
     const host = hostOfPath(cwd)
     if (!remote || !host) throw new Error('Koloft cannot reach this machine.')
@@ -638,11 +663,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
-      context: agentTools ? koloftPrompt('muse') : undefined,
+      context: agentTools ? koloftPrompt('muse', rules) : undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
-      ownerWords: opts.ownerWords,
-      holdWhileBusy: !!this.deps.holdWhileBusy?.(tabId)
+      ownerWords: opts.ownerWords
     })
     this.assertStarting()
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -686,8 +710,18 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private keepSweeping(): void {
     this.sweeping ??= setInterval(() => {
-      this.sweepRegistry()
-      this.followLogs()
+      if (this.registryLooking) return
+      this.registryLooking = true
+      const looksBefore = this.registryLooks
+      // PLATFORM§69
+      void registryDirsChanged(this.env)
+        .then((dirs) => {
+          const aLaterLookAlreadyRan = this.registryLooks !== looksBefore
+          if (!aLaterLookAlreadyRan) this.sweepRegistry(dirs)
+          this.followLogs()
+        })
+        .catch((error) => console.error('[koloft] Muse registry sweep failed:', error))
+        .finally(() => (this.registryLooking = false))
     }, REGISTRY_SWEEP_MS)
     this.sweeping.unref?.()
   }
@@ -696,7 +730,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     ctx: StartContext,
     { binary, account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const { opts, cwd, workspace, resource, freshWorktree } = ctx
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
     // ADR-0029 MUSE§22
@@ -715,19 +749,18 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('muse')] : []),
+      ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
-    const hold = this.deps.holdWhileBusy?.(tabId) ? this.deps.holdScript : undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
-      hold && { ...hold, tabId },
-      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined
+      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined,
+      rules
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -777,8 +810,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
     ownerWords: string | undefined,
-    hold: MuseHold | undefined,
-    relay: MuseRelayFiles | undefined
+    relay: MuseRelayFiles | undefined,
+    rules: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -786,6 +819,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         backend: 'muse',
         open,
         agent,
+        rules,
         drop: (name) =>
           name.startsWith(HOOK_DROP_PREFIX)
             ? (obj, full): void => {
@@ -805,7 +839,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold, relay)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, relay)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },
@@ -1113,8 +1147,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (!run.host || !run.tmuxName || this.shuttingDown) return
     const machine = this.deps.remote?.machine(run.host)
     const runId = run.mirror?.runId
+    // ADR-0044
     const named = runId && (await machine?.runScript(TAB_TMUX_NAME_SH, [runId]))
-    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName)
+    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName, runId)
     if (problem)
       this.deps.error(`Could not stop Muse on ${run.host}: ${problem}. It is still running there.`)
     this.deps.remote?.poke(run.host)
@@ -1211,7 +1246,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§4
-  private sweepRegistry(): Set<MuseRun> {
+  private sweepRegistry(dirs = registryDirsChangedNow(this.env)): Set<MuseRun> {
+    this.registryLooks++
     const rebound = new Set<MuseRun>()
     const live = [...this.runs.values()].filter(
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
@@ -1221,10 +1257,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       this.sweeping = undefined
       return rebound
     }
-    const dirs = registryDirs(this.env).flatMap((dir) => {
-      const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
-      return changed === undefined ? [] : [{ dir, changed }]
-    })
     if (!dirs.length) return rebound
     const changedAt = Math.max(...dirs.map((d) => d.changed))
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound

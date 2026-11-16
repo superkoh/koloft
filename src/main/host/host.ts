@@ -47,6 +47,7 @@ export interface ClaudeLaunch {
   role?: string
   conductor?: boolean
   trustFolder?: boolean
+  projectRules?: string
 }
 
 export interface MachineTab {
@@ -72,6 +73,7 @@ export type ClaudeLaunchPlan =
       extraEnv?: {
         KOLOFT_FIRST_PROMPT?: string
         KOLOFT_SESSION_NAME?: string
+        KOLOFT_PICTURE_FOLDER?: string
         KOLOFT_PORT_OFFSET?: string
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
@@ -101,6 +103,7 @@ export interface Host {
   gitDiff(root: string, base?: string): Promise<GitDiffResult>
   gitFileDiff(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
   gitFileDiffFull(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
+  fileExists(file: string): Promise<boolean>
   readText(file: string): Promise<string>
   readBytes(file: string): Promise<Buffer>
   openForEdit(file: string): Promise<EditOpenResult>
@@ -111,7 +114,11 @@ export interface Host {
     opts?: { force?: unknown; eol?: unknown }
   ): Promise<EditWriteResult>
   createFile(dir: string, name: string): Promise<EditCreateResult>
-  watchDir(root: string, onChange: DirChangeListener): boolean
+  watchDir(
+    root: string,
+    onChange: DirChangeListener,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): Promise<boolean>
   unwatchDir(root: string): void
   watchFile(
     file: string,

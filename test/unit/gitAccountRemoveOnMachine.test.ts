@@ -20,6 +20,7 @@ import type { MachineRun } from '../../src/main/gitMachineAccounts'
 import { REMOTE_GIT_DIR, remoteShCommand } from '../../src/main/remote/install'
 import type { RunResult } from '../../src/main/remote/ssh'
 import { rereadSettingsOnNextLoad, saveSettings } from '../../src/main/settings'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import type { GitAccount } from '../../src/shared/types'
 
 const MACHINE = 'devbox'
@@ -74,7 +75,8 @@ function service(): GitAccountService {
   })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await BackgroundFile.whenAllWritten()
   machineHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-machine-')))
   fs.mkdirSync(path.dirname(tokenFile()), { recursive: true })
   fs.writeFileSync(tokenFile(), 'carol-token')

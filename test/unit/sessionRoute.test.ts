@@ -174,6 +174,42 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
+  it('reads a reply that corrects itself by its last whole object, past a stray brace, and never falls back to an answer it took back', () => {
+    const answer = reply({ hand: 'koloft', title: 'Resume', rule: 5 })
+    expect(parseRoute(`${answer}(not rule 6})`, LIST)).toEqual({ kind: 'koloft', title: 'Resume' })
+    expect(
+      parseRoute(`${answer}Actually: ${reply({ hand: 'session', session: '9.9', rule: 4 })}`, LIST)
+    ).toBeNull()
+    expect(
+      parseRoute(
+        '{"hand": "koloft", "title": "恢复修复登录的会话", "rule": 5}\n\nWait, the title should be in the language of the message (English):\n\n{"hand": "koloft", "title": "Resume login fix session", "rule": 5}\n',
+        LIST
+      )
+    ).toEqual({ kind: 'koloft', title: 'Resume login fix session' })
+    expect(
+      parseRoute(
+        `${reply({ workspace: 1, worktree: { new: 'deng-lu' }, title: '修登录' })}Actually:\n${reply({ workspace: 1, worktree: { new: 'safari-login' }, title: 'Fix login' })}`,
+        LIST
+      )
+    ).toEqual({
+      kind: 'workspace',
+      path: '/Users/me/code/app',
+      title: 'Fix login',
+      worktree: { kind: 'new', name: 'safari-login' }
+    })
+  })
+
+  it('takes the last object that names its rule as the answer, passing over an example object written after it; a reply that names no rule anywhere is read by its last object', () => {
+    const answer = '{"hand": "koloft", "title": "Resume", "rule": 5}'
+    expect(
+      parseRoute(`${answer}\n\nFor a new session it would have been {"workspace": 1}.`, LIST)
+    ).toEqual({ kind: 'koloft', title: 'Resume' })
+    expect(parseRoute('{"workspace": 3} or {"hand": "koloft", "title": "Resume"}', LIST)).toEqual({
+      kind: 'koloft',
+      title: 'Resume'
+    })
+  })
+
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {
     expect(parseRoute(null, LIST)).toBeNull()
     expect(parseRoute('I think app.', LIST)).toBeNull()

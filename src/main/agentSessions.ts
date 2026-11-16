@@ -1,14 +1,24 @@
-import type {
-  BackendId,
-  CreateTabOptions,
-  QueuedLaunch,
-  SessionInfo,
-  SessionRow,
-  SessionStatus,
-  WorkspaceRows,
-  WorktreeInfo
+import {
+  CRON_EFFORTS,
+  isCronEffort,
+  type BackendId,
+  type CronEffort,
+  type CreateTabOptions,
+  type SessionInfo,
+  type SessionRow,
+  type SessionStatus,
+  type WorkspaceRows,
+  type WorktreeInfo
 } from '@shared/types'
-import { BUTLER_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
+import { namedModel, needsModel } from '@shared/cronModels'
+import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
+import {
+  BUTLER_SAYS_OPENING,
+  DISCORD_PREFIX,
+  PICK_FOR_THE_TASK,
+  ownerSays,
+  withProjectRules
+} from '@shared/agentGuide'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
@@ -73,15 +83,20 @@ export interface NewSessionArgs {
   workspace?: string
   worktree?: string
   model?: string
+  effort?: CronEffort
   backend?: BackendId
   prompt: string
 }
 
-const NEW_FLAGS: Record<string, 'name' | 'workspace' | 'worktree' | 'model' | 'backend'> = {
+const NEW_FLAGS: Record<
+  string,
+  'name' | 'workspace' | 'worktree' | 'model' | 'effort' | 'backend'
+> = {
   '--name': 'name',
   '--workspace': 'workspace',
   '-w': 'worktree',
   '--model': 'model',
+  '--effort': 'effort',
   '--backend': 'backend'
 }
 
@@ -109,6 +124,9 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
       const backend = backendIdOf(value)
       if (!backend) return fail(`--backend is one of ${SESSION_BACKENDS.join(', ')}.`)
       flags.backend = backend
+    } else if (key === 'effort') {
+      if (!isCronEffort(value)) return fail(`--effort is one of ${CRON_EFFORTS.join(', ')}.`)
+      flags.effort = value
     } else flags[key] = value
     i++
   }
@@ -375,38 +393,6 @@ export async function findClosable(
   )
 }
 
-export interface WaitingLaunches {
-  list(): QueuedLaunch[]
-  notStartedYet(): QueuedLaunch[]
-  hold(tabId: string, sendOnceStarted: () => Promise<unknown>): boolean
-  drop(tabId: string): boolean
-}
-
-function queuedLines(d: SessionVerbDeps, me: SessionInfo, workspace: string): string[] {
-  const now = Date.now()
-  return d.waiting
-    .list()
-    .filter((q) => d.workspaceOf(q.tabId) === workspace || q.cwd === workspace)
-    .map(
-      (q) =>
-        `- "${q.title}" (${q.tabId}): queued, waiting for the machine to have room (since ${ageLabel(q.since, now)})${d.startedSessions.startedBy({ sessionId: '', tabId: q.tabId }, me) ? ' — started by: you' : ''}`
-    )
-}
-
-function queuedStartedBy(
-  d: SessionVerbDeps,
-  me: SessionInfo,
-  ref: string
-): QueuedLaunch | undefined {
-  return d.waiting
-    .notStartedYet()
-    .find(
-      (q) =>
-        (q.tabId === ref || q.title === ref) &&
-        d.startedSessions.startedBy({ sessionId: '', tabId: q.tabId }, me)
-    )
-}
-
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
@@ -414,8 +400,9 @@ export interface SessionVerbDeps {
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): PeerNameOf
   turnedOff(backend: BackendId): string | null
+  pickFacts(backend: BackendId): Promise<PickFacts>
+  projectRules(workspace: string): Promise<string | undefined>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
-  waiting: WaitingLaunches
   assist: Assist
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
@@ -494,6 +481,52 @@ export const roomStarted = (link: string): string =>
 const hasNoName = (backend: BackendId): string =>
   `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
+function modelAndEffortRefusal(
+  backend: BackendId,
+  args: NewSessionArgs
+): ((rules: string | undefined) => string) | null {
+  const modelNeeded = needsModel(backend)
+  if ((modelNeeded && !args.model) || !args.effort)
+    return (rules) =>
+      `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
+  const owner = SESSION_BACKENDS.find(
+    (b) => b !== backend && (namedModel(b, args.model) || tierModelOf(b, args.model))
+  )
+  return owner
+    ? (rules) =>
+        `koloft session new: ${args.model} is one of ${BACKEND_LABEL[owner]}'s models. ${withProjectRules(rules, `${tiersOf(backend)}.`)}`
+    : null
+}
+
+type StartPlace =
+  | { ok: true; workspace: string; conductorTab?: string; helperRole?: string }
+  | { ok: false; reply: AgentReply }
+
+function newSessionPlace(
+  d: SessionVerbDeps,
+  args: NewSessionArgs,
+  callerTab: string,
+  ws: string | undefined,
+  butler: boolean
+): StartPlace {
+  const no = (text: string): StartPlace => ({ ok: false, reply: refused(text) })
+  if (args.workspace !== undefined) {
+    const target = startableWorkspace(args.workspace, d.pinnedWorkspaces())
+    if (!target.ok) return no(`koloft session new: ${target.error}`)
+    return { ok: true, workspace: target.value, conductorTab: butler ? callerTab : undefined }
+  }
+  if (butler) {
+    if (args.worktree !== undefined) return no(NO_WORKTREE_IN_BUTLER_FOLDER)
+    return {
+      ok: true,
+      workspace: d.butlerFolder(),
+      conductorTab: callerTab,
+      helperRole: d.butlerHelperRole()
+    }
+  }
+  return ws ? { ok: true, workspace: ws } : no(NO_WORKSPACE)
+}
+
 function starterNamer(
   d: SessionVerbDeps,
   everyRow: PlacedRow[],
@@ -536,7 +569,6 @@ async function listSessions(
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
     ...openSessionLines(listed, me, d.asking, d.transcriptPlaces),
-    ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]
   return answered(lines.join('\n') || 'This workspace has no sessions.')
@@ -576,14 +608,6 @@ async function startSibling(
   const { tabId, name } = launched
   const unnamed = aSessionOf(backend)
   const bySendMessage = sendMessageReaches(me, backend, parseRemoteKey(workspace)?.host)
-  if (d.waiting.list().some((q) => q.tabId === tabId))
-    return answered(
-      `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
-        name && bySendMessage
-          ? `once it starts, talk to it with SendMessage to "${name}"`
-          : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
-      }; "koloft session close ${tabId}" takes it off the queue.`
-    )
   if (conductorTab) {
     const room =
       workspace === d.butlerFolder()
@@ -620,10 +644,9 @@ function launchNames(d: SessionVerbDeps): LaunchNames {
   const held = new Set<HeldName>()
   const letGo = (): SessionInfo[] => {
     const listed = d.allSessions()
-    const queued = new Set(d.waiting.list().map((q) => q.tabId))
     for (const h of held) {
       const tabId = h.tabId
-      if (tabId === undefined || queued.has(tabId)) continue
+      if (tabId === undefined) continue
       if (!d.tabOpen(tabId) || listed.some((s) => s.tabId === tabId && s.title === h.name))
         held.delete(h)
     }
@@ -700,6 +723,7 @@ async function launchSibling(
       name,
       worktree,
       model: args.model,
+      effort: args.effort,
       // ADR-0028
       permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
       ownerWords,
@@ -1016,9 +1040,11 @@ export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
+  messaged(tabId: string, fromSessionId: string): void
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
   sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
+  tellFromKoloft(tabId: string, text: string): Promise<boolean>
   startFromInbox(
     aboutRef: string | undefined,
     spec: StartSpec,
@@ -1041,6 +1067,9 @@ export function sessionVerb(d: SessionVerbDeps): {
   const replyOwed = new Map<string, OwedReply>()
   const inboxOwed = new Map<string, (reply: string) => void>()
   const messagedBy = new Map<string, Set<string>>()
+  const messaged = (tab: string, from: string): void => {
+    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
+  }
 
   // ADR-0031
   const ownerWordsOf = async (
@@ -1115,7 +1144,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         }
       : undefined
     const sent = await owing(tab, owed, () => sendInto(t, tab, text, line, until))
-    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
+    messaged(tab, from)
     return sent
   }
 
@@ -1229,6 +1258,22 @@ export function sessionVerb(d: SessionVerbDeps): {
     void deliver('send', to, text, from, false)
       .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
       .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
+
+  const tellFromKoloft = async (tabId: string, text: string): Promise<boolean> => {
+    const session = d.allSessions().find((s) => s.tabId === tabId)
+    if (!session) return false
+    const to = openTarget(session)
+    const said = `${FROM_KOLOFT}${text}`
+    const mode = messagingOf(to.backend, !!to.remote) === 'peerLine' ? d.modeOf(tabId) : undefined
+    const line = mode && peerLineFrom(() => mode, said, 'koloft')(tabId)
+    try {
+      await sendInto(to, tabId, said, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS)
+      return true
+    } catch (error) {
+      d.undelivered(tabId, to, errorText(error))
+      return false
+    }
+  }
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
     const butler = d.butlerTarget(caller.session.sessionId)
@@ -1354,35 +1399,40 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
-      const where = parsed.value.workspace
-      const start = async (
-        workspace: string,
-        conductorTab?: string,
-        helperRole?: string
-      ): Promise<AgentReply> => {
-        const ownerWords = await ownerWordsOf(caller.session)
-        return startSibling(
-          d,
-          names,
-          parsed.value,
-          caller.session,
-          workspace,
-          conductorTab,
-          ownerWords,
-          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId }),
-          helperRole
+      const backend = parsed.value.backend ?? caller.session.backendId
+      const place = newSessionPlace(d, parsed.value, caller.tabId, ws, butler)
+      if (!place.ok) return place.reply
+      const { workspace, conductorTab, helperRole } = place
+      const { model, effort } = parsed.value
+      const unpicked = modelAndEffortRefusal(backend, parsed.value)
+      if (unpicked || !effort)
+        return refused(
+          unpicked
+            ? unpicked(await d.projectRules(workspace))
+            : 'koloft session new: --effort is missing.',
+          EXIT_USAGE
         )
-      }
-      if (where !== undefined) {
-        const target = startableWorkspace(where, d.pinnedWorkspaces())
-        if (!target.ok) return refused(`koloft session new: ${target.error}`)
-        return start(target.value, butler ? caller.tabId : undefined)
-      }
-      if (butler) {
-        if (parsed.value.worktree !== undefined) return refused(NO_WORKTREE_IN_BUTLER_FOLDER)
-        return start(d.butlerFolder(), caller.tabId, d.butlerHelperRole())
-      }
-      return ws ? start(ws) : refused(NO_WORKSPACE)
+      const resolved = d.turnedOff(backend)
+        ? undefined
+        : resolvePick(backend, { model, effort }, await d.pickFacts(backend))
+      if (resolved && !resolved.ok)
+        return refused(`koloft session new: ${resolved.error}`, EXIT_USAGE)
+      const picked = { ...parsed.value, ...resolved?.pick }
+      const ownerWords = await ownerWordsOf(caller.session)
+      const reply = await startSibling(
+        d,
+        names,
+        picked,
+        caller.session,
+        workspace,
+        conductorTab,
+        ownerWords,
+        (tab) => replyOwed.set(tab, { owner: caller.session.sessionId }),
+        helperRole
+      )
+      return resolved?.note && reply.exit === 0
+        ? { ...reply, text: `${reply.text} ${resolved.note}` }
+        : reply
     }
     if (butler && Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, true)
     if (sub === 'send') {
@@ -1393,30 +1443,13 @@ export function sessionVerb(d: SessionVerbDeps): {
         (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
-        (ref) =>
-          starter(ref) !== undefined ||
-          matchOpen(open, ref) !== null ||
-          queuedStartedBy(d, caller.session, ref) !== undefined
+        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
       )
       if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
       const { ref, tail } = split.value
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const said = sessionSays(caller.session, text)
-      const queued = queuedStartedBy(d, caller.session, ref)
-      if (
-        queued &&
-        sendMessageReaches(caller.session, queued.kind, parseRemoteKey(queued.cwd)?.host)
-      )
-        return refused(
-          `koloft session send: "${queued.title}" is still queued for the machine; once it starts, talk to it with SendMessage to "${queued.title}".`
-        )
-      const sendOnceStarted = async (): Promise<AgentReply> =>
-        verb(['send', queued?.tabId ?? ref, text], caller)
-      if (queued && d.waiting.hold(queued.tabId, sendOnceStarted))
-        return answered(
-          `"${queued.title}" is still queued for the machine; your message is kept and handed to it once it starts.`
-        )
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, said, caller, false)
@@ -1431,9 +1464,6 @@ export function sessionVerb(d: SessionVerbDeps): {
       const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
       const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
-      const queued = ref !== undefined ? queuedStartedBy(d, caller.session, ref) : undefined
-      if (queued && d.waiting.drop(queued.tabId))
-        return answered(`Took "${queued.title}" off the queue; it will not start.`)
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
         let hit = await findClosable(mine, ref, d.peerNames())
@@ -1494,6 +1524,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (inbox) {
       inboxOwed.delete(oldTabId)
       inboxOwed.set(newTabId, inbox)
+    }
+    const senders = messagedBy.get(oldTabId)
+    if (senders) {
+      messagedBy.delete(oldTabId)
+      messagedBy.set(newTabId, senders)
     }
   }
 
@@ -1590,9 +1625,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     verb,
     turnEnded,
     waitsOnAnother,
+    messaged,
     startButlerHelper,
     tabMoved,
     sendFromInbox,
+    tellFromKoloft,
     startFromInbox
   }
 }

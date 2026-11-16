@@ -11,12 +11,9 @@ import {
   QUOTE_PROMPT_FN,
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
   REMIND_REPLY_LANGUAGE_FN,
-  seedHandedOverOwnerWords,
-  type HoldScript
+  seedHandedOverOwnerWords
 } from './hooks'
 import { record } from './codexObservation'
-import { HOLD_HOOK_TIMEOUT_S } from './resourceGuard'
-import { REMOTE_HOOK_DIR } from './remote/paths'
 
 // MUSE§9
 export const MUSE_HOOKS_ENV = 'TBH_MANAGED_HOOKS_PATH'
@@ -97,8 +94,6 @@ export function sessionStartContext(text: string): string {
   return out
 }
 
-export type MuseHold = HoldScript & { tabId: string }
-
 export interface MuseRelayFiles {
   regDir: string
   tabId: string
@@ -110,7 +105,6 @@ export function writeMuseHooks(
   requestDir: string,
   context?: string,
   ownerWords?: string,
-  hold?: MuseHold,
   relay?: MuseRelayFiles
 ): string {
   const notice = relay ? noticeFile(relay.regDir, relay.tabId) : ''
@@ -126,37 +120,23 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`,
-      hold && `/bin/bash ${shq(hold.file)} ${shq(hold.regDir)} ${shq(hold.tabId)} hold`
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`
     )
   )
   return file
 }
 
-function hooksJson(command: (event: MuseHookName) => string, hold?: string): string {
+function hooksJson(command: (event: MuseHookName) => string): string {
   const run = (line: string): unknown[] => [{ hooks: [{ type: 'command', command: line }] }]
-  const hooks: Record<string, unknown> = Object.fromEntries(
-    EVENTS.map((event) => [event, run(command(event))])
-  )
-  // ADR-0043 MUSE§9
-  if (hold)
-    hooks.PreToolUse = [
-      ...run(command('PreToolUse')),
-      { hooks: [{ type: 'command', command: hold, timeout: HOLD_HOOK_TIMEOUT_S }] }
-    ]
-  return JSON.stringify({ hooks })
+  return JSON.stringify({
+    hooks: Object.fromEntries(EVENTS.map((event) => [event, run(command(event))]))
+  })
 }
 
 // MUSE§9 MUSE§17
-export function remoteMuseHooks(
-  script: string,
-  runId: string,
-  contextFile?: string,
-  holdScript?: string
-): string {
+export function remoteMuseHooks(script: string, runId: string, contextFile?: string): string {
   return hooksJson(
-    (event) => `bash "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`,
-    holdScript && `bash "${holdScript}" "${REMOTE_HOOK_DIR}" ${runId} hold-self`
+    (event) => `bash "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`
   )
 }
 

@@ -354,27 +354,29 @@ describe('writeText', () => {
 })
 
 describe('createFile', () => {
-  it('creates an empty file and hands back its fingerprint', () => {
-    const r = createFile(dir, 'new.env')
+  it('creates an empty file and hands back its fingerprint', async () => {
+    const r = await createFile(dir, 'new.env')
     expect(r.path).toBe(path.join(dir, 'new.env'))
     expect(r.size).toBe(0)
     expect(fs.readFileSync(r.path, 'utf8')).toBe('')
     expect(r).toMatchObject(fingerprint(r.path))
   })
 
-  it('refuses an existing name atomically, without truncating what is there', () => {
-    expect(() => createFile(dir, 'config.env')).toThrow('KOLOFT_EXISTS')
+  it('refuses an existing name atomically, without truncating what is there', async () => {
+    await expect(createFile(dir, 'config.env')).rejects.toThrow('KOLOFT_EXISTS')
     expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
   })
 
-  it('refuses a name that is a path, or a dot entry, before it reaches the folder', () => {
+  it('refuses a name that is a path, or a dot entry, before it reaches the folder', async () => {
     for (const bad of ['a/b.txt', 'a\\b.txt', '..', '.', '', '/etc/passwd']) {
-      expect(() => createFile(dir, bad)).toThrow('KOLOFT_BAD_NAME')
+      await expect(createFile(dir, bad)).rejects.toThrow('KOLOFT_BAD_NAME')
     }
-    expect(() => createFile(dir, '.env')).not.toThrow()
+    await expect(createFile(dir, '.env')).resolves.toMatchObject({ size: 0 })
   })
 
-  it('says the folder is gone when the directory does not exist', () => {
-    expect(() => createFile(path.join(dir, 'no-such-dir'), 'a.txt')).toThrow('KOLOFT_DIR_GONE')
+  it('says the folder is gone when the directory does not exist', async () => {
+    await expect(createFile(path.join(dir, 'no-such-dir'), 'a.txt')).rejects.toThrow(
+      'KOLOFT_DIR_GONE'
+    )
   })
 })

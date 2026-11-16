@@ -11,6 +11,7 @@ const STATUS_ON = `${ESC}]7501;?:states=`
 const MODEL = 'fake-model'
 const TOKENS_PER_REPLY = { input_tokens: 2000, cache_read_tokens: 500, output_tokens: 500 }
 const argv = process.argv.slice(2)
+const colsAtStart = process.stdout.columns ?? null
 const home = process.env.HOME
 const museHome = path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'muse')
 const configDir = path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'muse')
@@ -305,6 +306,7 @@ function tui() {
       argv,
       cwd: process.cwd(),
       sessionId: session.id,
+      cols: colsAtStart,
       pathHead: (process.env.PATH || '').split(':')[0],
       configHome: process.env.XDG_CONFIG_HOME || null,
       credentials: process.env.TBH_CREDENTIAL_BACKEND || null
@@ -696,6 +698,11 @@ function tui() {
       later(() => say(turnId, `echo: ${firstPrompt}`, firstPrompt))
     }
   }
+  const startAfterBindDelay = () => {
+    const bindDelayMs = Number(read('fake-muse-bind-delay', '0'))
+    if (bindDelayMs) setTimeout(start, bindDelayMs)
+    else start()
+  }
   let asking = !trusted()
   const line = (text) => {
     if (asking) {
@@ -706,7 +713,7 @@ function tui() {
       t.projects = { ...t.projects, [fs.realpathSync(process.cwd())]: { decision: 'trusted' } }
       fs.mkdirSync(path.dirname(trustFile), { recursive: true })
       fs.writeFileSync(trustFile, JSON.stringify(t))
-      return start()
+      return startAfterBindDelay()
     }
     if (text === '/exit') {
       status('state=clear')
@@ -765,5 +772,5 @@ function tui() {
   })
   process.on('SIGHUP', () => process.exit(0))
   process.stdout.on('error', () => process.exit(0))
-  if (!asking) start()
+  if (!asking) startAfterBindDelay()
 }

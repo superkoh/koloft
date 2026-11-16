@@ -15,14 +15,8 @@ import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/
 import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../src/main/remote/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
-import {
-  CODEX_REPLY_LANGUAGE_HOOKS,
-  CODEX_SHELL_WRITES_HOOKS,
-  codexHoldHook
-} from '../../src/main/hooks'
-import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
-import { BUSY_MARKER } from '../../src/main/machineRoom'
-import { execFileSync, spawn } from 'child_process'
+import { CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SHELL_WRITES_HOOKS } from '../../src/main/hooks'
+import { execFileSync } from 'child_process'
 import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
 import { localGitOut } from '../../src/main/host/localHost'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
@@ -52,19 +46,25 @@ vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))
-vi.mock('../../src/main/codexTransport', () => ({
-  createCodexTransport: mocks.create,
-  CodexRpc: class {
-    private home?: string
-    constructor(options: CodexProcessOptions) {
-      this.home = options.env?.CODEX_HOME
-      mocks.rpcHomes.push(this.home)
-      mocks.rpcOptions.push(options)
+vi.mock('../../src/main/codexTransport', async (importOriginal) => {
+  const real = (await importOriginal<typeof import('../../src/main/codexTransport')>()).CodexRpc
+  return {
+    createCodexTransport: mocks.create,
+    CodexRpc: class {
+      private home?: string
+      private initialized = Promise.resolve()
+      constructor(options: CodexProcessOptions) {
+        this.home = options.env?.CODEX_HOME
+        mocks.rpcHomes.push(this.home)
+        mocks.rpcOptions.push(options)
+      }
+      private send = (method: string, params: unknown) => mocks.request(method, params, this.home)
+      request = real.prototype.request
+      loadThreadIntoThisHome = real.prototype.loadThreadIntoThisHome
+      close = mocks.close
     }
-    request = (method: string, params: unknown) => mocks.request(method, params, this.home)
-    close = mocks.close
   }
-}))
+})
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -431,6 +431,44 @@ describe('CodexSessions', () => {
     expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
   })
 
+  it('a remote session keeps the name its machine last listed after Koloft starts again, before that machine is listed again, and a rename made while the listing ran is not taken back', async () => {
+    deps.machine = fakeMachine()
+    const remoteRepo = keyedOn('box', '/srv/repo')!
+    const remember = (id: string, title: string): void =>
+      sessions.store.upsertMember({
+        id,
+        key: codexSessionKey(id, 'box'),
+        workspacePath: remoteRepo,
+        cwd: remoteRepo,
+        title,
+        createdAt: 1,
+        updatedAt: 1
+      })
+    remember(A, 'Codex session')
+    remember(B, 'Old name')
+    mocks.request.mockImplementation(async (_method, params) => {
+      if (params.archived) return { data: [] }
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      sessions.store.updateMember(codexSessionKey(B, 'box'), {
+        title: 'Renamed meanwhile',
+        updatedAt: Date.now()
+      })
+      return {
+        data: [
+          { id: A, cwd: '/srv/repo', name: 'Fix the login' },
+          { id: B, cwd: '/srv/repo', name: 'Old name' }
+        ]
+      }
+    })
+    await sessions.refreshMachineHistory('box', true)
+    await BackgroundFile.whenAllWritten()
+
+    const startedAgain = new CodexSessions(path.join(directory, 'sessions.json'), deps)
+    expect(
+      Object.fromEntries(startedAgain.rows(remoteRepo).map((r) => [r.nativeSessionId, r.title]))
+    ).toEqual({ [A]: 'Fix the login', [B]: 'Renamed meanwhile' })
+  })
+
   // CODEX§16
   it("a later listing of a remote machine asks its open Codex line alone while that line lists sessions, and checks the machine's Codex home again once it lists none", async () => {
     let homeChecks = 0
@@ -712,6 +750,39 @@ describe('CodexSessions', () => {
       'thread/read undefined',
       'thread/read undefined'
     ])
+  })
+
+  // CODEX§15
+  it('two reads at once of a session the default home has not loaded both wait for its one resume, and a resume that failed is logged and not tried again in this run', async () => {
+    const said = [{ completedAt: 1, items: [{ type: 'agentMessage', text: 'Hi there' }] }]
+    const loaded = new Set<string>()
+    const resumeOfA = deferred<void>()
+    mocks.request.mockImplementation(async (method, params: { threadId: string }) => {
+      if (method === 'thread/resume' && params.threadId === B) throw new Error('timed out')
+      if (method === 'thread/resume') await resumeOfA.promise
+      if (method === 'thread/resume') loaded.add(params.threadId)
+      if (method === 'thread/read' || method === 'thread/resume')
+        return { thread: { id: params.threadId, turns: loaded.has(params.threadId) ? said : [] } }
+      return historyOrTrustedHooks(method)
+    })
+    vi.mocked(deps.homeOf).mockReturnValue(undefined)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const calls = (method: string, id: string) =>
+      mocks.request.mock.calls.filter(([m, p]) => m === method && p.threadId === id).length
+    const replies = (turns: { reply: string }[]) => turns.map((t) => t.reply)
+
+    const both = Promise.all([0, 1].map(() => sessions.readTurns(codexSessionKey(A), 5)))
+    await vi.waitFor(() => expect(calls('thread/resume', A)).toBe(1))
+    await vi.waitFor(() => expect(calls('thread/read', A)).toBe(2))
+    resumeOfA.resolve()
+    expect((await both).map(replies)).toEqual([['Hi there'], ['Hi there']])
+    expect(calls('thread/resume', A)).toBe(1)
+
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining(`could not load ${B}`))
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(calls('thread/resume', B)).toBe(1)
+    logged.mockRestore()
   })
 
   // CODEX§15
@@ -1164,6 +1235,34 @@ describe('CodexSessions', () => {
     expect(script).not.toContain('KOLOFT_')
   })
 
+  it("a Koloft started inside one of its Codex tabs takes neither that tab's dotfile folder for the user's ZDOTDIR nor its BASH_ENV file for the user's own", async () => {
+    const userInfo = os.userInfo()
+    const loginShell = vi.spyOn(os, 'userInfo')
+    loginShell.mockReturnValue({ ...userInfo, shell: '/bin/bash' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const outer = transports[0].options.env!
+    try {
+      vi.stubEnv('ZDOTDIR', outer.ZDOTDIR)
+      vi.stubEnv('BASH_ENV', outer.BASH_ENV)
+      mocks.runtime.mockResolvedValue({
+        binary: '/fixture/codex',
+        env: { PATH: '/usr/bin', ZDOTDIR: outer.ZDOTDIR, BASH_ENV: outer.BASH_ENV },
+        version: MIN_CODEX_VERSION,
+        verified: true
+      })
+      vi.mocked(sessions.availability).mockRestore()
+      await sessions.launch({ kind: 'codex', cwd: repo })
+      const inner = transports[1].options.env!
+      expect(fs.readFileSync(path.join(inner.ZDOTDIR!, '.zshenv'), 'utf8')).not.toContain(
+        outer.ZDOTDIR
+      )
+      expect(inner.BASH_ENV).toBe(path.join(path.dirname(inner.ZDOTDIR!), 'bash_env'))
+    } finally {
+      vi.unstubAllEnvs()
+      loginShell.mockRestore()
+    }
+  })
+
   it("an open the shim drops in the run's request folder reaches that tab's Workbench, and stopping the run removes the shim and the folder", async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
@@ -1187,11 +1286,13 @@ describe('CodexSessions', () => {
   it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, is given Koloft's skills folder, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
     deps.agent = { enabled: () => true, answer, skillsFolder: () => '/koloft/plugin/skills' }
+    deps.projectRules = async () => 'Code: high.'
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
     )
     expect(hint).toContain('koloft help')
+    expect(hint).toContain('Code: high.')
     expect(hint).toContain('koloft session new -w')
     expect(transports[0].options.skillRoots).toEqual([
       '/koloft/plugin/skills',
@@ -1498,6 +1599,32 @@ describe('CodexSessions', () => {
     })
   })
 
+  it("hands Codex a BASH_ENV file in the run's own folder only when the account's login shell is bash, and leaves a BASH_ENV the login shell exports in place", async () => {
+    const userInfo = os.userInfo()
+    const loginShell = vi.spyOn(os, 'userInfo')
+    loginShell.mockReturnValue({ ...userInfo, shell: '/bin/zsh' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[0].options.env?.BASH_ENV).toBeUndefined()
+
+    loginShell.mockReturnValue({ ...userInfo, shell: '/opt/homebrew/bin/bash' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const bashEnv = path.join(path.dirname(transports[1].options.env!.ZDOTDIR!), 'bash_env')
+    expect(transports[1].options.env?.BASH_ENV).toBe(bashEnv)
+    expect(vi.mocked(deps.pty.create).mock.calls[1][0].processEnv?.BASH_ENV).toBe(bashEnv)
+    expect(fs.existsSync(bashEnv)).toBe(true)
+
+    mocks.runtime.mockResolvedValue({
+      binary: '/fixture/codex',
+      env: { PATH: '/usr/bin', BASH_ENV: '/home/me/.bash_env' },
+      version: MIN_CODEX_VERSION,
+      verified: true
+    })
+    vi.mocked(sessions.availability).mockRestore()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[2].options.env?.BASH_ENV).toBe('/home/me/.bash_env')
+    loginShell.mockRestore()
+  })
+
   it("a tab's shell finds the user's own gh before the one Koloft ships, and Koloft's git first only when the Mac has none", async () => {
     mocks.runtime.mockResolvedValue({
       binary: '/fixture/codex',
@@ -1630,47 +1757,6 @@ describe('CodexSessions', () => {
     expect(mocks.crashLeftoverMarkers).toHaveLength(1)
     for (const { options } of transports)
       expect(options.configOverrides).toContain(mocks.crashLeftoverMarkers[0])
-  })
-
-  // ADR-0043 CODEX§27 CODEX§30
-  it("a background tab's app-server, once Codex trusts the hook, holds its next Bash command while the Mac is busy, for at most 25 s; an owner's tab gets no hold", async () => {
-    const reg = path.join(directory, 'reg')
-    fs.mkdirSync(reg)
-    const file = path.join(directory, 'hold.sh')
-    fs.writeFileSync(file, HOLD_SCRIPT)
-    deps.holdScript = { file, regDir: reg }
-    deps.holdWhileBusy = (tabId) => tabId === 'pty-bg'
-    const hold = codexHoldHook('hold')
-    const listed = [
-      ...REPLY_LANGUAGE_LISTED,
-      {
-        key: '/<session-flags>/config.toml:pre_tool_use:1:0',
-        eventName: 'preToolUse',
-        command: hold.command
-      }
-    ]
-    mocks.request.mockImplementation(async (method: string) =>
-      method === 'hooks/list' ? hookListing('trusted', listed) : { data: [], nextCursor: null }
-    )
-    await sessions.launch({ kind: 'codex', cwd: repo })
-    await sessions.launch({ kind: 'codex', cwd: repo, tabId: 'pty-bg' })
-    const [owner, background] = transports.map((t) => t.options)
-    expect(owner.configOverrides).toContain(`${SHELL_LOOK_BEFORE}]`)
-    expect(background.configOverrides).toContain(
-      `${SHELL_LOOK_BEFORE},{matcher="Bash",hooks=[{type="command",command=${JSON.stringify(hold.command)},timeout=60}]}]`
-    )
-    expect(hold.command).toMatch(/ 25$/)
-    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
-    const kid = spawn('/bin/sh', ['-c', hold.command], {
-      env: { PATH: process.env.PATH ?? '', ...background.sessionEnv }
-    })
-    kid.stdin.end(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } }))
-    await vi.waitFor(
-      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
-      { timeout: 3000 }
-    )
-    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
-    await new Promise((resolve) => kid.on('exit', resolve))
   })
 
   // CODEX§27 CODEX§15

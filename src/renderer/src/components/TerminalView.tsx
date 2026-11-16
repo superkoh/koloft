@@ -5,7 +5,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { consumeAdoptedNudge, useStore } from '../store'
-import { activateTerminalLink } from '../termLinks'
+import { activateTerminalLink, fileLinkProvider, type FileLinkOwner } from '../termLinks'
 import { suppressXtversionReply } from '../xtversionMask'
 import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
@@ -20,6 +20,8 @@ import {
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
 import { loadMonoFonts, monoFontsLoaded } from '../monoFonts'
 import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
+
+let sessionScreen = window.api.sessionScreenAtLoad
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
@@ -52,6 +54,7 @@ type TerminalViewProps = {
   onOutput?: () => void
   maxCols?: number
   copiesToClipboard?: boolean
+  fileLinksFrom?: FileLinkOwner
 }
 
 // PLATFORM§66
@@ -76,6 +79,12 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
   )
 }
 
+function ownerTypesInAnotherField(): boolean {
+  const at = document.activeElement
+  if (!(at instanceof HTMLElement) || at.closest('.xterm')) return false
+  return at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || at.isContentEditable
+}
+
 function LiveTerminal({
   fontFamily,
   id,
@@ -87,9 +96,12 @@ function LiveTerminal({
   onRepainted,
   onOutput,
   maxCols,
-  copiesToClipboard = false
+  copiesToClipboard = false,
+  fileLinksFrom
 }: TerminalViewProps & { fontFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
+  const fileLinksFromRef = useRef(fileLinksFrom)
+  fileLinksFromRef.current = fileLinksFrom
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
   const onRepaintedRef = useRef(onRepainted)
@@ -97,6 +109,7 @@ function LiveTerminal({
   const onOutputRef = useRef(onOutput)
   onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
+  const firstShow = useRef(true)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const repaintedRef = useRef(false)
@@ -179,7 +192,8 @@ function LiveTerminal({
         exitSyncWindow(term)
         term.resize(fits.cols, fits.rows)
       }
-      window.api.terminal.resize(id, term.cols, term.rows)
+      if (maxCols) sessionScreen = { cols: term.cols, rows: term.rows }
+      window.api.terminal.resize(id, term.cols, term.rows, !!maxCols)
       screenSizedToPane(id)
       // ADR-0007
       if (consumeAdoptedNudge(id)) {
@@ -194,6 +208,7 @@ function LiveTerminal({
   useEffect(() => {
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
+      ...(maxCols ? sessionScreen : null),
       fontSize: useStore.getState().settings.fontSize,
       fontFamily: fontFamilyRef.current,
       cursorBlink: true,
@@ -230,6 +245,7 @@ function LiveTerminal({
     term.loadAddon(new Unicode11Addon())
     term.unicode.activeVersion = '11'
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
+    term.registerLinkProvider(fileLinkProvider(term, () => fileLinksFromRef.current))
     // CC§12
     suppressXtversionReply(term)
     if (copiesToClipboard) copyOsc52ToClipboard(term, window.api.terminal.copy)
@@ -512,6 +528,7 @@ function LiveTerminal({
 
   // PLATFORM§21
   useEffect(() => {
+    if (!active) firstShow.current = false
     if (active) {
       showWebgl(id)
       let inner = 0
@@ -519,8 +536,10 @@ function LiveTerminal({
         const term = termRef.current
         if (!term) return
         safeFit()
+        const leaveTheOwnerTyping = firstShow.current && ownerTypesInAnotherField()
+        firstShow.current = false
         try {
-          if (autoFocus) term.focus()
+          if (autoFocus && !leaveTheOwnerTyping) term.focus()
         } catch {}
         inner = requestAnimationFrame(() => {
           forceRepaint()

@@ -8,10 +8,13 @@ import {
   REMOTE_ENV_LINES,
   TMUX_PASSES_THE_PANE_TITLE_ON,
   onATerminalEvenWhenSshGaveNone,
+  remoteAnswerCommand,
   remoteShCommand
 } from './install'
 import { remotePtsFile } from './paths'
+import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
+import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
@@ -22,6 +25,11 @@ export const CLAUDE_AUTH_ENV_VARS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN'
 ]
+
+// CC§7
+export function claudeCodeGuessesWindowOf(model: string): boolean {
+  return !/claude/i.test(model) && !/\[1m\]$/i.test(model)
+}
 
 export function accountEnv(
   kind: AccountKind,
@@ -47,6 +55,7 @@ export function accountEnv(
         env[k] = endpoint.model
       }
       env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1'
+      if (claudeCodeGuessesWindowOf(endpoint.model)) env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1'
     }
   } else env.CLAUDE_CODE_OAUTH_TOKEN = secret
   return env
@@ -129,6 +138,7 @@ export interface TabSpec {
   env?: Record<string, string>
   portOffset?: number
   ownerWords?: string
+  loginPath?: string
   program: TabProgram
 }
 
@@ -143,6 +153,7 @@ export interface TabProgram {
 export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
+  projectPrompt?: string
   claudeArgs: string[]
   trustFolder?: boolean
 }
@@ -163,7 +174,9 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
     beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
-      [`${tab.tabId}.tmux`]: tab.tmuxName
+      [`${tab.tabId}.tmux`]: tab.tmuxName,
+      ...(c.agentPlugin &&
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt })
     }
   }
 })
@@ -187,16 +200,22 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
+const PROJECT_PROMPT_SUFFIX = '.prompt.md'
+
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
+  const prompt = c.projectPrompt
+    ? `${T}${PROJECT_PROMPT_SUFFIX}`
+    : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 
 // PLATFORM§35
 export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
+  ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE,
   `${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"`,
   'exec "$@"'
 ]
@@ -233,6 +252,8 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
+  // PLATFORM§33 CC§3 AGY§25 MUSE§17
+  const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -240,7 +261,7 @@ T="${T}"
 ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
-  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
+${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
@@ -262,7 +283,7 @@ exited() {
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen"
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
 ${program.beforeTmux}${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
@@ -360,9 +381,10 @@ const NO_MACHINE_PACKAGE_EXIT = 97
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
   const m = `"$HOME/.koloft/${s.machine.name}"`
-  const run = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
+  const untilOwningTab = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; env ${OWNING_TAB_ENV}=`
+  const afterOwningTab = ` sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
   const ssh = `${s.sshOptions.join(' ')} ${shq(s.host)}`
-  const shell = `ssh -t ${ssh} ${shq(run)}" $COLUMNS $LINES"`
+  const shell = `ssh -t ${ssh} ${shq(untilOwningTab)}"$${OWNING_TAB_ENV}"${shq(afterOwningTab)}" $COLUMNS $LINES"`
   const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
     `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
@@ -379,11 +401,24 @@ export function resizeStandInCmd(tabId: string, cols: number, rows: number): str
 }
 
 // ADR-0044
-export function killSessionCmd(tmuxName: string, nameIfARenameLandedFirst?: string): string {
+export function killSessionCmd(
+  tmuxName: string,
+  nameIfARenameLandedFirst?: string,
+  tabWhoseNameFileToTryLast?: string
+): string {
   const names = nameIfARenameLandedFirst ? [tmuxName, nameIfARenameLandedFirst] : [tmuxName]
   assertSafeNames(...names)
-  return remoteShCommand(
-    names.map((name) => `tmux -L koloft kill-session -t ${name}`).join(' 2>/dev/null || ')
+  const tries = names.map(
+    (name) => `tmux -L koloft kill-session -t ${name} 2>/dev/null && { printf %s ${name}; exit 0; }`
+  )
+  if (tabWhoseNameFileToTryLast)
+    tries.push(
+      `n="$(cat "${tabPath('$1')}.tmux" 2>/dev/null)"`,
+      `case "$n" in k-?*) tmux -L koloft kill-session -t "$n" 2>/dev/null && { printf %s "$n"; exit 0; } ;; esac`
+    )
+  return remoteAnswerCommand(
+    [...tries, 'exit 1'].join('\n'),
+    tabWhoseNameFileToTryLast ? [tabWhoseNameFileToTryLast] : []
   )
 }
 

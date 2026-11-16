@@ -81,15 +81,21 @@ describe('BackgroundFile', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('v2')
   })
 
-  it('gives up on a text the disk keeps refusing after one more try, and saves the next text', async () => {
+  it('gives up on a text the disk keeps refusing after one more try, says so, and saves the next text', async () => {
     const refused = vi
       .spyOn(fs.promises, 'writeFile')
       .mockRejectedValue(Object.assign(new Error('disk full'), { code: 'ENOSPC' }))
-    const out = new BackgroundFile(() => file)
+    let gaveUp = 0
+    const out = new BackgroundFile(
+      () => file,
+      undefined,
+      () => gaveUp++
+    )
     out.write('v1')
     await BackgroundFile.whenAllWritten()
     expect(refused).toHaveBeenCalledTimes(2)
     expect(fs.existsSync(file)).toBe(false)
+    expect(gaveUp).toBe(1)
 
     refused.mockRestore()
     out.write('v2')

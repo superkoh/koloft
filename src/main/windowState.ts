@@ -1,7 +1,14 @@
 import { app, screen, type BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { usableBounds, type SavedWindowState, type WinBounds } from './windowBounds'
+import type { ScreenSize } from '@shared/types'
+import {
+  firstWindowBounds,
+  usableBounds,
+  usableSessionScreen,
+  type SavedWindowState,
+  type WinBounds
+} from './windowBounds'
 
 const DEFAULT_SIZE = { width: 1440, height: 920 }
 const DRAG_SETTLE_MS = 400
@@ -21,24 +28,27 @@ function loadState(): SavedWindowState {
 }
 
 export function restoredWindowGeometry(): {
-  bounds: Partial<WinBounds> & { width: number; height: number }
+  bounds: WinBounds
   maximized: boolean
   fullScreen: boolean
+  sessionScreen: ScreenSize | undefined
 } {
   const st = loadState()
   const displays = screen.getAllDisplays().map((d) => d.workArea)
   const bounds = usableBounds(st.bounds, displays)
   return {
-    bounds: bounds ?? DEFAULT_SIZE,
+    bounds: bounds ?? firstWindowBounds(DEFAULT_SIZE, screen.getPrimaryDisplay().workArea),
     maximized: st.maximized === true,
-    fullScreen: st.fullScreen === true
+    fullScreen: st.fullScreen === true,
+    sessionScreen: bounds ? usableSessionScreen(st.sessionScreen) : undefined
   }
 }
 
 export function trackWindowState(
   win: BrowserWindow,
-  pinnedFlags?: { maximized: boolean; fullScreen: boolean },
-  hiddenFromFullScreen: () => boolean = () => false
+  pinnedFlags: { maximized: boolean; fullScreen: boolean } | undefined,
+  hiddenFromFullScreen: () => boolean,
+  sessionScreen: () => ScreenSize | undefined
 ): void {
   let timer: NodeJS.Timeout | null = null
 
@@ -49,7 +59,8 @@ export function trackWindowState(
       maximized: pinnedFlags ? pinnedFlags.maximized : win.isMaximized(),
       fullScreen: pinnedFlags
         ? pinnedFlags.fullScreen
-        : win.isFullScreen() || hiddenFromFullScreen()
+        : win.isFullScreen() || hiddenFromFullScreen(),
+      sessionScreen: sessionScreen()
     }
     try {
       fs.writeFileSync(stateFile(), JSON.stringify(st, null, 2))

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CronRunner,
   worktreeNameFor,
+  type CarryOn,
   type LaunchRequest,
   type LaunchResult,
   type RunnerDeps
@@ -57,6 +58,7 @@ function makeHarness(
     folders: string[]
     branches: string[] | null
     busy: boolean
+    turnUnderWay: boolean
     left: string[]
     quitting: boolean
     inUse: string[]
@@ -70,6 +72,7 @@ function makeHarness(
   launch: ReturnType<typeof vi.fn>
   killTab: ReturnType<typeof vi.fn>
   closeForGood: ReturnType<typeof vi.fn>
+  tellToCarryOn: ReturnType<typeof vi.fn>
   notify: ReturnType<typeof vi.fn>
   save: ReturnType<typeof vi.fn>
   branchExists: ReturnType<typeof vi.fn>
@@ -90,6 +93,7 @@ function makeHarness(
     folders: [] as string[],
     branches: null as string[] | null,
     busy: false,
+    turnUnderWay: false,
     left: [] as string[],
     quitting: false,
     inUse: [] as string[]
@@ -110,6 +114,7 @@ function makeHarness(
   })
   const killTab = vi.fn()
   const closeForGood = vi.fn(async () => {})
+  const tellToCarryOn = vi.fn(async (): Promise<CarryOn> => 'told')
   const notify = vi.fn()
   const save = vi.fn()
   const branchExists = vi.fn(async () => false)
@@ -139,6 +144,8 @@ function makeHarness(
     stillWorking: async () => flags.busy,
     whatIsLeft: async () => flags.left,
     closeForGood,
+    tellToCarryOn,
+    turnUnderWay: () => flags.turnUnderWay,
     toast: (t: string) => {
       toasts.push(t)
     },
@@ -185,6 +192,7 @@ function makeHarness(
     launch,
     killTab,
     closeForGood,
+    tellToCarryOn,
     notify,
     save,
     branchExists,
@@ -782,44 +790,6 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.jobs[0].history[0]).toMatchObject({ state: 'failed', note: 'Claude did not start' })
   })
 
-  it('a run queued for a busy machine has no start deadline until it really starts', async () => {
-    let start!: (o: 'started' | 'dropped' | 'failed') => void
-    const startsLater = new Promise<'started' | 'dropped' | 'failed'>((r) => (start = r))
-    const h = makeHarness([makeJob()], {
-      bindDeadlineMs: 5 * SEC,
-      launch: vi.fn(() => ({ ok: true, tabId: 'tab-1', startsLater }) as LaunchResult)
-    })
-    await h.runner.runNow('j1')
-    expect(h.runner.state().live[0].state).toBe('queued')
-    await h.fireTimers(T0 + 60 * SEC)
-    expect(h.killTab).not.toHaveBeenCalled()
-    start('started')
-    await startsLater
-    await Promise.resolve()
-    expect(h.runner.state().live[0].state).toBe('launching')
-    await h.fireTimers(T0 + 70 * SEC)
-    expect(h.killTab).toHaveBeenCalledTimes(1)
-  })
-
-  it('a queued run taken off the queue reads closed; one whose launch then failed reads failed', async () => {
-    for (const [outcome, line] of [
-      ['dropped', { state: 'closed', note: 'taken off the queue before it started' }],
-      ['failed', { state: 'failed', note: 'Claude exited before it started' }]
-    ] as const) {
-      const h = makeHarness([makeJob()], {
-        launch: vi.fn(
-          () =>
-            ({ ok: true, tabId: 'tab-1', startsLater: Promise.resolve(outcome) }) as LaunchResult
-        )
-      })
-      await h.runner.runNow('j1')
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(h.jobs[0].history[0], outcome).toMatchObject(line)
-      expect(h.runner.state().live).toEqual([])
-    }
-  })
-
   it('a new turn after done goes back to running', async () => {
     const h = await started()
     h.runner.onBound('tab-1', 'sess-1')
@@ -1225,6 +1195,94 @@ describe('CronRunner — quitting', () => {
     })
   })
 
+  it('with "Close it" on, a run the relaunch took back in the middle of its work is told once to carry on, no status change closes it before the telling is over, and once it is over with nothing at work it closes at the next check', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    let tellingOver: (told: CarryOn) => void = () => {}
+    h.tellToCarryOn.mockImplementation(() => new Promise<CarryOn>((done) => (tellingOver = done)))
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    h.runner.onBound('tab-back', 's1')
+    h.runner.onStatus('tab-back', undefined, 'waiting')
+    h.runner.onStatus('tab-back', 'waiting', 'working')
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.closeForGood).not.toHaveBeenCalled()
+    expect(h.tellToCarryOn.mock.calls).toEqual([['tab-back']])
+
+    tellingOver('told')
+    await flush()
+    expect(h.closeForGood).not.toHaveBeenCalled()
+    await h.fireTimers(T0 + 2 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('with "Close it" on, a run the relaunch took back in the middle of its work stays open while it still works after the telling, whether or not the word reached it, and closes at a later check once it is idle', async () => {
+    for (const telling of [
+      async (): Promise<CarryOn> => 'told',
+      async (): Promise<CarryOn> => 'undelivered',
+      async (): Promise<CarryOn> => Promise.reject(new Error('gone'))
+    ]) {
+      const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+      h.tellToCarryOn.mockImplementation(telling)
+      h.flags.busy = true
+      h.runner.expectReopened(['s1'])
+      h.runner.reopenedIn('s1', 'tab-back')
+      await flush()
+      await h.fireTimers(T0 + 1 * MIN)
+      expect(h.closeForGood).not.toHaveBeenCalled()
+
+      h.flags.busy = false
+      await h.fireTimers(T0 + 2 * MIN)
+      expect(h.closeForGood).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('with "Close it" on, a run whose carry-on turn is under way when the telling ends reads working, and closes once that turn ends', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.flags.turnUnderWay = true
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    expect(h.runner.state().live[0].state).toBe('running')
+
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await flush()
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('with "Close it" on, a run the word to carry on could not reach is handled as finished, even while its status still reads working from before the restart', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.tellToCarryOn.mockImplementation(async (): Promise<CarryOn> => 'undelivered')
+    h.flags.turnUnderWay = true
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('with "Close it" on, a run whose agent lived through the restart is left to end its turn on its own', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.tellToCarryOn.mockImplementation(async (): Promise<CarryOn> => 'outlived')
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.runner.state().live[0].state).toBe('running')
+
+    h.runner.onStatus('tab-back', 'working', 'waiting')
+    await flush()
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+  })
+
+  it('never tells a run to carry on whose turn had ended before the quit', async () => {
+    const finished = await relaunchedAfterQuittingOnARun(makeJob(), { turnOverBeforeQuit: true })
+    finished.runner.expectReopened(['s1'])
+    finished.runner.reopenedIn('s1', 'tab-back')
+    finished.runner.onBound('tab-back', 's1')
+    expect(finished.tellToCarryOn).not.toHaveBeenCalled()
+  })
+
   it('takes nothing back when its session is opened again some other way than the relaunch reopening its tab', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob())
     h.runner.reopenedIn('s1', 'tab-by-hand')
@@ -1270,8 +1328,9 @@ describe('CronRunner — quitting', () => {
     expect(h.runner.state().live).toEqual([])
   })
 
-  it('with "Close it" on, a reopened run the quit cut off mid-turn stays open, and stays marked mid-turn through another quit', async () => {
+  it('with "Close it" on, a reopened run the quit cut off mid-turn stays open while it is being told to carry on, and stays marked mid-turn through another quit meanwhile', async () => {
     const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.tellToCarryOn.mockImplementation(() => new Promise<CarryOn>(() => {}))
     h.runner.expectReopened(['s1'])
     h.runner.reopenedIn('s1', 'tab-back')
     h.runner.onBound('tab-back', 's1')
@@ -1351,6 +1410,24 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     await flush()
     expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
     expect(h.jobs[0].history[0]).toMatchObject({ state: 'closed', removed: true })
+  })
+
+  it('a bound run’s folder is the run’s own to tidy while it runs and once its History line names it, so the tab’s close leaves it alone; a run that never bound is not claimed', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(true)
+    h.tidied.set(RUN, REMOVED)
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    expect(h.runner.tidiesFolder(folderOf(RUN))).toBe(true)
+    await flush()
+    expect(h.jobs[0].history[0]).toMatchObject({ removed: true })
+
+    const unbound = makeHarness([makeJob()])
+    await unbound.runner.runNow('j1')
+    expect(unbound.runner.tidiesFolder(folderOf(RUN))).toBe(false)
+    unbound.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN) })
+    expect(unbound.runner.tidiesFolder(folderOf(RUN))).toBe(false)
   })
 
   it('a folder that would lose work stays and its line says why; once a later sweep removes it, the reason goes', async () => {
@@ -1546,12 +1623,8 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
       expect(h.jobs[0].history).toHaveLength(1)
     })
 
-    it('a queued run whose process dies never started, so it holds nothing', async () => {
-      const h = makeHarness([makeJob()], {
-        launch: vi.fn(
-          () => ({ ok: true, tabId: 'tab-1', startsLater: new Promise(() => {}) }) as LaunchResult
-        )
-      })
+    it('a run whose process dies before its session begins never started, so it holds nothing', async () => {
+      const h = makeHarness([makeJob()])
       h.runner.onRendererReady()
       await h.runner.runNow('j1')
       h.tidied.set(RUN, REMOVED)

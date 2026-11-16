@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { execFileSync, spawn } from 'child_process'
+import { execFileSync } from 'child_process'
 import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -20,8 +20,6 @@ import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
-import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
-import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { museAccountEnv } from '../../src/main/museAccounts'
 
 const mocks = vi.hoisted(() => ({
@@ -51,6 +49,7 @@ const osc = (body: string): string => `${ESC}]7501;${body}${ESC}\\`
 let home: string
 let repo: string
 let sessions: MuseSessions
+let deps: MuseSessionDeps
 let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
 let pids: Map<string, number>
@@ -62,6 +61,7 @@ let created: {
 }[]
 let started: number
 let agentTools: boolean
+let projectRules: string | undefined
 let endpoint: string
 let picked: { account: string; env: Record<string, string>; notice?: string } | undefined
 let shown: string[]
@@ -185,7 +185,7 @@ beforeEach(() => {
     clearResumeIntent: vi.fn()
   })
   runtime = new SessionRuntime()
-  const deps: MuseSessionDeps = {
+  deps = {
     pty: pty as unknown as MuseSessionDeps['pty'],
     runtime,
     projectInfo: (p) => ({ root: repo, treeRoot: p }),
@@ -201,6 +201,7 @@ beforeEach(() => {
     skipPermissions: () => skipPermissions,
     serversAmong: async () => servers,
     agent: { enabled: () => agentTools, answer: vi.fn() },
+    projectRules: async () => projectRules,
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(tools, 'gh')
@@ -346,14 +347,17 @@ describe('MuseSessions launch', () => {
       expect(fs.existsSync(path.join(first, tool))).toBe(true)
   })
 
-  it("hands muse Koloft's instructions at every session start only when agent tools are on", async () => {
+  it("hands muse Koloft's instructions, with its workspace's own rules for picking a model, at every session start only when agent tools are on", async () => {
     agentTools = true
+    projectRules = 'Code: high.'
     const on = await launch()
+    projectRules = undefined
     agentTools = false
     const off = await launch()
     const told = JSON.parse(hook(on.id, 'SessionStart', { session_id: A, source: 'clear' }))
     expect(told.hookSpecificOutput).toMatchObject({ hookEventName: 'SessionStart' })
     expect(told.hookSpecificOutput.additionalContext).toContain('koloft help')
+    expect(told.hookSpecificOutput.additionalContext).toContain('    Code: high.')
     expect(hook(off.id, 'SessionStart', { session_id: B, source: 'startup' })).toBe('')
     const first = created[0].env.PATH!.split(':')[0]
     expect(fs.existsSync(path.join(first, 'koloft'))).toBe(true)
@@ -427,34 +431,6 @@ describe('The butler on Muse', () => {
     skipPermissions = true
     await launch()
     expect(created[1].argv).toEqual(['--permission-profile', ':unrestricted'])
-  })
-
-  // ADR-0043 MUSE§9
-  it("a background tab's hooks hold muse's next bash command while the Mac is busy, with no variable from muse's environment and an hour's timeout; an owner's tab gets no hold", async () => {
-    const reg = path.join(home, 'reg')
-    fs.mkdirSync(reg)
-    const file = path.join(home, 'hold.sh')
-    fs.writeFileSync(file, HOLD_SCRIPT)
-    sessions['deps'].holdScript = { file, regDir: reg }
-    sessions['deps'].holdWhileBusy = (tabId) => tabId === 'pty-bg'
-    await launch()
-    await launch({ tabId: 'pty-bg' })
-    const hooksOf = (n: number) =>
-      JSON.parse(fs.readFileSync(created[n].env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
-    expect(hooksOf(0).PreToolUse).toEqual(hooksOf(0).PostToolUse.map(lookBefore))
-    const [entry] = hooksOf(1).PreToolUse[1].hooks
-    expect(entry.timeout).toBe(HOLD_HOOK_TIMEOUT_S)
-    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
-    const kid = spawn('/bin/sh', ['-c', entry.command], { env: { PATH: '/usr/bin:/bin' } })
-    kid.stdin.end(
-      JSON.stringify({ session_id: A, tool_name: 'bash', tool_input: { command: 'npm test' } })
-    )
-    await vi.waitFor(
-      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
-      { timeout: 3000 }
-    )
-    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
-    await new Promise((resolve) => kid.on('exit', resolve))
   })
 
   // ADR-0029
@@ -868,6 +844,44 @@ describe('MuseSessions turns from hooks', () => {
     expect(
       Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
     ).toEqual({ [A]: 'Fix docs links', [B]: 'docs cleanup', [C]: 'Test review' })
+  })
+
+  it('after Koloft starts again, before muse lists the sessions again (a machine not reached yet), each row keeps the name it was last shown under, never the placeholder over a name', async () => {
+    const C = '01a13797-1111-7222-8333-444455556666'
+    const bindTab = async (sessionId: string, name?: string): Promise<string> => {
+      const { id } = await launch(name ? { name } : {})
+      hook(id, 'SessionStart', { session_id: sessionId, source: 'startup' })
+      await vi.waitFor(() =>
+        expect(sessions.list().map((s) => s.nativeSessionId)).toContain(sessionId)
+      )
+      return id
+    }
+    await bindTab(A, 'Fix docs links')
+    const prompted = await bindTab(B)
+    hook(prompted, 'UserPromptSubmit', {
+      session_id: B,
+      prompt: 'look at the tests',
+      turn_id: 't1'
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list().find((s) => s.nativeSessionId === B)?.title).toBe('look at the tests')
+    )
+    await bindTab(C)
+    mocks.list.mockResolvedValue([
+      { id: A, cwd: repo, name: 'please fix the docs links' },
+      { id: B, cwd: repo, name: null },
+      { id: C, cwd: repo, name: 'iron-libra' }
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await sessions.refreshHistory()
+    const shown = Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
+    await BackgroundFile.whenAllWritten()
+
+    const startedAgain = new MuseSessions(path.join(home, 'muse-sessions.json'), deps)
+    expect(
+      Object.fromEntries(startedAgain.rows(repo).map((r) => [r.nativeSessionId, r.title]))
+    ).toEqual(shown)
+    expect(shown).toEqual({ [A]: 'Fix docs links', [B]: 'look at the tests', [C]: 'iron-libra' })
   })
 })
 

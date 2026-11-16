@@ -146,7 +146,9 @@ describe('SleepingTabs — after the wake', () => {
       { tabId: 'x', sessionId: 's2', alive: false },
       live('y', 's3')
     ])
-    expect(woken).toEqual([{ oldId: 'c', newId: 'y' }])
+    expect(woken).toEqual([
+      { oldId: 'c', newId: 'y', tab: expect.objectContaining({ sessionId: 's3' }) }
+    ])
     expect([...sleepers].map(([id]) => id)).toEqual(['a', 'b'])
   })
 

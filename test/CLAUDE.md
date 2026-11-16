@@ -87,7 +87,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     waits on a key and `working` after it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
-    `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
+    `-exit` (exits with that code, no hook), `-crash-after-end` (the next exit
+    fires SessionEnd as usual, then exits 1.5 s later with that code; used once), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it), `-trust-question` (holds a session id: resuming that id, it
     asks CC's folder-trust question before it binds; ↓ then Enter answers yes, deletes
@@ -112,7 +113,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
     digit picks that option and `1` runs the command; a command starting `slow ` runs on
     only once `<home>/go-run` exists; a lone Esc on it ends the turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
-    tool use]`, no Stop, CC§2), `/busy` (a turn held open ~30 s), `/hold` (a turn held
+    tool use]`, no Stop, CC§2), `/plan <text>` (asks to approve `<text>` as a plan, the
+    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s), `/hold` (a turn held
     open until a lone Esc, which ends it with `[Request interrupted by user]` and no
     Stop), `/need-approval`,
     `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
@@ -124,7 +126,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     (the same for any shell command, as Claude's Bash tool would run it with the
     session's env, ending `sh exit=<code>`), `/run <command>` (the same command as a
     Bash tool call: its PreToolUse and PostToolUse hooks around it, then Stop; ends
-    `ran <command>`), `/clear`,
+    `ran <command>`), `/send-message uds:<socket> <text>` (a SendMessage, CC§13: writes
+    `<text>` to that socket as another session's message from its own, then its
+    PostToolUse, and its Stop 0.7 s later, the shortest gap measured), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
     writes), `/compact-while-idle` (Claude compacting a finished session on its own:
     the `idle_prompt` Notification, then an `auto` PreCompact and a compact
@@ -133,13 +137,17 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop, its UserPromptSubmit hook given the line as `prompt`. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
-    so an Esc Koloft presses lands inside the next one). A bracketed paste
+    Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
+    the real one does, and writes `ESC[?2004h` as it starts (CC§12): Enter (`\r`) sends
+    the line (a line sent before it binds waits for the bind), Shift+Enter (`\n`) adds a
+    new line to it, Backspace and Ctrl+U erase, Ctrl+C empties a line, and Ctrl+C or
+    Ctrl+D pressed twice within 0.8 s on an empty line quits as `/exit` does. Esc and
+    escape sequences (arrows, focus reports, OSC replies) are dropped. A bracketed paste
     (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
     it, and is then one prompt together with what was typed after it; fake-codex
     keeps one in its composer the same way.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
-    injected auth) before any delay — except a `-p` Koloft runs itself (the title
+    injected auth, the terminal width it started at) before any delay — except a `-p` Koloft runs itself (the title
     call, task piped on stdin; the remote launch's first-run warm-up, output sent to
     /dev/null), which prints `<first line of the task> (titled)` and exits unlogged; a
     `-p` typed in a terminal is logged like any launch. Asked which docs are for the
@@ -153,7 +161,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (its UserPromptSubmit hook
     gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
     transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
-    Stop). A `--name` shows as its registry name.
+    Stop; during a `/hold` turn it is taken into that turn instead, as CC's is: the hook
+    fires and a `queued_command` attachment lands, with no reply and no Stop; while
+    `<home>/fake-claude-peer-turn-held` exists, it starts a turn that never ends), except one
+    asking it to approve the same plan again, which asks its transcript's last plan once
+    more, as `/plan` does. A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
@@ -303,10 +315,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_AGY_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`, and `KOLOFT_TEST_MACHINE_FILE` (JSON
-  `{pressure, load1, backgroundWork}` read in place of the Mac's own numbers) pointing at a
-  roomy `<home>/machine-reading.json`, so the developer Mac's own load never reaches a
-  test; a spec wanting a busy Mac points it at a file of its own (machine-room). The
-  hand-test sandbox drops it and reads the real Mac.
+  `{pressure}`, the memory pressure level 1, 2 or 4, read in place of the Mac's own) pointing
+  at a roomy `<home>/machine-reading.json`, so the developer Mac's own memory never reaches a
+  test; a spec wanting memory at warning or critical rewrites that file (machine-room,
+  memory-drops-hidden-pages). The hand-test sandbox drops it and reads the real Mac.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,

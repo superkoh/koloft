@@ -2,7 +2,6 @@
 const fs = require('fs')
 const path = require('path')
 const cp = require('child_process')
-const readline = require('readline')
 
 const FAKE_CLAUDE_VERSION = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
@@ -108,8 +107,10 @@ function writeCallLog(effCwd) {
         sessionId,
         firstPrompt,
         ts: Date.now(),
+        cols: process.stdout.columns ?? null,
         oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
         apiKey: process.env.ANTHROPIC_API_KEY || null,
+        disable1mContext: process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
         playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null,
@@ -463,7 +464,7 @@ const startCwd = resumeId ? launchCwd : cwd
 
 function startupTurn() {
   if (noStatus()) {
-    fs.writeFileSync(transcript, '')
+    fs.appendFileSync(transcript, '')
     fireHook('start', {
       session_id: sessionId,
       transcript_path: transcript,
@@ -545,15 +546,32 @@ function startupTurn() {
   process.stdout.write(`\r\n[fake-claude] session ${sessionId} ready in ${cwd}\r\n> `)
 }
 
+let linesSentBeforeTheStart = []
+function startThenTakeTheLinesSentMeanwhile() {
+  startupTurn()
+  const lines = linesSentBeforeTheStart
+  linesSentBeforeTheStart = null
+  setImmediate(() => lines.forEach(handleLine))
+}
+
 function startAfterDelay() {
   const startDelay = delayMs()
   if (startDelay > 0) {
     process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
-    setTimeout(startupTurn, startDelay)
+    setTimeout(startThenTakeTheLinesSentMeanwhile, startDelay)
   } else {
-    startupTurn()
+    startThenTakeTheLinesSentMeanwhile()
   }
 }
+
+// CC§12
+if (process.stdin.isTTY) process.stdin.setRawMode(true)
+// PLATFORM§35
+if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+  fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
+// CC§12 CC§18
+process.stdout.write('\x1b[?2004h')
+process.on('exit', () => process.stdout.write('\x1b[?2004l'))
 
 // CC§9
 async function askTrustThenStart(question) {
@@ -607,10 +625,20 @@ function fireWaitingHook(event, payload) {
   })
 }
 
+const CRASH_AFTER_SESSION_END_MS = 1500
+
 function shutdown(reason) {
   waitingHook?.kill('SIGTERM')
   fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason })
-  process.exit(0)
+  const crashFile = path.join(home, 'fake-claude-crash-after-end')
+  let crashCode
+  try {
+    crashCode = Number(fs.readFileSync(crashFile, 'utf8'))
+    fs.rmSync(crashFile)
+  } catch {
+    process.exit(0)
+  }
+  setTimeout(() => process.exit(crashCode), CRASH_AFTER_SESSION_END_MS)
 }
 
 function dirtyCount() {
@@ -727,11 +755,59 @@ function hookContext(output) {
     return []
   }
 }
+const ASKED_FOR_THE_PLAN_AGAIN = 'approve the same plan again'
+function lastPlanAsked() {
+  if (!fs.existsSync(transcript)) return undefined
+  return fs
+    .readFileSync(transcript, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        return JSON.parse(line).message.content
+      } catch {
+        return []
+      }
+    })
+    .filter((c) => c?.type === 'tool_use' && c.name === 'ExitPlanMode')
+    .map((c) => c.input.plan)
+    .at(-1)
+}
+let turnHeld = false
+// CC§13
+const SHORTEST_REPLY_AFTER_A_SEND_MS = 700
 // CC§13
 function peerTurn(content) {
+  if (turnHeld) {
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
+    append([
+      {
+        type: 'attachment',
+        attachment: { type: 'queued_command', prompt: content, origin: { kind: 'peer' } },
+        isMeta: true,
+        cwd
+      }
+    ])
+    process.stdout.write('[fake-claude] took a peer message into the running turn\r\n')
+    return
+  }
+  const plan = content.includes(ASKED_FOR_THE_PLAN_AGAIN) ? lastPlanAsked() : undefined
+  if (plan !== undefined) return handleLine(`/plan ${plan}`)
   const context = hookContext(
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
   )
+  if (fs.existsSync(path.join(home, 'fake-claude-peer-turn-held'))) {
+    append([
+      {
+        type: 'user',
+        isMeta: true,
+        origin: { kind: 'peer' },
+        message: { role: 'user', content },
+        cwd
+      }
+    ])
+    process.stdout.write('[fake-claude] working on a peer message\r\n')
+    return
+  }
   append([
     {
       type: 'user',
@@ -772,35 +848,25 @@ process.on('exit', () => {
 })
 
 const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
-const typedLines = new (require('stream').PassThrough)()
 let dialogKey = null
 const ESC = /\x1b/g
 // CC§12
 const STATUS_REPLY = /\x1b\]7501;\?[^\x07\x1b]*(?:\x07|\x1b\\)/
-const STATUS_QUERY_WAITS_MS = 1000
 const statusQueried = !!process.env.KOLOFT_FAKE_PROGRAM_STATUS && process.stdin.isTTY
 let reportsState = false
 const reportState = (body) => {
   if (reportsState) process.stdout.write(`\x1b]7501;${body}:app=claude-code\x07`)
 }
-const stopStatusQuery = () => {
-  if (!dialogKey) process.stdin.setRawMode(false)
-}
-if (statusQueried) {
-  process.stdin.setRawMode(true)
-  process.stdout.write('\x1b]7501;?\x07')
-  setTimeout(stopStatusQuery, STATUS_QUERY_WAITS_MS)
-}
+if (statusQueried) process.stdout.write('\x1b]7501;?\x07')
+process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => {
-  if (statusQueried && STATUS_REPLY.test(String(chunk))) {
+  if (statusQueried && STATUS_REPLY.test(chunk)) {
     reportsState = true
-    stopStatusQuery()
-    chunk = String(chunk).replace(STATUS_REPLY, '')
-    if (!chunk) return
+    chunk = chunk.replace(STATUS_REPLY, '')
   }
-  dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
+  takeKeys(chunk)
 })
-process.stdin.on('end', () => typedLines.end())
+process.stdin.on('end', () => shutdown('other'))
 const ESC_ALONE = '\x1b'
 const INTERRUPTED = Symbol('interrupted')
 // CC§2 CC§13 CC§14
@@ -835,11 +901,7 @@ function keysOnTheDialog(
   answerOnceDone,
   { shownState = 'state=blocked:kind=permission', escEndsTheTurn = false } = {}
 ) {
-  const paneRaw = process.env.KOLOFT_FAKE_TMUX_RAW_MARK
   return new Promise((resolve) => {
-    if (process.stdin.isTTY) process.stdin.setRawMode(true)
-    // PLATFORM§35
-    if (paneRaw) fs.writeFileSync(paneRaw, '')
     reportState(shownState)
     const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
@@ -847,8 +909,6 @@ function keysOnTheDialog(
       const answer = escEndsTheTurn && key === ESC_ALONE ? INTERRUPTED : answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null
-      if (process.stdin.isTTY) process.stdin.setRawMode(false)
-      if (paneRaw) fs.rmSync(paneRaw, { force: true })
       reportState(answer === INTERRUPTED ? 'state=idle' : 'state=working')
       resolve(answer)
     }
@@ -953,19 +1013,84 @@ function questionDialogKeys(questions) {
     return at === questions.length && !reviewPage ? answers() : undefined
   }
 }
-const rl = readline.createInterface({ input: typedLines })
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
-let pasted = null
-// CC§18
-rl.on('line', (line) => {
-  if (pasted === null && !line.includes(PASTE_START)) return handleLine(line)
-  pasted = pasted === null ? line.replace(PASTE_START, '') : pasted + '\n' + line
-  if (!pasted.includes(PASTE_END)) return
-  const whole = pasted.replace(PASTE_END, '')
-  pasted = null
-  handleLine(whole)
-})
+const PASTE_MARKERS = [PASTE_START, PASTE_END]
+const ESCAPE_SEQUENCE = /^\x1b(?:\[[0-?]*[ -/]*[@-~]|O.|\][^\x07\x1b]*(?:\x07|\x1b\\))?/
+const ERASE_KEYS = ['\x7f', '\b']
+const CLEAR_THE_LINE = '\x15'
+const CTRL_C = '\x03'
+const CTRL_D = '\x04'
+const SECOND_QUIT_PRESS_WITHIN_MS = 800
+let typed = ''
+let pasting = false
+let unread = ''
+let quitPressed = null
+let echo = ''
+const showTheEcho = () => {
+  process.stdout.write(echo)
+  echo = ''
+}
+const clearTheLine = () => {
+  typed = ''
+  echo += '\r\x1b[K'
+}
+const send = (line) =>
+  linesSentBeforeTheStart ? linesSentBeforeTheStart.push(line) : handleLine(line)
+// CC§12 CC§18
+function takeKeys(chunk) {
+  let rest = unread + chunk
+  unread = ''
+  while (rest) {
+    if (dialogKey) return void (showTheEcho(), dialogKey(rest))
+    const marker = PASTE_MARKERS.find((m) => rest.startsWith(m))
+    if (marker) {
+      pasting = marker === PASTE_START
+      rest = rest.slice(marker.length)
+      continue
+    }
+    if (PASTE_MARKERS.some((m) => m.startsWith(rest))) {
+      unread = rest
+      break
+    }
+    if (rest[0] === ESC_ALONE && !pasting) {
+      rest = rest.slice(rest.match(ESCAPE_SEQUENCE)[0].length)
+      continue
+    }
+    const key = String.fromCodePoint(rest.codePointAt(0))
+    rest = rest.slice(key.length)
+    const quitKey = !typed && !pasting && (key === CTRL_C || key === CTRL_D)
+    const quitsNow =
+      quitKey &&
+      quitPressed?.key === key &&
+      Date.now() - quitPressed.at < SECOND_QUIT_PRESS_WITHIN_MS
+    quitPressed = quitKey && !quitsNow ? { key, at: Date.now() } : null
+    if (pasting) {
+      typed += key === '\r' ? '\n' : key
+      echo += key === '\r' || key === '\n' ? '\r\n' : key
+    } else if (key === '\r') {
+      const line = typed
+      typed = ''
+      echo += '\r\n'
+      showTheEcho()
+      send(line)
+    } else if (key === '\n') {
+      typed += key
+      echo += '\r\n'
+    } else if (ERASE_KEYS.includes(key)) {
+      if (typed) echo += '\b \b'
+      typed = Array.from(typed).slice(0, -1).join('')
+    } else if (key === CLEAR_THE_LINE || (key === CTRL_C && typed)) clearTheLine()
+    else if (quitsNow) {
+      showTheEcho()
+      return exitSession()
+    } else if (key >= ' ' || key === '\t') {
+      typed += key
+      echo += key
+    }
+  }
+  showTheEcho()
+}
 // CC§1
 function compact(trigger, firstRecord, lastRecord) {
   fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
@@ -1576,6 +1701,41 @@ function handleLine(line) {
     })
     return
   }
+  // CC§13
+  if (text.startsWith('/send-message uds:')) {
+    const [to, ...words] = text.slice('/send-message '.length).trim().split(' ')
+    const message = words.join(' ')
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+    append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
+    const content = `<cross-session-message from="uds:${peerSocket}" from-name="${argVal('--name') ?? 'fake'}" from-mode="bypass">\n${message}\n</cross-session-message>`
+    const c = require('net').createConnection(to.slice('uds:'.length), () =>
+      c.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n')
+    )
+    c.on('error', () => undefined)
+    c.on('close', (failed) => {
+      fireToolHooks('PostToolUse', {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'SendMessage',
+        tool_input: { to, message },
+        tool_response: { success: !failed, message: `→ ${to}` },
+        tool_use_id: `toolu_send_${require('crypto').randomUUID()}`
+      })
+      setTimeout(() => saidAndStopped(), SHORTEST_REPLY_AFTER_A_SEND_MS)
+    })
+    const saidAndStopped = () => {
+      append([
+        {
+          type: 'assistant',
+          timestamp: new Date().toISOString(),
+          message: { role: 'assistant', content: [{ type: 'text', text: `Sent to ${to}.` }] },
+          cwd
+        }
+      ])
+      fireHook('stop', { hook_event_name: 'Stop' })
+      process.stdout.write(`[fake-claude] sent to ${to}\r\n> `)
+    }
+    return
+  }
   // CC§2
   if (text.startsWith('/scratch ')) {
     const name = text.slice('/scratch '.length).trim()
@@ -1678,10 +1838,14 @@ function handleLine(line) {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
     process.stdout.write('[fake-claude] holding the turn until Esc\r\n')
+    turnHeld = true
     return void keysOnTheDialog(() => undefined, {
       shownState: 'state=working',
       escEndsTheTurn: true
-    }).then(() => interruptTheTurn())
+    }).then(() => {
+      turnHeld = false
+      interruptTheTurn()
+    })
   }
   if (text.startsWith('/answer ')) {
     const question = text.slice('/answer '.length)
@@ -1832,6 +1996,12 @@ function handleLine(line) {
       (key) => (key === '1' ? runs() : `Denied: key ${JSON.stringify(key)}`)
     )
   }
+  if (text.startsWith('/plan ')) {
+    const approved = () => 'Plan approved'
+    return ask('ExitPlanMode', { plan: text.slice('/plan '.length) }, approved, approved, (key) =>
+      key.includes(BACK_A_TAB) ? key : undefined
+    )
+  }
   if (text === '/need-approval') {
     fireHook('notify', {
       hook_event_name: 'Notification',
@@ -1866,8 +2036,6 @@ function handleLine(line) {
   fireHook('stop', { hook_event_name: 'Stop' })
   process.stdout.write(`[fake-claude] handled: ${text}\r\n> `)
 }
-// CC§1
-rl.on('close', () => shutdown('other'))
 // CC§12
 function shutdownBySignal() {
   process.stdout.write(`\r\nResume this session with:\r\nclaude --resume ${sessionId}\r\n`)

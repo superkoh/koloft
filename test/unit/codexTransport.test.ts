@@ -5,6 +5,7 @@ import path from 'path'
 import { once } from 'events'
 import WebSocket from 'ws'
 import type { CodexFrame } from '../../src/main/codexTransport'
+import { remoteAnswerCommand } from '../../src/main/remote/install'
 
 const PROCESS_SAMPLE_MS = 1000
 process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
@@ -131,6 +132,17 @@ describe('Codex stdio reads', () => {
     await expect(client.request('turn/start', {})).rejects.toThrow('does not allow')
   })
 
+  // CODEX§15
+  it('a side connection resumes a thread only to load it into its home, never through a plain request, which the long-lived side connections send', async () => {
+    const client = rpc()
+    await expect(client.request('thread/resume', { threadId: 't' })).rejects.toThrow(
+      'does not allow thread/resume'
+    )
+    await client.loadThreadIntoThisHome('t')
+    const after = await client.request<{ seen: string[] }>('thread/list')
+    expect(after.seen.slice(-2)).toEqual(['thread/resume', 'thread/list'])
+  })
+
   // CODEX§24
   it('lets a side connection ask the two checks a search makes of each thread: which of its own words hold the term, and whether Codex indexed it', async () => {
     const client = rpc()
@@ -211,6 +223,18 @@ require(${JSON.stringify(binary)});
       { mode: 0o700 }
     )
     const client = new CodexRpc({ binary: diesOnFirstStart, cwd: directory })
+    cleanups.push(() => client.close())
+    const reply = await client.request<{ params: unknown }>('thread/list', { cursor: 'next' })
+    expect(reply.params).toEqual({ cursor: 'next' })
+  })
+
+  // PLATFORM§33
+  it('a side server on a machine whose shell prints a greeting at login answers: the greeting before the answer mark never reaches the frame reader', async () => {
+    const client = new CodexRpc({
+      binary: '/bin/sh',
+      args: ['-c', `echo 'Welcome to the box'; ${remoteAnswerCommand('exec "$1"', [binary])}`],
+      cwd: directory
+    })
     cleanups.push(() => client.close())
     const reply = await client.request<{ params: unknown }>('thread/list', { cursor: 'next' })
     expect(reply.params).toEqual({ cursor: 'next' })

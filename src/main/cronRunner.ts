@@ -50,7 +50,6 @@ import {
   type Due
 } from './cronScheduler'
 import type { TidyResult } from './sessionClose'
-import type { LaunchOutcome } from './launchQueue'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -88,8 +87,7 @@ export async function worktreeNameFor(
   return withSuffix(base, `-${randomBytes(2).toString('hex')}`)
 }
 
-export type LaunchResult =
-  { ok: true; tabId: string; startsLater?: Promise<LaunchOutcome> } | { ok: false }
+export type LaunchResult = { ok: true; tabId: string } | { ok: false }
 
 export interface LeftTab {
   treeRoot?: string
@@ -127,6 +125,8 @@ export interface LaunchRequest {
 
 type MaybeAsync<T> = T | Promise<T>
 
+export type CarryOn = 'told' | 'undelivered' | 'outlived'
+
 function whenSettled<T>(value: MaybeAsync<T>, then: (settled: T) => void): void {
   if (value instanceof Promise) void value.then(then)
   else then(value)
@@ -159,6 +159,8 @@ export interface RunnerDeps {
   stillWorking(tabId: string): Promise<boolean>
   whatIsLeft(tabId: string, root: string, worktree?: string): Promise<string[]>
   closeForGood(tabId: string, root: string, worktree?: string): Promise<void>
+  tellToCarryOn(tabId: string): Promise<CarryOn>
+  turnUnderWay(tabId: string): boolean
   toast(text: string): void
   notify(title: string, body: string): void
   push(state: CronState): void
@@ -317,6 +319,7 @@ export class CronRunner {
   private inFlight = new Set<string>()
   private launching = new Set<string>()
   private reopening = new Set<string>()
+  private cutOffByTheRestart = new Set<string>()
   private held = new Map<string, Due[]>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
@@ -392,6 +395,7 @@ export class CronRunner {
 
   private dropRun(run: LiveRun): void {
     this.live.delete(run.tabId)
+    this.cutOffByTheRestart.delete(run.tabId)
     this.restartWait(run.jobId)
   }
 
@@ -514,17 +518,14 @@ export class CronRunner {
       const run: LiveRun = {
         jobId: job.id,
         tabId: res.tabId,
-        state: res.startsLater ? 'queued' : 'launching',
+        state: 'launching',
         startedAt: this.d.now(),
         dueAt,
         ...(worktree ? { worktree } : {}),
         ...mark
       }
       this.live.set(res.tabId, run)
-      if (res.startsLater) {
-        this.d.toast(`⏰ ${job.name} queued: it starts in turn, once the machine has room`)
-        void res.startsLater.then((outcome) => this.leftTheQueue(run, outcome))
-      } else this.launched(job, run)
+      this.launched(job, run)
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -587,32 +588,6 @@ export class CronRunner {
     this.armTimer(run.tabId, this.d.bindDeadlineMs, () => this.onDeadline(run.tabId))
   }
 
-  private leftTheQueue(run: LiveRun, outcome: LaunchOutcome): void {
-    if (this.live.get(run.tabId) !== run || run.state !== 'queued') return
-    const job = this.byId(run.jobId)
-    if (outcome === 'started') {
-      run.state = 'launching'
-      if (job) this.launched(job, run)
-      this.push()
-      return
-    }
-    this.dropRun(run)
-    this.refreshFolders()
-    if (!job) return this.push()
-    if (outcome === 'failed')
-      return this.fail(
-        job,
-        run.dueAt,
-        run.manual ? MANUAL : {},
-        `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
-      )
-    this.writeHistory(job, {
-      ...lineOf(run),
-      state: 'closed',
-      note: 'taken off the queue before it started'
-    })
-  }
-
   private onDeadline(tabId: string): void {
     const run = this.live.get(tabId)
     if (!run || run.state !== 'launching') return
@@ -669,14 +644,31 @@ export class CronRunner {
         startedAt: this.d.now()
       }
       this.live.set(tabId, run)
-      if (run.state === 'done') {
-        if (job.autoClose) run.closing = 'soon'
-        this.armTimer(tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
-      }
+      if (run.state === 'done') this.closeAtTheNextCheck(run, job)
+      else if (run.state === 'running') this.tellToCarryOn(run)
       this.d.store.save(this.jobs)
       this.push()
       return
     }
+  }
+
+  private closeAtTheNextCheck(run: LiveRun, job: CronJob): void {
+    if (job.autoClose) run.closing = 'soon'
+    this.armTimer(run.tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
+  }
+
+  private tellToCarryOn(run: LiveRun): void {
+    const { tabId } = run
+    this.cutOffByTheRestart.add(tabId)
+    const tellingOver = (told: CarryOn): void => {
+      const job = this.byId(run.jobId)
+      if (!this.cutOffByTheRestart.delete(tabId) || this.live.get(tabId) !== run || !job) return
+      if (told === 'outlived' || (told === 'told' && this.d.turnUnderWay(tabId))) return
+      run.state = 'done'
+      this.closeAtTheNextCheck(run, job)
+      this.push()
+    }
+    void this.d.tellToCarryOn(tabId).then(tellingOver, () => tellingOver('undelivered'))
   }
 
   reopeningOver(): void {
@@ -705,7 +697,7 @@ export class CronRunner {
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
     const run = this.live.get(tabId)
-    if (!run) return
+    if (!run || this.cutOffByTheRestart.has(tabId)) return
     let changed = false
     if (
       next === 'waiting' &&
@@ -811,6 +803,11 @@ export class CronRunner {
     return !!run && this.runStarted(run)
   }
 
+  holdsOpenRunThatClosesItself(tabId: string): boolean {
+    const run = this.live.get(tabId)
+    return !!run && this.runStarted(run) && !!this.byId(run.jobId)?.autoClose
+  }
+
   private runStarted(run: LiveRun): boolean {
     return run.state === 'running' || run.state === 'done'
   }
@@ -872,8 +869,26 @@ export class CronRunner {
     }
   }
 
-  holdsFolder(folder: string): boolean {
+  private holdsFolder(folder: string): boolean {
     return [...this.kept.values()].some((k) => runFolder(k.root, k.worktree) === folder)
+  }
+
+  private boundFolderOf(run: LiveRun): string | undefined {
+    const held = run.sessionId ? this.folderOf(run) : undefined
+    return held && runFolder(held.root, held.worktree)
+  }
+
+  tidiesFolder(folder: string): boolean {
+    return (
+      this.holdsFolder(folder) ||
+      [...this.live.values()].some((run) => this.boundFolderOf(run) === folder) ||
+      this.jobs.some((job) =>
+        job.history.some(
+          (h) =>
+            !!h.worktree && !!h.sessionId && runFolder(job.workspacePath, h.worktree) === folder
+        )
+      )
+    )
   }
 
   tabMoved(oldTabId: string, newTabId: string): void {

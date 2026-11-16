@@ -68,16 +68,12 @@ import {
 } from './codexLaunchConfig'
 import {
   CODEX_DISCORD_SAID_ENV,
-  CODEX_HOLD_REG_ENV,
-  CODEX_HOLD_SCRIPT_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
   CODEX_SHELL_WRITES_HOOKS,
   CODEX_SHELL_WROTE_ENV,
-  codexHoldHook,
   discordSaidFile,
-  HOLD_TAB_ENV,
   NOTICE_ENV,
   noticeFile,
   seedHandedOverOwnerWords,
@@ -108,9 +104,11 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
+import { bashEnvFileIn, loginShellIsBash, unlessInAKoloftRunsShim } from './openShimScript'
 import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
+import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
@@ -320,7 +318,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
-  private resumedInDefaultHome = new Set<string>()
+  private resumedInDefaultHome = new Map<string, Promise<void>>()
   private sideServers = new CodexSideServers((home: string | undefined) => this.rpc(home))
   private machineSideServers = new CodexSideServers((machine: string) => this.machineRpc(machine))
   private machineHistory = new Map<
@@ -578,6 +576,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     ]
   }
 
+  // CODEX§14
+  listedModels(home: string | undefined): Promise<ListedModel[]> {
+    return this.withRpc(home, (rpc) => rpc.request('model/list', {})).then(codexListedModels)
+  }
+
   // CODEX§15
   async readAccount(home: string): Promise<{ signedIn: boolean; apiKey?: true; limits?: unknown }> {
     return this.withRpc(home, async (rpc) => {
@@ -677,6 +680,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     }
     if (homeThere) this.listedAt.set(machine, startedAt)
     else this.listedAt.delete(machine)
+    this.rememberListedTitles(startedAt, machine)
     this.changed()
   }
 
@@ -795,12 +799,23 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  private async indexInDefaultHome(threadId: string): Promise<void> {
-    if (this.resumedInDefaultHome.has(threadId)) return
-    this.resumedInDefaultHome.add(threadId)
+  private indexInDefaultHome(threadId: string): Promise<void> {
+    let loading = this.resumedInDefaultHome.get(threadId)
+    if (!loading) {
+      loading = this.loadInDefaultHome(threadId).catch((error) => {
+        this.noteBinaryGone(error)
+        console.error(`[koloft] Codex could not load ${threadId} in the default home: ${error}`)
+      })
+      this.resumedInDefaultHome.set(threadId, loading)
+    }
+    return loading
+  }
+
+  private async loadInDefaultHome(threadId: string): Promise<void> {
+    await this.binaryOrThrow()
     const rpc = this.rpc(undefined)
     try {
-      await rpc.request('thread/resume', { threadId }).catch(() => undefined)
+      await rpc.loadThreadIntoThisHome(threadId)
     } finally {
       await rpc.close().catch(() => {})
     }
@@ -831,7 +846,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   protected async startRun(
-    { opts, cwd, resource, freshWorktree, workspace }: StartContext,
+    { opts, cwd, resource, freshWorktree, workspace, rules }: StartContext,
     { picked, binary, processEnv }: CodexLaunch
   ): Promise<CodexRun> {
     const home = picked.home
@@ -855,8 +870,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     if (opts.trustFolder || assist) trust(cwd, this.envFor(home))
     if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const tabId = opts.tabId ?? this.deps.pty.nextId()
-    const holding = !!this.deps.holdWhileBusy?.(tabId)
-    const holdHere = holding && !machine ? this.deps.holdScript : undefined
     const endpoint = machine ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
     this.assertStarting()
@@ -892,11 +905,21 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const openShim = machine
       ? undefined
       : this.startOpenShim(
-          processEnv?.ZDOTDIR,
+          unlessInAKoloftRunsShim(process.env.ZDOTDIR),
           (target) => observe({ type: 'open', target }),
-          agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
+          agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
+          rules
         )
-    const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
+    const env = openShim
+      ? {
+          ...this.envFor(home),
+          ZDOTDIR: openShim.zdotDir,
+          ...(loginShellIsBash() &&
+            !unlessInAKoloftRunsShim(processEnv?.BASH_ENV) && {
+              BASH_ENV: bashEnvFileIn(openShim.shimDir)
+            })
+        }
+      : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')
     if (said && opts.ownerWords) seedHandedOverOwnerWords(said, opts.ownerWords)
     const shellWroteDir = machine ? this.machineDeps().mirrorDir(machine) : this.deps.hookRegDir
@@ -911,7 +934,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         : undefined
     )
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('codex')] : []),
+      ...(agent && !conductor ? [koloftPrompt('codex', rules)] : []),
       ...(role ? [role] : [])
     ]
     const permission = this.permissionOf(opts)
@@ -932,11 +955,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
             [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId),
             [CODEX_SHELL_WROTE_ENV]: path.join(this.deps.hookRegDir, tabId + SHELL_WROTE_SUFFIX)
           })
-        }),
-        ...(holdHere && {
-          [CODEX_HOLD_SCRIPT_ENV]: holdHere.file,
-          [CODEX_HOLD_REG_ENV]: holdHere.regDir,
-          [HOLD_TAB_ENV]: tabId
         })
       },
       cwd,
@@ -949,12 +967,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         CODEX_ASKS_AND_WAITS
       ]
     }
-    // ADR-0043
-    const hooks: KoloftHook[] = [
-      ...CODEX_REPLY_LANGUAGE_HOOKS,
-      ...CODEX_SHELL_WRITES_HOOKS,
-      ...((machine ? holding : holdHere) ? [codexHoldHook(machine ? 'hold-self' : 'hold')] : [])
-    ]
+    const hooks: KoloftHook[] = [...CODEX_REPLY_LANGUAGE_HOOKS, ...CODEX_SHELL_WRITES_HOOKS]
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
@@ -1172,11 +1185,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   private startOpenShim(
     userZdotdir: string | undefined,
     open: (target: string) => void,
-    agent?: (dir: string, name: string, raw: unknown) => void
+    agent?: (dir: string, name: string, raw: unknown) => void,
+    rules?: string
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { backend: 'codex', userZdotdir, open, agent }
+      { backend: 'codex', userZdotdir, open, agent, rules }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }

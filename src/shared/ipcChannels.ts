@@ -10,6 +10,7 @@ export const CH = {
     onScreen: 'terminal:on-screen',
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
+    sessionScreen: 'terminal:session-screen',
     kill: 'terminal:kill',
     exit: 'terminal:exit',
     processTitle: 'terminal:processTitle',
@@ -82,11 +83,14 @@ export const CH = {
     state: 'cron:state',
     toast: 'cron:toast'
   },
+  sessionDefaults: {
+    read: 'sessionDefaults:read',
+    write: 'sessionDefaults:write'
+  },
   machine: {
     state: 'machine:state',
     now: 'machine:now',
-    free: 'machine:free',
-    drop: 'machine:drop'
+    free: 'machine:free'
   },
   conductors: {
     bind: 'conductors:bind',
@@ -95,6 +99,9 @@ export const CH = {
     open: 'conductors:open',
     startFresh: 'conductors:startFresh',
     fromPalette: 'conductors:fromPalette'
+  },
+  palette: {
+    savePicture: 'palette:savePicture'
   },
   discord: {
     status: 'discord:status',
@@ -189,6 +196,7 @@ export const CH = {
   fs: {
     listDir: 'fs:listDir',
     dirExists: 'fs:dirExists',
+    fileExists: 'fs:fileExists',
     search: 'fs:search',
     gitChanges: 'fs:gitChanges',
     gitHeadLog: 'fs:gitHeadLog',

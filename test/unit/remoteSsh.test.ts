@@ -4,9 +4,13 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
+import { once } from 'events'
+import { PassThrough } from 'stream'
 import {
+  answerStreamOf,
   defaultControlDir,
   ensureControlDir,
+  listenOverSsh,
   problemOf,
   runSsh,
   runSshBytes,
@@ -196,8 +200,56 @@ describe('a machine whose shell prints a greeting and a title escape as it start
     expect(r.stdout).toEqual(Buffer.concat([Buffer.from(ANSWER), Buffer.from([0, 0xff])]))
   })
 
-  it('a command Koloft did not mark keeps all it printed, even a line that reads like the mark', async () => {
-    const r = await runSsh('host', remoteShCommand(`printf '${ANSWER}'`), { controlDir: tmp })
-    expect(r.stdout).toBe(`Welcome to the box\n\x1b]0;box\x07${ANSWER}`)
+  it('a read built without the mark loses the greeting too, so a new read cannot forget it', async () => {
+    const r = await runSsh('host', remoteShCommand("printf 'README.md\\n'"), { controlDir: tmp })
+    expect(r.stdout).toBe('README.md\n')
+  })
+
+  it('a command fed input that only reports its exit code gets all its input and keeps its exit code', async () => {
+    const r = await runSsh('host', remoteShCommand('cat; exit 3'), {
+      controlDir: tmp,
+      input: Buffer.from('typed text')
+    })
+    expect(r).toMatchObject({ code: 3, stdout: 'typed text' })
+  })
+
+  it('a live stream loses the greeting too, even a title escape with no newline after it, and gets every line its command printed', async () => {
+    const lines: string[] = []
+    await new Promise<void>((ended) =>
+      listenOverSsh(
+        'host',
+        remoteShCommand("echo 'hooks changed'; echo 'still here'"),
+        { controlDir: tmp },
+        (line) => lines.push(line),
+        ended
+      )
+    )
+    expect(lines).toEqual(['hooks changed', 'still here'])
+  })
+
+  it('a live stream Koloft reads loses the greeting even when the mark comes split across reads, and keeps what follows byte for byte', async () => {
+    const stdout = new PassThrough()
+    const read = answerStreamOf(remoteAnswerCommand('true'), stdout)
+    const got: Buffer[] = []
+    read.on('data', (b: Buffer) => got.push(b))
+    for (const piece of [
+      'Welcome to the box\nkoloft-answer-st',
+      'arts-here',
+      '\n{"id":1}\n',
+      '\0\xff'
+    ])
+      stdout.write(Buffer.from(piece, 'latin1'))
+    stdout.end()
+    await once(read, 'end')
+    expect(Buffer.concat(got)).toEqual(Buffer.from('{"id":1}\n\0\xff', 'latin1'))
+  })
+
+  it('an error on the ssh stdout of a live stream reaches the stream Koloft reads, so it never goes unheard in the main process', async () => {
+    const stdout = new PassThrough()
+    const read = answerStreamOf(remoteAnswerCommand('true'), stdout)
+    const heard = once(read, 'error')
+    stdout.destroy(new Error('read ECONNRESET'))
+    const [error] = (await heard) as [Error]
+    expect(error.message).toBe('read ECONNRESET')
   })
 })

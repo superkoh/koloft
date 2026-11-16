@@ -1,9 +1,28 @@
 import type { Page } from '@playwright/test'
 import type { Terminal } from '@xterm/xterm'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings } from './helpers/env'
+import { launchSettled } from './helpers/blackbox'
+import { installAgentFor, seedSettings, type E2EEnv } from './helpers/env'
 import { openSettings } from './helpers/extensions'
-import { startSessionIn, waitBooted } from './helpers/p1'
+import {
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  agyReady,
+  killFakeRemote,
+  launchWithRemote,
+  type OtherAgentName
+} from './helpers/remote'
+import {
+  agyConversationOnceFirstTurnEnded,
+  centerTerm,
+  newSessionInWith,
+  notesArea,
+  runIn,
+  startSessionIn,
+  waitBooted,
+  wsRows
+} from './helpers/p1'
 
 const ALL_FOUR_FACES_LOADED = [
   'italic 400 loaded',
@@ -40,7 +59,102 @@ function recorded(page: Page, name: keyof FontProbeWindow): Promise<unknown> {
     .then((faces) => faces.jsonValue())
 }
 
+function focusIn(page: Page, selector: string): Promise<boolean> {
+  return page.evaluate((s) => !!document.activeElement?.closest(s), selector)
+}
+
+const LONG_ENOUGH_FOR_A_LATE_FOCUS_GRAB_MS = 1_000
+
+async function restoreWithFacesHeldBack(page: Page, meanwhile: () => Promise<void>) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __releaseFaces: () => void }
+    const released = new Promise<void>((resolve) => (w.__releaseFaces = resolve))
+    const load = document.fonts.load.bind(document.fonts)
+    document.fonts.load = (...args) => released.then(() => load(...args))
+  })
+  await page.reload()
+  await waitBooted(page)
+  await expect(page.locator('.term').first()).toBeAttached({ timeout: 30_000 })
+  await meanwhile()
+  expect(await page.locator('.xterm').count()).toBe(0)
+  await page.evaluate(() => (window as unknown as { __releaseFaces: () => void }).__releaseFaces())
+  await expect(page.locator('.xterm').first()).toBeAttached({ timeout: 30_000 })
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  )
+}
+
+interface SessionTab {
+  name: string
+  remote: boolean
+  install?: (env: E2EEnv) => void
+  start: (page: Page) => Promise<unknown>
+}
+
+const wsOf = (tab: SessionTab): string => (tab.remote ? REMOTE_WS_NAME : 'ws-a')
+
+const BOUND_ON_THIS_MAC: Partial<Record<OtherAgentName, (page: Page) => Promise<unknown>>> = {
+  // AGY§8
+  Antigravity: async (page) => {
+    await agyReady(page)
+    await runIn(page, centerTerm(page), 'first words')
+    await agyConversationOnceFirstTurnEnded(page)
+  }
+}
+
+const EVERY_SESSION_TAB: SessionTab[] = [
+  {
+    name: 'Claude tab on this Mac',
+    remote: false,
+    start: (page) => startSessionIn(page, 'ws-a')
+  },
+  ...OTHER_AGENTS_ON_THE_MACHINE.map(({ label }): SessionTab => ({
+    name: `${label} tab on this Mac`,
+    remote: false,
+    install: (env) => installAgentFor(env, label, env.workspaces.a),
+    start: async (page) => {
+      await newSessionInWith(page, 'ws-a', label)
+      await BOUND_ON_THIS_MAC[label]?.(page)
+    }
+  })),
+  {
+    name: 'Claude tab on a machine reached over SSH',
+    remote: true,
+    start: (page) => startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+  },
+  ...OTHER_AGENTS_ON_THE_MACHINE.map(({ label, install, bound }): SessionTab => ({
+    name: `${label} tab on a machine reached over SSH`,
+    remote: true,
+    install,
+    start: async (page) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, label)
+      await bound?.(page)
+    }
+  }))
+]
+
+async function withSessionTab(
+  env: E2EEnv,
+  tab: SessionTab,
+  body: (page: Page) => Promise<void>
+): Promise<void> {
+  test.setTimeout(tab.remote ? 240_000 : 120_000)
+  tab.install?.(env)
+  seedSettings(env, { hintsOff: true })
+  const { app, page } = tab.remote ? await launchWithRemote(env) : await launchSettled(env)
+  try {
+    if (tab.remote) await addRemoteWorkspace(page, env)
+    await tab.start(page)
+    await expect(wsRows(page, wsOf(tab)).first()).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    await body(page)
+  } finally {
+    await quitAndClose(app)
+  }
+}
+
 test.describe('the terminal font ships with the app', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
+
   test('the four JetBrainsMono Nerd Font faces a terminal draws with (regular, bold, italic, bold italic) have loaded before the first terminal opens', async ({
     page
   }) => {
@@ -61,6 +175,30 @@ test.describe('the terminal font ships with the app', () => {
 
     expect(await recorded(page, '__bundledFacesAtFirstTerminal')).toEqual(ALL_FOUR_FACES_LOADED)
   })
+
+  for (const tab of EVERY_SESSION_TAB) {
+    test(`a restored ${tab.name} built once its faces have loaded takes the keyboard when nobody moved it meanwhile`, async ({
+      env
+    }) => {
+      await withSessionTab(env, tab, async (page) => {
+        await restoreWithFacesHeldBack(page, async () => {})
+        await expect.poll(() => focusIn(page, '.xterm')).toBe(true)
+      })
+    })
+
+    test(`a restored ${tab.name} built once its faces have loaded leaves the keyboard in the note the owner clicked meanwhile`, async ({
+      env
+    }) => {
+      await withSessionTab(env, tab, async (page) => {
+        await restoreWithFacesHeldBack(page, async () => {
+          await notesArea(page).click()
+          expect(await focusIn(page, '.isl-notes')).toBe(true)
+        })
+        await page.waitForTimeout(LONG_ENOUGH_FOR_A_LATE_FOCUS_GRAB_MS)
+        expect(await focusIn(page, '.isl-notes')).toBe(true)
+      })
+    })
+  }
 
   test('a change from a system font to JetBrainsMono Nerd Font in Settings reaches an open terminal only once its four faces have loaded', async ({
     env

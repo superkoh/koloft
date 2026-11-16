@@ -1878,6 +1878,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8'))).toMatchObject({
         OPENAI_API_KEY: key
       })
+      await expect
+        .poll(() => ((settingsOnDisk(env).accounts ?? []) as { name: string }[]).map((a) => a.name))
+        .toContain('metered')
       expect(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')).not.toContain(key)
       await snap(page, 'codex-api-key-row')
       await page.keyboard.press('Escape')
