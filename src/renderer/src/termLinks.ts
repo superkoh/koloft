@@ -1,6 +1,6 @@
 import type { IBufferLine, ILink, ILinkProvider, Terminal } from '@xterm/xterm'
 import { basename } from '@shared/preview'
-import { resolveOnHost } from '@shared/remoteKey'
+import { isRemoteKey, resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, useStore } from './store'
 import { findFilePaths } from './markdown/fileRefs'
 import { fileExists } from './fileExists'
@@ -18,7 +18,7 @@ type Ref = ReturnType<typeof findFilePaths>[number]
 
 const FILE_LOOKUP_FRESH_MS = 5000
 const LOOKUPS_KEPT_AT_MOST = 500
-const REST_ON_A_ROW_BEFORE_LOOKING_UP_MS = 100
+const REST_ON_A_REMOTE_ROW_BEFORE_ASKING_MS = 100
 const lookups = new Map<string, { at: number; found: Promise<boolean> }>()
 
 function freshAnswer(src: string): Promise<boolean> | undefined {
@@ -106,8 +106,8 @@ export function fileLinkProvider(
       const drawnWhenAsked = line.translateToString()
       const srcs = refs.map((ref) => resolveOnHost(`${folder}/`, ref.path))
       void (async () => {
-        if (!srcs.every(freshAnswer))
-          await new Promise((rested) => setTimeout(rested, REST_ON_A_ROW_BEFORE_LOOKING_UP_MS))
+        if (isRemoteKey(folder) && !srcs.every(freshAnswer))
+          await new Promise((rested) => setTimeout(rested, REST_ON_A_REMOTE_ROW_BEFORE_ASKING_MS))
         const found: ILink[] = []
         for (const [i, ref] of refs.entries()) {
           if (ask !== asked) return
