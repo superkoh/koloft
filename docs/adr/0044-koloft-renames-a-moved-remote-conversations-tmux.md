@@ -25,8 +25,9 @@ an empty one (tmux would pick a session itself: another tab's), and prints the n
 ended. Whatever renames on the machine (Claude Code's hook, Antigravity's title script,
 the Muse relay) writes the new name to that file before it renames the session, so a kill
 landing between the two finds the session under the old name or under the file's; when
-the rename fails each of them leaves the file as it found it, so a reconnect still
-attaches and a close never ends whichever session already has that name. Koloft books that session as ended by it, and a launch of a
+the rename fails (another session has that name, PLATFORM§35) each of them leaves the
+file as it found it, so a reconnect still attaches and a close never ends the session
+that has that name. Koloft books that session as ended by it, and a launch of a
 conversation the machine still lists waits for every kill on the wire there (any one of
 them may be ending it under its new name) before choosing between attach and start. A
 tab's start deletes the file, so a name left by an earlier run of that tab id never

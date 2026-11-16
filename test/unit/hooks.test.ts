@@ -272,7 +272,7 @@ esac
       expect(fs.readFileSync(nameFile('tabN3'), 'utf8')).toBe('k-abc-123')
     })
 
-    it("Antigravity's title script leaves the name file as it found it when the rename fails, and keeps the name once the session already has it", () => {
+    it("Antigravity's title script leaves the name file as it found it when the rename fails, so a reconnect attaches to the session under the name it still has", () => {
       tmuxStub(1)
       fs.writeFileSync(nameFile('tabN5'), 'k-conv-before')
       runAgyTitle('tabN5')
@@ -280,7 +280,9 @@ esac
 
       runAgyTitle('tabN6')
       expect(fs.existsSync(nameFile('tabN6'))).toBe(false)
+    })
 
+    it("Antigravity's title script keeps the conversation's name in the file once the session already has it", () => {
       tmuxStub(1, 'k-abc-123')
       runAgyTitle('tabN7')
       expect(fs.readFileSync(nameFile('tabN7'), 'utf8')).toBe('k-abc-123')

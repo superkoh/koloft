@@ -201,7 +201,7 @@ def bind(sid):
     put({'t': 'bound', 'sessionId': sid, 'forked': starts_as_a_fork(path)})
     name = 'k-' + sid
     write_whole(os.path.join(hook_dir, name + '${RUN_POINTER_SUFFIX}'), run_id)
-    # ADR-0044
+    # ADR-0044 PLATFORM§35
     name_file = os.path.join(tabs, run_id + '.tmux')
     try:
         with open(name_file) as f:
@@ -216,8 +216,11 @@ def bind(sid):
             return
     if was:
         write_whole(name_file, was)
-    elif os.path.exists(name_file):
+        return
+    try:
         os.remove(name_file)
+    except OSError:
+        pass
 
 
 registry_seen = [None]
