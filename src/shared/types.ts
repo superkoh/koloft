@@ -1308,7 +1308,7 @@ export interface KoloftApi {
     ): Promise<{ hits: SearchHit[]; truncated: boolean }>
     gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     gitHeadLog(root: string): Promise<string | null>
-    watchDir(root: string): Promise<boolean>
+    watchDir(root: string, reportsWhatChangedWhileUnwatched?: boolean): Promise<boolean>
     unwatchDir(root: string): void
     onDirChange(cb: DirChangeListener): () => void
     watchFile(path: string): void

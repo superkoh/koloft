@@ -96,6 +96,8 @@ import {
   expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
   expectOnePromptFromThePassage,
+  layoutState,
+  workbenchIcon,
   writePlan,
   sendFailingChecks,
   openInBrowse,
@@ -116,15 +118,30 @@ const NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST = 'mac-only.localhost'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
 
+const heartbeats = (env: E2EEnv): string[] =>
+  sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls'))
+
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
-  sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls') && c.includes(`'${bare}'`))
-    .length
+  heartbeats(env).filter((c) => c.includes(`'${bare}'`)).length
 
 async function untilTheMachineHasStamped(env: E2EEnv, bare: string): Promise<void> {
   const before = heartbeatsStamping(env, bare)
   await expect
     .poll(() => heartbeatsStamping(env, bare), { timeout: 30_000 })
     .toBeGreaterThanOrEqual(before + 2)
+}
+
+async function untilTwoHeartbeatsLeaveOut(env: E2EEnv, bare: string): Promise<void> {
+  const since = heartbeats(env).length
+  await expect
+    .poll(
+      () => {
+        const lastTwo = heartbeats(env).slice(since).slice(-2)
+        return lastTwo.length === 2 && lastTwo.every((c) => !c.includes(`'${bare}'`))
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true)
 }
 
 async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void> {
@@ -1561,6 +1578,38 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       fs.writeFileSync(path.join(dir, 'top.txt'), 'new at the top\n')
       await expect(browseRow(page, `${remoteKey(env)}/src/b.ts`)).toBeVisible({ timeout: 30_000 })
       await expect(browseRow(page, `${remoteKey(env)}/top.txt`)).toBeVisible({ timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-63: a file made on the machine inside an open Browse folder while the Workbench is collapsed shows once the Workbench opens again', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      const src = path.join(dir, 'src')
+      fs.mkdirSync(src)
+      fs.writeFileSync(path.join(src, 'a.ts'), 'export const a = 1\n')
+      await openRemoteSessionWorkbench(page, env)
+
+      await showBrowse(page)
+      const srcRow = browseRow(page, `${remoteKey(env)}/src`)
+      await expect(srcRow).toBeVisible({ timeout: 30_000 })
+      await srcRow.click()
+      await expect(browseRow(page, `${remoteKey(env)}/src/a.ts`)).toBeVisible({ timeout: 30_000 })
+      await untilTheMachineHasStamped(env, src)
+
+      await workbenchIcon(page).click()
+      await expect.poll(() => layoutState(page)).toBe('T1')
+      await untilTwoHeartbeatsLeaveOut(env, src)
+      fs.writeFileSync(path.join(src, 'b.ts'), 'export const b = 2\n')
+
+      await workbenchIcon(page).click()
+      await expect.poll(() => layoutState(page)).toBe('T2')
+      await expect(browseRow(page, `${remoteKey(env)}/src/b.ts`)).toBeVisible({ timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }
