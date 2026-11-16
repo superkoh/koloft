@@ -87,7 +87,7 @@ export function scheduleToFields(
   return { whenKind: s.kind, at, date, days, n: s.n, unit: s.unit }
 }
 
-export function modelValue(f: JobFields): string | undefined {
+export function modelValue(f: Pick<JobFields, 'model' | 'modelOther'>): string | undefined {
   if (f.model === '') return undefined
   if (f.model === 'other') return f.modelOther.trim()
   return f.model
