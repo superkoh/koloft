@@ -47,6 +47,7 @@ import {
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
+  readAgyModels,
   prepareAgyHome,
   readAgyQuota,
   setAgyApiKeyRoute
@@ -97,6 +98,13 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
+import {
+  familyEfforts,
+  resolveOwnPick,
+  listsModels,
+  type ListedModel,
+  type OwnPickResolved
+} from '@shared/sessionPicks'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
@@ -374,6 +382,7 @@ import {
   type RelayDeps
 } from './cdpRelay'
 import { pickElement, pickText, stopPick } from './elementPick'
+import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -502,14 +511,17 @@ import { copyWorktreeIncludes } from './sessionWorktrees'
 import {
   AgentRequests,
   answered,
-  BUILTIN_VERBS,
   errorText,
+  helpVerb,
   refused,
   tabSpokenFor,
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { butlerHelperRole } from '@shared/agentGuide'
+import { butlerHelperRole, projectRulesForTheButler } from '@shared/agentGuide'
+import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
+import type { OwnPick, SessionDefaultsRead } from '@shared/types'
+import { projectDefaults } from './projectDefaults'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import {
@@ -1529,11 +1541,53 @@ function elementPicksDir(): string {
   return path.join(app.getPath('userData'), 'element-picks')
 }
 
-async function savePickOnThisMac(png: Buffer): Promise<string> {
-  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
-  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
-  await fs.promises.writeFile(file, png)
+async function savePictureIn(dir: string, extension: string, picture: Buffer): Promise<string> {
+  await fs.promises.mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${crypto.randomUUID()}.${extension}`)
+  await fs.promises.writeFile(file, picture)
   return file
+}
+
+function savePickOnThisMac(png: Buffer): Promise<string> {
+  return savePictureIn(elementPicksDir(), 'png', png)
+}
+
+const PASTED_PICTURES_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const PASTED_PICTURES_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+
+function pastedPicturesDir(): string {
+  return path.join(app.getPath('userData'), 'palette-pictures')
+}
+
+async function savePastedPicture(dataUrl: string): Promise<string | null> {
+  const [, mime, picture] = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl) ?? []
+  if (!Object.hasOwn(PASTED_PICTURE_EXTENSIONS, mime ?? '')) return null
+  return savePictureIn(
+    pastedPicturesDir(),
+    PASTED_PICTURE_EXTENSIONS[mime],
+    Buffer.from(picture, 'base64')
+  )
+}
+
+async function withPastedPicturesOnItsMachine(
+  options: CreateTabOptions
+): Promise<CreateTabOptions> {
+  const machine = typeof options.cwd === 'string' ? parseRemoteKey(options.cwd)?.host : undefined
+  if (!machine || !options.firstPrompt) return options
+  let firstPrompt = options.firstPrompt
+  await Promise.all(
+    pastedPicturesIn(firstPrompt, pastedPicturesDir()).map(async (file) => {
+      try {
+        const picture = await fs.promises.readFile(file)
+        const there = await hosts.machine(machine).savePick(path.basename(file), picture)
+        firstPrompt = firstPrompt.replaceAll(file, there)
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
+      }
+    })
+  )
+  return { ...options, firstPrompt }
 }
 
 // CODEX§3 CODEX§20 MUSE§5
@@ -1966,7 +2020,68 @@ const sessionSync = new SessionSync({
   notice: noticeOf
 })
 
+const A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS = 3_600_000
+const modelLists = new Map<BackendId, { at: number; listed: Promise<ListedModel[] | undefined> }>()
+
+async function readModelList(backend: BackendId): Promise<ListedModel[] | undefined> {
+  if (backend === 'codex') {
+    const picked = codexPicker.peek(accountViews())
+    return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
+  }
+  const target = await agyOneShotTarget()
+  if (!target) return undefined
+  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done?.())
+}
+
+function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
+  const kept = modelLists.get(backend)
+  if (kept && Date.now() - kept.at < A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS) return kept.listed
+  const listed = readModelList(backend).catch(() => undefined)
+  modelLists.set(backend, { at: Date.now(), listed })
+  void listed.then((models) => {
+    if (!models?.length && modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
+  })
+  return listed
+}
+
+const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
+
+const defaultsOfProjects = projectDefaults({
+  rootOf: (dir) => projectInfoOnHost(dir).root,
+  reachable: (root) => {
+    const remote = parseRemoteKey(root)
+    return remote ? hosts.machine(remote.host).reachOrThrow() : Promise.resolve()
+  },
+  repoOf: (root, fresh) => hosts.of(root).github.ownerSlashName(root, fresh),
+  saved: () => loadSettings().sessionDefaults,
+  save: (sessionDefaults) => commitSettings({ sessionDefaults }),
+  now: Date.now
+})
+
+async function rulesOf(workspace: string): Promise<string | undefined> {
+  return (await defaultsOfProjects.of(workspace))?.rules
+}
+
+async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
+  const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
+  const resolved = resolveOwnPick(backend, asked, listed)
+  if (resolved.note) sendToRenderer(CH.cron.toast, resolved.note)
+  return resolved
+}
+
+async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions> {
+  const backend = backendIdOf(opts.kind)
+  if (!backend || typeof opts.cwd !== 'string' || !takesOwnDefaults(opts)) return opts
+  const asked = (await defaultsOfProjects.of(opts.cwd))?.picks[backend]
+  return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
+}
+
 const sessionDeps: SessionVerbDeps = {
+  projectRules: rulesOf,
+  pickFacts: async (backend) => ({
+    fableLeft: picker.fableLeft(),
+    ...(listsModels(backend) && { listed: await listedModels(backend) })
+  }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
   tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
@@ -2148,7 +2263,10 @@ async function answerSession(tabId: string, reply: string): Promise<string | und
 
 const agentRequests = new AgentRequests({
   verbs: {
-    ...BUILTIN_VERBS,
+    help: helpVerb(async (tabId) => {
+      const workspace = sessionBackends.workspaceOfTab(tabId)
+      return workspace && rulesOf(workspace)
+    }),
     cron: cronVerb({
       runner: () => cronRunner,
       pinnedWorkspaceOf: pinnedWorkspaceOfTab,
@@ -3353,6 +3471,10 @@ app.whenReady().then(() => {
   const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
   pruneElementPicks()
   setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
+  const prunePastedPictures = (): void =>
+    pruneStale(pastedPicturesDir(), PASTED_PICTURES_KEPT_MS, true)
+  prunePastedPictures()
+  setInterval(prunePastedPictures, PASTED_PICTURES_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -3420,6 +3542,7 @@ app.whenReady().then(() => {
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
     memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
+    // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
         .map((s) => s.tabId)
@@ -3598,6 +3721,7 @@ app.whenReady().then(() => {
     pty: ptyMgr,
     runtime: tracker,
     projectInfo: projectInfoOnHost,
+    projectRules: rulesOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
@@ -5810,7 +5934,7 @@ async function launchQuietTab(
   title: string,
   more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
-  const r = await sessionBackends.create(options)
+  const r = await sessionBackends.create(await withPastedPicturesOnItsMachine(options))
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
   sendToRenderer(CH.terminal.spawned, spawned)
@@ -6310,11 +6434,18 @@ function commandIntoButler(text: string): string {
   return commandInto(butlerDestination(), text)
 }
 
-function fromPalette({ words, backend, about, at }: PaletteRequest): string {
+function fromPalette(
+  { words, pictures, backend, about, at }: PaletteRequest,
+  rules: string | undefined
+): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
   const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
-  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
+  const picks = about && rules ? projectRulesForTheButler(about, rules) : ''
+  return withPictures(
+    `The owner typed this in ⌘P: ${words}${where}${routed}${agent}${picks}`,
+    pictures
+  )
 }
 
 async function startHelper(
@@ -6332,9 +6463,10 @@ async function startHelper(
   return tabId ? { ok: true, tabId } : { ok: false, error: 'Koloft could not start a helper.' }
 }
 
-function handFromPalette(request: PaletteRequest): Promise<ConductorOpenResult> {
+async function handFromPalette(request: PaletteRequest): Promise<ConductorOpenResult> {
+  const prompt = fromPalette(request, request.about && (await rulesOf(request.about)))
   return startHelper(() => ({
-    prompt: fromPalette(request),
+    prompt,
     name: request.title,
     ownerWords: request.words,
     backend: request.backend
@@ -6361,14 +6493,22 @@ function butlerTarget(ref: string): Target | undefined {
   }
 }
 
+async function cronPick(req: LaunchRequest): Promise<OwnPick> {
+  const job = { model: req.model, effort: req.effort }
+  const filled =
+    job.model && job.effort
+      ? undefined
+      : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
+  return filled ? (await ownPick(req.backend, filled)).pick : job
+}
+
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
     const options: CreateTabOptions & { kind: BackendId } = {
       kind: req.backend,
       cwd: req.cwd,
       worktree: req.worktree,
-      model: req.model,
-      effort: req.effort,
+      ...(await cronPick(req)),
       permission: req.permission,
       firstPrompt: req.firstPrompt,
       name: req.name,
@@ -6465,7 +6605,8 @@ const hosts = new Hosts(
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
       sshEnvReady: loginEnvReady,
-      watch: (p, onChange) => remoteSync?.watch(machine, p, onChange),
+      watch: (p, onChange, reportsWhatChangedWhileUnwatched) =>
+        remoteSync?.watch(machine, p, onChange, reportsWhatChangedWhileUnwatched),
       unwatch: (p) => remoteSync?.unwatch(machine, p),
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
@@ -6496,7 +6637,8 @@ const hosts = new Hosts(
         noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
+        loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })
 )
@@ -6507,6 +6649,7 @@ const claudeBackend = new ClaudeBackend({
   hosts,
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
+  projectRules: rulesOf,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
@@ -6538,7 +6681,10 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (opts.kind !== 'shell') return sessionBackends.create(opts)
+      if (opts.kind !== 'shell')
+        return sessionBackends.create(
+          await withPastedPicturesOnItsMachine(await withOwnDefaults(opts))
+        )
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
@@ -6758,6 +6904,33 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
+  )
+  ipcMain.handle(
+    CH.sessionDefaults.read,
+    async (_e, workspacePath: string): Promise<SessionDefaultsRead> => {
+      try {
+        const [defaults, listed] = await Promise.all([
+          defaultsOfProjects.read(workspacePath),
+          loadSettings().sessionMethods.enabled.agy
+            ? Promise.race([
+                listedModels('agy'),
+                new Promise<undefined>((done) =>
+                  setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+                )
+              ])
+            : undefined
+        ])
+        return { ok: true, defaults, familyEfforts: familyEfforts('agy', listed) }
+      } catch (error) {
+        return { ok: false, error: errorText(error) }
+      }
+    }
+  )
+  ipcMain.handle(CH.sessionDefaults.write, async (_e, workspacePath: string, raw: unknown) =>
+    defaultsOfProjects.write(workspacePath, raw).then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ ok: false, error: errorText(error) })
+    )
   )
 
   ipcMain.handle(CH.update.check, () => checkForUpdates())
@@ -7090,8 +7263,8 @@ function registerIpc(): void {
     return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
-  ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
-    sessionBackends.historyRows(p, historyPartlyUnread)
+  ipcMain.handle(CH.workspace.historyRows, (_e, p: string, opts?: { quiet: boolean }) =>
+    sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({
@@ -7302,6 +7475,9 @@ function registerIpc(): void {
       : null
     return pickText(picked, picture)
   })
+  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
+  )
   ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
     if (typeof id === 'number') stopPick(id)
   })
@@ -7485,9 +7661,15 @@ function registerIpc(): void {
         ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
-  ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
+  ipcMain.handle(CH.fs.watchDir, (_e, root: string, reportsWhatChangedWhileUnwatched: unknown) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes))
+      ? hosts
+          .of(root)
+          .watchDir(
+            root,
+            (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes),
+            reportsWhatChangedWhileUnwatched === true
+          )
       : false
   )
   ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {

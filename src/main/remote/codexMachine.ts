@@ -12,7 +12,7 @@ import {
 } from './install'
 import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
-import { SSH_LINK_BROKE_EXIT } from './ssh'
+import { answerStreamOf, SSH_LINK_BROKE_EXIT } from './ssh'
 import {
   asError,
   KOLOFT_INITIALIZE,
@@ -30,9 +30,9 @@ import {
   handedOverOwnerWordsFiles,
   NOTICE_ENV,
   remoteNoticeFile,
-  SHELL_WROTE_SUFFIX,
-  TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV
+  SHELL_WROTE_SUFFIX
 } from '../hooks'
+import { OWNING_TAB_ENV } from '../owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
@@ -144,7 +144,7 @@ ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"
   ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
   export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV} ${CODEX_SHELL_WROTE_ENV}
-  ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}=${s.tabId}; export ${TAB_OF_A_CODEX_SERVER_ON_A_MACHINE_ENV}
+  ${OWNING_TAB_ENV}=${s.tabId}; export ${OWNING_TAB_ENV}
   command -v setsid >/dev/null 2>&1 && exec setsid nohup ${serve}
   exec nohup ${serve}
 ) </dev/null >"$S.log" 2>&1 &
@@ -238,7 +238,7 @@ const SIDE_SERVER = 'side'
 // ADR-0039 CODEX§16
 export function machineAppServerCmd(instance: string): string {
   assertSafeNames(instance)
-  return remoteShCommand(
+  return remoteAnswerCommand(
     `D="${serversDir(instance)}"\n${STOP_SERVER_FN}\n` +
       `mkdir -p "$D" && chmod 700 "$D" || exit 3\n` +
       `stop_one ${SIDE_SERVER}\necho $$ > "$D/${SIDE_SERVER}.pid"\n` +
@@ -250,7 +250,7 @@ export function machineAppServerCmd(instance: string): string {
 // ADR-0039 CODEX§16
 export function proxyCmd(instance: string, tabId: string): string {
   assertSafeNames(instance, tabId)
-  return remoteShCommand(
+  return remoteAnswerCommand(
     `${CODEX_FIRST_ON_PATH}\nexec codex app-server proxy --sock "${serversDir(instance)}/${tabId}.sock"`
   )
 }
@@ -488,7 +488,10 @@ export class MachineCodexUpstream implements CodexUpstream {
     child.stderr.on('data', (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-STDERR_KEPT_BYTES)
     })
-    const duplex = Duplex.from({ readable: child.stdout, writable: child.stdin })
+    const duplex = Duplex.from({
+      readable: answerStreamOf(child.spawnargs.join(' '), child.stdout),
+      writable: child.stdin
+    })
     const ws = new WebSocket('ws://localhost/', {
       createConnection: () => duplex as unknown as Socket,
       maxPayload: this.limit

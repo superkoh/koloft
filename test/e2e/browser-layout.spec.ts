@@ -436,6 +436,9 @@ test.describe('Workbench layout and keyboard: one panel holds both kinds without
       await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('files')
       await clickAppMenuItem(app, page, BROWSER_MENU_IDS.findInPage)
       await expect(page.locator('.find-bar:visible')).toHaveCount(1, { timeout: 20_000 })
+      await expect(page.locator('.find-bar:visible .find-input')).toHaveValue('', {
+        timeout: 20_000
+      })
       await searchWith(page, 'previewonlymarker')
       await expect.poll(() => findTotal(page), { timeout: 20_000 }).toBeGreaterThan(0)
     } finally {

@@ -121,7 +121,7 @@ export interface MuseMachine {
   launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan>
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
-  endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined>
   endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -645,7 +645,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     ctx: StartContext,
     { account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const { opts, cwd, workspace, resource, freshWorktree } = ctx
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     const remote = this.deps.remote
     const host = hostOfPath(cwd)
     if (!remote || !host) throw new Error('Koloft cannot reach this machine.')
@@ -663,7 +663,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
-      context: agentTools ? koloftPrompt('muse') : undefined,
+      context: agentTools ? koloftPrompt('muse', rules) : undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords
@@ -730,7 +730,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     ctx: StartContext,
     { binary, account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const { opts, cwd, workspace, resource, freshWorktree } = ctx
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
     // ADR-0029 MUSE§22
@@ -749,7 +749,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
     const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('muse')] : []),
+      ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
@@ -759,7 +759,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
-      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined
+      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined,
+      rules
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -809,7 +810,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
     ownerWords: string | undefined,
-    relay: MuseRelayFiles | undefined
+    relay: MuseRelayFiles | undefined,
+    rules: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -817,6 +819,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         backend: 'muse',
         open,
         agent,
+        rules,
         drop: (name) =>
           name.startsWith(HOOK_DROP_PREFIX)
             ? (obj, full): void => {
@@ -1144,8 +1147,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (!run.host || !run.tmuxName || this.shuttingDown) return
     const machine = this.deps.remote?.machine(run.host)
     const runId = run.mirror?.runId
+    // ADR-0044
     const named = runId && (await machine?.runScript(TAB_TMUX_NAME_SH, [runId]))
-    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName)
+    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName, runId)
     if (problem)
       this.deps.error(`Could not stop Muse on ${run.host}: ${problem}. It is still running there.`)
     this.deps.remote?.poke(run.host)

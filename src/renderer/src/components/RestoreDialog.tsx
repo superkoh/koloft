@@ -7,6 +7,46 @@ import { mixesBackends, relTime } from '../sessionRows'
 import { mayBeRunningElsewhere } from '../resumeFlow'
 import '../restoreDialog.css'
 
+export function useHistoryRows(wsPath: string, opts?: { quiet: boolean }): SessionRow[] {
+  const [history, setHistory] = useState<SessionRow[]>([])
+  const quiet = opts?.quiet ?? false
+  useEffect(() => {
+    let live = true
+    window.api.workspace
+      .historyRows(wsPath, { quiet })
+      .then((h) => {
+        if (live) setHistory(h)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [wsPath, quiet])
+  return history
+}
+
+export function HistoryRowMeta({
+  row,
+  now,
+  showBackend
+}: {
+  row: SessionRow
+  now: number
+  showBackend: boolean
+}): JSX.Element {
+  return (
+    <>
+      {showBackend && <SessionBackendIcon backend={row.backendId} />}
+      <span>
+        {row.worktree} · {relTime(row.mtime, now)}
+      </span>
+      {mayBeRunningElsewhere(row.mtime, now) && (
+        <span className="restore-tag">may be running elsewhere</span>
+      )}
+    </>
+  )
+}
+
 export function RestoreDialog({
   wsPath,
   onClose,
@@ -16,20 +56,7 @@ export function RestoreDialog({
   onClose: () => void
   onRestore: (row: SessionRow) => void
 }): JSX.Element {
-  const [history, setHistory] = useState<SessionRow[]>([])
-
-  useEffect(() => {
-    let live = true
-    window.api.workspace
-      .historyRows(wsPath)
-      .then((h) => {
-        if (live) setHistory(h)
-      })
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [wsPath])
+  const history = useHistoryRows(wsPath)
 
   // PLATFORM§25
   useLayoutEffect(() => {
@@ -41,6 +68,7 @@ export function RestoreDialog({
   }, [onClose])
 
   const now = Date.now()
+  const mixed = mixesBackends(history)
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -63,13 +91,7 @@ export function RestoreDialog({
                 <button key={r.id} className="restore-row" onClick={() => onRestore(r)}>
                   <span className="restore-title">{r.title}</span>
                   <span className="restore-meta">
-                    {mixesBackends(history) && <SessionBackendIcon backend={r.backendId} />}
-                    <span>
-                      {r.worktree} · {relTime(r.mtime, now)}
-                    </span>
-                    {mayBeRunningElsewhere(r.mtime, now) && (
-                      <span className="restore-tag">may be running elsewhere</span>
-                    )}
+                    <HistoryRowMeta row={r} now={now} showBackend={mixed} />
                   </span>
                 </button>
               ))}
