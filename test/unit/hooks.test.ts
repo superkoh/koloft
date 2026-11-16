@@ -836,7 +836,7 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabT').map((r) => r.event)).toEqual(['prompt', 'stop'])
   })
 
-  it('a new tab starts with no run-state log and no registration snapshot (pids, hence tab ids, recycle)', () => {
+  it('a new tab starts with no run-state log and no registration snapshot left under its id', () => {
     fire('pty-abc-1', 'stop', { hook_event_name: 'Stop' })
     expect(readStatusLog('pty-abc-1')).toHaveLength(1)
     fs.writeFileSync(

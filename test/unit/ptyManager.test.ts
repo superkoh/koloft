@@ -667,6 +667,16 @@ describe('tabInstancePid', () => {
   })
 })
 
+describe('PtyManager.nextId', () => {
+  it('two Koloft runs that get the same pid mint different tab ids, so an id saved before a restart never names a tab of a later run', () => {
+    const earlierRun = new PtyManager()
+    const laterRun = new PtyManager()
+    const earlierIds = [earlierRun.nextId(), earlierRun.nextId()]
+    const laterIds = [laterRun.nextId(), laterRun.nextId()]
+    expect(laterIds.filter((id) => earlierIds.includes(id))).toEqual([])
+  })
+})
+
 describe("BB-E27: a scheduled run's first prompt and session name reach only the tab that asked for them", () => {
   function envOf(call: number): Record<string, string> {
     return (mocks.spawn.mock.calls[call][2] as { env: Record<string, string> }).env
