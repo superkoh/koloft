@@ -784,15 +784,19 @@ async function startAServerIn(
 }
 
 async function backUnderANewTabId(row: Locator, before: string): Promise<string> {
-  const newTabId = async (): Promise<string | null> => {
-    const id = await row.getAttribute('data-tab-id')
-    return id === before ? null : id
-  }
-  await expect.poll(newTabId, { timeout: 30_000 }).not.toBeNull()
-  await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-  let after: string | null = null
-  await expect.poll(async () => (after = await newTabId()), { timeout: 30_000 }).not.toBeNull()
-  return after!
+  let after = ''
+  await expect
+    .poll(
+      async () => {
+        const id = await row.getAttribute('data-tab-id')
+        const settled = /\bst-(waiting|idle)\b/.test((await row.getAttribute('class')) ?? '')
+        after = id && id !== before && settled ? id : ''
+        return after
+      },
+      { timeout: 30_000 }
+    )
+    .not.toBe('')
+  return after
 }
 
 test.describe('Workbench + menu: the ports a session’s processes listen on', () => {
@@ -866,16 +870,16 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
     env
   }) => {
     const port = await portFreeOnTheMac()
-    const pidFile = path.join(env.home, 'server.pid')
     try {
+      let before = ''
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
         await startSessionIn(page, 'ws-a')
-        const before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+        before = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
         await openSessionTerminal(app, page)
-        await runIn(page, panelTerm(page), serverWithPidFile(env, port, pidFile))
+        await runIn(page, panelTerm(page), serverWithPidFile(env, port, serverPidFile(env)))
         await expect.poll(() => listeningPortsOf(page, before), { timeout: 30_000 }).toEqual([port])
         await expect.poll(() => savedTabIds(env)).toContain(before)
       } finally {
@@ -886,16 +890,14 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
       try {
         const page2 = await app2.firstWindow()
         await waitBooted(page2)
-        const row = wsRows(page2, 'ws-a').first()
-        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
-        const after = (await row.getAttribute('data-tab-id'))!
+        const after = await backUnderANewTabId(wsRows(page2, 'ws-a').first(), before)
         await expect.poll(() => answers(port)).toBe(true)
         await expect.poll(() => listeningPortsOf(page2, after), { timeout: 30_000 }).toEqual([port])
       } finally {
         await quitAndClose(app2)
       }
     } finally {
-      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+      stopTheServer(env)
     }
   })
 
@@ -954,8 +956,8 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         const after = await backUnderANewTabId(row, before)
         await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
       } finally {
-        await quitAndClose(app)
         stopTheServer(env)
+        await quitAndClose(app)
       }
     })
 
@@ -988,8 +990,8 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
         const after = await backUnderANewTabId(row, before)
         await expect.poll(() => listeningPortsOf(page, after), { timeout: 30_000 }).toEqual([port])
       } finally {
-        await quitAndClose(app)
         stopTheServer(env)
+        await quitAndClose(app)
       }
     })
   }
