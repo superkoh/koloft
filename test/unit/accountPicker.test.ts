@@ -104,6 +104,23 @@ describe('U4 · selection + banner', () => {
   })
 })
 
+describe('U4 · whether any account can still run fable', () => {
+  it('yes while an account is still unprobed or holds allowance, no once every account was probed and has none or has spent it', async () => {
+    const h = makeHarness([meta({ name: 'burned' }), meta({ name: 'plain' })])
+    expect(h.picker.fableLeft()).toBe(true)
+    h.setProbe('burned', { ok: true, usage: usage({ uoi: 0.99, soi: 'allowed', hasOi: true }) })
+    h.setProbe('plain', { ok: true, usage: usage({ u5: 0.6, u7: 0.8 }) })
+    await h.picker.pick()
+    expect(h.picker.fableLeft()).toBe(false)
+
+    const held = makeHarness([meta({ name: 'burned' }), meta({ name: 'fresh' })])
+    held.setProbe('burned', { ok: true, usage: usage({ uoi: 0.99, soi: 'allowed', hasOi: true }) })
+    held.setProbe('fresh', { ok: true, usage: usage({ uoi: 0.2, soi: 'allowed', hasOi: true }) })
+    await held.picker.pick()
+    expect(held.picker.fableLeft()).toBe(true)
+  })
+})
+
 describe('U4 · fable-host routing (rev2 D17/D19)', () => {
   it('an account whose fable bucket is spent stops hosting: pool routes on 5h/7d only', async () => {
     const h = makeHarness([meta({ name: 'burned' }), meta({ name: 'plain' })])

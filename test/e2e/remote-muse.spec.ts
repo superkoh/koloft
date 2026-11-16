@@ -371,6 +371,50 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
+  test('E-RM-16: /exit typed in a remote Muse tab closes the tab, and its row leaves the list', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(remoteRows(page).filter({ hasText: 'keep me' })).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+
+      await runIn(page, centerTerm(page), '/exit')
+
+      await expect(remoteRows(page)).toHaveCount(0, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await expect.poll(() => termIds(page)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RM-17: a remote Muse that dies before its session starts says so with its exit code, and keeps its tab, row and last screen, with no key pressed', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      machineFile(env, 'fake-muse-exit', '3')
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Muse closed before the session started (exit code 3)',
+        { timeout: ON_THE_MACHINE_WITHIN_MS }
+      )
+      const row = remoteRows(page)
+      await expect(row).toHaveCount(1)
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 3)')
+      await expect.poll(() => termIds(page)).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await expect.poll(() => terminalText(page, tabId)).toContain('Muse fixture startup failure')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RM-04: after Koloft restarts, the open Muse tab attaches to the same session still running on the machine, starts no second muse, and lights up again', async ({
     env
   }) => {

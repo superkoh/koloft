@@ -1,4 +1,4 @@
-# 0026 Only a worktree session the person starts or opens, a scheduled run's worktree under a folder they trusted, or a session an agent starts in a sidebar workspace, writes an agent's folder trust
+# 0026 Only a worktree session the person starts or opens, a scheduled run's worktree under a folder they trusted, a session an agent starts in a sidebar workspace, or an Antigravity resume on another account in a folder an account trusts, writes an agent's folder trust
 
 **Constraint**: `claude -w <name>` in a repo Claude has never been trusted in does not
 ask the trust question — it prints an error and exits at once (`CC§9`). In a folder it
@@ -28,6 +28,15 @@ for good.
   one run (`AGY§5`), so the worktree folder is written as well. Muse gets the same outcome
   without writing, from `--trust-workspace` for that run. A git worktree the person made
   themselves is not Koloft's and gets agy's own question.
+- an Antigravity resume lands on another Koloft account than one whose home already
+  trusts the folder (the first is at its limit, say): agy keeps trust per account home
+  and asks again in the new one even for a conversation it already ran there (`AGY§5`),
+  and a resume often has nobody at the terminal. The yes was the owner's, not the
+  account's, so the resumed folder alone is written into the picked account's list, when
+  any account home Koloft keeps trusts it (a removed account's home too, and a yes Koloft
+  wrote under the rules above, since those were the owner's as well), where
+  it stays like any yes agy records. A fresh launch never carries trust over: on an
+  account that has not had such a resume in the folder, agy still asks.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's
 own question in the terminal, a scheduled run in a workspace the agent does not trust
 keeps the jobs form's warning and stops on the question, and a launch that fell back to

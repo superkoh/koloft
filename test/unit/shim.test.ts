@@ -973,6 +973,13 @@ describe('claude shim (scheduled jobs: first prompt + session name ride env vars
     expect(r.realArgs0?.[r.realArgs0.length - 1]).toBe(TASK)
   })
 
+  it('a first prompt that names a pasted picture also hands claude the picture’s folder with --add-dir, just before the prompt, and that variable does not reach claude either', () => {
+    const folder = '/Users/me/Library/Application Support/Koloft/palette-pictures'
+    const r = runShim(['-w', 'n1'], { ...CRON, KOLOFT_PICTURE_FOLDER: folder })
+    expect(norm(r).slice(-6)).toEqual(['--name', NAME, '--add-dir', folder, '--', TASK])
+    expect(r.realEnv?.KOLOFT_PICTURE_FOLDER).toBeUndefined()
+  })
+
   it('BB-E19 neither variable reaches the launched claude', () => {
     const r = runShim(['-w', 'n1'], CRON)
     expect(r.realEnv?.KOLOFT_FIRST_PROMPT).toBeUndefined()

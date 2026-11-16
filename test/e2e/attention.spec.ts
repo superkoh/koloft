@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { ATTENTION_REASON } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
 import { codexRows, startCodex } from './helpers/codex'
@@ -13,7 +14,9 @@ import {
   startSessionIn,
   waitBooted,
   waitForCalls,
-  wsGroup
+  wsGroup,
+  picksFor,
+  wsRows
 } from './helpers/p1'
 
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
@@ -62,6 +65,34 @@ test.describe('attention markers come from real session-status transitions (shim
     await runIn(page, centerTerm(page), '/busy')
     await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(0)
     await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(0)
+  })
+
+  test('a session’s OS notification leaves Notification Center once its tab is on screen in a focused window — the window coming to the front or a switch to the tab — while its red dot stays', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    await startSessionIn(page, 'ws-b')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+    const turnDoneIn = (ws: string) => `${ATTENTION_REASON['turn-done']} · ${ws}`
+    const listed = async () =>
+      (await osOutlets(app)).inNotificationCenter
+        .map((n) => n.body)
+        .filter((body) => body.startsWith(ATTENTION_REASON['turn-done']))
+        .sort()
+    await expect.poll(listed).toEqual([turnDoneIn('ws-a'), turnDoneIn('ws-b')])
+    await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
+
+    await lookAtTheWindow(app)
+    await expect.poll(listed).toEqual([turnDoneIn('ws-a')])
+    expect(await pendingAttention(page)).toHaveLength(2)
+
+    await wsRows(page, 'ws-a').click()
+    await expect.poll(listed).toEqual([])
+    expect(await pendingAttention(page)).toHaveLength(2)
+    await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(2)
   })
 
   test('the bell counts the waiting sessions and walks them longest wait first, round and round, unfolding the workspace it lands in; ⌘J does the same, and only an answer takes one off', async ({
@@ -150,7 +181,7 @@ test.describe('attention markers come from real session-status transitions (shim
       await expect.poll(() => markOn(page, parentTab), { timeout: 25_000 }).toBeTruthy()
       const type = (tab: string, line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
-      await type(parentTab, '/koloft session new -- help me')
+      await type(parentTab, `/koloft session new ${picksFor('claude')} -- help me`)
       await waitForCalls(env, 2)
       const helper = page.locator(`.ws .ws-tab:not([data-tab-id="${parentTab}"])`)
       await expect(helper).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })

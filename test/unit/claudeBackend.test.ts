@@ -11,7 +11,14 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import {
+  ClaudeBackend,
+  rebuildWorktree,
+  type ClaudeBackendDeps
+} from '../../src/main/backends/claude'
+import { GIT_CALL_TIMEOUT_MS, localHost } from '../../src/main/host/localHost'
+import { GithubLookup } from '../../src/main/github'
+import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
 import { answered, replyJson } from '../../src/main/agentRequests'
 import { mirrorHookDir } from '../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../src/main/hooks'
@@ -407,4 +414,35 @@ describe('ClaudeBackend: the resume check before a restart', () => {
     expect(swept).toEqual([sessionId])
     listedFolders.mockRestore()
   })
+})
+
+const CHECKOUT_OF_A_BIG_REPO_MS = GIT_CALL_TIMEOUT_MS + 500
+
+describe('ClaudeBackend: rebuilding a missing worktree on resume', () => {
+  it(
+    'rebuilds the worktree of a repository whose checkout takes longer than a quick git call is given',
+    async () => {
+      const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-rebuild-')))
+      const root = path.join(tmp, 'repo')
+      seedRepo(root)
+      gitOnPath(
+        tmp,
+        `#!/bin/sh\ncase " $* " in *" worktree add "*) "${realGit()}" "$@" || exit $?; exec sleep ${CHECKOUT_OF_A_BIG_REPO_MS / 1000} ;; esac\nexec "${realGit()}" "$@"\n`
+      )
+      const worktreePath = path.join(root, '.claude', 'worktrees', 'wt')
+      try {
+        const rebuilt = await rebuildWorktree(
+          { worktreePath, branch: 'worktree-wt', baseRef: 'main' },
+          localHost(new GithubLookup({}), {} as never),
+          undefined
+        )
+        expect(rebuilt).toBe(true)
+        expect(fs.existsSync(worktreePath)).toBe(true)
+      } finally {
+        restorePath()
+        fs.rmSync(tmp, { recursive: true, force: true })
+      }
+    },
+    CHECKOUT_OF_A_BIG_REPO_MS * 3
+  )
 })

@@ -159,6 +159,7 @@ test.describe('Git freshness · sidebar behind badge, popover and fast-forward p
         'New session⌘N',
         'New worktree session…⇧⌘N',
         'Restore session…',
+        'Session defaults…',
         'Scheduled jobs…',
         'Remove workspace'
       ])

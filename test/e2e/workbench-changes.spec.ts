@@ -1016,6 +1016,45 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(bar.locator('.find-count')).toHaveText(/^1\/\d+$/)
   })
 
+  test('with ⌘F on a match in a lower block, an edit to a file above that adds a match and then removes it keeps the same match current', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    const parts = setupChangeFixture(env.workspaces.a).bigChange()
+    await openChanges(page)
+    await waitStream(page, 6, 60_000)
+
+    const first = blockOf(page, 'bulk/part-1.ts')
+    await expect(first.locator(CV.diffRow).first()).toBeVisible()
+    await first.locator(CV.diffRow).first().click()
+    await sendShortcut(app, 'shortcut:find')
+    const bar = page.locator('.find-bar')
+    await expect(bar.locator('.find-input')).toBeFocused()
+    await page.keyboard.type('rewritten_7 = ')
+    await expect(bar.locator('.find-count')).toHaveText('1/6')
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Enter')
+    await expect(bar.locator('.find-count')).toHaveText('4/6')
+
+    const current = async (): Promise<{ count: string; line: string | null }> => ({
+      count: (await bar.locator('.find-count').textContent()) ?? '',
+      line: await page.evaluate(() => {
+        const r = [...(CSS.highlights.get('find-active') ?? [])][0] as Range | undefined
+        return r?.startContainer.parentElement?.closest('.idiff-code')?.textContent ?? null
+      })
+    })
+    const userIsOn = 'export const part4rewritten_7 = 7'
+    await expect.poll(current).toEqual({ count: '4/6', line: userIsOn })
+
+    const part1 = fs.readFileSync(parts[0], 'utf8')
+    fs.writeFileSync(parts[0], part1 + 'export const morerewritten_7 = 7\n')
+    await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '5/7', line: userIsOn })
+
+    fs.writeFileSync(parts[0], part1)
+    await expect.poll(current, { timeout: 30_000 }).toEqual({ count: '4/6', line: userIsOn })
+  })
+
   test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({
     page,
     env

@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type JSX,
   type KeyboardEvent
 } from 'react'
@@ -14,6 +15,7 @@ import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey } from '@shared/remoteKey'
+import type { PastedPicture } from '@shared/pastedPictures'
 import { askRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
@@ -38,12 +40,27 @@ import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { startOrList, type AgentChoice } from '../agentChoice'
 import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
+import { PastedPictures } from './PastedPictures'
 import '../commandPalette.css'
 import '../workspaceSidebar.css'
 import '../workspacePicker.css'
 import '../restoreDialog.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
+const PICTURE_NOT_KEPT = 'Koloft could not keep that picture. It takes PNG, JPEG, GIF and WebP.'
+
+function copiedAsRichText(copied: DataTransfer): boolean {
+  return copied.types.includes('text/html') && !!copied.getData('text/plain').trim()
+}
+
+function dataUrlOf(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 let lastSearchId = 0
 
@@ -91,18 +108,27 @@ function tipsFor(
   naming: boolean,
   twoNamed: boolean,
   picked: boolean,
-  listed: boolean
+  listed: boolean,
+  pictureAlone: boolean,
+  savingPicture: boolean
 ): string {
   if (mode === 'thinking') return 'Esc cancel'
+  if (savingPicture) return 'Keeping the picture…'
   if (mode === 'search') return '↓↑ move · ⏎ open · Esc back'
   if (naming) return '↓↑ move · ⏎ pick · Esc'
   if (picked) return '↓↑ move · ⏎ open · Esc'
   if (twoNamed) return 'Name one workspace · Esc'
   if (listed) return '↓ pick a match · Esc'
+  if (pictureAlone) return 'Say what to do with the picture · Esc'
   return '⇧⏎ new line · Esc'
 }
 
-export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
+export type PaletteRouted = (
+  prompt: string,
+  backend: BackendId,
+  route: SessionRoute | null,
+  pictures: readonly PastedPicture[]
+) => void
 
 export function CommandPalette({
   actions,
@@ -131,6 +157,8 @@ export function CommandPalette({
   const [searchDone, setSearchDone] = useState(false)
   const [listOpen, setListOpen] = useState(false)
   const [grown, setGrown] = useState({ typed: '', rows: SESSION_ROWS_PER_BATCH })
+  const [pictures, setPictures] = useState<PastedPicture[]>([])
+  const [saving, setSaving] = useState(0)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const asking = useRef<ReturnType<typeof askRoute> | null>(null)
@@ -147,7 +175,7 @@ export function CommandPalette({
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
   const asksAssist = !pin
   const typed = (pin ? pin.prompt : query).trim()
-  const startable = !!typed && !twoNamed
+  const startable = !!typed && !twoNamed && !saving
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
   const offered = tagging && tagging.start !== dismissedAt ? tagging : null
   const suggestions = offered ? mentionCandidates(workspaceItems, offered, named) : []
@@ -200,7 +228,8 @@ export function CommandPalette({
       onRouted(
         typed,
         backend,
-        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null }
+        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null },
+        pictures
       )
       return
     }
@@ -210,8 +239,27 @@ export function CommandPalette({
     void ask.result.then((route) => {
       if (asking.current !== ask) return
       asking.current = null
-      onRouted(typed, backend, route)
+      onRouted(typed, backend, route, pictures)
     })
+  }
+
+  const keep = async (files: File[]): Promise<void> => {
+    setSaving((n) => n + 1)
+    for (const file of files) {
+      const shown = await dataUrlOf(file).catch(() => null)
+      const path = shown && (await window.api.palette.savePicture(shown).catch(() => null))
+      if (shown && path) setPictures((had) => [...had, { path, shown }])
+      else useStore.getState().showToast(PICTURE_NOT_KEPT)
+    }
+    setSaving((n) => n - 1)
+  }
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    if (mode !== 'ask' || copiedAsRichText(e.clipboardData)) return
+    const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
+    if (!files.length) return
+    e.preventDefault()
+    void keep(files)
   }
 
   const stopAsking = (): void => {
@@ -438,7 +486,15 @@ export function CommandPalette({
     )
   }
 
-  const tips = tipsFor(mode, !!mention, twoNamed, at !== null, visible.length > 0)
+  const tips = tipsFor(
+    mode,
+    !!mention,
+    twoNamed,
+    at !== null,
+    visible.length > 0,
+    pictures.length > 0 && !typed,
+    saving > 0
+  )
 
   return (
     <div className="modal-backdrop palette-top" onClick={onClose}>
@@ -473,8 +529,14 @@ export function CommandPalette({
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
           />
         </div>
+        <PastedPictures
+          pictures={pictures}
+          disabled={mode === 'thinking'}
+          onRemove={(gone) => setPictures((had) => had.filter((p) => p !== gone))}
+        />
         {results()}
         <div className="pal-bar">
           <span className="pal-tips">{tips}</span>

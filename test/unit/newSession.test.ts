@@ -395,6 +395,22 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     })
   })
 
+  it('pictures pasted in ⌘P go last in the first prompt, one "Picture:" line each after a blank line, also behind an issue’s lines; with no pictures the prompt is as typed', () => {
+    const pictures = [
+      { path: '/pics/a.png', shown: 'blob:a' },
+      { path: '/pics/b.jpg', shown: 'blob:b' }
+    ]
+    const said = { prompt: ' fix login ', title: '', pictures }
+    const sent = 'fix login\n\nPicture: /pics/a.png\nPicture: /pics/b.jpg'
+    expect(pendingLaunch('/repo', { kind: 'main' }, said, [], []).firstPrompt).toBe(sent)
+    expect(
+      pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue]).firstPrompt
+    ).toBe(`${itemLaunchExtras(issue).firstPrompt}\n\n${sent}`)
+    expect(
+      pendingLaunch('/repo', { kind: 'main' }, { ...said, pictures: [] }, [], []).firstPrompt
+    ).toBe('fix login')
+  })
+
   it('⌘P never starts in the main checkout of a git workspace: with no worktree from Assist it makes a new one named for the time; a folder that is not git starts in itself', () => {
     const at = new Date(2026, 9, 13, 23, 21).getTime()
     const login: RouteWorktree = { kind: 'new', name: 'login' }
