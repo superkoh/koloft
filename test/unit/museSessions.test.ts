@@ -858,7 +858,11 @@ describe('MuseSessions turns from hooks', () => {
     }
     await bindTab(A, 'Fix docs links')
     const prompted = await bindTab(B)
-    hook(prompted, 'UserPromptSubmit', { session_id: B, prompt: 'look at the tests', turn_id: 't1' })
+    hook(prompted, 'UserPromptSubmit', {
+      session_id: B,
+      prompt: 'look at the tests',
+      turn_id: 't1'
+    })
     await vi.waitFor(() =>
       expect(sessions.list().find((s) => s.nativeSessionId === B)?.title).toBe('look at the tests')
     )
