@@ -7,7 +7,7 @@ export interface TextBlock {
   slot: string
   text: string
   byAgent?: Partial<Record<BackendId, string>>
-  byModel?: Partial<Record<string, string>>
+  byModel?: Readonly<Record<string, string>>
 }
 
 export interface PluginCommand {
@@ -57,5 +57,5 @@ export interface PluginManifest {
   settings?: PluginSettings
   ui?: readonly UiEntry[]
   assistJobs?: readonly PluginAssistJob[]
-  mcp?: PluginMcpServer
+  mcpServers?: readonly PluginMcpServer[]
 }

@@ -23,5 +23,6 @@
     "src/shared/**/*",
     "src/core/**/*",
     "src/plugins/**/*"
-  ]
+  ],
+  "exclude": ["src/plugins/*/renderer/**"]
 }

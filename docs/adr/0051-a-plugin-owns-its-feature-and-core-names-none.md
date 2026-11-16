@@ -14,10 +14,10 @@ of the app never name a plugin: the one file that names plugins is the list,
 `src/plugins/list.ts`, and core reads only that list. So a text block names no reader: it
 names the slot it fills, and a slot belongs to a text core owns (the session prompt, the
 `koloft` skill) or to a plugin the block's plugin needs (the butler's prompt). A plugin
-imports core, the `api.ts` of the plugins it says it needs, and itself. Version 1 is a
-draft while stage D builds the registries: its shapes may change at version 1 until the
-registration surface is written down and held by a test. From then on the version goes
-up whenever a manifest written for the old version would no longer mean the same thing.
+imports core, the `api.ts` of the plugins it says it needs, and itself. Until a test holds
+the manifest's shape, that shape may still change at version 1; once one does, the
+version goes up whenever a manifest written for the old version would no longer mean the
+same thing.
 **Rejected**: core calling each feature by name and checking a switch at each call — every
 new feature then edits core, and a switch that misses one call leaves a sentence or a
 button behind. A list of readers in core (butler, helper, session) — the butler is a
