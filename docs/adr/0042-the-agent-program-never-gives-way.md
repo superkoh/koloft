@@ -26,7 +26,9 @@ reply from a process at normal priority beside 40 busy ones took 37 ms (PLATFORM
 while the agent's own work is what stalls. Only while memory pressure reads
 critical twice in a row does Koloft lower anything: in each agent tab on this Mac that is
 not the one last on screen, the processes under the agent — its builds, test runners,
-browsers. It never lowers a process whose parent is Koloft (the tab's own terminal
+browsers. The pressure read is this Mac's alone, so a tab on another machine — a Mac
+with `taskpolicy` included — never gives way: its tools run there and hold none of this
+Mac's memory. It never lowers a process whose parent is Koloft (the tab's own terminal
 process and the Codex server, whatever their command line says at that moment), nor one
 named like an agent. A tab that comes on screen is lifted at once; one whose sidebar row
 the owner clicks, or that the owner types into, stays lifted after they leave it, until
