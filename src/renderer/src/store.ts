@@ -296,6 +296,7 @@ export function tabEvictedNotice(title: string): string {
 const everBoundSession = new Set<string>()
 const lastSessionId = new Map<string, string>()
 const watchedSessionEndedIn = new Set<string>()
+const agentBeforeSessionEnded = new Map<string, Pick<Tab, 'kind' | 'title'>>()
 const restarting = new Set<string>()
 const restartedPtys = new Set<string>()
 const RESTART_COOLDOWN_MS = 1000
@@ -358,6 +359,11 @@ function rowOfTab(
 
 export function tabEverBound(tabId: string): boolean {
   return lastSessionId.has(tabId)
+}
+
+export function tabAsItsAgent(tab: Tab | undefined): Tab | undefined {
+  const agent = tab && agentBeforeSessionEnded.get(tab.id)
+  return agent ? { ...tab, ...agent, sessionId: lastSessionId.get(tab.id) } : tab
 }
 
 function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
@@ -457,6 +463,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
   watchedSessionEndedIn.delete(oldId)
+  agentBeforeSessionEnded.delete(oldId)
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
@@ -793,6 +800,7 @@ export const useStore = create<AppState>((set, get) => ({
       everBoundSession.delete(id)
       lastSessionId.delete(id)
       watchedSessionEndedIn.delete(id)
+      agentBeforeSessionEnded.delete(id)
       workbenchParked.delete(id)
       const tabs = s.tabs.filter((t) => t.id !== id)
       let activeTabId = s.activeTabId
@@ -847,18 +855,19 @@ export const useStore = create<AppState>((set, get) => ({
     }),
   keepEndedTab: (id, note) => {
     const s = get()
-    const tab = s.tabs.find((t) => t.id === id)
+    const tab = tabAsItsAgent(s.tabs.find((t) => t.id === id))
     const sessionId = boundSessionId(s, id) ?? lastSessionId.get(id)
     const at =
       everyWorkspaceRows(s)
         .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
         .find(({ row }) => row.id === id || row.id === sessionId) ??
       (tab && rowOfTab(s, tab))
-    if (!at) return false
+    if (!at || !tab) return false
+    agentBeforeSessionEnded.delete(id)
     set({
       tabs: s.tabs.map((t) =>
         t.id === id
-          ? { ...t, alive: false, resuming: undefined, sessionId, ended: { note, ...at } }
+          ? { ...tab, alive: false, resuming: undefined, sessionId, ended: { note, ...at } }
           : t
       )
     })
@@ -1025,6 +1034,7 @@ export const useStore = create<AppState>((set, get) => ({
       for (const id of liveTabs) {
         everBoundSession.add(id)
         watchedSessionEndedIn.delete(id)
+        agentBeforeSessionEnded.delete(id)
       }
       for (const x of sessions) {
         if (!x.sessionId) continue
@@ -1057,6 +1067,7 @@ export const useStore = create<AppState>((set, get) => ({
             activeReverted = true
             if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
           }
+          agentBeforeSessionEnded.set(t.id, { kind: t.kind, title: t.title })
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }
         }
         return t
