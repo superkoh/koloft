@@ -71,6 +71,31 @@ method. A recheck adds its date, version and command to the bullet.
   `zsh -lc`, with the user's own `PATH` additions kept. (2026-09-25, macOS 27.0, zsh:
   `command -v open` printed the wrapper's `open`; `command -v codex` still printed
   `~/.local/bin/codex`, which the user's `~/.zprofile` adds.)
+- **A `~/.zshenv` that sets `ZDOTDIR` takes zsh past such a wrapper.** zsh reads each
+  later dotfile from whatever `ZDOTDIR` holds at that moment, so a user `~/.zshenv`
+  (sourced by the wrapper's `.zshenv`) that says `ZDOTDIR=~/.config/zsh` sends zsh to
+  `~/.config/zsh/.zprofile`, and the folder is never put first. The wrapper holds when
+  each of its files, `.zshenv` included, first gives `ZDOTDIR` the value zsh itself would
+  have there (the user's folder, or unset), sources `${ZDOTDIR:-$HOME}/<file>`,
+  remembers what that file left in `ZDOTDIR`, and then exports `ZDOTDIR` back to what it
+  held when the file began: itself when zsh read the file, or the folder of another
+  wrapper that sourced it as the user's (a wrapper exporting itself there sends zsh's
+  next file to it, past the other wrapper's own). So
+  `ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"` and `unset ZDOTDIR` in `~/.zshenv` both
+  lead on to the files zsh would read. A user `.zlogin` or `.zshrc` can rebuild `PATH`
+  after `.zprofile`, so the wrapper puts the folder first again at the end of each of
+  the three (`path=(<folder> ${path:#<folder>})`, which also drops the earlier copy),
+  only when zsh read the file itself.
+  (2026-11-15, macOS 27.0 zsh 5.9, in real Codex turns, CODEX§12, and
+  `codexOpenShim.test.ts`.)
+- **`BASH_ENV` puts a folder first again in `bash -lc`.** A login bash reads
+  `/etc/profile` (where `path_helper` runs), then the first of `~/.bash_profile`,
+  `~/.bash_login`, `~/.profile`, and only then the file `BASH_ENV` names, so a folder
+  that file prepends wins and the user's profile still runs. macOS's own `/bin/bash`
+  3.2.57 reads `BASH_ENV` in `bash -c` too, except when its stdin is a socket: then it
+  takes bash's "started by sshd" branch, sources `~/.bashrc` and skips `BASH_ENV`.
+  Node's `spawnSync` pipes on macOS count as a socket; with `stdio: ['ignore', …]` the
+  same `bash -c` read `BASH_ENV`. (2026-11-15, macOS 27.0, a scratch node script.)
 - **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive), so a
   `command -v` run through it can miss a tool that every interactive session finds.
   Only `zsh -l -i` loads the user's full profile. (2026-09-24, macOS 27.0, zsh with a

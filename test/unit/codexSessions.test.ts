@@ -1235,6 +1235,34 @@ describe('CodexSessions', () => {
     expect(script).not.toContain('KOLOFT_')
   })
 
+  it("a Koloft started inside one of its Codex tabs takes neither that tab's dotfile folder for the user's ZDOTDIR nor its BASH_ENV file for the user's own", async () => {
+    const userInfo = os.userInfo()
+    const loginShell = vi.spyOn(os, 'userInfo')
+    loginShell.mockReturnValue({ ...userInfo, shell: '/bin/bash' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const outer = transports[0].options.env!
+    try {
+      vi.stubEnv('ZDOTDIR', outer.ZDOTDIR)
+      vi.stubEnv('BASH_ENV', outer.BASH_ENV)
+      mocks.runtime.mockResolvedValue({
+        binary: '/fixture/codex',
+        env: { PATH: '/usr/bin', ZDOTDIR: outer.ZDOTDIR, BASH_ENV: outer.BASH_ENV },
+        version: MIN_CODEX_VERSION,
+        verified: true
+      })
+      vi.mocked(sessions.availability).mockRestore()
+      await sessions.launch({ kind: 'codex', cwd: repo })
+      const inner = transports[1].options.env!
+      expect(fs.readFileSync(path.join(inner.ZDOTDIR!, '.zshenv'), 'utf8')).not.toContain(
+        outer.ZDOTDIR
+      )
+      expect(inner.BASH_ENV).toBe(path.join(path.dirname(inner.ZDOTDIR!), 'bash_env'))
+    } finally {
+      vi.unstubAllEnvs()
+      loginShell.mockRestore()
+    }
+  })
+
   it("an open the shim drops in the run's request folder reaches that tab's Workbench, and stopping the run removes the shim and the folder", async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
@@ -1569,6 +1597,32 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       ...RESERVED_TAB_ENV
     })
+  })
+
+  it("hands Codex a BASH_ENV file in the run's own folder only when the account's login shell is bash, and leaves a BASH_ENV the login shell exports in place", async () => {
+    const userInfo = os.userInfo()
+    const loginShell = vi.spyOn(os, 'userInfo')
+    loginShell.mockReturnValue({ ...userInfo, shell: '/bin/zsh' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[0].options.env?.BASH_ENV).toBeUndefined()
+
+    loginShell.mockReturnValue({ ...userInfo, shell: '/opt/homebrew/bin/bash' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const bashEnv = path.join(path.dirname(transports[1].options.env!.ZDOTDIR!), 'bash_env')
+    expect(transports[1].options.env?.BASH_ENV).toBe(bashEnv)
+    expect(vi.mocked(deps.pty.create).mock.calls[1][0].processEnv?.BASH_ENV).toBe(bashEnv)
+    expect(fs.existsSync(bashEnv)).toBe(true)
+
+    mocks.runtime.mockResolvedValue({
+      binary: '/fixture/codex',
+      env: { PATH: '/usr/bin', BASH_ENV: '/home/me/.bash_env' },
+      version: MIN_CODEX_VERSION,
+      verified: true
+    })
+    vi.mocked(sessions.availability).mockRestore()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[2].options.env?.BASH_ENV).toBe('/home/me/.bash_env')
+    loginShell.mockRestore()
   })
 
   it("a tab's shell finds the user's own gh before the one Koloft ships, and Koloft's git first only when the Mac has none", async () => {

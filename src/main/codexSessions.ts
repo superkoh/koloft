@@ -104,6 +104,7 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
+import { bashEnvFileIn, loginShellIsBash, unlessInAKoloftRunsShim } from './openShimScript'
 import { aboveItsTools } from './agentLift'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
@@ -904,12 +905,21 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const openShim = machine
       ? undefined
       : this.startOpenShim(
-          processEnv?.ZDOTDIR,
+          unlessInAKoloftRunsShim(process.env.ZDOTDIR),
           (target) => observe({ type: 'open', target }),
           agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
           rules
         )
-    const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
+    const env = openShim
+      ? {
+          ...this.envFor(home),
+          ZDOTDIR: openShim.zdotDir,
+          ...(loginShellIsBash() &&
+            !unlessInAKoloftRunsShim(processEnv?.BASH_ENV) && {
+              BASH_ENV: bashEnvFileIn(openShim.shimDir)
+            })
+        }
+      : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')
     if (said && opts.ownerWords) seedHandedOverOwnerWords(said, opts.ownerWords)
     const shellWroteDir = machine ? this.machineDeps().mirrorDir(machine) : this.deps.hookRegDir

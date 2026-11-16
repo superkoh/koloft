@@ -4,7 +4,13 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
-import { removeOpenShim, writeOpenShim, type OpenShim } from '../../src/main/openShimScript'
+import {
+  removeOpenShim,
+  unlessInAKoloftRunsShim,
+  writeOpenShim,
+  type OpenShim
+} from '../../src/main/openShimScript'
+import { ownedByThisRun } from '../../src/main/leftovers'
 
 let base: string
 let cwd: string
@@ -126,5 +132,155 @@ describe('Codex open shim dotfile folder', () => {
         removeOpenShim(run)
       }
     }
+  })
+
+  it("keeps the shim first whatever the user's ~/.zshenv does to ZDOTDIR and however their later files reorder PATH, and runs their files from the folder zsh itself would, with ZDOTDIR as zsh would leave it", () => {
+    const cases = [
+      { zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"', dir: '.config/zsh', saw: '.config/zsh' },
+      { zshenv: 'unset ZDOTDIR', dir: '', saw: '(unset)' }
+    ]
+    for (const [i, { zshenv, dir, saw }] of cases.entries()) {
+      const home = path.join(base, `home-own-zshenv-${i}`)
+      fs.mkdirSync(path.join(home, dir), { recursive: true })
+      fs.writeFileSync(path.join(home, '.zshenv'), `${zshenv}\n`)
+      fs.writeFileSync(
+        path.join(home, dir, '.zprofile'),
+        `export PATH="${path.join(base, 'user-bin')}:$PATH"\nexport ZPROFILE_SAW="\${ZDOTDIR-(unset)}"\n`
+      )
+      fs.writeFileSync(path.join(home, dir, '.zlogin'), 'export PATH="/usr/bin:/bin:$PATH"\n')
+      const res = spawnSync(
+        '/bin/zsh',
+        ['-lc', 'command -v open; printf "%s\\n" "$PATH" "$ZPROFILE_SAW"'],
+        { env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: shim.zdotDir }, encoding: 'utf8' }
+      )
+      const [openPath, pathLine, zprofileSaw] = res.stdout.trim().split('\n')
+      expect(openPath, zshenv).toBe(path.join(shim.shimDir, 'open'))
+      expect(pathLine.split(':'), zshenv).toContain(path.join(base, 'user-bin'))
+      expect(zprofileSaw, zshenv).toBe(saw === '(unset)' ? saw : path.join(home, saw))
+    }
+  })
+
+  it("runs the user's own files once, quietly, in a Koloft started from another Koloft's Codex tab, even after that tab has closed", () => {
+    const cases = [
+      { label: 'no ZDOTDIR', zshenv: '', dir: '' },
+      {
+        label: 'ZDOTDIR set in ~/.zshenv',
+        zshenv: 'ZDOTDIR="${ZDOTDIR:-$HOME/.config/zsh}"',
+        dir: '.config/zsh'
+      }
+    ]
+    for (const [i, { label, zshenv, dir }] of cases.entries()) {
+      const home = path.join(base, `home-nested-${i}`)
+      const ran = path.join(home, 'ran.txt')
+      fs.mkdirSync(path.join(home, dir), { recursive: true })
+      fs.writeFileSync(path.join(home, '.zshenv'), `echo .zshenv >> ${ran}\n${zshenv}\n`)
+      for (const name of ['.zprofile', '.zlogin'])
+        fs.writeFileSync(path.join(home, dir, name), `echo ${name} >> ${ran}\n`)
+      const loginShell = (zdotDir: string, cmd: string) =>
+        spawnSync('/bin/zsh', ['-lc', cmd], {
+          env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: zdotDir },
+          encoding: 'utf8'
+        })
+      const outer = writeOpenShim(
+        path.join(base, `outer-${i}`),
+        ownedByThisRun(randomUUID()),
+        undefined
+      )
+      const zdotdirInOuterTab = loginShell(outer.zdotDir, 'printf %s "$ZDOTDIR"').stdout
+      removeOpenShim(outer)
+      fs.rmSync(ran, { force: true })
+      const inner = writeOpenShim(
+        path.join(base, `inner-${i}`),
+        ownedByThisRun(randomUUID()),
+        unlessInAKoloftRunsShim(zdotdirInOuterTab)
+      )
+      try {
+        const res = loginShell(inner.zdotDir, 'command -v open')
+        expect(res.stderr, label).toBe('')
+        expect(res.stdout.trim(), label).toBe(path.join(inner.shimDir, 'open'))
+        expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean), label).toEqual([
+          '.zshenv',
+          '.zprofile',
+          '.zlogin'
+        ])
+      } finally {
+        removeOpenShim(inner)
+      }
+    }
+  })
+
+  it("lets an older Koloft started from one of its Codex tabs, whose wrapper sources this one's files as the user's, put its own shim first", () => {
+    const home = path.join(base, 'home-older-inner')
+    const ran = path.join(home, 'ran.txt')
+    fs.mkdirSync(home, { recursive: true })
+    for (const name of ['.zshenv', '.zprofile', '.zlogin'])
+      fs.writeFileSync(path.join(home, name), `echo ${name} >> ${ran}\n`)
+    const outer = writeOpenShim(
+      path.join(base, 'outer-of-older'),
+      ownedByThisRun(randomUUID()),
+      undefined
+    )
+    const olderShim = path.join(base, 'older-inner', ownedByThisRun(randomUUID()))
+    const olderZdot = path.join(olderShim, 'zdot')
+    fs.mkdirSync(olderZdot, { recursive: true })
+    fs.writeFileSync(path.join(olderShim, 'open'), '#!/bin/sh\n', { mode: 0o755 })
+    for (const name of ['.zshenv', '.zprofile', '.zshrc', '.zlogin']) {
+      const source = `[ -f '${outer.zdotDir}'/${name} ] && . '${outer.zdotDir}'/${name}\n`
+      fs.writeFileSync(
+        path.join(olderZdot, name),
+        name === '.zprofile' ? `${source}export PATH='${olderShim}':"$PATH"\n` : source
+      )
+    }
+    try {
+      const res = spawnSync('/bin/zsh', ['-lc', 'command -v open'], {
+        env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: olderZdot },
+        encoding: 'utf8'
+      })
+      expect(res.stderr).toBe('')
+      expect(res.stdout.trim()).toBe(path.join(olderShim, 'open'))
+      expect(fs.readFileSync(ran, 'utf8').split('\n').filter(Boolean)).toEqual([
+        '.zshenv',
+        '.zprofile',
+        '.zlogin'
+      ])
+    } finally {
+      removeOpenShim(outer)
+    }
+  })
+})
+
+describe('Codex open shim BASH_ENV file', () => {
+  function bash(flag: '-lc' | '-c', home: string): string[] {
+    const res = spawnSync(
+      '/bin/bash',
+      [flag, 'command -v open; printf "%s\\n" "$PATH" "rc=$FROM_BASHRC"'],
+      {
+        env: { HOME: home, PATH: '/usr/bin:/bin', BASH_ENV: shim.bashEnv },
+        // PLATFORM§2
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8'
+      }
+    )
+    return res.stdout.trim().split('\n')
+  }
+
+  it("puts the shim first in a bash login shell after the user's profile and ~/.bashrc have run, since Codex skips ~/.bashrc once BASH_ENV is set, and loads ~/.bashrc in no other bash", () => {
+    const home = path.join(base, 'home-bash')
+    fs.mkdirSync(home)
+    fs.writeFileSync(
+      path.join(home, '.bash_profile'),
+      `export PATH="${path.join(base, 'user-bin')}:$PATH"\n`
+    )
+    fs.writeFileSync(
+      path.join(home, '.bashrc'),
+      'export FROM_BASHRC=1\nexport PATH="/usr/bin:/bin:$PATH"\n'
+    )
+    const [openPath, pathLine, rc] = bash('-lc', home)
+    expect(openPath).toBe(path.join(shim.shimDir, 'open'))
+    expect(pathLine.split(':')).toContain(path.join(base, 'user-bin'))
+    expect(rc).toBe('rc=1')
+    const [nonLoginOpen, , nonLoginRc] = bash('-c', home)
+    expect(nonLoginOpen).toBe(path.join(shim.shimDir, 'open'))
+    expect(nonLoginRc).toBe('rc=')
   })
 })
