@@ -185,7 +185,7 @@ function writtenFile(subject: Record<string, unknown>): string | undefined {
     : undefined
 }
 
-// MUSE§5 MUSE§11
+// MUSE§5 MUSE§11 MUSE§24
 export function museAsk(reply: unknown): MuseAsk {
   const r = record(reply)
   const approval = record(Array.isArray(r.approvals) ? r.approvals[0] : undefined)
