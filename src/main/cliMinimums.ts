@@ -3,7 +3,7 @@ import { AGY_INSTALLER_URL } from './toolInstall'
 // CC§16 CODEX§7
 export const MIN_CLAUDE_VERSION = '2.1.293'
 export const MIN_CODEX_VERSION = '0.161.0'
-export const TESTED_CODEX_LINE = '0.168'
+export const TESTED_CODEX_LINE = '0.169'
 // MUSE§1
 export const MIN_MUSE_VERSION = '1.4.7'
 export const TESTED_MUSE_LINE = '1.4'
