@@ -122,10 +122,10 @@
         <p>
           Or click the folder's name. When the folder has no sessions of its own in the list yet,
           its page shows <code>Past sessions</code> under the buttons that start a new one: the
-          newest three, each with its name, where it ran and how long ago. Click one and it goes on
-          where it left off, and its row joins the list. With more than three, a last row,
-          <code>All N past sessions…</code>, opens <code>Restore session…</code>. This works for
-          every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
+          newest three, each with its name, its worktree (or <code>main</code>) and how long ago.
+          Click one and it goes on where it left off, and its row joins the list. With more than
+          three, a last row, <code>All N past sessions…</code>, opens <code>Restore session…</code>.
+          This works for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
         </p>
 
         <h2>Start and resume</h2>
@@ -141,15 +141,17 @@
           </li>
           <li id="session-defaults">
             Each folder can set the model its new sessions start on, and how hard they think:
-            right-click the folder ▸ <code>Session defaults…</code>. Pick an agent, then a model and
-            a thinking level. One left on <code>Default</code> starts the way that agent always
-            does. This counts for a session you start yourself (the + button, <kbd>⌘N</kbd>,
-            <kbd>⇧⌘N</kbd>, <kbd>⌘P</kbd>) and for a <a href="../scheduled/">scheduled job</a> left
-            on <code>Default</code>. A resume, a restart and a session an agent starts do not take
-            it. If the model does not take that thinking level, the session starts without it. The
-            same box has a place for rules: how this folder's agents pick the model and thinking of
-            a session they start (see <a href="../agents/">agents</a>). Left empty, they use
-            Koloft's own pick. Every agent gets this, on your Mac and in a
+            right-click the folder ▸ <code>Session defaults…</code>. Folders of the same GitHub
+            repository share one setting. Pick an agent, then a model and a thinking level. Leave
+            the model on <code>Default</code>, or the thinking on <code>Same as usual</code>, and
+            that part starts the way the agent always does. This counts for a session you start
+            yourself (the + button, <kbd>⌘N</kbd>, <kbd>⌘P</kbd>), and for a
+            <a href="../scheduled/">scheduled job</a>, for each part it leaves on
+            <code>Default</code> or <code>Same as usual</code>. A resume, a restart and a session an
+            agent starts do not take it. If the model does not take that thinking level, the session
+            starts without it. The same box has a place for rules: how this folder's agents pick the
+            model and thinking of a session they start (see <a href="../agents/">agents</a>). Left
+            empty, they use Koloft's own pick. Every agent gets this, on your Mac and in a
             <a href="../remote/">remote folder</a>.
           </li>
           <li>Click an old row to resume that session.</li>
