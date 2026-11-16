@@ -4,7 +4,13 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AGY_LIST_JS, historyEntries, type SummaryRow } from '../../src/main/agyStore'
-import { AGY_BRAIN_FLAGS, AGY_LIST_FILE, listAgyCmd } from '../../src/main/remote/agyTab'
+import {
+  AGY_BRAIN_FLAGS,
+  AGY_LIST_FILE,
+  listAgyCmd,
+  parseAgyConfig,
+  readAgyConfigCmd
+} from '../../src/main/remote/agyTab'
 import { answerOf } from '../../src/main/remote/ssh'
 import { writeSummaries } from './helpers/agyStore'
 
@@ -54,6 +60,26 @@ describe('the command Koloft runs on a remote machine to list its Antigravity co
       expect.objectContaining({ id: 'c1', name: 'On the box', cwd: '/home/me/proj' })
     ])
   })
+})
+
+it("the read of a machine's agy settings brings every Koloft account's trust list there, so a resume on another account can carry it (AGY§5)", () => {
+  const cmd = readAgyConfigCmd('work')
+  expect(parseAgyConfig(onMachine(cmd).stdout).accountsSettings).toEqual([])
+  for (const [account, trusted] of [
+    ['work', []],
+    ['spent', ['/home/me/proj']]
+  ] as const) {
+    const dir = path.join(home, '.koloft', 'agy', account, 'antigravity-cli')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: trusted })
+    )
+  }
+  const config = parseAgyConfig(onMachine(cmd).stdout)
+  expect(config.ownSettings).toEqual({ trustedWorkspaces: [] })
+  expect(config.accountsSettings).toHaveLength(2)
+  expect(config.accountsSettings).toContainEqual({ trustedWorkspaces: ['/home/me/proj'] })
 })
 
 it('the pull of a machine’s agy brain brings each conversation’s artifacts, their sidecars and its transcript, and nothing else, so a plan waiting for review can be read on the Mac (AGY§8 AGY§19)', () => {

@@ -9,3 +9,6 @@ export function aboveItsTools(argv: string[]): string[] {
   taskpolicyIsThere ??= fs.existsSync(TASKPOLICY)
   return taskpolicyIsThere ? [TASKPOLICY, '-a', ...argv] : argv
 }
+
+// ADR-0042 PLATFORM§59 PLATFORM§72
+export const ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE = `[ -x ${TASKPOLICY} ] && set -- ${TASKPOLICY} -a "$@"`

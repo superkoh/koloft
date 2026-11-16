@@ -30,6 +30,8 @@ import {
   killSession,
   listeningPortsOf,
   newSessionInWith,
+  openSessionTerminal,
+  panelTerm,
   processAlive,
   readCalls,
   runIn,
@@ -148,6 +150,7 @@ const ON_THE_MACHINE: Record<
 
 const RUNS_A_COMMAND_IN_ITS_SESSION: Partial<Record<AgentName, (command: string) => string>> = {
   Claude: (command) => `/sh ${command}`,
+  Codex: (command) => `/sh ${command}`,
   Muse: (command) => `/sh ${command}`,
   Antigravity: (command) => `!${command}`
 }
@@ -520,7 +523,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
     if (!typedToRun) continue
 
     // PLATFORM§67
-    test(`after a Koloft restart attaches a remote ${agent.label} tab again, its listening ports still list the server the session started before the restart, and one it starts after`, async ({
+    test(`after a Koloft restart brings a remote ${agent.label} tab back, its listening ports still list the server the session started before the restart, and one it starts after`, async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -528,6 +531,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       seedSettings(env, { hintsOff: true })
       const [before, after] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
       const pids = path.join(machineHome(env), 'servers.pid')
+      let launchesBeforeQuit = 0
       const startServer = (page: Page, port: number): Promise<void> =>
         runIn(
           page,
@@ -547,6 +551,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
             .poll(() => listeningPortsOf(page, tab), { timeout: 60_000 })
             .toEqual([before])
           await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+          launchesBeforeQuit = ON_THE_MACHINE[agent.label].launches(env)
         } finally {
           await quitAndClose(app)
         }
@@ -555,7 +560,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         try {
           const page2 = await app2.firstWindow()
           await waitBooted(page2)
-          await expect.poll(() => attachesThere(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+          await untilItCameBackOnTheMachine(env, agent.label, launchesBeforeQuit)
           const row = wsRows(page2, REMOTE_WS_NAME).first()
           await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
             timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
@@ -569,6 +574,56 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
           await expect
             .poll(() => listeningPortsOf(page2, tab), { timeout: 60_000 })
             .toEqual([before, after].sort((a, b) => a - b))
+        } finally {
+          await quitAndClose(app2)
+        }
+      } finally {
+        for (const pid of fs.existsSync(pids) ? fs.readFileSync(pids, 'utf8').split('\n') : [])
+          if (pid) killSession(Number(pid), env)
+      }
+    })
+  }
+
+  for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
+    // PLATFORM§67
+    test(`after a Koloft restart brings a remote ${agent.label} tab back, its listening ports still list the server started from its Workbench shell before the restart`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const port = await portFreeOnTheMac()
+      const pids = path.join(machineHome(env), 'servers.pid')
+      let launchesBeforeQuit = 0
+      try {
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(page, env)
+          await startOnTheMachine(page, agent)
+          const [tab] = await remoteTabIds(page)
+          await openSessionTerminal(app, page)
+          await runIn(
+            page,
+            panelTerm(page),
+            `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${machineHome(env)} >/dev/null 2>&1 & echo $! >> ${pids}`
+          )
+          await expect.poll(() => listeningPortsOf(page, tab), { timeout: 60_000 }).toEqual([port])
+          await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+          launchesBeforeQuit = ON_THE_MACHINE[agent.label].launches(env)
+        } finally {
+          await quitAndClose(app)
+        }
+
+        const app2 = await launchApp(env)
+        try {
+          const page2 = await app2.firstWindow()
+          await waitBooted(page2)
+          await untilItCameBackOnTheMachine(env, agent.label, launchesBeforeQuit)
+          await expect(wsRows(page2, REMOTE_WS_NAME).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
+            timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+          })
+          const [tab] = await remoteTabIds(page2)
+          await expect.poll(() => listeningPortsOf(page2, tab), { timeout: 60_000 }).toEqual([port])
         } finally {
           await quitAndClose(app2)
         }

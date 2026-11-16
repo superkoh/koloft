@@ -46,19 +46,25 @@ vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))
-vi.mock('../../src/main/codexTransport', () => ({
-  createCodexTransport: mocks.create,
-  CodexRpc: class {
-    private home?: string
-    constructor(options: CodexProcessOptions) {
-      this.home = options.env?.CODEX_HOME
-      mocks.rpcHomes.push(this.home)
-      mocks.rpcOptions.push(options)
+vi.mock('../../src/main/codexTransport', async (importOriginal) => {
+  const real = (await importOriginal<typeof import('../../src/main/codexTransport')>()).CodexRpc
+  return {
+    createCodexTransport: mocks.create,
+    CodexRpc: class {
+      private home?: string
+      private initialized = Promise.resolve()
+      constructor(options: CodexProcessOptions) {
+        this.home = options.env?.CODEX_HOME
+        mocks.rpcHomes.push(this.home)
+        mocks.rpcOptions.push(options)
+      }
+      private send = (method: string, params: unknown) => mocks.request(method, params, this.home)
+      request = real.prototype.request
+      loadThreadIntoThisHome = real.prototype.loadThreadIntoThisHome
+      close = mocks.close
     }
-    request = (method: string, params: unknown) => mocks.request(method, params, this.home)
-    close = mocks.close
   }
-}))
+})
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -706,6 +712,39 @@ describe('CodexSessions', () => {
       'thread/read undefined',
       'thread/read undefined'
     ])
+  })
+
+  // CODEX§15
+  it('two reads at once of a session the default home has not loaded both wait for its one resume, and a resume that failed is logged and not tried again in this run', async () => {
+    const said = [{ completedAt: 1, items: [{ type: 'agentMessage', text: 'Hi there' }] }]
+    const loaded = new Set<string>()
+    const resumeOfA = deferred<void>()
+    mocks.request.mockImplementation(async (method, params: { threadId: string }) => {
+      if (method === 'thread/resume' && params.threadId === B) throw new Error('timed out')
+      if (method === 'thread/resume') await resumeOfA.promise
+      if (method === 'thread/resume') loaded.add(params.threadId)
+      if (method === 'thread/read' || method === 'thread/resume')
+        return { thread: { id: params.threadId, turns: loaded.has(params.threadId) ? said : [] } }
+      return historyOrTrustedHooks(method)
+    })
+    vi.mocked(deps.homeOf).mockReturnValue(undefined)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const calls = (method: string, id: string) =>
+      mocks.request.mock.calls.filter(([m, p]) => m === method && p.threadId === id).length
+    const replies = (turns: { reply: string }[]) => turns.map((t) => t.reply)
+
+    const both = Promise.all([0, 1].map(() => sessions.readTurns(codexSessionKey(A), 5)))
+    await vi.waitFor(() => expect(calls('thread/resume', A)).toBe(1))
+    await vi.waitFor(() => expect(calls('thread/read', A)).toBe(2))
+    resumeOfA.resolve()
+    expect((await both).map(replies)).toEqual([['Hi there'], ['Hi there']])
+    expect(calls('thread/resume', A)).toBe(1)
+
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining(`could not load ${B}`))
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(calls('thread/resume', B)).toBe(1)
+    logged.mockRestore()
   })
 
   // CODEX§15

@@ -1056,39 +1056,49 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
       })
 
   // MUSE§11 AGY§14
-  for (const backend of ['muse', 'agy'] as const)
-    it(`a ${backend} question that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual`, async () => {
+  const FRUITS_TAKING_SEVERAL = {
+    question: 'Which fruits?',
+    options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+    multiSelect: true as const
+  }
+
+  const leftToTheOwner: [string, 'agy' | 'muse', CodexQuestion['questions'], string, string][] = [
+    ['an Antigravity question', 'agy', [], '1, 3', '2'],
+    [
+      'a Muse dialog with a second question after it',
+      'muse',
+      [{ question: 'Which size?', options: [{ label: 'Small' }, { label: 'Large' }] }],
+      '1, 3\n2',
+      '2\n1'
+    ]
+  ]
+  for (const [what, backend, after, first, again] of leftToTheOwner)
+    it(`${what} that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual`, async () => {
       const several = (question: string, id: string): CodexQuestion => ({
         id,
-        questions: [
-          {
-            question,
-            options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
-            multiSelect: true
-          }
-        ]
+        questions: [{ ...FRUITS_TAKING_SEVERAL, question }, ...after]
       })
       let asked = several('Which fruits?', 'hook:1')
       const { relay, writes, session } = codexAsking({
         backendOf: () => backend,
         pendingQuestion: () => asked
       })
-      const first = relay.answerSession(TAB, '1, 3')
+      const answering = relay.answerSession(TAB, first)
       await vi.advanceTimersByTimeAsync(0)
-      expect(await relay.answerSession(TAB, '2')).toBe(ANSWER_ON_ITS_WAY)
+      expect(await relay.answerSession(TAB, again)).toBe(ANSWER_ON_ITS_WAY)
       await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
-      expect(await first).toBe(ANSWER_NOT_TAKEN)
+      expect(await answering).toBe(ANSWER_NOT_TAKEN)
       const pressedOnce = writes.length
       expect(pressedOnce).toBeGreaterThan(0)
 
       asked = several('Which fruits?', 'traj:4')
-      expect(await relay.answerSession(TAB, '1, 3')).toBe(PICKS_MAY_STILL_BE_TICKED)
-      expect(await relay.answerSession(TAB, '2')).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(await relay.answerSession(TAB, first)).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(await relay.answerSession(TAB, again)).toBe(PICKS_MAY_STILL_BE_TICKED)
       expect(writes).toHaveLength(pressedOnce)
 
       session.takesKeys = true
       const taken = async (): Promise<string | undefined> => {
-        const answered = relay.answerSession(TAB, '2')
+        const answered = relay.answerSession(TAB, again)
         await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
         return answered
       }
@@ -1101,6 +1111,52 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
       expect(await taken()).toBeUndefined()
       expect(writes.length).toBeGreaterThan(pressedTwice)
     })
+
+  // MUSE§11
+  describe('a Muse question that takes several picks, alone in its dialog, whose ticks Koloft pressed but the session did not take', () => {
+    const tick = (n: string): string[] => [n, ' ']
+    const submitThenReview = ['5', '\r', '\r']
+    const untickAll = ['5', '\x1b[B', '\x1b[B', '\r', ...tick('4'), '1']
+
+    function museAsking() {
+      const s = codexAsking({
+        backendOf: () => 'muse',
+        pendingQuestion: () => ({
+          id: 'hook:1',
+          questions: [{ ...FRUITS_TAKING_SEVERAL, ownWords: true }]
+        })
+      })
+      const pressed = (): string[] => s.writes.splice(0).map((w) => w.data)
+      const answer = async (reply: string): Promise<string | undefined> => {
+        const answered = s.relay.answerSession(TAB, reply)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
+        return answered
+      }
+      return { ...s, pressed, answer }
+    }
+
+    it('is answered again by first unticking every option through its None of the above row, once: if that is not taken either, a third answer is left to the owner', async () => {
+      const { answer, pressed } = museAsking()
+      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
+      expect(pressed()).toEqual([...tick('1'), ...tick('3'), ...submitThenReview])
+      expect(await answer('2')).toBe(ANSWER_NOT_TAKEN)
+      expect(pressed()).toEqual([...untickAll, ...tick('2'), ...submitThenReview])
+      expect(await answer('2')).toBe(PICKS_MAY_STILL_BE_TICKED)
+      expect(pressed()).toEqual([])
+    })
+
+    it('is answered again in the owner’s own words after the same unticking', async () => {
+      const { answer, pressed, session } = museAsking()
+      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
+      pressed()
+      session.takesKeys = true
+      expect(await answer('Mango')).toBeUndefined()
+      expect(pressed()).toEqual([
+        ...untickAll,
+        ...['\x1b[B', '\x1b[B', '\x1b[B', '\t', 'Mango', '\r', '\r']
+      ])
+    })
+  })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
     const { relay } = codexAsking()
@@ -1375,9 +1431,9 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts[1].text).toContain('Delete the branch?')
   })
 
-  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', () => {
+  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is, and uses that notice up', async () => {
     const { relay, posts, conductor } = setup()
-    void relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
       said: [
         { who: 'owner', text: '[Discord] what is new?', at: 1 },
@@ -1386,17 +1442,55 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       reply: 'Two things.',
       at: 1
     })
+    await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE about koloft todo', at: 1 }],
       reply: 'Noted.',
       at: 1
     })
     relay.turnEnded(TAB, {
+      said: [{ who: 'owner', text: '[Discord] is "NOTICE about koloft todo" done?', at: 2 }],
+      reply: 'Yes.',
+      at: 2
+    })
+    expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Yes.'])
+  })
+
+  it('the same quiet notice told twice before the first answer to it ends keeps both answers off Discord', async () => {
+    const { relay, posts, conductor } = setup()
+    const notice = 'NOTICE: the same away digest'
+    const quietTurn = { said: [{ who: 'owner' as const, text: notice, at: 1 }], at: 1 }
+    expect(await relay.tellQuietly(conductor, notice)).toBe(true)
+    expect(await relay.tellQuietly(conductor, notice)).toBe(true)
+    relay.turnEnded(TAB, { ...quietTurn, reply: 'Nothing to tell.' })
+    relay.turnEnded(TAB, { ...quietTurn, reply: 'Still nothing.' })
+    relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: '[Discord] hi', at: 2 }],
       reply: 'Hello.',
       at: 2
     })
-    expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Hello.'])
+    expect(posts.map((p) => p.text)).toEqual(['Hello.'])
+  })
+
+  it('two copies of a quiet notice that land in one turn are both used up, so a later turn of the owner’s that quotes the notice is still posted', async () => {
+    const { relay, posts, conductor } = setup()
+    const notice = 'NOTICE: the same away digest'
+    await relay.tellQuietly(conductor, notice)
+    await relay.tellQuietly(conductor, notice)
+    relay.turnEnded(TAB, {
+      said: [
+        { who: 'owner', text: notice, at: 1 },
+        { who: 'owner', text: notice, at: 1 }
+      ],
+      reply: 'Nothing to tell.',
+      at: 1
+    })
+    relay.turnEnded(TAB, {
+      said: [{ who: 'owner', text: `[Discord] what does "${notice}" mean?`, at: 2 }],
+      reply: 'It lists what changed.',
+      at: 2
+    })
+    expect(posts.map((p) => p.text)).toEqual(['It lists what changed.'])
   })
 
   it('the turn that took Koloft’s quiet notice counts as quiet, so no typing shows in Discord, until that turn ends', async () => {
@@ -1624,6 +1718,41 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
       `shot.png in ${CHANNEL}`,
       `${butlerAsks('Assist')} Which 2?`
     ])
+  })
+
+  it('a card asked while a copy koloft open reported as still sending is on its way waits until that copy is sent, even when a later copy fails first', async () => {
+    const open: CodexQuestion = {
+      id: 'q1',
+      questions: [{ question: 'Which 1?', options: [{ label: 'A' }] }]
+    }
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    let sent!: () => void
+    relay.cardsWaitFor(
+      TAB,
+      new Promise<void>((done) => (sent = done)).then(() => void posts.push({ text: 'page.png' }))
+    )
+    relay.cardsWaitFor(TAB, Promise.reject(new Error('the upload broke')))
+    relay.codexAsked(TAB, open)
+    const A_CARD_NOT_HELD_POSTS_WITHIN_MS = 20
+    await new Promise((settle) => setTimeout(settle, A_CARD_NOT_HELD_POSTS_WITHIN_MS))
+    expect(posts).toEqual([])
+    sent()
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts.map((p) => p.text.split('\n').slice(0, 2).join(' '))).toEqual([
+      'page.png',
+      `${butlerAsks('Assist')} Which 1?`
+    ])
+  })
+
+  it('a copy that fails while a card waits for it does not keep that card or the next one from being posted', async () => {
+    let open: CodexQuestion | undefined
+    const { relay, posts } = setup({}, [], { pendingQuestion: () => open })
+    relay.cardsWaitFor(TAB, Promise.reject(new Error('the upload broke')))
+    for (const n of [1, 2]) {
+      open = { id: `q${n}`, questions: [{ question: `Which ${n}?`, options: [{ label: 'A' }] }] }
+      relay.codexAsked(TAB, open)
+      await vi.waitFor(() => expect(posts).toHaveLength(n))
+    }
   })
 })
 

@@ -696,6 +696,11 @@ function tui() {
       later(() => say(turnId, `echo: ${firstPrompt}`, firstPrompt))
     }
   }
+  const startAfterBindDelay = () => {
+    const bindDelayMs = Number(read('fake-muse-bind-delay', '0'))
+    if (bindDelayMs) setTimeout(start, bindDelayMs)
+    else start()
+  }
   let asking = !trusted()
   const line = (text) => {
     if (asking) {
@@ -706,7 +711,7 @@ function tui() {
       t.projects = { ...t.projects, [fs.realpathSync(process.cwd())]: { decision: 'trusted' } }
       fs.mkdirSync(path.dirname(trustFile), { recursive: true })
       fs.writeFileSync(trustFile, JSON.stringify(t))
-      return start()
+      return startAfterBindDelay()
     }
     if (text === '/exit') {
       status('state=clear')
@@ -765,5 +770,5 @@ function tui() {
   })
   process.on('SIGHUP', () => process.exit(0))
   process.stdout.on('error', () => process.exit(0))
-  if (!asking) start()
+  if (!asking) startAfterBindDelay()
 }

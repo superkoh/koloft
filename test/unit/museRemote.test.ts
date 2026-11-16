@@ -98,7 +98,8 @@ function installFakeMuse(m: { home: string; bin: string }): void {
 
 function runWrapper(
   m: { home: string; env: NodeJS.ProcessEnv },
-  extra: string[]
+  extra: string[],
+  startedThrough: string[] = []
 ): Promise<{ code: number | null; out: string }> {
   const wrap = path.join(m.home, 'muse-wrap.py')
   fs.writeFileSync(wrap, MUSE_WRAP_PY)
@@ -106,7 +107,7 @@ function runWrapper(
   return new Promise((resolve) => {
     const child = spawn(
       'python3',
-      [wrap, hookDir, 'pty-1', ...extra, '--', 'muse', 'resume', SID],
+      [wrap, hookDir, 'pty-1', ...extra, '--', ...startedThrough, 'muse', 'resume', SID],
       {
         env: { ...m.env, FAKE_SID: SID },
         stdio: ['pipe', 'pipe', 'inherit']
@@ -189,7 +190,7 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       expect(mirror).toContainEqual({ t: 'bound', sessionId: SID, forked: true })
     }, 15_000)
 
-    it('trusts the folders it is told to before Muse starts, and adds --trust-workspace only when the workspace it is asked about is trusted', async () => {
+    it('trusts the folders it is told to before Muse starts, and adds --trust-workspace only when the workspace it is asked about is trusted, to Muse even when Muse starts through the program that lifts it', async () => {
       const m = machine()
       installFakeMuse(m)
       const ws = path.join(m.home, 'ws')
@@ -202,7 +203,12 @@ describe.skipIf(!PYTHON_WITH_PTY)(
         'resume',
         SID
       ])
-      await runWrapper(m, ['--trust', ws, '--trust', tree, '--trust-if', ws])
+      fs.writeFileSync(
+        path.join(m.bin, 'lift'),
+        '#!/bin/sh\n[ "$1" = -a ] || exit 64\nshift\nexec "$@"\n',
+        { mode: 0o755 }
+      )
+      await runWrapper(m, ['--trust', ws, '--trust', tree, '--trust-if', ws], ['lift', '-a'])
       const trust = JSON.parse(
         fs.readFileSync(path.join(m.home, 'conf', 'muse', 'trust.json'), 'utf8')
       )

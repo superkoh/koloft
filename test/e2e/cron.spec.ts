@@ -43,6 +43,7 @@ import {
   menuItemTexts,
   openMenu,
   openWorktreeSession,
+  processAlive,
   readCalls,
   resumedId,
   sendShortcut,
@@ -225,6 +226,9 @@ const CLOSE_RECHECK_MS = 2_000
 const TUI_GIVES_UP_ON_A_QUESTION_MS = 1_500
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
 const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const ANOTHER_ROUND_OF_IDLE_SLEEP_MS = WAITING_TO_IDLE_MS + IDLE_TO_SLEEP_MS * 2
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -739,7 +743,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model, and its History line says the endpoint set the model', async ({
+  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model and with the context capped at 200k, and its History line says the endpoint set the model', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -774,6 +778,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       const call = await waitNewCall(env, 0)
       expect(call.argv).not.toContain('--model')
+      expect(call.disable1mContext).toBe('1')
       const row = cronRows(page, 'ws-a')
       await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
@@ -1279,6 +1284,70 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
+  const IDLE_RUNS: {
+    agent?: 'Codex'
+    setUp: (env: E2EEnv) => void
+    runPid: (env: E2EEnv) => Promise<number>
+  }[] = [
+    { setUp: () => {}, runPid: async (env) => (await waitNewCall(env, 0)).pid },
+    {
+      agent: 'Codex',
+      setUp: installCodex,
+      runPid: async (env) => {
+        await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(1)
+        return codexCalls(env)[0].pid
+      }
+    }
+  ]
+  for (const { agent, setUp, runPid } of IDLE_RUNS) {
+    test(`while idle${agent ? ` in ${agent}` : ''}, a "Close it" run held open by a file not committed keeps its tab awake while an idle plain tab goes to sleep, so it stays the open run and is not written closed`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      setUp(env)
+      gitInit(env.workspaces.a)
+      seedSettings(env, { hintsOff: true })
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent, name: 'Nightly report', task: '/write report.md' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Nightly report')
+        const run = await runPid(env)
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+          .toBe('Done — not closed: Changes not committed')
+        await closeCron(page)
+
+        const plain = agent ? { method: 'Claude' as const } : {}
+        await startSessionIn(page, 'ws-b', plain)
+        await startSessionIn(page, 'ws-a', plain)
+        const wsB = fs.realpathSync(env.workspaces.b)
+        const idlePlainTab = (): ClaudeCall | undefined =>
+          readCalls(env).find((c) => fs.realpathSync(c.cwd) === wsB)
+        await expect.poll(() => idlePlainTab(), { timeout: 30_000 }).toBeTruthy()
+        await expect.poll(() => processAlive(idlePlainTab()!.pid), { timeout: 30_000 }).toBe(false)
+        await page.waitForTimeout(ANOTHER_ROUND_OF_IDLE_SLEEP_MS)
+
+        expect(processAlive(run)).toBe(true)
+        await openCron(page, 'ws-a')
+        expect((await histLines(page))[0]?.state).toBe('Done — not closed: Changes not committed')
+        await clickRunNow(page, 'Nightly report')
+        await expect(toastMsg(page)).toHaveText(
+          '⏰ Nightly report skipped: the last run is still open'
+        )
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
   test('BB-M09: switching a job off is shown; on again counts from now', async ({ env }) => {
     test.setTimeout(300_000)
     const now = new Date()
@@ -1607,7 +1676,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     },
     {
       agent: 'Antigravity',
-      repo: false,
+      repo: true,
       setUp: (env) => {
         installAgy(env)
         installRemoteAgy(env)

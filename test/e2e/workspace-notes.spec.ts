@@ -16,6 +16,7 @@ import {
   encodeCwd,
   focusOwner,
   notesArea,
+  notesGutter,
   notesIsland,
   notesOnDisk,
   notesPath,
@@ -32,7 +33,6 @@ import {
 import { layoutState } from './helpers/workbench'
 
 const head = (page: Page, wsName: string) => page.locator('.ws-head', { hasText: wsName })
-const notesGutter = (page: Page) => page.locator('.gutter-h:has(+ .isl-notes)')
 
 function notesBorder(page: Page): Promise<{ border: string; accent: string }> {
   return notesIsland(page).evaluate((el) => {

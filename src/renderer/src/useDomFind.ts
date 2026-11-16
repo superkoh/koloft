@@ -100,17 +100,22 @@ function nearestVerticalScroller(range: Range, root: HTMLElement): HTMLElement |
   return null
 }
 
+function hasOwnBox(r: DOMRect): boolean {
+  return r.height !== 0 || r.width !== 0
+}
+
 function shownBoxOf(range: Range): DOMRect {
   const r = range.getBoundingClientRect()
-  if (r.height !== 0 || r.width !== 0) return r
+  if (hasOwnBox(r)) return r
   let el = range.startContainer.parentElement
   while (el && el.getClientRects().length === 0) el = el.parentElement
   return el ? el.getBoundingClientRect() : r
 }
 
-function scrollRangeIntoView(range: Range, container: HTMLElement): void {
-  const r = shownBoxOf(range)
-  if (r.height === 0 && r.width === 0) return
+function scrollRangeIntoViewLanding(range: Range, container: HTMLElement): boolean {
+  const own = range.getBoundingClientRect()
+  const r = hasOwnBox(own) ? own : shownBoxOf(range)
+  if (!hasOwnBox(r)) return false
   const c = container.getBoundingClientRect()
   if (r.top < c.top || r.bottom > c.bottom) {
     const top = r.top - c.top + container.scrollTop - container.clientHeight / 2 + r.height / 2
@@ -120,12 +125,36 @@ function scrollRangeIntoView(range: Range, container: HTMLElement): void {
     const left = r.left - c.left + container.scrollLeft - container.clientWidth / 2 + r.width / 2
     container.scrollLeft = Math.max(0, left)
   }
+  return r === own && r.height <= container.clientHeight
+}
+
+function countStartingBefore(list: Range[], point: Range, countTies: boolean): number {
+  return list.filter((r) => {
+    const c = r.compareBoundaryPoints(Range.START_TO_START, point)
+    return c < 0 || (countTies && c === 0)
+  }).length
+}
+
+function samePlaceIn(ranges: Range[], old: Range[], oldIndex: number): number {
+  const last = Math.max(0, ranges.length - 1)
+  const was = old[oldIndex]
+  if (was.startContainer.nodeType === Node.TEXT_NODE) {
+    return Math.min(countStartingBefore(ranges, was, false), last)
+  }
+  const holderOfRemovedText = was.startContainer
+  if (!holderOfRemovedText.parentNode) return oldIndex
+  const edge = document.createRange()
+  edge.setStartBefore(holderOfRemovedText)
+  const insideHolder = Math.max(0, oldIndex - countStartingBefore(old, edge, true))
+  return Math.min(countStartingBefore(ranges, edge, true) + insideHolder, last)
 }
 
 export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
   const rangesRef = useRef<Range[]>([])
   const activeRef = useRef(0)
   const queryRef = useRef('')
+  const jumpPendingRef = useRef(false)
+  const lastScrollRef = useRef<{ el: HTMLElement; top: number } | null>(null)
   const observerRef = useRef<MutationObserver | null>(null)
   const [count, setCount] = useState<FindCount>({ current: 0, total: 0 })
 
@@ -156,21 +185,39 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     CSS.highlights.set(HL_ACTIVE, hot)
 
     setCountIfChanged(active + 1, ranges.length)
+    if (!jumpPendingRef.current) return
     const root = getRoot()
     const scroller = root ? nearestVerticalScroller(ranges[active], root) : null
-    if (scroller) scrollRangeIntoView(ranges[active], scroller)
+    if (!scroller) return
+    const last = lastScrollRef.current
+    if (last?.el === scroller && last.top !== scroller.scrollTop) {
+      jumpPendingRef.current = false
+      return
+    }
+    if (scrollRangeIntoViewLanding(ranges[active], scroller)) jumpPendingRef.current = false
+    lastScrollRef.current = { el: scroller, top: scroller.scrollTop }
   }, [getRoot, setCountIfChanged])
+
+  const armJump = useCallback(() => {
+    jumpPendingRef.current = true
+    lastScrollRef.current = null
+  }, [])
 
   const recompute = useCallback(() => {
     const root = getRoot()
-    rangesRef.current = root ? computeMatchRanges(root, queryRef.current) : []
+    const ranges = root ? computeMatchRanges(root, queryRef.current) : []
+    if (rangesRef.current[activeRef.current])
+      activeRef.current = samePlaceIn(ranges, rangesRef.current, activeRef.current)
+    rangesRef.current = ranges
     render()
   }, [getRoot, render])
 
   const search = useCallback(
     (query: string) => {
       queryRef.current = query
+      rangesRef.current = []
       activeRef.current = 0
+      armJump()
       observerRef.current?.disconnect()
       observerRef.current = null
       const root = getRoot()
@@ -181,7 +228,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
       }
       recompute()
     },
-    [getRoot, recompute]
+    [getRoot, recompute, armJump]
   )
 
   const step = useCallback(
@@ -189,9 +236,10 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
       const n = rangesRef.current.length
       if (!n) return
       activeRef.current = (activeRef.current + delta + n) % n
+      armJump()
       render()
     },
-    [render]
+    [render, armJump]
   )
 
   const next = useCallback(() => step(1), [step])
@@ -203,6 +251,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     rangesRef.current = []
     activeRef.current = 0
     queryRef.current = ''
+    jumpPendingRef.current = false
     CSS.highlights.delete(HL_ALL)
     CSS.highlights.delete(HL_ACTIVE)
     setCount({ current: 0, total: 0 })

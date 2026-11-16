@@ -47,7 +47,8 @@ import {
   waitBooted,
   waitForCalls,
   wsGroup,
-  wsRows
+  wsRows,
+  picksFor
 } from './helpers/p1'
 
 const CENTER = '.term-island .term-wrap'
@@ -199,7 +200,9 @@ async function aChildWhoseParentTabWasClosed(
       ? undefined
       : processOf(env, backend, backend === 'claude' ? parent.sessionId : parentId)
   if (backend !== 'codex') expect(parentPid).toBeDefined()
-  expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
+  expect(
+    await koloftInSession(page, `session new ${picksFor(backend)} -- report back when done`)
+  ).toBe('0')
   const kidRow = wsGroup(page, 'ws-a').locator(
     `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
   )
@@ -350,13 +353,15 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     )
     fs.writeFileSync(path.join(env.home, 'fake-claude-delay'), String(HOLD_KID_BEFORE_IT_BINDS_MS))
 
-    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+    expect(await koloftInSession(page, `session new ${picksFor('claude')} -- hello`)).toBe('0')
 
     await expect(nested).toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
     await expect(wsRows(page, 'ws-a')).toHaveCount(2)
     const calls = await waitForCalls(env, callsBefore + 1, 60_000)
     const kid = calls[calls.length - 1]
     expect(kid.argv[kid.argv.indexOf('--name') + 1]).toBe('hello (titled)')
+    expect(kid.argv[kid.argv.indexOf('--model') + 1]).toBe('sonnet')
+    expect(kid.argv[kid.argv.indexOf('--effort') + 1]).toBe('low')
     expect(kid.firstPrompt).toMatch(/\n\nhello$/)
     await expect(nested).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
     await expect(nested.locator('.ws-tab-title', { hasText: /^hello \(titled\)$/ })).toHaveCount(
@@ -397,7 +402,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         String(ASSIST_TITLES_PAST_THE_SHIMS_TEN_SECONDS_MS)
       )
 
-      expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+      expect(await koloftInSession(page, `session new ${picksFor('claude')} -- hello`)).toBe('0')
 
       expect(await shownTermText(page, CENTER)).toMatch(
         /Started (?:\w+ )*session "Slow title" in a new tab/
@@ -423,8 +428,8 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       String(FIRST_SIBLING_STILL_STARTING_MS)
     )
 
-    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
-    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+    expect(await koloftInSession(page, `session new ${picksFor('claude')} -- hello`)).toBe('0')
+    expect(await koloftInSession(page, `session new ${picksFor('claude')} -- hello`)).toBe('0')
 
     const calls = await waitForCalls(env, callsBefore + 2, 60_000)
     const names = calls.slice(-2).map((c) => c.argv[c.argv.indexOf('--name') + 1])
@@ -450,11 +455,14 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         { label: 'Codex', backend: 'codex', marker: 'codex-marker' },
         { label: 'Muse', backend: 'muse', marker: 'muse-marker' },
         { label: 'Antigravity', backend: 'agy', marker: 'agy-marker' }
-      ]
+      ] as const
       for (const { backend, marker } of children)
-        expect(await koloftInSession(page, `session new --backend ${backend} -- ${marker}`)).toBe(
-          '0'
-        )
+        expect(
+          await koloftInSession(
+            page,
+            `session new ${picksFor(backend)} --backend ${backend} -- ${marker}`
+          )
+        ).toBe('0')
       await expect(wsRows(page, 'ws-a')).toHaveCount(4, { timeout: 60_000 })
 
       const listed = async (): Promise<Record<string, string>> => {
@@ -504,7 +512,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const page = await app.firstWindow()
       await waitBooted(page)
       await startSessionIn(page, 'ws-a')
-      expect(await koloftInSession(page, 'session new --backend codex -- hello')).not.toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('codex')} --backend codex -- hello`)
+      ).not.toBe('0')
       expect((await shownTermText(page, CENTER)).replace(/\s+/g, '')).toContain(
         'CodexisturnedoffinSettings▸Sessions'
       )
@@ -544,7 +554,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     )
     await runIn(page, centerTerm(page), ownerWords)
     await expect.poll(saidFiles, { timeout: 30_000 }).toEqual([ownerWords])
-    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+    expect(await koloftInSession(page, `session new ${picksFor('claude')} -- hello`)).toBe('0')
     await expect(kid).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
     expect(saidFiles()).toEqual([ownerWords, ownerWords])
   })
@@ -565,7 +575,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(caller).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const callerTabId = await caller.getAttribute('data-tab-id')
 
-      expect(await koloftInSession(page, 'session new --name kid-codex -- hello')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('codex')} --name kid-codex -- hello`)
+      ).toBe('0')
 
       const kid = wsGroup(page, 'ws-a').locator(
         `.ws-tab[data-tab-id="${callerTabId}"] + .ws-subtabs > .ws-tab`
@@ -681,7 +693,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const tree = parent.cwd
       expect(tree).not.toBe(env.workspaces.a)
 
-      expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('codex')} -- report back when done`)
+      ).toBe('0')
       const kidRow = wsGroup(page, 'ws-a').locator(
         `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
       )
@@ -719,7 +733,10 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         await startSessionIn(page, 'ws-a', { method: 'Claude' })
 
         expect(
-          await koloftInSession(page, `session new --workspace ws-b --backend ${backend} -- hello`)
+          await koloftInSession(
+            page,
+            `session new ${picksFor(backend)} --workspace ws-b --backend ${backend} -- hello`
+          )
         ).toBe('0')
 
         await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bst-waiting\b/, {
@@ -739,9 +756,12 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     await startSessionIn(page, 'ws-a')
     const callsBefore = readCalls(env).length
 
-    expect(await koloftInSession(page, 'session new --workspace ws-b --name kid -- hello')).toBe(
-      '0'
-    )
+    expect(
+      await koloftInSession(
+        page,
+        `session new ${picksFor('claude')} --workspace ws-b --name kid -- hello`
+      )
+    ).toBe('0')
 
     await expect(wsRows(page, 'ws-b')).toHaveCount(1, { timeout: 60_000 })
     const calls = await waitForCalls(env, callsBefore + 1, 60_000)
@@ -922,7 +942,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(rows).toHaveCount(1, { timeout: 60_000 })
       await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const callerTabId = await rows.getAttribute('data-tab-id')
-      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('claude')} -w kid --name kid -- hello`)
+      ).toBe('0')
       await expect(rows).toHaveCount(2, { timeout: 60_000 })
       const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
       await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
@@ -965,7 +987,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const rows = wsRows(page, 'repo')
       await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const callerTabId = await rows.getAttribute('data-tab-id')
-      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('claude')} -w kid --name kid -- hello`)
+      ).toBe('0')
       await expect(rows).toHaveCount(2, { timeout: 60_000 })
       const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
       await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
@@ -1018,7 +1042,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect.poll(() => fs.existsSync(path.join(parentTree, 'NOTES.md'))).toBe(true)
       fs.rmSync(path.join(parentTree, 'NOTES.md'))
 
-      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('claude')} -w kid --name kid -- hello`)
+      ).toBe('0')
       await expect(rows).toHaveCount(2, { timeout: 60_000 })
       const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
       await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
@@ -1072,7 +1098,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const callerTabId = await rows.getAttribute('data-tab-id')
       const caller = rows.and(page.locator(`.ws-tab[data-tab-id="${callerTabId}"]`))
-      expect(await koloftInSession(page, 'session new --name sleeper -- hello')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('claude')} --name sleeper -- hello`)
+      ).toBe('0')
       await expect(rows).toHaveCount(2, { timeout: 60_000 })
       const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
       await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
@@ -1114,7 +1142,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await page.keyboard.type('parent')
       await page.keyboard.press('Enter')
       await expect(rowOf(page, 'parent')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      expect(
+        await koloftInSession(page, `session new ${picksFor('claude')} -w kid --name kid -- hello`)
+      ).toBe('0')
       await expect(rowOf(page, 'kid')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await openMenu(page, rowOf(page, 'kid'))
       await page.locator('.menu .mi', { hasText: /^Close$/ }).click()

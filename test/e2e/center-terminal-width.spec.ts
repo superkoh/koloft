@@ -21,6 +21,7 @@ import {
   shownCenterTerm,
   startSessionIn,
   waitBooted,
+  waitForCalls,
   wsRows
 } from './helpers/p1'
 import { seedWorkbenchDefault } from './helpers/workbench'
@@ -313,6 +314,66 @@ test.describe('the center session terminal stops at 140 columns and sits centred
       }
     })
   }
+
+  test('a session started in a tab that is not on screen is as wide as the session on screen when its agent starts, not 80 columns until someone opens it', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const { app, page } = await launchWithPanelShut(env)
+    try {
+      await setWindowWidth(app, WIDE_WINDOW_PX)
+      await startSessionIn(page, 'ws-a')
+      await expect.poll(() => shownCenterCols(page), { timeout: 20_000 }).toBe(CENTER_MAX_COLS)
+      const onScreen = await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id')
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/koloft session new -- /answer hello\r'),
+        onScreen!
+      )
+      const [, startedOffScreen] = await waitForCalls(env, 2)
+      expect(startedOffScreen.cols).toBe(CENTER_MAX_COLS)
+      await expect(page.locator('.ws .ws-tab.active')).toHaveAttribute('data-tab-id', onScreen!)
+      const colsOffScreen = (): Promise<number[]> =>
+        page.evaluate((shown) => {
+          const terms = (window as unknown as { __koloftTerms: Record<string, { cols: number }> })
+            .__koloftTerms
+          return Object.entries(terms).flatMap(([id, t]) => (id === shown ? [] : [t.cols]))
+        }, onScreen!)
+      await expect.poll(colsOffScreen, { timeout: 20_000 }).toEqual([CENTER_MAX_COLS])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Keep running session that starts again by itself when Koloft reopens is as wide as the session screen was when Koloft quit', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const first = await launchWithPanelShut(env)
+    try {
+      await setWindowWidth(first.app, WIDE_WINDOW_PX)
+      await startSessionIn(first.page, 'ws-a')
+      await expect
+        .poll(() => shownCenterCols(first.page), { timeout: 20_000 })
+        .toBe(CENTER_MAX_COLS)
+      const row = wsRows(first.page, 'ws-a').first()
+      await openMenu(first.page, row)
+      await first.page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(row.locator('.ws-tab-resident')).toBeVisible()
+      await openMenu(first.page, row)
+      await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(first.app)
+    }
+
+    const app = await launchApp(env)
+    try {
+      const [, startedByItself] = await waitForCalls(env, 2)
+      expect(startedByItself.cols).toBe(CENTER_MAX_COLS)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   test('a remote Claude tab stops at 140 columns too', async ({ env }) => {
     test.setTimeout(240_000)

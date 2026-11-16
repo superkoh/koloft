@@ -363,8 +363,6 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           }
         })
       }
-      if (text.startsWith('/sh '))
-        execFile('/bin/sh', ['-c', text.slice('/sh '.length)], { cwd: thread.cwd }, () => {})
       if (text.startsWith('/write ')) {
         const target = path.join(thread.cwd, text.slice('/write '.length).trim())
         const diff = 'written by Codex\n'
@@ -768,7 +766,14 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         return
       }
       if (method === 'model/list') {
-        result(id, { data: [], nextCursor: null })
+        const efforts = ['low', 'medium', 'high'].map((reasoningEffort) => ({ reasoningEffort }))
+        result(id, {
+          data: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'].map((model) => ({
+            id: model,
+            supportedReasoningEfforts: efforts
+          })),
+          nextCursor: null
+        })
         return
       }
       if (method === 'thread/loaded/list') {
