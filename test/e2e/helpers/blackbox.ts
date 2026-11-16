@@ -128,7 +128,7 @@ export async function waitForBehindBadge(
   await expect(behindBadge(page, wsName)).toHaveText(`${behind}`, { timeout })
 }
 
-function exactText(text: string): RegExp {
+export function exactText(text: string): RegExp {
   return new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`)
 }
 

@@ -141,6 +141,18 @@ async function advanceTo(page: Page, step: number): Promise<void> {
   }
 }
 
+async function recordEveryChipText(page: Page): Promise<() => Promise<string[]>> {
+  await page.evaluate(() => {
+    const seen: string[] = []
+    ;(window as unknown as { chipTexts: string[] }).chipTexts = seen
+    new MutationObserver(() => {
+      const text = document.querySelector('.wl[data-step="2"] .wl-chip')?.textContent
+      if (text && seen[seen.length - 1] !== text) seen.push(text)
+    }).observe(document.body, { subtree: true, childList: true, characterData: true })
+  })
+  return () => page.evaluate(() => (window as unknown as { chipTexts: string[] }).chipTexts)
+}
+
 function sidebarFolders(page: Page): Locator {
   return page.locator('.isl-sessions .ws-name')
 }
@@ -192,7 +204,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  test('T-OB-02: screen 2 pins the folders used in the last two weeks (a gone or stale folder never) and brings their terminal sessions into the sidebar, grey', async ({
+  test('T-OB-02: screen 2 pins the folders used in the last two weeks (a gone or stale folder never) and brings their terminal sessions into the sidebar, grey, never saying it found nothing while it still reads them', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -209,12 +221,15 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
+      await expectStep(page, 1)
+      const chipTexts = await recordEveryChipText(page)
       await advanceTo(page, 2)
 
       await expect(sidebarFolders(page)).toHaveText(['ws-a', 'ws-b'], { timeout: 20_000 })
       const rows = welcome(page).locator('.wl-row-t')
       await expect(rows).toHaveText(['A one', 'A two', 'B one'], { timeout: 20_000 })
       await expect(welcome(page).locator('.wl-chip')).toHaveText(/Found 3 sessions in 2 folders/)
+      expect((await chipTexts()).filter((t) => /Found 0 sessions/.test(t))).toEqual([])
       await expect(page.locator('.isl-sessions .ws-tab.cold', { hasText: 'A one' })).toHaveCount(1)
       await expect(welcome(page)).not.toContainText('Deleted one')
       await expect(welcome(page)).not.toContainText('Stale one')

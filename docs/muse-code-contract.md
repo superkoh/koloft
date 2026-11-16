@@ -312,6 +312,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
     `~/.ssh/id_rsa` ("That path holds credentials …", refused).
   - So no read asks, and a file in an ask is always one muse would write. Not probed:
     `search` with `paths` outside the workspace, MCP tools' approvals (§21).
+- **A picture path at the end of the first prompt is read as a picture, with no ask.**
+  Measured 2026-11-15, Muse Code 1.4.20 (`muse-wonder-1.0`, a real Meta sign-in) in
+  Koloft's hand-test sandbox with Skip permission prompts off, 1 run: ⌘P with "What word
+  is in this picture? Answer with the word only." and a pasted PNG of the word ZEBRA, so
+  the TUI started with the prompt `<words>\n\nPicture:
+  <userData>/palette-pictures/<uuid>.png` in a fresh worktree. It printed "Read <path>"
+  and answered `ZEBRA`, the file being outside the workspace. Muse made no title of its
+  own, so Koloft's row was titled from the prompt's first characters.
 
 ## §6 tmux swallows OSC 7501
 
@@ -405,6 +413,34 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the real model once launched it so that it ran under launchd (parent pid 1) while
   muse kept running, with no background item for it; asked to keep it as the bash
   tool's own background job, it did.
+- **What a background command shows from outside muse.** 2026-11-15, `Muse Code 1.4.11
+  (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`, no network), `muse exec
+  --approval-mode never --disable-sandbox`, the fake model calling `bash` with
+  `yield_time_ms: 1500` on a Python script that listens on 127.0.0.1:8800 and, every
+  0.5 s, spins the CPU for 0.2 s and prints a line; one run, looked at from inside the
+  container 2 s and 5 s after the tool result came back:
+  - The process tree is `muse` → `/bin/sh -c <command>` → the program, so a
+    `ps`/`/proc` read sees each pid and its CPU time (`ps` `time` of the script's own
+    pid went 1 s → 2 s in those 3 s). The 1.4.9 macOS bullet above saw no shell between;
+    which of version, platform or `--disable-sandbox` makes the difference is not
+    probed yet.
+  - Its stdin is `/dev/null`; stdout and stderr are two pipes whose other ends muse
+    holds, not files.
+  - Muse copies what the command prints into a file of its own,
+    `museHome/sessions/YYYY/MM/DD/<session id>/tool-outputs/.spool/<call_id>-bash.txt.tmp`
+    while the command runs, `<call_id>` being the model's function-call id (`call_b1`
+    here); that file grew 49 → 95 bytes in the same 3 s. `session.jsonl` grew too, but
+    by muse's own reminder records as well, so its size says nothing about the command.
+  - The tool result is `{"execution_state":"background_running","work_id":
+    "work.v2.managed_bash.sha256.…","output":"tick 1\ntick 2\ntick 3\n",…}`, the output
+    printed so far included.
+  - `muse exec` had not ended 40 s after its start, after the fake model's final
+    answer; it was then killed with SIGKILL, and the command lived on under pid 1.
+
+  Not probed yet: the process tree, the pipes and the spool file on macOS; the spool
+  file's name or fate once the command ends; whether a hook's input carries the
+  `call_id`, or whether it is the `CLAUDE_CODE_TOOL_USE_ID` the command's environment
+  carries (bullet above).
 - **A `bash` command has no terminal unless the model asks for one, and the macOS
   sandbox refuses sudo itself.** 2026-11-05, `Muse Code 1.4.14 (1.4.14-R7309.1)` on macOS
   27 (official installer, a throwaway HOME, the TUI under `expect`) and `Muse Code 1.4.11
@@ -951,6 +987,14 @@ server of the opening note and with `--provider echo`; October 2026.
   `--provider echo`, 2026-11-09): the states reached the outer terminal, the wrapper's
   mirror file got the same ones, and the session was renamed for the bound session id.
 - Attaching to the tmux session again replays no 7501 frame.
+- **The `bash` tool does not read the user's rc files: a program only `~/.zshrc` puts on
+  PATH is not found.** 2026-11-15, `Muse Code 1.4.11 (1.4.11-R6667.1)`
+  (`koloft-muse-probe-1411` plus zsh 5.9), a user whose login shell is zsh and whose
+  `~/.zshrc` puts `~/rc-only/bin` first, `muse exec --approval-mode never
+  --disable-sandbox` started directly with `SHELL=/bin/zsh` and the PATH a remote tab's
+  script builds (PLATFORM§33), the fake model calling `bash` with `command -v
+  rconly-tool`: not found, the command's PATH exactly muse's own (§8). With the user's
+  login-shell PATH appended to muse's own, it was found.
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
   scrolled (4 of 4 runs; every one of its 171–174 redraws after the answer reached the
@@ -1294,3 +1338,56 @@ round that left `?996n` and OSC 4 unanswered asked exactly the same.
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 
 Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+
+## §24 No plan to approve
+
+**With both sets of flags Koloft launches muse with and no muse settings of the
+person's own, muse has no plan mode and no box that asks to approve a plan. `/plan` is
+a skill: the plan is the reply of an ordinary turn.**
+Measured 2026-11-14 on `Muse Code 1.4.20 (1.4.20-R8619.1)` (the launcher in the
+`koloft-muse-probe-1411` image updating itself to it), Linux arm64 in Docker, a python3
+pty 160×50 answering the cursor, colour, `?996n` and 7501 queries (§23), the screen read
+through `pyte`, a fake model (`--base-url`, `META_API_KEY`, `MUSE_MODEL`) answering
+`GET /muse-code/models`, `GET /muse-code/config` and `POST /responses` with the same
+text plan every time, a fresh `XDG_CONFIG_HOME` and `XDG_DATA_HOME`, `--trust-workspace
+--approval-judge off --sandbox-network enabled` (a tab that keeps its sandbox); one run
+per bullet. Not run: macOS muse.
+
+- The `/` menu, scrolled to its end, has no command or skill that switches a mode or
+  approves anything. `/plan` shows as `/plan · built-in · default skill`.
+- `/plan add a hello.sh that prints hello`, then Enter: the screen drew `◆ Loaded skill
+  plan · built-in`, the skill's text went into the user message of the model request,
+  and the frames were `working` then `done` 0.2 s later. The plan showed as the reply,
+  with the empty `❯` input box under it: no box, no menu, no `blocked` frame. `go`,
+  then Enter, was an ordinary next prompt (`working`, `done`). The fake model answered it
+  with the plan again, so what muse does once a real model goes ahead is **not probed
+  yet**.
+- The same run with `--trust-workspace --permission-profile :unrestricted` (a tab that
+  skips permission prompts; the footer reads `YOLO`): the same frames and screens, and
+  the same tools offered to the model.
+- The same run inside tmux 3.3a (`tmux -u -f /dev/null`, not Koloft's own tmux.conf;
+  160×50, keys by `tmux send-keys`, the screen by `capture-pane`): the same screens, no
+  box after the plan or after `go`.
+- The skill's own text says: "Treat this as planning guidance, not a host-enforced mode.
+  Do not call this a mode in user-facing text or claim that the host is blocking write
+  tools, commands, edits, or approvals for you", and that only `go` or a plain request to
+  implement starts the work (the skill's words; not watched, see above).
+- The tools the main model request offered hold no plan tool (`request_user_input` and
+  `write_todos` are the nearest). The binary also holds an `update_plan` tool name; it
+  was not offered with these flags; other `--preset`, `--approval-mode` and
+  `--permission-profile` values, and the person's own muse settings, are **not probed
+  yet**. The `workflow` tool was not
+  called; the binary's text holds no wording about the person approving a workflow's
+  plan ("Plan mode" there is a dry run of the `workflow recover` command kept for
+  testing).
+- Shift+Tab, twice in the empty box, changed nothing on screen; the footer stayed
+  `fake-model · high · <path> · Launch overrides`.
+- `muse schema generate-ts`, the stable and the `--experimental` surface, has no plan
+  request and no plan kind of approval.
+
+So with Koloft's flags, up to the plan's reply, nothing in a Muse tab waits for the
+person to approve a plan, in a pty or inside tmux, and Koloft builds no plan ask for
+Muse; that macOS muse does the same is inferred, not checked.
+
+Koloft dependents: `museAsk` in `src/main/museServe.ts`, where a Muse approval becomes
+Koloft's ask and never carries `plan`.

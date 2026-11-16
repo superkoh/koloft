@@ -49,6 +49,7 @@ const osc = (body: string): string => `${ESC}]7501;${body}${ESC}\\`
 let home: string
 let repo: string
 let sessions: MuseSessions
+let deps: MuseSessionDeps
 let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
 let pids: Map<string, number>
@@ -60,6 +61,7 @@ let created: {
 }[]
 let started: number
 let agentTools: boolean
+let projectRules: string | undefined
 let endpoint: string
 let picked: { account: string; env: Record<string, string>; notice?: string } | undefined
 let shown: string[]
@@ -183,7 +185,7 @@ beforeEach(() => {
     clearResumeIntent: vi.fn()
   })
   runtime = new SessionRuntime()
-  const deps: MuseSessionDeps = {
+  deps = {
     pty: pty as unknown as MuseSessionDeps['pty'],
     runtime,
     projectInfo: (p) => ({ root: repo, treeRoot: p }),
@@ -199,6 +201,7 @@ beforeEach(() => {
     skipPermissions: () => skipPermissions,
     serversAmong: async () => servers,
     agent: { enabled: () => agentTools, answer: vi.fn() },
+    projectRules: async () => projectRules,
     gitAccounts: {
       configEnv: (env) => env,
       ghWrapper: path.join(tools, 'gh')
@@ -344,14 +347,17 @@ describe('MuseSessions launch', () => {
       expect(fs.existsSync(path.join(first, tool))).toBe(true)
   })
 
-  it("hands muse Koloft's instructions at every session start only when agent tools are on", async () => {
+  it("hands muse Koloft's instructions, with its workspace's own rules for picking a model, at every session start only when agent tools are on", async () => {
     agentTools = true
+    projectRules = 'Code: high.'
     const on = await launch()
+    projectRules = undefined
     agentTools = false
     const off = await launch()
     const told = JSON.parse(hook(on.id, 'SessionStart', { session_id: A, source: 'clear' }))
     expect(told.hookSpecificOutput).toMatchObject({ hookEventName: 'SessionStart' })
     expect(told.hookSpecificOutput.additionalContext).toContain('koloft help')
+    expect(told.hookSpecificOutput.additionalContext).toContain('    Code: high.')
     expect(hook(off.id, 'SessionStart', { session_id: B, source: 'startup' })).toBe('')
     const first = created[0].env.PATH!.split(':')[0]
     expect(fs.existsSync(path.join(first, 'koloft'))).toBe(true)
@@ -838,6 +844,44 @@ describe('MuseSessions turns from hooks', () => {
     expect(
       Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
     ).toEqual({ [A]: 'Fix docs links', [B]: 'docs cleanup', [C]: 'Test review' })
+  })
+
+  it('after Koloft starts again, before muse lists the sessions again (a machine not reached yet), each row keeps the name it was last shown under, never the placeholder over a name', async () => {
+    const C = '01a13797-1111-7222-8333-444455556666'
+    const bindTab = async (sessionId: string, name?: string): Promise<string> => {
+      const { id } = await launch(name ? { name } : {})
+      hook(id, 'SessionStart', { session_id: sessionId, source: 'startup' })
+      await vi.waitFor(() =>
+        expect(sessions.list().map((s) => s.nativeSessionId)).toContain(sessionId)
+      )
+      return id
+    }
+    await bindTab(A, 'Fix docs links')
+    const prompted = await bindTab(B)
+    hook(prompted, 'UserPromptSubmit', {
+      session_id: B,
+      prompt: 'look at the tests',
+      turn_id: 't1'
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list().find((s) => s.nativeSessionId === B)?.title).toBe('look at the tests')
+    )
+    await bindTab(C)
+    mocks.list.mockResolvedValue([
+      { id: A, cwd: repo, name: 'please fix the docs links' },
+      { id: B, cwd: repo, name: null },
+      { id: C, cwd: repo, name: 'iron-libra' }
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await sessions.refreshHistory()
+    const shown = Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
+    await BackgroundFile.whenAllWritten()
+
+    const startedAgain = new MuseSessions(path.join(home, 'muse-sessions.json'), deps)
+    expect(
+      Object.fromEntries(startedAgain.rows(repo).map((r) => [r.nativeSessionId, r.title]))
+    ).toEqual(shown)
+    expect(shown).toEqual({ [A]: 'Fix docs links', [B]: 'look at the tests', [C]: 'iron-libra' })
   })
 })
 

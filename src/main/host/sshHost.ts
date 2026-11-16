@@ -17,6 +17,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 import { portOffset } from '@shared/worktreeName'
+import { pictureFolderIn } from '@shared/pastedPictures'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
   MAX_READ_BYTES,
@@ -52,6 +53,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
   mirrorProjectsRoot,
@@ -118,6 +120,7 @@ export interface MachineClaudeDeps {
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   noAccountMessage(): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
+  loginPath(): Promise<string>
 }
 
 export interface MuseMachineLaunch {
@@ -147,7 +150,11 @@ export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
-  watch(path: string, onChange: (stamp: string) => void): void
+  watch(
+    path: string,
+    onChange: (stamp: string) => void,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): void
   unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
@@ -177,11 +184,14 @@ export function machineClaudeArgs(
   })
   if (!argv.ok) return argv
   const fresh = !spec.resumeSessionId
+  const pictures = fresh && spec.firstPrompt ? pictureFolderIn(spec.firstPrompt) : undefined
   return {
     ok: true,
     args: [
       ...argv.argv.slice(1),
       ...(fresh && spec.name ? ['--name', spec.name] : []),
+      // CC§18
+      ...(pictures ? ['--add-dir', pictures] : []),
       ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
     ]
   }
@@ -914,8 +924,16 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  async watchDir(dir: string, onChange: DirChangeListener): Promise<boolean> {
-    this.deps.watch(this.bare(dir), () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }))
+  async watchDir(
+    dir: string,
+    onChange: DirChangeListener,
+    reportsWhatChangedWhileUnwatched?: boolean
+  ): Promise<boolean> {
+    this.deps.watch(
+      this.bare(dir),
+      () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }),
+      reportsWhatChangedWhileUnwatched
+    )
     return false
   }
 
@@ -1034,8 +1052,10 @@ export class SshHost implements Host {
   async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
     const d = this.deps.claude
     await this.sshReady()
+    const asked = this.loginPath()
     const sid = spec.resumeSessionId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const loginPath = attach ? '' : await asked
     const auth = attach ? undefined : spec.account.auth()
     const tmuxName = (tabId: string): string =>
       sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
@@ -1062,6 +1082,7 @@ export class SshHost implements Host {
           banner: '',
           portOffset: spec.portOffset,
           ownerWords: spec.ownerWords,
+          loginPath,
           program: machineToolProgram(
             'muse',
             museRunLines({
@@ -1086,6 +1107,10 @@ export class SshHost implements Host {
   private async sshReady(): Promise<void> {
     await this.deps.sshEnvReady?.()
     ensureControlDir(this.deps.claude.controlDir)
+  }
+
+  private loginPath(): Promise<string> {
+    return this.deps.claude.loginPath().catch(() => '')
   }
 
   // PLATFORM§35 ADR-0044
@@ -1184,8 +1209,10 @@ export class SshHost implements Host {
   async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
     const d = this.deps.claude
     await this.sshReady()
+    const asked = this.loginPath()
     const sid = spec.resumeId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const loginPath = attach ? '' : await asked
     const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const pkg = d.machinePackage()
     const tabDir = tabPackageDir(d.userData, spec.tabId)
@@ -1204,6 +1231,7 @@ export class SshHost implements Host {
           banner: '',
           env: spec.env,
           portOffset: spec.portOffset,
+          loginPath,
           program: attach ? { ...spec.program, files: {} } : spec.program
         })
         return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
@@ -1221,6 +1249,7 @@ export class SshHost implements Host {
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
+    const asked = this.loginPath()
     const mode = await this.attachOrStart(sid)
     // CC§2
     const root = d.realPath(this.bare(spec.root))
@@ -1233,9 +1262,11 @@ export class SshHost implements Host {
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(d.noAccountMessage())
+    const loginPath = mode === 'start' ? await asked : ''
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
+    const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -1256,11 +1287,13 @@ export class SshHost implements Host {
               banner: account?.banner ?? '',
               env: account?.env,
               portOffset: worktree ? portOffset(worktree) : undefined,
-              ownerWords: spec.ownerWords
+              ownerWords: spec.ownerWords,
+              loginPath
             },
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              projectPrompt,
               claudeArgs,
               trustFolder: spec.trustFolder
             }

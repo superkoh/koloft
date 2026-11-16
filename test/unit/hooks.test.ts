@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -37,7 +37,7 @@ import {
 import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
-import { AGY_HOOK_SCRIPT } from '../../src/main/agyHooks'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../src/main/agyHooks'
 import { museHookScript } from '../../src/main/museHooks'
 
 let hookScript: string
@@ -202,6 +202,72 @@ describe('injected hook script', () => {
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
   })
 
+  // ADR-0044
+  describe("a tab's name file already holds the new tmux name when the session is renamed, so a close landing between the two still finds the session", () => {
+    let home: string
+    const nameFile = (tab: string): string => path.join(home, '.koloft', 'tabs', `${tab}.tmux`)
+    const tmuxStub = (renameExit: number): string => {
+      const seen = path.join(stubBin, 'name-file-at-rename')
+      fs.rmSync(seen, { force: true })
+      fs.writeFileSync(
+        path.join(stubBin, 'tmux'),
+        `#!/bin/sh
+case "$1" in
+  display-message) echo k-sess-old ;;
+  rename-session) cat "$HOME/.koloft/tabs/"*.tmux > ${JSON.stringify(seen)}; exit ${renameExit} ;;
+esac
+`,
+        { mode: 0o755 }
+      )
+      return seen
+    }
+    const inTmuxOnTheMachine = { KOLOFT_TMUX_FOLLOW: '1', TMUX: '/tmp/s,1,0', TMUX_PANE: '%3' }
+    beforeEach(() => {
+      home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-home-'))
+      fs.mkdirSync(path.join(home, '.koloft', 'tabs'), { recursive: true })
+    })
+    afterEach(() => {
+      fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
+      fs.rmSync(home, { recursive: true, force: true })
+    })
+
+    it("Claude Code's hook, after a /clear", () => {
+      const seen = tmuxStub(0)
+      fire('tabN1', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
+      expect(fs.readFileSync(seen, 'utf8')).toBe('k-sess-new')
+      expect(fs.readFileSync(nameFile('tabN1'), 'utf8')).toBe('k-sess-new')
+    })
+
+    it("Claude Code's hook leaves the name file as it found it when the rename fails, so a reconnect attaches to the session under the name it still has", () => {
+      tmuxStub(1)
+      fs.writeFileSync(nameFile('tabN2'), 'k-sess-before')
+      fire('tabN2', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
+      expect(fs.readFileSync(nameFile('tabN2'), 'utf8')).toBe('k-sess-before')
+
+      fire('tabN4', 'start', { session_id: 'sess-new' }, { ...inTmuxOnTheMachine, HOME: home })
+      expect(fs.existsSync(nameFile('tabN4'))).toBe(false)
+    })
+
+    it("Antigravity's title script, once the conversation has its id", () => {
+      const seen = tmuxStub(0)
+      const script = path.join(home, 'agy-title.sh')
+      fs.writeFileSync(script, AGY_TITLE_SCRIPT)
+      const res = spawnSync('sh', [script], {
+        input: JSON.stringify({ conversation_id: 'abc-123' }),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...inTmuxOnTheMachine,
+          HOME: home,
+          KOLOFT_TAB_ID: 'tabN3',
+          PATH: `${stubBin}:${process.env.PATH}`
+        }
+      })
+      expect(res.status).toBe(0)
+      expect(fs.readFileSync(seen, 'utf8')).toBe('k-abc-123')
+    })
+  })
+
   it('SessionEnd carries the exit reason (drives the revert-to-terminal decision)', () => {
     fire('tabH', 'end', { session_id: 'sess-123', reason: 'prompt_input_exit' })
     expect(readReg('tabH.json')).toMatchObject({ event: 'end', reason: 'prompt_input_exit' })
@@ -212,6 +278,95 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')).toEqual([
       { tabId: 'tabH', event: 'stop', message: '', sessionId: '', tmux: '' }
     ])
+  })
+
+  // CC§11 CC§13
+  describe('sessions messaging each other with SendMessage', () => {
+    const SENDER = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
+    const TARGET = '424b6fd0-a45c-489b-a221-8346f11d37ed'
+    const GONE = '9b7f2a3e-0c4d-4e8f-a1b2-c3d4e5f60718'
+    let home: string
+    const socketOf = (pid: number): string => `/tmp/cc-socks/${pid}.sock`
+    const register = (pid: number, sessionId: string, name: string): void =>
+      fs.writeFileSync(
+        path.join(home, '.claude', 'sessions', `${pid}.json`),
+        JSON.stringify({ pid, sessionId, messagingSocketPath: socketOf(pid), name })
+      )
+    const gonePid = (): number => spawnSync('true').pid!
+    beforeEach(() => {
+      home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-home-'))
+      fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true })
+    })
+    afterEach(() => fs.rmSync(home, { recursive: true, force: true }))
+
+    it('a message from another Claude session names the running session behind the socket it came from in the prompt report; one Koloft wrote, one from a socket only a hard-killed claude held, and a typed prompt name none', () => {
+      register(process.pid, SENDER, 'issue-6')
+      const dead = gonePid()
+      register(dead, GONE, 'old')
+      const fromASession = (head: string): string =>
+        `<cross-session-message ${head} from-mode="bypass">\nRun the tests\n</cross-session-message>`
+      const prompts = [
+        fromASession(`from="uds:${socketOf(process.pid)}" from-name="issue-6"`),
+        fromASession(`from="uds:${socketOf(dead)}" from-name="old"`),
+        fromASession(''),
+        `say <cross-session-message from="uds:${socketOf(process.pid)}">`
+      ]
+      for (const prompt of prompts)
+        fire('tabP', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt }, { HOME: home })
+      expect(readStatusLog('tabP').map((r) => r.fromSession)).toEqual([
+        SENDER,
+        undefined,
+        undefined,
+        undefined
+      ])
+    })
+
+    it('a SendMessage that reached another running session, named bare, with its [ref] or by the from address it replies to, reports which session it went to, even when that session has a second live entry; one to a name two sessions share, to no session, or that failed reports nothing, and a "to" outside what was sent is never read', () => {
+      register(process.pid, TARGET, 'test-runner')
+      const second = spawn('sleep', ['30'])
+      register(second.pid!, TARGET, 'test-runner')
+      register(gonePid(), GONE, 'gone')
+      register(process.ppid, SENDER, 'twin')
+      const twin = spawn('sleep', ['30'])
+      register(twin.pid!, GONE, 'twin')
+      const sent = (
+        to: string,
+        success = true,
+        input: Record<string, string> = { to, summary: 'tests', message: 'Run the tests' }
+      ): void =>
+        void fire(
+          'tabS',
+          'sent',
+          {
+            session_id: SENDER,
+            hook_event_name: 'PostToolUse',
+            tool_name: 'SendMessage',
+            tool_input: input,
+            tool_response: { success, message: `"tests" → ${to}`, to: 'test-runner' }
+          },
+          { HOME: home }
+        )
+      sent('test-runner')
+      sent('test-runner [3fa9c1]')
+      sent(`uds:${socketOf(process.pid)}`)
+      sent('test-runner', true, { summary: 'tests', to: 'test-runner', message: 'Run' })
+      sent('test-runner', false)
+      sent('gone')
+      sent('main')
+      sent('twin')
+      sent('', true, { summary: 'tests', message: 'Run' })
+      twin.kill()
+      second.kill()
+      expect(readStatusLog('tabS')).toEqual(
+        Array(4).fill({
+          tabId: 'tabS',
+          event: 'sent',
+          sessionId: SENDER,
+          tmux: '',
+          toSession: TARGET
+        })
+      )
+    })
   })
 
   // CC§21
@@ -836,7 +991,7 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabT').map((r) => r.event)).toEqual(['prompt', 'stop'])
   })
 
-  it('a new tab starts with no run-state log and no registration snapshot (pids, hence tab ids, recycle)', () => {
+  it('a new tab starts with no run-state log and no registration snapshot left under its id', () => {
     fire('pty-abc-1', 'stop', { hook_event_name: 'Stop' })
     expect(readStatusLog('pty-abc-1')).toHaveLength(1)
     fs.writeFileSync(
@@ -978,8 +1133,8 @@ describe('injected hook script', () => {
     })
   })
 
-  // CC§19
-  it('every tool call fires the reply-language hook and every Bash call the look at the folder after it; the Bash-matched status-line one rides along only with the statusline', () => {
+  // CC§13 CC§19
+  it('every tool call fires the reply-language hook, every Bash call the look at the folder after it and every SendMessage the note of who it reached; the Bash-matched status-line one rides along only with the statusline', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
     const postToolUse = (file: string): { matcher: string; hooks: { command: string }[] }[] =>
       JSON.parse(fs.readFileSync(file, 'utf8')).hooks.PostToolUse
@@ -988,11 +1143,13 @@ describe('injected hook script', () => {
     expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl))).toEqual([
       '* tool',
       'Bash shell-after',
+      'SendMessage sent',
       'Bash posttool'
     ])
     expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual([
       '* tool',
-      'Bash shell-after'
+      'Bash shell-after',
+      'SendMessage sent'
     ])
   })
 

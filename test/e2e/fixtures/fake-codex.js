@@ -9,6 +9,7 @@ const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
 const FLAGS_FOLLOWED_BY_A_VALUE = ['--remote', '-C', '-c', '-m', '-a', '-s']
 
 const argv = process.argv.slice(2)
+const colsAtStart = process.stdout.columns ?? null
 const home = process.env.HOME
 const codexHome = process.env.CODEX_HOME || path.join(home, '.codex')
 const sessions = path.join(codexHome, 'sessions')
@@ -766,7 +767,14 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         return
       }
       if (method === 'model/list') {
-        result(id, { data: [], nextCursor: null })
+        const efforts = ['low', 'medium', 'high'].map((reasoningEffort) => ({ reasoningEffort }))
+        result(id, {
+          data: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'].map((model) => ({
+            id: model,
+            supportedReasoningEfforts: efforts
+          })),
+          nextCursor: null
+        })
         return
       }
       if (method === 'thread/loaded/list') {
@@ -908,6 +916,7 @@ async function startTui() {
       sessionId: thread.id,
       method,
       ts: Date.now(),
+      cols: colsAtStart,
       backend: 'codex',
       codexHome: process.env.CODEX_HOME || null,
       oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,

@@ -12,6 +12,7 @@ export interface CodexCall {
   effectiveCwd: string
   sessionId: string
   method: string
+  cols: number | null
   codexHome: string | null
 }
 

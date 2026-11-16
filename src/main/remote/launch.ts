@@ -12,6 +12,7 @@ import {
   remoteShCommand
 } from './install'
 import { remotePtsFile } from './paths'
+import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
@@ -137,6 +138,7 @@ export interface TabSpec {
   env?: Record<string, string>
   portOffset?: number
   ownerWords?: string
+  loginPath?: string
   program: TabProgram
 }
 
@@ -151,6 +153,7 @@ export interface TabProgram {
 export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
+  projectPrompt?: string
   claudeArgs: string[]
   trustFolder?: boolean
 }
@@ -171,7 +174,9 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
     beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
-      [`${tab.tabId}.tmux`]: tab.tmuxName
+      [`${tab.tabId}.tmux`]: tab.tmuxName,
+      ...(c.agentPlugin &&
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt })
     }
   }
 })
@@ -195,11 +200,16 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
+const PROJECT_PROMPT_SUFFIX = '.prompt.md'
+
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
+  const prompt = c.projectPrompt
+    ? `${T}${PROJECT_PROMPT_SUFFIX}`
+    : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 
@@ -242,6 +252,8 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
+  // PLATFORM§33 CC§3 AGY§25 MUSE§17
+  const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -249,7 +261,7 @@ T="${T}"
 ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
-  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
+${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
@@ -369,9 +381,10 @@ const NO_MACHINE_PACKAGE_EXIT = 97
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
   const m = `"$HOME/.koloft/${s.machine.name}"`
-  const run = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
+  const untilOwningTab = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; env ${OWNING_TAB_ENV}=`
+  const afterOwningTab = ` sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
   const ssh = `${s.sshOptions.join(' ')} ${shq(s.host)}`
-  const shell = `ssh -t ${ssh} ${shq(run)}" $COLUMNS $LINES"`
+  const shell = `ssh -t ${ssh} ${shq(untilOwningTab)}"$${OWNING_TAB_ENV}"${shq(afterOwningTab)}" $COLUMNS $LINES"`
   const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
     `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +

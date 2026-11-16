@@ -894,6 +894,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       expect(ws).toEqual([
         'New session⌘N',
         'Restore session…',
+        'Session defaults…',
         'Scheduled jobs…',
         'Remove workspace'
       ])

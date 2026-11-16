@@ -55,6 +55,7 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
+  tabAsItsAgent,
   tabEverBound,
   welcomeWorkbenchKey,
   workbenchStoreKey
@@ -126,7 +127,9 @@ import { BindConductorDialog } from './components/BindConductorDialog'
 import { butlerSetUp, everyWorkspaceRows, isButlerTab, someAccountCanRunAssist } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
+import { PastSessions } from './components/PastSessions'
 import { CronJobsDialog } from './components/CronJobsDialog'
+import { SessionDefaultsDialog } from './components/SessionDefaultsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf, isRemoteKey } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
@@ -325,6 +328,7 @@ export default function App(): JSX.Element {
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
   const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
+  const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -1029,7 +1033,8 @@ export default function App(): JSX.Element {
       if (useStore.getState().terminalExited(e.id)) return
       if (consumeRestartExit(e.id)) return
       if (consumeRestoreExit(e.id)) useStore.getState().showToast(RESTORE_FAILED_NOTICE)
-      const tab = useStore.getState().tabs.find((t) => t.id === e.id)
+      const found = useStore.getState().tabs.find((t) => t.id === e.id)
+      const tab = e.unexpected ? tabAsItsAgent(found) : found
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
@@ -1160,8 +1165,11 @@ export default function App(): JSX.Element {
   const resumeRecent = useCallback((row: SessionRow): void => {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
+  const restoreRow = useCallback((row: SessionRow): void => {
+    void resumeSession({ id: row.id, backendId: row.backendId, title: row.title, restore: true })
+  }, [])
 
-  const paletteRouted: PaletteRouted = (prompt, backend, route) => {
+  const paletteRouted: PaletteRouted = (prompt, backend, route, pictures) => {
     setPaletteOpen(false)
     if (route?.kind === 'project') {
       const where = useStore.getState().settings.newProjectFolders[route.machine]
@@ -1169,7 +1177,7 @@ export default function App(): JSX.Element {
       const folder = route.folder
       if (parentKey && folder) {
         startNow(hostOf(parentKey), backend, () =>
-          projectOptions(parentKey, folder, { prompt, title: route.title })
+          projectOptions(parentKey, folder, { prompt, title: route.title, pictures })
         )
         return
       }
@@ -1177,6 +1185,7 @@ export default function App(): JSX.Element {
         id: ++newRequestId.current,
         seed: {
           prompt,
+          pictures,
           title: route.title,
           machine: route.machine,
           folder: folder ?? '',
@@ -1195,6 +1204,7 @@ export default function App(): JSX.Element {
       const at = activeTabWs ?? undefined
       const request = {
         words: prompt,
+        pictures: pictures.map((p) => p.path),
         backend,
         title: title || undefined,
         about: about ?? undefined,
@@ -1203,7 +1213,12 @@ export default function App(): JSX.Element {
       void window.api.conductors.fromPalette(request).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
+        requestNew(
+          'main',
+          undefined,
+          { prompt, title, pictures, path: about, worktree: null },
+          backend
+        )
       })
     }
     if (route?.kind === 'feature') {
@@ -1225,7 +1240,7 @@ export default function App(): JSX.Element {
       return
     }
     if (!route && !someAccountCanRunAssist(useStore.getState())) {
-      pickWorkspaceForTyped({ prompt, title: '' }, backend)
+      pickWorkspaceForTyped({ prompt, title: '', pictures }, backend)
       return
     }
     const ws =
@@ -1237,6 +1252,7 @@ export default function App(): JSX.Element {
     }
     const pending: PendingStart = {
       prompt,
+      pictures,
       title: route.title,
       path: route.path,
       worktree: route.worktree
@@ -1615,6 +1631,7 @@ export default function App(): JSX.Element {
             launchable={launchable}
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
+            onSessionDefaults={setDefaultsWs}
             onScheduledJobs={openScheduledJobs}
           />
           {updateOffer && (
@@ -1842,6 +1859,14 @@ export default function App(): JSX.Element {
                           ))}
                         </div>
                       )}
+                      {!welcomeWs.rows.length && welcomeWs.workspace.hasHistory && (
+                        <PastSessions
+                          key={welcomeWs.workspace.path}
+                          wsPath={welcomeWs.workspace.path}
+                          onRestore={restoreRow}
+                          onShowAll={() => setRestoreWs(welcomeWs.workspace.path)}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="w-empty">
@@ -2020,12 +2045,7 @@ export default function App(): JSX.Element {
               onClose={() => setRestoreWs(null)}
               onRestore={(row) => {
                 setRestoreWs(null)
-                void resumeSession({
-                  id: row.id,
-                  backendId: row.backendId,
-                  title: row.title,
-                  restore: true
-                })
+                restoreRow(row)
               }}
             />
           )}
@@ -2041,6 +2061,13 @@ export default function App(): JSX.Element {
               wsPath={cronWs.path}
               initialJobId={cronWs.jobId}
               onClose={() => setCronWs(null)}
+            />
+          )}
+          {defaultsWs && (
+            <SessionDefaultsDialog
+              key={defaultsWs}
+              wsPath={defaultsWs}
+              onClose={() => setDefaultsWs(null)}
             />
           )}
           <ResumeDialog />

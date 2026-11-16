@@ -101,6 +101,7 @@ export interface StoredSessionDeps {
   pty: PtyManager
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
+  projectRules?(workspace: string): Promise<string | undefined>
   changed(): void
   replaced?(oldKey: string, newKey: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
@@ -123,6 +124,7 @@ export interface StartContext {
   workspace: string
   resource?: WorktreeResource
   freshWorktree: boolean
+  rules?: string
 }
 
 export interface SessionsWithStore {
@@ -443,13 +445,25 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       return workspace && title !== undefined ? { workspace, title } : undefined
     }
   }
-  private titleOf(key: string, t: H): string {
+  private titleOf(key: string, t: H, member = this.store.getMember(key)): string {
     return (
       this.store.nameOfLeftMember(key) ||
       t.name ||
       t.preview?.slice(0, 100) ||
+      member?.title ||
       PLACEHOLDER_TITLES[this.id]
     )
+  }
+  protected rememberListedTitles(listingStartedAt: number, machine?: string): void {
+    const titles = new Map<string, string>()
+    for (const m of this.store.listMembers()) {
+      const t = this.history.get(m.key)
+      if (!t || m.updatedAt >= listingStartedAt || (this.keepsItsOwnTitle && m.named)) continue
+      if (machine !== undefined && hostOfKey(m.key) !== machine) continue
+      const title = this.titleOf(m.key, t, m)
+      if (title !== m.title) titles.set(m.key, title)
+    }
+    this.store.retitleMembers(titles)
   }
   adopt(keys: string[]): void {
     let adopted = 0
@@ -625,6 +639,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.places.clear()
     this.archivedIds = archivedIds
     for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
+    this.rememberListedTitles(startedAt)
     this.historyError = undefined
     this.changed()
   }
@@ -781,8 +796,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
         resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
       }
+      const rules = await this.deps.projectRules?.(workspace)
       this.assertStarting()
-      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
+      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree, rules }, prepared)
       this.runs.set(run.tabId, run)
     } finally {
       this.starting.delete(starting)

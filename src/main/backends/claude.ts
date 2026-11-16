@@ -44,19 +44,27 @@ import {
 } from '../remote/paths'
 import {
   hookSettings,
+  FROM_SESSION_FIELD,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  SENT_TO_A_SESSION_EVENT,
   SHELL_WROTE_EVENT,
   START_IN_STATUS_LOG,
   STATUS_LOG_SUFFIX,
-  statusLogOf
+  statusLogOf,
+  TO_SESSION_FIELD
 } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
-import { claudePeerNames, runningClaudePid } from '../claudeSessionRegistry'
+import {
+  OLD_CLAUDE_GOES_WITHIN_MS,
+  claudePeerNames,
+  claudePidsHolding,
+  runningClaudePidBesides
+} from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import { sharedProcessTable } from '../processTable'
 import {
@@ -108,9 +116,11 @@ export interface ClaudeBackendDeps {
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
+  messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
+  projectRules?(workspace: string): Promise<string | undefined>
 }
 
 // PLATFORM§28
@@ -131,25 +141,26 @@ function startTakenFromTheStatusLog(note: unknown): boolean {
   const n = note as { event?: string; [START_IN_STATUS_LOG]?: unknown } | null
   return n?.event === 'start' && n[START_IN_STATUS_LOG] === true
 }
-async function rebuildWorktree(
+export async function rebuildWorktree(
   spec: {
     worktreePath: string
     branch: string
     baseRef: string
   },
-  git: GitOut,
+  host: Host,
   machine: ScriptRunner | undefined
 ): Promise<boolean> {
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
+  const at = host.keyed(root)
   const branchLives =
-    (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
+    (await host.gitOut(at, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
-  await git(root, ['worktree', 'remove', spec.worktreePath])
+  await host.gitRun(at, ['worktree', 'remove', spec.worktreePath])
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  if ((await git(root, args)) === null) return false
+  if ((await host.gitRun(at, args)).code !== 0) return false
   await copyWorktreeIncludes(root, spec.worktreePath, machine)
   return true
 }
@@ -197,6 +208,7 @@ export class ClaudeBackend implements SessionBackend {
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
+  private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
   agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
 
@@ -257,7 +269,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async runningElsewhere(key: string): Promise<boolean> {
-    return (await runningClaudePid(key)) !== null
+    const closed = this.closedClaudes.get(key)
+    const pid = await runningClaudePidBesides(key, closed?.pids ?? new Set(), closed?.until ?? 0)
+    return pid !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -307,13 +321,23 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   stop(tabId: string): void {
+    const sessionId = this.sessionIdOf(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
+    if (sessionId && !remote) this.rememberClosedClaude(sessionId)
     if (remote) {
       this.endRemoteTmux(remote.host, remote.tmuxName, tabId)
       fs.rmSync(tabPackageDir(this.d.userData(), tabId), { recursive: true, force: true })
     }
     this.d.pty.kill(tabId)
     this.d.tracker.untrack(tabId)
+  }
+
+  private rememberClosedClaude(sessionId: string): void {
+    const now = Date.now()
+    for (const [key, closed] of this.closedClaudes)
+      if (closed.until <= now) this.closedClaudes.delete(key)
+    const pids = claudePidsHolding(sessionId)
+    this.closedClaudes.set(sessionId, { pids, until: now + OLD_CLAUDE_GOES_WITHIN_MS })
   }
 
   endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {
@@ -662,6 +686,21 @@ export class ClaudeBackend implements SessionBackend {
     if (obj.event === SHELL_WROTE_EVENT) return this.d.tracker.noteShellWrites(obj.tabId, obj.wrote)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
+    this.noteSessionMessaged(obj.tabId, obj)
+  }
+
+  // CC§13
+  private noteSessionMessaged(
+    tabId: string,
+    report: HookReport & { [FROM_SESSION_FIELD]?: unknown; [TO_SESSION_FIELD]?: unknown }
+  ): void {
+    const from = report[FROM_SESSION_FIELD]
+    if (report.event === 'prompt' && typeof from === 'string') this.d.messaged(tabId, from)
+    const to = report[TO_SESSION_FIELD]
+    if (report.event !== SENT_TO_A_SESSION_EVENT || typeof to !== 'string' || !report.sessionId)
+      return
+    const target = this.d.tracker.list().find((s) => s.alive && s.sessionId === to)
+    if (target) this.d.messaged(target.tabId, report.sessionId)
   }
 
   // CC§5
@@ -965,7 +1004,7 @@ export class ClaudeBackend implements SessionBackend {
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, hostGit(host), this.d.hosts.machineOf(home ?? asked)))
+          !(await rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked)))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
@@ -1065,7 +1104,8 @@ export class ClaudeBackend implements SessionBackend {
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,
-      fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined
+      fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
+      projectRules: await this.d.projectRules?.(spec.root)
     })
     if (!plan.ok) return plan
     const machine = plan.machine

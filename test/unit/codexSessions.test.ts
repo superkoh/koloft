@@ -431,6 +431,44 @@ describe('CodexSessions', () => {
     expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
   })
 
+  it('a remote session keeps the name its machine last listed after Koloft starts again, before that machine is listed again, and a rename made while the listing ran is not taken back', async () => {
+    deps.machine = fakeMachine()
+    const remoteRepo = keyedOn('box', '/srv/repo')!
+    const remember = (id: string, title: string): void =>
+      sessions.store.upsertMember({
+        id,
+        key: codexSessionKey(id, 'box'),
+        workspacePath: remoteRepo,
+        cwd: remoteRepo,
+        title,
+        createdAt: 1,
+        updatedAt: 1
+      })
+    remember(A, 'Codex session')
+    remember(B, 'Old name')
+    mocks.request.mockImplementation(async (_method, params) => {
+      if (params.archived) return { data: [] }
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      sessions.store.updateMember(codexSessionKey(B, 'box'), {
+        title: 'Renamed meanwhile',
+        updatedAt: Date.now()
+      })
+      return {
+        data: [
+          { id: A, cwd: '/srv/repo', name: 'Fix the login' },
+          { id: B, cwd: '/srv/repo', name: 'Old name' }
+        ]
+      }
+    })
+    await sessions.refreshMachineHistory('box', true)
+    await BackgroundFile.whenAllWritten()
+
+    const startedAgain = new CodexSessions(path.join(directory, 'sessions.json'), deps)
+    expect(
+      Object.fromEntries(startedAgain.rows(remoteRepo).map((r) => [r.nativeSessionId, r.title]))
+    ).toEqual({ [A]: 'Fix the login', [B]: 'Renamed meanwhile' })
+  })
+
   // CODEX§16
   it("a later listing of a remote machine asks its open Codex line alone while that line lists sessions, and checks the machine's Codex home again once it lists none", async () => {
     let homeChecks = 0
@@ -1220,11 +1258,13 @@ describe('CodexSessions', () => {
   it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, is given Koloft's skills folder, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
     deps.agent = { enabled: () => true, answer, skillsFolder: () => '/koloft/plugin/skills' }
+    deps.projectRules = async () => 'Code: high.'
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
     )
     expect(hint).toContain('koloft help')
+    expect(hint).toContain('Code: high.')
     expect(hint).toContain('koloft session new -w')
     expect(transports[0].options.skillRoots).toEqual([
       '/koloft/plugin/skills',
