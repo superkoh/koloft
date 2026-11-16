@@ -28,14 +28,19 @@ function sourceFiles() {
     .sort()
 }
 
-async function needsById() {
+async function needsById(problems) {
   const alias = Object.fromEntries(
     Object.entries(ALIASES).map(([name, dir]) => [name, path.join(ROOT, dir)])
   )
-  const { PLUGINS: manifests } = await createJiti(import.meta.url, { alias }).import(
-    path.join(ROOT, `${PLUGIN_LIST}.ts`)
-  )
-  return new Map(manifests.map((m) => [m.id, new Set(m.needs)]))
+  try {
+    const { PLUGINS: manifests } = await createJiti(import.meta.url, { alias }).import(
+      path.join(ROOT, `${PLUGIN_LIST}.ts`)
+    )
+    return new Map(manifests.map((m) => [m.id, new Set(m.needs)]))
+  } catch (e) {
+    problems.push(`${PLUGIN_LIST}.ts: cannot load the manifests (${e.message})`)
+    return new Map()
+  }
 }
 
 function walk(node, visit) {
@@ -55,9 +60,11 @@ function importedSpecifiers(rel) {
     const source =
       node.type === 'CallExpression' && node.callee.type === 'Import'
         ? node.arguments[0]
-        : /^(Import|ExportAll|ExportNamed)Declaration$/.test(node.type)
-          ? node.source
-          : undefined
+        : node.type === 'TSImportType'
+          ? node.argument
+          : /^(Import|ExportAll|ExportNamed)Declaration$/.test(node.type)
+            ? node.source
+            : undefined
     if (source?.type === 'StringLiteral')
       found.push({ spec: source.value, line: node.loc.start.line })
   })
@@ -69,11 +76,12 @@ function target(fromRel, spec) {
   const [first, ...rest] = bare.split('/')
   const joined = bare.startsWith('.')
     ? path.posix.join(path.posix.dirname(fromRel), bare)
-    : ALIASES[first] && path.posix.join(ALIASES[first], ...rest)
+    : Object.hasOwn(ALIASES, first) && path.posix.join(ALIASES[first], ...rest)
   return joined && withoutExtension(joined)
 }
 
-function pluginOf(rel) {
+function pluginOf(file) {
+  const rel = withoutExtension(file)
   if (!rel.startsWith(PLUGINS) || rel === PLUGIN_LIST) return undefined
   const [id, ...rest] = rel.slice(PLUGINS.length).split('/')
   return { id, inside: rest.join('/') }
@@ -102,9 +110,9 @@ function breach(fromRel, to, needs) {
   return 'imports app code outside src/core'
 }
 
-const needs = await needsById()
-const files = sourceFiles()
 const problems = []
+const needs = await needsById(problems)
+const files = sourceFiles()
 for (const rel of files) {
   let specs
   try {

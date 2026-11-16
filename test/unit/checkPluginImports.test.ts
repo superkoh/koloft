@@ -68,7 +68,8 @@ describe('check-plugin-imports', () => {
         "export * from '@shared/types'",
         "import { app } from '../../../main/index'",
         "const plugin = import('@plugins/b')",
-        "import { sneak } from '@core/../plugins/b/main/inner'"
+        "import { sneak } from '@core/../plugins/b/main/inner'",
+        "type Inner = typeof import('@plugins/a/main/inner')"
       ),
       'src/core/bad.ts': "import { fromA } from '@plugins/a/api'\n",
       'src/renderer/src/bad.tsx': "const b = import('../../plugins/b/api')\n",
@@ -89,9 +90,15 @@ describe('check-plugin-imports', () => {
         'src/plugins/c/main/bad.ts:5 ../../../main/index',
         'src/plugins/c/main/bad.ts:6 @plugins/b',
         'src/plugins/c/main/bad.ts:7 @core/../plugins/b/main/inner',
+        'src/plugins/c/main/bad.ts:8 @plugins/a/main/inner',
         'src/plugins/list.ts:4 ./a/main/start',
         'src/renderer/src/bad.tsx:1 ../../plugins/b/api'
       ]
     })
+  })
+
+  it('lists a list of plugins it cannot load as a problem and still exits 0', () => {
+    const dir = fixtureRepo({ 'src/plugins/list.ts': "throw new Error('broken')\n" })
+    expect(check(dir)).toEqual({ code: 0, reported: ['src/plugins/list.ts: cannot'] })
   })
 })
