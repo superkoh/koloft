@@ -1,23 +1,59 @@
-import type { ElectronApplication } from '@playwright/test'
+import { spawnSync } from 'child_process'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { seedSettings } from './helpers/env'
 import {
+  agySessionCalls,
+  installAgentFor,
+  museCalls,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import {
+  type AgentName,
+  type ClaudeCall,
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
+  newSessionInWith,
   processAlive,
   readCalls,
   resumedId,
   runIn,
   startSessionIn,
+  switchToRow,
+  terminalText,
   termIds,
   waitBooted,
   waitForCalls,
   wsRows
 } from './helpers/p1'
+import {
+  addRemoteWorkspace,
+  agyReady,
+  killLines,
+  launchWithRemote,
+  liveTmuxSessions,
+  machineAgyCalls,
+  machineCodexLog,
+  machineHome,
+  machineMuseCalls,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME,
+  sshCommands,
+  tmuxName
+} from './helpers/remote'
+import {
+  codexAnswers,
+  codexCalls,
+  fakeCodexLog,
+  startCodex,
+  type CodexWireLine
+} from './helpers/codex'
 
 const ROOM_FOR_A_WRONG_FORCE_CLOSE_MODAL_MS = 1500
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const ROOM_FOR_A_WRONG_RESTART_MS = 2000
+const ON_THE_MACHINE_WITHIN_MS = 60_000
 
 // PLATFORM§18
 function inRenderer<T>(app: ElectronApplication, expr: string): Promise<T> {
@@ -248,4 +284,378 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
       await quitAndClose(app)
     }
   })
+})
+
+interface RunningTab {
+  tabId: string
+  launches: () => number
+  holders: () => number[]
+  answers: () => string | Promise<string>
+  asleep: () => boolean
+  lastLaunchResumesIt: () => boolean
+}
+
+interface TabKind {
+  agent: AgentName
+  remote: boolean
+  replyPrefix: string
+  listedTwiceWhileFallingAsleep?: true
+  start: (page: Page, env: E2EEnv, ws: string) => Promise<RunningTab>
+}
+
+const kindName = (kind: TabKind): string => `${kind.remote ? 'remote' : 'local'} ${kind.agent}`
+
+async function tabOf(page: Page, ws: string): Promise<string> {
+  const tabId = await wsRows(page, ws).first().getAttribute('data-tab-id')
+  expect(tabId).toBeTruthy()
+  return tabId!
+}
+
+// PLATFORM§3
+function stillThisTestsProcess(env: E2EEnv, pid: number): boolean {
+  const res = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' })
+  return processAlive(pid) && res.stdout.includes(env.home)
+}
+
+interface CodexServerCall {
+  pid: number
+  argv: string[]
+}
+
+const codexServersOnTheMachine = (env: E2EEnv): CodexServerCall[] =>
+  machineCodexLog<CodexServerCall>(env, 'fake-codex-server-calls.jsonl').filter((c) =>
+    c.argv.includes('--listen')
+  )
+
+const remoteClaudeCalls = (env: E2EEnv): ClaudeCall[] =>
+  readCalls(env).filter((c) => c.cwd.startsWith(machineHome(env)))
+
+const tmuxTabGone = (env: E2EEnv, id: string): boolean =>
+  !liveTmuxSessions(env).includes(tmuxName(id)) && killLines(env, id).length > 0
+
+const sshLinksToTab = (env: E2EEnv, tabId: string): number =>
+  sshCommands(env).filter((c) => new RegExp(`tabs/${tabId}\\.sh"?\\s+(attach|start)`).test(c))
+    .length
+
+const onScreen = (page: Page, tabId: string) => (): Promise<string> => terminalText(page, tabId)
+
+const TAB_KINDS: TabKind[] = [
+  {
+    agent: 'Claude',
+    remote: true,
+    replyPrefix: 'handled: ',
+    start: async (page, env, ws) => {
+      await startSessionIn(page, ws, { remote: true })
+      await expect.poll(() => remoteClaudeCalls(env).length).toBe(1)
+      const [first] = remoteClaudeCalls(env)
+      const tabId = await tabOf(page, ws)
+      return {
+        tabId,
+        launches: () => remoteClaudeCalls(env).length,
+        holders: () => [first.pid],
+        answers: onScreen(page, tabId),
+        asleep: () => tmuxTabGone(env, first.sessionId),
+        lastLaunchResumesIt: () => resumedId(remoteClaudeCalls(env).at(-1)!) === first.sessionId
+      }
+    }
+  },
+  {
+    agent: 'Codex',
+    remote: false,
+    replyPrefix: 'Codex fixture answered: ',
+    start: async (page, env, ws) => {
+      const first = await startCodex(page, env)
+      return {
+        tabId: await tabOf(page, ws),
+        launches: () => codexCalls(env).length,
+        holders: () => [first.pid],
+        answers: () =>
+          codexAnswers(fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')).join('\n'),
+        asleep: () => !stillThisTestsProcess(env, first.pid),
+        lastLaunchResumesIt: () => {
+          const last = codexCalls(env).at(-1)!
+          return last.method === 'thread/resume' && last.sessionId === first.sessionId
+        }
+      }
+    }
+  },
+  {
+    agent: 'Codex',
+    remote: true,
+    replyPrefix: 'Codex fixture answered: ',
+    start: async (page, env, ws) => {
+      await newSessionInWith(page, ws, 'Codex')
+      await expect
+        .poll(() => codexServersOnTheMachine(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(1)
+      await expect(wsRows(page, ws).filter({ hasText: 'Codex fixture session' })).toHaveClass(
+        /st-waiting/,
+        { timeout: ON_THE_MACHINE_WITHIN_MS }
+      )
+      const server = codexServersOnTheMachine(env)[0]
+      const [tui] = codexCalls(env)
+      return {
+        tabId: await tabOf(page, ws),
+        launches: () => codexCalls(env).length + codexServersOnTheMachine(env).length,
+        holders: () => [tui.pid, server.pid],
+        answers: () =>
+          codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')).join('\n'),
+        asleep: () => !stillThisTestsProcess(env, server.pid),
+        lastLaunchResumesIt: () => {
+          const last = codexCalls(env).at(-1)!
+          return last.method === 'thread/resume' && last.sessionId === tui.sessionId
+        }
+      }
+    }
+  },
+  {
+    agent: 'Muse',
+    remote: false,
+    replyPrefix: 'echo: ',
+    start: async (page, env, ws) => {
+      await newSessionInWith(page, ws, 'Muse')
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      await expect(wsRows(page, ws).first()).toHaveClass(/st-waiting/)
+      const [first] = museCalls(env)
+      const tabId = await tabOf(page, ws)
+      return {
+        tabId,
+        launches: () => museCalls(env).length,
+        holders: () => [first.pid],
+        answers: onScreen(page, tabId),
+        asleep: () => !stillThisTestsProcess(env, first.pid),
+        lastLaunchResumesIt: () =>
+          museCalls(env).at(-1)!.argv.slice(-2).join(' ') === `resume ${first.sessionId}`
+      }
+    }
+  },
+  {
+    agent: 'Muse',
+    remote: true,
+    replyPrefix: 'echo: ',
+    listedTwiceWhileFallingAsleep: true,
+    start: async (page, env, ws) => {
+      await newSessionInWith(page, ws, 'Muse')
+      await expect
+        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(1)
+      const [first] = machineMuseCalls(env)
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toContain(tmuxName(first.sessionId))
+      await expect(wsRows(page, ws).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      const tabId = await tabOf(page, ws)
+      return {
+        tabId,
+        launches: () => machineMuseCalls(env).length,
+        holders: () => [first.pid],
+        answers: onScreen(page, tabId),
+        asleep: () => tmuxTabGone(env, first.sessionId),
+        lastLaunchResumesIt: () =>
+          machineMuseCalls(env).at(-1)!.argv.slice(-2).join(' ') === `resume ${first.sessionId}`
+      }
+    }
+  },
+  {
+    agent: 'Antigravity',
+    remote: false,
+    replyPrefix: 'Answer to: ',
+    start: async (page, env, ws) => {
+      await newSessionInWith(page, ws, 'Antigravity')
+      await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const [first] = agySessionCalls(env)
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
+      return {
+        tabId,
+        launches: () => agySessionCalls(env).length,
+        holders: () => [first.pid],
+        answers: onScreen(page, tabId),
+        asleep: () => !stillThisTestsProcess(env, first.pid),
+        lastLaunchResumesIt: () =>
+          agySessionCalls(env).at(-1)!.argv.includes(`--conversation=${id}`)
+      }
+    }
+  },
+  {
+    agent: 'Antigravity',
+    remote: true,
+    replyPrefix: 'Answer to: ',
+    listedTwiceWhileFallingAsleep: true,
+    start: async (page, env, ws) => {
+      await newSessionInWith(page, ws, 'Antigravity')
+      const { tabId, id } = (await OTHER_AGENTS_ON_THE_MACHINE.find(
+        (a) => a.label === 'Antigravity'
+      )!.bound!(page)) as { tabId: string; id: string }
+      const [first] = machineAgyCalls(env)
+      return {
+        tabId,
+        launches: () => machineAgyCalls(env).length,
+        holders: () => [first.pid],
+        answers: onScreen(page, tabId),
+        asleep: () => tmuxTabGone(env, id),
+        lastLaunchResumesIt: () =>
+          machineAgyCalls(env).at(-1)!.argv.includes(`--conversation=${id}`)
+      }
+    }
+  }
+]
+
+const THE_MOMENT_IT_FALLS_ASLEEP_MS = 20
+
+const LISTED_TWICE_ISSUE =
+  'issue #1959: listed both live and asleep while its pty still runs, a reload keeps the live copy and a click no longer wakes it'
+
+async function launchFor(
+  kind: TabKind,
+  env: E2EEnv
+): Promise<{ app: ElectronApplication; page: Page; ws: string }> {
+  seedSettings(env, { hintsOff: true })
+  if (kind.remote) {
+    OTHER_AGENTS_ON_THE_MACHINE.find((a) => a.label === kind.agent)?.install(env)
+    const { app, page } = await launchWithRemote(env)
+    await addRemoteWorkspace(page, env)
+    return { app, page, ws: REMOTE_WS_NAME }
+  }
+  installAgentFor(env, kind.agent, env.workspaces.a)
+  const app = await launchApp(env)
+  const page = await app.firstWindow()
+  await page.waitForLoadState('domcontentloaded')
+  await waitBooted(page)
+  return { app, page, ws: 'ws-a' }
+}
+
+async function startAndSleep(
+  kind: TabKind,
+  env: E2EEnv,
+  page: Page,
+  ws: string,
+  atTheMoment: boolean
+): Promise<RunningTab> {
+  await startSessionIn(page, 'ws-b', kind.agent === 'Claude' ? {} : { method: 'Claude' })
+  const parked = wsRows(page, 'ws-b').first()
+  await expect(parked).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+  const tab = await kind.start(page, env, ws)
+  await switchToRow(page, wsRows(page, ws).first())
+  await runIn(page, centerTerm(page), 'before sleep')
+  await expect
+    .poll(tab.answers, { timeout: ON_THE_MACHINE_WITHIN_MS })
+    .toContain(`${kind.replyPrefix}before sleep`)
+  const awake = tab.holders()
+  expect(awake.every((pid) => stillThisTestsProcess(env, pid))).toBe(true)
+  await parked.click()
+  if (atTheMoment) {
+    expect(tab.asleep(), 'still awake when the watch for the moment starts').toBe(false)
+    await expect
+      .poll(tab.asleep, {
+        timeout: ON_THE_MACHINE_WITHIN_MS,
+        intervals: [THE_MOMENT_IT_FALLS_ASLEEP_MS]
+      })
+      .toBe(true)
+    return tab
+  }
+  await expect.poll(tab.asleep, { timeout: ON_THE_MACHINE_WITHIN_MS }).toBe(true)
+  await expect
+    .poll(() => awake.some((pid) => stillThisTestsProcess(env, pid)), { timeout: 30_000 })
+    .toBe(false)
+  return tab
+}
+
+async function reloadKeepsItAsleepAndAClickWakesIt(
+  page: Page,
+  ws: string,
+  tab: RunningTab
+): Promise<void> {
+  const row = wsRows(page, ws).first()
+  const launches = tab.launches()
+
+  await page.reload()
+  await waitBooted(page)
+  await expect.poll(() => termIds(page), { timeout: 30_000 }).toContain(tab.tabId)
+  await expect(row).toHaveClass(/\bst-idle\b/, { timeout: 30_000 })
+  await expect(row).not.toHaveClass(/\bcold\b/)
+  await page.waitForTimeout(ROOM_FOR_A_WRONG_RESTART_MS)
+  expect(tab.launches()).toBe(launches)
+  expect(tab.asleep()).toBe(true)
+
+  await row.click()
+  await expect.poll(tab.launches, { timeout: ON_THE_MACHINE_WITHIN_MS }).toBeGreaterThan(launches)
+  await expect.poll(tab.lastLaunchResumesIt, { timeout: ON_THE_MACHINE_WITHIN_MS }).toBe(true)
+  await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+}
+
+test.describe('every other kind of session tab is re-adopted by a reload just as a local Claude Code tab is', () => {
+  for (const kind of TAB_KINDS) {
+    test(`T-REL-07: a reload re-adopts a ${kindName(kind)} tab — same terminal, the same agent process, nothing launched or attached again, and typing reaches the agent`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const { app, page, ws } = await launchFor(kind, env)
+      try {
+        const tab = await kind.start(page, env, ws)
+        const row = wsRows(page, ws).first()
+        const idsBefore = await termIds(page)
+        expect(idsBefore).toEqual([tab.tabId])
+        const launches = tab.launches()
+        const links = sshLinksToTab(env, tab.tabId)
+        expect(links).toBe(kind.remote ? 1 : 0)
+        const holders = tab.holders()
+        expect(holders.every((pid) => stillThisTestsProcess(env, pid))).toBe(true)
+
+        await page.reload()
+        await waitBooted(page)
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).toEqual(idsBefore)
+        await expect(row).not.toHaveClass(/\bcold\b/)
+        await switchToRow(page, row)
+        await page.waitForTimeout(ROOM_FOR_A_WRONG_FORCE_CLOSE_MODAL_MS)
+        await expect(page.locator('.modal')).toHaveCount(0)
+
+        await runIn(page, centerTerm(page), 'after reload')
+        await expect
+          .poll(tab.answers, { timeout: ON_THE_MACHINE_WITHIN_MS })
+          .toContain(`${kind.replyPrefix}after reload`)
+        expect(tab.launches()).toBe(launches)
+        expect(sshLinksToTab(env, tab.tabId)).toBe(links)
+        expect(tab.holders()).toEqual(holders)
+        expect(holders.every((pid) => stillThisTestsProcess(env, pid))).toBe(true)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test(`T-REL-08: a reload once its old processes have exited keeps a sleeping ${kindName(kind)} tab asleep — its row stays, nothing starts again, and clicking it wakes the same session`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      const { app, page, ws } = await launchFor(kind, env)
+      try {
+        const tab = await startAndSleep(kind, env, page, ws, false)
+        await reloadKeepsItAsleepAndAClickWakesIt(page, ws, tab)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    if (kind.remote)
+      test(`T-REL-09: a reload the moment a ${kindName(kind)} tab falls asleep on the machine keeps it asleep — its row stays, nothing starts again, and clicking it wakes the same session`, async ({
+        env
+      }) => {
+        test.fixme(!!kind.listedTwiceWhileFallingAsleep, LISTED_TWICE_ISSUE)
+        test.setTimeout(300_000)
+        env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+        const { app, page, ws } = await launchFor(kind, env)
+        try {
+          const tab = await startAndSleep(kind, env, page, ws, true)
+          await reloadKeepsItAsleepAndAClickWakesIt(page, ws, tab)
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+  }
 })
