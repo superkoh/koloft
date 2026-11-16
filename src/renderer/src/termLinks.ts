@@ -21,13 +21,15 @@ const LOOKUPS_KEPT_AT_MOST = 500
 const REST_ON_A_ROW_BEFORE_LOOKING_UP_MS = 100
 const lookups = new Map<string, { at: number; found: Promise<boolean> }>()
 
-function fileThere(src: string): Promise<boolean> {
-  const now = Date.now()
+function freshAnswer(src: string): Promise<boolean> | undefined {
   const seen = lookups.get(src)
-  if (seen && now - seen.at < FILE_LOOKUP_FRESH_MS) return seen.found
+  return seen && Date.now() - seen.at < FILE_LOOKUP_FRESH_MS ? seen.found : undefined
+}
+
+function lookUp(src: string): Promise<boolean> {
   if (lookups.size >= LOOKUPS_KEPT_AT_MOST) lookups.clear()
   const found = fileExists(src)
-  lookups.set(src, { at: now, found })
+  lookups.set(src, { at: Date.now(), found })
   return found
 }
 
@@ -102,15 +104,21 @@ export function fileLinkProvider(
       )
       if (!refs.length) return callback(undefined)
       const drawnWhenAsked = line.translateToString()
+      const srcs = refs.map((ref) => resolveOnHost(`${folder}/`, ref.path))
       void (async () => {
-        await new Promise((rested) => setTimeout(rested, REST_ON_A_ROW_BEFORE_LOOKING_UP_MS))
+        if (!srcs.every(freshAnswer))
+          await new Promise((rested) => setTimeout(rested, REST_ON_A_ROW_BEFORE_LOOKING_UP_MS))
         const found: ILink[] = []
-        for (const ref of refs) {
-          await lookupOnItsWay
+        for (const [i, ref] of refs.entries()) {
           if (ask !== asked) return
-          const src = resolveOnHost(`${folder}/`, ref.path)
-          const there = fileThere(src)
-          lookupOnItsWay = there
+          const src = srcs[i]
+          let there = freshAnswer(src)
+          if (!there) {
+            await lookupOnItsWay
+            if (ask !== asked) return
+            there = freshAnswer(src) ?? lookUp(src)
+            lookupOnItsWay = there
+          }
           if (!(await there)) continue
           const last = colOf[ref.end - 1]
           found.push({

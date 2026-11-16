@@ -107,11 +107,14 @@ function scriptSentAsBase64() {
 
 const fileLookupsHeld = path.join(STATE, 'file-lookups-held')
 function heldLookup() {
-  if (!fs.existsSync(fileLookupsHeld)) return false
+  let heldText
+  try {
+    heldText = fs.readFileSync(fileLookupsHeld, 'utf8')
+  } catch {
+    return false
+  }
   const script = scriptSentAsBase64()
-  return (
-    script.includes('test -f "$1"') && script.includes(fs.readFileSync(fileLookupsHeld, 'utf8'))
-  )
+  return script.includes('test -f "$1"') && script.includes(heldText)
 }
 
 if (heldLookup()) {

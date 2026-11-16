@@ -42,7 +42,7 @@ import { WORKBENCH } from './helpers/workbench'
 
 const ROOM_FOR_A_WRONG_OPEN_MS = 1500
 const ROWS_SWEPT = 12
-const MOUSE_PASSING_OVER_A_ROW_MS = 20
+const RESTING_LONGER_THAN_THE_LOOKUP_WAITS_MS = 400
 const ROOM_FOR_MORE_LOOKUPS_TO_START_MS = 1500
 
 function numberedTs(tag: string): string {
@@ -435,7 +435,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
     }
   })
 
-  test('in a remote tab, the mouse sweeping down rows of paths keeps at most one lookup on its way to the machine, and the rows it left before resting are never asked', async ({
+  test('in a remote tab, the mouse sweeping down rows of paths asks only the row it rests on, and a row rested on while that lookup is on its way to the machine waits for it to come back', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -456,26 +456,33 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       for (const file of files) points.push(await screenPointOf(page, tabId, `${file}:1`))
 
       fs.writeFileSync(held, '/src/v')
-      for (const at of points) {
-        await page.mouse.move(at.x, at.y)
-        await page.waitForTimeout(MOUSE_PASSING_OVER_A_ROW_MS)
-      }
+      for (const at of points) await page.mouse.move(at.x, at.y)
+      const sweptTo = files[files.length - 1]
       await expect
         .poll(() => fileLookupsOnTheMachine(env).asked.length, { timeout: 20_000 })
         .toBeGreaterThan(0)
       await page.waitForTimeout(ROOM_FOR_MORE_LOOKUPS_TO_START_MS)
-      expect(fileLookupsOnTheMachine(env).mostAtOnce).toBe(1)
+      expect(fileLookupsOnTheMachine(env)).toEqual({
+        asked: [sweptTo],
+        answered: [],
+        mostAtOnce: 1
+      })
+
+      const restedOnNext = files[2]
+      await page.mouse.move(points[2].x, points[2].y)
+      await page.waitForTimeout(RESTING_LONGER_THAN_THE_LOOKUP_WAITS_MS)
+      expect(fileLookupsOnTheMachine(env).asked).toEqual([sweptTo])
 
       fs.rmSync(held)
-      const restedOn = files[files.length - 1]
       await expect
         .poll(() => fileLookupsOnTheMachine(env).answered, { timeout: 30_000 })
-        .toContain(restedOn)
+        .toContain(restedOnNext)
       await page.waitForTimeout(ROOM_FOR_MORE_LOOKUPS_TO_START_MS)
-      const { asked, mostAtOnce } = fileLookupsOnTheMachine(env)
-      expect(mostAtOnce).toBe(1)
-      expect(asked.at(-1)).toBe(restedOn)
-      expect(asked.length).toBeLessThanOrEqual(2)
+      expect(fileLookupsOnTheMachine(env)).toEqual({
+        asked: [sweptTo, restedOnNext],
+        answered: [sweptTo, restedOnNext],
+        mostAtOnce: 1
+      })
     } finally {
       fs.rmSync(held, { force: true })
       await quitAndClose(app)
