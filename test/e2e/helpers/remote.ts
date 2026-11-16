@@ -59,6 +59,7 @@ export interface SshCall {
   argv: string[]
   phase: 'start' | 'end'
   exit?: number
+  cols?: number | null
   ts: number
 }
 

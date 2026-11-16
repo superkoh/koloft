@@ -349,6 +349,7 @@ export interface AgyCall {
   pid: number
   argv: string[]
   cwd: string
+  cols: number | null
   env: Record<string, string | boolean | undefined> & { GEMINI_API_KEY: boolean }
   geminiDir: string
 }
@@ -379,8 +380,13 @@ export function agyApiCalls(env: E2EEnv, home = env.home): AgyApiCall[] {
     .map((line) => JSON.parse(line) as AgyApiCall)
 }
 
+const readsTheModelList = (c: AgyCall): boolean =>
+  c.argv.find((a) => !a.startsWith('-')) === 'models'
+
 export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
-  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
+  agyCalls(env).filter(
+    (c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p') && !readsTheModelList(c)
+  )
 
 export function ownersGemini(env: E2EEnv): string {
   return path.join(env.home, '.gemini')
@@ -428,6 +434,7 @@ export interface MuseCall {
   argv: string[]
   cwd: string
   sessionId: string
+  cols: number | null
   pathHead: string
   configHome: string | null
   credentials: string | null
