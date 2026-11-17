@@ -445,6 +445,11 @@ function tui() {
       fire('PostToolUse', { ...call, tool_response: ran.stdout })
       return later(() => say(turnId, `Ran: ${cmd}`, text))
     }
+    if (text === '/busy') {
+      const turnId = turn(text)
+      const busyMs = Number(read('fake-muse-busy-ms', '30000'))
+      return setTimeout(() => say(turnId, 'Done being busy', text), busyMs)
+    }
     // MUSE§9
     if (text === '/silent') {
       const turnId = turn(text)
@@ -693,7 +698,7 @@ function tui() {
   const start = () => {
     open(resumeId)
     status('state=idle:app=muse')
-    if (firstPrompt) {
+    if (firstPrompt && command(firstPrompt) === false) {
       const turnId = turn(firstPrompt)
       later(() => say(turnId, `echo: ${firstPrompt}`, firstPrompt))
     }

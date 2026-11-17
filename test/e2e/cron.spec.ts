@@ -23,6 +23,7 @@ import {
   installCodex,
   installMuse,
   museCalls,
+  ownersGemini,
   seedClaudeTrust,
   seedSettings,
   trustInAgy,
@@ -230,6 +231,7 @@ const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const ANOTHER_ROUND_OF_IDLE_SLEEP_MS = WAITING_TO_IDLE_MS + IDLE_TO_SLEEP_MS * 2
+const A_RESTART_CUT_THE_RUN_OFF = 'Koloft restarted while this scheduled run was working'
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -1247,7 +1249,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
           timeout: 60_000
         })
-        .toContain('Koloft restarted while this scheduled run was working')
+        .toContain(A_RESTART_CUT_THE_RUN_OFF)
       await openCron(page, 'ws-a')
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
@@ -1382,8 +1384,12 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
+  const firstLaunchPid = async (launches: () => { pid: number }[]): Promise<number> => {
+    await expect.poll(() => launches().length, { timeout: 60_000 }).toBe(1)
+    return launches()[0].pid
+  }
   const IDLE_RUNS: {
-    agent?: 'Codex'
+    agent?: NonNullable<JobSpec['agent']>
     setUp: (env: E2EEnv) => void
     runPid: (env: E2EEnv) => Promise<number>
   }[] = [
@@ -1391,10 +1397,23 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     {
       agent: 'Codex',
       setUp: installCodex,
-      runPid: async (env) => {
-        await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(1)
-        return codexCalls(env)[0].pid
-      }
+      runPid: (env) => firstLaunchPid(() => codexCalls(env))
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        trustInMuse(env, env.workspaces.a)
+      },
+      runPid: (env) => firstLaunchPid(() => museCalls(env))
+    },
+    {
+      agent: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        trustInAgy(env, env.workspaces.a)
+      },
+      runPid: (env) => firstLaunchPid(() => agyTabLaunches(env))
     }
   ]
   for (const { agent, setUp, runPid } of IDLE_RUNS) {
@@ -1442,6 +1461,149 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         )
       } finally {
         await quitAndClose(app)
+      }
+    })
+  }
+
+  const STARTING_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    shell: string
+    permission?: string
+  }[] = [
+    { agent: 'Codex', setUp: (env) => STORED_AGENTS[0].setUp(env), shell: '/sh' },
+    { agent: 'Muse', setUp: (env) => STORED_AGENTS[1].setUp(env), shell: '/sh' },
+    {
+      agent: 'Antigravity',
+      setUp: agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree,
+      shell: '/bash',
+      permission: 'Never ask'
+    }
+  ]
+  for (const { agent, setUp, shell, permission } of STARTING_AGENTS) {
+    test(`BB-M37 in ${agent}: with "Close it" on, a ${agent} run whose own turn has ended stays open while a session it started is still working, and closes for good once that session’s turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      setUp(env)
+      env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+      const untilThere = (file: string): string =>
+        `while [ ! -f ${path.join(env.home, file)} ]; do sleep 0.2; done`
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+
+        const dlg = await openCron(page, 'ws-a')
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, {
+          agent,
+          name: 'Nightly report',
+          task: `${shell} koloft session new --backend claude --model sonnet --effort low --name kid -- hello; ${untilThere('go-run')}`,
+          permission
+        })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Nightly report')
+
+        const kidRow = plainRows(page, 'ws-a').filter({ hasText: 'kid' })
+        await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        const kidTab = await kidRow.getAttribute('data-tab-id')
+        await page.evaluate(([tab, line]) => window.api.terminal.write(tab!, line + '\r'), [
+          kidTab,
+          `/run ${untilThere('go-kid')}`
+        ] as const)
+        await expect(kidRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+        fs.writeFileSync(path.join(env.home, 'go-run'), '')
+        await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+          'done — still finishing',
+          { timeout: 60_000 }
+        )
+        await page.waitForTimeout(SEVERAL_CLOSE_CHECKS_MS)
+        await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+          'done — still finishing'
+        )
+        await expect(cronRows(page, 'ws-a')).toHaveCount(1)
+
+        fs.writeFileSync(path.join(env.home, 'go-kid'), '')
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+          .toBe('Done — closed itself')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  const textOfFilesUnder = (dir: string, name: RegExp): string =>
+    fs.existsSync(dir)
+      ? (fs.readdirSync(dir, { recursive: true, encoding: 'utf8' }) as string[])
+          .filter((f) => name.test(path.basename(f)))
+          .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+          .join('\n')
+      : ''
+  const CUT_OFF_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    heard: (env: E2EEnv) => string
+  }[] = [
+    {
+      agent: 'Codex',
+      setUp: (env) => STORED_AGENTS[0].setUp(env),
+      heard: (env) => textOfFilesUnder(env.home, /^fake-codex-wire\.jsonl$/)
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => STORED_AGENTS[1].setUp(env),
+      heard: (env) =>
+        textOfFilesUnder(path.join(env.home, '.local', 'share', 'muse', 'sessions'), /\.json$/)
+    },
+    {
+      agent: 'Antigravity',
+      setUp: agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree,
+      heard: (env) =>
+        textOfFilesUnder(
+          path.join(ownersGemini(env), 'antigravity-cli', 'brain'),
+          /^transcript\.jsonl$/
+        )
+    }
+  ]
+  for (const { agent, setUp, heard } of CUT_OFF_AGENTS) {
+    test(`BB-M38 in ${agent}: a "Close it" ${agent} run that Koloft quit on in the middle of its work is told to carry on when the relaunch reopens it, and closes for good once that turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      setUp(env)
+      env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+      const app1 = await launchApp(env)
+      try {
+        const page = await app1.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent, name: 'Nightly report', task: '/busy' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Nightly report')
+        await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      } finally {
+        await quitAndClose(app1)
+      }
+      expect(heard(env)).not.toContain(A_RESTART_CUT_THE_RUN_OFF)
+
+      const app2 = await launchApp(env)
+      try {
+        const page = await app2.firstWindow()
+        await waitBooted(page)
+        await expect
+          .poll(() => heard(env), { timeout: 60_000 })
+          .toContain(A_RESTART_CUT_THE_RUN_OFF)
+        await openCron(page, 'ws-a')
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+          .toBe('Done — closed itself')
+      } finally {
+        await quitAndClose(app2)
       }
     })
   }
@@ -2200,6 +2362,192 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       }
     })
   }
+
+  const REMOTE_GIT_RUNS: {
+    agent?: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    shell: string
+    permission?: string
+  }[] = [
+    {
+      setUp: (env) =>
+        // CC§9 ADR-0026
+        fs.writeFileSync(
+          path.join(machineHome(env), '.claude.json'),
+          JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+        ),
+      shell: '/run'
+    },
+    { agent: 'Codex', setUp: installCodexOnFakeRemote, shell: '/sh' },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+      },
+      shell: '/sh'
+    },
+    {
+      agent: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+      },
+      shell: '/bash',
+      permission: 'Never ask'
+    }
+  ]
+  for (const { agent, setUp } of REMOTE_GIT_RUNS) {
+    test(`while idle${agent ? ` in ${agent}` : ''} on a remote workspace, a "Close it" run held open by a file not committed keeps its tab awake while an idle plain tab goes to sleep, so it stays the open run and is not written closed`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      gitInit(remoteDir(env))
+      seedSettings(env, { hintsOff: true })
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        const dlg = await openCron(page, REMOTE_WS_NAME)
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent, name: 'Remote report', task: '/write report.md' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Remote report')
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 120_000 })
+          .toBe('Done — not closed: Changes not committed')
+        await closeCron(page)
+        const runTab = await cronRows(page, REMOTE_WS_NAME).getAttribute('data-tab-id')
+
+        const plain = agent ? { method: 'Claude' as const } : {}
+        await startSessionIn(page, 'ws-b', plain)
+        const plainTab = await wsRows(page, 'ws-b').getAttribute('data-tab-id')
+        await startSessionIn(page, 'ws-a', plain)
+        const awakeTabs = async (): Promise<(string | undefined)[]> =>
+          (await page.evaluate(() => window.api.sessions.list()))
+            .filter((s) => s.alive)
+            .map((s) => s.tabId)
+        await expect.poll(awakeTabs, { timeout: 30_000 }).not.toContain(plainTab)
+        await page.waitForTimeout(ANOTHER_ROUND_OF_IDLE_SLEEP_MS)
+
+        expect(await awakeTabs()).toContain(runTab)
+        await openCron(page, REMOTE_WS_NAME)
+        expect((await histLines(page))[0]?.state).toBe('Done — not closed: Changes not committed')
+        await clickRunNow(page, 'Remote report')
+        await expect(toastMsg(page)).toHaveText(
+          '⏰ Remote report skipped: the last run is still open'
+        )
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
+
+  for (const { agent, setUp, shell, permission } of REMOTE_GIT_RUNS) {
+    test(`BB-M37${agent ? ` in ${agent}` : ''} on a remote workspace: with "Close it" on, a run whose own turn has ended stays open while a session it started is still working, and closes for good once that session’s turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      gitInit(remoteDir(env))
+      env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+      const untilThere = (file: string): string =>
+        `while [ ! -f ${path.join(env.home, file)} ]; do sleep 0.2; done`
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        const dlg = await openCron(page, REMOTE_WS_NAME)
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, {
+          agent,
+          name: 'Remote report',
+          task: `${shell} until koloft session new --backend claude --model sonnet --effort low --name kid -- hello; do sleep 0.5; done; ${untilThere('go-run')}`,
+          permission
+        })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Remote report')
+
+        const kidRow = plainRows(page, REMOTE_WS_NAME).filter({ hasText: 'kid' })
+        await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+        const kidTab = await kidRow.getAttribute('data-tab-id')
+        await page.evaluate(([tab, line]) => window.api.terminal.write(tab!, line + '\r'), [
+          kidTab,
+          `/run ${untilThere('go-kid')}`
+        ] as const)
+        await expect(kidRow).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+        fs.writeFileSync(path.join(env.home, 'go-run'), '')
+        await expect(card(page, 'Remote report').locator('.job-last')).toContainText(
+          'done — still finishing',
+          { timeout: 90_000 }
+        )
+        await page.waitForTimeout(SEVERAL_CLOSE_CHECKS_MS)
+        await expect(card(page, 'Remote report').locator('.job-last')).toContainText(
+          'done — still finishing'
+        )
+        await expect(cronRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+
+        fs.writeFileSync(path.join(env.home, 'go-kid'), '')
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+          .toBe('Done — closed itself')
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
+
+  test('BB-M38 in Codex on a remote workspace: a "Close it" run that Koloft quit on in the middle of its work, whose app-server on the machine the relaunch ends, is told to carry on when the relaunch reopens it, and closes for good once that turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    installCodexOnFakeRemote(env)
+    gitInit(remoteDir(env))
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    fs.writeFileSync(path.join(machineHome(env), 'fake-codex-busy-ms'), '120000')
+    const heard = (): string =>
+      textOfFilesUnder(env.home, /^fake-codex-wire\.jsonl$/) +
+      textOfFilesUnder(machineHome(env), /^fake-codex-wire\.jsonl$/)
+    try {
+      const first = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(first.page, env)
+        const dlg = await openCron(first.page, REMOTE_WS_NAME)
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent: 'Codex', name: 'Remote report', task: '/busy' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(first.page, 'Remote report')
+        await expect(cronRows(first.page, REMOTE_WS_NAME)).toHaveClass(/\bst-working\b/, {
+          timeout: 120_000
+        })
+      } finally {
+        await quitAndClose(first.app)
+      }
+      expect(heard()).not.toContain(A_RESTART_CUT_THE_RUN_OFF)
+
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await expect.poll(heard, { timeout: 120_000 }).toContain(A_RESTART_CUT_THE_RUN_OFF)
+        await openCron(page, REMOTE_WS_NAME)
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+          .toBe('Done — closed itself')
+      } finally {
+        await quitAndClose(app)
+      }
+    } finally {
+      killFakeRemote(env)
+    }
+  })
 
   test('BB-M13: the workspace forecast row shows the nearest next run', async ({ env }) => {
     const now = new Date()
