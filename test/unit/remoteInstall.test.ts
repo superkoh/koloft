@@ -135,17 +135,14 @@ name=\${url##*/}
 cat "$FIXTURES/$name" > "$out"
 exit 0`
 
-const HOMEBREW_RSYNC_THE_PATH_CANNOT_HIDE = [
-  '/opt/homebrew/bin/rsync',
-  '/usr/local/bin/rsync'
-].filter((f) => fs.existsSync(f))
+const homebrewCopiesThePathCannotHide = (...tools: string[]): string[] =>
+  ['/opt/homebrew/bin', '/usr/local/bin']
+    .flatMap((dir) => tools.map((tool) => path.join(dir, tool)))
+    .filter((f) => fs.existsSync(f))
 
-const HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE = [
-  '/opt/homebrew/bin/curl',
-  '/opt/homebrew/bin/wget',
-  '/usr/local/bin/curl',
-  '/usr/local/bin/wget'
-].filter((f) => fs.existsSync(f))
+const HOMEBREW_RSYNC_THE_PATH_CANNOT_HIDE = homebrewCopiesThePathCannotHide('rsync')
+
+const HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE = homebrewCopiesThePathCannotHide('curl', 'wget')
 
 const NODE = (version: string) => `[ "$1" = -v ] && echo v${version}\nexit 0`
 
