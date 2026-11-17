@@ -109,6 +109,31 @@ describe('judgeTurn — the Assist decides only what code cannot', () => {
       return answer
     }
 
+  it('the Assist is asked on its turn row with this exact text, and sees only the last 4000 characters of the reply', async () => {
+    const jobs: unknown[] = []
+    const reply = `${'a'.repeat(10)}${'b'.repeat(3990)}${'c'.repeat(10)}`
+    await judgeTurn(async (job) => {
+      jobs.push(job)
+      return 'ACT'
+    }, turn(reply))
+    expect(jobs).toEqual([
+      {
+        row: 'turn',
+        system:
+          'You decide whether a person has to act on what a coding agent just said, and which short replies they could send.',
+        prompt: `A coding agent just finished its turn and stopped. Read its last reply.
+Answer ACT if the reply asks the person anything: a question, an approval, a choice, information, a login, or a step only the person can do before the work goes on.
+Answer NEWS if the reply only reports: the work is done, or the agent is waiting on something else (another session, a background job, a build, a notice) and will carry on by itself, and it asks the person for nothing.
+When unsure, answer ACT.
+Write ACT or NEWS alone on the first line.
+After ACT, if the person could answer with one tap, add a line "Q: " naming what they decide in at most 8 words, then 2 to 4 lines "- ", each a different answer they could send as it is, at most 5 words, the one the agent recommends first. Every answer must move the work on: no "let me look first" or "wait". A no means "not now", never a step the agent did not offer, such as closing a PR. Write them in the language of the agent's reply. Add none when the person has to type something only they know, or do a step away from the chat.
+
+Agent replied:
+${'b'.repeat(3990)}${'c'.repeat(10)}`
+      }
+    ])
+  })
+
   it('news only when the Assist answers NEWS; ACT, no answer or an empty reply keep it a call', async () => {
     asks.length = 0
     expect(
