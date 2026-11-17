@@ -833,7 +833,7 @@ const slash = new SlashCommands({
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => tracker.turnOver(tabId),
   asking: asksTheOwner,
-  takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
+  takesTyping: (tabId) => !!sessionAsks?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
     if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
@@ -4061,6 +4061,7 @@ app.whenReady().then(() => {
   })
   const tabState = {
     backendOf: (tabId: string) => backendIdOf(ptyMgr.get(tabId)?.kind),
+    boundKey: (tabId: string) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId: string) => tracker.statusOf(tabId),
     awaitsInput: (tabId: string) => tracker.awaitsInput(tabId),
     turnOver: (tabId: string) => tracker.turnOver(tabId),
@@ -4071,6 +4072,8 @@ app.whenReady().then(() => {
   }
   const asks = new SessionAsks({
     ...tabState,
+    showsPromptBeforeBind,
+    queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     touchedSinceAsked: (tabId) => {
       const asked = questionSeenAt(tabId)
       return asked !== undefined && ownerTouchedSince(tabId, asked)
@@ -4269,11 +4272,8 @@ app.whenReady().then(() => {
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     askPlaced: (card, at) => buttons.placed(card, at),
-    boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
-    showsPromptBeforeBind,
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
@@ -4301,7 +4301,7 @@ app.whenReady().then(() => {
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
       const lobby = butlerNow.channel()?.channelId
-      return (!!lobby && relay.delivering(lobby)) || (!!tab && !relay.takesCommand(tab))
+      return (!!lobby && relay.delivering(lobby)) || (!!tab && !asks.takesCommand(tab))
     },
     tell: (text) => relay.tellQuietly(butlerDestination(), text),
     now: Date.now,

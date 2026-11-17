@@ -51,15 +51,6 @@ export const unreadableInRoom = (butler: string, lobby: string | undefined): str
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 
-// MUSE§7 AGY§15
-const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
-  claude: true,
-  codex: true,
-  muse: false,
-  agy: true
-}
-const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
-  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const QUEUED = '⏳'
 const DELIVERED = '✅'
 const PAGE = 100
@@ -91,7 +82,6 @@ export interface RelayDeps {
   backendOf(tabId: string): BackendId | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
-  turnOver(tabId: string): boolean
   type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
   pendingApproval(tabId: string): CodexApproval | undefined
   pendingQuestion(tabId: string): CodexQuestion | undefined
@@ -99,7 +89,8 @@ export interface RelayDeps {
     SessionAsks,
     | 'listen'
     | 'dialogOpen'
-    | 'hookWaits'
+    | 'typable'
+    | 'takesCommand'
     | 'askOf'
     | 'stillAsks'
     | 'claudeAskAnswerable'
@@ -124,10 +115,8 @@ export interface RelayDeps {
   withButtons(tabId: string, view: DialogView, card: Card): Card
   askPlaced(card: Card, at: PlacedAsk | undefined): void
   boundKey(tabId: string): string | undefined
-  showsPromptBeforeBind(tabId: string): boolean
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
-  queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   modeOf(tabId: string): ModeClass
@@ -290,7 +279,8 @@ export class DiscordRelay {
       dest.seen(m.id)
       return
     }
-    const takes = command === undefined ? this.typable(tab ?? '') : this.takesCommand(tab ?? '')
+    const takes =
+      command === undefined ? this.d.asks.typable(tab ?? '') : this.d.asks.takesCommand(tab ?? '')
     const waits = !tab || this.delivering(dest.channelId) || !takes
     if (waits) this.react(m, QUEUED, true)
     this.enqueue(dest, {
@@ -429,7 +419,7 @@ export class DiscordRelay {
   private async readyTab(dest: Destination): Promise<string> {
     const already = dest.liveTab()
     const tab = await dest.open()
-    if (!(await this.d.ready(tab, () => this.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
+    if (!(await this.d.ready(tab, () => this.d.asks.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
       throw new Error(
         this.d.alive(tab)
           ? `${dest.name} did not get ready in time.`
@@ -437,30 +427,6 @@ export class DiscordRelay {
       )
     if (tab !== already) await sleep(PROMPT_SETTLES_AFTER_BIND_MS)
     return tab
-  }
-
-  // AGY§8
-  private typable(tab: string): boolean {
-    if (this.d.showsPromptBeforeBind(tab)) return true
-    const status = this.d.status(tab)
-    return (
-      !!this.d.boundKey(tab) &&
-      status !== undefined &&
-      status !== 'approval' &&
-      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
-      !this.d.asks.hookWaits(tab)
-    )
-  }
-
-  // AGY§8
-  takesCommand(tab: string): boolean {
-    return (
-      this.d.showsPromptBeforeBind(tab) ||
-      (this.typable(tab) &&
-        this.d.turnOver(tab) &&
-        !this.d.asks.dialogOpen(tab) &&
-        this.d.queueDrained(tab))
-    )
   }
 
   private async textOf(m: DiscordMessage): Promise<string> {

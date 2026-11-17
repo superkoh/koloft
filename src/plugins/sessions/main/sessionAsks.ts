@@ -46,10 +46,22 @@ export const PICKS_MAY_STILL_BE_TICKED =
 export const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
   backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
 
+// MUSE§7 AGY§15
+const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
+  claude: true,
+  codex: true,
+  muse: false,
+  agy: true
+}
+const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
+  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 
 export interface SessionAskDeps {
+  showsPromptBeforeBind(tabId: string): boolean
+  boundKey(tabId: string): string | undefined
+  queueDrained(tabId: string): boolean
   backendOf(tabId: string): BackendId | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
@@ -112,7 +124,31 @@ export class SessionAsks {
     return !!this.openAsk(tab) || !!this.d.pendingApproval(tab) || !!this.d.pendingQuestion(tab)
   }
 
-  hookWaits(tab: string): boolean {
+  // AGY§8
+  typable(tab: string): boolean {
+    if (this.d.showsPromptBeforeBind(tab)) return true
+    const status = this.d.status(tab)
+    return (
+      !!this.d.boundKey(tab) &&
+      status !== undefined &&
+      status !== 'approval' &&
+      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
+      !this.hookWaits(tab)
+    )
+  }
+
+  // AGY§8
+  takesCommand(tab: string): boolean {
+    return (
+      this.d.showsPromptBeforeBind(tab) ||
+      (this.typable(tab) &&
+        this.d.turnOver(tab) &&
+        !this.dialogOpen(tab) &&
+        this.d.queueDrained(tab))
+    )
+  }
+
+  private hookWaits(tab: string): boolean {
     const hooks = this.askHooks.get(tab)
     if (!hooks) return false
     for (const hook of hooks)
