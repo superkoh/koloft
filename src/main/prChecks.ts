@@ -102,18 +102,43 @@ export function jobIdOf(link: string): string | null {
 
 // PLATFORM§32
 const LOG_LINE_PREFIX = /^[^\t\n]*\t[^\t\n]*\t﻿?\d{4}-\d\d-\d\dT[\d:.]+Z ?/
+// PLATFORM§32
+const ESC_WRITTEN_AS_CARET = /\^\[(?=\[)/g
+// PLATFORM§32
+const STEP_START = '##[group]Run '
+// PLATFORM§32
+const CLEANUP_START = 'Post job cleanup.'
+
+function startsAStep(line: string): boolean {
+  return line.startsWith(STEP_START) || line === CLEANUP_START
+}
 
 export function trimFailedLog(raw: string, limit = FAILED_LOG_LIMIT): string {
   const lines = raw
     .split('\n')
-    .map((l) => stripTerminalCodes(l.replace(LOG_LINE_PREFIX, '')).trimEnd())
+    .map((l) =>
+      stripTerminalCodes(
+        l.replace(LOG_LINE_PREFIX, '').replace(ESC_WRITTEN_AS_CARET, '\x1b')
+      ).trimEnd()
+    )
   const firstError = lines.findIndex((l) => l.startsWith('##[error]'))
   let end = firstError < 0 ? lines.length : firstError + 1 + LINES_KEPT_AFTER_FIRST_ERROR
   end = Math.min(end, lines.length)
+  if (firstError >= 0) {
+    const nextStep = lines.findIndex((l, i) => i > firstError && i < end && startsAStep(l))
+    if (nextStep >= 0) end = nextStep
+  }
   while (end > 0 && lines[end - 1] === '') end--
+  const failedStepStart =
+    firstError < 0
+      ? 0
+      : Math.max(
+          0,
+          lines.findLastIndex((l, i) => i < firstError && l.startsWith(STEP_START))
+        )
   const kept: string[] = []
   let size = 0
-  for (let i = end - 1; i >= 0; i--) {
+  for (let i = end - 1; i >= failedStepStart; i--) {
     const cost = lines[i].length + 1
     if (size + cost > limit) break
     kept.unshift(lines[i])

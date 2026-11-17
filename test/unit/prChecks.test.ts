@@ -113,6 +113,30 @@ describe('the failing log cut to the part around the first error', () => {
     expect(cut).not.toContain('setup line 0\n')
   })
 
+  it('cuts a whole-job log to the failed step, from its ##[group]Run line to the first error, stopping at the cleanup that follows and reading the ^[ gh writes for ESC as a colour code', () => {
+    const lines = [
+      logLine('##[group]Run actions/checkout@v7', 'UNKNOWN STEP'),
+      logLine('[command]/opt/homebrew/bin/git config --local gc.auto 0', 'UNKNOWN STEP'),
+      logLine('##[endgroup]', 'UNKNOWN STEP'),
+      logLine('##[group]Run npm ci', 'UNKNOWN STEP'),
+      logLine('^[[36;1mnpm ci^[[0m', 'UNKNOWN STEP'),
+      logLine('##[endgroup]', 'UNKNOWN STEP'),
+      logLine('npm error code ERESOLVE', 'UNKNOWN STEP'),
+      logLine('##[error]Process completed with exit code 1.', 'UNKNOWN STEP'),
+      logLine('Post job cleanup.', 'UNKNOWN STEP'),
+      logLine('[command]/opt/homebrew/bin/git version', 'UNKNOWN STEP')
+    ]
+    expect(trimFailedLog(lines.join('\n'))).toBe(
+      [
+        '##[group]Run npm ci',
+        'npm ci',
+        '##[endgroup]',
+        'npm error code ERESOLVE',
+        '##[error]Process completed with exit code 1.'
+      ].join('\n')
+    )
+  })
+
   it('keeps the tail when the log has no error marker', () => {
     const lines = Array.from({ length: 2000 }, (_, i) => logLine(`line ${i}`))
     const cut = trimFailedLog(lines.join('\n'))
