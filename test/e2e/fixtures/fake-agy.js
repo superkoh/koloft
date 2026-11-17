@@ -1264,6 +1264,35 @@ function fileAsk(turn, file, kind) {
         : undefined
   }
 }
+// AGY§26
+function readAsk(file) {
+  return {
+    needed: !skipPermissions && path.relative(process.cwd(), file).startsWith('..'),
+    stepType: 'CORTEX_STEP_TYPE_VIEW_FILE',
+    requestedInteraction: {
+      permission: {
+        resource: { action: 'read_file', target: file },
+        actionDescription: `Analyzing ${path.basename(file)}`,
+        triggerSource: { type: 'TYPE_DEFAULT_FALLBACK' }
+      }
+    },
+    frame: ['permission', `Approve ReadFile: Read: ${file}`],
+    screen: `File access\nRead: ${file}\nReason: outside workspace\nAllow access to this file?\n> 1. Yes, allow access\n  2. Yes, and always allow non-workspace access\n  3. No, deny access`,
+    deniedError: `user denied permission for read_file(${file})`,
+    onKey: (key) => {
+      if (key === '1' || key === '2' || key === ENTER) return { allow: true }
+      if (key === '3') return { allow: false, via: 'key' }
+      if (key === ESC) return { allow: false, via: 'esc' }
+      return undefined
+    },
+    fromApi: (interaction) =>
+      interaction.permission
+        ? interaction.permission.allow
+          ? { allow: true, fromApi: true }
+          : { allow: false, via: 'api' }
+        : undefined
+  }
+}
 function commandAsk(cmd) {
   const prefix = cmd.split(/\s+/)[0]
   const shellName = path.basename(modelShell())
@@ -1408,6 +1437,21 @@ async function editScenario(turn, target) {
     }
   })
   return endToolTurn(turn, result, `Edited ${shown}`, shown)
+}
+async function readScenario(turn, target) {
+  const shown = target || 'fake-agy.txt'
+  const file = path.resolve(process.cwd(), shown)
+  const result = await useTool(turn, {
+    name: 'read_file',
+    args: { Path: file },
+    ask: readAsk(file),
+    run: () => {
+      const text = fs.readFileSync(file, 'utf8')
+      say(text.replace(/\n$/, ''))
+      return { content: text }
+    }
+  })
+  return endToolTurn(turn, result, `Read ${shown}`, shown)
 }
 async function bashScenario(turn, command) {
   const c = turn.conv
@@ -1661,6 +1705,7 @@ const ASKED_FOR_THE_PLAN_AGAIN = 'approve the same plan again'
 const SCENARIOS = {
   '/write': writeScenario,
   '/edit': editScenario,
+  '/read': readScenario,
   '/bash': bashScenario,
   '/ask': askScenario,
   '/bg': backgroundScenario,

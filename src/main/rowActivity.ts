@@ -113,7 +113,7 @@ export function agyToolDid(
   name: string,
   arg: (key: string) => string | undefined
 ): string | undefined {
-  const file = arg('TargetFile')
+  const file = arg('TargetFile') ?? arg('Path') ?? arg('AbsolutePath')
   const command = arg('CommandLine')
   switch (name) {
     case 'ask_question':
@@ -121,9 +121,14 @@ export function agyToolDid(
     case 'run_command':
       return command && ran(command)
     case 'replace_file_content':
+    case 'edit_file':
       return file && edited(file)
     case 'write_to_file':
+    case 'write_file':
       return file && wrote(file)
+    case 'read_file':
+    case 'view_file':
+      return file && read(file)
   }
   return name ? used(name) : undefined
 }

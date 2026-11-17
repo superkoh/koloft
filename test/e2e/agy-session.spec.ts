@@ -73,6 +73,7 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
 const THE_FORM_DRAWS_ITS_TRUST_ANSWER_MS = 500
+const OUTSIDE_FILE_WORD = 'zebra-quilt-41'
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -461,6 +462,58 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     } finally {
       await quitAndClose(app)
       await fake.close()
+    }
+  })
+
+  // AGY§26
+  test('a file outside its workspace agy asks to read shows the row as wanting to read it; Deny on the Inbox card declines it through the local API, so agy never reads it and the row leaves waiting for approval, and Allow lets the next ask read it, after which the row says it read that file', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true, skipPermissions: false })
+    const outside = path.join(env.workspaces.a, '..', 'agy-outside.txt')
+    fs.writeFileSync(outside, `${OUTSIDE_FILE_WORD}\n`)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'first turn')
+      const { tabId } = await agyConversationOnceFirstTurnEnded(page)
+      const row = agyRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await page.locator('.ibx-entry').click()
+      const button = (name: RegExp): Locator =>
+        page.locator('.inbox-page .ibx-item .ibx-btn', { hasText: name }).first()
+      const answers = (): unknown[] =>
+        apiCalls(env)
+          .filter((c) => c.method === 'HandleCascadeUserInteraction')
+          .map((c) => (c.body as { interaction?: unknown }).interaction)
+
+      for (const [verdict, allow] of [
+        [/^Deny$/, false],
+        [/^Allow$/, true]
+      ] as const) {
+        await page.evaluate(
+          (t) => window.api.terminal.write(t, '/read ../agy-outside.txt\r'),
+          tabId
+        )
+        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+        await expect(row.locator('.ws-tab-act')).toHaveText('Wants to read: agy-outside.txt')
+        await button(verdict).click()
+        await expect
+          .poll(answers)
+          .toContainEqual(expect.objectContaining({ permission: { allow } }))
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+        await expect
+          .poll(() => terminalText(page, tabId))
+          .toContain(allow ? 'Read ../agy-outside.txt' : 'Denied: ../agy-outside.txt')
+        expect((await terminalText(page, tabId)).includes(OUTSIDE_FILE_WORD)).toBe(allow)
+      }
+      await expect(row.locator('.ws-tab-act')).toHaveText('Last: Read agy-outside.txt')
+    } finally {
+      await quitAndClose(app)
     }
   })
 

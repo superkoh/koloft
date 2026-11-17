@@ -42,6 +42,17 @@ describe('what a row says each agent did, in plain words', () => {
     expect(agyToolDid('search_web', arg)).toBe('Used search_web')
     expect(agyToolDid('ask_question', arg)).toBeUndefined()
   })
+
+  it('Antigravity: the file tools of newer builds, which name the file Path, and the reads of every build', () => {
+    const args: Record<string, string> = { Path: '/r/f.go', AbsolutePath: '/r/g.go' }
+    const arg = (k: string): string | undefined => args[k]
+    expect(agyToolDid('write_file', arg)).toBe('Wrote f.go')
+    expect(agyToolDid('edit_file', arg)).toBe('Edited f.go')
+    expect(agyToolDid('read_file', arg)).toBe('Read f.go')
+    expect(agyToolDid('view_file', (k) => (k === 'AbsolutePath' ? '/r/g.go' : undefined))).toBe(
+      'Read g.go'
+    )
+  })
 })
 
 describe('what a row says while the session waits on you', () => {
