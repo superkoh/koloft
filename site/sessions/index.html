@@ -512,24 +512,6 @@
             reads <code>Name one workspace · Esc</code>.
           </li>
           <li>
-            To show the new session a picture, paste it into the box with <kbd>⌘V</kbd>: a
-            screenshot, or a picture file you copied in Finder (PNG, JPEG, GIF or WebP). A small
-            copy shows under your words. You can paste more than one; the × on a picture takes it
-            away. A picture needs words with it: with no words, the button stays off and the tip
-            reads <code>Say what to do with the picture · Esc</code>. When the session starts, its
-            first message ends with one <code>Picture: …</code> line per picture, naming a copy
-            Koloft keeps on this Mac for about a week. When Koloft hands your words to a helper of
-            your butler, the helper gets the same lines (not when you ask to set up Discord). Assist
-            sees only your words, not the picture.
-          </li>
-          <li>
-            Claude Code, Codex, Muse Code and Antigravity all get the <code>Picture:</code> lines.
-            Antigravity may ask you before it opens a picture. In a
-            <a href="../remote/">remote folder</a>, Koloft tries to copy the picture to that machine
-            first, so the line names the copy there; if the copy fails, a note says so and the line
-            keeps the path on this Mac.
-          </li>
-          <li>
             Not everything you type starts a session. "open settings" or "check for updates" just
             does it. Ask for a session by what it was doing ("go to the session that was fixing
             login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. What <kbd>⌘P</kbd> cannot do
@@ -541,6 +523,26 @@
             the button, or one from the ▾ list or <kbd>⌘⏎</kbd>), does the job and reports back to
             your butler. "Set up Discord" works its own way (see
             <a href="../discord/#set-up">discord</a>).
+          </li>
+          <li>
+            To show the agent a picture, such as a screenshot, paste it into the box with
+            <kbd>⌘V</kbd>. Koloft takes PNG, JPEG, GIF and WebP. A small copy shows under your
+            words. You can paste more than one; the × on a picture takes it away. A picture needs
+            words with it. With only a picture, the button stays off and the tip reads
+            <code>Say what to do with the picture · Esc</code>.
+          </li>
+          <li>
+            When your words start a session, or go to a helper of your butler, they end with one
+            <code>Picture: …</code> line per picture. The line names a copy Koloft keeps on this Mac
+            for about a week. Claude Code, Codex, Muse Code and Antigravity all get these lines;
+            Antigravity may ask you before it opens a picture. When a session starts in a
+            <a href="../remote/">remote folder</a>, Koloft first copies the picture to that machine,
+            and the line names the copy there. That copy is cleared out the same way as a
+            <a href="../workbench/#pick">picked part of a page</a>. If the copy fails, Koloft says
+            <code>A pasted picture could not be copied to …</code>, and the line names the file on
+            this Mac. The picture is left behind when <kbd>⌘P</kbd> jumps to a session, does an
+            action like "open settings", or sets up Discord. Assist sees only your words, not the
+            picture.
           </li>
           <li>
             When none of your accounts can run <a href="../accounts/#assist">Assist</a>, the button
