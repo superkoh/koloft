@@ -166,6 +166,14 @@ method. A recheck adds its date, version and command to the bullet.
   zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
   caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
   `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
+- **An empty HOME does not hide Homebrew from a login shell.** The Homebrew installer
+  writes `/etc/paths.d/homebrew` (`/opt/homebrew/bin`), and `path_helper` adds every
+  `/etc/paths.d` file after `/etc/paths`, so `zsh -l -i -c` and `bash -l -i -c` with a
+  fresh HOME and `PATH=/usr/bin:/bin:/usr/sbin:/sbin` both found a brew cask
+  `/opt/homebrew/bin/codex`. `zsh -o NO_GLOBAL_RCS -l -i -c` skips `/etc/zprofile` (and
+  so `path_helper`) and `/etc/zshrc` but still reads the HOME's own `.zprofile`: there
+  `codex` was not found, and a `PATH` line in that `.zprofile` held. (2026-11-17,
+  macOS 27.2, zsh 5.9, Codex 0.169.0 as a brew cask, a scratch node script.)
 
 ## §3 macOS system tools and limits
 

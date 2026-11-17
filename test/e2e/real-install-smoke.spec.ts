@@ -13,6 +13,13 @@ test.skip(
 
 const OFFICIAL_INSTALL_MS = 5 * 60_000
 
+// PLATFORM§2
+function loginShellBlindToThisMacsGlobalPath(env: E2EEnv): string {
+  const shell = path.join(env.home, 'zsh-without-global-rcs')
+  fs.writeFileSync(shell, '#!/bin/sh\nexec /bin/zsh -o NO_GLOBAL_RCS "$@"\n', { mode: 0o755 })
+  return shell
+}
+
 function nothingInstalled(env: E2EEnv): void {
   fs.writeFileSync(
     path.join(env.userData, 'layout.json'),
@@ -27,6 +34,7 @@ function nothingInstalled(env: E2EEnv): void {
   seedSettings(env, { onboardingSeen: false })
   seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
   env.launchEnv.PATH = `${path.dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`
+  env.launchEnv.SHELL = loginShellBlindToThisMacsGlobalPath(env)
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   delete env.launchEnv.KOLOFT_CODEX_CMD
 }
