@@ -453,6 +453,8 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
           .toContain(allow ? 'Read ../agy-outside.txt' : 'Interrupted')
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
         expect((await terminalText(page, tabId)).includes(word)).toBe(allow)
+        if (!allow)
+          await expect(row.locator('.ws-tab-act')).not.toHaveText('Last: Read agy-outside.txt')
       }
       await expect(row.locator('.ws-tab-act')).toHaveText('Last: Read agy-outside.txt', {
         timeout: 60_000

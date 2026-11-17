@@ -1256,13 +1256,14 @@ function fileAsk(turn, file, kind) {
       }
       return undefined
     },
-    fromApi: (interaction) =>
-      interaction.permission
-        ? interaction.permission.allow
-          ? { allow: true, fromApi: true }
-          : { allow: false, via: 'api' }
-        : undefined
+    fromApi: permissionFromApi
   }
+}
+function permissionFromApi(interaction) {
+  if (!interaction.permission) return undefined
+  return interaction.permission.allow
+    ? { allow: true, fromApi: true }
+    : { allow: false, via: 'api' }
 }
 // AGY§26
 function readAsk(file) {
@@ -1280,17 +1281,12 @@ function readAsk(file) {
     screen: `File access\nRead: ${file}\nReason: outside workspace\nAllow access to this file?\n> 1. Yes, allow access\n  2. Yes, and always allow non-workspace access\n  3. No, deny access`,
     deniedError: `user denied permission for read_file(${file})`,
     onKey: (key) => {
-      if (key === '1' || key === '2' || key === ENTER) return { allow: true }
+      if (key === '1' || key === ENTER) return { allow: true }
       if (key === '3') return { allow: false, via: 'key' }
       if (key === ESC) return { allow: false, via: 'esc' }
       return undefined
     },
-    fromApi: (interaction) =>
-      interaction.permission
-        ? interaction.permission.allow
-          ? { allow: true, fromApi: true }
-          : { allow: false, via: 'api' }
-        : undefined
+    fromApi: permissionFromApi
   }
 }
 function commandAsk(cmd) {
