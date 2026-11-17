@@ -112,15 +112,15 @@ flowchart LR
 | `src/core/prompt.ts` | `composePrompt`, which puts text blocks together | yes |
 | `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports a plugin's manifest | yes |
 | `src/plugins/<id>/plugin.ts` | the plugin's manifest | all eleven |
-| `src/plugins/<id>/prompts/` | the plugin's text blocks | six plugins |
+| `src/plugins/<id>/prompts/` | the plugin's text blocks for prompts | six plugins |
+| `src/plugins/<id>/skill/` | the plugin's text blocks for `koloft help` and the `koloft` skill | nine plugins |
 | `src/plugins/<id>/api.ts` | what other plugins may import | four plugins |
 | `src/plugins/<id>/main/` | code that runs in Koloft's main process | none yet |
 | `src/plugins/<id>/renderer/` | code that runs in Koloft's window | none yet |
 | `src/plugins/<id>/shared/` | code both of them use | none yet |
 
 Koloft's main-process type check skips every plugin's `renderer/` folder, and its window type
-check skips every `main/` folder; both read the rest of a plugin folder. The plan in #1964
-also names a `skill/` folder inside a plugin; nothing in the code knows it yet.
+check skips every `main/` folder; both read the rest of a plugin folder.
 
 ## The manifest
 
@@ -243,7 +243,11 @@ These are the slots, values and facts in use today:
 | slot | `butler` | Butler; the butler's prompt |
 | slot | `butler-helper` | Butler; the prompt of a helper the butler starts |
 | slot | `butler-koloft` | Sessions core, GitHub, Discord, Todo; sentences in the butler's prompt |
+| slot | `koloft-help` | Sessions core; the guide that `koloft help` prints, the `koloft` skill holds and the `koloft` command carries as a file, with one slot for each other section in its order |
+| slot | `koloft-help-…` | one for each section, rule or half-sentence of that guide; filled by Sessions core, Workbench, Scheduled tasks, Inbox, Todo, Passwords and sign-in, Discord, GitHub and Browser control (each plugin's `skill/text.ts` names its own) |
+| slot | `koloft-skill` | Sessions core; the `koloft` skill's one-line description, with slots `koloft-skill-…` where Workbench, Scheduled tasks, Todo, Passwords and sign-in and Browser control each add a few words |
 | value | `butler-name` | the caller; the butler's name |
+| value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
 | fact | `discord-bound` | the caller, when Discord has a bound channel |
 
