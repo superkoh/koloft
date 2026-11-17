@@ -246,6 +246,15 @@
           ended), and in a <a href="#folder-workbench">folder's own Workbench</a> (which has no
           session).
         </p>
+        <p>
+          A file path the agent prints in its own terminal, like <code>src/app.ts:42</code>, is a
+          link too. Hover it and it is underlined; <kbd>⌘</kbd>-click it and the file opens in that
+          session's Workbench, at the line when the path gives one. A plain click does nothing. Only
+          a path to a file that is really there becomes a link. In a worktree session it opens the
+          worktree's copy. Every agent gets the same, on your Mac and in a
+          <a href="../remote/">remote folder</a>, where the file is looked up and opened on the
+          machine; there the underline comes once the mouse rests on the line for a moment.
+        </p>
 
         <h2 id="web-tabs">Web tabs</h2>
         <p>

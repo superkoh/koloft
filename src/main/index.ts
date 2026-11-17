@@ -518,7 +518,8 @@ import {
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { butlerHelperRole, projectRulesForTheButler } from '@shared/agentGuide'
+import { projectRulesForTheButler } from '@shared/agentGuide'
+import { butlerHelperRole } from '@plugins/butler/api'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
 import { projectDefaults } from './projectDefaults'

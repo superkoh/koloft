@@ -12,13 +12,9 @@ import {
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
 import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
-import {
-  BUTLER_SAYS_OPENING,
-  DISCORD_PREFIX,
-  PICK_FOR_THE_TASK,
-  ownerSays,
-  withProjectRules
-} from '@shared/agentGuide'
+import { BUTLER_SAYS_OPENING, ownerSays } from '@shared/agentGuide'
+import { PICK_FOR_THE_TASK, withProjectRules } from '@plugins/sessions/api'
+import { DISCORD_PREFIX } from '@plugins/discord/api'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
