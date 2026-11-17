@@ -13,8 +13,8 @@ import {
   type KoloftInboxDeps
 } from '../../src/main/koloftInbox'
 import { inboxVerb } from '../../src/main/agentInbox'
-import { ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
-import { SHOWS_NO_DIALOG } from '../../src/main/discord/relay'
+import { ANSWER_NOT_TAKEN } from '../../src/plugins/sessions/main/dialog'
+import { SHOWS_NO_DIALOG } from '../../src/plugins/sessions/main/sessionAsks'
 import type { AgentCaller } from '../../src/main/agentRequests'
 
 function host(sent: [string, string][] = []): InboxHost {

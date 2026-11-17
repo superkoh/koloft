@@ -1,11 +1,10 @@
 import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
-import { fail, type Parsed } from '../agentRequests'
-import type { ToolCall } from '../sessionTracker'
-import { keysFor, typedPieces } from '../typeKeys'
+import { fail, type Parsed } from '../../../main/agentRequests'
+import type { ToolCall } from '../../../main/sessionTracker'
+import { keysFor, typedPieces } from '../../../main/typeKeys'
 import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
-import type { CardButton } from './cards'
 
 interface Option {
   label: string
@@ -92,7 +91,7 @@ export function dialogText(p: AskPayload): string {
 export interface Choice {
   label: string
   reply: string
-  style: CardButton['style']
+  style: 'secondary' | 'success' | 'danger'
 }
 
 export const YES_OR_NO: Choice[] = [
