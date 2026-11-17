@@ -64,7 +64,10 @@ import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/t
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
+import {
+  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
+  ANSWER_NOT_TAKEN
+} from '../../src/plugins/sessions/main/dialog'
 
 test.setTimeout(120_000)
 

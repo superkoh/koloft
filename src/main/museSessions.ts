@@ -77,7 +77,7 @@ import {
 import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
 import { MIRROR_SUFFIX, MUSE_HELD_SH, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
 import { sleep } from './codexTransport'
-import type { CodexApproval, CodexQuestion } from './discord/dialog'
+import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
 import { museToolDid } from './rowActivity'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'

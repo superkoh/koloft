@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto'
 import type { Card } from './cards'
-import type { Choice, DialogView } from './dialog'
+import type { Choice, DialogView } from '@plugins/sessions/main/dialog'
 import { privately, type DiscordInteraction } from './link'
-import { ANSWER_ON_ITS_WAY } from './relay'
+import { ANSWER_ON_ITS_WAY } from '@plugins/sessions/main/sessionAsks'
 import { errorText } from '../agentRequests'
 
 export const NO_LONGER_OPEN = 'This question is no longer open.'

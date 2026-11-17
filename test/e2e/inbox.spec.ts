@@ -50,7 +50,7 @@ import {
   ASKED_BEFORE_IT_STOPPED,
   SHOW_PLAN_AGAIN
 } from '../../src/main/koloftInbox'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/plugins/sessions/main/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const KEYS_READ_APART_MS = 300
