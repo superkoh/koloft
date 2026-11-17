@@ -4,8 +4,6 @@ import { SESSION_BACKENDS } from './sessionBackend'
 import { tiersOf } from './sessionPicks'
 import { PICKED_FLAGS, PICK_FOR_THE_TASK, withProjectRules } from '@plugins/sessions/api'
 
-export { OWNER_QUOTE_MARKS }
-
 export const BUTLER_SAYS_OPENING = "(From the butler, Koloft's AI, for your owner."
 
 export function ownerSays(text: string): string {
