@@ -4013,6 +4013,7 @@ machine it leaves the agent and its tools as they start.
   checked: that colima's `docker exec` gave 0022, since the same e2e setup passed there
   until the move to OrbStack.
 
-Koloft dependents: none in the app. Every `docker exec` of the e2e lab goes through
-`labExec` (test/e2e/helpers/docker.ts), which sets umask 022, the umask an ssh login there
-gets, before its command.
+Koloft dependents: none in the app. Every `docker exec` in test/e2e/helpers/docker.ts goes
+through `labExec`, which sets umask 022, the umask an ssh login there gets, before its
+command. The `docker exec` calls remote-git-accounts.spec.ts makes itself (a port relay,
+a `chown`, a `chmod`) write no file, and do not.
