@@ -4064,7 +4064,6 @@ app.whenReady().then(() => {
     boundKey: (tabId: string) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId: string) => tracker.statusOf(tabId),
     awaitsInput: (tabId: string) => tracker.awaitsInput(tabId),
-    turnOver: (tabId: string) => tracker.turnOver(tabId),
     type: (tabId: string, keys: string[], stillWanted?: () => boolean) =>
       ptyMgr.type(tabId, keys, stillWanted),
     pendingApproval: (tabId: string) => storedOwnerOf(tabId)?.openApproval(tabId),
@@ -4072,6 +4071,7 @@ app.whenReady().then(() => {
   }
   const asks = new SessionAsks({
     ...tabState,
+    turnOver: (tabId) => tracker.turnOver(tabId),
     showsPromptBeforeBind,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     touchedSinceAsked: (tabId) => {
@@ -4088,15 +4088,7 @@ app.whenReady().then(() => {
     showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir
   })
-  asks.listen({
-    asksChanged: (tabId) => {
-      ptyMgr.wakeReady(tabId)
-      showAskOnItsRow(tabId)
-      void ownerAsleep.asks(tabId)
-    }
-  })
   sessionAsks = asks
-  asks.watchAsks()
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4174,7 +4166,12 @@ app.whenReady().then(() => {
   })
   askButtons = buttons
   asks.listen({
-    asksChanged: (tabId) => void buttons.check(tabId),
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      void buttons.check(tabId)
+      showAskOnItsRow(tabId)
+      void ownerAsleep.asks(tabId)
+    },
     answered: (tabId, reply) => buttons.answered(tabId, reply)
   })
   const secrets = new SecretAsks({
@@ -4279,6 +4276,7 @@ app.whenReady().then(() => {
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     attachmentsDir
   })
+  asks.watchAsks()
   const relay = discordRelay
   awayDigest = new AwayDigest({
     away: ownerAway,
