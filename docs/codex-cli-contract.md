@@ -2180,6 +2180,18 @@ reached.** The binary holds a native clipboard, a tmux clipboard and an OSC 52 f
 for tmux passthrough (`ESC Ptmux; … ESC \`). Which of them it picks on a machine with
 no display: read from the Mac's codex binary's `strings` (2026-11-05), not run.
 
+**Developer instructions written into the machine's start script reach the model whole.**
+2026-11-17, codex-cli 0.169.0 (`@openai/codex@0.169.0-linux-arm64`) in the e2e SSH lab
+image (Docker, Debian 12, arm64). The start script was Koloft's own `codexTabScript`,
+rendered from this repo with `developerInstructions([text])` among its `config`, the text
+being `koloftPrompt('codex')`, a blank line and a 7,232-byte block holding newlines,
+tabs, `'`, `"`, backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji
+(10,997 bytes in all). It ran as `ssh <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start'`
+from the Mac. By hand: a stand-in Responses server in the container as a `model_providers`
+entry in `config`, and a small WebSocket client in the container on the server's socket
+(`initialize`, `thread/start`, `turn/start`) instead of the TUI. The one `/v1/responses`
+request held the whole text as one exact string (SHA-256 matched).
+
 Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
 ## 17. Handing a session context and a command, and queuing a message into it
@@ -2272,6 +2284,15 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   files itself), as an `AGENTS.md` (the model went to spawn) and in the prompt (the model
   went to spawn). In both spawn runs `--ephemeral` made the spawn itself fail ("no rollout
   found for thread id").
+- **Developer instructions win over the folder's `AGENTS.md` when the two clash.**
+  2026-11-17, codex-cli 0.169.0 on the Mac, `codex exec --skip-git-repo-check --ephemeral
+  --json`, a scratch `CODEX_HOME` holding only a copy of one Koloft account's `auth.json`
+  (the account's default model; the copy did not refresh), in a scratch folder whose
+  `AGENTS.md` said `# Project rules` / "Every reply you write ends with this exact last
+  line: `Signed: PELICAN`". `-c developer_instructions=` carried `koloftPrompt('codex')`,
+  then `## Written by the owner for this workspace` / the same sentence with `Signed:
+  WALRUS`. Prompt: "Say hello in one short sentence."; about 15,700 input tokens a run.
+  All 3 runs ended `Signed: WALRUS` and none mentioned the other rule.
 - **`codex exec --json` shows a sub-agent only through the parent's `wait` items**: a run
   that started two sub-agents printed four `collab_tool_call` items, all `tool: "wait"`,
   and no spawn item; each child left its own rollout file under `$CODEX_HOME/sessions`

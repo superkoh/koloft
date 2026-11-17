@@ -473,8 +473,10 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   tool calls, their `Stop`), `session_id` is that child's own id, the one
   `SubagentStart` names as `child_session_id` (fake model).
 - Events Koloft reads: `SessionStart {source: "startup"|"clear"}` at the first prompt
-  of a session (never at idle, never on `muse resume` or in-TUI `/resume`; `/new` says
-  `startup`); `UserPromptSubmit {prompt, turn_id}`; `Stop {last_assistant_message,
+  of a session (never at idle, never on in-TUI `/resume`; `/new` says `startup`; on
+  `muse resume <id>` none up to 1.4.14, while 1.4.23 sends `{source: "resume"}` at the
+  first prompt after it — 2026-11-17, `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker, read
+  from Koloft's remote hook log); `UserPromptSubmit {prompt, turn_id}`; `Stop {last_assistant_message,
   turn_id}`; `StopFailure {error, last_assistant_message}`; `PreToolUse` / `PostToolUse`
   `{tool_name, tool_input, tool_response}`; `PostToolUseFailure`;
   `SubagentStart` / `SubagentStop {subagent_id, child_session_id}`; `SessionEnd`.
@@ -803,8 +805,31 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - A `SessionStart` hook (§9) that prints
   `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"…"}}`
   puts that text into the developer message of the model request (fake model: read
-  from the request body). It fires again after `/clear`; after `muse resume` the text
-  comes back from the session log without the hook firing.
+  from the request body). It fires again after `/clear`.
+- **On `muse resume` the hook's new text replaces the old one.** 2026-11-17,
+  `Muse Code 1.4.23 (1.4.23-R8977.1)` in the e2e SSH lab image (Docker, Debian 12),
+  started through Koloft's remote tab script as in §17, a stand-in model at `--base-url`
+  saving each request body. A session started with a hook text holding `OLDTEXT-A1` and a
+  first prompt was quit; the tab was started again with `resume <id>` and a hook text
+  holding `NEWTEXT-B2`, and a second prompt was typed. That request held both turns, and
+  its first developer message (where the hook text goes) held `NEWTEXT-B2` and no
+  `OLDTEXT-A1`; the hook got `source: "resume"` (§9). Up to 1.4.14 the old text came back
+  from the session log and the hook did not fire.
+- **A remote tab's hook text reaches the model whole.** Same day, version and lab:
+  Koloft's `museRunLines`, `remoteMuseHooks` and `sessionStartContext` (rendered from this
+  repo) with `koloftPrompt('muse')`, a blank line and a 7,232-byte block holding newlines,
+  tabs, `'`, `"`, backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji
+  (10,846 bytes), run as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`
+  from the Mac; the model key, model name and `--base-url` were added by hand. The first
+  developer message of the turn's request held the whole text as one exact string
+  (SHA-256 matched).
+- **A `SessionStart` output of up to 16,384 bytes reaches the model; one byte more and
+  none of it does.** Same day, version and lab, the same remote tab with only its hook
+  file swapped: the hook printed a JSON output of exactly N bytes whose
+  `additionalContext` began and ended with marker words. At N = 16,000 and 16,384 both
+  markers were in the turn's request; at 16,385, 16,390, 16,500, 20,000 and 40,000
+  neither was (the text was dropped whole, not cut), and the turn still ran. Koloft's own
+  Muse prompt makes a 3,717-byte output.
 - The same shape with `"hookEventName":"UserPromptSubmit"` lands as a developer message
   in that turn's request, and with `"PostToolUse"` in the next request after the tool
   (1.4.9, fake model, Docker, 2026-10: read from the request body).

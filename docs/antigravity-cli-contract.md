@@ -665,6 +665,20 @@ only downloaded the public release.
     hook:\n…". It is stored once in the transcript and sent in every later request,
     also after a `--conversation` or `-c` resume and in a `/fork`. 300 KB arrived
     whole.
+  - **On a remote tab it arrives whole, and a resume keeps the first text.** 2026-11-17,
+    agy 1.5.10 (manifest build, sha512 checked) in the e2e SSH lab image (Docker, Debian
+    12, arm64), a stand-in Gemini server on the API-key route. The tab was started the
+    way Koloft starts a remote one: its own `agyTab` (with `sessionStartOutput(text)` as
+    `start`), `mergedAgySettings`, `mergedAgyHooks` and the machine package's
+    `agy-hook.sh`, rendered from this repo and run as `ssh -tt <lab> 'sh
+    "$HOME/.koloft/tabs/<tab>.sh" start 120 40'` from the Mac; the key, the server's
+    address and `-i <prompt>` were added by hand. A text of `koloftPrompt('agy')`, a blank
+    line and a 7,232-byte block holding newlines, tabs, `'`, `"`, backticks, `$HOME`,
+    `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji (10,852 bytes) was in the
+    `gemini-3.1-pro-preview` request as one exact string (SHA-256 matched). A tab started
+    with a text holding `OLDTEXT-A1`, then started again with `--conversation=<its id>`
+    and a text holding `NEWTEXT-B2`: the resumed request carried both turns and
+    `OLDTEXT-A1`, never `NEWTEXT-B2`, and its hook log had no `SessionStart`.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
   - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux
@@ -1915,8 +1929,20 @@ repository, like the butler's.
   right after the write, in the same turn, did not hold it; the next turn of that
   conversation did, and so did a new conversation after `/clear`, a `-c` resume after
   the process was killed, and a fresh `-p`.
-- Not probed: the macOS build, `--mode accept-edits`, the Google sign-in route, and the
-  owner's own `~/.gemini/GEMINI.md` beside it.
+- **The folder's `AGENTS.md` wins over a `SessionStart` injected text when the two
+  clash.** 2026-11-17, agy 1.5.10 darwin-arm64 on the Mac with a real Google account: a
+  scratch `--gemini_dir` holding a copy of one Koloft account's sign-in file (written back
+  had it changed), `WSL_INTEROP=koloft`, the folder trusted, onboarding seeded, and a
+  `config/hooks.json` whose `SessionStart` printed `injectSteps` (§12) with
+  `koloftPrompt('agy')`, then `## Written by the owner for this workspace` / "Every reply
+  you write ends with this exact last line: `Signed: WALRUS`". The folder's `AGENTS.md`
+  said `# Project rules` / the same sentence with `Signed: PELICAN`. `agy -p "Say hello in
+  one short sentence." --output-format json`, about 11,100 input tokens a run. All 4 runs
+  ended `Signed: PELICAN` and none mentioned the other rule; in the 4th the hook was
+  seen to run and `WALRUS` was in the conversation's transcript. The injected text is a
+  user-role message after the prompt (§12), the file a rule in `systemInstruction`.
+- Not probed for the memory lines above: the macOS build, `--mode accept-edits`, the
+  Google sign-in route, and the owner's own `~/.gemini/GEMINI.md` beside it.
 
 Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
 starts, as a Codex one does (`src/main/assistMemory.ts`).
