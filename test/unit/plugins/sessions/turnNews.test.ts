@@ -5,8 +5,8 @@ import {
   waitsOnOtherWork,
   type Helper,
   type Verdict
-} from '../../src/main/turnNews'
-import type { Turn } from '../../src/shared/turns'
+} from '../../../../src/plugins/sessions/main/turnNews'
+import type { Turn } from '../../../../src/shared/turns'
 
 const turn = (reply: string): Turn => ({ said: [], reply, at: 1 })
 const nobodyOwes = (): boolean => false
@@ -48,18 +48,20 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     const j = new NewsJudge({
       judge: () => new Promise((resolve) => verdicts.push(resolve)),
       awaitingVerdict: (tabId) => marked.has(tabId),
-      markFyi: (tabId) => fyi.push(tabId),
-      judged: () => {}
+      markFyi: (tabId) => fyi.push(tabId)
     })
+    const heard: string[] = []
+    j.onVerdict((tabId, v) => heard.push(`first ${tabId} ${v.news}`))
+    j.onVerdict((tabId, v) => heard.push(`second ${tabId} ${v.news}`))
     const settle = async (news: boolean): Promise<void> => {
       verdicts.shift()?.({ news })
       await Promise.resolve()
     }
-    return { j, marked, fyi, verdicts, settle }
+    return { j, marked, fyi, heard, verdicts, settle }
   }
 
-  it('asks once the turn and its mark are both in, in either order, and a flapping mark keeps the verdict', async () => {
-    const { j, marked, fyi, verdicts, settle } = judge()
+  it('asks once the turn and its mark are both in, in either order, a flapping mark keeps the verdict, and every subscriber hears each verdict', async () => {
+    const { j, marked, fyi, heard, verdicts, settle } = judge()
     j.turnEnded('tab-A', turn('Done.'))
     expect(verdicts).toHaveLength(0)
     marked.add('tab-A')
@@ -74,6 +76,12 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     j.turnEnded('tab-B', turn('Merge it?'))
     await settle(false)
     expect(fyi).toEqual(['tab-A'])
+    expect(heard).toEqual([
+      'first tab-A true',
+      'second tab-A true',
+      'first tab-B false',
+      'second tab-B false'
+    ])
   })
 
   it('a turn counts as being judged from the ask until its verdict is back, or until the session is written to again', async () => {
@@ -91,12 +99,13 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
   })
 
   it('a verdict that comes back after the owner wrote again is dropped', async () => {
-    const { j, marked, fyi, settle } = judge()
+    const { j, marked, fyi, heard, settle } = judge()
     marked.add('tab-A')
     j.turnEnded('tab-A', turn('Done.'))
     j.prompted('tab-A')
     await settle(true)
     expect(fyi).toEqual([])
+    expect(heard).toEqual([])
   })
 })
 
