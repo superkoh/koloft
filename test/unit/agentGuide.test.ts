@@ -34,9 +34,10 @@ describe("a project's own rules for picking a session's model and effort", () =>
     }
   )
 
-  it('reach the prompt exactly as the owner wrote them, even when they hold {{…}} or $ patterns', () => {
+  it('reach the prompt and koloft help exactly as the owner wrote them, even when they hold {{…}} or $ patterns', () => {
     const odd = 'Name it {{butler-name}} or {{session}}; replace $& with $1 and $$.'
     expect(koloftPrompt('claude', odd)).toContain(`    ${odd}\nKoloft's own way:`)
+    expect(agentGuide(odd)).toContain(`        ${odd}\n    Koloft's own way:`)
   })
 
   it('come first in koloft help under session new, indented with it, and are not in the help of a project without rules', () => {
