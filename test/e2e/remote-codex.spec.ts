@@ -44,9 +44,10 @@ import {
   MAC_CODEX_ACCESS_TOKEN,
   remoteDir,
   remoteKey,
-  REMOTE_WS_NAME
+  REMOTE_WS_NAME,
+  seedRemoteWorkspace
 } from './helpers/remote'
-import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
+import { E2E_CODEX_ACCOUNT, seededAccount, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, codexPromptsSent, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
@@ -204,6 +205,49 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         { type: 'apiKey', accessToken: null, accountId: null, apiKey: key }
       ])
       expect(fs.existsSync(path.join(server.codexHome, 'auth.json'))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('after Koloft is reopened, the first remote Codex session started before any limit read has answered signs in on the machine with the account that had room when Koloft was last open, not the full one listed first', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedRemoteWorkspace(env)
+    const signedIn = (name: string, usedPercent: number): void => {
+      const home = path.join(env.userData, 'codex-homes', name)
+      fs.mkdirSync(home, { recursive: true })
+      fs.writeFileSync(
+        path.join(home, 'auth.json'),
+        JSON.stringify({
+          usedPercent,
+          tokens: { access_token: `${name}-access-token`, account_id: name }
+        })
+      )
+    }
+    signedIn(E2E_CODEX_ACCOUNT, 100)
+    signedIn('roomy', 10)
+    seedSettings(env, {
+      accounts: [
+        ...(settingsOnDisk(env).accounts as Record<string, unknown>[]),
+        seededAccount('roomy', 'codex-home')
+      ]
+    })
+    const lastOpen = await launchWithRemote(env)
+    try {
+      await lastOpen.page.evaluate(() => window.api.accounts.probe())
+    } finally {
+      await quitAndClose(lastOpen.app)
+    }
+
+    fs.writeFileSync(path.join(env.home, 'fake-codex-account-read-fails'), '')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await startRemoteCodex(page, env)
+      expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toEqual([
+        { type: 'chatgptAuthTokens', accessToken: 'roomy-access-token', accountId: 'roomy' }
+      ])
     } finally {
       await quitAndClose(app)
     }
