@@ -1439,10 +1439,11 @@ async function askScenario(turn, spec) {
   const shownFirst = readSentinel('fake-agy-open-before-ask')
   if (shownFirst) {
     fs.unlinkSync(sentinel('fake-agy-open-before-ask'))
+    const quoted = `'${shownFirst.replace(/'/g, `'\\''`)}'`
     const opened = await runShell(
-      '/bin/sh',
-      `koloft open ${JSON.stringify(shownFirst)}`,
-      process.env
+      modelShell(),
+      `koloft open ${quoted}`,
+      runCommandEnv(turn.conv, 0, null)
     )
     say(opened.output.replace(/\n$/, ''))
   }
@@ -2592,7 +2593,7 @@ function main() {
   startTui().catch(crash)
   setInterval(() => {
     if (!fs.existsSync(sentinel('fake-agy-ask-later'))) return
-    fs.unlinkSync(sentinel('fake-agy-ask-later'))
+    fs.rmSync(sentinel('fake-agy-ask-later'), { force: true })
     queue.push({ text: '/ask Ship it?|Yes|No', origin: {} })
     drainQueue()
   }, ASK_LATER_CHECKED_EVERY_MS).unref()

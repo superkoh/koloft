@@ -24,6 +24,7 @@ const read = (name, fallback = '') => {
     return fallback
   }
 }
+const shellQuoted = (s) => `'${s.replace(/'/g, `'\\''`)}'`
 const append = (name, value) => fs.appendFileSync(file(name), JSON.stringify(value) + '\n')
 const load = (id) => {
   if (!/^[a-zA-Z0-9-]+$/.test(id)) return undefined
@@ -386,10 +387,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         if (writeAtMs) setTimeout(write, writeAtMs)
         else write()
       }
-      const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
-      if (ran) {
-        const [, tool, rest] = ran
-        const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
+      const runTool = (tool, command, then) => {
         const call = {
           session_id: thread.id,
           cwd: thread.cwd,
@@ -415,8 +413,14 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
             }
           })
           runHook('PostToolUse', call)
-          complete(thread, turn)
+          then()
         })
+      }
+      const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
+      if (ran) {
+        const [, tool, rest] = ran
+        const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
+        runTool(tool, command, () => complete(thread, turn))
         return
       }
       if (text.includes('approve')) {
@@ -466,24 +470,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         const shownFirst = read('fake-codex-open-before-ask')
         if (shownFirst) {
           fs.unlinkSync(file('fake-codex-open-before-ask'))
-          const command = `koloft open ${JSON.stringify(shownFirst)}`
-          execFile(SHELL, [SHELL_FLAG, command], { cwd: thread.cwd }, (e, out, err) => {
-            event('item/completed', {
-              threadId: thread.id,
-              turnId: turn.id,
-              item: {
-                type: 'commandExecution',
-                id: `koloft-${turn.id}`,
-                status: e ? 'failed' : 'completed',
-                exitCode: e ? 1 : 0,
-                aggregatedOutput: `${out}${err}`,
-                command: `${SHELL} ${SHELL_FLAG} '${command}'`,
-                cwd: thread.cwd,
-                commandActions: [{ type: 'unknown', command }]
-              }
-            })
-            askNow()
-          })
+          runTool('koloft', `koloft open ${shellQuoted(shownFirst)}`, askNow)
         } else askNow()
       } else if (text.includes('spawn child')) {
         // CODEX§4
@@ -931,9 +918,9 @@ async function startTui() {
   const prompt = (text) =>
     send('turn/start', { threadId: thread.id, input: [{ type: 'text', text }] })
   setInterval(() => {
-    if (!thread || !flag('fake-codex-ask-later')) return
-    fs.unlinkSync(file('fake-codex-ask-later'))
-    void prompt('ask me')
+    if (leaving || working || !thread || !flag('fake-codex-ask-later')) return
+    fs.rmSync(file('fake-codex-ask-later'), { force: true })
+    prompt('ask me').catch(() => {})
   }, ASK_LATER_CHECKED_EVERY_MS).unref()
   const open = async (method, params) => {
     const response = await send(method, params)

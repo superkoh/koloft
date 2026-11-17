@@ -525,8 +525,17 @@ function tui() {
       const shownFirst = read('fake-muse-open-before-ask')
       if (!shownFirst) return ask()
       fs.unlinkSync(file('fake-muse-open-before-ask'))
-      execFile('koloft', ['open', shownFirst], { cwd: process.cwd() }, (e, out, err) => {
-        process.stdout.write(`${out}${err}`.replace(/\r?\n/g, '\r\n'))
+      const call = {
+        turn_id: turnId,
+        tool_name: 'bash',
+        tool_input: { command: `koloft open ${shownFirst}` }
+      }
+      fire('PreToolUse', call)
+      const opening = ['-c', 'koloft open "$1"', 'sh', shownFirst]
+      execFile('/bin/sh', opening, { cwd: process.cwd() }, (e, out, err) => {
+        const said = `${out}${err}`
+        process.stdout.write(said.replace(/\r?\n/g, '\r\n'))
+        fire('PostToolUse', { ...call, tool_response: said })
         ask()
       })
       return
@@ -754,8 +763,8 @@ function tui() {
     later(() => say(turnId, `echo: ${text}`, text))
   }
   setInterval(() => {
-    if (!session || !fs.existsSync(file('fake-muse-ask-later'))) return
-    fs.unlinkSync(file('fake-muse-ask-later'))
+    if (!session || blocked || !fs.existsSync(file('fake-muse-ask-later'))) return
+    fs.rmSync(file('fake-muse-ask-later'), { force: true })
     command('/ask')
   }, ASK_LATER_CHECKED_EVERY_MS).unref()
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
