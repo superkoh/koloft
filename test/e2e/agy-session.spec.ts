@@ -511,7 +511,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
           .toContain(allow ? 'Read ../agy-outside.txt' : 'Denied: ../agy-outside.txt')
         expect((await terminalText(page, tabId)).includes(OUTSIDE_FILE_WORD)).toBe(allow)
         if (!allow)
-          await expect(row.locator('.ws-tab-act')).not.toHaveText('Last: Read agy-outside.txt')
+          await expect(row.locator('.ws-tab-act', { hasText: /^Last: Read/ })).toHaveCount(0)
       }
       await expect(row.locator('.ws-tab-act')).toHaveText('Last: Read agy-outside.txt', {
         timeout: 30_000
