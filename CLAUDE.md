@@ -295,7 +295,8 @@ Working principles:
   → GitHub issues. Everything else is git history — deletion loses nothing, while a
   stale doc actively misleads whoever greps it. `docs/` therefore holds only
   documents organized around a subject that outlives any one feature (today: the
-  contract ledgers, the ADRs, and the roadmap),
+  contract ledgers, the ADRs, the roadmap, and the plugin format reference
+  `docs/plugin-format.md`),
   never a shipped feature's design doc.
 - The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
   and how much to trust the order. Start any "what's next" discussion from it rather
