@@ -1873,7 +1873,7 @@ function notesFileOfScope(scope: string): string | undefined {
 }
 
 const fileOpened = moment<FileOpened>()
-fileOpened.listen(copyEachOpenedFile((o) => copyToPhone(o.tabId, o.target, o.view)))
+copyEachOpenedFile(fileOpened, (o) => copyToPhone(o.tabId, o.target, o.view))
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: async (tabId, target, view) => {
