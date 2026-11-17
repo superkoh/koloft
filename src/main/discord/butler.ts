@@ -14,7 +14,9 @@ import type {
 import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, newerSnowflake, peerNamesOf } from '@shared/conductors'
-import { butlerRole, TODO_NOTICE } from '@shared/agentGuide'
+import { butlerRole } from '@plugins/butler/api'
+import { TODO_NOTICE } from '@plugins/todo/api'
+import { DISCORD_BOUND } from '@plugins/discord/api'
 import { errorText } from '../agentRequests'
 import { FROM_KOLOFT } from '../crossSessionMessage'
 import { realpathSafe } from '../projectInfo'
@@ -190,7 +192,7 @@ export class Butler {
   }
 
   private role(): string {
-    return butlerRole(this.d.butler().name, !!this.discord.channel)
+    return butlerRole(this.d.butler().name, this.discord.channel ? [DISCORD_BOUND] : [])
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {

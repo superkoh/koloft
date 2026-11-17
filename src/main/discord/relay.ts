@@ -20,7 +20,7 @@ import { CONDUCTOR_ACCENT, type Card } from './cards'
 import type { PlacedAsk } from './buttons'
 import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
-import { DISCORD_PREFIX } from '@shared/agentGuide'
+import { DISCORD_PREFIX } from '@plugins/discord/api'
 import type { ToolCall } from '../sessionTracker'
 import {
   MESSAGE_SOCKET_SHOWS_WITHIN_MS,

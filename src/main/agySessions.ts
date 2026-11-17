@@ -11,7 +11,7 @@ import type {
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from './sessionBackends'
-import { koloftPrompt } from '@shared/agentGuide'
+import { koloftPrompt } from '@plugins/sessions/api'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'

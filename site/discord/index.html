@@ -91,7 +91,8 @@
           Discord until you want to work on one from your phone: then your butler opens a
           <a href="#rooms">room just for that session</a>. One exception: while you are away, a
           session with no room that needs a password, a code or a sign-in sends a 🔑 card to your
-          butler's channel (see <a href="#secrets">below</a>).
+          butler's channel (see <a href="#secrets">below</a>), and one that needs you to click on a
+          web page sends a 👆 card (see <a href="#page-tap">robot checks</a>).
         </p>
 
         <pre
@@ -411,6 +412,36 @@ your Mac
           the ask down and tells the session to skip that step.
         </p>
 
+        <h3 id="page-tap">Robot checks</h3>
+        <p>
+          Some web pages stop at an "I'm not a robot" check that only a person may pass. A session
+          hands it to you with <code>koloft page tap</code> (see
+          <a href="../agents/#page-tap">how the agent asks</a>). At the Mac, the page comes to the
+          front for you to click. While you are away, or talking to that session from Discord, a
+          card comes where a 🔑 card would:
+          <code>👆 &lt;session&gt; · &lt;folder&gt; asks you to tap a web page</code>, with the
+          page's site, what to do, and a picture of that part of the page with a grid over it. Each
+          square of the grid has a name, like <code>B5</code>. The card has four buttons:
+        </p>
+        <ul class="dash">
+          <li>
+            <code>Tap squares</code> — a form opens. Type the squares, like <code>B5 H4 F8</code>.
+            Koloft taps the middle of each one on the real page, in order, then sends a new picture
+            of the page as it is now, with a new card
+          </li>
+          <li><code>New picture</code> — a fresh picture, with nothing tapped</li>
+          <li><code>It passed</code> — tells the session to look at the page and go on</li>
+          <li><code>Give up</code> — nothing more is tapped, and the session is told</li>
+        </ul>
+        <p>
+          Go as many rounds as it takes, until Koloft stops waiting (<code
+            >⌛ Koloft stopped waiting.</code
+          >, as on a 🔑 card). The first answer wins, on the card or in Koloft, as with a 🔑 card.
+          While the <a href="../sessions/#asleep">moon</a> is on, no 👆 card is sent. Koloft does
+          this the same way for every agent, on your Mac and in a
+          <a href="../remote/">remote folder</a>.
+        </p>
+
         <h3>Slash commands</h3>
         <p>
           A slash command is a command you type that starts with <code>/</code>. Discord shows three
@@ -519,6 +550,14 @@ your Mac
                   The session's name and folder, and what it asks for (the command for sudo, the
                   page and field, or the sign-in address), only while you are away or talking to
                   that session from Discord. Never what you type into the form.
+                </td>
+              </tr>
+              <tr>
+                <td>👆 cards</td>
+                <td>
+                  The session's name and folder, the page's site, what it asks you to do, and
+                  pictures of that part of the page, only while you are away or talking to that
+                  session from Discord.
                 </td>
               </tr>
               <tr>

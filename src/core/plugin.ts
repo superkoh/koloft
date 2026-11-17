@@ -1,5 +1,6 @@
 // ADR-0051
 import type { BackendId } from '@shared/types'
+import { SESSION_BACKENDS, byBackend } from '@shared/sessionBackend'
 
 export const PLUGIN_FORMAT_VERSION = 1
 
@@ -8,7 +9,14 @@ export interface TextBlock {
   text: string
   byAgent?: Partial<Record<BackendId, string>>
   byModel?: Readonly<Record<string, string>>
+  when?: string
 }
+
+export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): TextBlock => ({
+  slot,
+  text: textOf(SESSION_BACKENDS[0]),
+  byAgent: byBackend(textOf)
+})
 
 export interface PluginCommand {
   verb: string
