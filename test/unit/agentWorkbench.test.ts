@@ -20,7 +20,9 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-function verbs(over: { canShow?: boolean; pinned?: boolean; copied?: string } = {}): ReturnType<
+function verbs(
+  over: { canShow?: boolean; pinned?: boolean; copied?: string; copyFails?: string } = {}
+): ReturnType<
   typeof workbenchVerbs
 > & {
   opened: { tabId: string; target: string; view?: ArtifactView }[]
@@ -35,6 +37,7 @@ function verbs(over: { canShow?: boolean; pinned?: boolean; copied?: string } = 
     },
     copyToPhone: async (_tabId, target) => {
       copies.push(target)
+      if (over.copyFails) throw new Error(over.copyFails)
       return over.copied
     },
     notesFileOf: () => (over.pinned === false ? undefined : note)
@@ -99,6 +102,15 @@ describe('koloft open / diff', () => {
     expect(reply.text).toBe(
       `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Sent it to Discord as text, with the file.`
     )
+  })
+
+  it('a copy that fails still opens the file, and the reply says why the copy did not go', async () => {
+    const v = verbs({ copyFails: 'the bot is offline.' })
+    const reply = await v.open(['plan.md'], caller())
+    expect(reply).toMatchObject({
+      exit: 0,
+      text: `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Koloft could not also send it to Discord: the bot is offline.`
+    })
   })
 })
 
