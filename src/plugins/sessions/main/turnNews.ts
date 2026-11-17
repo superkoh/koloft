@@ -1,6 +1,7 @@
 import type { BackgroundItem } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import type { Assist } from '../../../main/assist'
+
+type TurnAssist = (job: { row: 'turn'; system: string; prompt: string }) => Promise<string | null>
 
 const REPLY_CHARS_SENT = 4000
 const MOST_REPLIES_OFFERED = 4
@@ -96,7 +97,7 @@ export function waitsOnOtherWork(
   )
 }
 
-export async function judgeTurn(assist: Assist, turn: Turn): Promise<Verdict> {
+export async function judgeTurn(assist: TurnAssist, turn: Turn): Promise<Verdict> {
   const reply = turn.reply.trim()
   if (!reply) return { news: false }
   if (saysNothingForYou(reply)) return { news: true }
@@ -120,7 +121,7 @@ export interface NewsJudgeDeps {
   markFyi(tabId: string): void
 }
 
-export type VerdictListener = (tabId: string, verdict: Verdict) => void
+type VerdictListener = (tabId: string, verdict: Verdict) => void
 
 export class NewsJudge {
   private round = new Map<string, number>()

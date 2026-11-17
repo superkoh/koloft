@@ -1306,7 +1306,7 @@ only downloaded the public release.
   before the prompt. A short naming prompt, one at a time, three runs each (seconds): no
   `--model` 10.1 / 11.2 / 11.8 (178–243 thinking tokens), `gemini-3.8-flash` `low` 4.1 /
   4.5 / 5.8 (0), `gemini-4-argon` `low` 6.7 / 7.5 / 13.0 (0). On the owner's 86
-  hand-labelled end-of-turn replies (`src/main/turnNews.ts` as shipped, three runs each,
+  hand-labelled end-of-turn replies (`src/plugins/sessions/main/turnNews.ts` as shipped, three runs each,
   four at a time, 60 s allowed): no `--model` 82 / 83 / 84 right, no reply that asks the
   owner read as news, mean 18.8 s, 25–29 of 65 calls over 15 s and 6–7 more over 60 s;
   `gemini-4-argon` `medium` 84 / 83 / 83 right, 2–3 asks read as news (two of them in
