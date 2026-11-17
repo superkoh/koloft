@@ -34,6 +34,9 @@ const SPEC_OPT_IN_PANEL_EXPANDED_NOT_SHIPPED_DEFAULT = { defaultOpen: true }
 // PLATFORM§11
 const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-media-stream'
 
+// PLATFORM§9
+const CAPTURES_IN_SRGB_WHATEVER_THE_MAC_SCREEN = '--force-color-profile=srgb'
+
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
@@ -203,7 +206,10 @@ export function setupE2EEnv(): E2EEnv {
     downloadDir,
     fileDialogFile,
     gitCalls: path.join(home, 'git-calls.txt'),
-    extraArgs: [FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT],
+    extraArgs: [
+      FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT,
+      CAPTURES_IN_SRGB_WHATEVER_THE_MAC_SCREEN
+    ],
     claudeCalls: path.join(home, 'fake-claude-calls.jsonl'),
     wrapperCalls: path.join(home, 'wrapper-calls.txt'),
     scratchpadBase,

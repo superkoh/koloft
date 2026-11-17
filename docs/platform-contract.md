@@ -548,6 +548,18 @@ method. A recheck adds its date, version and command to the bullet.
   guest (measured). A capture that races the first paint comes back empty.
 - **Host captures do not draw a guest.** Neither Playwright's `page.screenshot()` of the
   host nor `win.capturePage()` shows any trace of a `<webview>` filling the area.
+- **A capture is in the Mac screen's colour space, not the page's sRGB.** On a
+  wide-gamut screen both `webContents.capturePage()` and CDP `Page.captureScreenshot`
+  give a PNG whose pixels are the screen's values with the screen's profile embedded
+  (`iCCP`): a CSS `rgb(10, 120, 250)` box is stored as `62, 104, 245`. `nativeImage`
+  reads the profile and converts back, landing one off (`9, 120, 250`; `200, 10, 10`
+  comes back `200, 9, 9`); a reader that ignores the profile sees the stored values.
+  `--force-color-profile=srgb` on the command line makes the capture plain sRGB with no
+  `iCCP` and the exact page values; the same switch set by
+  `app.commandLine.appendSwitch` in the main script changed nothing. Measured
+  2026-11-17 on Electron 43.8.7, macOS 27.2.1, an Acer XB273K
+  (`screen.getPrimaryDisplay().colorSpace` reports red primary 0.6816, 0.3106,
+  transfer `BT709_APPLE`), a hidden `BrowserWindow`, one launch per variant.
 
 ## §10 Focus between the host page and a `<webview>`
 
