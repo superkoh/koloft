@@ -15,7 +15,9 @@ const OFFICIAL_INSTALL_MS = 5 * 60_000
 
 // PLATFORM§2
 function loginShellBlindToThisMacsGlobalPath(env: E2EEnv): string {
-  const shell = path.join(env.home, 'zsh-without-global-rcs')
+  const dir = path.join(env.home, 'zsh-without-global-rcs')
+  fs.mkdirSync(dir)
+  const shell = path.join(dir, 'zsh')
   fs.writeFileSync(shell, '#!/bin/sh\nexec /bin/zsh -o NO_GLOBAL_RCS "$@"\n', { mode: 0o755 })
   return shell
 }
