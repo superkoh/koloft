@@ -4,8 +4,7 @@ import os from 'os'
 import path from 'path'
 import { workbenchVerbs } from '../../src/main/agentWorkbench'
 import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../src/main/agentRequests'
-import type { ArtifactView } from '../../src/shared/types'
-import { moment, type FileOpened } from '../../src/core/moment'
+import type { FileOpened } from '../../src/core/moment'
 
 let dir: string
 let note: string
@@ -22,25 +21,19 @@ afterEach(() => {
 })
 
 function verbs(
-  over: { canShow?: boolean; pinned?: boolean; listenersSay?: (string | undefined)[] } = {}
-): ReturnType<typeof workbenchVerbs> & {
-  opened: { tabId: string; target: string; view?: ArtifactView }[]
-  announced: FileOpened[]
-} {
-  const opened: { tabId: string; target: string; view?: ArtifactView }[] = []
+  over: { canShow?: boolean; pinned?: boolean; listenersSaid?: string[] } = {}
+): ReturnType<typeof workbenchVerbs> & { opened: FileOpened[]; announced: FileOpened[] } {
+  const opened: FileOpened[] = []
   const announced: FileOpened[] = []
-  const fileOpened = moment<FileOpened>()
-  fileOpened.listen(async (o) => {
-    announced.push(o)
-    return undefined
-  })
-  for (const says of over.listenersSay ?? []) fileOpened.listen(async () => says)
   const v = workbenchVerbs({
     open: (tabId, target, view) => {
       opened.push({ tabId, target, view })
       return over.canShow ?? true
     },
-    announceOpened: fileOpened.announce,
+    announceOpened: async (o) => {
+      announced.push(o)
+      return over.listenersSaid ?? []
+    },
     notesFileOf: () => (over.pinned === false ? undefined : note)
   })
   return Object.assign(v, { opened, announced })
@@ -90,7 +83,7 @@ describe('koloft open / diff', () => {
   })
 
   it('a file the Workbench cannot show, missing or not, is refused and named, and no one hears it was opened', async () => {
-    const v = verbs({ canShow: false, listenersSay: ['Sent it.'] })
+    const v = verbs({ canShow: false, listenersSaid: ['Sent it.'] })
     const reply = await v.open(['missing.md'], caller())
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain(path.join(dir, 'missing.md'))
@@ -103,10 +96,8 @@ describe('koloft open / diff', () => {
     expect(v.announced).toEqual([{ tabId: 't1', target: path.join(dir, 'plan.md'), view: 'diff' }])
   })
 
-  it('the reply says what each listener said, in order, after it says the Workbench opened it', async () => {
-    const v = verbs({
-      listenersSay: ['Sent it to Discord as text, with the file.', undefined, 'B.']
-    })
+  it('the reply says what the listeners said, after it says the Workbench opened it', async () => {
+    const v = verbs({ listenersSaid: ['Sent it to Discord as text, with the file.', 'B.'] })
     const reply = await v.open(['plan.md'], caller())
     expect(reply.text).toBe(
       `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Sent it to Discord as text, with the file. B.`

@@ -9,12 +9,10 @@ export interface FileOpened {
 
 export type SaysInReply<T> = (moment: T) => Promise<string | undefined>
 
-export interface Moment<T> {
+export function moment<T>(): {
   listen(listener: SaysInReply<T>): void
   announce(moment: T): Promise<string[]>
-}
-
-export function moment<T>(): Moment<T> {
+} {
   const listeners: SaysInReply<T>[] = []
   return {
     listen: (listener) => {
