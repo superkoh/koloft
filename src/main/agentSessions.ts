@@ -13,7 +13,12 @@ import {
 import { namedModel, needsModel } from '@shared/cronModels'
 import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
 import { BUTLER_SAYS_OPENING, ownerSays } from '@shared/agentGuide'
-import { PICK_FOR_THE_TASK, withProjectRules } from '@plugins/sessions/api'
+import {
+  PICK_FOR_THE_TASK,
+  RepliesOwed,
+  withProjectRules,
+  type ReplyListener
+} from '@plugins/sessions/api'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import {
   BACKEND_LABEL,
@@ -46,7 +51,6 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
-import type { SendResult, StartResult, StartSpec } from './inbox'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
@@ -1025,12 +1029,28 @@ function isMe(
   )
 }
 
-interface OwedReply {
-  owner: string
-  asked?: string
+export interface SendResult {
+  ok: boolean
+  session?: string
+  text?: string
+  why?: string
 }
 
-const INBOX_SENDER = 'inbox'
+export interface StartResult {
+  ok: boolean
+  session?: string
+  name?: string
+  why?: string
+}
+
+export interface StartSpec {
+  task: string
+  workspace?: string
+  backend?: string
+  model?: string
+  name?: string
+  worktree?: string
+}
 
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
@@ -1039,13 +1059,13 @@ export function sessionVerb(d: SessionVerbDeps): {
   messaged(tabId: string, fromSessionId: string): void
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
-  sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
+  sendFrom(sender: string, ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
   tellFromKoloft(tabId: string, text: string): Promise<boolean>
-  startFromInbox(
+  startForReply(
     aboutRef: string | undefined,
     spec: StartSpec,
     permission: 'bypass' | 'default',
-    onReply: (reply: string) => void
+    onReply: ReplyListener
   ): Promise<StartResult>
 } {
   const opening = new Map<string, Promise<string | null>>()
@@ -1060,8 +1080,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     const id = `koloft-${sender}-${++lined}`
     return (tab) => crossSessionLine(modeFor(tab), text, id)
   }
-  const replyOwed = new Map<string, OwedReply>()
-  const inboxOwed = new Map<string, (reply: string) => void>()
+  const repliesOwed = new RepliesOwed()
   const messagedBy = new Map<string, Set<string>>()
   const messaged = (tab: string, from: string): void => {
     messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
@@ -1086,29 +1105,6 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (open) return open
     const assist = d.butlerTarget(sessionId)
     return assist && { sessionId, tabId: assist.tabId, backendId: assist.backend }
-  }
-
-  const owing = async <T>(
-    tab: string,
-    owed: OwedReply | undefined,
-    act: () => Promise<T>,
-    failed: (result: T) => boolean = () => false
-  ): Promise<T> => {
-    const before = replyOwed.get(tab)
-    if (owed) replyOwed.set(tab, owed)
-    const takeBack = (): void => {
-      if (!owed || replyOwed.get(tab) !== owed) return
-      if (before) replyOwed.set(tab, before)
-      else replyOwed.delete(tab)
-    }
-    try {
-      const result = await act()
-      if (failed(result)) takeBack()
-      return result
-    } catch (error) {
-      takeBack()
-      throw error
-    }
   }
 
   const openReady = (t: Target, until: number): Promise<string | null> => {
@@ -1139,7 +1135,7 @@ export function sessionVerb(d: SessionVerbDeps): {
           asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
         }
       : undefined
-    const sent = await owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    const sent = await repliesOwed.owing(tab, owed, () => sendInto(t, tab, text, line, until))
     messaged(tab, from)
     return sent
   }
@@ -1221,29 +1217,20 @@ export function sessionVerb(d: SessionVerbDeps): {
         (s) =>
           s.alive &&
           (s.status === 'working' || s.status === 'approval') &&
-          (replyOwed.get(s.tabId)?.owner === sessionId || !!messagedBy.get(s.tabId)?.has(sessionId))
+          (repliesOwed.sessionOwed(s.tabId)?.owner === sessionId ||
+            !!messagedBy.get(s.tabId)?.has(sessionId))
       )
 
   const turnEnded = (tabId: string, turn: Turn): boolean => {
     messagedBy.delete(tabId)
-    const toInbox = inboxOwed.get(tabId)
-    if (toInbox && turn.reply.trim()) {
-      inboxOwed.delete(tabId)
-      toInbox(turn.reply.trim())
+    return repliesOwed.turnEnded(tabId, turn, (owner) => {
+      const to = sessionTarget(d, owner)
+      if (!to) return false
+      const session = d.allSessions().find((s) => s.tabId === tabId)
+      if (!session) return false
+      deliverOrReport({ tabId, session }, to, sessionSays(session, turn.reply))
       return true
-    }
-    const owed = replyOwed.get(tabId)
-    if (!owed) return false
-    const { owner, asked } = owed
-    if (asked !== undefined && !turn.said.some((l) => l.text.includes(asked))) return false
-    replyOwed.delete(tabId)
-    if (!turn.reply.trim()) return false
-    const to = sessionTarget(d, owner)
-    if (!to) return false
-    const session = d.allSessions().find((s) => s.tabId === tabId)
-    if (!session) return false
-    deliverOrReport({ tabId, session }, to, sessionSays(session, turn.reply))
-    return true
+    })
   }
 
   const deliverOrReport = (
@@ -1329,7 +1316,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'keys' && t.tabId) {
       const tab = t.tabId
       const owed = d.asking(tab) ? { owner: caller.session.sessionId } : undefined
-      await owing(tab, owed, () => d.press(tab, keysFor(tail)))
+      await repliesOwed.owing(tab, owed, () => d.press(tab, keysFor(tail)))
       return answered(
         `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
       )
@@ -1338,7 +1325,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (!t.tabId)
         return refused(`koloft session answer: ${t.name}: ${SHOWS_NOTHING_WHILE_CLOSED}`)
       const tab = t.tabId
-      const error = await owing(
+      const error = await repliesOwed.owing(
         tab,
         { owner: caller.session.sessionId },
         () => d.answer(tab, text),
@@ -1423,7 +1410,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         workspace,
         conductorTab,
         ownerWords,
-        (tab) => replyOwed.set(tab, { owner: caller.session.sessionId }),
+        (tab) => repliesOwed.oweSession(tab, { owner: caller.session.sessionId }),
         helperRole
       )
       return resolved?.note && reply.exit === 0
@@ -1447,7 +1434,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const said = sessionSays(caller.session, text)
       const to = starter(ref)
-      if (to) replyOwed.delete(caller.tabId)
+      if (to) repliesOwed.forgetSession(caller.tabId)
       if (to) return deliver('send', to, said, caller, false)
       if (forTheOwner || matchOpen(open, ref) === null)
         return sessionAct(sub, rest, caller, forTheOwner)
@@ -1504,23 +1491,14 @@ export function sessionVerb(d: SessionVerbDeps): {
         d.butlerFolder(),
         butler.tabId,
         ownerWords,
-        (tab) => replyOwed.set(tab, { owner: butler.sessionId }),
+        (tab) => repliesOwed.oweSession(tab, { owner: butler.sessionId }),
         d.butlerHelperRole()
       )
     )?.tabId ?? null
 
   const tabMoved = (oldTabId: string, newTabId: string): void => {
     names.moved(oldTabId, newTabId)
-    const owed = replyOwed.get(oldTabId)
-    if (owed !== undefined) {
-      replyOwed.delete(oldTabId)
-      replyOwed.set(newTabId, owed)
-    }
-    const inbox = inboxOwed.get(oldTabId)
-    if (inbox) {
-      inboxOwed.delete(oldTabId)
-      inboxOwed.set(newTabId, inbox)
-    }
+    repliesOwed.moved(oldTabId, newTabId)
     const senders = messagedBy.get(oldTabId)
     if (senders) {
       messagedBy.delete(oldTabId)
@@ -1534,7 +1512,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     return sessionTarget(d, open?.sessionId ?? ref)
   }
 
-  const sendFromInbox = async (
+  const sendFrom = async (
+    sender: string,
     ref: string,
     text: string,
     toItsOwnSession: boolean
@@ -1546,14 +1525,14 @@ export function sessionVerb(d: SessionVerbDeps): {
       return { ok: false, why: 'The message holds text the session cannot take' }
     // ADR-0028
     const modeFor = (tab: string): ModeClass => (toItsOwnSession ? d.modeOf(tab) : 'prompting')
-    const lineFor = route === 'peerLine' ? peerLineFrom(modeFor, text, 'inbox') : undefined
+    const lineFor = route === 'peerLine' ? peerLineFrom(modeFor, text, sender) : undefined
     const woke = !t.tabId
     const busy = route === 'typed' && !!t.tabId && !(await d.ready(t.tabId, 0, true))
     const until =
       Date.now() +
       (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
     try {
-      await sendNow(t, text, lineFor, until, INBOX_SENDER)
+      await sendNow(t, text, lineFor, until, sender)
       return {
         ok: true,
         session: t.key,
@@ -1568,11 +1547,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
   }
 
-  const startFromInbox = async (
+  const startForReply = async (
     aboutRef: string | undefined,
     spec: StartSpec,
     permission: 'bypass' | 'default',
-    onReply: (reply: string) => void
+    onReply: ReplyListener
   ): Promise<StartResult> => {
     const about = aboutRef
       ? d.allSessions().find((s) => s.tabId === aboutRef || s.sessionId === aboutRef)
@@ -1613,7 +1592,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (held) names.launched(held, tabId)
     }
     if (!tabId) return { ok: false, why: 'Koloft could not start the session' }
-    inboxOwed.set(tabId, onReply)
+    repliesOwed.oweListener(tabId, onReply)
     return { ok: true, session: tabId, name: held?.name }
   }
 
@@ -1624,9 +1603,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     messaged,
     startButlerHelper,
     tabMoved,
-    sendFromInbox,
+    sendFrom,
     tellFromKoloft,
-    startFromInbox
+    startForReply
   }
 }
 

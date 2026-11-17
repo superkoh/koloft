@@ -12,12 +12,13 @@ import {
   workspaceVerb,
   type ClosableSession,
   type PinnedWorkspace,
+  type SendResult,
   type SessionVerbDeps,
   type Target
 } from '../../src/main/agentSessions'
 import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../src/main/sessionBackends'
-import type { SendResult } from '../../src/main/inbox'
+import { INBOX_SENDER } from '../../src/main/inbox'
 
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
@@ -110,7 +111,7 @@ function harness(
   turnEnded: (tabId: string, reply: string, said?: string) => boolean
   waitsOnAnother: (sessionId: string) => boolean
   sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
-  startFromInbox: ReturnType<typeof sessionVerb>['startFromInbox']
+  startForReply: ReturnType<typeof sessionVerb>['startForReply']
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -246,8 +247,9 @@ function harness(
         at: 1
       }),
     waitsOnAnother: inner.waitsOnAnother,
-    sendFromInbox: inner.sendFromInbox,
-    startFromInbox: inner.startFromInbox,
+    sendFromInbox: (ref, text, toItsOwnSession) =>
+      inner.sendFrom(INBOX_SENDER, ref, text, toItsOwnSession),
+    startForReply: inner.startForReply,
     launched,
     queued,
     closed,
@@ -2371,7 +2373,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
         .map((l) => (JSON.parse(l.line) as { message: { content: string } }).message.content)
 
     expect(
-      await h.startFromInbox(undefined, { task: 'fix it', workspace: WS }, 'default', (r) =>
+      await h.startForReply(undefined, { task: 'fix it', workspace: WS }, 'default', (r) =>
         replies.push(r)
       )
     ).toMatchObject({ ok: true, session: 'new-tab' })

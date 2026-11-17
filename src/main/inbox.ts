@@ -23,17 +23,13 @@ import {
   type InboxState,
   type InboxTarget
 } from '@shared/inbox'
+import type { SendResult, StartResult } from './agentSessions'
+
+export const INBOX_SENDER = 'inbox'
 
 export interface InboxCaller {
   source: string
   as?: string
-}
-
-export interface SendResult {
-  ok: boolean
-  session?: string
-  text?: string
-  why?: string
 }
 
 export interface AnswerResult {
@@ -41,13 +37,6 @@ export interface AnswerResult {
   elsewhere?: boolean
   why?: string
   retryHelps?: boolean
-}
-
-export interface StartResult {
-  ok: boolean
-  session?: string
-  name?: string
-  why?: string
 }
 
 export type StartSpec = Omit<Extract<InboxRun, { type: 'new-session' }>, 'type'>
