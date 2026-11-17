@@ -399,6 +399,8 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       await startSessionIn(page, 'ws-a')
       await waitStartupTurnOver(page, 'ws-a')
       const tabId = await shownTabId(page)
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+      await expect.poll(() => terminalFitsItsBox(page, tabId), { timeout: 10_000 }).toBe(true)
       await writeTo(
         page,
         tabId,
@@ -407,9 +409,6 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       await expect
         .poll(() => linkTextsOnLineWith(page, tabId, 'tfg-mark'), { timeout: 20_000 })
         .toEqual(['src/g.ts:33'])
-
-      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
-      await expect.poll(() => terminalFitsItsBox(page, tabId)).toBe(true)
 
       const title = page.locator(WORKBENCH.readingTitle)
       await clickLinkCell(page, tabId, 'tfg-mark', { holdingCommand: false })
