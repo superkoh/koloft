@@ -1908,7 +1908,8 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   job 112815692712 of superkoh/koloft.) Where the step is named it printed only that
   step: job 107036731098 (PR #3, `npm ci`) came back as 38 lines, 3,366 bytes, all
   `check\tRun npm ci\t…`, with `##[error]Process completed with exit code 1.` as the last
-  line. **The first line's time starts with a UTF-8 byte-order mark**
+  line (that the step name decides this is inferred, not checked). **The first line's
+  time starts with a UTF-8 byte-order mark**
   (`﻿2026-09-23T03:47:43.4098300Z`).
 - **GitHub no longer names the steps, so gh prints the whole job.** On 2026-11-17 the run
   log archive (`gh api repos/o/r/actions/runs/<run>/logs`) held only `0_check.txt` and

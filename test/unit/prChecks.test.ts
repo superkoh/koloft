@@ -121,6 +121,7 @@ describe('the failing log cut to the part around the first error', () => {
       logLine('##[group]Run npm ci', 'UNKNOWN STEP'),
       logLine('^[[36;1mnpm ci^[[0m', 'UNKNOWN STEP'),
       logLine('##[endgroup]', 'UNKNOWN STEP'),
+      logLine("grep -E '^[[:space:]]+$' ^[(Bdone", 'UNKNOWN STEP'),
       logLine('npm error code ERESOLVE', 'UNKNOWN STEP'),
       logLine('##[error]Process completed with exit code 1.', 'UNKNOWN STEP'),
       logLine('Post job cleanup.', 'UNKNOWN STEP'),
@@ -131,6 +132,7 @@ describe('the failing log cut to the part around the first error', () => {
         '##[group]Run npm ci',
         'npm ci',
         '##[endgroup]',
+        "grep -E '^[[:space:]]+$' done",
         'npm error code ERESOLVE',
         '##[error]Process completed with exit code 1.'
       ].join('\n')

@@ -103,7 +103,7 @@ export function jobIdOf(link: string): string | null {
 // PLATFORM§32
 const LOG_LINE_PREFIX = /^[^\t\n]*\t[^\t\n]*\t﻿?\d{4}-\d\d-\d\dT[\d:.]+Z ?/
 // PLATFORM§32
-const ESC_WRITTEN_AS_CARET = /\^\[(?=\[)/g
+const ESC_WRITTEN_AS_CARET = /\^\[(?=\[[0-9;]*m|[()][AB0])/g
 // PLATFORM§32
 const STEP_START = '##[group]Run '
 // PLATFORM§32
@@ -134,7 +134,7 @@ export function trimFailedLog(raw: string, limit = FAILED_LOG_LIMIT): string {
       ? 0
       : Math.max(
           0,
-          lines.findLastIndex((l, i) => i < firstError && l.startsWith(STEP_START))
+          lines.findLastIndex((l, i) => i < firstError && startsAStep(l))
         )
   const kept: string[] = []
   let size = 0
