@@ -18,22 +18,17 @@ import {
   type InboxLevel,
   type InboxLink,
   type InboxOutcome,
-  type InboxRun,
   type InboxSnapshot,
   type InboxState,
   type InboxTarget
 } from '@shared/inbox'
+import type { ReplyListener, SendResult, StartResult, StartSpec } from '@plugins/sessions/api'
+
+export const INBOX_SENDER = 'inbox'
 
 export interface InboxCaller {
   source: string
   as?: string
-}
-
-export interface SendResult {
-  ok: boolean
-  session?: string
-  text?: string
-  why?: string
 }
 
 export interface AnswerResult {
@@ -43,15 +38,6 @@ export interface AnswerResult {
   retryHelps?: boolean
 }
 
-export interface StartResult {
-  ok: boolean
-  session?: string
-  name?: string
-  why?: string
-}
-
-export type StartSpec = Omit<Extract<InboxRun, { type: 'new-session' }>, 'type'>
-
 export interface InboxHost {
   now(): number
   sendToSession(session: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
@@ -59,11 +45,7 @@ export interface InboxHost {
     session: string,
     answer: { answers?: InboxAnswers[string]; pick?: string }
   ): Promise<AnswerResult>
-  startSession(
-    spec: StartSpec,
-    card: InboxCard,
-    onReply: (reply: string) => void
-  ): Promise<StartResult>
+  startSession(spec: StartSpec, card: InboxCard, onReply: ReplyListener): Promise<StartResult>
   footer(card: InboxCard, action: InboxAction): string
   changed(): void
 }

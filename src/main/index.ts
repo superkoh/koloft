@@ -617,7 +617,7 @@ import { workbenchVerbs } from './agentWorkbench'
 import { moment, type FileOpened } from '@core/moment'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import { inboxVerb } from './agentInbox'
-import { Inbox } from './inbox'
+import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
 import {
   askFromClaude,
@@ -2191,10 +2191,10 @@ const inbox = new Inbox(
   {
     now: () => Date.now(),
     sendToSession: (ref, text, toItsOwnSession) =>
-      sessionCommand.sendFromInbox(ref, text, toItsOwnSession),
+      sessionCommand.sendFrom(INBOX_SENDER, ref, text, toItsOwnSession),
     answerSession: (ref, given) => koloftInbox.answer(ref, given),
     startSession: async (spec, card, onReply) => {
-      const started = await sessionCommand.startFromInbox(
+      const started = await sessionCommand.startForReply(
         card.session ?? undefined,
         spec,
         ownersPermission(),
