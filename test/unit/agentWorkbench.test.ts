@@ -5,6 +5,7 @@ import path from 'path'
 import { workbenchVerbs } from '../../src/main/agentWorkbench'
 import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../src/main/agentRequests'
 import type { ArtifactView } from '../../src/shared/types'
+import { moment, type FileOpened } from '../../src/core/moment'
 
 let dir: string
 let note: string
@@ -21,28 +22,28 @@ afterEach(() => {
 })
 
 function verbs(
-  over: { canShow?: boolean; pinned?: boolean; copied?: string; copyFails?: string } = {}
-): ReturnType<
-  typeof workbenchVerbs
-> & {
+  over: { canShow?: boolean; pinned?: boolean; listenersSay?: (string | undefined)[] } = {}
+): ReturnType<typeof workbenchVerbs> & {
   opened: { tabId: string; target: string; view?: ArtifactView }[]
-  copies: string[]
+  announced: FileOpened[]
 } {
   const opened: { tabId: string; target: string; view?: ArtifactView }[] = []
-  const copies: string[] = []
+  const announced: FileOpened[] = []
+  const fileOpened = moment<FileOpened>()
+  fileOpened.listen(async (o) => {
+    announced.push(o)
+    return undefined
+  })
+  for (const says of over.listenersSay ?? []) fileOpened.listen(async () => says)
   const v = workbenchVerbs({
     open: (tabId, target, view) => {
       opened.push({ tabId, target, view })
       return over.canShow ?? true
     },
-    copyToPhone: async (_tabId, target) => {
-      copies.push(target)
-      if (over.copyFails) throw new Error(over.copyFails)
-      return over.copied
-    },
+    announceOpened: fileOpened.announce,
     notesFileOf: () => (over.pinned === false ? undefined : note)
   })
-  return Object.assign(v, { opened, copies })
+  return Object.assign(v, { opened, announced })
 }
 
 const caller = (): AgentCaller => ({
@@ -88,29 +89,28 @@ describe('koloft open / diff', () => {
     expect(v.opened).toEqual([])
   })
 
-  it('a file the Workbench cannot show, missing or not, is refused and named', async () => {
-    const v = verbs({ canShow: false, copied: 'Sent it.' })
+  it('a file the Workbench cannot show, missing or not, is refused and named, and no one hears it was opened', async () => {
+    const v = verbs({ canShow: false, listenersSay: ['Sent it.'] })
     const reply = await v.open(['missing.md'], caller())
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain(path.join(dir, 'missing.md'))
-    expect(v.copies).toEqual([])
+    expect(v.announced).toEqual([])
   })
 
-  it('the reply says what was also sent to Discord, after it says the Workbench opened it', async () => {
-    const v = verbs({ copied: 'Sent it to Discord as text, with the file.' })
+  it('an opened file or diff is announced with its tab, its full target and its view', async () => {
+    const v = verbs()
+    await v.diff(['plan.md'], caller())
+    expect(v.announced).toEqual([{ tabId: 't1', target: path.join(dir, 'plan.md'), view: 'diff' }])
+  })
+
+  it('the reply says what each listener said, in order, after it says the Workbench opened it', async () => {
+    const v = verbs({
+      listenersSay: ['Sent it to Discord as text, with the file.', undefined, 'B.']
+    })
     const reply = await v.open(['plan.md'], caller())
     expect(reply.text).toBe(
-      `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Sent it to Discord as text, with the file.`
+      `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Sent it to Discord as text, with the file. B.`
     )
-  })
-
-  it('a copy that fails still opens the file, and the reply says why the copy did not go', async () => {
-    const v = verbs({ copyFails: 'the bot is offline.' })
-    const reply = await v.open(['plan.md'], caller())
-    expect(reply).toMatchObject({
-      exit: 0,
-      text: `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Koloft could not also send it to Discord: the bot is offline.`
-    })
   })
 })
 
