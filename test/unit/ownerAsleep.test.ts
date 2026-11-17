@@ -10,7 +10,7 @@ import {
   type AskedOwner,
   type OwnerAsleepDeps
 } from '../../src/main/ownerAsleep'
-import { ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
+import { ANSWER_NOT_TAKEN } from '../../src/plugins/sessions/main/dialog'
 
 const HOUR_MS = 60 * 60_000
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-'))
