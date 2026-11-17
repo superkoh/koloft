@@ -565,12 +565,7 @@ import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
-import {
-  SlashCommands,
-  toCaller,
-  type SlashReplyTo,
-  type SlashTarget
-} from '@plugins/sessions/main/slashCommands'
+import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { toChannel } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'

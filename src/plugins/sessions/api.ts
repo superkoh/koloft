@@ -8,6 +8,13 @@ import {
 } from './prompts/text'
 
 export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
+export {
+  SlashCommands,
+  toCaller,
+  type SlashReplyTo,
+  type SlashTarget,
+  type SlashResult
+} from './main/slashCommands'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

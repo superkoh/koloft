@@ -1,14 +1,10 @@
-import type { SlashReplyTo } from '@plugins/sessions/main/slashCommands'
-import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
-
-export interface ChannelPoster {
-  say(channelId: string, text: string): void
-  card(channelId: string, card: Card): Promise<void>
-}
+import type { SlashReplyTo } from '@plugins/sessions/api'
+import { accentOf, CONDUCTOR_ACCENT } from './cards'
+import type { DiscordRelay } from './relay'
 
 export const toChannel = (
   channelId: string,
-  poster: () => ChannelPoster | null | undefined
+  poster: () => Pick<DiscordRelay, 'say' | 'card'> | null | undefined
 ): SlashReplyTo => ({
   where: 'post what it prints in Discord',
   say: (text) => poster()?.say(channelId, text),
