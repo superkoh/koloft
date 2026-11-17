@@ -14,8 +14,8 @@ export class RepliesOwed {
   private toSessions = new Map<string, OwedToSession>()
   private toListeners = new Map<string, ReplyListener>()
 
-  sessionOwed(tab: string): OwedToSession | undefined {
-    return this.toSessions.get(tab)
+  owesSession(tab: string, sessionId: string): boolean {
+    return this.toSessions.get(tab)?.owner === sessionId
   }
 
   oweSession(tab: string, owed: OwedToSession): void {

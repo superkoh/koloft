@@ -9,6 +9,7 @@ import {
 
 export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
+export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

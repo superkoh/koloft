@@ -17,7 +17,10 @@ import {
   PICK_FOR_THE_TASK,
   RepliesOwed,
   withProjectRules,
-  type ReplyListener
+  type ReplyListener,
+  type SendResult,
+  type StartResult,
+  type StartSpec
 } from '@plugins/sessions/api'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import {
@@ -1029,29 +1032,6 @@ function isMe(
   )
 }
 
-export interface SendResult {
-  ok: boolean
-  session?: string
-  text?: string
-  why?: string
-}
-
-export interface StartResult {
-  ok: boolean
-  session?: string
-  name?: string
-  why?: string
-}
-
-export interface StartSpec {
-  task: string
-  workspace?: string
-  backend?: string
-  model?: string
-  name?: string
-  worktree?: string
-}
-
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): boolean
@@ -1217,8 +1197,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         (s) =>
           s.alive &&
           (s.status === 'working' || s.status === 'approval') &&
-          (repliesOwed.sessionOwed(s.tabId)?.owner === sessionId ||
-            !!messagedBy.get(s.tabId)?.has(sessionId))
+          (repliesOwed.owesSession(s.tabId, sessionId) || !!messagedBy.get(s.tabId)?.has(sessionId))
       )
 
   const turnEnded = (tabId: string, turn: Turn): boolean => {
