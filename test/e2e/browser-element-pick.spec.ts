@@ -36,6 +36,8 @@ import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 let server: FixtureServer
 let transcript: string
 
+test.use({ capturesInSrgb: true })
+
 test.beforeEach(async ({ page, env }) => {
   test.setTimeout(180_000)
   server = await startEchoServer()

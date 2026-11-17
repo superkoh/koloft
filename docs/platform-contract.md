@@ -556,7 +556,8 @@ method. A recheck adds its date, version and command to the bullet.
   comes back `200, 9, 9`); a reader that ignores the profile sees the stored values.
   `--force-color-profile=srgb` on the command line makes the capture plain sRGB with no
   `iCCP` and the exact page values; the same switch set by
-  `app.commandLine.appendSwitch` in the main script changed nothing. Measured
+  `app.commandLine.appendSwitch` on the main script's first lines, before `ready`,
+  changed nothing. Measured
   2026-11-17 on Electron 43.8.7, macOS 27.2.1, an Acer XB273K
   (`screen.getPrimaryDisplay().colorSpace` reports red primary 0.6816, 0.3106,
   transfer `BT709_APPLE`), a hidden `BrowserWindow`, one launch per variant.

@@ -14,15 +14,21 @@ import type { AttentionEvent, OsOutletsSeenByTests } from '../../../src/shared/t
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out', 'main', 'index.js')
 
+// PLATFORM§9
+const CAPTURES_IN_SRGB_WHATEVER_THE_MAC_SCREEN = '--force-color-profile=srgb'
+
 interface Fixtures {
+  capturesInSrgb: boolean
   env: E2EEnv
   app: ElectronApplication
   page: Page
 }
 
 export const test = base.extend<Fixtures>({
-  env: async ({}, use, testInfo) => {
+  capturesInSrgb: [false, { option: true }],
+  env: async ({ capturesInSrgb }, use, testInfo) => {
     const env = setupE2EEnv()
+    if (capturesInSrgb) env.extraArgs.push(CAPTURES_IN_SRGB_WHATEVER_THE_MAC_SCREEN)
     await use(env)
     const sshLog = path.join(env.home, 'fake-ssh', 'log')
     if (testInfo.status !== testInfo.expectedStatus && fs.existsSync(sshLog)) {
