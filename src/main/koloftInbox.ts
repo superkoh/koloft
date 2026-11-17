@@ -19,8 +19,8 @@ import {
   type CodexQuestion,
   ANSWER_NOT_TAKEN,
   type Question
-} from './discord/dialog'
-import { SHOWS_NO_DIALOG } from './discord/relay'
+} from '@plugins/sessions/main/dialog'
+import { SHOWS_NO_DIALOG } from '@plugins/sessions/main/sessionAsks'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
