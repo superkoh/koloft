@@ -314,22 +314,13 @@ export function thawMachine(lab: SshLab): void {
   dk(['unpause', lab.target])
 }
 
-export function runOnTarget(
-  lab: SshLab,
-  user: string,
-  script: string,
-  container = lab.target
-): string {
-  return dk(['exec', '-u', user, '-w', `/home/${user}`, container, 'sh', '-c', script])
+// PLATFORM§73
+function withTheUmaskOfAnSshLogin(script: string): string {
+  return `umask 022\n${script}`
 }
 
-export async function runOnTargetWhileServing(
-  lab: SshLab,
-  user: string,
-  script: string,
-  container = lab.target
-): Promise<string> {
-  const { stdout } = await promisify(execFile)(docker(), [
+function asUserIn(container: string, user: string, script: string): string[] {
+  return [
     'exec',
     '-u',
     user,
@@ -338,13 +329,31 @@ export async function runOnTargetWhileServing(
     container,
     'sh',
     '-c',
-    script
-  ])
+    withTheUmaskOfAnSshLogin(script)
+  ]
+}
+
+export function runOnTarget(
+  lab: SshLab,
+  user: string,
+  script: string,
+  container = lab.target
+): string {
+  return dk(asUserIn(container, user, script))
+}
+
+export async function runOnTargetWhileServing(
+  lab: SshLab,
+  user: string,
+  script: string,
+  container = lab.target
+): Promise<string> {
+  const { stdout } = await promisify(execFile)(docker(), asUserIn(container, user, script))
   return stdout
 }
 
 export function runOnBastion(lab: SshLab, user: string, script: string): string {
-  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.bastion, 'sh', '-c', script])
+  return dk(asUserIn(lab.bastion, user, script))
 }
 
 export function installOnTarget(lab: SshLab, file: string, at: string): void {
