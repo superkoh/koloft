@@ -1,4 +1,4 @@
-import { OWNER_QUOTE_MARKS } from '@shared/agentGuide'
+import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
 import type { Assist } from './assist'
 
 export interface SessionCaller {
