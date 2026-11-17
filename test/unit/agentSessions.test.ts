@@ -107,9 +107,10 @@ function harness(
   cold: ClosableSession[] = []
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
-  turnEnded: (tabId: string, reply: string, said?: string) => void
+  turnEnded: (tabId: string, reply: string, said?: string) => boolean
   waitsOnAnother: (sessionId: string) => boolean
   sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
+  startFromInbox: ReturnType<typeof sessionVerb>['startFromInbox']
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -238,7 +239,7 @@ function harness(
     inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
   return {
     verb,
-    turnEnded: (tabId, reply, said) =>
+    turnEnded: (tabId, reply, said): boolean =>
       inner.turnEnded(tabId, {
         said: said === undefined ? [] : [{ who: 'owner', text: said, at: 1 }],
         reply,
@@ -246,6 +247,7 @@ function harness(
       }),
     waitsOnAnother: inner.waitsOnAnother,
     sendFromInbox: inner.sendFromInbox,
+    startFromInbox: inner.startFromInbox,
     launched,
     queued,
     closed,
@@ -2350,6 +2352,41 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     await vi.waitFor(() =>
       expect(toAssist().at(-1)).toEqual(handed('butler', 'Still owed after a failed answer.'))
     )
+  })
+
+  it('a session started for a listener owes it the first reply that has words, carried across a tab move and paid once and before a session that messaged it meanwhile, which still gets the reply after', async () => {
+    const open = [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })]
+    const h = harness(
+      open,
+      {},
+      [],
+      conducting({
+        sidebar: sidebar([[WS, [row('new-id', { title: 'new-work', running: true })]]])
+      })
+    )
+    const replies: string[] = []
+    const toButler = (): string[] =>
+      h.lines
+        .filter((l) => l.tabId === 'butler')
+        .map((l) => (JSON.parse(l.line) as { message: { content: string } }).message.content)
+
+    expect(
+      await h.startFromInbox(undefined, { task: 'fix it', workspace: WS }, 'default', (r) =>
+        replies.push(r)
+      )
+    ).toMatchObject({ ok: true, session: 'new-tab' })
+    expect(h.turnEnded('new-tab', '')).toBe(false)
+    expect(replies).toEqual([])
+    expect((await h.verb(['send', 'new-work', 'also the docs'], from('butler'))).exit).toBe(0)
+    h.moveTab('new-tab', 'moved')
+    open[open.length - 1] = { ...open[open.length - 1], tabId: 'moved' }
+    expect(h.turnEnded('new-tab', 'Stale.')).toBe(false)
+    expect(h.turnEnded('moved', 'Fixed it.')).toBe(true)
+    expect(replies).toEqual(['Fixed it.'])
+    expect(toButler()).toEqual([])
+    expect(h.turnEnded('moved', 'Docs too.')).toBe(true)
+    await vi.waitFor(() => expect(toButler()).toEqual([expect.stringContaining('Docs too.')]))
+    expect(replies).toEqual(['Fixed it.'])
   })
 })
 
