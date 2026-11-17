@@ -25,6 +25,8 @@ import {
   processAlive,
   runIn,
   sendShortcut,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   sessionInRow,
   startSessionIn,
@@ -248,6 +250,29 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
           timeout: 60_000
         })
         .toContain(JSON.stringify(`Answer to: ${TWO_LINE_PROMPT}`).slice(1, -1))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§15
+  test('⌘⌫ in a remote Antigravity tab reaches agy through ssh and tmux as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      const { id } = await boundRemoteSession(page, 'agy')
+      await expect
+        .poll(() => agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini')), {
+          timeout: 60_000
+        })
+        .toContain(`Answer to: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
     } finally {
       await quitAndClose(app)
     }

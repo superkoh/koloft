@@ -21,6 +21,7 @@ const ESC = '\x1b'
 const BEL = '\x07'
 const ENTER = '\r'
 const BACKSPACE = '\x7f'
+const CLEAR_THE_LINE = '\x15'
 const UP = '\u0000up'
 const DOWN = '\u0000down'
 const LEFT = '\u0000left'
@@ -2113,6 +2114,8 @@ function onKey(key) {
   }
   if (key === BACKSPACE) typed = typed.slice(0, -1)
   // AGY§15
+  else if (key === CLEAR_THE_LINE)
+    typed = typed.endsWith('\n') ? typed.slice(0, -1) : typed.slice(0, typed.lastIndexOf('\n') + 1)
   else if (key === '\n' || (key.length === 1 && key >= ' ')) typed += key
 }
 function feed(chunk) {
