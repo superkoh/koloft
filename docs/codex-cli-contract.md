@@ -2933,6 +2933,18 @@ message" (3 runs).
   prompt `<words>\n\nPicture: <userData>/palette-pictures/<uuid>.png` in a fresh
   worktree. It printed "Viewed image <uuid>.png" and answered `ZEBRA`, with no approval
   in between, the file being outside the workspace.
+- **A `Picture:` line changes nothing about a first prompt that starts with `/` or
+  `$`.** Measured 2026-11-17, Codex CLI 0.169.0 on this Mac, `codex app-server --listen
+  unix://…` and the TUI `--remote` to it in a python pty, a scratch `HOME` and
+  `CODEX_HOME` pointing at a fake Responses server, the repo trusted, the prompt as the
+  last argument; 1 run each, with and without `\n\nPicture: <png>` (the PNG outside the
+  repo). `/probe-skill say hi` (a skill in `<repo>/.agents/skills/`), `/review focus on
+  the README` and `/nosuch do X` all went to the model as plain text, the `Picture:` line
+  in the same `input_text`, with no "Unrecognized command" and nothing run (as §14).
+  `$probe-skill say hi` sent the skill both ways: the user's text, `Picture:` line
+  included, then a second item `<skill><name>probe-skill</name>…<body></skill>`;
+  `$ARGUMENTS` in the body is not filled in. No run attached an image item; the path is
+  text, the title request included.
 
 ## 24. Searching the words of every thread
 
