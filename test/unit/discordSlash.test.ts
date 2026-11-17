@@ -421,6 +421,22 @@ describe('a slash command typed into a session', () => {
     expect(typed).toEqual([])
   })
 
+  it.each([
+    ['a calling session', { tell: () => undefined }, 'hand you what it prints'],
+    ['a Discord channel', CHANNEL, 'post what it prints in Discord']
+  ] as const)(
+    'answers %s, word for word, whether it types now or once the turn ends, and where the output goes',
+    (_who, to, where) => {
+      expect(setup().slash.run(child, '/compact', to)).toBe(
+        `Typing /compact into fix-login; Koloft will ${where}.`
+      )
+      const busy = setup({ takesTyping: () => false, ready: () => new Promise(() => undefined) })
+      expect(busy.slash.run(child, '/compact', to)).toBe(
+        `fix-login is busy; Koloft will type /compact once its turn ends, and ${where}.`
+      )
+    }
+  )
+
   it('a session closed before the result says so and no longer counts as running a command', async () => {
     const { slash, posts } = setup()
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
