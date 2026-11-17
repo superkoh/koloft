@@ -40,6 +40,7 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
   KEPT_AFTER_COMMAND_BACKSPACE,
   sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
@@ -211,6 +212,9 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect
         .poll(() => museSaid(env, call.sessionId))
         .toContain(`echo: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(JSON.stringify(museSaid(env, call.sessionId))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
     } finally {
       await quitAndClose(app)
     }

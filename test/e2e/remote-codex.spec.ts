@@ -22,6 +22,7 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
   KEPT_AFTER_COMMAND_BACKSPACE,
   sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
@@ -239,9 +240,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await addRemoteWorkspace(page, env)
       await startRemoteCodex(page, env)
       await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
-      await expect
-        .poll(() => codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')))
-        .toContain(KEPT_AFTER_COMMAND_BACKSPACE)
+      const sent = (): unknown[] =>
+        codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+      await expect.poll(sent).toContain(KEPT_AFTER_COMMAND_BACKSPACE)
+      expect(JSON.stringify(sent())).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }

@@ -789,16 +789,18 @@ export async function sendTwoLinesJoinedByShiftEnter(page: Page, term: Locator):
   await page.keyboard.press('Enter')
 }
 
+export const ERASED_BY_COMMAND_BACKSPACE = 'dropped words'
 export const KEPT_AFTER_COMMAND_BACKSPACE = 'kept words'
 
 export async function sendALineErasedByCommandBackspaceThenAnother(
   page: Page,
-  term: Locator
+  term: Locator,
+  kept = KEPT_AFTER_COMMAND_BACKSPACE
 ): Promise<void> {
   await term.click()
-  await page.keyboard.type('dropped words')
+  await page.keyboard.type(ERASED_BY_COMMAND_BACKSPACE)
   await page.keyboard.press('Meta+Backspace')
-  await page.keyboard.type(KEPT_AFTER_COMMAND_BACKSPACE)
+  await page.keyboard.type(kept)
   await page.keyboard.press('Enter')
 }
 

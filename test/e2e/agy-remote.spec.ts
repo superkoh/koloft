@@ -25,6 +25,7 @@ import {
   processAlive,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
   KEPT_AFTER_COMMAND_BACKSPACE,
   sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
@@ -255,7 +256,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
-  // AGY§15
+  // AGY§15 PLATFORM§35
   test('⌘⌫ in a remote Antigravity tab reaches agy through ssh and tmux as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
     env
   }) => {
@@ -273,6 +274,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
           timeout: 60_000
         })
         .toContain(`Answer to: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini'))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
     } finally {
       await quitAndClose(app)
     }

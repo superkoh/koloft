@@ -86,6 +86,7 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
   KEPT_AFTER_COMMAND_BACKSPACE,
   sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
@@ -1400,6 +1401,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await startCodex(page, env)
       await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
       await expect.poll(() => codexPrompts(env)).toContain(KEPT_AFTER_COMMAND_BACKSPACE)
+      expect(JSON.stringify(codexPrompts(env))).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }

@@ -43,6 +43,7 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
   KEPT_AFTER_COMMAND_BACKSPACE,
   sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
@@ -913,6 +914,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
       const { id } = await agyConversationOnceFirstTurnEnded(page)
       expect(transcriptOf(env, id)).toContain(`Answer to: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(transcriptOf(env, id)).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }

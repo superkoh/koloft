@@ -2112,8 +2112,8 @@ function onKey(key) {
     typed = ''
     return submit(line)
   }
-  if (key === BACKSPACE) typed = typed.slice(0, -1)
   // AGY§15
+  if (key === BACKSPACE) typed = typed.slice(0, -1)
   else if (key === CLEAR_THE_LINE)
     typed = typed.endsWith('\n') ? typed.slice(0, -1) : typed.slice(0, typed.lastIndexOf('\n') + 1)
   else if (key === '\n' || (key.length === 1 && key >= ' ')) typed += key
