@@ -5,7 +5,6 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
-  agyQuotaUsed,
   agyTranscriptOf,
   installAgy,
   installAgyWithNoAccount,
@@ -16,6 +15,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
+  agyQuotaUsed,
   centerTerm,
   chooseBackend,
   closeActiveTab,
@@ -69,8 +69,8 @@ const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 
-const accountFolder = (env: E2EEnv): string =>
-  path.join(machineHome(env), '.koloft', 'agy', E2E_AGY_ACCOUNT)
+const accountFolder = (env: E2EEnv, name = E2E_AGY_ACCOUNT): string =>
+  path.join(machineHome(env), '.koloft', 'agy', name)
 
 function setUp(env: E2EEnv): void {
   installAgy(env)
@@ -649,9 +649,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await waitBooted(page)
       await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
-      expect(machineAgyCalls(env)[0].argv[0]).toBe(
-        `--gemini_dir=${path.join(machineHome(env), '.koloft', 'agy', 'roomy')}`
-      )
+      expect(machineAgyCalls(env)[0].argv[0]).toBe(`--gemini_dir=${accountFolder(env, 'roomy')}`)
     } finally {
       await quitAndClose(app)
     }

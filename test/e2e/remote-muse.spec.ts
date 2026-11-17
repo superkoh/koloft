@@ -7,6 +7,7 @@ import {
   addMuseAccount,
   E2E_MUSE_ACCOUNT,
   installMuse,
+  MUSE_SIGNED_IN_WITH_META,
   museSaid,
   seedSettings,
   type E2EEnv
@@ -39,6 +40,7 @@ import {
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
   killSession,
+  museLimitWindows,
   newSessionInWith,
   openMenu,
   openWorktreeSession,
@@ -263,13 +265,9 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     installMuseOnMachine(env)
     seedRemoteWorkspace(env)
     seedSettings(env, { hintsOff: true })
-    const signedInWithMeta = JSON.stringify({
-      schema_version: 1,
-      providers: { meta: { access_token: 'fake' } }
-    })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-      signedInWithMeta
+      MUSE_SIGNED_IN_WITH_META
     )
     const quota = path.join(env.home, 'fake-muse-quota.json')
     fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 100 }))
@@ -278,19 +276,13 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       const page = await lastOpen.firstWindow()
       await waitBooted(page)
       await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.accounts.probe())).find(
-              (a) => a.kind === 'muse-home'
-            )?.limits?.windows.length,
-          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
-        )
+        .poll(() => museLimitWindows(page), { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
         .toBe(2)
     } finally {
       await quitAndClose(lastOpen)
     }
 
-    addMuseAccount(env, 'roomy', signedInWithMeta)
+    addMuseAccount(env, 'roomy', MUSE_SIGNED_IN_WITH_META)
     fs.writeFileSync(quota, JSON.stringify({ current: 'unread', weekly: 'unread' }))
     const app = await launchApp(env)
     try {

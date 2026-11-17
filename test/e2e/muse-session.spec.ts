@@ -16,6 +16,7 @@ import {
   installCodex,
   addMuseAccount,
   installMuse,
+  MUSE_SIGNED_IN_WITH_META,
   museCalls,
   museSaid,
   seedSettings,
@@ -25,6 +26,7 @@ import {
 } from './helpers/env'
 import {
   agentRow,
+  museLimitWindows,
   centerTerm,
   chooseBackend,
   dialogPrimary,
@@ -223,7 +225,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     seedSettings(env, { hintsOff: true })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+      MUSE_SIGNED_IN_WITH_META
     )
     fs.writeFileSync(
       path.join(env.home, 'fake-muse-quota.json'),
@@ -258,12 +260,8 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     installMuse(env)
     trustInMuse(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })
-    const signedInWithMeta = JSON.stringify({
-      schema_version: 1,
-      providers: { meta: { access_token: 'fake' } }
-    })
     const configOf = (name: string) => path.join(env.userData, 'muse-homes', name, 'muse')
-    fs.writeFileSync(path.join(configOf(E2E_MUSE_ACCOUNT), 'auth.json'), signedInWithMeta)
+    fs.writeFileSync(path.join(configOf(E2E_MUSE_ACCOUNT), 'auth.json'), MUSE_SIGNED_IN_WITH_META)
     const quota = path.join(env.home, 'fake-muse-quota.json')
     fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 100 }))
     const lastOpen = await launchApp(env)
@@ -271,19 +269,13 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const page = await lastOpen.firstWindow()
       await waitBooted(page)
       await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.accounts.probe())).find(
-              (a) => a.kind === 'muse-home'
-            )?.limits?.windows.length,
-          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
-        )
+        .poll(() => museLimitWindows(page), { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
         .toBe(2)
     } finally {
       await quitAndClose(lastOpen)
     }
 
-    addMuseAccount(env, 'roomy', signedInWithMeta)
+    addMuseAccount(env, 'roomy', MUSE_SIGNED_IN_WITH_META)
     fs.writeFileSync(quota, JSON.stringify({ current: 'unread', weekly: 'unread' }))
     const app = await launchApp(env)
     try {
@@ -304,7 +296,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     seedSettings(env, { hintsOff: true })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+      MUSE_SIGNED_IN_WITH_META
     )
     const quota = path.join(env.home, 'fake-muse-quota.json')
     fs.writeFileSync(quota, JSON.stringify({ current: 40, weekly: 7 }))

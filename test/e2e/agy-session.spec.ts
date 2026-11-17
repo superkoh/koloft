@@ -14,7 +14,6 @@ import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
   agyCalls,
-  agyQuotaUsed,
   agySessionCalls as sessionCalls,
   agyTranscriptOf as transcriptOf,
   installAgy,
@@ -30,6 +29,7 @@ import {
 } from './helpers/env'
 import {
   agentRow,
+  agyQuotaUsed,
   agyConversationOnceFirstTurnEnded,
   centerTerm,
   chooseBackend,

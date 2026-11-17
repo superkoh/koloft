@@ -10,6 +10,7 @@ import {
   agentRow,
   centerTerm,
   chooseBackend,
+  codexAccountsWithLimits,
   gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
@@ -229,6 +230,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     signedIn(E2E_CODEX_ACCOUNT, 100)
     signedIn('roomy', 10)
     seedSettings(env, {
+      hintsOff: true,
       accounts: [
         ...(settingsOnDisk(env).accounts as Record<string, unknown>[]),
         seededAccount('roomy', 'codex-home')
@@ -236,7 +238,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     })
     const lastOpen = await launchWithRemote(env)
     try {
-      await lastOpen.page.evaluate(() => window.api.accounts.probe())
+      await expect.poll(() => codexAccountsWithLimits(lastOpen.page), { timeout: 30_000 }).toBe(2)
     } finally {
       await quitAndClose(lastOpen.app)
     }
@@ -245,9 +247,11 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     const { app, page } = await launchWithRemote(env)
     try {
       await startRemoteCodex(page, env)
-      expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toEqual([
-        { type: 'chatgptAuthTokens', accessToken: 'roomy-access-token', accountId: 'roomy' }
-      ])
+      await expect
+        .poll(() => machineCodexLog(env, 'fake-codex-logins.jsonl'), { timeout: 30_000 })
+        .toEqual([
+          { type: 'chatgptAuthTokens', accessToken: 'roomy-access-token', accountId: 'roomy' }
+        ])
     } finally {
       await quitAndClose(app)
     }

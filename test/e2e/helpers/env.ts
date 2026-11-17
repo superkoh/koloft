@@ -2,7 +2,6 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type { Page } from '@playwright/test'
 import type { GithubFixture } from '../../../src/main/github'
 import type { AgentName } from './p1'
 
@@ -307,6 +306,11 @@ export function installMuse(env: E2EEnv): void {
   addMuseAccount(env)
 }
 
+export const MUSE_SIGNED_IN_WITH_META = JSON.stringify({
+  schema_version: 1,
+  providers: { meta: { access_token: 'fake' } }
+})
+
 // MUSE§13
 export function addMuseAccount(
   env: E2EEnv,
@@ -366,11 +370,6 @@ export function writeAgyWeeklyUsage(env: E2EEnv, remaining: number): string {
     })
   )
   return usage
-}
-
-export async function agyQuotaUsed(page: Page): Promise<number | undefined> {
-  return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
-    ?.quota?.[0]?.used
 }
 
 // AGY§5 AGY§6
