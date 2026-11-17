@@ -135,9 +135,10 @@ name=\${url##*/}
 cat "$FIXTURES/$name" > "$out"
 exit 0`
 
-const expectNoHomebrewRsyncThePathCannotHide = (): void => {
-  expect(['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync'].filter(fs.existsSync)).toEqual([])
-}
+const HOMEBREW_RSYNC_THE_PATH_CANNOT_HIDE = [
+  '/opt/homebrew/bin/rsync',
+  '/usr/local/bin/rsync'
+].filter((f) => fs.existsSync(f))
 
 const HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE = [
   '/opt/homebrew/bin/curl',
@@ -271,52 +272,61 @@ describe('U-ENS-1..4: ensure.sh on a remote machine never sits on a hidden passw
     expect(m.calls('curl')).toHaveLength(fetches)
   })
 
-  it('refreshes apt\u2019s package lists once, right before the first install: a bare Debian/Ubuntu container has none', () => {
-    const m = machine()
-    complete(m)
-    fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
-    m.give('id', 'echo 0')
-    m.run()
-    expect(m.calls('apt-get')).toEqual(['update', 'install -y rsync'])
-    expect(m.calls('sudo')).toEqual([])
-  })
+  const itWithoutHomebrewRsync = it.skipIf(HOMEBREW_RSYNC_THE_PATH_CANNOT_HIDE.length > 0)
 
-  it('asks for the lists through the same passwordless sudo as the install', () => {
-    const m = machine()
-    complete(m)
-    fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
-    m.giveLogger('sudo', 0)
-    m.run()
-    expect(m.calls('sudo')).toEqual([
-      '-n true',
-      '-n apt-get update',
-      '-n env DEBIAN_FRONTEND=noninteractive apt-get install -y rsync'
-    ])
-  })
+  itWithoutHomebrewRsync(
+    'refreshes apt\u2019s package lists once, right before the first install: a bare Debian/Ubuntu container has none',
+    () => {
+      const m = machine()
+      complete(m)
+      fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
+      m.give('id', 'echo 0')
+      m.run()
+      expect(m.calls('apt-get')).toEqual(['update', 'install -y rsync'])
+      expect(m.calls('sudo')).toEqual([])
+    }
+  )
 
-  it('with no passwordless sudo the password is asked for in the tab, and the install runs', () => {
-    expectNoHomebrewRsyncThePathCannotHide()
-    const m = machine()
-    complete(m)
-    fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
-    m.give(
-      'sudo',
-      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'sudo.log'))}
+  itWithoutHomebrewRsync(
+    'asks for the lists through the same passwordless sudo as the install',
+    () => {
+      const m = machine()
+      complete(m)
+      fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
+      m.giveLogger('sudo', 0)
+      m.run()
+      expect(m.calls('sudo')).toEqual([
+        '-n true',
+        '-n apt-get update',
+        '-n env DEBIAN_FRONTEND=noninteractive apt-get install -y rsync'
+      ])
+    }
+  )
+
+  itWithoutHomebrewRsync(
+    'with no passwordless sudo the password is asked for in the tab, and the install runs',
+    () => {
+      const m = machine()
+      complete(m)
+      fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
+      m.give(
+        'sudo',
+        `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'sudo.log'))}
 [ "$1" = -n ] && exit 1
 [ "$1" = -p ] && shift 2
 while [ $# -gt 0 ]; do case "$1" in env|*=*) shift ;; *) break ;; esac; done
 exec "$@"`
-    )
-    const res = m.run()
-    expect(res.status).toBe(0)
-    expect(m.calls('sudo').join('\n')).toContain('sudo password')
-    expect(m.calls('apt-get')).toEqual(['update', 'install -y rsync'])
-    expect(res.stdout).toContain('type it below')
-    expect(res.stdout).not.toContain('Run this on the machine')
-  })
+      )
+      const res = m.run()
+      expect(res.status).toBe(0)
+      expect(m.calls('sudo').join('\n')).toContain('sudo password')
+      expect(m.calls('apt-get')).toEqual(['update', 'install -y rsync'])
+      expect(res.stdout).toContain('type it below')
+      expect(res.stdout).not.toContain('Run this on the machine')
+    }
+  )
 
-  it('only when the password sudo fails too is the command handed over', () => {
-    expectNoHomebrewRsyncThePathCannotHide()
+  itWithoutHomebrewRsync('only when the password sudo fails too is the command handed over', () => {
     const m = machine()
     complete(m)
     fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
