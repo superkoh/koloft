@@ -2991,6 +2991,23 @@ sessions.
   sent is read from the attachments still in the conversation, so a compaction sends
   the list again (the changelog line; `strings`, 2026-10-20, not run). Koloft's e2e
   helper reads only `type` and `content`.
+- **A running session never re-reads a `--plugin-dir` skill rewritten on disk.**
+  2026-11-17, CC 2.1.326 darwin-arm64, interactive in a python pty with a scratch `HOME`
+  and `CLAUDE_CONFIG_DIR`, a plugin folder `probe` given by `--plugin-dir`, and a stand-in
+  Messages API that answered a prompt holding a keyword with a `Skill
+  {skill: "probe:probe"}` call and saved every request body. `SKILL.md` was given a new
+  `description` and a new body while the session sat idle, either rewritten in place or
+  by swapping in a whole new skill folder (written beside it, the old one removed, the new
+  one renamed into place, as Koloft's `keepFolder` does):
+  - called once before the change and again after it, the second call's result was
+    `Launching skill: probe:probe` plus the text `Skill /probe:probe is already loaded
+    above; instructions unchanged.` — the new body never reached the model (both ways of
+    changing it);
+  - never called before the change (one plain turn first; rewritten in place), the first
+    call after it brought the old body;
+  - in both runs every later request listed the old `description`.
+  So a skill's text is read when the session starts; a new text reaches only sessions
+  started after the rewrite. A user skill under `~/.claude/skills` was not tried.
 - **`--add-dir <dir>` also loads `<dir>/.claude/skills`**, listed without a prefix
   unless another skill (a user skill, say) already holds the name: since 2.1.309 it is
   then offered as `<folder>:<name>`, and CC adds ` (scoped to <folder>/ — use this
@@ -3235,6 +3252,24 @@ sessions.
   `--append-system-prompt-file` flags the model knew only the second file's word. Given
   one `--append-system-prompt-file` and one inline `--append-system-prompt`, it knew both
   words.
+- **A shared prompt file plus a long inline appended prompt both reach the model whole,
+  on the Mac and on a remote machine.** 2026-11-17, CC 2.1.326. The file was Koloft's own
+  `koloft-prompt.md` (3,713 bytes, from `agentPluginFiles()`); the inline text was 7,232
+  bytes holding newlines, tabs, `'`, `"`, backticks, `$HOME`, `$(whoami)`, `\`, `%s`,
+  `!!`, Chinese and an emoji. Each run's one model request went to a local stand-in
+  Messages API that saved the request body. On the Mac: the darwin-arm64 binary run
+  interactively in a python pty with a scratch `HOME` and `CLAUDE_CONFIG_DIR`. Remote:
+  the linux-arm64 binary in the e2e SSH lab image (Docker, Debian 12), started the way a
+  remote tab starts — Koloft's own `claudeTabSpec` + `writeTabPackage` (rendered from
+  this repo, with `--append-system-prompt <text>` added to its `claudeArgs` and the
+  machine package's `agent-plugin/koloft-prompt.md` as the file) run as
+  `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'` from the Mac, so
+  through Koloft's tab script, real sshd, tmux and the status relay; the tab and machine
+  packages were copied in with `docker cp` rather than Koloft's tar push, and the
+  settings file (a fake `apiKeyHelper` and `ANTHROPIC_BASE_URL`) and the first prompt
+  were written by hand. Both times the request's last `system` block held the file's text and then the
+  inline text, each as one exact substring (SHA-256 of the inline text matched), the
+  inline text last in the block. Not tried: an inline text much longer than 7 KB.
 
 ## §14 The PermissionRequest hook: answering a dialog from outside
 
@@ -4242,7 +4277,17 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
   `--session-id` with `b.txt` sent `b.txt`'s word.
 - The transcript holds an `attachment` `{type: "prompt_snapshot", systemPrompt: […]}`,
   which a resume reuses.
-- Not probed: a resume in the full-screen `claude`.
+- **The interactive TUI does the same, in the default and the fullscreen layout.**
+  2026-11-17, CC 2.1.326 darwin-arm64, a python pty with a scratch `HOME` and
+  `CLAUDE_CONFIG_DIR`, a stand-in Messages API saving each request body, one turn per
+  launch: started `--session-id X --append-system-prompt-file a.txt` with a first prompt
+  on the command line, ended with SIGTERM once the turn was done, then `--resume X
+  --append-system-prompt-file b.txt` with a second prompt on the command line. With
+  `"tui": "fullscreen"` in the `--settings` file (the screen switched to the alternate
+  buffer, `ESC[?1049h`) and without it, the resumed request held both turns and
+  `a.txt`'s word, never `b.txt`'s. The same in fullscreen with Koloft's prompt file on
+  both launches and the changing word given as an inline `--append-system-prompt`: the
+  first launch's inline word only.
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
 conversation (`src/main/discord/butler.ts`).
@@ -4303,3 +4348,20 @@ screen` while the call ran.
 - Once done, the one call seen folded into `Ran 1 shell command`.
 
 Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/main/hooks.ts`.
+
+## §26 An inline appended prompt against the folder's CLAUDE.md
+
+2026-11-17, CC 2.1.326 through Koloft's shim with an account from Settings ▸ Accounts,
+`claude -p --model opus` (the requests went to `claude-opus-5-5`), a scratch
+`CLAUDE_CONFIG_DIR`, no MCP servers, in a scratch folder whose `CLAUDE.md` said `#
+Project rules` / "Every reply you write ends with this exact last line: `Signed:
+PELICAN`". Koloft's `koloft-prompt.md` went in with `--append-system-prompt-file`, and
+`--append-system-prompt` carried `## Written by the owner for this workspace` / the same
+sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; about
+18,700 input tokens and US$0.07 a run.
+
+- **The appended prompt won 3 times of 4.** Last lines: `Signed: PELICAN` once (the
+  model called the project file "the more specific rule"), `Signed: WALRUS` three times.
+- **Every run named the clash in its reply** and said which one it followed.
+
+Koloft dependents: none yet; the owner-written workspace block (#1995) is planned on it.

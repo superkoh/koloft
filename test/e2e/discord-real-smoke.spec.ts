@@ -19,7 +19,7 @@ import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 import { BUTLER_OFF_ITS_AGENT_LOG } from '../../src/shared/butlerStart'
 import { ownerSays } from '../../src/shared/agentGuide'
-import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
+import { PICK_OR_OWN_WORDS } from '../../src/plugins/sessions/main/dialog'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 
 function claudeTokenFromKeychain(): string {

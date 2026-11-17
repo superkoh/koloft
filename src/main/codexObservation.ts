@@ -19,7 +19,7 @@ import {
   type Asked,
   type CodexApproval,
   type CodexQuestion
-} from './discord/dialog'
+} from '@plugins/sessions/main/dialog'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

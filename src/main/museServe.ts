@@ -4,7 +4,7 @@ import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
 import { jsonRecord, record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
-import { labelsOf, type Question } from './discord/dialog'
+import { labelsOf, type Question } from '@plugins/sessions/main/dialog'
 import { pipeSecretTo } from './secretOnStdin'
 
 const SERVE_ANSWERS_WITHIN_MS = 15_000
