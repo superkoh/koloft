@@ -1,7 +1,7 @@
 # Koloft plugin format
 
-Format version 1, a draft. Only plugins built into Koloft exist, and nothing in the app reads
-a plugin's manifest yet.
+Format version 1, a draft. Only plugins built into Koloft exist. Of a manifest, Koloft reads
+only the `text` field today: the text it gives agents is put together from it.
 
 This page says what a Koloft plugin is and what its manifest (the plain-data file that says
 what the plugin is and what it owns) contains. It is written for someone who has not read
@@ -40,8 +40,11 @@ issue says whether it is done.
 A plugin owns six things. Switches are not built yet. The plan in #1964 is that when an
 optional plugin is off, sessions started afterwards get none of its text, its commands are
 refused with one sentence, its listeners and code are not started, and its UI entries are
-not shown, except a "Set up" action and its ⌘P item. Its settings and data stay on disk. The example column says what the Discord plugin is meant
-to own once its code moves into its folder.
+not shown, except a "Set up" action and its ⌘P item. Its settings and data stay on disk.
+
+The example column says what the Discord plugin is meant to own. Today its folder holds its
+manifest, its text blocks and its `api.ts`; the rest of its code still lives elsewhere in
+the app.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
 |---|---|---|---|
@@ -64,7 +67,8 @@ plugin owns (for a settings page, help text or a switch) without running the plu
 ## The eleven plugins
 
 These are the plugins in `src/plugins/list.ts`, in its order. A plugin is listed after
-every plugin it needs.
+every plugin it needs. The order also decides the order of text blocks that fill the same
+slot ([Text blocks](#text-blocks)).
 
 | Id | Name | Mandatory | Needs |
 |---|---|---|---|
@@ -74,8 +78,8 @@ every plugin it needs.
 | `butler` | Butler | yes | `sessions` |
 | `inbox` | Inbox | yes | `sessions` |
 | `scheduled-tasks` | Scheduled tasks | yes | `sessions` |
-| `discord` | Discord | no | `butler` |
 | `github` | GitHub | no | `sessions` |
+| `discord` | Discord | no | `butler` |
 | `todo` | Todo | no | `butler`, `github` |
 | `passwords` | Passwords and sign-in | no | `sessions`, `workbench` |
 | `docs-writing` | Docs writing | no | — |
@@ -83,39 +87,40 @@ every plugin it needs.
 ## Where a plugin lives
 
 Each plugin is one folder under `src/plugins/`, named by its id. The picture shows which file
-imports which, with the Todo plugin as the example. A dashed arrow is planned, not built.
+imports which, with the Todo plugin as the example.
 
 ```mermaid
 flowchart LR
   subgraph core["src/core/"]
     coreType["plugin.ts<br/>the manifest type"]
-    coreRest["the rest of core"]
+    corePrompt["prompt.ts<br/>composePrompt"]
   end
+  corePrompt -->|reads the text blocks of every plugin| list
   list["src/plugins/list.ts<br/>the list of plugins"] -->|imports each plugin.ts| manifest
-  list -->|imports the manifest type| coreType
-  manifest -->|imports the manifest type| coreType
   subgraph plugin["src/plugins/todo/"]
     manifest["plugin.ts<br/>the manifest"]
+    text["prompts/text.ts<br/>its text blocks"]
     api["api.ts<br/>what other plugins may use"]
-    code["main/, renderer/, shared/<br/>running code"]
   end
-  coreRest -.->|PLANNED: reads only the list| list
+  manifest -->|imports| text
+  manifest -->|imports the manifest type| coreType
 ```
 
-| Path | What it holds |
-|---|---|
-| `src/core/plugin.ts` | the manifest type `PluginManifest` and `PLUGIN_FORMAT_VERSION` |
-| `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports plugins |
-| `src/plugins/<id>/plugin.ts` | the plugin's manifest |
-| `src/plugins/<id>/api.ts` | what other plugins may import |
-| `src/plugins/<id>/main/` | code that runs in Koloft's main process |
-| `src/plugins/<id>/renderer/` | code that runs in Koloft's window |
-| `src/plugins/<id>/shared/` | code both of them use |
+| Path | What it holds | Today |
+|---|---|---|
+| `src/core/plugin.ts` | the manifest type `PluginManifest` and `PLUGIN_FORMAT_VERSION` | yes |
+| `src/core/prompt.ts` | `composePrompt`, which puts text blocks together | yes |
+| `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports a plugin's manifest | yes |
+| `src/plugins/<id>/plugin.ts` | the plugin's manifest | all eleven |
+| `src/plugins/<id>/prompts/` | the plugin's text blocks | six plugins |
+| `src/plugins/<id>/api.ts` | what other plugins may import | four plugins |
+| `src/plugins/<id>/main/` | code that runs in Koloft's main process | none yet |
+| `src/plugins/<id>/renderer/` | code that runs in Koloft's window | none yet |
+| `src/plugins/<id>/shared/` | code both of them use | none yet |
 
-Today each plugin folder holds only its `plugin.ts`. Koloft's main-process type check skips
-every plugin's `renderer/` folder, and its window type check skips every `main/` folder;
-both read the rest of a plugin folder. The plan in #1964 also names `prompts/` and `skill/` folders
-inside a plugin; nothing in the code knows them yet.
+Koloft's main-process type check skips every plugin's `renderer/` folder, and its window type
+check skips every `main/` folder; both read the rest of a plugin folder. The plan in #1964
+also names a `skill/` folder inside a plugin; nothing in the code knows it yet.
 
 ## The manifest
 
@@ -124,13 +129,15 @@ manifest of the Todo plugin:
 
 ```ts
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
+import { TEXT } from './prompts/text'
 
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'todo',
   name: 'Todo',
   mandatory: false,
-  needs: ['butler', 'github']
+  needs: ['butler', 'github'],
+  text: TEXT
 }
 ```
 
@@ -158,9 +165,9 @@ There is no other naming rule for an id.
 
 ### Optional fields
 
-Each optional field is a place for one of the things a plugin owns. No manifest fills one
-yet, and nothing in Koloft reads them yet. The steps in #1964 make Koloft read them one at a
-time.
+Each optional field is a place for one of the things a plugin owns. Koloft reads `text`
+today ([Text blocks](#text-blocks)). No manifest fills any other optional field yet, and
+nothing reads them; the steps in #1964 make Koloft read them one at a time.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -174,19 +181,74 @@ time.
 | `assistJobs` | list of `{ id, name }` | Assist jobs the plugin owns |
 | `mcpServers` | list of `{ name, command, args }` | MCP servers the plugin adds to sessions; a place kept for later, which no step plans to fill yet |
 
-A `TextBlock` is a piece of text and the slot it fills:
+### Text blocks
 
-- `slot`: the name of the place in a prompt the text goes into. A block names only its slot,
-  never who reads it, so core never names a plugin.
+A plugin's `text` is a list of `TextBlock`s. A text block is a piece of text and the slot it
+fills:
+
+- `slot`: the name of the place the text goes into. A block names only its slot, never who
+  reads it, so core never names a plugin.
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
-  `codex`, `muse` or `agy` (Antigravity).
-- `byModel`: optional; text to use instead for some models, keyed by model id. Nothing
-  checks the key against a list of models.
+  `codex`, `muse` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
+  builds a block that has its own text for every agent.
+- `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
+  it yet, and nothing checks the key against a list of models.
+- `when`: optional; the name of a fact. The block is used only when the caller says that
+  fact holds.
 
-The shape of `TextBlock` is being decided in #1969: how a block is added only when a
-condition holds, and how a text carries values only known at run time (the butler's name, a
-project's rules). The type in `src/core/plugin.ts` is the shape in the code today.
+Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
+
+This is the Todo plugin's one block. It adds a sentence to the part of the butler's prompt
+about the `koloft` command:
+
+```ts
+import type { TextBlock } from '@core/plugin'
+
+const SORT_OUT_THE_TO_DOS =
+  'When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints.'
+
+export const TEXT: readonly TextBlock[] = [
+  { slot: 'butler-koloft', text: ` ${SORT_OUT_THE_TO_DOS}` }
+]
+```
+
+`composePrompt(slot, context)` in `src/core/prompt.ts` puts the text for a slot together. The
+caller passes a context with three optional parts: `agent` (an agent id), `facts` (a list of
+fact names that hold) and `values` (a map from a name to a text). It works in this order:
+
+1. It takes every block that fills the slot, from every plugin, in the order of
+   `src/plugins/list.ts`, and within one plugin in the order of its `text` list.
+2. It drops each block whose `when` names a fact not in `facts`.
+3. For each block left, it takes `byAgent[agent]` when there is one, else `text`.
+4. It joins the texts with nothing between them, so a block starts with its own space or
+   line break.
+5. It fills each `{{name}}`. When the caller gave a value called `name`, it puts that value
+   in as it is, and does not look for `{{…}}` inside it. Otherwise it puts the text of slot
+   `name`, put together the same way with the same context. When no block fills that slot
+   and no value was given, it throws an error. A slot whose blocks were all dropped by
+   `when` gives empty text.
+
+For example, the slot `butler-koloft` is filled by Sessions core, GitHub, Discord and Todo,
+in that order. Discord's block there has `when: 'discord-bound'`, so its sentences are in the
+butler's prompt only while Discord has a bound channel.
+
+These are the slots, values and facts in use today:
+
+| Kind | Name | Filled or given by |
+|---|---|---|
+| slot | `session` | Sessions core and Discord; the prompt every session gets |
+| slot | `session-opening` | Browser control; half a sentence in the session prompt |
+| slot | `question-tool` | Sessions core; the name of each agent's question tool |
+| slot | `butler` | Butler; the butler's prompt |
+| slot | `butler-helper` | Butler; the prompt of a helper the butler starts |
+| slot | `butler-koloft` | Sessions core, GitHub, Discord, Todo; sentences in the butler's prompt |
+| value | `butler-name` | the caller; the butler's name |
+| value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
+| fact | `discord-bound` | the caller, when Discord has a bound channel |
+
+Who may add a slot, a value or a fact, and whether these names are kept stable for plugins
+written outside Koloft, is not decided.
 
 ## Format version
 
@@ -220,18 +282,19 @@ A plugin imports only:
 - the `api.ts` of a plugin listed in its own `needs`.
 
 If A needs B and B needs C, whether A may import C's `api.ts` without listing C is not
-decided. The check in #1967 allows only the plugins A lists itself.
+decided. The check below allows only the plugins A lists itself.
 
 Outside `src/plugins/`, the app's source imports no plugin, except through the list,
-`src/plugins/list.ts`. The list imports each plugin's `plugin.ts`. The check in #1967 reads
-only the source under `src/`, not the tests.
+`src/plugins/list.ts`. The list imports each plugin's `plugin.ts`. Core reads the list, never
+a plugin by name.
 
-`src/shared/` holds code Koloft's main process and window share today, and
-`src/core/plugin.ts` itself imports a type from it. Whether a plugin may import
-`src/shared/` directly is not decided.
+`src/shared/` holds code Koloft's main process and window share today, and core itself
+imports from it. Whether a plugin may import `src/shared/` directly is not decided.
 
-Nothing enforces the rule yet. #1967 adds a check that reports each import breaking it;
-#1991 makes that check fail the build.
+`npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
+not read the tests. It only reports and never fails the build; #1991 makes it fail. Today it
+lists imports that the steps of #1964 still have to move: app code that imports a plugin's
+`api.ts` directly, and plugins that import `src/shared/`.
 
 ## Not promised yet
 
