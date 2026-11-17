@@ -2995,13 +2995,16 @@ sessions.
   2026-11-17, CC 2.1.326 darwin-arm64, interactive in a python pty with a scratch `HOME`
   and `CLAUDE_CONFIG_DIR`, a plugin folder `probe` given by `--plugin-dir`, and a stand-in
   Messages API that answered a prompt holding a keyword with a `Skill
-  {skill: "probe:probe"}` call and saved every request body. `SKILL.md` was rewritten (a
-  new `description` and a new body) while the session sat idle:
-  - called once before the rewrite and again after it, the second call's result was
+  {skill: "probe:probe"}` call and saved every request body. `SKILL.md` was given a new
+  `description` and a new body while the session sat idle, either rewritten in place or
+  by swapping in a whole new skill folder (written beside it, the old one removed, the new
+  one renamed into place, as Koloft's `keepFolder` does):
+  - called once before the change and again after it, the second call's result was
     `Launching skill: probe:probe` plus the text `Skill /probe:probe is already loaded
-    above; instructions unchanged.` — the new body never reached the model;
-  - never called before the rewrite (one plain turn first), the first call after it
-    brought the old body;
+    above; instructions unchanged.` — the new body never reached the model (both ways of
+    changing it);
+  - never called before the change (one plain turn first; rewritten in place), the first
+    call after it brought the old body;
   - in both runs every later request listed the old `description`.
   So a skill's text is read when the session starts; a new text reaches only sessions
   started after the rewrite. A user skill under `~/.claude/skills` was not tried.
@@ -3261,9 +3264,10 @@ sessions.
   this repo, with `--append-system-prompt <text>` added to its `claudeArgs` and the
   machine package's `agent-plugin/koloft-prompt.md` as the file) run as
   `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'` from the Mac, so
-  through Koloft's tab script, real sshd, tmux and the status relay; the settings file
-  (a fake `apiKeyHelper` and `ANTHROPIC_BASE_URL`) and the first prompt were written by
-  hand. Both times the request's last `system` block held the file's text and then the
+  through Koloft's tab script, real sshd, tmux and the status relay; the tab and machine
+  packages were copied in with `docker cp` rather than Koloft's tar push, and the
+  settings file (a fake `apiKeyHelper` and `ANTHROPIC_BASE_URL`) and the first prompt
+  were written by hand. Both times the request's last `system` block held the file's text and then the
   inline text, each as one exact substring (SHA-256 of the inline text matched), the
   inline text last in the block. Not tried: an inline text much longer than 7 KB.
 
@@ -4276,8 +4280,9 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
 - **The interactive TUI does the same, in the default and the fullscreen layout.**
   2026-11-17, CC 2.1.326 darwin-arm64, a python pty with a scratch `HOME` and
   `CLAUDE_CONFIG_DIR`, a stand-in Messages API saving each request body, one turn per
-  launch: started `--session-id X --append-system-prompt-file a.txt`, quit, then
-  `--resume X --append-system-prompt-file b.txt` with a typed second prompt. With
+  launch: started `--session-id X --append-system-prompt-file a.txt` with a first prompt
+  on the command line, ended with SIGTERM once the turn was done, then `--resume X
+  --append-system-prompt-file b.txt` with a second prompt on the command line. With
   `"tui": "fullscreen"` in the `--settings` file (the screen switched to the alternate
   buffer, `ESC[?1049h`) and without it, the resumed request held both turns and
   `a.txt`'s word, never `b.txt`'s. The same in fullscreen with Koloft's prompt file on

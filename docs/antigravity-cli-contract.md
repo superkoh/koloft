@@ -671,8 +671,9 @@ only downloaded the public release.
     way Koloft starts a remote one: its own `agyTab` (with `sessionStartOutput(text)` as
     `start`), `mergedAgySettings`, `mergedAgyHooks` and the machine package's
     `agy-hook.sh`, rendered from this repo and run as `ssh -tt <lab> 'sh
-    "$HOME/.koloft/tabs/<tab>.sh" start 120 40'` from the Mac; the key, the server's
-    address and `-i <prompt>` were added by hand. A text of `koloftPrompt('agy')`, a blank
+    "$HOME/.koloft/tabs/<tab>.sh" start 120 40'` from the Mac; the packages went in with
+    `docker cp` rather than Koloft's tar push, and the key, the server's address and `-i
+    <prompt>` were added by hand. Each tab was ended by killing its tmux server. A text of `koloftPrompt('agy')`, a blank
     line and a 7,232-byte block holding newlines, tabs, `'`, `"`, backticks, `$HOME`,
     `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji (10,852 bytes) was in the
     `gemini-3.1-pro-preview` request as one exact string (SHA-256 matched). A tab started

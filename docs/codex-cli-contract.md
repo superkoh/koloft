@@ -2187,7 +2187,7 @@ rendered from this repo with `developerInstructions([text])` among its `config`,
 being `koloftPrompt('codex')`, a blank line and a 7,232-byte block holding newlines,
 tabs, `'`, `"`, backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji
 (10,997 bytes in all). It ran as `ssh <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start'`
-from the Mac. By hand: a stand-in Responses server in the container as a `model_providers`
+from the Mac, the script copied in with `docker cp`. By hand: a stand-in Responses server in the container as a `model_providers`
 entry in `config`, and a small WebSocket client in the container on the server's socket
 (`initialize`, `thread/start`, `turn/start`) instead of the TUI. The one `/v1/responses`
 request held the whole text as one exact string (SHA-256 matched).
@@ -2292,7 +2292,9 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   line: `Signed: PELICAN`". `-c developer_instructions=` carried `koloftPrompt('codex')`,
   then `## Written by the owner for this workspace` / the same sentence with `Signed:
   WALRUS`. Prompt: "Say hello in one short sentence."; about 15,700 input tokens a run.
-  All 3 runs ended `Signed: WALRUS` and none mentioned the other rule.
+  All 3 runs ended `Signed: WALRUS` and none mentioned the other rule. A control run with
+  the developer instructions holding only `koloftPrompt('codex')` ended `Signed:
+  PELICAN`, so the file was read.
 - **`codex exec --json` shows a sub-agent only through the parent's `wait` items**: a run
   that started two sub-agents printed four `collab_tool_call` items, all `tool: "wait"`,
   and no spawn item; each child left its own rollout file under `$CODEX_HOME/sessions`
