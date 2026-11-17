@@ -14,21 +14,23 @@ import {
   ONE_LINE_PER_QUESTION,
   PICK_OR_OWN_WORDS,
   type CodexQuestion
-} from '../../src/main/discord/dialog'
+} from '../../src/plugins/sessions/main/dialog'
 import {
   answerItFirst,
-  inputNotProbed,
-  STARTED_IN_THE_TERMINAL,
   butlerAsks,
   DiscordRelay,
   OFFLINE_REPLY,
-  PICKS_MAY_STILL_BE_TICKED,
-  SHOWS_NO_DIALOG,
-  ANSWER_ON_ITS_WAY,
   unreadableInRoom,
   type Destination,
   type RelayDeps
 } from '../../src/main/discord/relay'
+import {
+  inputNotProbed,
+  STARTED_IN_THE_TERMINAL,
+  PICKS_MAY_STILL_BE_TICKED,
+  SHOWS_NO_DIALOG,
+  ANSWER_ON_ITS_WAY
+} from '../../src/plugins/sessions/main/sessionAsks'
 import { typeKeys } from '../../src/main/typeKeys'
 import { waitingForAnswer } from '../../src/shared/slashCommands'
 import {

@@ -1,7 +1,12 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
 import { toolFilePath, WRITE_TOOLS } from './claudeTouchedFiles'
-import { planOf, questionsOf, type CodexApproval, type CodexQuestion } from './discord/dialog'
+import {
+  planOf,
+  questionsOf,
+  type CodexApproval,
+  type CodexQuestion
+} from '@plugins/sessions/main/dialog'
 
 const LINE_KEEPS_CHARS = 200
 
