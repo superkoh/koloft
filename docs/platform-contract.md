@@ -4003,7 +4003,8 @@ machine it leaves the agent and its tools as they start.
 - **`docker exec` runs with umask 0000, whoever it runs as.** `docker exec -u kuser … sh -c
   umask` and the same as root both printed `0000`; a file written there came out `-rw-rw-rw-`.
   The container's own first process (`/proc/1/status`) and `docker run … sh -c umask` both
-  read `0022`, so an ssh login into the container (started by its sshd) is not affected.
+  read `0022`, and so did `ssh kuser@127.0.0.1 umask` from inside the container: an ssh
+  login there gets 0022.
 - **ssh refuses such a file as its config.** With `~/.ssh/config` at 0666 `ssh x true`
   stopped at "Bad owner or permissions on /home/kuser/.ssh/config"; at 0644 the same
   command went on to check the host key.
@@ -4012,6 +4013,6 @@ machine it leaves the agent and its tools as they start.
   checked: that colima's `docker exec` gave 0022, since the same e2e setup passed there
   until the move to OrbStack.
 
-Koloft dependents: none in the app. The e2e lab's `runOnTarget`, `runOnTargetWhileServing`
-and `runOnBastion` (test/e2e/helpers/docker.ts) set umask 022 before their script, the
-umask an ssh login there gets.
+Koloft dependents: none in the app. Every `docker exec` of the e2e lab goes through
+`labExec` (test/e2e/helpers/docker.ts), which sets umask 022, the umask an ssh login there
+gets, before its command.
