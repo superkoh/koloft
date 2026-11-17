@@ -38,7 +38,7 @@ import {
   writeTo,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH } from './helpers/workbench'
+import { WORKBENCH, workbenchPanel } from './helpers/workbench'
 
 const ROOM_FOR_A_WRONG_OPEN_MS = 1500
 const ROWS_SWEPT = 12
@@ -110,6 +110,19 @@ function linksOnLineWith(page: Page, tabId: string, marker: string): Promise<Fou
 
 async function linkTextsOnLineWith(page: Page, tabId: string, marker: string): Promise<string[]> {
   return (await linksOnLineWith(page, tabId, marker)).map((l) => l.text)
+}
+
+function terminalFitsItsBox(page: Page, tabId: string): Promise<boolean> {
+  return page.evaluate(
+    ({ id }) => {
+      const term = (
+        window as unknown as { __koloftTerms: Record<string, { element: HTMLElement }> }
+      ).__koloftTerms[id]
+      const drawn = term.element.querySelector('.xterm-screen')!.getBoundingClientRect().width
+      return drawn <= term.element.parentElement!.getBoundingClientRect().width
+    },
+    { id: tabId }
+  )
 }
 
 async function clickLinkCell(
@@ -394,6 +407,9 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       await expect
         .poll(() => linkTextsOnLineWith(page, tabId, 'tfg-mark'), { timeout: 20_000 })
         .toEqual(['src/g.ts:33'])
+
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+      await expect.poll(() => terminalFitsItsBox(page, tabId)).toBe(true)
 
       const title = page.locator(WORKBENCH.readingTitle)
       await clickLinkCell(page, tabId, 'tfg-mark', { holdingCommand: false })
