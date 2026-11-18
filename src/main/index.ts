@@ -115,16 +115,12 @@ import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
-  authPromptFor,
-  certHostOf,
-  certTrusted,
   chromeClientHints,
   enforceGuestAttach,
   guestMenuItems,
   isAppNavigation,
   isAttachmentResponse,
   isUnderAnyRoot,
-  jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml, fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
@@ -341,7 +337,6 @@ import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
   aPageOnTheMachineAsks,
-  canOpenExternally,
   loopbackPortOf,
   MACHINE_PAGE_SCHEME,
   machinePageOf,
@@ -375,16 +370,11 @@ import {
 import { CdpOps } from '@plugins/browser-control/main/cdpOps'
 import { pickElement, pickText, stopPick } from '@plugins/workbench/main/elementPick'
 import { WebPages } from '@plugins/workbench/main/webPages'
+import { SitePermissions } from '@plugins/workbench/main/sitePermissions'
+import { PageDialogs } from '@plugins/workbench/main/pageDialogs'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
-import {
-  permissionAsk,
-  permissionKeysFor,
-  permissionQueryAsk,
-  type PermissionDetails,
-  type PermissionName
-} from '@plugins/workbench/main/browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
@@ -448,10 +438,8 @@ import type {
   CodexResetOutcome,
   SignInResult,
   SignInFailure,
-  BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
-  BrowserJsDialog,
   BrowserPagesInUse,
   ScreenAnswer,
   ScreenRequest,
@@ -3534,8 +3522,8 @@ app.whenReady().then(() => {
     ask: (request) => sendToRenderer(CH.ext.permissionRequest, request)
   })
   onExtensionsChanged(() => sendToRenderer(CH.ext.changed))
-  setupBrowserAuth()
-  setupCertErrors()
+  pageDialogs.watchSignIns()
+  pageDialogs.watchCertificates()
   setupGuestUnload()
   setupSecretLanding()
   setupGuestForwardsEnd()
@@ -4786,97 +4774,18 @@ function watchOpenRequests(openDir: string): fs.FSWatcher | null {
   )
 }
 
-// ADR-0009
-const trustedCertHosts = new Set<string>()
+const sitePermissions = new SitePermissions({
+  send: sendToRenderer,
+  isOverlay: (page) => webPages.isOverlay(page),
+  takeGesture: (page) => webPages.takeGesture(page),
+  openExternally: openUrlExternally,
+  allowFullscreen: allowPageFullscreenWithoutTheWindow
+})
 
-// PLATFORM§12
-function setupCertErrors(): void {
-  app.on('certificate-error', (event, contents, url, _error, _cert, callback) => {
-    if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-    event.preventDefault()
-    callback(certTrusted(trustedCertHosts, certHostOf(url)))
-  })
-}
-
-// ADR-0009
-const permissionAnswers = new Map<string, boolean>()
-
-// PLATFORM§5
-interface PendingPermission {
-  guestId: number
-  origin: string
-  permission: PermissionName
-  answer: (granted: boolean) => void
-}
-const pendingPermissions = new Map<string, PendingPermission>()
-
-function rememberedPermission(origin: string, permission: PermissionName): boolean | undefined {
-  return permissionAnswers.get(permissionKeysFor(origin, permission)[0])
-}
-
-function askUserForPermission(
-  guestId: number,
-  origin: string,
-  permission: PermissionName,
-  callback: (granted: boolean) => void
-): void {
-  for (const pending of pendingPermissions.values()) {
-    if (pending.guestId !== guestId || pending.permission !== permission) continue
-    const first = pending.answer
-    pending.answer = (granted) => {
-      first(granted)
-      callback(granted)
-    }
-    return
-  }
-  const id = crypto.randomUUID()
-  pendingPermissions.set(id, { guestId, origin, permission, answer: callback })
-  sendToRenderer(CH.browser.permissionAsk, { id, origin, permission })
-}
-
-function answerPermission(id: string, granted: boolean): void {
-  const pending = pendingPermissions.get(id)
-  if (!pending) return
-  pendingPermissions.delete(id)
-  for (const key of permissionKeysFor(pending.origin, pending.permission)) {
-    permissionAnswers.set(key, granted)
-  }
-  pending.answer(granted)
-}
-
-function dropPermissions(match: (p: PendingPermission) => boolean): void {
-  for (const [id, pending] of [...pendingPermissions]) {
-    if (!match(pending)) continue
-    pendingPermissions.delete(id)
-    pending.answer(false)
-    sendToRenderer(CH.browser.permissionDrop, id)
-  }
-}
-
-const pendingAuth = new Map<string, (username?: string, password?: string) => void>()
-
-// PLATFORM§12
-function setupBrowserAuth(): void {
-  app.on('login', (event, contents, details, authInfo, callback) => {
-    if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-    const prompt = authPromptFor(details, authInfo, modalSlotTaken())
-    if (!prompt) return
-    event.preventDefault()
-    const id = crypto.randomUUID()
-    pageOfTheModalUp = contents.id
-    pendingAuth.set(id, callback)
-    const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
-    sendToRenderer(CH.browser.authChallenge, payload)
-  })
-}
-
-const pendingJsDialogs = new Map<string, (answer: BrowserDialogAnswer) => void>()
-let pageOfTheModalUp = 0
-const pagesGivenMicOrCamera = new Set<number>()
-
-function modalSlotTaken(): boolean {
-  return pendingAuth.size > 0 || pendingJsDialogs.size > 0
-}
+const pageDialogs = new PageDialogs({
+  send: sendToRenderer,
+  isOverlay: (page) => webPages.isOverlay(page)
+})
 
 const pageOfSignInWindow = new Map<BaseWindow, WebContents>()
 
@@ -5019,33 +4928,14 @@ function setupGuestLinkReports(): void {
   })
 }
 
-// PLATFORM§11
 function setupGuestPermissionQuery(): void {
-  ipcMain.on(CH.browser.permissionUndecided, (e, name: unknown) => {
-    const decision = permissionQueryAsk(name, {
-      requestingUrl: e.senderFrame?.url,
-      isMainFrame: e.senderFrame?.parent === null
-    })
-    e.returnValue =
-      e.sender.session === session.fromPartition(BROWSER_PARTITION) &&
-      !webPages.isOverlay(e.sender) &&
-      decision.kind === 'ask' &&
-      rememberedPermission(decision.origin, decision.permission) === undefined
-  })
+  ipcMain.on(CH.browser.permissionUndecided, (e, name: unknown) =>
+    sitePermissions.undecided(e, name)
+  )
 }
 
 function setupPermissionCleanup(): void {
-  webPages.onEveryWebPage((contents) => {
-    // PLATFORM§5
-    const guestId = contents.id
-    contents.once('destroyed', () => {
-      dropPermissions((pending) => pending.guestId === guestId)
-    })
-    contents.on('did-start-navigation', (details) => {
-      if (!details.isMainFrame || details.isSameDocument) return
-      dropPermissions((pending) => pending.guestId === guestId)
-    })
-  })
+  webPages.onEveryWebPage((contents) => sitePermissions.pageOpened(contents))
 }
 
 function setupGuestBackgroundOpen(): void {
@@ -5107,12 +4997,9 @@ function setupGuestAudioState(): void {
 }
 
 function pagesInUse(): BrowserPagesInUse {
-  const guestIds = new Set<number>([
-    ...pagesDownloading.values(),
-    ...pagesGivenMicOrCamera,
-    ...[...pendingPermissions.values()].map((p) => p.guestId)
-  ])
-  if (modalSlotTaken()) guestIds.add(pageOfTheModalUp)
+  const guestIds = new Set<number>([...pagesDownloading.values(), ...sitePermissions.pagesHeld()])
+  const modalPage = pageDialogs.modalPage()
+  if (modalPage !== null) guestIds.add(modalPage)
   const owners = new Set<string>()
   const keepOwnerOf = (page: WebContents): void => {
     guestIds.add(page.id)
@@ -5424,62 +5311,12 @@ function setupPageShotPartition(): void {
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
   ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
-  // PLATFORM§11
-  ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
-    const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
-    if (webPages.isOverlay(_wc) && decision.kind === 'ask') {
-      callback(false)
-      return
-    }
-    if (decision.kind === 'allow') {
-      if (permission === 'fullscreen') allowPageFullscreenWithoutTheWindow(callback)
-      else callback(true)
-      return
-    }
-    if (decision.kind === 'refuse') {
-      callback(false)
-      if (decision.tell) {
-        sendToRenderer(CH.browser.permissionRefused, {
-          origin: decision.origin,
-          permission: decision.permission
-        })
-      }
-      return
-    }
-    if (decision.kind === 'ask') {
-      const answer = (granted: boolean): void => {
-        if (granted && permission === 'media' && !pagesGivenMicOrCamera.has(_wc.id)) {
-          const id = _wc.id
-          const forget = (): void => void pagesGivenMicOrCamera.delete(id)
-          pagesGivenMicOrCamera.add(id)
-          _wc.once('destroyed', forget)
-          _wc.once('did-navigate', forget)
-        }
-        callback(granted)
-      }
-      const remembered = rememberedPermission(decision.origin, decision.permission)
-      if (remembered !== undefined) {
-        answer(remembered)
-        return
-      }
-      askUserForPermission(_wc.id, decision.origin, decision.permission, answer)
-      return
-    }
-    // PLATFORM§11
-    callback(false)
-    // PLATFORM§11
-    if (permission !== 'openExternal') return
-    const target = (details as { externalURL?: string }).externalURL ?? ''
-    if (canOpenExternally(target) && webPages.takeGesture(_wc)) openUrlExternally(target)
-    else if (target) sendToRenderer(CH.browser.blockedScheme, target)
-  })
-  // PLATFORM§11
-  ses.setPermissionCheckHandler((_wc, permission, _origin, details) => {
-    const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
-    if (decision.kind === 'allow') return true
-    if (decision.kind !== 'ask') return false
-    return rememberedPermission(decision.origin, decision.permission) ?? false
-  })
+  ses.setPermissionRequestHandler((page, permission, callback, details) =>
+    sitePermissions.request(page, permission, callback, details)
+  )
+  ses.setPermissionCheckHandler((_wc, permission, _origin, details) =>
+    sitePermissions.check(permission, details)
+  )
   ses.protocol.handle(PREVIEW_FILE_SCHEME, async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
@@ -7464,16 +7301,11 @@ function registerIpc(): void {
     if (typeof id === 'string') answerPermissionRequest(id, granted === true)
   })
 
-  ipcMain.on(CH.browser.permissionAnswer, (_e, id: unknown, granted: unknown) => {
-    if (typeof id !== 'string') return
-    answerPermission(id, granted === true)
-  })
+  ipcMain.on(CH.browser.permissionAnswer, (_e, id: unknown, granted: unknown) =>
+    sitePermissions.answer(id, granted)
+  )
 
-  ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => {
-    if (typeof id !== 'string') return
-    const pending = pendingPermissions.get(id)
-    if (pending) dropPermissions((p) => p === pending)
-  })
+  ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => sitePermissions.cancel(id))
 
   ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
@@ -7501,70 +7333,20 @@ function registerIpc(): void {
     contents.setAudioMuted(muted === true)
   })
 
-  ipcMain.handle(CH.browser.certProceed, (_e, url: string) => {
-    const host = certHostOf(typeof url === 'string' ? url : '')
-    if (!host) return
-    trustedCertHosts.add(host)
-  })
-  // PLATFORM§12
-  ipcMain.handle(CH.browser.clearData, async () => {
-    const ses = session.fromPartition(BROWSER_PARTITION)
-    trustedCertHosts.clear()
-    await ses.clearData()
-    await ses.clearAuthCache()
-    await ses.closeAllConnections()
-  })
-  ipcMain.on(CH.browser.authAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
-    const respond = pendingAuth.get(id)
-    if (!respond) return
-    pendingAuth.delete(id)
-    if (answer?.ok && typeof answer.username === 'string') {
-      respond(answer.username, answer.password ?? '')
-    } else respond()
-  })
+  ipcMain.handle(CH.browser.certProceed, (_e, url: string) => pageDialogs.certProceed(url))
+  ipcMain.handle(CH.browser.clearData, () => pageDialogs.clearSiteData())
+  ipcMain.on(CH.browser.authAnswer, (_e, id: string, answer: BrowserDialogAnswer) =>
+    pageDialogs.authAnswer(id, answer)
+  )
 
   ipcMain.on(
     CH.browser.jsDialog,
-    (e, request: { kind?: unknown; message?: unknown; defaultValue?: unknown }) => {
-      const cancel = { ok: false } satisfies BrowserDialogAnswer
-      if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) {
-        e.returnValue = cancel
-        return
-      }
-      const dialog = jsDialogFor(request ?? {}, e.senderFrame?.url ?? '', modalSlotTaken())
-      if (!dialog) {
-        e.returnValue = cancel
-        return
-      }
-      const id = crypto.randomUUID()
-      const gone = (): void => {
-        pendingJsDialogs.delete(id)
-      }
-      pageOfTheModalUp = e.sender.id
-      pendingJsDialogs.set(id, (answer) => {
-        e.sender.removeListener('destroyed', gone)
-        e.returnValue = answer
-      })
-      e.sender.once('destroyed', gone)
-      const payload: BrowserJsDialog = {
-        id,
-        ...dialog,
-        guestId: e.sender.id,
-        overlay: webPages.isOverlay(e.sender)
-      }
-      sendToRenderer(CH.browser.jsDialog, payload)
-    }
+    (e, request: { kind?: unknown; message?: unknown; defaultValue?: unknown }) =>
+      pageDialogs.jsDialog(e, request)
   )
-  ipcMain.on(CH.browser.jsDialogAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
-    const respond = pendingJsDialogs.get(id)
-    if (!respond) return
-    pendingJsDialogs.delete(id)
-    respond(
-      answer?.ok
-        ? { ok: true, value: typeof answer.value === 'string' ? answer.value : '' }
-        : { ok: false }
-    )
-  })
+  ipcMain.on(CH.browser.jsDialogAnswer, (_e, id: string, answer: BrowserDialogAnswer) =>
+    pageDialogs.jsDialogAnswer(id, answer)
+  )
 
   registerWorkbenchChannels(pluginIpc, {
     files: (p) => hosts.of(p),
