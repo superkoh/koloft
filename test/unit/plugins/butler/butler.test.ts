@@ -9,6 +9,7 @@ import {
 } from '../../../../src/plugins/butler/main/butler'
 import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
+import type { InstructionsVersion } from '../../../../src/plugins/butler/shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
 import { TODO_NOTICE_FROM_KOLOFT } from '../../../../src/main/crossSessionMessage'
@@ -20,12 +21,14 @@ const CODEX_KEY = 'codex:019a-thread'
 let userData: string
 let name: string
 let formerNames: string[]
+let instructions: InstructionsVersion[] | undefined
 let facts: string[]
 let session: ButlerSession
 let rescans: number
 let started: {
   cwd: string
   role: string
+  ownerText?: string
   title: string
   backend: BackendId
   firstPrompt?: string
@@ -53,7 +56,7 @@ function make(): Butler {
   const deps: ButlerDeps = {
     userData,
     realpath: realpathSafe,
-    butler: () => ({ name, formerNames }),
+    butler: () => ({ name, formerNames, instructions }),
     roleFacts: () => facts,
     loadSession: () => session,
     saveSession: (s) => void (session = s),
@@ -66,6 +69,7 @@ function make(): Butler {
       started.push({
         cwd: l.cwd,
         role: l.role,
+        ownerText: l.ownerText,
         title: l.title,
         backend: l.backend,
         firstPrompt: l.firstPrompt
@@ -106,6 +110,7 @@ beforeEach(() => {
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
+  instructions = undefined
   facts = []
   session = { sessionIds: [] }
   rescans = 0
@@ -172,6 +177,28 @@ describe('the butler', () => {
     facts = [DISCORD_BOUND]
     expect(c.identityOfLaunch(conductorFolder(userData), 's1')?.role).toContain(
       'start with [Discord]'
+    )
+  })
+
+  it('started on Claude Code, the owner’s instructions go beside its role; on Codex, Muse and Antigravity they close its role; with none written, nothing is added', async () => {
+    instructions = [
+      { text: 'Old words.', at: 1, by: 'owner' },
+      { text: 'Answer in Chinese.', at: 2, by: 'owner' }
+    ]
+    const others = ['codex:local:t1', 'muse:local:t2', 'agy:local:t3']
+    session = { sessionIds: others }
+    const c = make()
+    await opened(c)
+    expect(started[0].role).toMatch(/^Who you are/)
+    expect(started[0].role).not.toContain('Answer in Chinese.')
+    expect(started[0].ownerText).toBe('Written by the owner\nAnswer in Chinese.')
+    for (const key of others)
+      expect(c.identityOfLaunch(conductorFolder(userData), key)?.role).toMatch(
+        /\n\nWritten by the owner\nAnswer in Chinese\.$/
+      )
+    instructions = [...instructions, { text: '', at: 3, by: 'owner' }]
+    expect(c.identityOfLaunch(conductorFolder(userData), 'codex:local:t1')?.role).not.toContain(
+      'Written by the owner'
     )
   })
 
