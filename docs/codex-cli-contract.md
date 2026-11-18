@@ -2492,7 +2492,8 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   `agentMessage`; `last_agent_message` is that message's text. Seen in this Mac's own
   rollouts from 0.153.0 and 0.153.4 (2026-09) and in a real e2e turn on 0.170.0
   (2026-11-18). On that 0.170.0 turn the model (`gpt-6.2-sol`, the server's default that
-  day for 0.169.0 and 0.170.0; 0.161.0 still got `gpt-6.1-sol`) sent a `commentary`
+  day for 0.169.0 and 0.170.0 with a ChatGPT login; which model 0.161.0 got is not
+  checked) sent a `commentary`
   message ("I’ll read the Koloft skill.") before one shell call and the `final_answer` 2.5 s
   later, so the first `agentMessage` of a turn is not its answer.
 - **`clientId` on a `userMessage` is the `clientUserMessageId` given to
