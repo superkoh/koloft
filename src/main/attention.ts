@@ -22,6 +22,7 @@ export class AttentionTracker {
   watching: () => string | null = () => null
   turnDone: (tabId: string) => void = () => {}
   outlivesKoloft: (tabId: string) => boolean = () => false
+  turnTakenElsewhere: (tabId: string) => boolean = () => false
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
@@ -80,7 +81,7 @@ export class AttentionTracker {
       return
     }
     const kind = edgeAttention(prev, next)
-    if (!kind) return
+    if (!kind || (kind === 'turn-done' && this.turnTakenElsewhere(tabId))) return
     this.raise(tabId, kind, subject, true)
   }
 

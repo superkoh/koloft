@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest'
 import type { JSX } from 'react'
-import {
-  DEFAULT_SETTINGS,
-  type BackendId,
-  type WorkspacePullResult,
-  type WorkspaceRows
-} from '../../src/shared/types'
+import type { BackendId, WorkspacePullResult, WorkspaceRows } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 
 vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({

@@ -4,6 +4,7 @@
   "assist": { "backend": "claude" },
   "lastSeenVersion": "0.40.0",
   "showUsage": true,
+  "aKeyANewerKoloftWrote": { "kept": true },
   "butler": {
     "name": "  Jeeves   the\n butler  ",
     "formerNames": [
