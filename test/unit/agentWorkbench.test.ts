@@ -105,6 +105,24 @@ describe('koloft open / diff', () => {
   })
 })
 
+describe('the usage line each Workbench command answers a wrong call with', () => {
+  it('open, diff and note each say how to call them, exit code 2', async () => {
+    const v = verbs()
+    expect(await v.open([], caller())).toEqual({
+      exit: EXIT_USAGE,
+      text: 'koloft open: give one file or web address, like "koloft open docs/plan.md".'
+    })
+    expect(await v.diff([], caller())).toEqual({
+      exit: EXIT_USAGE,
+      text: 'koloft diff: give one file, like "koloft diff src/app.ts".'
+    })
+    expect(await v.note(['erase'], caller())).toEqual({
+      exit: EXIT_USAGE,
+      text: 'koloft note: run "koloft note" to read the note, or "koloft note append <text>" to add to it.'
+    })
+  })
+})
+
 describe('koloft note', () => {
   it('prints the note, and says so when it is empty', async () => {
     const v = verbs()

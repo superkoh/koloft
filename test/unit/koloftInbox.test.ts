@@ -404,6 +404,14 @@ describe('koloft inbox — a session posts and moves its own cards', () => {
 
   const card = JSON.stringify({ title: 'Pull request 8 is ready', level: 'normal' })
 
+  it('a wrong call is answered with the usage line, exit code 2', async () => {
+    const { run } = verb()
+    expect(await run(['frob'], caller('s1'))).toEqual({
+      exit: 2,
+      text: "koloft inbox: add <key> -- '<card JSON>' | update <key> -- '<fields JSON>' | move <key> <needs-you|in-progress|closed> [-- \"<status>\"] | delete <key> | list [<state>]"
+    })
+  })
+
   it('a card a session posts is about that session and shows where it runs', async () => {
     const { inbox, run } = verb()
     await run(['add', 'pr-8', '--', card], caller('s1'))

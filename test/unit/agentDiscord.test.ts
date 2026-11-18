@@ -58,6 +58,15 @@ function verb(butler: boolean, pageHeight = 900, pageWidth = 1280, quiet = false
   return { call, sent, shot, opened, bound: () => bound }
 }
 
+describe('koloft discord usage', () => {
+  it('a wrong call is answered with the usage line, exit code 2', async () => {
+    expect(await verb(true).call(['frob'])).toEqual({
+      exit: 2,
+      text: 'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
+    })
+  })
+})
+
 describe('koloft discord thread open', () => {
   it('opens the named session’s room for the butler, taking a name with spaces whole', async () => {
     const { call, opened } = verb(true)
