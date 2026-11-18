@@ -10,11 +10,11 @@ import {
   AGENT_TOOLS_OFF,
   AgentRequests,
   answered,
-  helpVerb,
   type AgentCaller,
   type AgentRequestDeps,
   type TabFacts
 } from '../../src/main/agentRequests'
+import { helpVerb } from '../../src/plugins/sessions/main/sessionVerbs'
 import type { SessionInfo } from '../../src/shared/types'
 import { testCommands } from './helpers/testCommands'
 
