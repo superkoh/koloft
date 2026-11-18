@@ -12,6 +12,6 @@ export function testCommands(handlers: CommandHandlers): Commands {
       commands: Object.keys(handlers).map((verb) => ({ verb }))
     }
   ])
-  commands.register('test', handlers)
+  commands.register(handlers)
   return commands
 }

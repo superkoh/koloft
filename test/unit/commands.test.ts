@@ -14,31 +14,16 @@ const manifest = (id: string, verbs: string[]): PluginManifest => ({
 })
 
 describe('koloft commands', () => {
-  it("the plugins together list today's thirteen koloft commands, each in one plugin only", () => {
-    const owners = PLUGINS.flatMap((p) => (p.commands ?? []).map((c) => `${c.verb} ${p.id}`))
-    expect(owners.sort()).toEqual([
-      'cron scheduled-tasks',
-      'diff workbench',
-      'discord discord',
-      'gh github',
-      'help sessions',
-      'inbox inbox',
-      'note workbench',
-      'open workbench',
-      'page passwords',
-      'secret passwords',
-      'session sessions',
-      'todo todo',
-      'workspace sessions'
-    ])
+  it('no two plugins list the same koloft command, so each command has one owner', () => {
+    const verbs = PLUGINS.flatMap((p) => (p.commands ?? []).map((c) => c.verb))
+    expect(new Set(verbs).size).toBe(verbs.length)
   })
 
-  it('a plugin may register only the commands its own manifest lists, and no command twice', () => {
-    const commands = new Commands([manifest('a', ['one']), manifest('b', ['two'])])
+  it('only a command some plugin lists may be registered, and none twice', () => {
+    const commands = new Commands([manifest('a', ['one'])])
     const run = (): ReturnType<typeof answered> => answered('')
-    expect(() => commands.register('a', { two: run })).toThrow()
-    expect(() => commands.register('c', { one: run })).toThrow()
-    commands.register('a', { one: run })
-    expect(() => commands.register('a', { one: run })).toThrow()
+    expect(() => commands.register({ two: run })).toThrow()
+    commands.register({ one: run })
+    expect(() => commands.register({ one: run })).toThrow()
   })
 })

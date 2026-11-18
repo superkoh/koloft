@@ -209,7 +209,7 @@ async function signInEnd(d: SecretVerbDeps, at: Asker, signIn: string): Promise<
 }
 
 export function registerSecretCommand(commands: Commands, d: SecretVerbDeps): void {
-  commands.register('passwords', { [SECRET_VERB]: secretVerb(d) })
+  commands.register({ [SECRET_VERB]: secretVerb(d) })
 }
 
 export function secretVerb(d: SecretVerbDeps): AgentVerb {

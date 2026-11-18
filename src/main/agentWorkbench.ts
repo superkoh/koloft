@@ -43,7 +43,7 @@ async function show(
 }
 
 export function registerWorkbenchCommands(commands: Commands, d: WorkbenchVerbDeps): void {
-  commands.register('workbench', workbenchVerbs(d))
+  commands.register(workbenchVerbs(d))
 }
 
 export function workbenchVerbs(d: WorkbenchVerbDeps): CommandHandlers {

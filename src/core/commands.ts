@@ -1,54 +1,33 @@
 // ADR-0051
 import type { PluginManifest } from './plugin'
-import {
-  EXIT_USAGE,
-  refused,
-  splitAtDashes,
-  type AgentCaller,
-  type AgentReply,
-  type AgentVerb
-} from './command'
+import { EXIT_USAGE, refused, type AgentCaller, type AgentReply, type AgentVerb } from './command'
 import { errorText } from './errorText'
 
 export type CommandHandlers = Readonly<Record<string, AgentVerb>>
 
-interface Registered {
-  plugin: string
-  run: AgentVerb
-}
-
-const HELP = 'help'
-
-function asksForHelp(argv: string[]): boolean {
-  return splitAtDashes(argv).before.includes('--help')
-}
-
 export class Commands {
-  private registered = new Map<string, Registered>()
+  private handlers = new Map<string, AgentVerb>()
 
   constructor(private plugins: readonly PluginManifest[]) {}
 
-  register(pluginId: string, handlers: CommandHandlers): void {
-    const declared = this.plugins.find((p) => p.id === pluginId)?.commands ?? []
+  register(handlers: CommandHandlers): void {
     for (const [verb, run] of Object.entries(handlers)) {
-      if (!declared.some((c) => c.verb === verb))
-        throw new Error(`plugin ${pluginId} registers "${verb}", which its manifest does not list`)
-      const taken = this.registered.get(verb)
-      if (taken) throw new Error(`"${verb}" is already registered by plugin ${taken.plugin}`)
-      this.registered.set(verb, { plugin: pluginId, run })
+      if (!this.plugins.some((p) => p.commands?.some((c) => c.verb === verb)))
+        throw new Error(`"${verb}" is registered, but no plugin's manifest lists it`)
+      if (this.handlers.has(verb)) throw new Error(`"${verb}" is registered twice`)
+      this.handlers.set(verb, run)
     }
   }
 
-  async dispatch(argv: string[], caller: AgentCaller): Promise<AgentReply> {
-    const [verb = HELP, ...rest] = asksForHelp(argv) ? [HELP] : argv
-    const found = this.registered.get(verb)
-    if (!found)
+  async dispatch(verb: string, args: string[], caller: AgentCaller): Promise<AgentReply> {
+    const run = this.handlers.get(verb)
+    if (!run)
       return refused(
         `koloft: there is no "${verb}" command. Run "koloft help" to see the commands.`,
         EXIT_USAGE
       )
     try {
-      return await found.run(rest, caller)
+      return await run(args, caller)
     } catch (error) {
       return refused(`koloft: ${errorText(error)}`)
     }

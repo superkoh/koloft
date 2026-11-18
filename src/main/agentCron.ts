@@ -325,7 +325,7 @@ export interface CronVerbDeps {
 }
 
 export function registerCronCommand(commands: Commands, d: CronVerbDeps): void {
-  commands.register('scheduled-tasks', { cron: cronVerb(d) })
+  commands.register({ cron: cronVerb(d) })
 }
 
 export function cronVerb(d: CronVerbDeps): AgentVerb {

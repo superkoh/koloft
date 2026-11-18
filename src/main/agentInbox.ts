@@ -33,7 +33,7 @@ function warned(text: string, warnings: string[]): AgentReply {
 }
 
 export function registerInboxCommand(commands: Commands, d: InboxVerbDeps): void {
-  commands.register('inbox', { inbox: inboxVerb(d) })
+  commands.register({ inbox: inboxVerb(d) })
 }
 
 export function inboxVerb(d: InboxVerbDeps): AgentVerb {

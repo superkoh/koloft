@@ -131,7 +131,7 @@ async function tapAsk(
 }
 
 export function registerPageCommand(commands: Commands, d: PageVerbDeps): void {
-  commands.register('passwords', { page: pageVerb(d) })
+  commands.register({ page: pageVerb(d) })
 }
 
 export function pageVerb(d: PageVerbDeps): AgentVerb {

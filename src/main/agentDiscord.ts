@@ -130,7 +130,7 @@ async function setup(
 }
 
 export function registerDiscordCommand(commands: Commands, d: DiscordVerbDeps): void {
-  commands.register('discord', { discord: discordVerb(d) })
+  commands.register({ discord: discordVerb(d) })
 }
 
 // PLATFORM§39

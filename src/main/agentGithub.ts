@@ -115,7 +115,7 @@ function jqFilters(args: string[]): string[] {
 }
 
 export function registerGithubCommand(commands: Commands, d: GithubVerbDeps): void {
-  commands.register('github', { gh: githubVerb(d) })
+  commands.register({ gh: githubVerb(d) })
 }
 
 // ADR-0029

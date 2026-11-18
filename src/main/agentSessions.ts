@@ -1551,7 +1551,7 @@ export interface SessionCommandsDeps {
 }
 
 export function registerSessionCommands(commands: Commands, d: SessionCommandsDeps): void {
-  commands.register('sessions', {
+  commands.register({
     help: helpVerb(d.rulesOfTab),
     session: d.session,
     workspace: workspaceVerb(d.workspace)

@@ -457,7 +457,7 @@ async function fileVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
 }
 
 export function registerTodoCommand(commands: Commands, d: TodoVerbDeps): void {
-  commands.register('todo', { todo: todoVerb(d) })
+  commands.register({ todo: todoVerb(d) })
 }
 
 export function todoVerb(d: TodoVerbDeps): AgentVerb {
