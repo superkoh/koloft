@@ -140,7 +140,7 @@ const spec = ({
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
   trustFolder,
-  handsPictures,
+  pictureFolder,
   program,
   ...over
 }: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
@@ -154,7 +154,7 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder, handsPictures })
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder, pictureFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -1052,23 +1052,19 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§18 ADR-0026
-  it("a tab that hands claude Koloft's picture folder on the machine trusts that folder under its real path; a tab that hands none leaves .claude.json alone", () => {
-    const launched = (handsPictures: boolean): { pictures: string; claudeJson: string } => {
-      const b = box(spec({ handsPictures }), { ensureBringsNode: true })
-      const pictures = path.join(b.home, '.koloft', 'element-picks')
-      fs.mkdirSync(pictures, { recursive: true })
+  it('a tab that hands claude a picture folder trusts that very folder under its real path; a tab that hands none leaves .claude.json alone', () => {
+    const pictures = path.join(mkroot('pictures'), 'element-picks')
+    fs.mkdirSync(pictures)
+    const claudeJsonAfter = (pictureFolder?: string): string => {
+      const b = box(spec({ pictureFolder }), { ensureBringsNode: true })
       expect(b.run().status).toBe(0)
       const cj = path.join(b.home, '.claude.json')
-      return {
-        pictures: fs.realpathSync(pictures),
-        claudeJson: fs.existsSync(cj) ? fs.readFileSync(cj, 'utf8') : ''
-      }
+      return fs.existsSync(cj) ? fs.readFileSync(cj, 'utf8') : ''
     }
 
-    expect(launched(false).claudeJson).toBe('')
-    const { pictures, claudeJson } = launched(true)
-    expect(JSON.parse(claudeJson)).toEqual({
-      projects: { [pictures]: { hasTrustDialogAccepted: true } }
+    expect(claudeJsonAfter()).toBe('')
+    expect(JSON.parse(claudeJsonAfter(pictures))).toEqual({
+      projects: { [fs.realpathSync(pictures)]: { hasTrustDialogAccepted: true } }
     })
   })
 

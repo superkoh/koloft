@@ -740,6 +740,7 @@ describe('what a remote launch hands claude', () => {
     const firstPrompt = 'fix it\n\nPicture: /home/me/.koloft/element-picks/a.png'
     expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
       ok: true,
+      pictures: '/home/me/.koloft/element-picks',
       args: [
         '--session-id',
         'sid1',

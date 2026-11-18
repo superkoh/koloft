@@ -180,7 +180,7 @@ export function machineClaudeArgs(
   spec: ClaudeLaunch,
   sessionId: string,
   skipPermissions: boolean
-): { ok: true; args: string[] } | { ok: false; code: 'invalid-args' } {
+): { ok: true; args: string[]; pictures?: string } | { ok: false; code: 'invalid-args' } {
   const argv = claudeArgv('claude', {
     resumeSessionId: spec.resumeSessionId,
     sessionId: spec.resumeSessionId ? undefined : sessionId,
@@ -194,6 +194,7 @@ export function machineClaudeArgs(
   const pictures = picturesHandedTo(spec)
   return {
     ok: true,
+    pictures,
     args: [
       ...argv.argv.slice(1),
       ...(fresh && spec.name ? ['--name', spec.name] : []),
@@ -1303,7 +1304,7 @@ export class SshHost implements Host {
               projectPrompt,
               claudeArgs,
               trustFolder: spec.trustFolder,
-              handsPictures: !!picturesHandedTo(spec)
+              pictureFolder: args.pictures
             }
           )
         )
