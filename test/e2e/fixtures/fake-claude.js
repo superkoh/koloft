@@ -234,6 +234,17 @@ function reportedBackgroundMs() {
   return SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
 }
 
+const BUSY_TICK_MS = 250
+const BUSY_TICKS_BY_DEFAULT = 120
+
+function busyTicks() {
+  try {
+    const v = fs.readFileSync(path.join(home, 'fake-claude-busy-ms'), 'utf8').trim()
+    if (v) return Math.ceil(Number(v) / BUSY_TICK_MS) || BUSY_TICKS_BY_DEFAULT
+  } catch {}
+  return BUSY_TICKS_BY_DEFAULT
+}
+
 function nextFreshLaunchTitleFromFile() {
   if (argVal('--resume') || launchedInTheButlersFolder) return null
   const f = path.join(home, 'fake-claude-next-title')
@@ -1805,10 +1816,11 @@ function handleLine(line) {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
     let ticks = 0
+    const lastTick = busyTicks()
     const busy = setInterval(() => {
       ticks += 1
       process.stdout.write(`[fake-claude] busy ${ticks}\r\n`)
-      if (ticks >= 120) {
+      if (ticks >= lastTick) {
         clearInterval(busy)
         const meta = usageMeta()
         append([
@@ -1830,7 +1842,7 @@ function handleLine(line) {
         fireHook('stop', { hook_event_name: 'Stop' })
         process.stdout.write('[fake-claude] busy finished\r\n> ')
       }
-    }, 250)
+    }, BUSY_TICK_MS)
     return
   }
   // CC§13

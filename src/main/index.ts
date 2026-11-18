@@ -471,7 +471,6 @@ import type {
   ConductorOpenResult,
   PaletteRequest,
   ConductorSaveResult,
-  DiscordChannel,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
@@ -595,7 +594,7 @@ import {
 } from './claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { asPeerName } from '@plugins/butler/shared/names'
-import { inviteLink, isDiscordId, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
+import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
 import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
@@ -614,6 +613,10 @@ import {
   pushChanged as pushInboxChanged
 } from '@plugins/inbox/main/channels'
 import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
+import {
+  registerChannels as registerDiscordChannels,
+  pushStatus as pushStatusToDiscordPane
+} from '@plugins/discord/main/channels'
 import {
   registerChannels as registerSecretChannels,
   pushAsks as pushSecretAsks
@@ -966,10 +969,7 @@ attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
 // ADR-0039
-attention.outlivesKoloft = (tabId) => {
-  const s = sessionOfTab(tabId)
-  return !!s?.remote && s.backendId !== 'codex'
-}
+attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (
@@ -1402,6 +1402,7 @@ const pluginIpc: MainIpc = {
 }
 const pushInbox = pushInboxChanged(pluginIpc)
 const pushOpenRequest = pushOpenFile(pluginIpc)
+const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -4155,7 +4156,7 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
-      sendToRenderer(CH.discord.status, status)
+      pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
@@ -6983,7 +6984,7 @@ function registerIpc(): void {
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }
     // CC§7
-    const ptys = ptyMgr.list().filter((h) => !loginWatchers.has(h.id))
+    const ptys = ptyMgr.list().filter((h) => !loginWatchers.has(h.id) && !sleepers.has(h.id))
     const tracked = allSessions()
     const cwdByTab = new Map(tracked.map((s) => [s.tabId, s.cwd]))
     const tabs = adoptableTabs(
@@ -7012,12 +7013,6 @@ function registerIpc(): void {
     runner: () => cronRunner,
     skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
     trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
-  })
-  registerButlerChannels(pluginIpc, {
-    butler: () => loadSettings().butler,
-    save: (butler) => {
-      commitSettings({ butler })
-    }
   })
   ipcMain.handle(
     CH.sessionDefaults.read,
@@ -7242,42 +7237,36 @@ function registerIpc(): void {
     cronRunner?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  ipcMain.handle(CH.conductors.bind, (_e, channel: DiscordChannel | undefined) => {
-    if (
-      !isDiscordId(channel?.guildId) ||
-      !isDiscordId(channel.channelId) ||
-      typeof channel.name !== 'string'
-    )
-      return { ok: false, error: 'Pick a channel.' }
-    const { guildId, channelId, name } = channel
-    const saved = discordBinding?.bind({ guildId, channelId, name }) ?? {
-      ok: false,
-      error: STILL_STARTING
+  registerDiscordChannels(pluginIpc, {
+    bind: (channel) => {
+      const saved = discordBinding?.bind(channel) ?? { ok: false, error: STILL_STARTING }
+      if (saved.ok) registerSlashCommands()
+      return saved
+    },
+    bindNewChannel: bindWithNewChannel,
+    unbind: () => {
+      discordBinding?.unbind()
+      syncAnswerable()
+    },
+    status: () => discordLink?.status() ?? DISCORD_OFF,
+    pair: (isMe) => {
+      const owner = discordLink?.pair(isMe)
+      if (owner) discordBinding?.setOwner(owner)
+    },
+    channels: () => discordLink?.channels() ?? Promise.resolve([]),
+    setUpWithButler: setUpDiscordWithButler
+  })
+  registerButlerChannels(pluginIpc, {
+    open: () => butler?.open() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
+    startFresh: () => butler?.startFresh() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
+    fromPalette: handFromPalette,
+    butler: () => loadSettings().butler,
+    save: (butler) => {
+      commitSettings({ butler })
     }
-    if (saved.ok) registerSlashCommands()
-    return saved
   })
-  ipcMain.handle(CH.conductors.bindNewChannel, () => bindWithNewChannel())
-  ipcMain.handle(CH.conductors.unbind, () => {
-    discordBinding?.unbind()
-    syncAnswerable()
-  })
-  ipcMain.handle(CH.conductors.open, () => butler?.open() ?? { ok: false, error: STILL_STARTING })
-  ipcMain.handle(
-    CH.conductors.startFresh,
-    () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING }
-  )
-  ipcMain.handle(CH.conductors.fromPalette, (_e, request: PaletteRequest) =>
-    handFromPalette(request)
-  )
-  ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
-  ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
-    const owner = discordLink?.pair(isMe === true)
-    if (owner) discordBinding?.setOwner(owner)
-  })
-  ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
-  ipcMain.handle(CH.discord.setUpWithButler, (_e, ownerWords?: string) =>
-    setUpDiscordWithButler(typeof ownerWords === 'string' ? ownerWords : undefined)
+  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
   )
   ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
@@ -7558,9 +7547,6 @@ function registerIpc(): void {
       : null
     return pickText(picked, picture)
   })
-  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
-    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
-  )
   ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
     if (typeof id === 'number') stopPick(id)
   })

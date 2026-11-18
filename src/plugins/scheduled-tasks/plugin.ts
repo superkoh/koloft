@@ -1,6 +1,6 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './skill/text'
-import { CHANNELS } from './shared/channels'
+import { CHANNELS } from './shared/ipc'
 
 export const SCHEDULED_JOBS_DIALOG = 'scheduled-jobs-dialog'
 export const SCHEDULED_JOBS = 'scheduled-jobs'

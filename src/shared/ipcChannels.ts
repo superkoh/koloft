@@ -76,22 +76,8 @@ export const CH = {
     now: 'machine:now',
     free: 'machine:free'
   },
-  conductors: {
-    bind: 'conductors:bind',
-    bindNewChannel: 'conductors:bindNewChannel',
-    unbind: 'conductors:unbind',
-    open: 'conductors:open',
-    startFresh: 'conductors:startFresh',
-    fromPalette: 'conductors:fromPalette'
-  },
   palette: {
     savePicture: 'palette:savePicture'
-  },
-  discord: {
-    status: 'discord:status',
-    pair: 'discord:pair',
-    channels: 'discord:channels',
-    setUpWithButler: 'discord:setUpWithButler'
   },
   attention: {
     list: 'attention:list',

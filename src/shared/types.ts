@@ -1,11 +1,6 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
-import type {
-  ConductorSaveResult,
-  DiscordChannel,
-  DiscordStatus
-} from '@plugins/discord/shared/types'
 
 export interface ProjectInfo {
   root: string
@@ -1346,23 +1341,8 @@ export interface CoreApi {
     now(): Promise<MachineState | null>
     free(tabId: string): Promise<boolean>
   }
-  conductors: {
-    bind(channel: DiscordChannel): Promise<ConductorSaveResult>
-    bindNewChannel(): Promise<ConductorSaveResult>
-    unbind(): Promise<void>
-    open(): Promise<ConductorOpenResult>
-    startFresh(): Promise<ConductorOpenResult>
-    fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
-  }
   palette: {
     savePicture(dataUrl: string): Promise<string | null>
-  }
-  discord: {
-    status(): Promise<DiscordStatus>
-    onStatus(cb: (s: DiscordStatus) => void): () => void
-    pair(isMe: boolean): Promise<void>
-    channels(): Promise<DiscordChannel[]>
-    setUpWithButler(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 

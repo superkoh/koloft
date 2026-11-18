@@ -59,6 +59,7 @@ interface RuntimeEntry extends StatusSignals {
   status?: SessionStatus
   since: number
   wakeupPending: boolean
+  compactingFrom?: { turn: Turn; heldByBackground: boolean }
   idleTimer?: ReturnType<typeof setTimeout>
   closeTimer?: ReturnType<typeof setTimeout>
 }
@@ -75,6 +76,10 @@ export class SessionRuntime extends EventEmitter {
 
   awaitsInput(tabId: string): boolean {
     return this.entries.get(tabId)?.turn === 'input'
+  }
+
+  turn(tabId: string): Turn | undefined {
+    return this.entries.get(tabId)?.turn
   }
 
   turnOver(tabId: string): boolean {
@@ -98,6 +103,7 @@ export class SessionRuntime extends EventEmitter {
   recordTurn(tabId: string, turn: Turn, heldByBackground = false): void {
     const e = this.entry(tabId)
     const wasOver = this.turnOver(tabId)
+    e.compactingFrom = undefined
     e.turn = turn
     e.heldByBackground = heldByBackground
     e.restingSince = undefined
@@ -107,6 +113,26 @@ export class SessionRuntime extends EventEmitter {
     if (over === wasOver) return
     this.turnOverChanged(tabId)
     this.emit('turn-over', { tabId, over } satisfies TurnOverEdge)
+  }
+
+  recordCompaction(
+    tabId: string,
+    event: Extract<SessionEvent, { type: 'compacting' | 'compacted' }>
+  ): void {
+    const e = this.entry(tabId)
+    if (event.type === 'compacting') {
+      if (event.trigger === 'auto' && this.turnOver(tabId)) return
+      const saved = e.compactingFrom ?? {
+        turn: e.turn ?? 'ended',
+        heldByBackground: e.heldByBackground
+      }
+      this.recordTurn(tabId, 'working')
+      e.compactingFrom = saved
+      return
+    }
+    const from = e.compactingFrom
+    e.compactingFrom = undefined
+    if (from && e.turn === 'working') this.recordTurn(tabId, from.turn, from.heldByBackground)
   }
 
   setBackground(tabId: string, items: BackgroundItem[]): boolean {

@@ -8,7 +8,7 @@ function landOnButler(): void {
   const live = butlerTabOf(get().sessions, useButler.getState().openedTab, get().tabs)
   if (live) return get().activateTab(live)
   const landedOn = get().activeTabId
-  void window.api.conductors.open().then((r) => {
+  void window.api.butler.open().then((r) => {
     if (!r.ok) return get().showToast(r.error)
     useButler.setState({ openedTab: r.tabId })
     if (get().activeTabId === landedOn) get().activateTab(r.tabId)

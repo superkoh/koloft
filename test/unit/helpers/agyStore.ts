@@ -11,6 +11,8 @@ export interface SummaryFixture {
   last_modified_time?: string
   step_count?: number
   parent_conversation_id?: string
+  agent_name?: string
+  killed?: number
   app_data_dir?: string
   dbRemoved?: true
 }
@@ -23,6 +25,8 @@ const SUMMARY_COLUMNS = [
   'last_modified_time',
   'step_count',
   'parent_conversation_id',
+  'agent_name',
+  'killed',
   'app_data_dir'
 ] as const
 
@@ -39,6 +43,8 @@ export function writeSummaries(geminiDir: string, rows: SummaryFixture[]): void 
       last_modified_time text not null default '',
       step_count integer not null default 0,
       parent_conversation_id text not null default '',
+      agent_name text not null default '',
+      killed integer not null default 0,
       app_data_dir text not null default ''
     )`)
     const insert = db.prepare(
@@ -58,6 +64,8 @@ export function writeSummaries(geminiDir: string, rows: SummaryFixture[]): void 
         row.last_modified_time ?? '0001-01-01 00:00:00+00:00',
         row.step_count ?? 1,
         row.parent_conversation_id ?? '',
+        row.agent_name ?? '',
+        row.killed ?? 0,
         row.app_data_dir ?? ''
       )
     }
