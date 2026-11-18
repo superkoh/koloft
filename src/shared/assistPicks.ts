@@ -1,5 +1,6 @@
+import { ASSIST_JOBS, assistJobDefaults } from '@core/assistJobs'
+import type { ModelAndEffort } from '@core/assistModels'
 import {
-  ASSIST_JOBS,
   isCronEffort,
   type AccountMeta,
   type AssistPick,
@@ -12,50 +13,9 @@ import {
 import { ACCOUNT_KINDS_OF, usableAccounts } from './accountUsage'
 import { effortsFor, NAMED_MODELS, takenEffort, type NamedModel } from './cronModels'
 import { isValidModelName } from './cronNames'
-import { backendIdOf, byBackend, SESSION_BACKENDS } from './sessionBackend'
+import { backendIdOf, SESSION_BACKENDS } from './sessionBackend'
 
-export const ASSIST_ROWS: readonly AssistRowId[] = [...ASSIST_JOBS, 'butler']
-
-export interface ModelAndEffort {
-  model?: string
-  effort?: CronEffort
-}
-
-// CC§9 CODEX§15
-export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {
-  claude: { model: 'haiku' },
-  codex: { model: 'gpt-6-luna' },
-  muse: {},
-  agy: {}
-}
-
-// CC§9 CODEX§15 MUSE§1 AGY§21
-const SMALL_AND_QUICK: Record<BackendId, ModelAndEffort> = {
-  claude: EVERY_ACCOUNT_TAKES.claude,
-  codex: { ...EVERY_ACCOUNT_TAKES.codex, effort: 'low' },
-  muse: { effort: 'low' },
-  agy: { model: 'gemini-3.8-flash', effort: 'low' }
-}
-
-// CC§9 CODEX§15 MUSE§1 AGY§21
-export const ASSIST_DEFAULTS: Record<AssistRowId, Record<BackendId, ModelAndEffort>> = {
-  title: SMALL_AND_QUICK,
-  handover: SMALL_AND_QUICK,
-  turn: {
-    claude: { model: 'haiku' },
-    codex: { model: 'gpt-6.1-sol', effort: 'medium' },
-    muse: { effort: 'medium' },
-    agy: { model: 'gemini-4-argon', effort: 'medium' }
-  },
-  docs: SMALL_AND_QUICK,
-  route: {
-    claude: { model: 'sonnet', effort: 'low' },
-    codex: { model: 'gpt-6.1-sol', effort: 'low' },
-    muse: { effort: 'low' },
-    agy: { model: 'gemini-3.8-flash', effort: 'low' }
-  },
-  butler: byBackend(() => ({}))
-}
+export const ASSIST_ROWS: readonly AssistRowId[] = [...ASSIST_JOBS.map((j) => j.id), 'butler']
 
 const HAIKU: NamedModel = { id: 'haiku', label: 'Haiku' }
 
@@ -140,7 +100,7 @@ export interface AssistLaunch extends ModelAndEffort {
 }
 
 export function assistLaunchOn(row: AssistRowId, backend: BackendId, s: Resolved): AssistLaunch {
-  const table = ASSIST_DEFAULTS[row][backend]
+  const table = assistJobDefaults(row, backend)
   const pick = s.assist.rows?.[row]
   const own = pick?.backend === backend ? pick : undefined
   const model = own?.model ?? table.model
@@ -199,7 +159,7 @@ export function assistOnMethodsThatAreOn(
 ): AssistSetting {
   const off = (b: BackendId): boolean => !methods.enabled[b]
   const rows = Object.fromEntries(
-    Object.entries(assist.rows ?? {}).filter(([, pick]) => !off(pick.backend))
+    Object.entries(assist.rows ?? {}).filter(([, pick]) => pick && !off(pick.backend))
   )
   return {
     ...(assist.backend && {

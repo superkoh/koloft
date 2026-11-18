@@ -1,6 +1,7 @@
 // ADR-0051
 import type { BackendId } from '@shared/types'
 import { SESSION_BACKENDS, byBackend } from '@shared/sessionBackend'
+import type { ModelAndEffort } from './assistModels'
 
 export const PLUGIN_FORMAT_VERSION = 1
 
@@ -43,6 +44,8 @@ export interface UiEntry {
 export interface PluginAssistJob {
   id: string
   name: string
+  does: string
+  defaults: Record<BackendId, ModelAndEffort>
 }
 
 export interface PluginMcpServer {
