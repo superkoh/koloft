@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { IconClose, IconDelete, IconEdit, IconPlay } from '../icons'
+import { IconClose, IconDelete, IconEdit, IconPlay } from '@renderer/icons'
 import type {
   BackendId,
   CronJob,
@@ -35,7 +35,6 @@ import { effortsFor, NAMED_MODELS, namedModel } from '@shared/cronModels'
 import {
   effortOf,
   emptyFields,
-  modelValue,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
@@ -43,13 +42,13 @@ import {
   toModelFields,
   type JobFields,
   type WhenKind
-} from '../cronForm'
-import { isComposing } from '../keys'
-import { useStore } from '../store'
-import { mixesBackends } from '../sessionRows'
-import { ModelAndThinking, useFieldFocus } from './ModelAndThinking'
-import { Switch } from './settings/Switch'
-import '../cronJobs.css'
+} from './cronForm'
+import { modelValue } from '@renderer/modelPick'
+import { isComposing } from '@renderer/keys'
+import { useStore } from '@renderer/store'
+import { mixesBackends } from '@renderer/sessionRows'
+import { ModelAndThinking, useFieldFocus } from '@renderer/components/ModelAndThinking'
+import { Switch } from '@renderer/components/settings/Switch'
 
 const DAY_CHIPS: { d: number; label: string }[] = [
   { d: 1, label: 'Mon' },

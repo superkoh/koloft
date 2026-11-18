@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { route, dockBadgeText } from '../../src/main/notifyRouter'
-import {
-  DEFAULT_SETTINGS,
-  type AttentionEvent,
-  type AttentionKind,
-  type Settings
-} from '../../src/shared/types'
+import type { AttentionEvent, AttentionKind, Settings } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 
 const ev = (kind: AttentionKind): AttentionEvent => ({ tabId: 'tab-A', kind, at: 1 })
 const settings = (o: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, ...o })

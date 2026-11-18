@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { koloftAssist } from '../../src/main/assist'
-import { DEFAULT_SETTINGS, type AssistSetting, type BackendId } from '../../src/shared/types'
+import type { AssistSetting, BackendId } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 
 function recordingBinary(name: string, reply: string): { bin: string; log: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-'))

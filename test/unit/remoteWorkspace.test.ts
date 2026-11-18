@@ -40,12 +40,13 @@ describe('remoteKeyFromForm', () => {
 })
 
 describe('workspaceMenuCount', () => {
-  it('adds only the worktree item for a checkout — fetching lives in the git panel', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: true })).toBe(7)
-    expect(workspaceMenuCount({ missing: false, isGit: false })).toBe(6)
+  it('adds only the worktree item for a checkout — fetching lives in the git panel — and the items plugins add', () => {
+    expect(workspaceMenuCount({ missing: false, isGit: true }, 1)).toBe(7)
+    expect(workspaceMenuCount({ missing: false, isGit: false }, 1)).toBe(6)
+    expect(workspaceMenuCount({ missing: false, isGit: false }, 0)).toBe(5)
   })
 
   it('a deleted folder offers only Remove', () => {
-    expect(workspaceMenuCount({ missing: true, isGit: false })).toBe(1)
+    expect(workspaceMenuCount({ missing: true, isGit: false }, 1)).toBe(1)
   })
 })

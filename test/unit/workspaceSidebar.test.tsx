@@ -87,7 +87,6 @@ describe('WorkspaceSidebar (C2): a row redraws only when what it shows changes',
         onNewWorktreeSession={() => {}}
         onRestoreSession={() => {}}
         onSessionDefaults={() => {}}
-        onScheduledJobs={() => {}}
       />
     )
     const claudeRow = container.querySelector('[data-tab-id="pty-claude"]')!
@@ -117,7 +116,6 @@ function renderSidebar(): HTMLElement {
       onNewWorktreeSession={() => {}}
       onRestoreSession={() => {}}
       onSessionDefaults={() => {}}
-      onScheduledJobs={() => {}}
     />
   ).container
 }
