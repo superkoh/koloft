@@ -1057,6 +1057,19 @@ starts a new conversation when it is set back to the tool's own.
   the two dim resume-hint lines (119 bytes), `Removing worktree…`, `Worktree removed (no
   changes)`; the spinner line above them reads `Cleaning up worktree (no pending
   changes)…` on both.
+- Rechecked 2026-11-18 on CC 2.1.327 beside 2.1.325 (the same setup, one run each, the
+  bytes replayed through `WorktreeRemovalWatch`): a clean exit and a dirty one answered
+  Remove wrote the same bytes on both (`Worktree removed (no changes)` /
+  `Worktree removed. Uncommitted changes were discarded.`), and the watch saw the removal
+  start. A dirty exit answered Keep prints nothing after the resume hint on 2.1.325;
+  2.1.327 adds `Worktree kept. Your work is saved at <path> on branch worktree-<n>`, and
+  the watch rightly saw no removal. The dialog now counts an untracked folder as `You
+  have 1 new folder of uncommitted files.` (2.1.325: `1 uncommitted file`). The same
+  day a 2.1.327 `-w` session still ran every `--settings` hook (SessionStart,
+  UserPromptSubmit, Stop, SessionEnd) and offered a `--plugin-dir` skill to the model,
+  drew no notice of skipped plugin settings (a plugin with hooks, MCP servers or settings
+  of its own was not tried), and made its worktree through the first `git` on `PATH` (a
+  logging wrapper), in a repo with no remote.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -1259,6 +1272,10 @@ never wrote a transcript.
   the command's stdin and **treats stdout-pipe EOF as "render done"** — any orphaned
   process holding the pipe's write end delays the visible render for its full lifetime
   (measured: 10.06 s → 0.83 s cold / 0.18 s warm once no orphan held the pipe).
+- **Since 2.1.326 the statusLine command runs again after a terminal resize, with the new
+  `COLUMNS`.** 2026-11-18, a Mac pty resized 120 → 90 → 140: 2.1.325 ran the command once
+  (`COLUMNS=120`) and not after either resize; 2.1.327 ran it again each time, with
+  `COLUMNS=90`, then `140`. One run each.
 - statusLine (like hooks) only runs after the workspace trust dialog is accepted, and
   `disableAllHooks: true` turns off both statusLine and hooks.
 - CC also supports `subagentStatusLine` (the key is in the 2.1.281 binary, `strings`,
@@ -2692,8 +2709,21 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   `TMUX`, `ZELLIJ`, JetBrains terminal or `WT_SESSION` is set; a debug line `DECSTBM:
   enabled|gated (TMUX=… ZELLIJ=… TERM_PROGRAM=… TERM=…)` is new. So on 2.1.327 a local
   tab with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1` gets the cheap scroll without the env var,
-  which stays set only for older builds. Not rerun on 2.1.327: the wheel-scroll bytes,
-  and whether the XTVERSION condition above still holds.
+  which stays set only for older builds. Run the same day (a Mac pty at 120×40,
+  `"tui": "fullscreen"`, a resumed 300-turn transcript, DECRQM 2026 answered, 40 SGR
+  wheel-up reports 150 ms apart, one run per case): with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1`
+  both builds scrolled every report with `ESC[2;35r ESC[<n>T ESC[r`, with or without
+  `CLAUDE_CODE_DECSTBM`, 241.5 bytes per report with no XTVERSION reply and 449.7 with an
+  `xterm.js(6.1.0)` reply (more, smaller frames), byte for byte the same on both. So the
+  flag was on for this Mac even on 2.1.325 (inferred, not checked: it is not in the
+  cached `.claude.json`), and an `xterm.js` reply changes the pacing, not whether the
+  scroll region is used — the `xterm.js` condition in the first sentence did not hold here.
+- **The `tui` setting still takes only `default` and `fullscreen` on 2.1.327**, though
+  that release names the non-fullscreen renderer `/tui classic`: `"tui": "classic"` in
+  `settings.json` opens a blocking "Settings Error … tui: Invalid value. Expected one of:
+  "default", "fullscreen"" on 2.1.325 and 2.1.327 alike. With no `tui` setting both
+  started fullscreen (`ESC[?1049h`); `"default"` gave the classic renderer on 2.1.327.
+  2026-11-18, a Mac pty, one run each; `/tui classic` typed as a command not run.
 - **With `TERM_PROGRAM=Apple_Terminal`, fullscreen claude asks for the cursor position
   (`ESC[?6n`) about every 200 ms, idle or not, as long as something answers it; with
   `TERM_PROGRAM` unset it never asks, and still draws in true colour (`38;2;`).** Same
@@ -2850,6 +2880,23 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   <command>">` (`"approve plan"` for `ExitPlanMode`), 20 ms before the `PermissionRequest`
   hook. In the strings the reports gate only these frames and the bare `state=clear`
   written on exit; nothing else claude draws or sends depends on them.
+- **Since 2.1.326 a turn that leaves a background shell running does not end in `done`,
+  and the folder trust question is reported.** 2026-11-18, CC 2.1.327 beside 2.1.325, a
+  Mac pty answering with Koloft's `PROGRAM_STATUS_REPLY` (sent before the DA1 reply: in
+  the other order the reports never turned on), a stand-in API, one run each, every run
+  replayed through `ClaudeDialogWatch`. A plain turn (`idle`, `working`, `done`, a bare
+  `state=clear` on exit) and a Bash permission dialog (`blocked:kind=permission`, then
+  `working` on `1`, then `done`) are the same on both. A turn whose Bash `sleep 30` runs
+  in the background ends on 2.1.325 with `state=done:app=claude-code`; on 2.1.327 with
+  `state=working:app=claude-code:id=<task>:title=<base64 "Wait in the background">` and
+  then `state=working:app=claude-code:msg=<base64 "1 shell still running">`, and no
+  `done` while the shell runs (after it ends: not probed). The folder trust question in
+  an untrusted folder sends nothing on 2.1.325; on 2.1.327 it sends
+  `state=blocked:app=claude-code:kind=permission:msg=<base64 "trust this folder">` at
+  once and a bare `state=clear` after Yes, then `idle`. With a background shell
+  running, `/exit` opens "Background work is running" (`1. Exit and stop tasks / 2. Move
+  to background and exit / 3. Stay`) on both builds, which 2.1.327 reports only as
+  `working:msg=<"1 shell still running">`, with no `blocked`.
 - **Behind tmux claude sends no reports until something between them answers its query;
   a pty wrapper that does so gets every frame out, as remote Muse's does (MUSE§17).**
   2026-11-05, CC 2.1.319 (the `claude-code-linux-arm64` npm build) in Docker (the e2e
@@ -2876,7 +2923,10 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   sending the last `blocked` frame again every 2 s while the dialog waits, each time
   only once claude had written nothing for 0.1 s, the outer pty got `blocked` 1.2 s
   after attaching and every 2 s after; `1` then gave `working` 37 ms later. `/exit` after a Bash call that left `sleep 300` running in
-  the background ended claude, the wrapper and the tmux session at once.
+  the background ended claude, the wrapper and the tmux session at once (2.1.319, Linux,
+  in tmux). On this Mac on 2.1.325 and 2.1.327 (2026-11-18, a pty, no tmux, `sleep 30`
+  in the background) `/exit` instead opened the "Background work is running" dialog
+  described above and claude stayed; the Linux-in-tmux case was not rerun.
 - **Since 2.1.305 a permission rule that does nothing shows as a warning row under the
   banner, and the long warning goes to the debug log.** On 2.1.306 a deny
   `Write(/etc/**)` drew `⚠ Deny rule Write(/etc/**) never matches · use Edit(/etc/**)`
