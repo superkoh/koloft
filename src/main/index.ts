@@ -613,8 +613,9 @@ import { registerCronCommand } from './agentCron'
 import { registerWorkbenchCommands } from './agentWorkbench'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
-import { moment, type FileOpened } from '@core/moment'
+import { moment, type FileOpened, type SessionStarted } from '@core/moment'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
+import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
 import {
   registerChannels as registerCronChannels,
@@ -2108,6 +2109,12 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
   return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
 }
 
+const sessionStarted = moment<SessionStarted>()
+giveEachStartedSessionARoom(sessionStarted, {
+  butlerFolder: () => conductorFolder(app.getPath('userData')),
+  roomFor: roomForNew
+})
+
 const sessionDeps: SessionVerbDeps = {
   projectRules: rulesOf,
   pickFacts: async (backend) => ({
@@ -2190,12 +2197,13 @@ const sessionDeps: SessionVerbDeps = {
       ? commandIntoButler(text)
       : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
-  roomOf: (key) => {
+  rowNote: (key) => {
     const room = rooms?.ofKey(key)
     if (!room) return undefined
     return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
   },
-  roomForNew
+  announceStarted: sessionStarted.announce,
+  ownersWords: withoutTheRelayTag
 }
 const sessionCommand = sessionVerb(sessionDeps)
 
@@ -3753,7 +3761,6 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     if (t.prev === 'approval') askEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
-    const onDiscord = !!discordBinding?.channelOfTab(t.tabId)
     const asksOnDiscord = !!askChannelOfTab(t.tabId)
     if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
@@ -3764,8 +3771,7 @@ app.whenReady().then(() => {
     if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
     if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
-    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
+    attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -4030,6 +4036,8 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
+  attention.turnTakenElsewhere = (tabId) =>
+    !!bindingNow.channelOfTab(tabId) && !!discordRelay?.reaches(tabId)
   butler = new Butler({
     userData,
     realpath: realpathSafe,
@@ -6522,13 +6530,13 @@ async function openRoomByRef(ref: string): Promise<AgentReply> {
   )
 }
 
-async function roomForNew(
-  callerTab: string,
-  tabId: string,
-  workspace: string,
-  name: string | undefined
-): Promise<string | undefined> {
-  if (!rooms || !discordRelay?.answeringDiscord(callerTab)) return undefined
+async function roomForNew({
+  by,
+  tabId,
+  workspace,
+  name
+}: SessionStarted): Promise<string | undefined> {
+  if (!rooms || !discordRelay?.answeringDiscord(by)) return undefined
   const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
   if (!backend) return undefined
   const subject: RoomSubject = {

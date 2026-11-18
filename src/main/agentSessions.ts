@@ -27,7 +27,6 @@ import {
   type StartResult,
   type StartSpec
 } from '@plugins/sessions/api'
-import { DISCORD_PREFIX } from '@plugins/discord/api'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
@@ -59,6 +58,7 @@ import {
   type Parsed
 } from './agentRequests'
 import type { Commands } from '@core/commands'
+import type { SessionStarted } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
@@ -227,7 +227,7 @@ function rowLines(
   withWorkspace: boolean,
   now: number,
   asking: (tabId: string) => boolean,
-  roomOf: (key: string) => string | undefined = () => undefined
+  noteOf: (key: string) => string | undefined = () => undefined
 ): string[] {
   return placed.map(({ workspace, shownAs, row, title, live: info }, i) => {
     const parts = [
@@ -241,8 +241,8 @@ function rowLines(
     if (names[i]) parts.push(`name: ${names[i]}`)
     parts.push(...starterPart(starters[i]))
     if (withWorkspace) parts.push(`workspace: ${shownAs}`)
-    const room = roomOf(row.id)
-    if (room) parts.push(room)
+    const note = noteOf(row.id)
+    if (note) parts.push(note)
     return parts.join(' · ')
   })
 }
@@ -395,13 +395,9 @@ export interface SessionVerbDeps {
     tellCaller: (said: string) => void
   ): Promise<string>
   screen(tabId: string): Promise<SessionScreen>
-  roomOf(key: string): string | undefined
-  roomForNew(
-    callerTab: string,
-    tabId: string,
-    workspace: string,
-    name: string | undefined
-  ): Promise<string | undefined>
+  rowNote(key: string): string | undefined
+  announceStarted(started: SessionStarted): Promise<string[]>
+  ownersWords(said: string): string
 }
 
 export type SessionScreen = { lines: string[]; notes: string[] } | { error: string }
@@ -431,8 +427,6 @@ const aSessionOf = (backend: BackendId): string => {
   const label = BACKEND_LABEL[backend]
   return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label} session`
 }
-export const roomStarted = (link: string): string =>
-  `The owner asked for it on Discord, so it has a room there, where the owner talks to it: ${link}. Give the owner that link exactly as written.`
 const hasNoName = (backend: BackendId): string =>
   `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
@@ -564,12 +558,9 @@ async function startSibling(
   const unnamed = aSessionOf(backend)
   const bySendMessage = sendMessageReaches(me, backend, parseRemoteKey(workspace)?.host)
   if (conductorTab) {
-    const room =
-      workspace === d.butlerFolder()
-        ? undefined
-        : await d.roomForNew(conductorTab, tabId, workspace, name)
+    const said = await d.announceStarted({ by: conductorTab, tabId, workspace, name })
     return answered(
-      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.${room ? ` ${roomStarted(room)}` : ''}`
+      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.${said.map((s) => ` ${s}`).join('')}`
     )
   }
   const listHint =
@@ -962,14 +953,15 @@ const KOLOFT_ENVELOPES = [
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
 
-export function lastOwnerWords(turns: Turn[]): string | undefined {
+export function lastOwnerWords(
+  turns: Turn[],
+  ownersWords: (said: string) => string
+): string | undefined {
   const line = turns
     .flatMap((t) => t.said)
     .findLast((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
   if (!line) return undefined
-  const relayed = `${DISCORD_PREFIX} `
-  const words = line.text.startsWith(relayed) ? line.text.slice(relayed.length) : line.text
-  return words.slice(0, OWNER_WORDS_QUOTED_CHARS)
+  return ownersWords(line.text).slice(0, OWNER_WORDS_QUOTED_CHARS)
 }
 
 function isMe(
@@ -1029,7 +1021,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     const [parent] = d.startedSessions.startersOf(s)
     const holder = parent && !seen.has(parent) ? holderOf(parent) : undefined
     if (holder) return ownerWordsOf(holder, seen)
-    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS))
+    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS), d.ownersWords)
   }
 
   const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
@@ -1296,7 +1288,7 @@ export function sessionVerb(d: SessionVerbDeps): {
           true,
           Date.now(),
           d.asking,
-          d.roomOf
+          d.rowNote
         ).join('\n')
       )
     }

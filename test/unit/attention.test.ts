@@ -25,6 +25,19 @@ describe('attention — raising events from status transitions', () => {
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
 
+  it('a finished turn someone else has taken raises no mark, and a question on that tab still does', () => {
+    const { t, changes } = makeTracker()
+    t.turnTakenElsewhere = (tabId) => tabId === 'tab-A'
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    expect(changes).toEqual([])
+    t.onStatusChange('tab-B', 'working', 'waiting')
+    t.onStatusChange('tab-A', 'working', 'approval')
+    expect(t.list().map((e) => [e.tabId, e.kind])).toEqual([
+      ['tab-B', 'turn-done'],
+      ['tab-A', 'approval']
+    ])
+  })
+
   it('waiting→idle is a visual downgrade, not a new event', () => {
     const { t, changes } = makeTracker()
     t.onStatusChange('tab-A', 'waiting', 'idle')
