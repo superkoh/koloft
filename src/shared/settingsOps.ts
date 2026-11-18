@@ -3,13 +3,14 @@ import {
   HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
+  type AppSettings,
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
-import { stringsIn } from './workbenchState'
+import { isRecord, stringsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
@@ -21,7 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ...(PLUGIN_KEYS.defaults as PluginSettingValues)
 }
 
-const KEPT_ON_RESET: readonly string[] = [
+const APP_KEPT_ON_RESET: readonly (keyof AppSettings)[] = [
   'accounts',
   'skipPermissions',
   'skipPermissionsAgreed',
@@ -34,22 +35,22 @@ const KEPT_ON_RESET: readonly string[] = [
   'gitSuggestionsDismissed',
   'gitMachines',
   'todoNotes',
-  'sessionDefaults',
-  ...PLUGIN_KEYS.keptOnReset
+  'sessionDefaults'
 ]
 
-const WRITTEN_BY_MAIN_ONLY: readonly string[] = [
+const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
   'accounts',
   'gitAccounts',
   'gitPicks',
   'gitSuggestionsDismissed',
   'gitMachines',
   'todoNotes',
-  'sessionDefaults',
-  ...PLUGIN_KEYS.writtenByMainOnly
+  'sessionDefaults'
 ]
 
-const RETIRED: readonly string[] = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
+const KEPT_ON_RESET = [...APP_KEPT_ON_RESET, ...PLUGIN_KEYS.keptOnReset]
+const WRITTEN_BY_MAIN_ONLY = [...APP_WRITTEN_BY_MAIN_ONLY, ...PLUGIN_KEYS.writtenByMainOnly]
+export const RETIRED_KEYS = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
 
 const without = <T extends object>(from: T, keys: readonly string[]): Partial<T> =>
   Object.fromEntries(Object.entries(from).filter(([key]) => !keys.includes(key))) as Partial<T>
@@ -63,9 +64,8 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
 }
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
-  const doc: Record<string, unknown> =
-    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const merged = { ...DEFAULT_SETTINGS, ...without(doc, RETIRED) } as Settings
+  const doc = isRecord(raw) ? raw : {}
+  const merged = { ...DEFAULT_SETTINGS, ...without(doc, RETIRED_KEYS) } as Settings
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)

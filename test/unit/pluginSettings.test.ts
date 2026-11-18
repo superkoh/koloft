@@ -5,13 +5,15 @@ import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { registerSettings, setting, type SettingKeys } from '@core/settings'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS } from '@plugins/settings'
+import { APP_DEFAULT_SETTINGS } from '@shared/types'
+import { RETIRED_KEYS } from '@shared/settingsOps'
 
-const manifest = (id: string, keys: string[]): PluginManifest => ({
+const manifest = (id: string, keys: string[], needs: string[] = []): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
   mandatory: true,
-  needs: [],
+  needs,
   settings: { keys }
 })
 
@@ -23,7 +25,7 @@ const text = setting<string>({
 const PLUGIN_FOLDERS = path.join(__dirname, '..', '..', 'src', 'plugins')
 
 describe('setting keys a plugin registers', () => {
-  it('a plugin registers exactly the keys its manifest lists, no key twice, only for a plugin on the list, and hands records only to a key some plugin registers', () => {
+  it('a plugin registers exactly the keys its manifest lists, no key twice, and only for a plugin on the list', () => {
     const a = manifest('a', ['one'])
     expect(() => registerSettings([a], { a: { one: text, two: text } })).toThrow(
       'plugin a registers setting "two", which its manifest does not list'
@@ -38,41 +40,56 @@ describe('setting keys a plugin registers', () => {
     expect(() => registerSettings([a], { a: { one: text }, c: {} })).toThrow(
       '"c", which is not on the list of plugins'
     )
-    const handing: SettingKeys = { one: { ...text, handsTo: { nobody: () => [] } } }
-    expect(() => registerSettings([a], { a: handing })).toThrow(
-      'setting "one" hands records to "nobody", which no plugin registers'
-    )
   })
 
-  it('cleans each key from its saved value, or from its default when nothing was saved, and gives a key the records other keys hand it, in the order of the list of plugins', () => {
+  it('a key hands records only to a key some plugin registers, of its own plugin or of one its plugin needs', () => {
+    const handing = (into: string): SettingKeys => ({
+      one: { ...text, handsTo: { [into]: () => [] } }
+    })
+    expect(() => registerSettings([manifest('a', ['one'])], { a: handing('nobody') })).toThrow(
+      'setting "one" hands records to "nobody", which no plugin registers'
+    )
+    const b = manifest('b', ['two'])
+    expect(() =>
+      registerSettings([b, manifest('a', ['one'])], { a: handing('two'), b: { two: text } })
+    ).toThrow('setting "one" hands records to "two" of plugin b, which plugin a does not need')
+    expect(() =>
+      registerSettings([b, manifest('a', ['one'], ['b'])], { a: handing('two'), b: { two: text } })
+    ).not.toThrow()
+  })
+
+  it('cleans each key from its saved value, or from its default when nothing was saved, and gives it first what its retired keys hand it, then what other keys hand it, in the order of the list of plugins', () => {
     const seen: unknown[] = []
     const keys = registerSettings(
-      [manifest('a', ['one']), manifest('b', ['two']), manifest('c', ['three'])],
+      [manifest('c', ['three']), manifest('a', ['one'], ['c']), manifest('b', ['two'], ['c'])],
       {
-        a: { one: { ...text, handsTo: { three: (raw) => [`from one: ${String(raw)}`] } } },
-        b: { two: { ...text, default: 'b default', handsTo: { three: (raw) => [raw] } } },
         c: {
           three: setting<number>({
             default: 0,
-            clean: (raw, saved, handed) => {
-              seen.push({ raw, saved, handed })
+            clean: (raw, handed) => {
+              seen.push({ raw, handed })
               return handed.length
-            }
+            },
+            retires: { oldThree: (raw) => [`retired: ${String(raw)}`] }
           })
-        }
+        },
+        a: { one: { ...text, handsTo: { three: (raw) => [`from one: ${String(raw)}`] } } },
+        b: { two: { ...text, default: 'b default', handsTo: { three: (raw) => [raw] } } }
       }
     )
-    expect(keys.defaults).toEqual({ one: '', two: 'b default', three: 0 })
-    expect(keys.clean({ one: ' x ', other: 1 })).toEqual({ one: 'x', two: 'b default', three: 2 })
-    expect(seen).toEqual([
-      { raw: 0, saved: { one: ' x ', other: 1 }, handed: ['from one:  x ', 'b default'] }
-    ])
+    expect(keys.defaults).toEqual({ three: 0, one: '', two: 'b default' })
+    expect(keys.clean({ one: ' x ', oldThree: 7 })).toEqual({
+      three: 3,
+      one: 'x',
+      two: 'b default'
+    })
+    expect(seen).toEqual([{ raw: 0, handed: ['retired: 7', 'from one:  x ', 'b default'] }])
   })
 
   it('says which keys a reset leaves alone, which only the main process writes and which older keys go, each as its key says', () => {
     const keys = registerSettings([manifest('a', ['one', 'two'])], {
       a: {
-        one: { ...text, keptOnReset: true, retires: ['oldOne'] },
+        one: { ...text, keptOnReset: true, retires: { oldOne: () => [] } },
         two: { ...text, writtenByMainOnly: true }
       }
     })
@@ -81,11 +98,13 @@ describe('setting keys a plugin registers', () => {
     expect(keys.retired).toEqual(['oldOne'])
   })
 
-  it('the list of settings holds the shared/settings.ts of every plugin folder that has one, keyed by its id, and the app registers them without a complaint', () => {
+  it('the list of settings holds the shared/settings.ts of every plugin folder that has one, keyed by its id; the app registers them, and no plugin key is one of the app’s own keys or a retired key', () => {
     const withSettings = fs
       .readdirSync(PLUGIN_FOLDERS)
       .filter((id) => fs.existsSync(path.join(PLUGIN_FOLDERS, id, 'shared', 'settings.ts')))
     expect(Object.keys(PLUGIN_SETTINGS).sort()).toEqual(withSettings.sort())
-    expect(() => registerSettings(PLUGINS, PLUGIN_SETTINGS)).not.toThrow()
+    const keys = registerSettings(PLUGINS, PLUGIN_SETTINGS)
+    const appKeys = [...Object.keys(APP_DEFAULT_SETTINGS), ...RETIRED_KEYS]
+    expect(Object.keys(keys.defaults).filter((k) => appKeys.includes(k))).toEqual([])
   })
 })

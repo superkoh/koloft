@@ -43,8 +43,6 @@ function sanitizeButlerSession(raw: unknown, olderRecords: readonly unknown[]): 
   ])
 }
 
-const OLD_ASSIST_RECORDS = 'assistSessions'
-
 export const SETTINGS = {
   butler: setting<ButlerSetting>({
     default: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
@@ -53,12 +51,9 @@ export const SETTINGS = {
   }),
   butlerSession: setting<ButlerSession>({
     default: { sessionIds: [] },
-    clean: (raw, saved, handed) => {
-      const older = saved[OLD_ASSIST_RECORDS]
-      return sanitizeButlerSession(raw, [...(Array.isArray(older) ? older : []), ...handed])
-    },
+    clean: sanitizeButlerSession,
     keptOnReset: true,
     writtenByMainOnly: true,
-    retires: [OLD_ASSIST_RECORDS]
+    retires: { assistSessions: (raw) => (Array.isArray(raw) ? raw : []) }
   })
 } satisfies SettingKeys
