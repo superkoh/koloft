@@ -5,8 +5,8 @@ import {
   waitsOnOtherWork,
   type Helper,
   type Verdict
-} from '../../src/main/turnNews'
-import type { Turn } from '../../src/shared/turns'
+} from '../../../../src/plugins/sessions/main/turnNews'
+import type { Turn } from '../../../../src/shared/turns'
 
 const turn = (reply: string): Turn => ({ said: [], reply, at: 1 })
 const nobodyOwes = (): boolean => false
@@ -48,18 +48,20 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     const j = new NewsJudge({
       judge: () => new Promise((resolve) => verdicts.push(resolve)),
       awaitingVerdict: (tabId) => marked.has(tabId),
-      markFyi: (tabId) => fyi.push(tabId),
-      judged: () => {}
+      markFyi: (tabId) => fyi.push(tabId)
     })
+    const heard: string[] = []
+    j.onVerdict((tabId, v) => heard.push(`first ${tabId} ${v.news}`))
+    j.onVerdict((tabId, v) => heard.push(`second ${tabId} ${v.news}`))
     const settle = async (news: boolean): Promise<void> => {
       verdicts.shift()?.({ news })
       await Promise.resolve()
     }
-    return { j, marked, fyi, verdicts, settle }
+    return { j, marked, fyi, heard, verdicts, settle }
   }
 
-  it('asks once the turn and its mark are both in, in either order, and a flapping mark keeps the verdict', async () => {
-    const { j, marked, fyi, verdicts, settle } = judge()
+  it('asks once the turn and its mark are both in, in either order, a flapping mark keeps the verdict, and every subscriber hears each verdict', async () => {
+    const { j, marked, fyi, heard, verdicts, settle } = judge()
     j.turnEnded('tab-A', turn('Done.'))
     expect(verdicts).toHaveLength(0)
     marked.add('tab-A')
@@ -74,6 +76,12 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     j.turnEnded('tab-B', turn('Merge it?'))
     await settle(false)
     expect(fyi).toEqual(['tab-A'])
+    expect(heard).toEqual([
+      'first tab-A true',
+      'second tab-A true',
+      'first tab-B false',
+      'second tab-B false'
+    ])
   })
 
   it('a turn counts as being judged from the ask until its verdict is back, or until the session is written to again', async () => {
@@ -91,12 +99,13 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
   })
 
   it('a verdict that comes back after the owner wrote again is dropped', async () => {
-    const { j, marked, fyi, settle } = judge()
+    const { j, marked, fyi, heard, settle } = judge()
     marked.add('tab-A')
     j.turnEnded('tab-A', turn('Done.'))
     j.prompted('tab-A')
     await settle(true)
     expect(fyi).toEqual([])
+    expect(heard).toEqual([])
   })
 })
 
@@ -108,6 +117,31 @@ describe('judgeTurn — the Assist decides only what code cannot', () => {
       asks.push(prompt)
       return answer
     }
+
+  it('the Assist is asked on its turn row with this exact text, and sees only the last 4000 characters of the reply', async () => {
+    const jobs: unknown[] = []
+    const reply = `${'a'.repeat(10)}${'b'.repeat(3990)}${'c'.repeat(10)}`
+    await judgeTurn(async (job) => {
+      jobs.push(job)
+      return 'ACT'
+    }, turn(reply))
+    expect(jobs).toEqual([
+      {
+        row: 'turn',
+        system:
+          'You decide whether a person has to act on what a coding agent just said, and which short replies they could send.',
+        prompt: `A coding agent just finished its turn and stopped. Read its last reply.
+Answer ACT if the reply asks the person anything: a question, an approval, a choice, information, a login, or a step only the person can do before the work goes on.
+Answer NEWS if the reply only reports: the work is done, or the agent is waiting on something else (another session, a background job, a build, a notice) and will carry on by itself, and it asks the person for nothing.
+When unsure, answer ACT.
+Write ACT or NEWS alone on the first line.
+After ACT, if the person could answer with one tap, add a line "Q: " naming what they decide in at most 8 words, then 2 to 4 lines "- ", each a different answer they could send as it is, at most 5 words, the one the agent recommends first. Every answer must move the work on: no "let me look first" or "wait". A no means "not now", never a step the agent did not offer, such as closing a PR. Write them in the language of the agent's reply. Add none when the person has to type something only they know, or do a step away from the chat.
+
+Agent replied:
+${'b'.repeat(3990)}${'c'.repeat(10)}`
+      }
+    ])
+  })
 
   it('news only when the Assist answers NEWS; ACT, no answer or an empty reply keep it a call', async () => {
     asks.length = 0

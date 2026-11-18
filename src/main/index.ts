@@ -646,7 +646,7 @@ import { resolveWorkspace, type PlacedRow } from '@plugins/sessions/api'
 import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { NewsJudge, judgeTurn, waitsOnOtherWork } from './turnNews'
+import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, Presence } from './presence'
 import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
 import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
@@ -793,9 +793,9 @@ function allSessions(): SessionInfo[] {
 const newsJudge = new NewsJudge({
   judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId),
-  judged: (tabId, verdict) => koloftInbox.judged(tabId, verdict)
+  markFyi: (tabId) => attention.markFyi(tabId)
 })
+newsJudge.onVerdict((tabId, verdict) => koloftInbox.judged(tabId, verdict))
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
