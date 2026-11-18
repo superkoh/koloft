@@ -14,7 +14,8 @@
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"],
-      "@plugins/*": ["./src/plugins/*"]
+      "@plugins/*": ["./src/plugins/*"],
+      "@renderer/*": ["./src/renderer/src/*"]
     }
   },
   "include": [
