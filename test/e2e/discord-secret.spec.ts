@@ -32,7 +32,11 @@ import {
 import { guestByUrl } from './helpers/browser'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { FILLED_AND_EMPTIED } from '../../src/plugins/passwords/main/secretVerb'
-import { ANSWERED_IN_KOLOFT, NO_LONGER_WAITING, PASSED_ON } from '../../src/main/discord/secretCards'
+import {
+  ANSWERED_IN_KOLOFT,
+  NO_LONGER_WAITING,
+  PASSED_ON
+} from '../../src/main/discord/secretCards'
 
 test.setTimeout(120_000)
 
