@@ -48,6 +48,7 @@ import {
   resizeStandInCmd,
   launchLine,
   MACHINE_PICTURES_DIR,
+  MACHINE_PICTURES_DIR_TAIL,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
   tmuxSessionName,
@@ -170,7 +171,9 @@ function machinePermission(
 }
 
 const picturesHandedTo = (spec: ClaudeLaunch): string | undefined =>
-  !spec.resumeSessionId && spec.firstPrompt ? pictureFolderIn(spec.firstPrompt) : undefined
+  !spec.resumeSessionId && spec.firstPrompt
+    ? pictureFolderIn(spec.firstPrompt, (folder) => folder.endsWith(MACHINE_PICTURES_DIR_TAIL))
+    : undefined
 
 // CC§9
 export function machineClaudeArgs(
@@ -1300,7 +1303,7 @@ export class SshHost implements Host {
               projectPrompt,
               claudeArgs,
               trustFolder: spec.trustFolder,
-              pictureFolder: picturesHandedTo(spec)
+              handsPictures: !!picturesHandedTo(spec)
             }
           )
         )

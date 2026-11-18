@@ -44,7 +44,9 @@ for good.
   question for a folder it does not trust, sends no first prompt and tells Koloft
   nothing (`CC§18`). The folder holds only pictures Koloft saved, so trusting it gives
   nothing away. A `Picture:` line naming any other folder (typed words, an agent's
-  task) gets no entry: that folder would trust whatever sits under it.
+  task, a picture that failed to copy to the machine) gets no entry, as that folder
+  would trust whatever sits under it, and no `--add-dir` either: claude then asks
+  before reading the picture, in the open, instead of stopping unseen.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's
 own question in the terminal, a scheduled run in a workspace the agent does not trust
 keeps the jobs form's warning and stops on the question, and a launch that fell back to

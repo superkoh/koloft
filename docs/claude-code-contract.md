@@ -4099,9 +4099,7 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   /home/node/.koloft/element-picks` with Koloft's own first prompt shape (`Picture:` line),
   with and without bypass, with and without `SSH_CONNECTION` set (question each time on
   2.1.327, none on 2.1.325), and once more after Koloft's remote trust script ran in that
-  folder (no question, the turn ran). Koloft writes the trust entry before every launch
-  whose first prompt names a picture in its own picture folder, locally
-  (`src/main/host/localHost.ts`) and on a remote machine (`src/main/remote/launch.ts`).
+  folder (no question, the turn ran).
 
 ## §19 The PostToolUse hook adds text after every tool result
 

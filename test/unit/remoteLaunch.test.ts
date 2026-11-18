@@ -140,7 +140,7 @@ const spec = ({
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
   trustFolder,
-  pictureFolder,
+  handsPictures,
   program,
   ...over
 }: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
@@ -154,7 +154,7 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder, pictureFolder })
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder, handsPictures })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -1052,21 +1052,22 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§18 ADR-0026
-  it("a tab handed a picture folder trusts it when it is Koloft's own picture folder on the machine, and leaves .claude.json alone for any other folder", () => {
-    const handedPictures = (pictureFolder: (ownPictures: string) => string): string => {
-      const b = box(spec(), { ensureBringsNode: true })
-      const own = path.join(b.home, '.koloft', 'element-picks')
-      fs.mkdirSync(own, { recursive: true })
-      writeTabPackage(b.tabs, spec({ pictureFolder: pictureFolder(fs.realpathSync(own)) }))
+  it("a tab that hands claude Koloft's picture folder on the machine trusts that folder under its real path; a tab that hands none leaves .claude.json alone", () => {
+    const launched = (handsPictures: boolean): { pictures: string; claudeJson: string } => {
+      const b = box(spec({ handsPictures }), { ensureBringsNode: true })
+      const pictures = path.join(b.home, '.koloft', 'element-picks')
+      fs.mkdirSync(pictures, { recursive: true })
       expect(b.run().status).toBe(0)
       const cj = path.join(b.home, '.claude.json')
-      return fs.existsSync(cj) ? fs.readFileSync(cj, 'utf8') : ''
+      return {
+        pictures: fs.realpathSync(pictures),
+        claudeJson: fs.existsSync(cj) ? fs.readFileSync(cj, 'utf8') : ''
+      }
     }
 
-    expect(handedPictures(() => fs.realpathSync(mkroot('elsewhere')))).toBe('')
-    let pictures = ''
-    const trusted = handedPictures((own) => (pictures = own))
-    expect(JSON.parse(trusted)).toEqual({
+    expect(launched(false).claudeJson).toBe('')
+    const { pictures, claudeJson } = launched(true)
+    expect(JSON.parse(claudeJson)).toEqual({
       projects: { [pictures]: { hasTrustDialogAccepted: true } }
     })
   })

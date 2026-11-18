@@ -116,8 +116,10 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   }
   if (spec.trustFolder) trustFolder(spec.cwd ?? spec.root)
   // CC§18 ADR-0026
-  const pictures = pictureFolderIn(spec.firstPrompt ?? '')
-  if (pictures === d.pastedPicturesDir()) trustFolder(pictures)
+  const pictures = spec.resumeSessionId
+    ? undefined
+    : pictureFolderIn(spec.firstPrompt ?? '', (folder) => folder === d.pastedPicturesDir())
+  if (pictures) trustFolder(pictures)
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
   const launchCommand = `exec ${aboveItsTools(args.argv).join(' ')}`
   const worktree = spec.worktree ?? worktreeNameAround(cwd)

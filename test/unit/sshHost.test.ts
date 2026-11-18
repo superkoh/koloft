@@ -726,6 +726,16 @@ describe('what a remote launch hands claude', () => {
     })
   })
 
+  // CC§18
+  it('a first prompt whose picture sits in any other folder than Koloft’s own on the machine hands claude no --add-dir, as claude would stop on its question about that folder', () => {
+    const firstPrompt =
+      'fix it\n\nPicture: /Users/me/Library/Application Support/Koloft/palette-pictures/a.png'
+    expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
+      ok: true,
+      args: ['--session-id', 'sid1', '--', firstPrompt]
+    })
+  })
+
   it('a first prompt that names a pasted picture also hands claude the picture’s folder on the machine with --add-dir, just before the prompt', () => {
     const firstPrompt = 'fix it\n\nPicture: /home/me/.koloft/element-picks/a.png'
     expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
