@@ -612,7 +612,7 @@ import {
 import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
 import {
   registerChannels as registerDiscordChannels,
-  pushStatus
+  pushStatus as pushStatusToDiscordPane
 } from '@plugins/discord/main/channels'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import {
@@ -1403,7 +1403,7 @@ const pluginIpc: MainIpc = {
 }
 const pushInbox = pushInboxChanged(pluginIpc)
 const pushOpenRequest = pushOpenFile(pluginIpc)
-const pushDiscordStatus = pushStatus(pluginIpc)
+const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -7243,15 +7243,17 @@ function registerIpc(): void {
       const owner = discordLink?.pair(isMe)
       if (owner) discordBinding?.setOwner(owner)
     },
-    channels: () => discordLink?.channels() ?? [],
+    channels: () => discordLink?.channels() ?? Promise.resolve([]),
     setUpWithButler: setUpDiscordWithButler
   })
   registerButlerChannels(pluginIpc, {
-    open: () => butler?.open() ?? { ok: false, error: STILL_STARTING },
-    startFresh: () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING },
-    fromPalette: handFromPalette,
-    savePicture: savePastedPicture
+    open: () => butler?.open() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
+    startFresh: () => butler?.startFresh() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
+    fromPalette: handFromPalette
   })
+  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
+  )
   ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )

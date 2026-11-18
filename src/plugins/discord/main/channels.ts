@@ -10,7 +10,7 @@ export interface ChannelDeps {
   unbind(): void
   status(): DiscordStatus
   pair(isMe: boolean): void
-  channels(): Promise<DiscordChannel[]> | DiscordChannel[]
+  channels(): Promise<DiscordChannel[]>
   setUpWithButler(ownerWords: string | undefined): Promise<ConductorOpenResult>
 }
 

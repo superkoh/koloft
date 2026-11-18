@@ -76,6 +76,9 @@ export const CH = {
     now: 'machine:now',
     free: 'machine:free'
   },
+  palette: {
+    savePicture: 'palette:savePicture'
+  },
   attention: {
     list: 'attention:list',
     activeTab: 'attention:active-tab',

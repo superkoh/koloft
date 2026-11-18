@@ -5,12 +5,7 @@ import {
   type ButlerSession,
   type ButlerSetting
 } from '@plugins/butler/shared/types'
-import type {
-  ConductorSaveResult,
-  DiscordChannel,
-  DiscordSettings,
-  DiscordStatus
-} from '@plugins/discord/shared/types'
+import type { DiscordSettings } from '@plugins/discord/shared/types'
 
 export interface ProjectInfo {
   root: string
@@ -1360,6 +1355,9 @@ export interface CoreApi {
     onState(cb: (s: MachineState) => void): () => void
     now(): Promise<MachineState | null>
     free(tabId: string): Promise<boolean>
+  }
+  palette: {
+    savePicture(dataUrl: string): Promise<string | null>
   }
 }
 

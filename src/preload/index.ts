@@ -192,6 +192,9 @@ const api: KoloftApi = {
     now: () => ipcRenderer.invoke(CH.machine.now),
     free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId)
   },
+  palette: {
+    savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
+  },
   attention: {
     list: () => ipcRenderer.invoke(CH.attention.list),
     activeTab: (id) => ipcRenderer.send(CH.attention.activeTab, id),
