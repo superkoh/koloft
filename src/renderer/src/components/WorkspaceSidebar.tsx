@@ -81,7 +81,7 @@ import {
   startedByAJob,
   useNextJobClock
 } from '@plugins/scheduled-tasks/renderer/sidebarMarks'
-import { InboxRow } from '@plugins/inbox/renderer/Inbox'
+import { PartsAt } from '../pluginUi'
 import { MENU_PAD_H, menuPosFor, useDismissOnOutside } from './menuPlace'
 import {
   discardAll,
@@ -1327,7 +1327,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   return (
     <>
       <div className="island flat isl-sessions">
-        <InboxRow />
+        <PartsAt place="sidebar-head" />
         <div
           ref={listRef}
           className="ws-list"

@@ -1,11 +1,18 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './skill/text'
 
+export const INBOX_ROW = 'inbox-row'
+export const INBOX_PAGE = 'inbox-page'
+
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'inbox',
   name: 'Inbox',
   mandatory: true,
   needs: ['sessions'],
-  text: TEXT
+  text: TEXT,
+  ui: [
+    { place: 'sidebar-head', id: INBOX_ROW },
+    { place: 'centre-page', id: INBOX_PAGE }
+  ]
 }

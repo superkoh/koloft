@@ -112,7 +112,7 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
-import { InboxPage } from '@plugins/inbox/renderer/Inbox'
+import { OpenCentrePage } from './pluginUi'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -303,7 +303,7 @@ export default function App(): JSX.Element {
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
   const secretAsks = useStore((s) => s.secretAsks)
-  const inboxOpen = useStore((s) => s.inboxOpen)
+  const centrePage = useStore((s) => s.centrePage)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -1001,8 +1001,8 @@ export default function App(): JSX.Element {
   }, [activeTabId])
 
   useEffect(() => {
-    window.api.attention.activeTab(inboxOpen ? null : activeTabId)
-  }, [activeTabId, inboxOpen])
+    window.api.attention.activeTab(centrePage ? null : activeTabId)
+  }, [activeTabId, centrePage])
 
   useEffect(() => {
     const set = useStore.getState().setInbox
@@ -1728,7 +1728,7 @@ export default function App(): JSX.Element {
       {/* PLATFORM§10 */}
       {(sbDragging || nbDragging || vDragging) && <div className="drag-overlay" />}
       <div className="center" ref={centerRef}>
-        {inboxOpen && <InboxPage />}
+        <OpenCentrePage />
         <div className="center-row">
           {sidebarHidden && panelFull && <div className="wb-full-drag" />}
           <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
