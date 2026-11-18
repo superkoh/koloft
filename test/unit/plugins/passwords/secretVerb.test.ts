@@ -11,12 +11,12 @@ import {
   OWNER_FILLED_AND_EMPTIED,
   PAGE_CHANGED,
   secretVerb,
-  type FieldPage,
   type SecretVerbDeps
-} from '../../src/main/agentSecret'
-import type { SecretAnswer, SecretAsk } from '../../src/main/discord/secretAsks'
-import type { AgentCaller } from '../../src/main/agentRequests'
-import type { SessionInfo } from '../../src/shared/types'
+} from '../../../../src/plugins/passwords/main/secretVerb'
+import type { SecretAnswer, SecretAsk } from '../../../../src/plugins/passwords/main/secretAsks'
+import type { WebPage } from '../../../../src/core/webPage'
+import type { AgentCaller } from '../../../../src/main/agentRequests'
+import type { SessionInfo } from '../../../../src/shared/types'
 
 const session = { tabId: 'tab-1', title: 'Fix login' } as SessionInfo
 
@@ -30,7 +30,7 @@ interface FakeField {
   keptAfterSubmit?: boolean
 }
 
-function page(url: string, field: FakeField, run: string[] = []): FieldPage & { url_: string } {
+function page(url: string, field: FakeField, run: string[] = []): WebPage & { url_: string } {
   const p = {
     guestId: 7,
     url_: url,

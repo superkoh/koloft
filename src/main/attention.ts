@@ -88,11 +88,11 @@ export class AttentionTracker {
     this.raise(tabId, 'exited', subject)
   }
 
-  asksForASecret(tabId: string, subject: AttentionSubject): void {
+  waitsOnTheOwner(tabId: string, subject: AttentionSubject): void {
     this.raise(tabId, 'approval', subject)
   }
 
-  secretAnswered(tabId: string): void {
+  ownerAnswered(tabId: string): void {
     if (this.pending.get(tabId)?.kind === 'approval') this.drop(tabId)
   }
 
