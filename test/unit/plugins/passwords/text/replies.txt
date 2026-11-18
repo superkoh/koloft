@@ -1,0 +1,101 @@
+$ koloft secret sudo Password: /usr/bin/sudo -A brew services restart nginx  → {"typed":"pw"}
+  header: 🔑 **NAME** asks for your sudo password
+  body: Command: `/usr/bin/sudo -A brew services restart nginx`
+sudo asked: Password:
+  label: Your sudo password
+  exit 0: pw
+$ koloft secret sudo Password: /usr/bin/sudo -A brew services restart nginx  → {"ended":"declined"}
+  header: 🔑 **NAME** asks for your sudo password
+  body: Command: `/usr/bin/sudo -A brew services restart nginx`
+sudo asked: Password:
+  label: Your sudo password
+  exit 1: koloft: the owner turned this down; nothing was passed on.
+$ koloft secret sudo Password: /usr/bin/sudo -A brew services restart nginx  → {"ended":"timeout"}
+  header: 🔑 **NAME** asks for your sudo password
+  body: Command: `/usr/bin/sudo -A brew services restart nginx`
+sudo asked: Password:
+  label: Your sudo password
+  exit 1: koloft: the owner did not answer in time; nothing was passed on.
+$ koloft secret sudo Password: /usr/bin/sudo -A brew services restart nginx  → {"doneInKoloft":true}
+  header: 🔑 **NAME** asks for your sudo password
+  body: Command: `/usr/bin/sudo -A brew services restart nginx`
+sudo asked: Password:
+  label: Your sudo password
+  exit 1: koloft: the owner did not answer in time; nothing was passed on.
+$ koloft secret sudo Password: /usr/bin/sudo -A brew services restart nginx  → {"typed":"pw"}
+  exit 1: koloft: the owner is asleep and cannot give a password or a code now. Skip this step, go on with the rest, and say in your report that it waits for the owner.
+$ koloft secret sudo  → {"typed":"pw"}
+  header: 🔑 **NAME** asks for your sudo password
+  body: Command: `sudo`
+sudo asked: Password:
+  label: Your sudo password
+  exit 0: pw
+$ koloft secret page #pw  → {"typed":"pw"}
+  header: 🔑 **NAME** asks you to fill in a field on a web page
+  body: Page: https://accounts.example.com
+Field: Password
+  label: Password
+  exit 0: Koloft filled the field and submitted the form.
+$ koloft secret page #pw  → {"typed":"pw"}
+  header: 🔑 **NAME** asks you to fill in a field on a web page
+  body: Page: https://accounts.example.com
+Field: Password
+  label: Password
+  exit 0: Koloft filled the field and submitted the form, but the field still held the text afterwards, so Koloft emptied it: the sign-in may have failed. Look at the page.
+$ koloft secret page #pw  → {"doneInKoloft":true}
+  header: 🔑 **NAME** asks you to fill in a field on a web page
+  body: Page: https://accounts.example.com
+Field: Password
+  label: Password
+  exit 0: The page moved on, or the owner said they were done, after Koloft asked the owner to fill it in on the Mac. Look at the page to see whether it went through.
+$ koloft secret page #pw  → {"doneInKoloft":true}
+  header: 🔑 **NAME** asks you to fill in a field on a web page
+  body: Page: https://accounts.example.com
+Field: Password
+  label: Password
+  exit 0: The page moved on, or the owner said they were done, after Koloft asked the owner to fill it in on the Mac, but the field still held the text afterwards, so Koloft emptied it: the sign-in may have failed. Look at the page.
+$ koloft secret page #pw  → {"typed":"pw"}
+  header: 🔑 **NAME** asks you to fill in a field on a web page
+  body: Page: https://accounts.example.com
+Field: Password
+  label: Password
+  exit 1: koloft: the page moved to another site, or the field went, while the owner answered; Koloft filled nothing.
+$ koloft secret page #pw  → {"typed":"pw"}
+  exit 1: koloft: no single field matches that selector in this session's Workbench pages. Give a selector that matches exactly one input box.
+$ koloft secret url https://auth.example/authorize?x  → {"typed":"http://127.0.0.1:1455/auth/callback?code=c"}
+  header: 🔑 **NAME** needs the address a sign-in ends on
+  body: 1. Open this on your phone and finish the sign-in: https://auth.example/authorize?x
+2. The last page will not load: it points at 127.0.0.1 or localhost.
+3. Copy that page's whole address and paste it here. Koloft opens it on this Mac.
+  label: The address the sign-in ended on
+  exit 0: Koloft opened the address on this Mac; it answered 200.
+$ koloft secret url https://auth.example/authorize?x  → {"typed":"http://127.0.0.1:1455/auth/callback?code=c"}
+  header: 🔑 **NAME** needs the address a sign-in ends on
+  body: 1. Open this on your phone and finish the sign-in: https://auth.example/authorize?x
+2. The last page will not load: it points at 127.0.0.1 or localhost.
+3. Copy that page's whole address and paste it here. Koloft opens it on devbox.
+  label: The address the sign-in ended on
+  exit 0: Koloft opened the address on devbox; it answered 200.
+$ koloft secret url https://auth.example/authorize?x  → {"doneInKoloft":true}
+  header: 🔑 **NAME** needs the address a sign-in ends on
+  body: 1. Open this on your phone and finish the sign-in: https://auth.example/authorize?x
+2. The last page will not load: it points at 127.0.0.1 or localhost.
+3. Copy that page's whole address and paste it here. Koloft opens it on this Mac.
+  label: The address the sign-in ended on
+  exit 0: The owner finished the sign-in in this session's Workbench, and its last page loaded on this Mac.
+$ koloft secret url https://auth.example/authorize?x  → {"doneInKoloft":true}
+  header: 🔑 **NAME** needs the address a sign-in ends on
+  body: 1. Open this on your phone and finish the sign-in: https://auth.example/authorize?x
+2. The last page will not load: it points at 127.0.0.1 or localhost.
+3. Copy that page's whole address and paste it here. Koloft opens it on devbox.
+  label: The address the sign-in ended on
+  exit 0: The owner finished the sign-in in this session's Workbench, and its last page loaded on devbox.
+$ koloft secret url https://auth.example/authorize?x  → {"typed":"https://evil.example/cb"}
+  header: 🔑 **NAME** needs the address a sign-in ends on
+  body: 1. Open this on your phone and finish the sign-in: https://auth.example/authorize?x
+2. The last page will not load: it points at 127.0.0.1 or localhost.
+3. Copy that page's whole address and paste it here. Koloft opens it on this Mac.
+  label: The address the sign-in ended on
+  exit 1: koloft: what the owner pasted is not an http address on 127.0.0.1 or localhost, so Koloft did not open it.
+$ koloft secret nope  → {"typed":"pw"}
+  exit 2: koloft: usage: koloft secret page <css selector> | koloft secret url "<sign-in address>"
