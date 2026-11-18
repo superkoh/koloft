@@ -1,6 +1,7 @@
 import { urlOrNull } from '@shared/browserRoute'
 import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
-import type { SecretAnswer, SecretAsk, TapRounds } from './discord/secretAsks'
+import type { SecretAnswer, SecretAsk } from '@plugins/passwords/main/secretAsks'
+import type { TapRounds } from './discord/secretCards'
 import type { DiscordFile } from './discord/link'
 import type { PartOnPage } from './guestTap'
 import {
@@ -45,7 +46,7 @@ export interface TapPage {
 
 export interface PageVerbDeps {
   sessionTab(tabId: string): string
-  ask(a: SecretAsk): Promise<SecretAnswer>
+  ask(a: SecretAsk & { taps: TapRounds }): Promise<SecretAnswer>
   ownerAsleep(): boolean
   pages(tabId: string): TapPage[]
   draw(png: Buffer, grid: Grid): Promise<DiscordFile>
