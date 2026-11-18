@@ -601,14 +601,9 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
-import {
-  asPeerName,
-  GLOBAL_SCOPE,
-  inviteLink,
-  isDiscordId,
-  NEW_CHANNEL_NAME,
-  scopeName
-} from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { asPeerName } from '@plugins/butler/shared/names'
+import { inviteLink, isDiscordId, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
 import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'

@@ -1,6 +1,7 @@
 import { useState, type JSX } from 'react'
 import { IconPlus } from '@renderer/icons'
-import { butlerTitle, channelLabel, setUpWith } from '@shared/conductors'
+import { butlerTitle } from '@plugins/butler/shared/names'
+import { channelLabel, setUpWith } from '../shared/channels'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '@renderer/store'
 import { setUpDiscordWithButler } from './setUpWithButler'

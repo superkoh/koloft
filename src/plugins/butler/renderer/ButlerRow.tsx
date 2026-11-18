@@ -1,7 +1,7 @@
 import { useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAssist, IconClose } from '@renderer/icons'
-import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
+import { butlerName, butlerTitle, renamedButler } from '../shared/names'
 import { attentionReason } from '@shared/types'
 import { assistBackendsFor, assistRowBackend } from '@shared/assistPicks'
 import { butlerStart } from '@shared/butlerStart'
