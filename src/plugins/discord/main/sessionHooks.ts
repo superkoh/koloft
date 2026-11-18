@@ -7,12 +7,13 @@ export const roomStarted = (link: string): string =>
 export function giveEachStartedSessionARoom(
   sessionStarted: Moment<SessionStarted>,
   d: {
+    isButler(tabId: string): boolean
     butlerFolder(): string
     roomFor(started: SessionStarted): Promise<string | undefined>
   }
 ): void {
   sessionStarted.listen(async (started) => {
-    if (started.workspace === d.butlerFolder()) return undefined
+    if (!d.isButler(started.by) || started.workspace === d.butlerFolder()) return undefined
     const link = await d.roomFor(started)
     return link ? roomStarted(link) : undefined
   })

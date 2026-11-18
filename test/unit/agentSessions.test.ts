@@ -152,6 +152,7 @@ function harness(
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
   const sessionStarted = moment<SessionStarted>()
   giveEachStartedSessionARoom(sessionStarted, {
+    isButler: (tabId) => !!conducting.scopes?.[tabId],
     butlerFolder: () => BUTLER_FOLDER,
     roomFor: async ({ by, tabId }) =>
       conducting.answeringDiscord?.includes(by) ? `<#room-${tabId}>` : undefined
@@ -2178,8 +2179,11 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     }
   })
 
-  it('a session the butler starts in a project while it answers the owner’s Discord message prints its room’s link; one started at other times, or a helper in its own folder, gets none', async () => {
-    const answering = harness(live, {}, [], conducting({ answeringDiscord: ['butler'] }))
+  it('a session the butler starts in a project while it answers the owner’s Discord message prints its room’s link; one started at other times, a helper in its own folder, or one another session starts while it answers on Discord, gets none', async () => {
+    const answering = harness(live, {}, [], conducting({ answeringDiscord: ['butler', 'fix'] }))
+    const child = await answering.verb(['new', ...PICKED, '--', 'fix it'], from('fix'))
+    expect(child.exit).toBe(0)
+    expect(child.text).not.toContain('<#room')
     const project = await answering.verb(
       ['new', ...PICKED, '--workspace', WS, '--', 'fix it'],
       from('butler')
