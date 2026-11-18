@@ -8,7 +8,11 @@ const ROOT = process.cwd()
 const SOURCE_FILE = /\.tsx?$/
 const PLUGINS = 'src/plugins/'
 const PLUGIN_LIST = 'src/plugins/list'
-const LIST_ENTRY = { [PLUGIN_LIST]: 'plugin', 'src/plugins/bridges': 'preload/bridge' }
+const LIST_ENTRY = {
+  [PLUGIN_LIST]: 'plugin',
+  'src/plugins/bridges': 'preload/bridge',
+  'src/plugins/uis': 'renderer/ui'
+}
 const ALIASES = {
   '@shared': 'src/shared',
   '@core': 'src/core',
@@ -18,7 +22,7 @@ const ALIASES = {
 const RULE =
   'A plugin imports only src/core, its own folder and the api.ts of a plugin in its needs; ' +
   'outside src/plugins, only the lists import a plugin: src/plugins/list.ts its plugin.ts, ' +
-  'src/plugins/bridges.ts its preload/bridge.ts (ADR-0051).'
+  'src/plugins/bridges.ts its preload/bridge.ts, src/plugins/uis.ts its renderer/ui.tsx (ADR-0051).'
 
 const withoutExtension = (p) => p.replace(SOURCE_FILE, '')
 
