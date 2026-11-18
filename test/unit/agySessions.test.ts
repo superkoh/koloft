@@ -723,6 +723,16 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
   })
 
+  it("skips a line that names an id agy never makes, written into the tab's log by a program that inherited the tab's env, and still takes the lines after it", async () => {
+    const id = await boundTab()
+    title(id, { conversation_id: 'abc-123' })
+    hook(id, 'Stop', { conversationId: 'abc-123' })
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
+  })
+
   // AGY§8 AGY§19
   it("the tab's Scratchpad is agy's own folder for the conversation it holds, under the account folder agy runs with, so it is the very path agy writes its plans to, and follows the tab to the next conversation after /clear", async () => {
     const id = await boundTab()

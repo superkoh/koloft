@@ -260,6 +260,8 @@ esac
           ...inTmuxOnTheMachine,
           HOME: home,
           KOLOFT_TAB_ID: 'tabN3',
+          KOLOFT_AGY_LOG: '',
+          KOLOFT_AGY_OWNER_TITLE: '',
           PATH: `${stubBin}:${process.env.PATH}`
         }
       })

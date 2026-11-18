@@ -30,6 +30,53 @@ export class StallWatch {
   }
 }
 
+export const STUCK_AFTER_MS = 5000
+const BEATS_PER_STUCK_LIMIT = 5
+export const THE_WHOLE_PROCESS_WAS_PAUSED_IF_THE_WATCH_WOKE_LATE_BY_MS = 2000
+
+export interface StuckWatchDeps {
+  stuckAfterMs: number
+  now(): number
+  beats(): number
+  beatAfter(seen: number, withinMs?: number): boolean
+  stuck(): void
+  resumed(afterMs: number): void
+}
+
+// PLATFORM§70
+export function watchOneBeat(d: StuckWatchDeps): void {
+  const seen = d.beats()
+  const from = d.now()
+  if (d.beatAfter(seen, d.stuckAfterMs)) return
+  const wokeLateByMs = d.now() - from - d.stuckAfterMs
+  if (wokeLateByMs >= THE_WHOLE_PROCESS_WAS_PAUSED_IF_THE_WATCH_WOKE_LATE_BY_MS) return
+  d.stuck()
+  d.beatAfter(seen)
+  d.resumed(d.now() - from)
+}
+
+export interface StuckWatchData {
+  beats: SharedArrayBuffer
+  pid: number
+  log: string
+  samplesDir: string
+  stuckAfterMs: number
+}
+
+// PLATFORM§70
+export function beatForTheStuckWatch(
+  startWatch: (data: StuckWatchData) => { unref(): void },
+  data: Omit<StuckWatchData, 'beats'>
+): void {
+  const beats = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+  const beat = new Int32Array(beats)
+  startWatch({ ...data, beats }).unref()
+  setInterval(() => {
+    Atomics.add(beat, 0, 1)
+    Atomics.notify(beat, 0)
+  }, data.stuckAfterMs / BEATS_PER_STUCK_LIMIT).unref()
+}
+
 function mainThreadCpuMs(): number {
   const { user, system } = process.threadCpuUsage()
   return (user + system) / 1000

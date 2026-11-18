@@ -306,7 +306,9 @@ import {
 } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
-import { StallWatchWhileFocused } from './mainThreadStalls'
+import { STUCK_AFTER_MS, StallWatchWhileFocused, beatForTheStuckWatch } from './mainThreadStalls'
+import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
+import { envMs } from './sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -691,6 +693,19 @@ if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
 }
+
+let mainErrorLog: ((line: string) => void) | undefined
+// PLATFORM§4
+process.on('uncaughtException', (error) => {
+  const file = path.join(app.getPath('userData'), 'main-errors.log')
+  mainErrorLog ??= signalLog(file)
+  mainErrorLog(error instanceof Error && error.stack ? error.stack : String(error))
+  const message = error instanceof Error ? error.message : String(error)
+  sendToRenderer(
+    CH.toast.show,
+    `Koloft hit an error it did not expect and kept going: ${message}. The details are in ${file}`
+  )
+})
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -3477,9 +3492,14 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
-  const stalls = new StallWatchWhileFocused(
-    signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
-  )
+  const stallsLog = path.join(app.getPath('userData'), 'main-stalls.log')
+  const stalls = new StallWatchWhileFocused(signalLog(stallsLog))
+  beatForTheStuckWatch((workerData) => createMainThreadStuckWorker({ workerData }), {
+    pid: process.pid,
+    log: stallsLog,
+    samplesDir: path.join(app.getPath('userData'), 'main-stuck'),
+    stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS)
+  })
   const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
   app.on('browser-window-focus', followFocus)
   app.on('browser-window-blur', () => setImmediate(followFocus))

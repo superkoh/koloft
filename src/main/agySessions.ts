@@ -94,7 +94,7 @@ import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
-import { agySessionKey } from './sessionStore'
+import { UUID, agySessionKey } from './sessionStore'
 import {
   codexKeyFor,
   labelsOf,
@@ -384,6 +384,11 @@ function logTail(file: string): { size: number; text: string } {
 
 function attachedLog(mirror: string, conversationId: string): string | undefined {
   return readText(path.join(mirror, agyLogPointer(conversationId)))?.trim() || undefined
+}
+
+function namesAnIdAgyNeverMakes(read: AgyLogLine): boolean {
+  const id = 'hook' in read ? read.hook.conversationId : read.title.conversationId
+  return !!id && !UUID.test(id)
 }
 
 // AGY§13
@@ -1059,7 +1064,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§11 AGY§12
   private onLogLine(run: AgyRun, line: string): void {
     const read = agyLogLine(line)
-    if (!read) return
+    if (!read || namesAnIdAgyNeverMakes(read)) return
     if ('hook' in read) this.learnBrain(run, read.hook.input.artifactDirectoryPath)
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
     if ('hook' in read) {
