@@ -649,7 +649,7 @@ async function launchSibling(
           ? (held = names.own(args.name))
           : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
       handoverInOwnersLanguage(caller, d.assist),
-      d.announceStarting({ by: me.tabId, workspace, helper })
+      d.announceStarting({ helper })
     ])
     const name = held?.name
     const preamble = [...told, handover].join('\n\n')
@@ -948,10 +948,7 @@ const KOLOFT_ENVELOPES = [
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
 
-export function lastOwnerWords(
-  turns: Turn[],
-  d: Pick<SessionVerbDeps, 'ownersWords'> & { overseer: Pick<Overseer, 'wrote'> }
-): string | undefined {
+function lastOwnerWords(turns: Turn[], d: SessionVerbDeps): string | undefined {
   const line = turns
     .flatMap((t) => t.said)
     .findLast(

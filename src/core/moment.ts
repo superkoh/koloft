@@ -8,8 +8,6 @@ export interface FileOpened {
 }
 
 export interface SessionStarting {
-  by: string
-  workspace: string
   helper: boolean
 }
 
