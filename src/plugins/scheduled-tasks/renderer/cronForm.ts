@@ -13,6 +13,7 @@ import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronN
 import { nextDue } from '@shared/cronHistory'
 import { namedModel, takenEffort } from '@shared/cronModels'
 import { localDayKey } from '@shared/usageFormat'
+import { modelValue } from '@renderer/modelPick'
 import {
   describeWhen,
   isStepKind,
@@ -85,12 +86,6 @@ export function scheduleToFields(
   if (s.kind === 'weekly') return { whenKind: 'weekly', at: s.at, date, days: [...s.days], n, unit }
   if (s.kind === 'once') return { whenKind: 'once', at: s.at, date: s.date, days, n, unit }
   return { whenKind: s.kind, at, date, days, n: s.n, unit: s.unit }
-}
-
-export function modelValue(f: Pick<JobFields, 'model' | 'modelOther'>): string | undefined {
-  if (f.model === '') return undefined
-  if (f.model === 'other') return f.modelOther.trim()
-  return f.model
 }
 
 export function effortOf(f: JobFields): JobFields['effort'] {

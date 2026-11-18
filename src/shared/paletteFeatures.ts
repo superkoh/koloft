@@ -33,7 +33,7 @@ export const SETTINGS_PANES: { id: SettingsPaneId; label: string; words: string[
   { id: 'about', label: 'About', words: ['关于', '版本号', 'version'] }
 ]
 
-export type PaletteActionKey =
+export type CorePaletteAction =
   | 'new-session'
   | 'new-worktree-session'
   | 'add-workspace'
@@ -42,9 +42,14 @@ export type PaletteActionKey =
   | 'toggle-workbench'
   | 'toggle-sidebar'
   | 'restore-session'
-  | 'scheduled-jobs'
   | 'open-settings'
   | 'check-update'
+
+export const PLUGIN_PALETTE_ACTIONS = ['scheduled-jobs'] as const
+
+export type PluginPaletteAction = (typeof PLUGIN_PALETTE_ACTIONS)[number]
+
+export type PaletteActionKey = CorePaletteAction | PluginPaletteAction
 
 export interface PaletteFeature {
   key: PaletteActionKey | `settings-${SettingsPaneId}`

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, type BackendId } from '../../src/shared/types'
+import type { BackendId } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { koloftAssist } from '../../src/main/assist'
 import {
   parseRoute,

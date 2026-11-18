@@ -59,7 +59,7 @@ function alive(pid) {
   }
 }
 
-function attach(name) {
+function attach(name, paneJustStarted = false) {
   const rec = recordOf(name)
   const pid = rec?.pid ?? 0
   const io = rec?.io ?? name
@@ -86,7 +86,7 @@ function attach(name) {
 
   let off = 0
   let held = ''
-  const pump = () => {
+  const pump = (attached) => {
     keysAtOnceOnceThePaneIsRaw()
     try {
       const size = fs.statSync(outPath(io)).size
@@ -96,11 +96,11 @@ function attach(name) {
       fs.readSync(fd, buf, 0, buf.length, off)
       fs.closeSync(fd)
       off = size
-      process.stdout.write(passThrough(buf))
+      process.stdout.write(passThrough(buf, attached))
     } catch {}
   }
   // PLATFORM§35
-  const passThrough = (buf) => {
+  const passThrough = (buf, attached) => {
     let text = held + buf.toString('latin1')
     held = ''
     const open = text.lastIndexOf(DCS_OPEN)
@@ -108,14 +108,16 @@ function attach(name) {
       held = text.slice(open)
       text = text.slice(0, open)
     }
-    const passes = !fs.existsSync(path.join(STATE, 'no-passthrough'))
+    const passes = attached && !fs.existsSync(path.join(STATE, 'no-passthrough'))
     text = text.replace(DCS, (_, inner) => (passes ? inner.replace(/\x1b\x1b/g, '\x1b') : ''))
     return Buffer.from(text, 'latin1')
   }
-  setInterval(pump, 80)
+  // PLATFORM§35
+  pump(paneJustStarted)
+  setInterval(() => pump(true), 80)
   setInterval(() => {
     if (alive(pid)) return
-    pump()
+    pump(true)
     try {
       fs.unlinkSync(aliveFile(name))
     } catch {}
@@ -126,7 +128,8 @@ function attach(name) {
 if (verb === 'new-session') {
   const name = flagVal('-s')
   const cmd = rest[rest.length - 1]
-  if (!alive(pidOf(name))) {
+  const paneJustStarted = !alive(pidOf(name))
+  if (paneJustStarted) {
     const io = name
     const fifo = fifoPath(io)
     try {
@@ -154,7 +157,7 @@ if (verb === 'new-session') {
     child.unref()
     fs.writeFileSync(aliveFile(name), JSON.stringify({ pid: child.pid, io }))
   }
-  attach(name)
+  attach(name, paneJustStarted)
 } else if (verb === 'attach') {
   attach(flagVal('-t'))
 } else if (verb === 'ls') {

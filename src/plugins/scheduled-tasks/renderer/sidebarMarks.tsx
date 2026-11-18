@@ -1,16 +1,20 @@
 import { useEffect, useState, type JSX } from 'react'
 import { IconScheduled } from '@renderer/icons'
-import { forecastFor, type Forecast } from '@renderer/cronForm'
+import { useStore } from '@renderer/store'
+import type { MarkOf } from '@renderer/slots'
+import { forecastFor, type Forecast } from './cronForm'
+import { openScheduledJobs } from './state'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { capabilitiesFor } from '@shared/sessionBackend'
 import type { CronState, SessionRow } from '@shared/types'
 
 const CRON_BADGE_MS = 30_000
+const A_JOB_STARTED_IT = 'job'
 
-export function useNextJobClock(cron: CronState): void {
+export function useNextJobClock(): void {
+  const showsAClock = useStore((s) => s.cron.jobs.length > 0)
   const [, bumpCronClock] = useState(0)
-  const showsAClock = cron.jobs.length > 0
   useEffect(() => {
     if (!showsAClock) return
     const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
@@ -43,25 +47,34 @@ export function startedByAJob(
         (worktreePrefixes.get(wsPath) ?? []).some((p) => row.worktree.startsWith(p))))
 }
 
-export const nextJobIn = (cron: CronState, wsPath: string, now: Date): Forecast | null =>
+export function useJobMarkOf(): MarkOf {
+  const started = startedByAJob(useStore((s) => s.cron))
+  return (wsPath, row, tabId) => (started(wsPath, row, tabId) ? A_JOB_STARTED_IT : undefined)
+}
+
+const nextJobIn = (cron: CronState, wsPath: string, now: Date): Forecast | null =>
   forecastFor(cron.jobs, cron.live, wsPath, now)
 
 export function NextJobLine({
-  soon,
+  wsPath,
   now,
-  onOpen
+  dismissMenu
 }: {
-  soon: Forecast
+  wsPath: string
   now: Date
-  onOpen: () => void
-}): JSX.Element {
+  dismissMenu: () => void
+}): JSX.Element | null {
+  const cron = useStore((s) => s.cron)
+  const soon = nextJobIn(cron, wsPath, now)
+  if (!soon) return null
   return (
     <div
       className="ws-next"
       title={soon.title}
       onClick={(e) => {
         e.stopPropagation()
-        onOpen()
+        dismissMenu()
+        openScheduledJobs(wsPath, soon.id)
       }}
     >
       <IconScheduled size={12} className="ws-next-ico" />
