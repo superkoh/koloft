@@ -1144,7 +1144,7 @@ export interface ScreenAnswer {
   sizedToPane: boolean
 }
 
-export interface KoloftApi {
+export interface CoreApi {
   isDev: boolean
   domRenderer: boolean
   testMode: boolean
@@ -1479,17 +1479,8 @@ export interface KoloftApi {
     // PLATFORM§20
     onRepair(cb: () => void): () => void
   }
-  cron: {
-    list(): Promise<CronState>
-    save(input: CronSaveInput): Promise<CronSaveResult>
-    delete(jobId: string): Promise<void>
-    setEnabled(jobId: string, on: boolean): Promise<void>
-    runNow(jobId: string): Promise<CronRunNowResult>
-    skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
-    // CC§9
-    trusted(workspacePath: string, backend: BackendId): Promise<boolean>
-    onState(cb: (s: CronState) => void): () => void
-    onToast(cb: (text: string) => void): () => void
+  toast: {
+    onShow(cb: (text: string) => void): () => void
   }
   sessionDefaults: {
     read(workspacePath: string): Promise<SessionDefaultsRead>
