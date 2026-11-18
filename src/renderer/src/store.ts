@@ -2,8 +2,8 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import type { InboxSnapshot } from '@shared/inbox'
+import { DEFAULT_SETTINGS } from '@shared/settingsOps'
 import {
-  DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
   type AccountView,
   type AdoptableTab,
