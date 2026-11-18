@@ -5,21 +5,13 @@ import type {
   ButlerSession,
   ButlerSetting,
   ConductorOpenResult,
-  ConductorSaveResult,
-  CronEffort,
-  DiscordChannel,
-  DiscordSettings,
-  SessionRoom
+  CronEffort
 } from '@shared/types'
-import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
-import { butlerNames, newerSnowflake, peerNamesOf } from '@shared/conductors'
-import { butlerRole } from '@plugins/butler/api'
-import { TODO_NOTICE } from '@plugins/todo/api'
-import { DISCORD_BOUND } from '@plugins/discord/api'
-import { errorText } from '../agentRequests'
-import { FROM_KOLOFT } from '../crossSessionMessage'
-import { realpathSafe } from '../projectInfo'
+import { butlerNames, peerNamesOf } from '@shared/conductors'
+import { errorText } from '@core/errorText'
+import { butlerRole } from '../prompts/role'
+import { conductorFolder } from './folder'
 
 export interface ButlerLaunch {
   backend: BackendId
@@ -41,11 +33,10 @@ export type AssistBackendChoice = AssistBackendPick | { error: string }
 
 export interface ButlerDeps {
   userData: string
+  realpath(folder: string): string
   butler(): ButlerSetting
-  load(): DiscordSettings
+  roleFacts(): readonly string[]
   loadSession(): ButlerSession
-  save(discord: DiscordSettings): void
-  saveQuietly(discord: DiscordSettings): void
   saveSession(session: ButlerSession): void
   backend(): Promise<AssistBackendChoice>
   tabAlive(tabId: string): boolean
@@ -58,15 +49,9 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
+  todoNotice: string
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
-}
-
-const LAST_MESSAGE_SAVE_DELAY_MS = 1000
-
-// ADR-0029 CC§3 CODEX§2
-export function conductorFolder(userData: string): string {
-  return path.join(userData, 'conductors', 'global')
 }
 
 function refusal(error: string): ConductorOpenResult {
@@ -74,62 +59,21 @@ function refusal(error: string): ConductorOpenResult {
 }
 
 export class Butler {
-  private discord: DiscordSettings
   private session: ButlerSession
   private resident: string | undefined
-  private pendingSave: ReturnType<typeof setTimeout> | null = null
   private stopping = new Set<string>()
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private waitingForWords: string | undefined
 
   constructor(private d: ButlerDeps) {
-    this.discord = d.load()
     this.session = d.loadSession()
-  }
-
-  channel(): DiscordChannel | undefined {
-    return this.discord.channel
-  }
-
-  lastMessageId(): string | undefined {
-    return this.discord.lastMessageId
-  }
-
-  oldThreadsArchived(): boolean {
-    return !!this.discord.oldThreadsArchived
-  }
-
-  markOldThreadsArchived(): void {
-    this.discord = { ...this.discord, oldThreadsArchived: true }
-    this.d.saveQuietly(this.discord)
-  }
-
-  private write(patch: Partial<DiscordSettings>): void {
-    this.discord = { ...this.discord, ...patch }
-    this.d.save(this.discord)
-    this.d.rowsChanged()
   }
 
   private changeSession(change: (s: ButlerSession) => ButlerSession): void {
     this.session = change(this.session)
     this.d.saveSession(this.session)
     this.d.rowsChanged()
-  }
-
-  flush(): void {
-    if (!this.pendingSave) return
-    clearTimeout(this.pendingSave)
-    this.pendingSave = null
-    this.d.saveQuietly(this.discord)
-  }
-
-  channelOfTab(tabId: string): string | undefined {
-    return tabId === this.resident ? this.discord.channel?.channelId : undefined
-  }
-
-  isButlerChannel(channelId: string): boolean {
-    return this.discord.channel?.channelId === channelId
   }
 
   isButler(ref: string): boolean {
@@ -150,26 +94,6 @@ export class Butler {
     return tab && this.d.tabAlive(tab) ? tab : undefined
   }
 
-  setLastMessage(messageId: string): void {
-    const last = this.discord.lastMessageId
-    if (last && !newerSnowflake(messageId, last)) return
-    this.discord = { ...this.discord, lastMessageId: messageId }
-    this.saveSoon()
-  }
-
-  rooms(): SessionRoom[] {
-    return this.discord.rooms ?? []
-  }
-
-  saveRooms(rooms: SessionRoom[]): void {
-    this.discord = { ...this.discord, rooms }
-    this.saveSoon()
-  }
-
-  private saveSoon(): void {
-    this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
-  }
-
   isButlerSession(tabOrSessionId: string): boolean {
     if (!tabOrSessionId) return false
     return (
@@ -185,14 +109,15 @@ export class Butler {
 
   // ADR-0029
   identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
-    const launched = realpathSafe(path.resolve(cwd))
-    if (realpathSafe(conductorFolder(this.d.userData)) !== launched || !resumeKey) return undefined
+    const launched = this.d.realpath(path.resolve(cwd))
+    if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
+      return undefined
     if (!this.recorded(resumeKey)) return undefined
     return { role: this.role() }
   }
 
   private role(): string {
-    return butlerRole(this.d.butler().name, this.discord.channel ? [DISCORD_BOUND] : [])
+    return butlerRole(this.d.butler().name, this.d.roleFacts())
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {
@@ -208,37 +133,6 @@ export class Butler {
     }))
   }
 
-  async bindNewChannel(
-    make: (category: DiscordChannel | undefined) => Promise<NewChannel>
-  ): Promise<ConductorSaveResult> {
-    let made: NewChannel
-    try {
-      made = await make(this.discord.category)
-    } catch (error) {
-      return {
-        ok: false,
-        error: errorText(error),
-        ...(error instanceof CannotMakeChannels ? { cannotMakeChannels: true } : {})
-      }
-    }
-    this.discord = { ...this.discord, category: made.category }
-    return this.bind(made.channel)
-  }
-
-  bind(channel: DiscordChannel): ConductorSaveResult {
-    const same = this.discord.channel?.channelId === channel.channelId
-    this.write({
-      channel,
-      lastMessageId: same ? this.discord.lastMessageId : undefined,
-      rooms: same ? this.discord.rooms : undefined
-    })
-    return { ok: true }
-  }
-
-  unbind(): void {
-    this.write({ channel: undefined, lastMessageId: undefined, rooms: undefined })
-  }
-
   startFresh(): Promise<ConductorOpenResult> {
     this.stopResident()
     this.changeSession(({ lastSessionKey, ...kept }) => {
@@ -246,20 +140,6 @@ export class Butler {
       return kept
     })
     return this.open()
-  }
-
-  discordSettings(): DiscordSettings {
-    return this.discord
-  }
-
-  owner(): string | undefined {
-    return this.discord.userId
-  }
-
-  setOwner(owner: { id: string; name: string }): void {
-    if (owner.id === this.discord.userId && owner.name === this.discord.userName) return
-    this.discord = { ...this.discord, userId: owner.id, userName: owner.name }
-    this.d.save(this.discord)
   }
 
   async open(firstPrompt?: string): Promise<ConductorOpenResult> {
@@ -363,7 +243,7 @@ export class Butler {
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
   private tellOfTodo(key: string): void {
-    void this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`).then((told) => {
+    void this.d.notice(this.d.todoNotice).then((told) => {
       if (told && !this.session.knowsTodo?.includes(key))
         this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
     })
