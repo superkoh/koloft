@@ -2,16 +2,16 @@ import fs from 'fs'
 import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
 import type { FileOpened } from '@core/moment'
-import { openDropTarget } from './openDrop'
+import type { CommandHandlers, Commands } from '@core/commands'
+import { openDropTarget } from '../../../main/openDrop'
 import {
   answered,
   EXIT_USAGE,
   NOT_PINNED,
   refused,
   type AgentCaller,
-  type AgentReply,
-  type AgentVerbs
-} from './agentRequests'
+  type AgentReply
+} from '@core/command'
 
 export interface WorkbenchVerbDeps {
   open(tabId: string, target: string, view?: ArtifactView): boolean | Promise<boolean>
@@ -42,7 +42,11 @@ async function show(
   return answered([`Opened ${target} in this session's Workbench.`, ...said].join(' '))
 }
 
-export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {
+export function registerWorkbenchCommands(commands: Commands, d: WorkbenchVerbDeps): void {
+  commands.register(workbenchVerbs(d))
+}
+
+export function workbenchVerbs(d: WorkbenchVerbDeps): CommandHandlers {
   return {
     open: (args, caller) =>
       args.length === 1 ? show(d, args[0], caller) : refused(OPEN_USAGE, EXIT_USAGE),

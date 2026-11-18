@@ -8,5 +8,6 @@ export const plugin: PluginManifest = {
   name: 'Todo',
   mandatory: false,
   needs: ['sessions', 'butler', 'github'],
+  commands: [{ verb: 'todo' }],
   text: [...TEXT, ...SKILL_TEXT]
 }

@@ -3,15 +3,8 @@ import path from 'path'
 import type { SessionInfo } from '@shared/types'
 import { agentGuide } from '@shared/agentGuide'
 import { errorText } from '@core/errorText'
-import {
-  answered,
-  EXIT_USAGE,
-  refused,
-  splitAtDashes,
-  type AgentCaller,
-  type AgentReply,
-  type AgentVerb
-} from '@core/command'
+import { answered, refused, splitAtDashes, type AgentReply, type AgentVerb } from '@core/command'
+import type { Commands } from '@core/commands'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
 
@@ -21,8 +14,6 @@ export interface AgentRequest {
   cwd: string
   pid?: number
 }
-
-export type AgentVerbs = Record<string, AgentVerb>
 
 export {
   answered,
@@ -42,8 +33,6 @@ export const helpVerb =
   (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>
   async (_args, caller) =>
     answered(agentGuide(await rulesOfTab(caller.tabId)))
-
-export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."
@@ -65,25 +54,6 @@ export function parseAgentRequest(raw: unknown): AgentRequest | null {
 
 function asksForHelp(argv: string[]): boolean {
   return splitAtDashes(argv).before.includes('--help')
-}
-
-export async function dispatchAgent(
-  verbs: AgentVerbs,
-  argv: string[],
-  caller: AgentCaller
-): Promise<AgentReply> {
-  const [verb = 'help', ...rest] = asksForHelp(argv) ? ['help'] : argv
-  const run = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
-  if (!run)
-    return refused(
-      `koloft: there is no "${verb}" command. Run "koloft help" to see the commands.`,
-      EXIT_USAGE
-    )
-  try {
-    return await run(rest, caller)
-  } catch (error) {
-    return refused(`koloft: ${errorText(error)}`)
-  }
 }
 
 export function replyJson(reply: AgentReply): string {
@@ -112,7 +82,7 @@ export function callerTab(
 }
 
 export interface AgentRequestDeps {
-  verbs: AgentVerbs
+  commands: Commands
   tab(tabId: string): TabFacts | undefined
   session(tabId: string): SessionInfo | undefined
   enabled(tabId: string): boolean
@@ -176,6 +146,7 @@ export class AgentRequests {
     if (!this.deps.enabled(tabId)) return refused(AGENT_TOOLS_OFF)
     const session = this.deps.session(tabId)
     if (!session) return refused(UNKNOWN_TAB)
-    return dispatchAgent(this.deps.verbs, req.argv, { tabId, cwd: req.cwd, session })
+    const [verb = 'help', ...args] = asksForHelp(req.argv) ? ['help'] : req.argv
+    return this.deps.commands.dispatch(verb, args, { tabId, cwd: req.cwd, session })
   }
 }

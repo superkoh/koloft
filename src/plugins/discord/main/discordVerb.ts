@@ -10,11 +10,12 @@ import {
   splitAtDashes,
   type AgentReply,
   type AgentVerb
-} from './agentRequests'
-import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
-import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
-import type { PagePictures } from './discord/pageShot'
-import { picturesSent, tooLarge } from './discord/phoneCopy'
+} from '@core/command'
+import type { Commands } from '@core/commands'
+import { BYTES_PER_FILE, type DiscordFile } from '../../../main/discord/link'
+import { DISCORD_SETUP_STEPS } from '../../../main/discord/setupSteps'
+import type { PagePictures } from '../../../main/discord/pageShot'
+import { picturesSent, tooLarge } from '../../../main/discord/phoneCopy'
 
 export const DISCORD_USAGE =
   'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
@@ -126,6 +127,10 @@ async function setup(
     return r.ok ? answered('Bound to a new channel.') : refused(`koloft: ${r.error}`)
   }
   return refused(DISCORD_USAGE, EXIT_USAGE)
+}
+
+export function registerDiscordCommand(commands: Commands, d: DiscordVerbDeps): void {
+  commands.register({ discord: discordVerb(d) })
 }
 
 // PLATFORM§39

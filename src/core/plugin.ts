@@ -21,7 +21,6 @@ export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): T
 
 export interface PluginCommand {
   verb: string
-  summary: string
 }
 
 export interface PluginMoments {
@@ -34,7 +33,7 @@ export interface PluginSettings {
   keys: readonly string[]
 }
 
-export type UiPlace = 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item'
+export type UiPlace = 'sidebar-head' | 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item'
 
 export interface UiEntry {
   place: UiPlace

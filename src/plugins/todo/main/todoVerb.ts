@@ -12,6 +12,7 @@ import {
   type AgentReply,
   type AgentVerb
 } from '@core/command'
+import type { Commands } from '@core/commands'
 import { mapAtMost } from '@core/mapAtMost'
 import {
   GITHUB_NOT_ASKED,
@@ -453,6 +454,10 @@ async function fileVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
       `koloft todo file: ${rest[1]} is not one of the files koloft todo reads there${files.length ? ` (${files.map((f) => f.name).join(', ')})` : ''}.`
     )
   return answered(cutForATurn(await d.readText(file.path)))
+}
+
+export function registerTodoCommand(commands: Commands, d: TodoVerbDeps): void {
+  commands.register({ todo: todoVerb(d) })
 }
 
 export function todoVerb(d: TodoVerbDeps): AgentVerb {

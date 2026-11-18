@@ -212,7 +212,7 @@ import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
-import { SECRET_VERB, SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
+import { SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
@@ -510,7 +510,6 @@ import {
   AgentRequests,
   answered,
   errorText,
-  helpVerb,
   refused,
   tabSpokenFor,
   type AgentReply,
@@ -538,9 +537,9 @@ import { DiscordRelay, type Destination } from './discord/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
 import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from './discord/secretCards'
-import { secretVerb } from '@plugins/passwords/main/secretVerb'
+import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
-import { pageVerb, type TapPage } from './agentPageTap'
+import { registerPageCommand, type TapPage } from './agentPageTap'
 import {
   A_PAGE_ANSWERS_WITHIN_MS,
   findPart,
@@ -578,9 +577,9 @@ import {
   type DialogView
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
-import { discordVerb } from './agentDiscord'
-import { githubVerb, repoFlagOf } from './agentGithub'
-import { todoVerb } from '@plugins/todo/main/todoVerb'
+import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
+import { registerGithubCommand, repoFlagOf } from './agentGithub'
+import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
@@ -610,8 +609,10 @@ import {
   NEW_CHANNEL_NAME,
   scopeName
 } from '@shared/conductors'
-import { cronVerb } from './agentCron'
-import { workbenchVerbs } from './agentWorkbench'
+import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
+import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
+import { Commands } from '@core/commands'
+import { PLUGINS } from '@plugins/list'
 import { moment, type FileOpened } from '@core/moment'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import type { MainIpc } from '@core/ipc'
@@ -619,7 +620,7 @@ import {
   registerChannels as registerCronChannels,
   pushState as pushCronState
 } from '@plugins/scheduled-tasks/main/channels'
-import { inboxVerb } from './agentInbox'
+import { registerInboxCommand } from '@plugins/inbox/main/inboxVerb'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
 import {
@@ -636,15 +637,15 @@ import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
+  registerSessionCommands,
   sessionVerb,
-  workspaceVerb,
   type ButlerHelperTask,
   type ClosableSession,
   type SessionScreen,
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { resolveWorkspace, type PlacedRow } from '@plugins/sessions/api'
+import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
   TODO_NOTICE_FROM_KOLOFT,
@@ -1174,7 +1175,7 @@ const ownerAsleep = new OwnerAsleep({
   answer: answerSession,
   titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
   changedSince: (since) => awayDigest?.changedSince(since) ?? [],
-  report: (text) => discordRelay?.tell(butlerDestination(), text),
+  report: (text) => void handOver?.tell(butlerRecipient(), text),
   now: Date.now,
   answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
 })
@@ -1530,6 +1531,7 @@ let butler: Butler | null = null
 let discordBinding: DiscordBinding | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
+let handOver: HandOver | null = null
 let sessionAsks: SessionAsks | null = null
 let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
@@ -1883,7 +1885,9 @@ function notesFileOfScope(scope: string): string | undefined {
 const fileOpened = moment<FileOpened>()
 copyEachOpenedFile(fileOpened, (o) => copyToPhone(o.tabId, o.target, o.view))
 
-const notesAndWorkbenchVerbs = workbenchVerbs({
+const commands = new Commands(PLUGINS)
+
+registerWorkbenchCommands(commands, {
   open: async (tabId, target, view) => {
     const machine = machineOfTab(tabId)
     if (machine && !schemeOf(target)) return openOnMachine(tabId, machine, target, view)
@@ -2180,7 +2184,7 @@ const sessionDeps: SessionVerbDeps = {
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
       discordRelay.say(channelId, `⚠ ${text}`)
     else sendToRenderer(CH.toast.show, text)
-    if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
+    if (callerChannel) void handOver?.tell(butlerRecipient(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
     target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
@@ -2300,127 +2304,134 @@ const ownerAsks = {
   ownerAsleep: (): boolean => presence.asleep()
 }
 
-const agentRequests = new AgentRequests({
-  verbs: {
-    help: helpVerb(async (tabId) => {
-      const workspace = sessionBackends.workspaceOfTab(tabId)
-      return workspace && rulesOf(workspace)
-    }),
-    cron: cronVerb({
-      runner: () => cronRunner,
-      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-      resolveWorkspace: (ref) => {
-        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
-        return found.ok ? { ok: true, value: found.value.path } : found
-      },
-      toast: (text) => sendToRenderer(CH.toast.show, text),
-      now: () => new Date()
-    }),
-    ...notesAndWorkbenchVerbs,
-    session: sessionCommand.verb,
-    inbox: inboxVerb({
-      inbox: () => inbox,
-      whereOf: (caller) => {
-        const s = inboxSessionOfTab(caller.tabId)
-        return s ? where(s) : {}
-      }
-    }),
-    workspace: workspaceVerb({ sidebar: projectRows }),
-    discord: discordVerb({
-      channelOf: (tabId) => discordBinding?.channelOfTab(tabId),
-      quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
-      send: async (channelId, files, text) => {
-        if (!discordRelay) throw new Error(STILL_STARTING)
-        await discordRelay.send(channelId, files, text)
-      },
-      shoot: shootPage,
-      status: () =>
-        setupStatusText(discordLink?.status() ?? DISCORD_OFF, discordBinding?.settings() ?? {}),
-      tokenFromPage: (tabId) =>
-        saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
-      reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
-      invite: () => {
-        const appId = discordLink?.status().applicationId
-        return appId ? inviteLink(appId) : null
-      },
-      bindNewChannel: bindWithNewChannel,
-      openRoom: openRoomByRef
-    }),
-    [SECRET_VERB]: secretVerb({
-      ...ownerAsks,
-      machine: machineOfTab,
-      pages: guestPagesOf,
-      showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
-      open: openSignInEndOn,
-      sleep
-    }),
-    page: pageVerb({
-      ...ownerAsks,
-      pages: tapPagesOf,
-      draw: async (png, grid) => {
-        const { html, width, height } = gridPictureHtml(png, grid)
-        const shot = await shootHtml(
-          html,
-          { width, height, pictureHeight: Infinity, mostPictures: 1 },
-          'the page'
-        )
-        return shot.files[0]
-      },
-      sleep
-    }),
-    gh: githubVerb({
-      writesInEnglishOnly: butlerSide,
-      // PLATFORM§1 ADR-0036
-      run: async (args, tabId, cwd) => {
-        await loginEnvReady()
-        const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
-        if (!workspace) {
-          const pinned = workspaceMgr?.pinnedPathList() ?? []
-          return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
-        }
-        const remote = parseRemoteKey(workspace)
-        if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
-        const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
-          ? formatRemoteKey(remote.host, cwd)
-          : workspace
-        const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
-        if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
-        return onMachine.code === 0
-          ? { ok: true, out: onMachine.stdout }
-          : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
-      }
-    }),
-    todo: todoVerb({
-      allowed: butlerSide,
-      sidebar: () => workspaceMgr?.rows() ?? [],
-      pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-      sessions: () => allSessions().filter((s) => !s.butler),
-      asking: asksTheOwner,
-      asleep: (sessionId) => !!sleepers.tabOf(sessionId),
-      workLeft: async (row, merged) => {
-        const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
-        return tree ? whatIsLeft(hostGitOut, tree, merged) : null
-      },
-      deleting: (row) => treeRemovals.has(row.cwd),
-      worktrees: sessionDeps.worktrees,
-      repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
-      pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
-      mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
-      mergedHeads: (dir, branch) => mergedHeads(dir, branch),
-      notes: () => loadSettings().todoNotes,
-      saveNote: (key, text) => {
-        const todoNotes = { ...loadSettings().todoNotes, [key]: text }
-        if (!text) delete todoNotes[key]
-        commitSettings({ todoNotes })
-      },
-      projectFiles: async (wsPath) =>
-        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
-      readText: (file) => hosts.of(file).readText(file),
-      servers: mcpServersNow,
-      butlerFolder: sessionDeps.butlerFolder,
-      now: Date.now
-    })
+registerSessionCommands(commands, {
+  rulesOfTab: async (tabId) => {
+    const workspace = sessionBackends.workspaceOfTab(tabId)
+    return workspace && rulesOf(workspace)
   },
+  session: sessionCommand.verb,
+  workspace: { sidebar: projectRows }
+})
+
+registerCronCommand(commands, {
+  runner: () => cronRunner,
+  pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+  resolveWorkspace: (ref) => {
+    const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
+    return found.ok ? { ok: true, value: found.value.path } : found
+  },
+  toast: (text) => sendToRenderer(CH.toast.show, text),
+  now: () => new Date()
+})
+
+registerInboxCommand(commands, {
+  inbox: () => inbox,
+  whereOf: (caller) => {
+    const s = inboxSessionOfTab(caller.tabId)
+    return s ? where(s) : {}
+  }
+})
+
+registerDiscordCommand(commands, {
+  channelOf: (tabId) => discordBinding?.channelOfTab(tabId),
+  quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
+  send: async (channelId, files, text) => {
+    if (!discordRelay) throw new Error(STILL_STARTING)
+    await discordRelay.send(channelId, files, text)
+  },
+  shoot: shootPage,
+  status: () =>
+    setupStatusText(discordLink?.status() ?? DISCORD_OFF, discordBinding?.settings() ?? {}),
+  tokenFromPage: (tabId) =>
+    saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
+  reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
+  invite: () => {
+    const appId = discordLink?.status().applicationId
+    return appId ? inviteLink(appId) : null
+  },
+  bindNewChannel: bindWithNewChannel,
+  openRoom: openRoomByRef
+})
+
+registerSecretCommand(commands, {
+  ...ownerAsks,
+  machine: machineOfTab,
+  pages: guestPagesOf,
+  showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
+  open: openSignInEndOn,
+  sleep
+})
+
+registerPageCommand(commands, {
+  ...ownerAsks,
+  pages: tapPagesOf,
+  draw: async (png, grid) => {
+    const { html, width, height } = gridPictureHtml(png, grid)
+    const shot = await shootHtml(
+      html,
+      { width, height, pictureHeight: Infinity, mostPictures: 1 },
+      'the page'
+    )
+    return shot.files[0]
+  },
+  sleep
+})
+
+registerGithubCommand(commands, {
+  writesInEnglishOnly: butlerSide,
+  // PLATFORM§1 ADR-0036
+  run: async (args, tabId, cwd) => {
+    await loginEnvReady()
+    const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
+    if (!workspace) {
+      const pinned = workspaceMgr?.pinnedPathList() ?? []
+      return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
+    }
+    const remote = parseRemoteKey(workspace)
+    if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
+    const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
+      ? formatRemoteKey(remote.host, cwd)
+      : workspace
+    const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
+    if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
+    return onMachine.code === 0
+      ? { ok: true, out: onMachine.stdout }
+      : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
+  }
+})
+
+registerTodoCommand(commands, {
+  allowed: butlerSide,
+  sidebar: () => workspaceMgr?.rows() ?? [],
+  pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+  sessions: () => allSessions().filter((s) => !s.butler),
+  asking: asksTheOwner,
+  asleep: (sessionId) => !!sleepers.tabOf(sessionId),
+  workLeft: async (row, merged) => {
+    const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
+    return tree ? whatIsLeft(hostGitOut, tree, merged) : null
+  },
+  deleting: (row) => treeRemovals.has(row.cwd),
+  worktrees: sessionDeps.worktrees,
+  repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
+  pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+  mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
+  mergedHeads: (dir, branch) => mergedHeads(dir, branch),
+  notes: () => loadSettings().todoNotes,
+  saveNote: (key, text) => {
+    const todoNotes = { ...loadSettings().todoNotes, [key]: text }
+    if (!text) delete todoNotes[key]
+    commitSettings({ todoNotes })
+  },
+  projectFiles: async (wsPath) => (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
+  readText: (file) => hosts.of(file).readText(file),
+  servers: mcpServersNow,
+  butlerFolder: sessionDeps.butlerFolder,
+  now: Date.now
+})
+
+const agentRequests = new AgentRequests({
+  commands,
   tab: (tabId) => ptyMgr.get(tabId),
   session: sessionOfTab,
   enabled: (tabId) => {
@@ -4074,7 +4085,8 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.toast.show, text),
-    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    notice: async (text) =>
+      (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
     todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
@@ -4236,9 +4248,20 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
+  const handOverNow = new HandOver({
+    ...tabState,
+    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
+    typable: (tabId) => asks.typable(tabId),
+    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
+    queue: queueCodexMessage,
+    sendLine: sendPeerLine,
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId)
+  })
+  handOver = handOverNow
   discordRelay = new DiscordRelay({
     ...tabState,
     asks,
+    handOver: handOverNow,
     link,
     download: async (url) => {
       const res = await fetch(url)
@@ -4296,15 +4319,9 @@ app.whenReady().then(() => {
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     askPlaced: (card, at) => buttons.placed(card, at),
-    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
-    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    queue: queueCodexMessage,
-    sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     attachmentsDir
   })
   asks.watchAsks()
-  const relay = discordRelay
   awayDigest = new AwayDigest({
     away: ownerAway,
     lastHandsAt: () => presence.lastHandsAt(),
@@ -4325,10 +4342,9 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      const lobby = bindingNow.channel()?.channelId
-      return (!!lobby && relay.delivering(lobby)) || (!!tab && !asks.takesCommand(tab))
+      return handOverNow.delivering(BUTLER_RECIPIENT) || (!!tab && !asks.takesCommand(tab))
     },
-    tell: (text) => relay.tellQuietly(butlerDestination(), text),
+    tell: (text) => handOverNow.tell(butlerRecipient(), text, discordRelay?.quietMarks),
     now: Date.now,
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
@@ -5863,7 +5879,7 @@ async function leftOnceRemovalsEnd(
 
 function tellTheOwner(text: string): void {
   sendToRenderer(CH.toast.show, text)
-  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
+  if (handOver && ownerAway()) void handOver.tell(butlerRecipient(), `[Koloft] ${text}`)
 }
 
 async function closeSessionFully(
@@ -6434,6 +6450,7 @@ function roomDestination(threadId: string): Destination | undefined {
   if (!room) return undefined
   const liveTab = (): string | undefined => liveTabOfRoom(threadId, room.keys)
   return {
+    key: threadId,
     channelId: threadId,
     name: room.name,
     liveTab,
@@ -6530,9 +6547,11 @@ async function roomForNew(
   return threadId && roomLink(threadId)
 }
 
-function butlerDestination(): Destination {
+const BUTLER_RECIPIENT = 'butler'
+
+function butlerRecipient(): Recipient {
   return {
-    channelId: discordBinding?.channel()?.channelId ?? '',
+    key: BUTLER_RECIPIENT,
     ownerIsWhere,
     name: butlerNameNow(),
     liveTab: () => butler?.liveTab(),
@@ -6542,7 +6561,14 @@ function butlerDestination(): Destination {
       if (!opened.ok) throw new Error(opened.error)
       butler?.firstWordsComing(opened.tabId)
       return opened.tabId
-    },
+    }
+  }
+}
+
+function butlerDestination(): Destination {
+  return {
+    ...butlerRecipient(),
+    channelId: discordBinding?.channel()?.channelId ?? '',
     typeCommand: async (tabId, command) => {
       const channelId = discordBinding?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
