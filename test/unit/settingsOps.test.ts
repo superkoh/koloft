@@ -87,6 +87,27 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
     expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
   })
 
+  it('strips exactly the keys only the main process writes, and lets every other key through', () => {
+    const kept = Object.keys(sanitizeSettingsPatch({ ...DEFAULT_SETTINGS }))
+    expect(
+      Object.keys(DEFAULT_SETTINGS)
+        .filter((k) => !kept.includes(k))
+        .sort()
+    ).toEqual(
+      [
+        'accounts',
+        'discord',
+        'butlerSession',
+        'gitAccounts',
+        'gitPicks',
+        'gitSuggestionsDismissed',
+        'gitMachines',
+        'todoNotes',
+        'sessionDefaults'
+      ].sort()
+    )
+  })
+
   it('lets the git auto-fetch switch through untouched (no whitelist to extend)', () => {
     expect(sanitizeSettingsPatch({ gitAutoFetch: false })).toEqual({ gitAutoFetch: false })
   })
@@ -578,6 +599,130 @@ describe('a settings file an older Koloft wrote', () => {
           "userId": "4242",
           "userName": "owner",
         },
+      }
+    `)
+  })
+
+  it('loads every key exactly as before: retired keys dropped, a key Koloft does not know kept', () => {
+    expect(sanitizeLoadedSettings(older)).toMatchInlineSnapshot(`
+      {
+        "aKeyANewerKoloftWrote": {
+          "kept": true,
+        },
+        "accounts": [],
+        "agentTools": true,
+        "assist": {
+          "backend": "claude",
+        },
+        "browserControl": true,
+        "browserPaneWidth": 560,
+        "butler": {
+          "formerNames": [
+            "Alfred",
+            "A name far longer than the forty charact",
+          ],
+          "name": "Jeeves the butler",
+        },
+        "butlerSession": {
+          "carried": {
+            "effort": "high",
+            "model": "opus",
+          },
+          "knowsTodo": [
+            "todo-1",
+            "todo-2",
+            "todo-3",
+          ],
+          "lastSessionKey": "key-butler",
+          "sessionIds": [
+            "s-butler",
+            "s-assist",
+            "s-binding",
+          ],
+        },
+        "discord": {
+          "category": {
+            "channelId": "300",
+            "guildId": "100",
+            "name": "Koloft",
+          },
+          "channel": {
+            "channelId": "200",
+            "guildId": "100",
+            "name": "global",
+          },
+          "lastMessageId": "800",
+          "oldThreadsArchived": true,
+          "rooms": [
+            {
+              "keys": [
+                "claude:abc",
+                "claude:def",
+              ],
+              "lastMessageId": "510",
+              "name": "fix login",
+              "putDown": true,
+              "threadId": "500",
+            },
+            {
+              "keys": [
+                "codex:jkl",
+              ],
+              "name": "plain room",
+              "threadId": "502",
+            },
+          ],
+          "userId": "4242",
+          "userName": "owner",
+        },
+        "dockBadge": true,
+        "fablePriority": true,
+        "filePaneWidth": 560,
+        "fileTreeHeight": 260,
+        "fontFamily": ""JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace",
+        "fontSize": 13,
+        "gitAccounts": [],
+        "gitAutoFetch": true,
+        "gitAutoPull": false,
+        "gitMachines": {},
+        "gitPicks": [],
+        "gitSuggestionsDismissed": [],
+        "hintsOff": false,
+        "hintsSeen": [
+          "workbench",
+          "approval",
+          "agent-web",
+          "worktree",
+          "github",
+        ],
+        "keepAwake": true,
+        "newProjectFolders": {},
+        "notesFolded": false,
+        "notesHeight": 260,
+        "notifyApproval": true,
+        "notifyApprovalSound": false,
+        "notifyExited": true,
+        "notifyTurnDone": true,
+        "onboardingSeen": true,
+        "ownerAsleepSince": null,
+        "sessionDefaults": {},
+        "sessionMethods": {
+          "defaultBackend": "claude",
+          "enabled": {
+            "agy": true,
+            "claude": true,
+            "codex": true,
+            "muse": true,
+          },
+        },
+        "sidebarHidden": false,
+        "sidebarWidth": 280,
+        "skipPermissions": true,
+        "skipPermissionsAgreed": true,
+        "statuslineBuiltin": true,
+        "todoNotes": {},
+        "workbenchWidth": 560,
+        "worldClocks": [],
       }
     `)
   })
