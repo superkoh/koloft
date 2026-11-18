@@ -38,7 +38,8 @@ export const PANES_AFTER_PLUGIN_PAGES: readonly (SettingsPane & { id: AppPaneId 
   { id: 'about', label: 'About', words: ['关于', '版本号', 'version'] }
 ]
 
+const APP_PANES = [...PANES_BEFORE_PLUGIN_PAGES, ...PANES_AFTER_PLUGIN_PAGES]
+
 export function settingsPaneName(id: AppPaneId): string {
-  const pane = [...PANES_BEFORE_PLUGIN_PAGES, ...PANES_AFTER_PLUGIN_PAGES].find((p) => p.id === id)
-  return `Settings ▸ ${pane!.label}`
+  return `Settings ▸ ${APP_PANES.find((p) => p.id === id)!.label}`
 }

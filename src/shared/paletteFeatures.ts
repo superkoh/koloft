@@ -7,7 +7,7 @@ import {
   type SettingsPaneId
 } from './settingsPanes'
 
-export { settingsPaneName, type SettingsPaneId } from './settingsPanes'
+export type { SettingsPaneId } from './settingsPanes'
 
 export const SETTINGS_PANES: readonly SettingsPane[] = [
   ...PANES_BEFORE_PLUGIN_PAGES,

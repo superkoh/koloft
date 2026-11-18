@@ -96,14 +96,12 @@ function pluginPage(id: string): PaneParts {
   return { Icon, Pane }
 }
 
-let panes: (PaneParts & { id: SettingsPaneId; label: string })[] | undefined
-
-const settingsPanes = (): NonNullable<typeof panes> =>
-  (panes ??= SETTINGS_PANES.map(({ id, label }) => ({
+const settingsPanes = (): (PaneParts & { id: SettingsPaneId; label: string })[] =>
+  SETTINGS_PANES.map(({ id, label }) => ({
     id,
     label,
     ...(Object.hasOwn(APP_PANES, id) ? APP_PANES[id as AppPaneId] : pluginPage(id))
-  })))
+  }))
 
 export function SettingsModal(): JSX.Element | null {
   const open = useStore((s) => s.settingsOpen)
@@ -168,6 +166,7 @@ export function SettingsModal(): JSX.Element | null {
   }
 
   const PANES = settingsPanes()
+  const OpenPane = PANES.find((p) => p.id === pane)?.Pane
 
   const navKey = (e: React.KeyboardEvent, i: number): void => {
     const move = (next: number): void => {
@@ -220,9 +219,7 @@ export function SettingsModal(): JSX.Element | null {
           <ClearBrowsingData />
         </nav>
         <div className="set-main">
-          <EscScope.Provider value={registerEsc}>
-            {PANES.map((p) => pane === p.id && <p.Pane key={p.id} />)}
-          </EscScope.Provider>
+          <EscScope.Provider value={registerEsc}>{OpenPane && <OpenPane />}</EscScope.Provider>
         </div>
         <button
           className="set-x"

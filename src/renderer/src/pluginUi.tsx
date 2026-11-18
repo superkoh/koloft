@@ -34,7 +34,7 @@ export function useShowsGlobalNote(tabId: string | null, rowId: string | null): 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
   return (
     <>
-      {(placed().parts[place] ?? []).map(({ id, Part }) => (
+      {partsAt(place).map(({ id, Part }) => (
         <Part key={id} />
       ))}
     </>
@@ -43,6 +43,6 @@ export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
 
 export function OpenCentrePage(): JSX.Element | null {
   const open = useStore((s) => s.centrePage)
-  const page = placed().parts['centre-page']?.find((p) => p.id === open)
+  const page = partsAt('centre-page').find((p) => p.id === open)
   return page ? <page.Part /> : null
 }

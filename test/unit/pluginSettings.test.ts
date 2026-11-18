@@ -6,6 +6,7 @@ import { registerSettings, setting, settingsPages, type SettingKeys } from '@cor
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS } from '@plugins/settings'
 import { APP_DEFAULT_SETTINGS } from '@shared/types'
+import { SETTINGS_PANES } from '@shared/paletteFeatures'
 
 const manifest = (id: string, keys: string[], needs: string[] = []): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -133,5 +134,10 @@ describe('a settings page a plugin registers', () => {
       'plugin a lists more than one settings page'
     )
     expect(() => settingsPages(PLUGINS)).not.toThrow()
+  })
+
+  it('no two pages in the Settings window share an id, so no plugin page hides behind an app page', () => {
+    const ids = SETTINGS_PANES.map((p) => p.id)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })
