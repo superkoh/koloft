@@ -1,13 +1,13 @@
-import type { ButlerRowEntry } from '@plugins/butler/api'
+import type { RowExtras } from '@renderer/slots'
 import { channelLabel } from '../shared/channels'
 import { useStore } from '@renderer/store'
+import { openBinding } from './state'
 
 const NOT_ON_DISCORD = 'not on Discord'
 
-export function useDiscordOnButlerRow(): { menu: ButlerRowEntry[]; where: string } {
+export function useDiscordOnButlerRow(): RowExtras {
   const channel = useStore((s) => s.settings.discord.channel)
-  const setBindButler = useStore((s) => s.setBindButler)
-  const bind = (): void => setBindButler(true)
+  const bind = (): void => openBinding(true)
   if (!channel)
     return { menu: [{ label: 'Bind Discord channel…', run: bind }], where: NOT_ON_DISCORD }
   return {

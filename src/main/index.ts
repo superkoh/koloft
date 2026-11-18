@@ -501,8 +501,6 @@ import type {
   Settings,
   HostId,
   GitStepResult,
-  PrChecks,
-  PrWorktreeResult,
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
@@ -616,6 +614,11 @@ import {
   registerChannels as registerCronChannels,
   pushState as pushCronState
 } from '@plugins/scheduled-tasks/main/channels'
+import {
+  registerChannels as registerInboxChannels,
+  pushChanged as pushInboxChanged
+} from '@plugins/inbox/main/channels'
+import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
 import { registerInboxCommand } from '@plugins/inbox/main/inboxVerb'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
@@ -629,7 +632,6 @@ import {
   type KoloftAsk
 } from './koloftInbox'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
-import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
@@ -1391,8 +1393,11 @@ function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
     ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
+  on: (channel, listener) =>
+    ipcMain.on(channel, (_e, ...args) => listener(...(args as Parameters<typeof listener>))),
   push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
 }
+const pushInbox = pushInboxChanged(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -2230,7 +2235,7 @@ const inbox = new Inbox(
         inboxPushQueued = false
         const now = inbox.snapshot()
         if (!quitCommitted) saveInbox(now)
-        sendToRenderer(CH.inbox.changed, now)
+        pushInbox(now)
       })
     }
   },
@@ -6955,55 +6960,11 @@ function registerIpc(): void {
     return id ? installTool(id) : null
   })
   ipcMain.handle(CH.attention.list, () => attention.list())
-  ipcMain.handle(CH.inbox.list, () => {
-    koloftInbox.sync()
-    return inbox.snapshot()
+  registerInboxChannels(pluginIpc, {
+    cards: inbox,
+    sync: () => koloftInbox.sync(),
+    toast: (text) => sendToRenderer(CH.toast.show, text)
   })
-  const onCard =
-    (act: (cardId: string, ...rest: unknown[]) => void) =>
-    (_e: unknown, cardId: unknown, ...rest: unknown[]): void => {
-      if (typeof cardId !== 'string') return
-      try {
-        act(cardId, ...rest)
-      } catch (error) {
-        sendToRenderer(CH.toast.show, errorText(error))
-      }
-    }
-  ipcMain.on(
-    CH.inbox.press,
-    onCard((id, action, answers) => {
-      if (typeof action === 'string' && answers && typeof answers === 'object')
-        inbox.press(id, action, answers as InboxAnswers)
-    })
-  )
-  ipcMain.on(
-    CH.inbox.confirm,
-    onCard((id) => inbox.confirm(id))
-  )
-  ipcMain.on(
-    CH.inbox.undo,
-    onCard((id) => inbox.undo(id))
-  )
-  ipcMain.on(
-    CH.inbox.retry,
-    onCard((id) => inbox.retry(id))
-  )
-  ipcMain.on(
-    CH.inbox.dismiss,
-    onCard((id) => inbox.dismiss(id))
-  )
-  ipcMain.on(
-    CH.inbox.top,
-    onCard((id) => inbox.moveToTop(id))
-  )
-  ipcMain.on(
-    CH.inbox.level,
-    onCard((id, level) => {
-      if (level === null || INBOX_LEVELS.includes(level as InboxLevel))
-        inbox.setYourLevel(id, level as InboxLevel | null)
-    })
-  )
-  ipcMain.on(CH.inbox.clearNotes, () => inbox.clearNotes())
   ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
   ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
     if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)
@@ -7857,74 +7818,26 @@ function registerIpc(): void {
     if (typeof ws !== 'string' || !ws) return null
     return notesFileOfScope(ws) ?? null
   })
-  ipcMain.handle(CH.github.info, async (_e, root: unknown, force: unknown) => {
-    if (typeof root !== 'string' || !root) return null
-    const { now, settled } = await hosts.of(root).github.info(root, { force: force === true })
-    if (settled)
-      void settled.then(
-        (info) => sendToRenderer(CH.github.info, root, info),
-        () => {}
-      )
-    return now
-  })
-  ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
-    if (typeof root !== 'string' || !root) return null
-    if (
-      what !== 'repo' &&
-      what !== 'issues' &&
-      what !== 'pulls' &&
-      what !== 'pr' &&
-      what !== 'compare'
-    )
-      return null
-    return hosts.of(root).github.target(root, what)
-  })
-  ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
-    if (typeof root !== 'string' || !root || !Number.isInteger(pr)) {
-      return Promise.resolve({ state: 'failed' })
+  registerGithubChannels(pluginIpc, {
+    lookup: (root) => hosts.of(root).github,
+    prWorktree: async (root, pr, branch) => {
+      if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
+      const host = hosts.of(root)
+      const r = await addPrWorktree((args, network) => host.gitRun(root, args, network), pr, branch)
+      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
+      return r
     }
-    return hosts.of(root).github.checks(root, pr as number)
   })
-  ipcMain.handle(CH.github.failingChecksText, (_e, root: unknown, pr: unknown) => {
-    if (typeof root !== 'string' || !root || !Number.isInteger(pr)) return null
-    return hosts.of(root).github.failingChecksText(root, pr as number)
-  })
-  ipcMain.handle(CH.github.commit, (_e, root: unknown, message: unknown) => {
+  ipcMain.handle(CH.git.commit, (_e, root: unknown, message: unknown) => {
     if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
     const host = hosts.of(root)
     return commitAll((args, network) => host.gitRun(root, args, network), message)
   })
-  ipcMain.handle(CH.github.push, (_e, root: unknown) => {
+  ipcMain.handle(CH.git.push, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
-  ipcMain.handle(CH.github.openItems, (_e, root: unknown) => {
-    if (typeof root !== 'string' || !root) return { state: 'no-repo' }
-    return hosts.of(root).github.openItems(root)
-  })
-  ipcMain.handle(
-    CH.github.prWorktree,
-    async (_e, root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult> => {
-      if (
-        typeof root !== 'string' ||
-        !root ||
-        !Number.isInteger(pr) ||
-        typeof branch !== 'string' ||
-        !GIT_REF_RE.test(branch)
-      ) {
-        return BAD_GIT_STEP
-      }
-      const host = hosts.of(root)
-      const r = await addPrWorktree(
-        (args, network) => host.gitRun(root, args, network),
-        pr as number,
-        branch
-      )
-      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
-      return r
-    }
-  )
   ipcMain.handle(CH.preview.openFileDialog, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
