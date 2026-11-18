@@ -1,18 +1,14 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import type { AssistJobId, BackendId } from '@shared/types'
-import {
-  assistBackendsFor,
-  assistLaunchOn,
-  EVERY_ACCOUNT_TAKES,
-  type ModelAndEffort
-} from '@shared/assistPicks'
+import type { AssistRowId, BackendId } from '@shared/types'
+import { assistBackendsFor, assistLaunchOn } from '@shared/assistPicks'
+import { EVERY_ACCOUNT_TAKES, type ModelAndEffort } from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { lastCompletedText } from './museSessionLog'
 import { envMs } from './sessionRuntime'
 
 export interface AssistJob {
-  row: AssistJobId
+  row: AssistRowId
   system: string
   prompt: string
   signal?: AbortSignal
