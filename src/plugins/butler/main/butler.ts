@@ -1,14 +1,9 @@
 import fs from 'fs'
 import path from 'path'
-import type {
-  BackendId,
-  ButlerSession,
-  ButlerSetting,
-  ConductorOpenResult,
-  CronEffort
-} from '@shared/types'
+import type { BackendId, ConductorOpenResult, CronEffort } from '@shared/types'
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
-import { butlerNames, peerNamesOf } from '@shared/conductors'
+import { butlerNames, peerNamesOf } from '../shared/names'
+import type { ButlerSession, ButlerSetting } from '../shared/types'
 import { errorText } from '@core/errorText'
 import { butlerRole } from '../prompts/role'
 import { conductorFolder } from './folder'

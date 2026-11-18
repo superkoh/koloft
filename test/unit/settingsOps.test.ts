@@ -12,6 +12,7 @@ import {
   sanitizeLoadedSettings
 } from '@shared/settingsOps'
 import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
+import { GLOBAL_SCOPE } from '@shared/conductors'
 
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
@@ -437,6 +438,75 @@ describe('session methods', () => {
         sessionMethods: { defaultBackend: 'muse', enabled: off }
       }).assist
     ).toEqual({ backend: 'agy' })
+  })
+})
+
+describe('loading settings written before the butler', () => {
+  const channel = (channelId: string) => ({ guildId: '100', channelId, name: `ch-${channelId}` })
+  const oldBinding = (id: string, scope: string, channelId: string) => ({
+    id,
+    scope,
+    backend: 'claude',
+    channel: channel(channelId),
+    touched: []
+  })
+  const v038 = {
+    discord: {
+      userId: '555',
+      bindings: [
+        {
+          ...oldBinding('g', GLOBAL_SCOPE, '1'),
+          sessionIds: ['old-1', 'old-2'],
+          lastSessionKey: 'old-2'
+        },
+        { ...oldBinding('a', '/ws/a', '2'), backend: 'codex', sessionIds: ['ws-1'] }
+      ]
+    }
+  }
+
+  it('the global Assist’s conversation becomes the butler’s, and a workspace Assist’s is left behind', () => {
+    const s = sanitizeLoadedSettings(v038)
+    expect(s.butlerSession).toEqual({ sessionIds: ['old-1', 'old-2'], lastSessionKey: 'old-2' })
+    expect(s.discord).toEqual({ userId: '555', channel: channel('1') })
+  })
+
+  it('the Assist records of the release before this one become the butler’s conversation, and are not written back', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assistSessions: [
+        { scope: GLOBAL_SCOPE, sessionIds: ['new-1'], lastSessionKey: 'new-1' },
+        { scope: '/ws/a', sessionIds: ['ws-2'], lastSessionKey: 'ws-2' }
+      ]
+    })
+    expect(s.butlerSession).toEqual({
+      sessionIds: ['new-1', 'old-1', 'old-2'],
+      lastSessionKey: 'new-1'
+    })
+    expect(s).not.toHaveProperty('assistSessions')
+  })
+
+  it('reading the file it writes back changes nothing', () => {
+    const once = JSON.parse(JSON.stringify(sanitizeLoadedSettings(v038)))
+    const twice = sanitizeLoadedSettings(once)
+    expect(twice.butlerSession).toEqual(once.butlerSession)
+    expect(twice.discord).toEqual(once.discord)
+  })
+
+  it('the tool Assist ran on is kept, so the owner is not asked to agree to skipping permissions again', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assist: { on: false, backend: 'codex' },
+      skipPermissions: true
+    })
+    expect(s.assist).toEqual({ backend: 'codex' })
+    expect(s.skipPermissionsAgreed).toBe(true)
+  })
+
+  it('the butler’s conversation is left out of a settings reset and of what the window may write', () => {
+    expect(buildResetPatch()).not.toHaveProperty('butlerSession')
+    expect(sanitizeSettingsPatch({ butlerSession: { sessionIds: [] }, fontSize: 12 })).toEqual({
+      fontSize: 12
+    })
   })
 })
 

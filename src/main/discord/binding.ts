@@ -5,7 +5,7 @@ import type {
   SessionRoom
 } from '@shared/types'
 import { CannotMakeChannels, type NewChannel } from './link'
-import { newerSnowflake } from '@shared/conductors'
+import { newerSnowflake } from '@plugins/discord/shared/channels'
 import { DISCORD_BOUND } from '@plugins/discord/api'
 import { errorText } from '@core/errorText'
 

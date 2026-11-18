@@ -1,5 +1,6 @@
 import type { BackendId, DiscordChannel, SessionRoom } from '@shared/types'
-import { newerSnowflake, scopeName } from '@shared/conductors'
+import { scopeName } from '@shared/conductors'
+import { newerSnowflake } from '@plugins/discord/shared/channels'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { accentOf, type Card } from './cards'
 import type { DiscordLink } from './link'
