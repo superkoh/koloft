@@ -314,8 +314,10 @@ method. A recheck adds its date, version and command to the bullet.
   seventh box was up shows its main thread in `-[NSAlert runModal]`, called from
   JavaScript run by `node::Environment::RunTimers`.
 
-Koloft dependents: `index.ts` listens for `uncaughtException` itself, writes the stack
-to `main-errors.log` in `userData` and shows a toast.
+Koloft dependents: once its window is made, `index.ts` listens for `uncaughtException`
+itself, writes the stack to `main-errors.log` in `userData` and shows a toast; before
+that, with no window to show a toast in, Electron's box stays. It writes a rejected
+promise nobody handled to the same log, with no toast.
 
 ## §5 Electron: windows, renderers and quitting
 
@@ -3943,8 +3945,10 @@ thread for a beat once a second with a message, so no timer on the main thread i
 involved (inferred, not checked: App Nap holds back timers, not messages). When an ask
 has had no answer for 5 s, it saves a `sample` of the process under `main-stuck/` in
 `userData` while the main thread is still stuck (the newest ten are kept; if `sample`
-fails, the file holds the reason). When the main thread takes work again, a line in
-`main-stalls.log` says how long that ask waited and names the file.
+fails or takes over 10 s, the file holds the reason). When the main thread takes work
+again, a line in `main-stalls.log` says how long that ask waited and names the file,
+and the next ask comes a minute later, so a main thread that sticks again and again is
+sampled at most about once a minute.
 
 ## §71 1Password for Mac: which browsers its app lets the extension in
 

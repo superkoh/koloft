@@ -56,19 +56,18 @@ export function answerTheStuckWatch(
 ): void {
   const beats = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
   const beat = new Int32Array(beats)
-  let longestAnAskWaitedMs = 0
+  let theLastAskWaitedMs = 0
   const watch = startWatch({ ...data, beats })
   watch.on('message', (said: AskedForABeatAt | WhatTheMainThreadWasIn) => {
     if (typeof said === 'number') {
-      longestAnAskWaitedMs = Math.max(longestAnAskWaitedMs, Date.now() - said)
+      theLastAskWaitedMs = Date.now() - said
       Atomics.add(beat, 0, 1)
       Atomics.notify(beat, 0)
       return
     }
     log(
-      `main thread took no new work for at least ${longestAnAskWaitedMs} ms; what it was in ${data.stuckAfterMs} ms into that: ${said}`
+      `main thread took no new work for at least ${theLastAskWaitedMs} ms; what it was in ${data.stuckAfterMs} ms into that: ${said}`
     )
-    longestAnAskWaitedMs = 0
   })
   watch.on('error', (error) => log(`the watch for a stuck main thread stopped: ${error}`))
   watch.unref()

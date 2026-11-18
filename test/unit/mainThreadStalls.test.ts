@@ -41,7 +41,7 @@ describe('the main thread answering the watch that looks for it being stuck', ()
     vi.useRealTimers()
   })
 
-  it('answers each ask with a beat, and once the watch names the sample it saved, logs that sample with the longest time an ask had to wait, not the time the sample took', () => {
+  it('answers each ask with a beat, and once the watch names the sample it saved, logs that sample with how long the ask just before it had to wait: not the time the sample took, and not an older ask that waited through a sleep', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000_000)
     const fromTheWatch = Object.assign(new EventEmitter(), { unref: vi.fn() })
@@ -62,7 +62,6 @@ describe('the main thread answering the watch that looks for it being stuck', ()
     const SEVEN_HOURS_MS = 7 * 3600_000
     fromTheWatch.emit('message', Date.now() - SEVEN_HOURS_MS)
     expect(beats()).toBe(2)
-    fromTheWatch.emit('message', Date.now() - 2)
     expect(lines).toEqual([])
 
     vi.advanceTimersByTime(2000)
@@ -71,9 +70,13 @@ describe('the main thread answering the watch that looks for it being stuck', ()
     expect(lines[0]).toContain(`${SEVEN_HOURS_MS} ms`)
     expect(lines[0]).toContain('/samples/one.txt')
 
+    const ASLEEP_FOR_MS = 8 * 3600_000
+    fromTheWatch.emit('message', Date.now() - ASLEEP_FOR_MS)
+    fromTheWatch.emit('message', Date.now() - 2)
     fromTheWatch.emit('message', Date.now() - 6000)
     fromTheWatch.emit('message', '/samples/two.txt')
-    expect(lines[1]).toContain('6000 ms')
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toContain(' 6000 ms')
     expect(lines[1]).toContain('/samples/two.txt')
   })
 })

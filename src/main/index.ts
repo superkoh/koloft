@@ -714,6 +714,12 @@ function takeErrorsNobodyCaught(): void {
     )
     if (shown) shownAt = Date.now()
   })
+  process.on('unhandledRejection', (reason) => {
+    console.error(reason)
+    log(
+      `a promise nobody handled was rejected: ${reason instanceof Error && reason.stack ? reason.stack : String(reason)}`
+    )
+  })
 }
 
 const ptyMgr = new PtyManager()
@@ -3501,7 +3507,6 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
-  takeErrorsNobodyCaught()
   const stallLog = signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
   const stalls = new StallWatchWhileFocused(stallLog)
   answerTheStuckWatch(
@@ -4666,6 +4671,7 @@ app.whenReady().then(() => {
 
   markKeyAccountsSavedOnDisk()
   createWindow()
+  takeErrorsNobodyCaught()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
   probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())

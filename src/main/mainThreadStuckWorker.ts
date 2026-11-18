@@ -6,7 +6,8 @@ import type { AskedForABeatAt, StuckWatchData, WhatTheMainThreadWasIn } from './
 
 const ASKS_PER_STUCK_LIMIT = 5
 const SAMPLE_SECONDS = 1
-const SAMPLE_GIVES_UP_MS = 30_000
+const SAMPLE_GIVES_UP_MS = 10_000
+const STUCK_LIMITS_UNTIL_THE_NEXT_ASK_AFTER_A_SAMPLE = 12
 const SAMPLES_KEPT = 10
 const SAMPLE_SUFFIX = '.txt'
 
@@ -45,10 +46,14 @@ function sampleOfTheProcess(): WhatTheMainThreadWasIn {
 for (;;) {
   const seen = Atomics.load(beat, 0)
   tellMain(Date.now())
-  if (Atomics.wait(beat, 0, seen, stuckAfterMs) === 'timed-out') {
+  const stuck = Atomics.wait(beat, 0, seen, stuckAfterMs) === 'timed-out'
+  if (stuck) {
     const whatItWasIn = sampleOfTheProcess()
     Atomics.wait(beat, 0, seen)
     tellMain(whatItWasIn)
   }
-  Atomics.wait(nothingEverWakesThis, 0, 0, stuckAfterMs / ASKS_PER_STUCK_LIMIT)
+  const untilTheNextAskMs = stuck
+    ? stuckAfterMs * STUCK_LIMITS_UNTIL_THE_NEXT_ASK_AFTER_A_SAMPLE
+    : stuckAfterMs / ASKS_PER_STUCK_LIMIT
+  Atomics.wait(nothingEverWakesThis, 0, 0, untilTheNextAskMs)
 }
