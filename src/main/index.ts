@@ -577,7 +577,7 @@ import {
   type DialogView
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
-import { registerDiscordCommand } from './agentDiscord'
+import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
 import { registerGithubCommand, repoFlagOf } from './agentGithub'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
@@ -609,8 +609,8 @@ import {
   NEW_CHANNEL_NAME,
   scopeName
 } from '@shared/conductors'
-import { registerCronCommand } from './agentCron'
-import { registerWorkbenchCommands } from './agentWorkbench'
+import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
+import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { moment, type FileOpened, type SessionStarted } from '@core/moment'
@@ -621,7 +621,7 @@ import {
   registerChannels as registerCronChannels,
   pushState as pushCronState
 } from '@plugins/scheduled-tasks/main/channels'
-import { registerInboxCommand } from './agentInbox'
+import { registerInboxCommand } from '@plugins/inbox/main/inboxVerb'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
 import {

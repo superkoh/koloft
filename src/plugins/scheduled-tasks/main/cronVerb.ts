@@ -35,7 +35,7 @@ import {
   type AgentReply,
   type AgentVerb,
   type Parsed
-} from './agentRequests'
+} from '@core/command'
 import type { Commands } from '@core/commands'
 
 const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
