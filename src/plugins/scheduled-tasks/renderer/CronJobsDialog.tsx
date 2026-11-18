@@ -49,7 +49,6 @@ import { useStore } from '@renderer/store'
 import { mixesBackends } from '@renderer/sessionRows'
 import { ModelAndThinking, useFieldFocus } from '@renderer/components/ModelAndThinking'
 import { Switch } from '@renderer/components/settings/Switch'
-import '@renderer/cronJobs.css'
 
 const DAY_CHIPS: { d: number; label: string }[] = [
   { d: 1, label: 'Mon' },
