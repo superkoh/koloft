@@ -1142,14 +1142,12 @@ export const useStore = create<AppState>((set, get) => ({
       workbenchParked.delete(k)
     }
     set((s) => {
+      const claimed = new Set(all.filter(claimsWorkspace))
       const workspaceRows = keepUnchangedWorkspaces(
         s.workspaceRows,
-        all.filter((w) => !claimsWorkspace(w))
+        all.filter((w) => !claimed.has(w))
       )
-      const claimedWorkspaces = keepUnchangedWorkspaces(
-        s.claimedWorkspaces,
-        all.filter(claimsWorkspace)
-      )
+      const claimedWorkspaces = keepUnchangedWorkspaces(s.claimedWorkspaces, [...claimed])
       const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
         ? s.selectedWs
         : null
