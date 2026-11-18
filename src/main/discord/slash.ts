@@ -10,7 +10,7 @@ export const toChannel = (
   say: (text) => poster()?.say(channelId, text),
   result: ({ target, header, body }) =>
     void poster()?.card(channelId, {
-      accent: target.butler ? CONDUCTOR_ACCENT : accentOf(target.name),
+      accent: target.overseer ? CONDUCTOR_ACCENT : accentOf(target.name),
       header,
       body
     })

@@ -18,7 +18,8 @@ import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMe
 import type { TranscriptPlaces } from '../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../src/main/inbox'
 import type { SendResult } from '../../src/plugins/sessions/api'
-import { moment, type SessionStarted } from '../../src/core/moment'
+import { moment, type SessionStarted, type SessionStarting } from '../../src/core/moment'
+import { fromTheButler, tellEachHelperItsRole } from '../../src/plugins/butler/main/sessionHooks'
 import {
   giveEachStartedSessionARoom,
   withoutTheRelayTag
@@ -116,7 +117,7 @@ function harness(
   waitsOnAnother: (sessionId: string) => boolean
   sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
   startForReply: ReturnType<typeof sessionVerb>['startForReply']
-  startButlerHelper: ReturnType<typeof sessionVerb>['startButlerHelper']
+  startHelper: ReturnType<typeof sessionVerb>['startHelper']
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -150,6 +151,8 @@ function harness(
   const stopped: string[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
+  const sessionStarting = moment<SessionStarting>()
+  tellEachHelperItsRole(sessionStarting, () => BUTLER_HELPER_ROLE)
   const sessionStarted = moment<SessionStarted>()
   giveEachStartedSessionARoom(sessionStarted, {
     isButler: (tabId) => !!conducting.scopes?.[tabId],
@@ -195,12 +198,14 @@ function harness(
       closed.push(...inOrder.map((target) => target.sessionId))
       closeFails.push((text) => tellStarter(inOrder[0], text))
     },
-    isButler: (tabId) => !!conducting.scopes?.[tabId],
+    overseer: {
+      is: (tabId) => !!conducting.scopes?.[tabId],
+      target: (ref) => conducting.conductors?.[ref],
+      folder: () => BUTLER_FOLDER
+    },
     speaksForTheOwner: (tabId) =>
       !!conducting.scopes?.[tabId] ||
       sessions.find((s) => s.tabId === tabId)?.cwd === BUTLER_FOLDER,
-    butlerFolder: () => BUTLER_FOLDER,
-    butlerHelperRole: () => BUTLER_HELPER_ROLE,
     sidebar: () => conducting.sidebar ?? [],
     worktrees: async () => (conducting.worktrees ?? []).map((name) => ({ name, dir: name })),
     readTurns: async (key, n) => {
@@ -209,7 +214,6 @@ function harness(
     },
     transcriptPlaces: (key) => conducting.transcripts?.[key],
     quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
-    butlerTarget: (ref) => conducting.conductors?.[ref],
     resume: async (r) => {
       resumed.push(r.id)
       return `${r.id}-tab`
@@ -245,8 +249,9 @@ function harness(
         ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] }
         : { error: 'no window' },
     rowNote: (key) => conducting.rooms?.[key],
+    announceStarting: sessionStarting.announce,
     announceStarted: sessionStarted.announce,
-    ownersWords: withoutTheRelayTag
+    ownersWords: (said) => (fromTheButler(said) ? undefined : withoutTheRelayTag(said))
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
@@ -262,7 +267,7 @@ function harness(
     sendFromInbox: (ref, text, toItsOwnSession) =>
       inner.sendFrom(INBOX_SENDER, ref, text, toItsOwnSession),
     startForReply: inner.startForReply,
-    startButlerHelper: inner.startButlerHelper,
+    startHelper: inner.startHelper,
     launched,
     queued,
     closed,
@@ -1657,7 +1662,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     backend: 'claude',
     remote: false,
     tabId: 'butler',
-    butler: true,
+    overseer: true,
     open: async () => 'reopened-tab',
     ...over
   })
@@ -2141,7 +2146,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     const h = harness([...live, helper], { 'cond-id': 'Alfred' }, [], conducting())
     await h.verb(['new', ...PICKED, '--', 'look into it'], from('butler'))
     await h.verb(['new', ...PICKED, '--backend', 'codex', '--', 'look into it'], from('butler'))
-    await h.startButlerHelper(live[0], {
+    await h.startHelper(live[0], {
       prompt: 'Sort the inbox.',
       ownerWords: 'sort it',
       backend: 'claude'

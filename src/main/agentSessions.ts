@@ -12,7 +12,7 @@ import {
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
 import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
-import { BUTLER_SAYS_OPENING, ownerSays } from '@shared/agentGuide'
+import { ownerSays } from '@shared/agentGuide'
 import {
   PICK_FOR_THE_TASK,
   placedRows,
@@ -58,7 +58,7 @@ import {
   type Parsed
 } from './agentRequests'
 import type { Commands } from '@core/commands'
-import type { SessionStarted } from '@core/moment'
+import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
@@ -80,7 +80,7 @@ import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
 import type { TranscriptPlaces } from './sessionBackends'
 
-export interface ButlerHelperTask {
+export interface HelperTask {
   prompt: string
   name?: string
   ownerWords: string
@@ -367,16 +367,13 @@ export interface SessionVerbDeps {
     inOrder: ClosableSession[],
     tellStarter: (closed: ClosableSession, text: string) => void
   ): void
-  isButler(tabId: string): boolean
+  overseer: Overseer
   speaksForTheOwner(tabId: string): boolean
-  butlerFolder(): string
-  butlerHelperRole(): string
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
   transcriptPlaces(key: string): TranscriptPlaces | undefined
   quotedPrompt(tabId: string): string | undefined
-  butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
   bound(tabId: string, ms: number): Promise<boolean>
@@ -396,8 +393,15 @@ export interface SessionVerbDeps {
   ): Promise<string>
   screen(tabId: string): Promise<SessionScreen>
   rowNote(key: string): string | undefined
+  announceStarting(starting: SessionStarting): Promise<string[]>
   announceStarted(started: SessionStarted): Promise<string[]>
-  ownersWords(said: string): string
+  ownersWords(said: string): string | undefined
+}
+
+export interface Overseer {
+  is(tabId: string): boolean
+  target(ref: string): Target | undefined
+  folder(): string
 }
 
 export type SessionScreen = { lines: string[]; notes: string[] } | { error: string }
@@ -409,14 +413,14 @@ export interface Target {
   remote: boolean
   workspace?: string
   tabId?: string
-  butler?: true
+  overseer?: true
   open(): Promise<string>
 }
 
 const SESSION_USAGE =
   'koloft session: use list, read, new, send, command, screen, keys, answer, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
-const BUTLER_LIST_USAGE =
+const OVERSEER_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session in every workspace.'
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
@@ -448,30 +452,24 @@ function modelAndEffortRefusal(
 }
 
 type StartPlace =
-  | { ok: true; workspace: string; conductorTab?: string; helperRole?: string }
-  | { ok: false; reply: AgentReply }
+  { ok: true; workspace: string; conductorTab?: string } | { ok: false; reply: AgentReply }
 
 function newSessionPlace(
   d: SessionVerbDeps,
   args: NewSessionArgs,
   callerTab: string,
   ws: string | undefined,
-  butler: boolean
+  overseer: boolean
 ): StartPlace {
   const no = (text: string): StartPlace => ({ ok: false, reply: refused(text) })
   if (args.workspace !== undefined) {
     const target = startableWorkspace(args.workspace, d.pinnedWorkspaces())
     if (!target.ok) return no(`koloft session new: ${target.error}`)
-    return { ok: true, workspace: target.value, conductorTab: butler ? callerTab : undefined }
+    return { ok: true, workspace: target.value, conductorTab: overseer ? callerTab : undefined }
   }
-  if (butler) {
-    if (args.worktree !== undefined) return no(NO_WORKTREE_IN_BUTLER_FOLDER)
-    return {
-      ok: true,
-      workspace: d.butlerFolder(),
-      conductorTab: callerTab,
-      helperRole: d.butlerHelperRole()
-    }
+  if (overseer) {
+    if (args.worktree !== undefined) return no(NO_WORKTREE_IN_OWN_FOLDER)
+    return { ok: true, workspace: d.overseer.folder(), conductorTab: callerTab }
   }
   return ws ? { ok: true, workspace: ws } : no(NO_WORKSPACE)
 }
@@ -531,8 +529,7 @@ async function startSibling(
   workspace: string,
   conductorTab: string | undefined,
   ownerWords: string | undefined,
-  oweReply: (tabId: string) => void,
-  helperRole?: string
+  oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
   const turnedOff = d.turnedOff(backend)
@@ -550,8 +547,7 @@ async function startSibling(
     workspace,
     conductorTab,
     ownerWords,
-    oweReply,
-    helperRole
+    oweReply
   )
   if (!launched) return refused('koloft session new: Koloft could not start the session.')
   const { tabId, name } = launched
@@ -627,8 +623,7 @@ async function launchSibling(
   workspace: string,
   conductorTab: string | undefined,
   ownerWords: string | undefined,
-  oweReply: (tabId: string) => void,
-  helperRole?: string
+  oweReply: (tabId: string) => void
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
   const traits = PEER_TRAITS[backend]
@@ -639,19 +634,21 @@ async function launchSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
+  const helper = d.overseer.is(me.tabId) && workspace === d.overseer.folder()
   let held: HeldName | undefined
   let tabId: string | null = null
   try {
-    const [, handover] = await Promise.all([
+    const [, handover, told] = await Promise.all([
       !namedAtLaunch(backend, isRemoteKey(workspace))
         ? undefined
         : args.name !== undefined
           ? (held = names.own(args.name))
           : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
-      handoverInOwnersLanguage(caller, d.assist)
+      handoverInOwnersLanguage(caller, d.assist),
+      d.announceStarting({ by: me.tabId, workspace, helper })
     ])
     const name = held?.name
-    const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
+    const preamble = [...told, handover].join('\n\n')
     const gitWorkspace = d
       .sidebar()
       .some((w) => w.workspace.path === workspace && w.workspace.isGit)
@@ -670,8 +667,7 @@ async function launchSibling(
       permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
       ownerWords,
       // ADR-0026
-      trustFolder:
-        !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
+      trustFolder: !worktree && (helper || d.pinnedWorkspaces().some((w) => w.path === workspace)),
       // CODEX§17
       ...(traits.handoverAsRole
         ? { role: preamble, firstPrompt: args.prompt }
@@ -756,7 +752,7 @@ function starterRow(
 
 function sessionTarget(d: SessionVerbDeps, id: string): Target | undefined {
   const row = placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === id)
-  return d.butlerTarget(id) ?? (row && rowTarget(d, row))
+  return d.overseer.target(id) ?? (row && rowTarget(d, row))
 }
 
 interface NamedRows {
@@ -825,7 +821,7 @@ async function sessionOnThisComputer(
     )
   const target = d.closable().find((s) => s.sessionId === row.id)
   if (!target) return fail(`koloft session close: ${title} is gone.`)
-  if (target.tabId && d.isButler(target.tabId))
+  if (target.tabId && d.overseer.is(target.tabId))
     return fail(`koloft session close: ${title} is the butler, which only closes itself.`)
   return { ok: true, value: target }
 }
@@ -897,7 +893,7 @@ const ANSWER_USAGE =
 export const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
 const FIRST_PROMPT_BINDS_WITHIN_MS = 10_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
-const NO_WORKTREE_IN_BUTLER_FOLDER =
+const NO_WORKTREE_IN_OWN_FOLDER =
   'koloft session new: your own folder is no git repository, so -w needs --workspace <workspace>; "koloft workspace list" shows them.'
 
 const COMMAND_USAGE = `koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact`
@@ -941,7 +937,6 @@ const ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS = "(From Assist, Koloft's AI, for
 
 const KOLOFT_ENVELOPES = [
   SESSION_SAYS_OPENING,
-  BUTLER_SAYS_OPENING,
   ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS,
   FROM_KOLOFT,
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
@@ -951,13 +946,14 @@ type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?:
 
 export function lastOwnerWords(
   turns: Turn[],
-  ownersWords: (said: string) => string
+  ownersWords: (said: string) => string | undefined
 ): string | undefined {
-  const line = turns
+  return turns
     .flatMap((t) => t.said)
-    .findLast((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
-  if (!line) return undefined
-  return ownersWords(line.text).slice(0, OWNER_WORDS_QUOTED_CHARS)
+    .filter((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
+    .map((l) => ownersWords(l.text))
+    .findLast((words) => words !== undefined)
+    ?.slice(0, OWNER_WORDS_QUOTED_CHARS)
 }
 
 function isMe(
@@ -977,7 +973,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   messaged(tabId: string, fromSessionId: string): void
-  startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
+  startHelper(overseer: SessionInfo, task: HelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
   sendFrom(sender: string, ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
   tellFromKoloft(tabId: string, text: string): Promise<boolean>
@@ -1023,7 +1019,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
     const open = d.allSessions().find((s) => s.sessionId === sessionId)
     if (open) return open
-    const assist = d.butlerTarget(sessionId)
+    const assist = d.overseer.target(sessionId)
     return assist && { sessionId, tabId: assist.tabId, backendId: assist.backend }
   }
 
@@ -1178,10 +1174,10 @@ export function sessionVerb(d: SessionVerbDeps): {
   }
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
-    const butler = d.butlerTarget(caller.session.sessionId)
+    const overseer = d.overseer.target(caller.session.sessionId)
     const me =
-      butler?.tabId === caller.tabId
-        ? butler
+      overseer?.tabId === caller.tabId
+        ? overseer
         : openTarget({ ...caller.session, tabId: caller.tabId })
     return d.command(caller.tabId, into ?? me, text, (said) =>
       deliverOrReport(caller, me, `${FROM_KOLOFT}${said}`)
@@ -1192,7 +1188,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     sub: string,
     rest: string[],
     caller: AgentCaller,
-    asButler: boolean
+    forTheOwner: boolean
   ): Promise<AgentReply> => {
     const takesWords = sub === 'send' || sub === 'answer' || sub === 'command' || sub === 'keys'
     const resume = splitAtDashes(rest)
@@ -1201,8 +1197,8 @@ export function sessionVerb(d: SessionVerbDeps): {
       ? nameThenWords(
           rest,
           (r) =>
-            isMe(r, caller.session, d.butlerTarget(r), caller.tabId) ||
-            d.butlerTarget(r) !== undefined ||
+            isMe(r, caller.session, d.overseer.target(r), caller.tabId) ||
+            d.overseer.target(r) !== undefined ||
             namesARow(rows, r)
         )
       : wholeName(sub === 'resume' ? resume.before : rest)
@@ -1214,11 +1210,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       const problem = slashCommandProblem(text)
       if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
     }
-    const self = isMe(ref, caller.session, d.butlerTarget(ref), caller.tabId)
+    const self = isMe(ref, caller.session, d.overseer.target(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
     if (self && sub === 'command') return answered(await commandFrom(caller, text))
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = d.butlerTarget(ref) ?? findAmong(rows, sub, ref)
+    const found = d.overseer.target(ref) ?? findAmong(rows, sub, ref)
     if ('ok' in found && !found.ok) return refused(found.error)
     const t = 'ok' in found ? rowTarget(d, found.value) : found
     if (sub === 'screen')
@@ -1259,8 +1255,8 @@ export function sessionVerb(d: SessionVerbDeps): {
       await (opening.get(t.key) ?? t.open())
       return answered(`Resumed ${t.name}.`)
     }
-    const toAnotherHelper = !d.isButler(caller.tabId) && t.workspace === d.butlerFolder()
-    return asButler && !t.butler && !toAnotherHelper
+    const toAnotherHelper = !d.overseer.is(caller.tabId) && t.workspace === d.overseer.folder()
+    return forTheOwner && !t.overseer && !toAnotherHelper
       ? deliver(sub, t, ownerSays(text), caller, true)
       : deliver(sub, t, sessionSays(caller.session, text), caller, false)
   }
@@ -1270,10 +1266,10 @@ export function sessionVerb(d: SessionVerbDeps): {
     const ws = d.workspaceOf(caller.tabId)
     const sessionsIn = (workspace: string): SessionInfo[] =>
       d.allSessions().filter((s) => d.workspaceOf(s.tabId) === workspace)
-    const butler = d.isButler(caller.tabId)
+    const overseer = d.overseer.is(caller.tabId)
     const forTheOwner = d.speaksForTheOwner(caller.tabId)
-    if (sub === 'list' && butler) {
-      if (rest.length > 0) return refused(BUTLER_LIST_USAGE, EXIT_USAGE)
+    if (sub === 'list' && overseer) {
+      if (rest.length > 0) return refused(OVERSEER_LIST_USAGE, EXIT_USAGE)
       const placed = placedRows(d.sidebar(), d.allSessions())
       if (placed.length === 0) return answered('There are no sessions to look after.')
       return answered(
@@ -1302,9 +1298,9 @@ export function sessionVerb(d: SessionVerbDeps): {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const backend = parsed.value.backend ?? caller.session.backendId
-      const place = newSessionPlace(d, parsed.value, caller.tabId, ws, butler)
+      const place = newSessionPlace(d, parsed.value, caller.tabId, ws, overseer)
       if (!place.ok) return place.reply
-      const { workspace, conductorTab, helperRole } = place
+      const { workspace, conductorTab } = place
       const { model, effort } = parsed.value
       const unpicked = modelAndEffortRefusal(backend, parsed.value)
       if (unpicked || !effort)
@@ -1329,19 +1325,19 @@ export function sessionVerb(d: SessionVerbDeps): {
         workspace,
         conductorTab,
         ownerWords,
-        (tab) => repliesOwed.oweSession(tab, { owner: caller.session.sessionId }),
-        helperRole
+        (tab) => repliesOwed.oweSession(tab, { owner: caller.session.sessionId })
       )
       return resolved?.note && reply.exit === 0
         ? { ...reply, text: `${reply.text} ${resolved.note}` }
         : reply
     }
-    if (butler && Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, true)
+    if (overseer && Object.hasOwn(SESSION_ACT_USAGE, sub))
+      return sessionAct(sub, rest, caller, true)
     if (sub === 'send') {
       const open = d.allSessions()
       const parent = starterRow(d, caller, open)
       const starter = (ref: string): Target | undefined =>
-        d.butlerTarget(ref) ??
+        d.overseer.target(ref) ??
         (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
@@ -1382,7 +1378,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       d.closeSoon([target, ...started.close], (closed, text) => {
         const [id] = d.startedSessions.startersOf(closed)
         const starter = id === undefined ? undefined : sessionTarget(d, id)
-        if (starter?.tabId && !starter.butler)
+        if (starter?.tabId && !starter.overseer)
           void deliver('send', starter, `${FROM_KOLOFT}${text}`, caller, false).catch(() => {})
       })
       return answered(
@@ -1397,21 +1393,20 @@ export function sessionVerb(d: SessionVerbDeps): {
     return refused(SESSION_USAGE, EXIT_USAGE)
   }
 
-  const startButlerHelper = async (
-    butler: SessionInfo,
-    { prompt, name, ownerWords, backend }: ButlerHelperTask
+  const startHelper = async (
+    overseer: SessionInfo,
+    { prompt, name, ownerWords, backend }: HelperTask
   ): Promise<string | null> =>
     (
       await launchSibling(
         d,
         names,
         { prompt, name, backend },
-        butler,
-        d.butlerFolder(),
-        butler.tabId,
+        overseer,
+        d.overseer.folder(),
+        overseer.tabId,
         ownerWords,
-        (tab) => repliesOwed.oweSession(tab, { owner: butler.sessionId }),
-        d.butlerHelperRole()
+        (tab) => repliesOwed.oweSession(tab, { owner: overseer.sessionId })
       )
     )?.tabId ?? null
 
@@ -1520,7 +1515,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     turnEnded,
     waitsOnAnother,
     messaged,
-    startButlerHelper,
+    startHelper,
     tabMoved,
     sendFrom,
     tellFromKoloft,
