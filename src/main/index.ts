@@ -615,6 +615,8 @@ import {
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
+import { moment, type FileOpened } from '@core/moment'
+import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import { inboxVerb } from './agentInbox'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
@@ -1872,6 +1874,9 @@ function notesFileOfScope(scope: string): string | undefined {
     : undefined
 }
 
+const fileOpened = moment<FileOpened>()
+copyEachOpenedFile(fileOpened, (o) => copyToPhone(o.tabId, o.target, o.view))
+
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: async (tabId, target, view) => {
     const machine = machineOfTab(tabId)
@@ -1883,7 +1888,7 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
         : routed
     return openInWorkbench(tabId, decision, 'agent', target, view)
   },
-  copyToPhone,
+  announceOpened: fileOpened.announce,
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
