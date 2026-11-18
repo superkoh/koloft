@@ -8,7 +8,7 @@ import { ASSIST_ANSWERS_WITHIN_MS } from './assist'
 import { GIT_TIMEOUT_MS } from './gitStatus'
 import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
-import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from './sudoShim'
+import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from '@plugins/passwords/main/sudoShim'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '@plugins/sessions/main/dialog'
 
 export const AGENT_SHIM_WAITS_MS = 10_000

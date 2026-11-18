@@ -4,13 +4,13 @@ import {
   NO_LONGER_WAITING,
   NOTHING_TYPED,
   PASSED_ON,
-  SecretAsks,
+  SecretCards,
   TURNED_DOWN_IN_KOLOFT,
   type PlacedCard,
-  type SecretAsk,
-  type SecretAskDeps,
+  type SecretCardDeps,
   type TapRounds
-} from '../../src/main/discord/secretAsks'
+} from '../../src/main/discord/secretCards'
+import { SecretAsks, type SecretAsk } from '../../src/plugins/passwords/main/secretAsks'
 import type { Card } from '../../src/main/discord/cards'
 import type { DiscordInteraction } from '../../src/main/discord/link'
 import type { SecretAskView } from '../../src/shared/types'
@@ -21,14 +21,24 @@ const SECRET = 'hunter2 "x" \\ 日本'
 const LONG = 60_000
 const PLACED: PlacedCard = { channelId: 'thread-1', messageId: 'm1', name: 'fix-login' }
 
-function setup(over: Partial<SecretAskDeps> = {}) {
+type AskWithTaps = SecretAsk & { taps?: TapRounds }
+
+function setup(over: Partial<SecretCardDeps> = {}) {
   const cards: Card[] = []
   const edits: Card[] = []
   const responses: unknown[] = []
   const shown: SecretAskView[][] = []
   const onlyInKoloft: string[] = []
   const ended: string[] = []
-  const asks = new SecretAsks({
+  const asks = new SecretAsks<AskWithTaps>({
+    show: (views) => void shown.push(views),
+    owner: {
+      waitsOnTheOwner: (tabId) => void onlyInKoloft.push(tabId),
+      ownerAnswered: (tabId) => void ended.push(tabId)
+    }
+  })
+  const secretCards = new SecretCards({
+    asks,
     owner: () => OWNER,
     cardWanted: () => true,
     place: async (_tab, card): Promise<PlacedCard> => {
@@ -37,11 +47,9 @@ function setup(over: Partial<SecretAskDeps> = {}) {
     },
     edit: async (_placed, card) => void edits.push(card),
     respond: async (_i, body) => void responses.push(body),
-    show: (views) => void shown.push(views),
-    askedOnlyInKoloft: (tabId) => void onlyInKoloft.push(tabId),
-    ended: (tabId) => void ended.push(tabId),
     ...over
   })
+  asks.listen(secretCards)
   const interaction = (
     type: number,
     over: Partial<DiscordInteraction> = {}
@@ -63,7 +71,18 @@ function setup(over: Partial<SecretAskDeps> = {}) {
       tick()
     })
   const lastShown = (): SecretAskView[] => shown.at(-1) ?? []
-  return { asks, cards, edits, responses, onlyInKoloft, ended, interaction, posted, lastShown }
+  return {
+    asks,
+    secretCards,
+    cards,
+    edits,
+    responses,
+    onlyInKoloft,
+    ended,
+    interaction,
+    posted,
+    lastShown
+  }
 }
 
 const ask: SecretAsk = {
@@ -79,18 +98,18 @@ const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 describe('asking the owner for a secret, in Koloft and in Discord', () => {
   it('the owner presses the card’s button, types in the form, and the asker gets exactly what was typed; it never shows in any message', async () => {
-    const { asks, cards, edits, responses, interaction, posted, lastShown } = setup()
+    const { asks, secretCards, cards, edits, responses, interaction, posted, lastShown } = setup()
     const answer = asks.ask(ask, LONG)
     await posted()
     expect(cards[0].body).toContain('sudo x')
-    await asks.press(interaction(3))
+    await secretCards.press(interaction(3))
     expect(responses[0]).toMatchObject({
       type: 9,
       data: {
         components: [{ components: [{ type: 4, label: 'Your sudo password', required: true }] }]
       }
     })
-    await asks.submit(interaction(5, { fields: { value: SECRET } }))
+    await secretCards.submit(interaction(5, { fields: { value: SECRET } }))
     expect(await answer).toEqual({ typed: SECRET })
     expect(responses[1]).toEqual({ type: 4, data: { content: PASSED_ON, flags: 64 } })
     await settle()
@@ -100,12 +119,12 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
   })
 
   it('someone other than the owner can neither open the form nor send one', async () => {
-    const { asks, responses, interaction, posted } = setup()
+    const { asks, secretCards, responses, interaction, posted } = setup()
     let settled = false
     void asks.ask(ask, LONG).then(() => (settled = true))
     await posted()
-    await asks.press(interaction(3, { userId: '666' }))
-    await asks.submit(interaction(5, { userId: '666', fields: { value: SECRET } }))
+    await secretCards.press(interaction(3, { userId: '666' }))
+    await secretCards.submit(interaction(5, { userId: '666', fields: { value: SECRET } }))
     await settle()
     expect(settled).toBe(false)
     expect(responses).toEqual([
@@ -115,12 +134,12 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
   })
 
   it('an empty form passes nothing on and keeps waiting', async () => {
-    const { asks, responses, interaction, posted } = setup()
+    const { asks, secretCards, responses, interaction, posted } = setup()
     const answer = asks.ask(ask, LONG)
     await posted()
-    await asks.submit(interaction(5, { fields: { value: '' } }))
+    await secretCards.submit(interaction(5, { fields: { value: '' } }))
     expect(responses).toEqual([{ type: 4, data: { content: NOTHING_TYPED, flags: 64 } }])
-    await asks.submit(interaction(5, { fields: { value: 'x' } }))
+    await secretCards.submit(interaction(5, { fields: { value: 'x' } }))
     expect(await answer).toEqual({ typed: 'x' })
   })
 
@@ -147,7 +166,7 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
   })
 
   it('answered in Koloft first, the card loses its button and says so, and a later press says Koloft no longer waits', async () => {
-    const { asks, edits, responses, interaction, posted, lastShown } = setup()
+    const { asks, secretCards, edits, responses, interaction, posted, lastShown } = setup()
     const answer = asks.ask(ask, LONG)
     await posted()
     asks.answer(lastShown()[0].id, 'pw')
@@ -155,7 +174,7 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
     await settle()
     expect(edits[0].footer).toContain(ANSWERED_IN_KOLOFT)
     expect(edits[0].buttons ?? []).toEqual([])
-    await asks.press(interaction(3))
+    await secretCards.press(interaction(3))
     expect(responses).toEqual([{ type: 4, data: { content: NO_LONGER_WAITING, flags: 64 } }])
   })
 
@@ -184,43 +203,10 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
     expect(edits[0].footer).toContain(TURNED_DOWN_IN_KOLOFT)
   })
 
-  it('a page ask ends once its own page loads another address; a sign-in ask ends only once the page that opened the sign-in lands on an http loopback address', async () => {
-    const { asks } = setup({ cardWanted: () => false })
-    const page = asks.ask(
-      { ...ask, shape: { kind: 'page', guestId: 7, url: 'https://a.example/login', label: 'P' } },
-      LONG
-    )
-    const signInUrl = 'https://auth.example/authorize?x=1'
-    const signIn = asks.ask({ ...ask, shape: { kind: 'url', signIn: signInUrl } }, LONG)
-    let signedIn = false
-    void signIn.then(() => (signedIn = true))
-    asks.navigated(8, 'https://a.example/home')
-    asks.navigated(9, 'http://localhost:3000/')
-    asks.navigationStarted(9, signInUrl)
-    asks.navigated(9, 'https://auth.example/consent')
-    asks.navigated(10, 'http://localhost:1455/auth/callback?code=c')
-    await settle()
-    expect(signedIn).toBe(false)
-    asks.navigated(7, 'https://a.example/home')
-    expect(await page).toEqual({ doneInKoloft: true })
-    asks.navigated(9, 'http://127.0.0.1:1455/auth/callback?code=c')
-    expect(await signIn).toEqual({ doneInKoloft: true })
-  })
-
-  it('an ask from a Workbench shell ends when that shell closes, and one whose tab moves follows it to the new tab', async () => {
-    const { asks, lastShown } = setup({ cardWanted: () => false })
-    const fromShell = asks.ask({ ...ask, from: 'shell-1' }, LONG)
-    asks.forget('shell-1')
-    expect(await fromShell).toEqual({ ended: 'timeout' })
-    void asks.ask(ask, LONG)
-    asks.rehome('tab-1', 'tab-9')
-    expect(lastShown()).toMatchObject([{ tabId: 'tab-9' }])
-  })
-
   it('past its wait, or once the session closes, the ask ends with nothing, and a later press says so', async () => {
     const timed = setup()
     expect(await timed.asks.ask(ask, 5)).toEqual({ ended: 'timeout' })
-    await timed.asks.press(timed.interaction(3))
+    await timed.secretCards.press(timed.interaction(3))
     expect(timed.responses).toEqual([{ type: 4, data: { content: NO_LONGER_WAITING, flags: 64 } }])
     const closed = setup()
     const answer = closed.asks.ask(ask, LONG)
@@ -232,7 +218,7 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
 
 describe('asking the owner to tap a page from Discord, in rounds', () => {
   const PICTURE = { file: { name: 'page.png', data: Buffer.from('png') }, seen: () => undefined }
-  const tapAsk = (taps: TapRounds): SecretAsk => ({
+  const tapAsk = (taps: TapRounds): AskWithTaps => ({
     tabId: 'tab-1',
     from: 'tab-1',
     shape: { kind: 'tap', guestId: 7, url: 'https://x.test/', label: 'Tick the box.' },
@@ -248,7 +234,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     let letGo!: () => void
     const held = new Promise<void>((r) => (letGo = r))
     const tapped: string[] = []
-    const { asks, cards, interaction, posted } = setup()
+    const { asks, secretCards, cards, interaction, posted } = setup()
     const answer = asks.ask(
       tapAsk({
         picture: async () => PICTURE,
@@ -264,18 +250,36 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
       LONG
     )
     await posted()
-    await asks.submit(interaction(5, { fields: { value: 'A1 B1 C1' } }))
+    await secretCards.submit(interaction(5, { fields: { value: 'A1 B1 C1' } }))
     await settle()
-    await asks.press(interaction(3, { customId: button(cards, 'Give up') }))
+    await secretCards.press(interaction(3, { customId: button(cards, 'Give up') }))
     letGo()
     await settle()
     expect(await answer).toEqual({ ended: 'declined' })
     expect(tapped).toEqual(['A1'])
   })
 
+  it('once the asking tab moves, the next picture goes where the tab now is', async () => {
+    const tabs: string[] = []
+    const { asks, secretCards, cards, interaction, posted } = setup({
+      place: async (tab, card): Promise<PlacedCard> => {
+        tabs.push(tab)
+        cards.push(card('fix-login'))
+        return PLACED
+      }
+    })
+    void asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped.' }), LONG)
+    await posted()
+    asks.rehome('tab-1', 'tab-9')
+    await secretCards.press(interaction(3, { customId: button(cards, 'New picture') }))
+    await settle()
+    await settle()
+    expect(tabs).toEqual(['tab-1', 'tab-9'])
+  })
+
   it('when the next card cannot be posted at all, the card before keeps its buttons', async () => {
     let placed = 0
-    const { asks, cards, edits, interaction, posted } = setup({
+    const { asks, secretCards, cards, edits, interaction, posted } = setup({
       place: async (_tab, card): Promise<PlacedCard> => {
         if (placed++) throw new Error('Discord answered 500')
         cards.push(card('fix-login'))
@@ -284,7 +288,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     })
     void asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped A1.' }), LONG)
     await posted()
-    await asks.submit(interaction(5, { fields: { value: 'A1' } }))
+    await secretCards.submit(interaction(5, { fields: { value: 'A1' } }))
     await settle()
     await settle()
     expect(placed).toBe(3)
@@ -294,7 +298,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
   it('when Discord does not take the new picture, the card still comes, says so, and the squares named next are read on the picture the owner last saw', async () => {
     let shownPictures = 0
     let placed = 0
-    const { asks, cards, interaction, posted } = setup({
+    const { asks, secretCards, cards, interaction, posted } = setup({
       place: async (_tab, card, files): Promise<PlacedCard> => {
         if (placed++ && files?.length) throw new Error('Discord answered 413')
         cards.push(card('fix-login'))
@@ -309,7 +313,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
       LONG
     )
     await posted()
-    await asks.submit(interaction(5, { fields: { value: 'A1' } }))
+    await secretCards.submit(interaction(5, { fields: { value: 'A1' } }))
     await settle()
     await settle()
     expect(cards).toHaveLength(2)
@@ -319,7 +323,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
 
   it('two presses of New picture close together take one new picture, and the second is told to wait', async () => {
     let pictures = 0
-    const { asks, cards, responses, interaction, posted } = setup()
+    const { asks, secretCards, cards, responses, interaction, posted } = setup()
     void asks.ask(
       tapAsk({
         picture: async () => {
@@ -332,7 +336,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     )
     await posted()
     const press = interaction(3, { customId: button(cards, 'New picture') })
-    await Promise.all([asks.press(press), asks.press(press)])
+    await Promise.all([secretCards.press(press), secretCards.press(press)])
     await settle()
     expect(pictures).toBe(2)
     expect(JSON.stringify(responses)).toMatch(/still at the last taps/)

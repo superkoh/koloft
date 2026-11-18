@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  SecretAsks,
-  type PlacedCard,
-  type SecretAsk,
-  type TapRounds
-} from '../../src/main/discord/secretAsks'
+import { SecretCards, type PlacedCard, type TapRounds } from '../../src/main/discord/secretCards'
+import { SecretAsks, type SecretAsk } from '../../src/plugins/passwords/main/secretAsks'
 import type { Card } from '../../src/main/discord/cards'
 import type { DiscordInteraction } from '../../src/main/discord/link'
 
@@ -13,6 +9,8 @@ const PLACED: PlacedCard = { channelId: 'thread-1', messageId: 'm1', name: 'fix-
 const LONG = 60_000
 const PRESS = 3
 const SUBMIT = 5
+
+type AskWithTaps = SecretAsk & { taps?: TapRounds }
 
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 const settleLong = async (): Promise<void> => {
@@ -34,7 +32,12 @@ function discord(placeFails: (n: number, files: number) => boolean = () => false
   const said: string[] = []
   const placed: Card[] = []
   let places = 0
-  const asks = new SecretAsks({
+  const asks = new SecretAsks<AskWithTaps>({
+    show: () => undefined,
+    owner: { waitsOnTheOwner: () => undefined, ownerAnswered: () => undefined }
+  })
+  const cards = new SecretCards({
+    asks,
     owner: () => OWNER,
     cardWanted: () => true,
     place: async (_tab, card, files) => {
@@ -45,11 +48,9 @@ function discord(placeFails: (n: number, files: number) => boolean = () => false
       return PLACED
     },
     edit: async (_placed, card) => void said.push(`card edited:\n${cardText(card)}`),
-    respond: async (_i, body) => void said.push(`reply: ${withoutIds(JSON.stringify(body))}`),
-    show: () => undefined,
-    askedOnlyInKoloft: () => undefined,
-    ended: () => undefined
+    respond: async (_i, body) => void said.push(`reply: ${withoutIds(JSON.stringify(body))}`)
   })
+  asks.listen(cards)
   const button = (label: string): string =>
     placed.at(-1)!.buttons!.find((b) => b.label === label)!.id
   const interaction = (
@@ -68,7 +69,7 @@ function discord(placeFails: (n: number, files: number) => boolean = () => false
     customId,
     ...over
   })
-  return { asks, said, button, interaction, placed }
+  return { asks, cards, said, button, interaction, placed }
 }
 
 const SUDO: SecretAsk = {
@@ -82,7 +83,7 @@ const SUDO: SecretAsk = {
 
 const PICTURE = { file: { name: 'page.png', data: Buffer.from('png') }, seen: () => undefined }
 
-const tapAsk = (taps: TapRounds): SecretAsk => ({
+const tapAsk = (taps: TapRounds): AskWithTaps => ({
   ...SUDO,
   shape: { kind: 'tap', guestId: 7, url: 'https://x.test/', label: 'Tick the box.' },
   taps
@@ -97,22 +98,22 @@ describe('the full text of the Discord card that asks the owner for a secret, pi
     void d.asks.ask(SUDO, LONG)
     await settleLong()
     const enter = d.button('Enter it')
-    await d.asks.press(d.interaction(PRESS, enter, { userId: '666' }))
-    await d.asks.press(d.interaction(PRESS, enter))
-    await d.asks.submit(d.interaction(SUBMIT, enter, { fields: { value: '' } }))
-    await d.asks.submit(d.interaction(SUBMIT, enter, { fields: { value: 'pw' } }))
+    await d.cards.press(d.interaction(PRESS, enter, { userId: '666' }))
+    await d.cards.press(d.interaction(PRESS, enter))
+    await d.cards.submit(d.interaction(SUBMIT, enter, { fields: { value: '' } }))
+    await d.cards.submit(d.interaction(SUBMIT, enter, { fields: { value: 'pw' } }))
     await settleLong()
-    await d.asks.press(d.interaction(PRESS, enter))
+    await d.cards.press(d.interaction(PRESS, enter))
     await pin(d.said, 'typed')
   })
 
   it('each way an ask ends without a typed answer on Discord', async () => {
     const said: string[] = []
     for (const [name, end] of [
-      ['answered in Koloft', (a: SecretAsks) => a.answer(a.views()[0].id, 'pw')],
-      ['done in Koloft', (a: SecretAsks) => a.done(a.views()[0].id)],
-      ['turned down in Koloft', (a: SecretAsks) => a.decline(a.views()[0].id)],
-      ['the session closed', (a: SecretAsks) => a.forget('tab-1')]
+      ['answered in Koloft', (a: SecretAsks<AskWithTaps>) => a.answer(a.views()[0].id, 'pw')],
+      ['done in Koloft', (a: SecretAsks<AskWithTaps>) => a.done(a.views()[0].id)],
+      ['turned down in Koloft', (a: SecretAsks<AskWithTaps>) => a.decline(a.views()[0].id)],
+      ['the session closed', (a: SecretAsks<AskWithTaps>) => a.forget('tab-1')]
     ] as const) {
       const d = discord()
       void d.asks.ask({ ...SUDO, shape: { kind: 'url', signIn: 'https://a.example' } }, LONG)
@@ -148,22 +149,28 @@ describe('the full text of the Discord card that asks the owner for a secret, pi
       LONG
     )
     await settleLong()
-    await d.asks.press(d.interaction(PRESS, d.button('Tap squares')))
-    await d.asks.submit(d.interaction(SUBMIT, d.button('Tap squares'), { fields: { value: 'A1' } }))
-    await d.asks.press(d.interaction(PRESS, d.button('New picture')))
-    await d.asks.submit(d.interaction(SUBMIT, d.button('Tap squares'), { fields: { value: 'A1' } }))
+    await d.cards.press(d.interaction(PRESS, d.button('Tap squares')))
+    await d.cards.submit(
+      d.interaction(SUBMIT, d.button('Tap squares'), { fields: { value: 'A1' } })
+    )
+    await d.cards.press(d.interaction(PRESS, d.button('New picture')))
+    await d.cards.submit(
+      d.interaction(SUBMIT, d.button('Tap squares'), { fields: { value: 'A1' } })
+    )
     letGo()
     await settleLong()
-    await d.asks.press(d.interaction(PRESS, d.button('New picture')))
+    await d.cards.press(d.interaction(PRESS, d.button('New picture')))
     await settleLong()
-    await d.asks.submit(d.interaction(SUBMIT, d.button('Tap squares'), { fields: { value: 'Z9' } }))
+    await d.cards.submit(
+      d.interaction(SUBMIT, d.button('Tap squares'), { fields: { value: 'Z9' } })
+    )
     await settleLong()
-    await d.asks.press(d.interaction(PRESS, d.button('It passed')))
+    await d.cards.press(d.interaction(PRESS, d.button('It passed')))
     await settleLong()
     const gaveUp = discord()
     void gaveUp.asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => '' }), LONG)
     await settleLong()
-    await gaveUp.asks.press(gaveUp.interaction(PRESS, gaveUp.button('Give up')))
+    await gaveUp.cards.press(gaveUp.interaction(PRESS, gaveUp.button('Give up')))
     await settleLong()
     const noPicture = discord((n, files) => n > 0 && files > 0)
     void noPicture.asks.ask(
@@ -171,7 +178,7 @@ describe('the full text of the Discord card that asks the owner for a secret, pi
       LONG
     )
     await settleLong()
-    await noPicture.asks.submit(
+    await noPicture.cards.submit(
       noPicture.interaction(SUBMIT, noPicture.button('Tap squares'), { fields: { value: 'A1' } })
     )
     await settleLong()

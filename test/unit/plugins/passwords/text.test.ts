@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { secretVerb, type FieldPage } from '../../src/main/agentSecret'
-import type { SecretAnswer, SecretAsk } from '../../src/main/discord/secretAsks'
+import { secretVerb } from '../../../../src/plugins/passwords/main/secretVerb'
+import type { SecretAnswer, SecretAsk } from '../../../../src/plugins/passwords/main/secretAsks'
 import {
   ASKPASS,
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
   SUDO_SHIM_FILES
-} from '../../src/main/sudoShim'
-import type { AgentCaller } from '../../src/main/agentRequests'
-import type { SessionInfo } from '../../src/shared/types'
+} from '../../../../src/plugins/passwords/main/sudoShim'
+import type { WebPage } from '../../../../src/core/webPage'
+import type { AgentCaller } from '../../../../src/main/agentRequests'
+import type { SessionInfo } from '../../../../src/shared/types'
 
 const caller: AgentCaller = {
   tabId: 'tab-1',
@@ -15,7 +16,7 @@ const caller: AgentCaller = {
   session: { tabId: 'tab-1', title: 'Fix login' } as SessionInfo
 }
 
-const fieldPage = (keptAfterSubmit: boolean, moves = false): FieldPage => {
+const fieldPage = (keptAfterSubmit: boolean, moves = false): WebPage => {
   let url = 'https://accounts.example.com/login?x=1'
   return {
     guestId: 7,
@@ -32,7 +33,7 @@ const fieldPage = (keptAfterSubmit: boolean, moves = false): FieldPage => {
 async function said(
   args: string[],
   answer: SecretAnswer,
-  over: { asleep?: boolean; pages?: FieldPage[]; machine?: string } = {}
+  over: { asleep?: boolean; pages?: WebPage[]; machine?: string } = {}
 ): Promise<string> {
   const asked: SecretAsk[] = []
   const verb = secretVerb({
@@ -85,7 +86,7 @@ describe('the full text of koloft secret and of the sudo files it rests on, pinn
       await said(URL, { typed: 'https://evil.example/cb' }),
       await said(['nope'], { typed: 'pw' })
     ]
-    await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./secret-verb-text/replies.txt')
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./text/replies.txt')
   })
 
   it('the sudo wrapper and askpass files, as each kind of session tab gets them', async () => {
@@ -93,11 +94,9 @@ describe('the full text of koloft secret and of the sudo files it rests on, pinn
       Object.entries(set)
         .map(([name, text]) => `=== ${name}\n${text}`)
         .join('')
-    await expect(files(SUDO_SHIM_FILES)).toMatchFileSnapshot(
-      './secret-verb-text/sudo-shim-files.txt'
-    )
+    await expect(files(SUDO_SHIM_FILES)).toMatchFileSnapshot('./text/sudo-shim-files.txt')
     await expect(files(SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)).toMatchFileSnapshot(
-      './secret-verb-text/sudo-files-any-terminal.txt'
+      './text/sudo-files-any-terminal.txt'
     )
     expect(SUDO_SHIM_FILES['koloft-askpass']).toBe(ASKPASS)
   })
