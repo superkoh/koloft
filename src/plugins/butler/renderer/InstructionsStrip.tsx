@@ -2,6 +2,7 @@ import { useLayoutEffect, useState, type JSX, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAiStart, IconClose } from '@renderer/icons'
 import { useStore } from '@renderer/store'
+import { isComposing } from '@renderer/keys'
 import {
   cleanInstructions,
   INSTRUCTIONS_MAX_BYTES,
@@ -17,6 +18,8 @@ const whenItTakesEffect = (name: string): string =>
   `${name} uses it from the next fresh conversation (on Muse, from the next start).`
 
 const count = (n: number): string => n.toLocaleString('en-US')
+
+const COULD_NOT_SAVE = 'Koloft could not save the instructions.'
 
 export function InstructionsStrip(): JSX.Element | null {
   const opened = useButler((s) => s.openedTab)
@@ -74,12 +77,15 @@ function InstructionsEditor(): JSX.Element {
   useEscapeCloses(close)
   const save = async (): Promise<void> => {
     if (left < 0) return
-    const r = await window.api.butler.saveInstructions(text)
+    const r = await window.api.butler
+      .saveInstructions(text)
+      .catch(() => ({ ok: false as const, error: COULD_NOT_SAVE }))
     if (!r.ok) return setError(r.error)
     close()
     showToast(`Instructions saved. ${whenItTakesEffect(butler.name)}`)
   }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (isComposing(e)) return e.stopPropagation()
     if (e.key !== 'Enter' || !e.metaKey) return
     e.preventDefault()
     void save()

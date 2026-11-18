@@ -109,7 +109,7 @@ export class Butler {
     return tabId === this.resident
   }
 
-  // ADR-0029
+  // ADR-0029 CC§23
   identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
     const launched = this.d.realpath(path.resolve(cwd))
     if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
@@ -123,6 +123,7 @@ export class Butler {
     const instructions = instructionsOf(butler)
     if (!ownerTextBesideTheRole(backend))
       return { role: butlerRole(butler.name, this.d.roleFacts(), instructions) }
+    // CC§13 CC§23
     return {
       role: butlerRole(butler.name, this.d.roleFacts()),
       ...(instructions && { ownerText: ownerInstructionsPart(instructions) })

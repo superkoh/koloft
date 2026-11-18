@@ -25,6 +25,8 @@ const textOfBytes = (unit: string, bytes: number): string =>
 const CLAUDE_START_HOOK_MAX_UNITS = 10_000
 // CODEX§17
 const CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES = 20_000
+// AGY§12
+const AGY_START_MESSAGE_SEEN_WHOLE_BYTES = 300_000
 
 describe('how long the owner’s instructions for the butler may be', () => {
   it.each([
@@ -52,6 +54,13 @@ describe('how long the owner’s instructions for the butler may be', () => {
     const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
     expect(Buffer.byteLength(butlerRole(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
       CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES
+    )
+  })
+
+  it('an Antigravity butler’s start message at the limit stays within the length seen reaching the model whole', () => {
+    const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
+    expect(Buffer.byteLength(butlerRole(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
+      AGY_START_MESSAGE_SEEN_WHOLE_BYTES
     )
   })
 

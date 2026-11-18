@@ -4314,7 +4314,9 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
   first launch's inline word only.
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
-conversation (`src/plugins/butler/main/butler.ts`).
+conversation, and the owner's instructions for a Claude Code butler, handed only when a
+conversation starts, since a resume keeps those it started with
+(`src/plugins/butler/main/butler.ts`).
 
 ## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
 

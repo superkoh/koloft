@@ -7010,7 +7010,9 @@ function registerIpc(): void {
   })
   registerButlerChannels(pluginIpc, {
     butler: () => loadSettings().butler,
-    save: (butler) => void commitSettings({ butler })
+    save: (butler) => {
+      commitSettings({ butler })
+    }
   })
   ipcMain.handle(
     CH.sessionDefaults.read,
