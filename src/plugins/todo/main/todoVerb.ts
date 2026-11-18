@@ -1,29 +1,29 @@
-import type { BackendId, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { BackendId, McpServer, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { ageLabel } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
-import { TODO_METHOD } from '@shared/agentGuide'
 import {
   answered,
+  cutForATurn,
   EXIT_USAGE,
   refused,
   splitAtDashes,
   type AgentReply,
   type AgentVerb
-} from './agentRequests'
-import { cutForATurn } from './agentGithub'
+} from '@core/command'
+import { mapAtMost } from '@core/mapAtMost'
 import {
+  GITHUB_NOT_ASKED,
   placedRows,
   resolveWorkspace,
   workspaceLabel,
+  type MergedHeads,
   type PinnedWorkspace,
   type PlacedRow
-} from './agentSessions'
-import type { TodoPull, TodoPulls } from './github'
-import { mapAtMost } from './mapAtMost'
-import { mcpLines, type McpServer } from './mcpServers'
-import { GITHUB_NOT_ASKED, type MergedHeads } from './sessionClose'
+} from '@plugins/sessions/api'
+import type { TodoPull, TodoPulls } from '@plugins/github/api'
+import { TODO_METHOD } from './method'
 
 export const TODO_ONLY_FOR_THE_BUTLER =
   'koloft todo: only the butler and the helpers it starts in its own folder can use it.'
@@ -279,6 +279,34 @@ async function pullsOfRepos(d: TodoVerbDeps, workspaces: WorkspaceFacts[]): Prom
     })
   )
   return pulled.filter((p): p is PullsOfRepo => !!p)
+}
+
+function reachText(s: McpServer): string {
+  return `${BACKEND_LABEL[s.backend]} (${s.onlyIn ? `only in ${s.onlyIn}` : 'everywhere'})`
+}
+
+function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): string[] {
+  if (!servers.length) return ['No agent has an MCP server set up.']
+  const names = [...new Set(servers.map((s) => s.name))].sort()
+  const reachOf = (name: string): string =>
+    [
+      ...new Set(
+        servers
+          .filter((s) => s.name === name)
+          .sort((a, b) => SESSION_BACKENDS.indexOf(a.backend) - SESSION_BACKENDS.indexOf(b.backend))
+          .map(reachText)
+      )
+    ].join(', ')
+  const lines = names.map((name) => `- ${name}: ${reachOf(name)}`)
+  const reachable = names.filter((name) =>
+    servers.some(
+      (s) => s.name === name && s.backend === mine && (!s.onlyIn || s.onlyIn === myFolder)
+    )
+  )
+  return [
+    ...lines,
+    `You and your helpers run on ${BACKEND_LABEL[mine]}, so you can use: ${reachable.join(', ') || 'none of them'}.`
+  ]
 }
 
 async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {

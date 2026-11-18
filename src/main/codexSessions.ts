@@ -91,7 +91,7 @@ import {
   type ListedHook
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
-import { mapAtMost } from './mapAtMost'
+import { mapAtMost } from '@core/mapAtMost'
 import { seedAssistMemory } from './assistMemory'
 import { pipeSecretTo } from './secretOnStdin'
 import {
