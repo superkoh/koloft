@@ -647,11 +647,10 @@ import {
 } from './agentSessions'
 import {
   A_HELPER_HAS_IT,
-  FROM_KOLOFT,
+  TODO_NOTICE_FROM_KOLOFT,
   crossSessionLine,
   writeLineInTurn
 } from './crossSessionMessage'
-import { TODO_NOTICE } from '@plugins/todo/api'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -4078,7 +4077,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
-    todoNotice: `${FROM_KOLOFT}${TODO_NOTICE}`,
+    todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })

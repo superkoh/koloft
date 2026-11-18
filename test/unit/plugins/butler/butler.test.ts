@@ -11,8 +11,7 @@ import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
-
-const TODO_NOTICE = 'Koloft got koloft todo since this conversation began.'
+import { TODO_NOTICE_FROM_KOLOFT } from '../../../../src/main/crossSessionMessage'
 
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
@@ -85,7 +84,7 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
-    todoNotice: TODO_NOTICE,
+    todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
@@ -240,7 +239,9 @@ describe('the butler', () => {
     noticeArrives = false
     const c = make()
     expect(await c.open()).toEqual({ ok: true, tabId: tab })
-    expect(notices).toEqual([TODO_NOTICE])
+    expect(notices).toEqual([
+      '(From Koloft:) Koloft got a new command after this conversation began: koloft todo. When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints. There is nothing to answer now.'
+    ])
     c.onPtyExit(tab)
     noticeArrives = true
     await c.open()
