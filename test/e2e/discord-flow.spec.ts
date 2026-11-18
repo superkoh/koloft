@@ -361,7 +361,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is, and once the owner is away the next reply to a helper is posted', async ({
+  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is and leaves no mark, and once the owner is away the next reply to a helper is posted and leaves none either', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -393,6 +393,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('helper note two')
+      expect(await turnDoneAt()).toBe(0)
     } finally {
       await quitAndClose(app)
       await fake.close()
