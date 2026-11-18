@@ -59,22 +59,6 @@ function alive(pid) {
   }
 }
 
-function sizeOf(file) {
-  try {
-    return fs.statSync(file).size
-  } catch {
-    return 0
-  }
-}
-
-function readBetween(file, from, to) {
-  const buf = Buffer.alloc(to - from)
-  const fd = fs.openSync(file, 'r')
-  fs.readSync(fd, buf, 0, buf.length, from)
-  fs.closeSync(fd)
-  return buf
-}
-
 function attach(name, paneJustStarted = false) {
   const rec = recordOf(name)
   const pid = rec?.pid ?? 0
@@ -102,19 +86,15 @@ function attach(name, paneJustStarted = false) {
 
   let off = 0
   let held = ''
-  // PLATFORM§35
-  const printedWhileDetached = paneJustStarted ? 0 : sizeOf(outPath(io))
   const pump = () => {
     keysAtOnceOnceThePaneIsRaw()
     try {
-      if (off < printedWhileDetached) {
-        const redrawn = readBetween(outPath(io), off, printedWhileDetached)
-        off = printedWhileDetached
-        process.stdout.write(passThrough(redrawn, false))
-      }
       const size = fs.statSync(outPath(io)).size
       if (size <= off) return
-      const buf = readBetween(outPath(io), off, size)
+      const buf = Buffer.alloc(size - off)
+      const fd = fs.openSync(outPath(io), 'r')
+      fs.readSync(fd, buf, 0, buf.length, off)
+      fs.closeSync(fd)
       off = size
       process.stdout.write(passThrough(buf, true))
     } catch {}
@@ -131,6 +111,15 @@ function attach(name, paneJustStarted = false) {
     const passes = attached && !fs.existsSync(path.join(STATE, 'no-passthrough'))
     text = text.replace(DCS, (_, inner) => (passes ? inner.replace(/\x1b\x1b/g, '\x1b') : ''))
     return Buffer.from(text, 'latin1')
+  }
+  // PLATFORM§35
+  if (!paneJustStarted) {
+    try {
+      const printedWhileDetached = fs.readFileSync(outPath(io))
+      off = printedWhileDetached.length
+      process.stdout.write(passThrough(printedWhileDetached, false))
+      held = ''
+    } catch {}
   }
   setInterval(pump, 80)
   setInterval(() => {
