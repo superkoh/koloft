@@ -4,7 +4,7 @@ import { accountToSignInAgain } from '@shared/accountUsage'
 import { assistRunsOn } from '@shared/assistPicks'
 import { settingsPaneName } from '@shared/paletteFeatures'
 import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
-import { assistInputs } from '../butlerRows'
+import { assistInputs } from '../assistInputs'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import {

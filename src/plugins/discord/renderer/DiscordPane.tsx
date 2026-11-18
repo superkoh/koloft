@@ -1,16 +1,11 @@
 import { useState, type JSX } from 'react'
-import { IconPlus } from '../../icons'
+import { IconPlus } from '@renderer/icons'
 import { butlerTitle, channelLabel, setUpWith } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
-import { useStore } from '../../store'
-import { setUpDiscordWithButler } from '../ButlerRow'
-import {
-  messageContentByHand,
-  statusClass,
-  statusText,
-  useDiscordStatus
-} from '../../discordStatus'
-import '../../accounts.css'
+import { useStore } from '@renderer/store'
+import { setUpDiscordWithButler } from './setUpWithButler'
+import { messageContentByHand, statusClass, statusText, useDiscordStatus } from './status'
+import '@renderer/accounts.css'
 
 export function DiscordPane(): JSX.Element {
   const discord = useStore((s) => s.settings.discord)

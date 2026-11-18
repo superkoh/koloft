@@ -1,4 +1,4 @@
-import { BACKEND_LABEL, capabilitiesFor, identityOf, type LaunchMenu } from '@shared/sessionBackend'
+import { BACKEND_LABEL, identityOf, type LaunchMenu } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
@@ -17,7 +17,6 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconAssist,
   IconBranch,
   IconCheck,
   IconChevronDown,
@@ -30,19 +29,16 @@ import {
   IconNewWorktree,
   IconPin,
   IconPlus,
-  IconPullRequest,
-  IconScheduled
+  IconPullRequest
 } from '../icons'
 import type { BackendId, HostId, MachineState, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { attentionReason } from '@shared/types'
 import { noAccountLine, popoverX } from '@shared/accountUsage'
-import { slugOf } from '@shared/cronNames'
-import { describeWhen } from '@shared/schedule'
-import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
   endedTabOf,
+  everyWorkspaceRows,
   isOrphanRow,
   liveTabOf,
   marqueeAnim,
@@ -75,9 +71,17 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
-import { ButlerRow } from './ButlerRow'
+import { ButlerRow } from '@plugins/butler/renderer/ButlerRow'
+import { StartedByButler, useStartedByButler } from '@plugins/butler/renderer/startedBy'
+import { useDiscordOnButlerRow } from '@plugins/discord/renderer/onButlerRow'
+import {
+  CronMark,
+  NextJobLine,
+  nextJobIn,
+  startedByAJob,
+  useNextJobClock
+} from '@plugins/scheduled-tasks/renderer/sidebarMarks'
 import { InboxRow } from './Inbox'
-import { everyWorkspaceRows } from '../butlerRows'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -91,8 +95,6 @@ import '../workspaceSidebar.css'
 
 const FORCE_CLOSE_FAILED_NOTICE =
   'Could not force close — the session may be running outside Koloft.'
-
-const CRON_BADGE_MS = 30_000
 
 const ENDED_ROW_TIP = 'Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it'
 
@@ -262,12 +264,6 @@ interface SidebarActions {
   openDoor: (path: string, isGit: boolean) => void
 }
 
-const CronMark = (): JSX.Element => (
-  <span className="ws-tab-cron" title="started by a scheduled job">
-    <IconScheduled size={12} />
-  </span>
-)
-
 const SessionRowView = memo(function SessionRowView({
   id,
   className,
@@ -389,11 +385,7 @@ const SessionRowView = memo(function SessionRowView({
         )}
       </div>
       <div className="ws-tab-sub">
-        {startedBy && (
-          <span className="session-backend-icon" title={`started by ${startedBy}`}>
-            <IconAssist size={12} />
-          </span>
-        )}
+        {startedBy && <StartedByButler name={startedBy} />}
         {backend && <SessionBackendIcon backend={backend} />}
         <span>{worktree}</span>
         {memory !== undefined && <span>{memory}</span>}
@@ -1048,9 +1040,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }): JSX.Element {
   const listedRows = useStore((s) => s.workspaceRows)
   const welcomeActive = useStore((s) => s.welcomeActive)
-  const butlerName = useStore((s) => s.settings.butler.name)
   const listedButler = useStore((s) => s.butlerWorkspace)
-  const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
+  const startedByButler = useStartedByButler()
+  const discordOnButlerRow = useDiscordOnButlerRow()
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
@@ -1080,14 +1072,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const confirmOrphan = useStore((s) => s.orphanConfirm)
   const setConfirmOrphan = useStore((s) => s.setOrphanConfirm)
   const floating = useRef<FloatingCtl | null>(null)
-  const [, bumpCronClock] = useState(0)
-
-  const showsAClock = cron.jobs.length > 0
-  useEffect(() => {
-    if (!showsAClock) return
-    const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
-    return () => clearInterval(t)
-  }, [showsAClock])
+  useNextJobClock(cron)
 
   useEffect(() => {
     if (confirmRemove && confirmRemove.dirty.length > 0) removeCancelRef.current?.focus()
@@ -1150,14 +1135,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const look = rowLookups(sessions, storeTabs, attention)
   const callingAmong = (list: SessionRow[]): number =>
     list.filter((r) => look.attentionOn(r.id, look.tabOf(r))).length
-  const cronLiveTabs = new Set(cron.live.map((l) => l.tabId))
-  const cronLiveSessions = new Set(cron.live.map((l) => l.sessionId))
-  const cronWorktreePrefixes = new Map<string, string[]>()
-  for (const j of cron.jobs) {
-    const list = cronWorktreePrefixes.get(j.workspacePath) ?? []
-    list.push(slugOf(j.name) + '-')
-    cronWorktreePrefixes.set(j.workspacePath, list)
-  }
+  const startedByJob = startedByAJob(cron)
   const live = useRef({ onNewSession, onNewWorktreeSession })
   live.current = { onNewSession, onNewWorktreeSession }
 
@@ -1306,7 +1284,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     sessionRows: SessionRow[]
   ): ((node: RowNode<SessionRow>) => JSX.Element) => {
     const showBackend = mixesBackends(sessionRows)
-    const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
     const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
       const { row } = node
       const ended = endedTabOf(row, storeTabs, sessions)
@@ -1330,11 +1307,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       const resumingNow =
         !ended && !running && !row.pending && (launching || look.hasAliveTab(row.id))
       const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
-      const isCronRow =
-        capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
-        ((!!tabId && cronLiveTabs.has(tabId)) ||
-          cronLiveSessions.has(row.id) ||
-          (row.worktree !== 'main' && cronPrefixes.some((p) => row.worktree.startsWith(p))))
       const folded = node.children.length > 0 && !!foldedRows[row.id]
       const hidden = folded ? rowsUnder(node) : []
       return (
@@ -1353,7 +1325,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       ? ' — worktree deleted; click to rebuild and resume'
                       : ' — click to resume')
             }
-            cron={isCronRow}
+            cron={startedByJob(wsPath, row, tabId)}
             resident={!!row.resident}
             title={shownTitle(row.title, sess?.title)}
             callingReason={calling && attentionReason(calling)}
@@ -1367,7 +1339,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             parent={node.children.length > 0}
             folded={folded}
             backend={showBackend ? row.backendId : undefined}
-            startedBy={row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined}
+            startedBy={startedByButler(row.parentId)}
             worktree={ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
             memory={memoryShown(machine, tabId)}
             activity={rowActivityLine(shownCls, sess)}
@@ -1393,7 +1365,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
-          <ButlerRow>
+          <ButlerRow {...discordOnButlerRow}>
             {butlerWorkspace &&
               sessionTree(butlerWorkspace.rows).map(
                 rowRenderer(butlerWorkspace.workspace.path, butlerWorkspace.rows)
@@ -1412,8 +1384,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             const behind = behindBadge(ws.freshness, now.getTime())
             const door = doorFor(ws.isGit)
             const callingInside = open ? 0 : callingAmong(sessionRows)
-            const soon =
-              ws.missing || !open ? null : forecastFor(cron.jobs, cron.live, ws.path, now)
+            const soon = ws.missing || !open ? null : nextJobIn(cron, ws.path, now)
             const sessionRow = rowRenderer(ws.path, sessionRows)
             return (
               <div
@@ -1450,23 +1421,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 {open && (soon || sessionRows.length > 0 || !ws.missing) && (
                   <div className="ws-tabs">
                     {soon && (
-                      <div
-                        className="ws-next"
-                        title={soon.title}
-                        onClick={(e) => {
-                          e.stopPropagation()
+                      <NextJobLine
+                        soon={soon}
+                        now={now}
+                        onOpen={() => {
                           floating.current?.dismissMenu()
                           onScheduledJobs(ws.path, soon.id)
                         }}
-                      >
-                        <IconScheduled size={12} className="ws-next-ico" />
-                        <span className="ws-next-name">{soon.name}</span>
-                        {soon.more > 0 && <span className="ws-next-more">{`+${soon.more}`}</span>}
-                        <span className="ws-next-dot">·</span>
-                        <span className={'ws-next-at' + (soon.soon ? ' soon' : '')}>
-                          {describeWhen(soon.at, now)}
-                        </span>
-                      </div>
+                      />
                     )}
                     {sessionTree(sessionRows).map(sessionRow)}
                     {sessionRows.length === 0 && !ws.missing && (
