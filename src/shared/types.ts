@@ -1,11 +1,6 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
-import {
-  DEFAULT_BUTLER_NAME,
-  type ButlerSession,
-  type ButlerSetting
-} from '@plugins/butler/shared/types'
-import type { DiscordSettings } from '@plugins/discord/shared/types'
+import type { PluginSettingValues } from '@plugins/settings'
 
 export interface ProjectInfo {
   root: string
@@ -328,7 +323,7 @@ export interface AccountAddResult {
   account?: AccountView
 }
 
-export interface Settings {
+export interface AppSettings {
   sessionMethods: SessionMethods
   fontFamily: string
   fontSize: number
@@ -361,12 +356,9 @@ export interface Settings {
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
-  butler: ButlerSetting
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
-  discord: DiscordSettings
-  butlerSession: ButlerSession
   gitAccounts: GitAccount[]
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
@@ -374,6 +366,8 @@ export interface Settings {
   todoNotes: Record<string, string>
   sessionDefaults: Record<string, SessionDefaults>
 }
+
+export type Settings = AppSettings & PluginSettingValues
 
 export interface OwnPick {
   model?: string
@@ -438,7 +432,7 @@ export const WORLD_CLOCK_MAX = 3
 
 export const SIDEBAR_MIN = 240
 
-export const DEFAULT_SETTINGS: Settings = {
+export const APP_DEFAULT_SETTINGS: AppSettings = {
   sessionMethods: {
     defaultBackend: 'claude',
     enabled: { claude: true, codex: true, muse: true, agy: true }
@@ -473,12 +467,9 @@ export const DEFAULT_SETTINGS: Settings = {
   worldClocks: [],
   onboardingSeen: false,
   assist: {},
-  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
-  discord: {},
-  butlerSession: { sessionIds: [] },
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],

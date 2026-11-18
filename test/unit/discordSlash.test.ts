@@ -9,8 +9,12 @@ describe('a slash command run from Discord', () => {
       say: () => undefined,
       card: async (_id, card) => void accents.push(card.accent)
     }))
-    to.result({ target: { name: 'Alfred', tabId: 't1', butler: true }, header: 'h', body: 'b' })
-    to.result({ target: { name: 'fix-login', tabId: 't2', butler: false }, header: 'h', body: 'b' })
+    to.result({ target: { name: 'Alfred', tabId: 't1', overseer: true }, header: 'h', body: 'b' })
+    to.result({
+      target: { name: 'fix-login', tabId: 't2', overseer: false },
+      header: 'h',
+      body: 'b'
+    })
     expect(accents).toEqual([CONDUCTOR_ACCENT, accentOf('fix-login')])
   })
 })

@@ -11,6 +11,7 @@ export const plugin: PluginManifest = {
   name: 'Discord',
   mandatory: false,
   needs: ['butler'],
+  settings: { keys: ['discord'] },
   commands: [{ verb: 'discord' }],
   text: [...TEXT, ...SKILL_TEXT],
   ui: [{ place: 'dialog', id: DISCORD_BIND }],

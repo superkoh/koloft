@@ -112,7 +112,8 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
-import { OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import { PALETTE_RUN } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -128,7 +129,6 @@ import { someAccountCanRunAssist } from './assistInputs'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { PastSessions } from './components/PastSessions'
-import { CronJobsDialog } from './components/CronJobsDialog'
 import { SessionDefaultsDialog } from './components/SessionDefaultsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf, isRemoteKey } from '@shared/remoteKey'
@@ -156,7 +156,7 @@ import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
 import {
   PALETTE_FEATURES,
-  type PaletteActionKey,
+  type CorePaletteAction,
   type PaletteFeature
 } from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
@@ -326,7 +326,6 @@ export default function App(): JSX.Element {
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
-  const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
@@ -429,10 +428,6 @@ export default function App(): JSX.Element {
   const newWorktreeSessionIn = useCallback(
     (path: string) => requestNew('worktree', path),
     [requestNew]
-  )
-  const openScheduledJobs = useCallback(
-    (path: string, jobId?: string) => setCronWs({ path, jobId }),
-    []
   )
 
   const startNow = useCallback(
@@ -1267,7 +1262,7 @@ export default function App(): JSX.Element {
     const hasHistory = workspaceRows.some(
       (w) => w.workspace.path === currentWs && w.workspace.hasHistory
     )
-    const run: Record<PaletteActionKey, () => void> = {
+    const run: Record<CorePaletteAction, () => void> = {
       'new-session': () => globalNew('main'),
       'new-worktree-session': () => globalNew('worktree'),
       'add-workspace': () => void addWorkspace(),
@@ -1276,20 +1271,26 @@ export default function App(): JSX.Element {
       'toggle-workbench': toggleWorkbench,
       'toggle-sidebar': toggleSidebar,
       'restore-session': () => setRestoreWs(currentWs),
-      'scheduled-jobs': () => currentWs && setCronWs({ path: currentWs }),
       'open-settings': () => setSettingsOpen(true),
       'check-update': () => useStore.getState().openUpdateCheck()
     }
     const disabled: Partial<Record<PaletteFeature['key'], boolean>> = {
-      'restore-session': !hasHistory,
-      'scheduled-jobs': !currentWs
+      'restore-session': !hasHistory
     }
-    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => ({
-      ...f,
-      kind: 'action',
-      disabled: disabled[f.key],
-      run: pane ? () => useStore.getState().openSettingsPane(pane) : run[f.key as PaletteActionKey]
-    }))
+    const fromPlugins = fillsOf(PALETTE_RUN)
+    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => {
+      const plugin = fromPlugins.find((a) => a.key === f.key)
+      return {
+        ...f,
+        kind: 'action',
+        disabled: plugin ? plugin.disabled(currentWs) : disabled[f.key],
+        run: pane
+          ? () => useStore.getState().openSettingsPane(pane)
+          : plugin
+            ? () => plugin.run(currentWs)
+            : run[f.key as CorePaletteAction]
+      }
+    })
   }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
@@ -1624,7 +1625,6 @@ export default function App(): JSX.Element {
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onSessionDefaults={setDefaultsWs}
-            onScheduledJobs={openScheduledJobs}
           />
           {updateOffer && (
             <button
@@ -2045,14 +2045,6 @@ export default function App(): JSX.Element {
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}
               onClose={() => setRemoteDialog(false)}
-            />
-          )}
-          {cronWs && (
-            <CronJobsDialog
-              key={cronWs.path}
-              wsPath={cronWs.path}
-              initialJobId={cronWs.jobId}
-              onClose={() => setCronWs(null)}
             />
           )}
           {defaultsWs && (

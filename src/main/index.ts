@@ -598,8 +598,10 @@ import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
-import { moment, type FileOpened } from '@core/moment'
+import { moment, type FileOpened, type SessionStarted, type SessionStarting } from '@core/moment'
+import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
+import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
 import {
   registerChannels as registerCronChannels,
@@ -641,7 +643,7 @@ import {
   findSessionRow,
   registerSessionCommands,
   sessionVerb,
-  type ButlerHelperTask,
+  type HelperTask,
   type ClosableSession,
   type SessionScreen,
   type SessionVerbDeps,
@@ -2116,6 +2118,17 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
   return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
 }
 
+const sessionStarting = moment<SessionStarting>()
+const sessionStarted = moment<SessionStarted>()
+const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
+const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
+tellEachHelperItsRole(sessionStarting, () => butlerHelperRole(butlerNameNow()))
+giveEachStartedSessionARoom(sessionStarted, {
+  isButler: isButlerNow,
+  butlerFolder: butlerFolderNow,
+  roomFor: roomForNew
+})
+
 const sessionDeps: SessionVerbDeps = {
   projectRules: rulesOf,
   pickFacts: async (backend) => ({
@@ -2151,10 +2164,8 @@ const sessionDeps: SessionVerbDeps = {
         if (!closed) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow, ...butlersWords },
   speaksForTheOwner: butlerSide,
-  butlerFolder: () => conductorFolder(app.getPath('userData')),
-  butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
@@ -2164,7 +2175,6 @@ const sessionDeps: SessionVerbDeps = {
     const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
     return dir ? quotedPrompt(dir, tabId) : undefined
   },
-  butlerTarget,
   resume: async (row) => {
     const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
     if (!resumed.ok) throw new Error(resumed.error)
@@ -2185,7 +2195,7 @@ const sessionDeps: SessionVerbDeps = {
   undelivered: (callerTab, target, why) => {
     const callerChannel = discordBinding?.channelOfTab(callerTab)
     const channelId =
-      callerChannel ?? (target.butler ? discordBinding?.channel()?.channelId : undefined)
+      callerChannel ?? (target.overseer ? discordBinding?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
     const butlerTab = callerChannel ? callerTab : butler?.liveTab()
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
@@ -2194,16 +2204,18 @@ const sessionDeps: SessionVerbDeps = {
     if (callerChannel) void handOver?.tell(butlerRecipient(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
+    target.overseer && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
-  roomOf: (key) => {
+  rowNote: (key) => {
     const room = rooms?.ofKey(key)
     if (!room) return undefined
     return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
   },
-  roomForNew
+  announceStarting: sessionStarting.announce,
+  announceStarted: sessionStarted.announce,
+  ownersWords: withoutTheRelayTag
 }
 const sessionCommand = sessionVerb(sessionDeps)
 
@@ -2433,7 +2445,7 @@ registerTodoCommand(commands, {
   projectFiles: async (wsPath) => (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
   readText: (file) => hosts.of(file).readText(file),
   servers: mcpServersNow,
-  butlerFolder: sessionDeps.butlerFolder,
+  butlerFolder: butlerFolderNow,
   now: Date.now
 })
 
@@ -3761,7 +3773,6 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     if (t.prev === 'approval') askEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
-    const onDiscord = !!discordBinding?.channelOfTab(t.tabId)
     const asksOnDiscord = !!askChannelOfTab(t.tabId)
     if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
@@ -3772,8 +3783,7 @@ app.whenReady().then(() => {
     if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
     if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
-    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
+    attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -4038,6 +4048,8 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
+  attention.turnTakenElsewhere = (tabId) =>
+    !!bindingNow.channelOfTab(tabId) && !!discordRelay?.reaches(tabId)
   butler = new Butler({
     userData,
     realpath: realpathSafe,
@@ -6471,7 +6483,7 @@ function roomDestination(threadId: string): Destination | undefined {
     },
     typeCommand: async (tabId, command) => {
       await slash.typeWhenIdle(
-        { name: room.name, tabId, butler: false },
+        { name: room.name, tabId, overseer: false },
         command,
         toChannel(threadId, () => discordRelay)
       )
@@ -6533,13 +6545,13 @@ async function openRoomByRef(ref: string): Promise<AgentReply> {
   )
 }
 
-async function roomForNew(
-  callerTab: string,
-  tabId: string,
-  workspace: string,
-  name: string | undefined
-): Promise<string | undefined> {
-  if (!rooms || !discordRelay?.answeringDiscord(callerTab)) return undefined
+async function roomForNew({
+  by,
+  tabId,
+  workspace,
+  name
+}: SessionStarted): Promise<string | undefined> {
+  if (!rooms || !discordRelay?.answeringDiscord(by)) return undefined
   const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
   if (!backend) return undefined
   const subject: RoomSubject = {
@@ -6580,7 +6592,7 @@ function butlerDestination(): Destination {
       const channelId = discordBinding?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
       await slash.typeWhenIdle(
-        { name: butlerNameNow(), tabId, butler: true },
+        { name: butlerNameNow(), tabId, overseer: true },
         command,
         toChannel(channelId, () => discordRelay)
       )
@@ -6590,7 +6602,7 @@ function butlerDestination(): Destination {
 }
 
 function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
-  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, butler: !!t.butler })
+  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, overseer: !!t.overseer })
   if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()
@@ -6618,7 +6630,7 @@ function fromPalette(
 }
 
 async function startHelper(
-  task: (butler: SessionInfo) => ButlerHelperTask
+  task: (butler: SessionInfo) => HelperTask
 ): Promise<ConductorOpenResult> {
   // AGY§8
   const opened = await butler?.open(A_HELPER_HAS_IT)
@@ -6628,7 +6640,7 @@ async function startHelper(
     ? sessionOfTab(opened.tabId)
     : undefined
   if (!parent) return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
-  const tabId = await sessionCommand.startButlerHelper(parent, task(parent))
+  const tabId = await sessionCommand.startHelper(parent, task(parent))
   return tabId ? { ok: true, tabId } : { ok: false, error: 'Koloft could not start a helper.' }
 }
 
@@ -6653,7 +6665,7 @@ function butlerTarget(ref: string): Target | undefined {
       (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || assistRowBackend('butler', loadSettings()),
     remote: false,
     tabId,
-    butler: true,
+    overseer: true,
     open: async () => {
       const opened = await all.open()
       if (!opened.ok) throw new Error(opened.error)
