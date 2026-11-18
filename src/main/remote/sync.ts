@@ -1,5 +1,5 @@
 import { encodeCwd } from '@shared/cwdKey'
-import { mapAtMost } from '../mapAtMost'
+import { mapAtMost } from '@core/mapAtMost'
 import { problemOf, refusedByAFullMaster, type RunResult } from './ssh'
 import {
   heartbeatCmd,

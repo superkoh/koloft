@@ -76,23 +76,23 @@ exit 0
 const GH_AUTH_SUBCOMMANDS = ['login', 'logout', 'switch', 'refresh', 'setup-git', 'token', 'status']
 
 // ADR-0029
-function inButlerFolderRunKoloftGh(butlerFolder: string): string {
-  return `butler="$(cd ${shq(butlerFolder)} 2>/dev/null && pwd -P)"
-if [ -n "$butler" ] && [ -x "$self/koloft" ]; then
-  case "$(pwd -P)/" in "$butler"/*) exec "$self/koloft" gh "$@" ;; esac
+function inFolderRunKoloftGh(koloftGhFolder: string): string {
+  return `folder="$(cd ${shq(koloftGhFolder)} 2>/dev/null && pwd -P)"
+if [ -n "$folder" ] && [ -x "$self/koloft" ]; then
+  case "$(pwd -P)/" in "$folder"/*) exec "$self/koloft" gh "$@" ;; esac
 fi
 `
 }
 
 // PLATFORM§49
-export function ghWrapperScript(requestDir: string, butlerFolder: string): string {
+export function ghWrapperScript(requestDir: string, koloftGhFolder: string): string {
   return ghWrapper(
     `proto=""
 host=""
 ${requestFns(requestDir)}
 ask gh-token "$acct"
 tok=${replyField('token')}`,
-    inButlerFolderRunKoloftGh(butlerFolder)
+    inFolderRunKoloftGh(koloftGhFolder)
   )
 }
 

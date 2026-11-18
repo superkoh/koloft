@@ -17,6 +17,14 @@ export {
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
+export {
+  placedRows,
+  resolveWorkspace,
+  workspaceLabel,
+  type PinnedWorkspace,
+  type PlacedRow
+} from './main/placedRows'
+export { GITHUB_NOT_ASKED, type MergedHeads } from '../../main/sessionClose'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

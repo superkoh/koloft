@@ -1,7 +1,7 @@
 import fs from 'fs'
 import readline from 'readline'
 import type { SearchSnippet } from '@shared/types'
-import { mapAtMost } from './mapAtMost'
+import { mapAtMost } from '@core/mapAtMost'
 import { messageText } from './messageText'
 
 export interface TranscriptFile {
