@@ -1,6 +1,6 @@
 import type { MainIpc } from '@core/ipc'
 import type { SecretAskView } from '@shared/types'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 import type { SecretAsks } from './secretAsks'
 
 type Asks = Pick<SecretAsks, 'views' | 'answer' | 'done' | 'decline'>

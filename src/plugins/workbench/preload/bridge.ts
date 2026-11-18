@@ -13,7 +13,7 @@ import type {
   SearchHit,
   SessionWorkbenchState
 } from '@shared/types'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface WorkbenchBridge {
   workbench: {

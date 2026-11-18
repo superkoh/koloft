@@ -1,7 +1,7 @@
 import type { MainIpc } from '@core/ipc'
 import { errorText } from '@core/errorText'
 import { INBOX_LEVELS, type InboxAnswers, type InboxLevel, type InboxSnapshot } from '@shared/inbox'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface Cards {
   snapshot(): InboxSnapshot
