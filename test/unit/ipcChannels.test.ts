@@ -42,7 +42,7 @@ const PLUGIN_PARTS = await Promise.all(
     }
   })
 )
-const PLUGIN_CALL = String.raw`ipc\.(handle|push|invoke|listen)\(\s*([^,)\s]+)`
+const PLUGIN_CALL = String.raw`ipc\.(handle|on|push|invoke|send|listen)\(\s*([^,)\s]+)`
 const pluginCalls = (p: (typeof PLUGIN_PARTS)[number]): { call: string; channel: string }[] =>
   [...`${p.main}\n${p.preload}`.matchAll(new RegExp(PLUGIN_CALL, 'g'))].map((m) => ({
     call: m[1],
@@ -74,7 +74,10 @@ const rendererInvokes = new Set([
   ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.invoke`),
   ...fromPlugins('invoke')
 ])
-const rendererSends = channels(RENDERER_SIDE, String.raw`ipcRenderer\.(?:send|sendSync)`)
+const rendererSends = new Set([
+  ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.(?:send|sendSync)`),
+  ...fromPlugins('send')
+])
 const rendererListens = new Set([
   ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.on`),
   ...fromPlugins('listen')
@@ -83,7 +86,7 @@ const mainHandles = new Set([
   ...channels(MAIN, String.raw`ipcMain\.handle`),
   ...fromPlugins('handle')
 ])
-const mainOns = channels(MAIN, String.raw`ipcMain\.on`)
+const mainOns = new Set([...channels(MAIN, String.raw`ipcMain\.on`), ...fromPlugins('on')])
 const menuMapStart = MAIN.indexOf('const MENU_SHORTCUT_CHANNEL')
 const menuMap = MAIN.slice(menuMapStart, MAIN.indexOf('\n}\n', menuMapStart))
 const mainSends = new Set([
