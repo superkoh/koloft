@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { PluginManifest } from '@core/plugin'
 import { PLUGINS } from '@plugins/list'
+import { ASSIST_ROWS } from '@shared/assistPicks'
 
 const PLUGIN_FOLDERS = path.join(__dirname, '..', '..', 'src', 'plugins')
 
@@ -35,5 +36,9 @@ describe('the list of plugins', () => {
     for (const p of PLUGINS.filter((q) => q.mandatory))
       for (const need of p.needs)
         expect(byId.get(need)?.mandatory, `${p.id} needs ${need}`).toBe(true)
+  })
+
+  it('no two Assist jobs share an id, and none takes the butler row’s, since the owner’s pick is saved under it', () => {
+    expect(new Set(ASSIST_ROWS).size).toBe(ASSIST_ROWS.length)
   })
 })
