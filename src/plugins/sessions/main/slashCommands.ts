@@ -55,7 +55,7 @@ export const AN_ENTER_LANDS_WITHIN_MS = 2000
 export interface SlashTarget {
   name: string
   tabId: string
-  butler: boolean
+  overseer: boolean
 }
 
 export interface SlashDeps {
@@ -134,7 +134,7 @@ function resultOf(p: Pending, screen: string[] | undefined): SlashResult | undef
   const said = details.length && !p.worked ? details : printed
   const body: string[] = []
   if (p.newKey) body.push(`It is a new conversation now, with the id ${p.newKey}.`)
-  if (p.reply && !p.target.butler) body.push(p.reply)
+  if (p.reply && !p.target.overseer) body.push(p.reply)
   else if (said.length) body.push(said.join('\n\n'))
   if (!body.length && p.reply) return undefined
   if (!body.length && p.worked) body.push('Done.')
