@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { workbenchVerbs } from '../../../../src/plugins/workbench/main/workbenchVerbs'
-import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../../../src/main/agentRequests'
+import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../../../src/core/command'
 import type { FileOpened } from '../../../../src/core/moment'
 
 let dir: string

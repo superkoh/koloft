@@ -8,7 +8,7 @@ import {
   CRON_NEEDS_A_WORKSPACE,
   type CronVerbDeps
 } from '../../../../src/plugins/scheduled-tasks/main/cronVerb'
-import { EXIT_USAGE, NOT_PINNED } from '../../../../src/main/agentRequests'
+import { EXIT_USAGE, NOT_PINNED } from '../../../../src/core/command'
 import type { BackendId, CronJob, SessionInfo } from '../../../../src/shared/types'
 
 const NOW = new Date(2026, 8, 2, 10, 0, 0, 0)

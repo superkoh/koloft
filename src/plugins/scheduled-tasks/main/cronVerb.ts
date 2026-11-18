@@ -30,12 +30,12 @@ import {
   answered,
   EXIT_USAGE,
   fail,
+  NOT_PINNED,
   refused,
   type AgentReply,
   type AgentVerb,
   type Parsed
 } from '@core/command'
-import { NOT_PINNED } from '../../../main/agentRequests'
 import type { Commands } from '@core/commands'
 
 const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
