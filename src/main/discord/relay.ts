@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendId } from '@shared/types'
+import type { BackendId, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@shared/conductors'
@@ -21,7 +21,6 @@ import type { PlacedAsk } from './buttons'
 import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
-import type { ToolCall } from '../sessionTracker'
 import {
   MESSAGE_SOCKET_SHOWS_WITHIN_MS,
   crossSessionLine,
@@ -41,8 +40,7 @@ import {
 import {
   answerKeysOf,
   CODEX_NEEDS_YES_OR_NO,
-  SessionAsks,
-  type SessionAskDeps
+  type SessionAsks
 } from '@plugins/sessions/main/sessionAsks'
 
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
@@ -53,15 +51,6 @@ export const unreadableInRoom = (butler: string, lobby: string | undefined): str
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 
-// MUSE§7 AGY§15
-const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
-  claude: true,
-  codex: true,
-  muse: false,
-  agy: true
-}
-const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
-  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const QUEUED = '⏳'
 const DELIVERED = '✅'
 const PAGE = 100
@@ -89,7 +78,25 @@ export interface CaughtUpChannel {
   handsOverTo?: Destination
 }
 
-export interface RelayDeps extends SessionAskDeps {
+export interface RelayDeps {
+  backendOf(tabId: string): BackendId | undefined
+  status(tabId: string): SessionStatus | undefined
+  awaitsInput(tabId: string): boolean
+  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
+  pendingApproval(tabId: string): CodexApproval | undefined
+  pendingQuestion(tabId: string): CodexQuestion | undefined
+  asks: Pick<
+    SessionAsks,
+    | 'listen'
+    | 'dialogOpen'
+    | 'typable'
+    | 'takesCommand'
+    | 'askOf'
+    | 'stillAsks'
+    | 'claudeAskAnswerable'
+    | 'dropClaudeAsk'
+    | 'answerSession'
+  >
   link: Pick<DiscordLink, 'post' | 'upload' | 'react' | 'messages' | 'card'>
   download(url: string): Promise<Buffer>
   owner(): string | undefined
@@ -108,10 +115,8 @@ export interface RelayDeps extends SessionAskDeps {
   withButtons(tabId: string, view: DialogView, card: Card): Card
   askPlaced(card: Card, at: PlacedAsk | undefined): void
   boundKey(tabId: string): string | undefined
-  showsPromptBeforeBind(tabId: string): boolean
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
-  queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   modeOf(tabId: string): ModeClass
@@ -154,10 +159,9 @@ export class DiscordRelay {
   private shownNotSent = new Map<string, SendTo[]>()
   private sending = new Map<string, Promise<void>>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
-  private sessionAsks: SessionAsks
 
   constructor(private d: RelayDeps) {
-    this.sessionAsks = new SessionAsks(d, {
+    d.asks.listen({
       asked: (tab, payload) => this.postClaudeAsk(tab, payload),
       answerGoingIn: (tab) => void this.codexAsks.delete(tab)
     })
@@ -188,7 +192,7 @@ export class DiscordRelay {
   checkHeld(): void {
     const away = this.d.ownerAway()
     for (const tab of [...this.held]) {
-      if (!away && this.dialogOpen(tab)) continue
+      if (!away && this.d.asks.dialogOpen(tab)) continue
       this.held.delete(tab)
       if (away) this.postOpenAsk(tab)
     }
@@ -204,7 +208,7 @@ export class DiscordRelay {
   }
 
   private postOpenAsk(tab: string): void {
-    const asked = this.sessionAsks.askOf(tab)
+    const asked = this.d.asks.askOf(tab)
     if (asked) return this.postClaudeAsk(tab, asked)
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
     if (open) return this.codexAsked(tab, open)
@@ -251,7 +255,7 @@ export class DiscordRelay {
   private take(dest: Destination, m: DiscordMessage): void {
     dest.ownerSpoke?.()
     const tab = dest.liveTab()
-    if (tab && this.held.delete(tab) && this.dialogOpen(tab)) {
+    if (tab && this.held.delete(tab) && this.d.asks.dialogOpen(tab)) {
       this.answersDiscord(tab, 'turn')
       this.postOpenAsk(tab)
       this.say(m.channelId, answerItFirst(dest.name), m.id)
@@ -275,7 +279,8 @@ export class DiscordRelay {
       dest.seen(m.id)
       return
     }
-    const takes = command === undefined ? this.typable(tab ?? '') : this.takesCommand(tab ?? '')
+    const takes =
+      command === undefined ? this.d.asks.typable(tab ?? '') : this.d.asks.takesCommand(tab ?? '')
     const waits = !tab || this.delivering(dest.channelId) || !takes
     if (waits) this.react(m, QUEUED, true)
     this.enqueue(dest, {
@@ -302,7 +307,7 @@ export class DiscordRelay {
     command: string,
     name: string
   ): string | undefined {
-    if (tab && this.dialogOpen(tab)) return waitingForAnswer(name, command)
+    if (tab && this.d.asks.dialogOpen(tab)) return waitingForAnswer(name, command)
     const problem = slashCommandProblem(command)
     return problem && didNotRun(problem)
   }
@@ -414,7 +419,7 @@ export class DiscordRelay {
   private async readyTab(dest: Destination): Promise<string> {
     const already = dest.liveTab()
     const tab = await dest.open()
-    if (!(await this.d.ready(tab, () => this.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
+    if (!(await this.d.ready(tab, () => this.d.asks.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
       throw new Error(
         this.d.alive(tab)
           ? `${dest.name} did not get ready in time.`
@@ -422,34 +427,6 @@ export class DiscordRelay {
       )
     if (tab !== already) await sleep(PROMPT_SETTLES_AFTER_BIND_MS)
     return tab
-  }
-
-  // AGY§8
-  private typable(tab: string): boolean {
-    if (this.d.showsPromptBeforeBind(tab)) return true
-    const status = this.d.status(tab)
-    return (
-      !!this.d.boundKey(tab) &&
-      status !== undefined &&
-      status !== 'approval' &&
-      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
-      !this.sessionAsks.hookWaits(tab)
-    )
-  }
-
-  // AGY§8
-  takesCommand(tab: string): boolean {
-    return (
-      this.d.showsPromptBeforeBind(tab) ||
-      (this.typable(tab) &&
-        this.d.turnOver(tab) &&
-        !this.dialogOpen(tab) &&
-        this.d.queueDrained(tab))
-    )
-  }
-
-  dialogOpen(tab: string): boolean {
-    return this.sessionAsks.dialogOpen(tab)
   }
 
   private async textOf(m: DiscordMessage): Promise<string> {
@@ -490,10 +467,6 @@ export class DiscordRelay {
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
-  watchAsks(): fs.FSWatcher | null {
-    return this.sessionAsks.watchAsks()
-  }
-
   private askerName(tab: string): string {
     const helper = this.d.helperTitle(tab)
     const butler = this.d.butlerName()
@@ -512,7 +485,12 @@ export class DiscordRelay {
 
   asksUnreadably(tab: string): void {
     const channelId = this.d.askChannelOf(tab)
-    if (!channelId || !this.d.inRoom(tab) || this.unreadable.has(tab) || this.dialogOpen(tab))
+    if (
+      !channelId ||
+      !this.d.inRoom(tab) ||
+      this.unreadable.has(tab) ||
+      this.d.asks.dialogOpen(tab)
+    )
       return
     if (this.holds(tab)) return
     this.unreadable.add(tab)
@@ -525,7 +503,7 @@ export class DiscordRelay {
       tab,
       channelId,
       () => void this.card(channelId, card),
-      () => this.unreadable.has(tab) && !this.dialogOpen(tab)
+      () => this.unreadable.has(tab) && !this.d.asks.dialogOpen(tab)
     )
   }
 
@@ -587,13 +565,9 @@ export class DiscordRelay {
     )
   }
 
-  onAsk(tab: string, payload: AskPayload, hook?: string): void {
-    this.sessionAsks.onAsk(tab, payload, hook)
-  }
-
   private postClaudeAsk(tab: string, payload: AskPayload): void {
     const channelId = this.d.askChannelOf(tab)
-    const stillAsked = this.sessionAsks.stillAsks(tab)
+    const stillAsked = this.d.asks.stillAsks(tab)
     if (channelId && !this.holds(tab))
       this.postAsk(
         tab,
@@ -601,30 +575,6 @@ export class DiscordRelay {
         this.askCard(tab, claudeDialog(payload), askHow(payload)),
         stillAsked
       )
-  }
-
-  dialog(tab: string): DialogView | undefined {
-    return this.sessionAsks.dialog(tab)
-  }
-
-  askOf(tab: string): AskPayload | undefined {
-    return this.sessionAsks.askOf(tab)
-  }
-
-  heldAsk(tab: string): AskPayload | undefined {
-    return this.sessionAsks.heldAsk(tab)
-  }
-
-  toolDone(tab: string, call: ToolCall): void {
-    this.sessionAsks.toolDone(tab, call)
-  }
-
-  answerSession(tab: string, reply: string, toItsCard = false): Promise<string | undefined> {
-    return this.sessionAsks.answerSession(tab, reply, toItsCard)
-  }
-
-  dialogGone(tab: string, closed: boolean): void {
-    this.sessionAsks.dialogGone(tab, closed)
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
@@ -646,8 +596,8 @@ export class DiscordRelay {
   }
 
   private answerDialog(tab: string, m: DiscordMessage): Promise<string | undefined> | undefined {
-    if (this.sessionAsks.claudeAskAnswerable(tab)) return this.answerSession(tab, m.content)
-    this.sessionAsks.dropClaudeAsk(tab)
+    if (this.d.asks.claudeAskAnswerable(tab)) return this.d.asks.answerSession(tab, m.content)
+    this.d.asks.dropClaudeAsk(tab)
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return undefined
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
@@ -655,11 +605,10 @@ export class DiscordRelay {
       this.codexAsks.delete(tab)
       return undefined
     }
-    return this.answerSession(tab, m.content, true)
+    return this.d.asks.answerSession(tab, m.content, true)
   }
 
   forget(tab: string): void {
-    this.sessionAsks.forget(tab)
     this.codexAsks.delete(tab)
     this.answering.delete(tab)
     this.held.delete(tab)

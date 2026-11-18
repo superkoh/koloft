@@ -1,10 +1,10 @@
 import fs from 'fs'
 import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
+import type { FileOpened } from '@core/moment'
 import { openDropTarget } from './openDrop'
 import {
   answered,
-  errorText,
   EXIT_USAGE,
   NOT_PINNED,
   refused,
@@ -15,7 +15,7 @@ import {
 
 export interface WorkbenchVerbDeps {
   open(tabId: string, target: string, view?: ArtifactView): boolean | Promise<boolean>
-  copyToPhone(tabId: string, target: string, view?: ArtifactView): Promise<string | undefined>
+  announceOpened(opened: FileOpened): Promise<string[]>
   notesFileOf(tabId: string): string | undefined
 }
 
@@ -38,12 +38,8 @@ async function show(
   const target = openDropTarget(schemeOf(arg) ? { url: arg } : { path: arg, cwd: caller.cwd })
   if (!(await d.open(caller.tabId, target, view)))
     return refused(`koloft: there is no file at ${target} that the Workbench can show.`)
-  const copied = await d
-    .copyToPhone(caller.tabId, target, view)
-    .catch((error: unknown) => `Koloft could not also send it to Discord: ${errorText(error)}`)
-  return answered(
-    [`Opened ${target} in this session's Workbench.`, copied].filter(Boolean).join(' ')
-  )
+  const said = await d.announceOpened({ tabId: caller.tabId, target, view })
+  return answered([`Opened ${target} in this session's Workbench.`, ...said].join(' '))
 }
 
 export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {
