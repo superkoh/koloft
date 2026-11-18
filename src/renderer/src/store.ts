@@ -372,7 +372,6 @@ export function tabAsItsAgent(tab: Tab | undefined): Tab | undefined {
 
 export interface LandingAfterClose {
   isLandingTab: (s: AppState, tabId: string) => boolean
-  canLand: (s: AppState) => boolean
   land: () => void
 }
 
@@ -389,7 +388,6 @@ function watchedSessionLeaves(s: AppState, tabId: string): boolean {
     s.activeTabId === tabId &&
     (isSessionKind(leaving?.kind) || watchedSessionEndedIn.has(tabId)) &&
     !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
-    landingAfterClose.canLand(s) &&
     !landingAfterClose.isLandingTab(s, tabId)
   )
 }
@@ -1082,7 +1080,8 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           if (t.id === s.activeTabId) {
             activeReverted = true
-            if (!landingAfterClose?.isLandingTab(s, t.id)) watchedSessionEndedIn.add(t.id)
+            if (landingAfterClose && !landingAfterClose.isLandingTab(s, t.id))
+              watchedSessionEndedIn.add(t.id)
           }
           agentBeforeSessionEnded.set(t.id, { kind: t.kind, title: t.title })
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }

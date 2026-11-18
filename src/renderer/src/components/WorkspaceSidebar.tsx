@@ -1365,7 +1365,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
-          <ButlerRow menu={discordOnButlerRow.menu} where={discordOnButlerRow.where}>
+          <ButlerRow {...discordOnButlerRow}>
             {butlerWorkspace &&
               sessionTree(butlerWorkspace.rows).map(
                 rowRenderer(butlerWorkspace.workspace.path, butlerWorkspace.rows)

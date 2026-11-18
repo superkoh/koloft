@@ -13,17 +13,12 @@ import { assistInputs } from '@renderer/assistInputs'
 import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from '@renderer/components/WorkspaceSidebar'
+import type { ButlerRowEntry } from '../api'
 import { butlerSetUp, butlerTabOf } from './butlerTabs'
 
 export async function openButler(fresh = false): Promise<void> {
   const error = await useStore.getState().openButler(fresh)
   if (error) useStore.getState().showToast(error)
-}
-
-export interface ButlerRowEntry {
-  label: string
-  run: () => void
-  danger?: true
 }
 
 export function ButlerRow({

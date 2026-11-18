@@ -1,15 +1,10 @@
+import type { ButlerRowEntry } from '@plugins/butler/api'
 import { channelLabel } from '@shared/conductors'
 import { useStore } from '@renderer/store'
 
 const NOT_ON_DISCORD = 'not on Discord'
 
-export interface MenuEntry {
-  label: string
-  run: () => void
-  danger?: true
-}
-
-export function useDiscordOnButlerRow(): { menu: MenuEntry[]; where: string } {
+export function useDiscordOnButlerRow(): { menu: ButlerRowEntry[]; where: string } {
   const channel = useStore((s) => s.settings.discord.channel)
   const setBindButler = useStore((s) => s.setBindButler)
   const bind = (): void => setBindButler(true)

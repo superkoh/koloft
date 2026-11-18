@@ -3,6 +3,7 @@ import { butlerSetUp, butlerTabOf, isButlerTab } from './butlerTabs'
 
 function landOnButler(): void {
   const get = useStore.getState
+  if (!butlerSetUp(get())) return
   const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
   if (live) return get().activateTab(live)
   const landedOn = get().activeTabId
@@ -15,6 +16,5 @@ function landOnButler(): void {
 
 export const butlerLanding: LandingAfterClose = {
   isLandingTab: (s, tabId) => isButlerTab(s.sessions, s.butlerTab, tabId),
-  canLand: butlerSetUp,
   land: landOnButler
 }
