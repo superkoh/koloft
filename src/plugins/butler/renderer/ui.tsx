@@ -1,5 +1,5 @@
 import { fill, type PluginUi } from '@core/ui'
-import { GLOBAL_NOTE, LANDING_AFTER_CLOSE, ROW_MARK } from '@renderer/slots'
+import { GLOBAL_NOTE, LANDING_AFTER_CLOSE, PALETTE_HAND_OFF, ROW_MARK } from '@renderer/slots'
 import {
   BUTLER_FRESH,
   BUTLER_INSTRUCTIONS,
@@ -26,6 +26,7 @@ export const ui: PluginUi = {
   fills: [
     fill(LANDING_AFTER_CLOSE, butlerLanding),
     fill(GLOBAL_NOTE, useButlerShowsGlobalNote),
-    fill(ROW_MARK, { at: 'sub', useMarkOf: useStartedByButler, Mark: StartedByButler })
+    fill(ROW_MARK, { at: 'sub', useMarkOf: useStartedByButler, Mark: StartedByButler }),
+    fill(PALETTE_HAND_OFF, (request) => window.api.conductors.fromPalette(request))
   ]
 }
