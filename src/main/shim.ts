@@ -460,6 +460,7 @@ pre=()
 [ -n "$KOLOFT_DOCS_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_DOCS_PLUGIN")
 [ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
 [ -n "$KOLOFT_AGENT_PROMPT" ] && pre+=(--append-system-prompt-file "$KOLOFT_AGENT_PROMPT")
+[ -n "$KOLOFT_OWNER_TEXT" ] && pre+=(--append-system-prompt "$KOLOFT_OWNER_TEXT")
 
 ${NEWID_FN}
 
@@ -564,7 +565,7 @@ fi
 kfp="$KOLOFT_FIRST_PROMPT"
 ksn="$KOLOFT_SESSION_NAME"
 kpf="$KOLOFT_PICTURE_FOLDER"
-unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME KOLOFT_PICTURE_FOLDER
+unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME KOLOFT_PICTURE_FOLDER KOLOFT_OWNER_TEXT
 
 if [ "$skip" = "1" ]; then
   exec "$real" "\${inj[@]}" "$@"

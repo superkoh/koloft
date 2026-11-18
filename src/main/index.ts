@@ -506,7 +506,8 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { butlerHelperRole, conductorFolder, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
@@ -616,7 +617,6 @@ import {
   registerChannels as registerDiscordChannels,
   pushStatus as pushStatusToDiscordPane
 } from '@plugins/discord/main/channels'
-import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import {
   registerChannels as registerSecretChannels,
   pushAsks as pushSecretAsks
@@ -2122,7 +2122,7 @@ const sessionStarting = moment<SessionStarting>()
 const sessionStarted = moment<SessionStarted>()
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
 const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
-tellEachHelperItsRole(sessionStarting, () => butlerHelperRole(butlerNameNow()))
+tellEachHelperItsRole(sessionStarting, () => helperRoleOf(loadSettings().butler))
 giveEachStartedSessionARoom(sessionStarted, {
   isButler: isButlerNow,
   butlerFolder: butlerFolderNow,
@@ -4068,6 +4068,7 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          ownerText: l.ownerText,
           conductor: true,
           permission: ownersPermission(),
           trustFolder: true,
@@ -7261,7 +7262,11 @@ function registerIpc(): void {
   registerButlerChannels(pluginIpc, {
     open: () => butler?.open() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
     startFresh: () => butler?.startFresh() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
-    fromPalette: handFromPalette
+    fromPalette: handFromPalette,
+    butler: () => loadSettings().butler,
+    save: (butler) => {
+      commitSettings({ butler })
+    }
   })
   ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
     typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null

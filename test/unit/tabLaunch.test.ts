@@ -271,6 +271,10 @@ const CONDUCTORS_RUN_ON_THIS_MAC: Landing = {
 
 const CODEX_TAKES_NO_NAME: Landing = { takesNothing: 'Codex takes no session name when it starts' }
 
+const CODEX_TAKES_OWNER_TEXT_IN_THE_ROLE: Landing = {
+  takesNothing: 'Codex gets the owner’s text inside its role, never beside it'
+}
+
 const WORKTREE_OFFSET = String(portOffset('table-wt'))
 
 const FEATURES: Record<
@@ -361,6 +365,16 @@ const FEATURES: Record<
       'Claude Code over SSH': CONDUCTORS_RUN_ON_THIS_MAC,
       'Codex on this Mac': { handed: ['ROLE-TEXT'] },
       'Codex over SSH': { handed: ['ROLE-TEXT'] }
+    }
+  },
+  ownerText: {
+    spec: { ownerText: 'OWNER-TEXT' },
+    marker: 'OWNER-TEXT',
+    on: {
+      'Claude Code on this Mac': { handed: ['"KOLOFT_OWNER_TEXT":"OWNER-TEXT"'] },
+      'Claude Code over SSH': CONDUCTORS_RUN_ON_THIS_MAC,
+      'Codex on this Mac': CODEX_TAKES_OWNER_TEXT_IN_THE_ROLE,
+      'Codex over SSH': CODEX_TAKES_OWNER_TEXT_IN_THE_ROLE
     }
   },
   conductor: {

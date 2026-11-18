@@ -532,6 +532,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  ownerText?: string
   ownerWords?: string
   conductor?: boolean
   trustFolder?: boolean

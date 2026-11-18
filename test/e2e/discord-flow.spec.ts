@@ -1058,7 +1058,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       }
     })
     const fake = await startFakeDiscord(env)
-    fake.refusePostsIn.push('333')
+    fake.failPostsIn['333'] = 'forbidden'
     const { app, page } = await connected(env, fake)
     try {
       fake.say(OWNER, 'hello', { channelId: '333' })
