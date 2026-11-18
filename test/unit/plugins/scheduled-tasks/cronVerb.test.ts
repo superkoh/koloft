@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CronRunner, type RunnerDeps } from '../../src/main/cronRunner'
+import { CronRunner, type RunnerDeps } from '../../../../src/main/cronRunner'
 import {
   cronVerb,
   formatList,
@@ -7,9 +7,9 @@ import {
   parseCronArgs,
   CRON_NEEDS_A_WORKSPACE,
   type CronVerbDeps
-} from '../../src/main/agentCron'
-import { EXIT_USAGE, NOT_PINNED } from '../../src/main/agentRequests'
-import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
+} from '../../../../src/plugins/scheduled-tasks/main/cronVerb'
+import { EXIT_USAGE, NOT_PINNED } from '../../../../src/core/command'
+import type { BackendId, CronJob, SessionInfo } from '../../../../src/shared/types'
 
 const NOW = new Date(2026, 8, 2, 10, 0, 0, 0)
 const HERE = '/ws/here'
@@ -352,6 +352,17 @@ describe('koloft cron: changing tasks', () => {
 
   it('a bad command line exits with the usage code', async () => {
     expect((await cron([]).run('add')).exit).toBe(EXIT_USAGE)
+  })
+
+  it('an unknown or missing subcommand is answered with the subcommands there are, exit code 2', async () => {
+    expect(await cron([]).run('frob')).toEqual({
+      exit: 2,
+      text: 'koloft cron: there is no "frob" command: use list, show, add, edit, rm, on, off, run. Run "koloft help" to see how.'
+    })
+    expect(await cron([]).run()).toEqual({
+      exit: 2,
+      text: 'koloft cron: say what to do: use list, show, add, edit, rm, on, off, run. Run "koloft help" to see how.'
+    })
   })
 })
 

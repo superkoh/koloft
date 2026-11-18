@@ -3,7 +3,7 @@ import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
 import type { FileOpened } from '@core/moment'
 import type { CommandHandlers, Commands } from '@core/commands'
-import { openDropTarget } from './openDrop'
+import { openDropTarget } from '../../../main/openDrop'
 import {
   answered,
   EXIT_USAGE,
@@ -11,7 +11,7 @@ import {
   refused,
   type AgentCaller,
   type AgentReply
-} from './agentRequests'
+} from '@core/command'
 
 export interface WorkbenchVerbDeps {
   open(tabId: string, target: string, view?: ArtifactView): boolean | Promise<boolean>

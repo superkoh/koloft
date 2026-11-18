@@ -15,6 +15,8 @@ export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Pr
 
 export const EXIT_USAGE = 2
 
+export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
+
 export function answered(text: string): AgentReply {
   return { text, exit: 0 }
 }

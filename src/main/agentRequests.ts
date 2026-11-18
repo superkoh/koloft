@@ -34,8 +34,6 @@ export const helpVerb =
   async (_args, caller) =>
     answered(agentGuide(await rulesOfTab(caller.tabId)))
 
-export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
-
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."
 const UNKNOWN_TAB = 'koloft: Koloft does not know this session.'
