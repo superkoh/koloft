@@ -8,6 +8,7 @@ export const plugin: PluginManifest = {
   name: 'Scheduled tasks',
   mandatory: true,
   needs: ['sessions'],
+  commands: [{ verb: 'cron' }],
   text: TEXT,
   channels: Object.values(CHANNELS)
 }

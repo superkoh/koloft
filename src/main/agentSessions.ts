@@ -50,6 +50,7 @@ import {
   errorText,
   EXIT_USAGE,
   fail,
+  helpVerb,
   refused,
   splitAtDashes,
   type AgentCaller,
@@ -57,6 +58,7 @@ import {
   type AgentVerb,
   type Parsed
 } from './agentRequests'
+import type { Commands } from '@core/commands'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
@@ -1540,6 +1542,20 @@ export function sessionVerb(d: SessionVerbDeps): {
 
 export interface WorkspaceVerbDeps {
   sidebar(): WorkspaceRows[]
+}
+
+export interface SessionCommandsDeps {
+  rulesOfTab(tabId: string): Promise<string | undefined>
+  session: AgentVerb
+  workspace: WorkspaceVerbDeps
+}
+
+export function registerSessionCommands(commands: Commands, d: SessionCommandsDeps): void {
+  commands.register({
+    help: helpVerb(d.rulesOfTab),
+    session: d.session,
+    workspace: workspaceVerb(d.workspace)
+  })
 }
 
 export function workspaceVerb(d: WorkspaceVerbDeps): AgentVerb {
