@@ -93,13 +93,6 @@ export const CH = {
     channels: 'discord:channels',
     setUpWithButler: 'discord:setUpWithButler'
   },
-  secret: {
-    asks: 'secret:asks',
-    list: 'secret:list',
-    answer: 'secret:answer',
-    done: 'secret:done',
-    decline: 'secret:decline'
-  },
   attention: {
     list: 'attention:list',
     activeTab: 'attention:active-tab',
