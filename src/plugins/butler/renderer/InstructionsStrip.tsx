@@ -121,7 +121,7 @@ function InstructionsEditor(): JSX.Element {
           />
         </div>
         <div className="pal-status">
-          {`Placed last in the prompt of ${butler.name} and its helpers, under “Written by the owner”. ${whenItTakesEffect(butler.name)}`}
+          {`${butler.name} and the helpers it starts follow this. ${whenItTakesEffect(butler.name)}`}
         </div>
         <div className="pal-bar">
           <span className="pal-tips">

@@ -13,6 +13,8 @@ import { sanitizeLoadedSettings } from '../../../../src/shared/settingsOps'
 import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { sessionStartContext } from '../../../../src/main/museHooks'
+import { handoverPreamble } from '../../../../src/main/handover'
+import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 
 const BUTLER: ButlerSetting = { name: 'Alfred', formerNames: [] }
 const LONGEST_NAME = '𝔄'.repeat(40)
@@ -24,7 +26,7 @@ const textOfBytes = (unit: string, bytes: number): string =>
 // CC§13
 const CLAUDE_START_HOOK_MAX_UNITS = 10_000
 // CODEX§17
-const CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES = 20_000
+const CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES = 22_438
 // AGY§12
 const AGY_START_MESSAGE_SEEN_WHOLE_BYTES = 300_000
 
@@ -53,6 +55,24 @@ describe('how long the owner’s instructions for the butler may be', () => {
   it('a Codex butler’s developer instructions at the limit stay within the length seen reaching the model whole', () => {
     const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
     expect(Buffer.byteLength(butlerRole(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
+      CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES
+    )
+  })
+
+  it('a Codex helper’s developer instructions — Koloft’s prompt, its role with the owner’s text at the limit, the handover — stay within the length seen reaching the model whole', () => {
+    const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
+    const handover = handoverPreamble({
+      name: LONGEST_NAME,
+      id: 'codex:local:019a-thread',
+      label: 'Codex',
+      assist: true,
+      ownerWords: '中'.repeat(500)
+    })
+    const developerInstructions = [
+      koloftPrompt('codex'),
+      `${butlerHelperRole(LONGEST_NAME, text)}\n\n${handover}`
+    ].join('\n\n')
+    expect(Buffer.byteLength(developerInstructions)).toBeLessThanOrEqual(
       CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES
     )
   })

@@ -4312,6 +4312,12 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
   `a.txt`'s word, never `b.txt`'s. The same in fullscreen with Koloft's prompt file on
   both launches and the changing word given as an inline `--append-system-prompt`: the
   first launch's inline word only.
+- **An inline `--append-system-prompt` given only at the start survives a resume with no
+  flag.** 2026-11-18, CC 2.1.327 darwin-arm64, `claude -p` with a scratch `HOME`, a
+  stand-in Messages API saving each request body: `-p firstturn --session-id X
+  --append-system-prompt <marker with a newline, Chinese, a quote and $HOME>`, then `-p
+  secondturn --resume X` with no prompt flag at all. The resumed request held three
+  messages and its last `system` block still ended with the marker, exactly. 2 of 2 runs.
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
 conversation, and the owner's instructions for a Claude Code butler, handed only when a

@@ -20,6 +20,7 @@ import type { ButlerSetting } from '../../src/plugins/butler/shared/types'
 
 test.setTimeout(120_000)
 
+const A_KEY_IS_HANDLED_MS = 300
 const TEXT = 'Answer me in Chinese, short.\n合并前先问我。'
 const OWNER_PART = `Written by the owner\n${TEXT}`
 const LAST_IN_THE_ROLE = `\n\n${OWNER_PART}`
@@ -58,7 +59,7 @@ const WRITTEN = {
 const strip = (page: Page) => page.locator('.term-island .butler-strip')
 
 test.describe('The butler’s Instructions: written by the owner, placed last in the butler’s prompt, on each of the four agents', () => {
-  test('Claude Code: the strip under the butler opens the editor, which counts what is left, refuses too much and saves; a fresh conversation is asked for first, then gets the text beside its role, and a helper it starts gets it last in its role', async ({
+  test('Claude Code: the strip under the butler opens the editor, which counts what is left, keeps an input method’s Esc for the input method, refuses too much and saves; a fresh conversation is asked for first, then gets the text beside its role, and a helper it starts gets it last in its role', async ({
     env
   }) => {
     const { app, page } = await launched(env)
@@ -74,6 +75,13 @@ test.describe('The butler’s Instructions: written by the owner, placed last in
       const field = editor.getByRole('textbox', { name: 'Instructions' })
       await expect(field).toBeFocused()
       await expect(editor.locator('.pal-tips')).toHaveText(left(''))
+      await field.dispatchEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })
+      await page.waitForTimeout(A_KEY_IS_HANDLED_MS)
+      await expect(editor).toBeVisible()
+      await field.dispatchEvent('keydown', { key: 'Escape', bubbles: true })
+      await expect(editor).toHaveCount(0)
+      await strip(page).getByRole('button', { name: 'Instructions' }).click()
+      await expect(field).toBeFocused()
       await field.fill('a'.repeat(INSTRUCTIONS_MAX_BYTES + 12))
       await expect(editor.locator('.pal-tips')).toHaveText('12 over the limit')
       await expect(editor.getByRole('button', { name: /^Save/ })).toBeDisabled()
