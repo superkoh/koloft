@@ -12,20 +12,17 @@ import {
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
 import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
+import { agentGuide } from '@shared/agentGuide'
+import { PICK_FOR_THE_TASK, withProjectRules } from '../prompts/text'
 import {
-  PICK_FOR_THE_TASK,
   placedRows,
-  RepliesOwed,
   resolveWorkspace,
-  withProjectRules,
   workspaceLabel,
   type PinnedWorkspace,
-  type PlacedRow,
-  type ReplyListener,
-  type SendResult,
-  type StartResult,
-  type StartSpec
-} from '@plugins/sessions/api'
+  type PlacedRow
+} from './placedRows'
+import { RepliesOwed, type ReplyListener } from './repliesOwed'
+import type { SendResult, StartResult, StartSpec } from './sendAndStart'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
@@ -36,7 +33,7 @@ import {
   namedAtLaunch
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { withoutBlankEdges } from './messageText'
+import { withoutBlankEdges } from '../../../main/messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { scopeName } from '@shared/conductors'
@@ -45,20 +42,19 @@ import { MAX_READ_TURNS, type Turn } from '@shared/turns'
 import { MYSELF, slashCommandProblem } from '@shared/slashCommands'
 import {
   answered,
-  errorText,
   EXIT_USAGE,
   fail,
-  helpVerb,
   refused,
   splitAtDashes,
   type AgentCaller,
   type AgentReply,
   type AgentVerb,
   type Parsed
-} from './agentRequests'
+} from '@core/command'
+import { errorText } from '@core/errorText'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
-import { AGENT_SHIM_WAITS_MS } from './agentShim'
+import { AGENT_SHIM_WAITS_MS } from '../../../main/agentShim'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
@@ -66,18 +62,23 @@ import {
   crossSessionLine,
   fitsACrossSessionMessage,
   type ModeClass
-} from './crossSessionMessage'
+} from '../../../main/crossSessionMessage'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
   withHandover,
   type SessionCaller
-} from './handover'
-import { distinctTitle, titleForTask } from './sessionTitle'
-import type { Assist } from './assist'
-import { keysFor } from './typeKeys'
-import type { StartedSessions } from './startedSessions'
-import type { TranscriptPlaces } from './sessionBackends'
+} from '../../../main/handover'
+import { distinctTitle, titleForTask } from '../../../main/sessionTitle'
+import type { Assist } from '../../../main/assist'
+import { keysFor } from '../../../main/typeKeys'
+import type { StartedSessions } from '../../../main/startedSessions'
+import type { TranscriptPlaces } from '../../../main/sessionBackends'
+
+export const helpVerb =
+  (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>
+  async (_args, caller) =>
+    answered(agentGuide(await rulesOfTab(caller.tabId)))
 
 export interface HelperTask {
   prompt: string

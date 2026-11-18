@@ -12,28 +12,31 @@ import {
   type ClosableSession,
   type SessionVerbDeps,
   type Target
-} from '../../src/main/agentSessions'
-import type { PinnedWorkspace } from '../../src/plugins/sessions/api'
-import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
-import type { TranscriptPlaces } from '../../src/main/sessionBackends'
-import { INBOX_SENDER } from '../../src/main/inbox'
-import type { SendResult } from '../../src/plugins/sessions/api'
-import { moment, type SessionStarted, type SessionStarting } from '../../src/core/moment'
-import { butlersWords, tellEachHelperItsRole } from '../../src/plugins/butler/main/sessionHooks'
+} from '../../../../src/plugins/sessions/main/sessionVerbs'
+import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
+import { A_HELPER_HAS_IT, crossSessionLine } from '../../../../src/main/crossSessionMessage'
+import type { TranscriptPlaces } from '../../../../src/main/sessionBackends'
+import { INBOX_SENDER } from '../../../../src/main/inbox'
+import type { SendResult } from '../../../../src/plugins/sessions/api'
+import { moment, type SessionStarted, type SessionStarting } from '../../../../src/core/moment'
+import {
+  butlersWords,
+  tellEachHelperItsRole
+} from '../../../../src/plugins/butler/main/sessionHooks'
 import {
   giveEachStartedSessionARoom,
   withoutTheRelayTag
-} from '../../src/plugins/discord/main/sessionHooks'
+} from '../../../../src/plugins/discord/main/sessionHooks'
 
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
-import { ownerSays } from '../../src/shared/agentGuide'
-import type { PickFacts } from '../../src/shared/sessionPicks'
-import { handoverPreamble } from '../../src/main/handover'
-import { StartedSessions } from '../../src/main/startedSessions'
-import { turnedOffLine } from '../../src/shared/sessionBackend'
-import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
-import { AGENT_SHIM_WAITS_MS } from '../../src/main/agentShim'
+import { ownerSays } from '../../../../src/shared/agentGuide'
+import type { PickFacts } from '../../../../src/shared/sessionPicks'
+import { handoverPreamble } from '../../../../src/main/handover'
+import { StartedSessions } from '../../../../src/main/startedSessions'
+import { turnedOffLine } from '../../../../src/shared/sessionBackend'
+import { EXIT_USAGE, type AgentReply } from '../../../../src/core/command'
+import { AGENT_SHIM_WAITS_MS } from '../../../../src/main/agentShim'
 import type {
   BackendId,
   CreateTabOptions,
@@ -41,8 +44,8 @@ import type {
   SessionInfo,
   SessionRow,
   WorkspaceRows
-} from '../../src/shared/types'
-import type { Turn } from '../../src/shared/turns'
+} from '../../../../src/shared/types'
+import type { Turn } from '../../../../src/shared/turns'
 
 const WS = '/work/app'
 const BUTLER_FOLDER = '/data/conductors/global'
@@ -2587,6 +2590,74 @@ describe('koloft workspace list', () => {
         'gone · /work/gone · 0 open · folder missing',
         'api · box:/srv/api · 1 open'
       ])
+  })
+})
+
+describe('the one-line usage error of each koloft session and workspace subcommand', () => {
+  const usage = (text: string): AgentReply => ({ text, exit: EXIT_USAGE })
+
+  it('says what to give, word for word', async () => {
+    const { verb } = harness(
+      [
+        session('fix', 'claude'),
+        session('butler', 'claude'),
+        session('lost', 'claude', { cwd: '' })
+      ],
+      {},
+      [],
+      { scopes: { butler: 'global' } }
+    )
+    expect(await verb(['bogus'], from('fix'))).toEqual(
+      usage(
+        'koloft session: use list, read, new, send, command, screen, keys, answer, resume, stop or close. Run "koloft help" to see how.'
+      )
+    )
+    expect(await verb(['read'], from('fix'))).toEqual(
+      usage(
+        'koloft session read: give an id or name, and if you like --last <1 to 20>, like: koloft session read fix-login --last 3'
+      )
+    )
+    expect(await verb(['list', 'x'], from('butler'))).toEqual(
+      usage(
+        'koloft session list: it takes no options here; it lists every session in every workspace.'
+      )
+    )
+    expect(await verb(['list', '--bad'], from('fix'))).toEqual(
+      usage(
+        'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
+      )
+    )
+    expect(await verb(['list'], { tabId: 'lost', cwd: '' })).toEqual({
+      text: 'koloft session: Koloft does not know which workspace this session is in.',
+      exit: 1
+    })
+    expect(await verb(['new'], from('fix'))).toEqual(
+      usage(
+        'koloft session new: put the first message after --, like: -- "Fix the broken links in docs/."'
+      )
+    )
+    expect(await verb(['send'], from('fix'))).toEqual(
+      usage(
+        'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
+      )
+    )
+    const acts: Record<string, string> = {
+      command:
+        'koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact',
+      screen:
+        'koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login',
+      keys: 'koloft session keys: give an id or name, then the keys to press in order, like: koloft session keys fix-login Down Enter',
+      answer:
+        'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2',
+      resume:
+        'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."',
+      stop: 'koloft session stop: give an id or name, like: koloft session stop fix-login'
+    }
+    for (const [sub, text] of Object.entries(acts))
+      expect(await verb([sub], from('fix'))).toEqual(usage(text))
+    expect(await workspaceVerb({ sidebar: () => [] })(['bogus'], from('fix') as never)).toEqual(
+      usage('koloft workspace: use list, like: koloft workspace list')
+    )
   })
 })
 
