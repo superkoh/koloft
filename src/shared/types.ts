@@ -1118,35 +1118,6 @@ export interface CoreApi {
     onKilledByMain(cb: (tabId: string) => void): () => void
     onSlept(cb: (tabId: string) => void): () => void
   }
-  sessions: {
-    backends(recheck?: boolean): Promise<BackendAvailability[]>
-    installTool(backend: BackendId): Promise<{ tabId: string; cwd: string } | null>
-    onToolsChanged(cb: () => void): () => void
-    onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
-    onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
-    noteActivity(tabId: string): void
-    list(): Promise<SessionInfo[]>
-    resumePlan(sessionId: string): Promise<ResumePlan>
-    resume(req: SessionResumeRequest): Promise<SessionResumeResult>
-    archive(id: string): Promise<boolean>
-    setResident(id: string, on: boolean): void
-    forceClose(id: string): Promise<{ ok: boolean }>
-    // CC§2
-    transcriptExists(sessionId: string): Promise<boolean>
-    noAccountToResume(sessionId: string): Promise<string | null>
-    leftovers(): Promise<Record<string, LeftoverProcess[]>>
-    onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
-    stopLeftover(sessionId: string, pid: number): Promise<boolean>
-    ports(tabId: string): Promise<ListeningPort[] | null>
-    search(searchId: number, term: string): void
-    onSearchHits(cb: (found: SessionSearchHits) => void): () => void
-  }
-  attention: {
-    list(): Promise<AttentionEvent[]>
-    activeTab(id: string | null): void
-    onActivateTab(cb: (tabId: string) => void): () => void
-    onChanged(cb: (pending: AttentionEvent[]) => void): () => void
-  }
   browserGuestLimit: number
   sessionScreenAtLoad: ScreenSize | null
   browserTabCap: number
@@ -1328,13 +1299,6 @@ export interface CoreApi {
   }
   toast: {
     onShow(cb: (text: string) => void): () => void
-  }
-  sessionDefaults: {
-    read(workspacePath: string): Promise<SessionDefaultsRead>
-    write(
-      workspacePath: string,
-      defaults: SessionDefaults
-    ): Promise<{ ok: boolean; error?: string }>
   }
   machine: {
     onState(cb: (s: MachineState) => void): () => void
