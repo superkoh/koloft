@@ -132,7 +132,7 @@ export class HandOver {
     await this.d.type(tab, [text, '\r'])
   }
 
-  // CC§13 ADR-0028
+  // CC§13
   private async sendAsPeer(tab: string, text: string, id: string): Promise<void> {
     if (!fitsACrossSessionMessage(text))
       throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')

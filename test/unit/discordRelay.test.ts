@@ -24,6 +24,7 @@ import {
   type RelayDeps
 } from '../../src/main/discord/relay'
 import { SessionAsks, type SessionAskDeps } from '../../src/plugins/sessions/main/sessionAsks'
+import { HandOver, type HandOverDeps } from '../../src/plugins/sessions/main/handOver'
 import { typeKeys } from '../../src/main/typeKeys'
 import { waitingForAnswer } from '../../src/shared/slashCommands'
 import {
@@ -53,7 +54,7 @@ function message(id: string, authorId = OWNER, content = `said ${id}`): DiscordM
 function setup(
   bound: { lastMessageId?: string } = {},
   history: DiscordMessage[] = [],
-  more: Partial<RelayDeps & SessionAskDeps> = {},
+  more: Partial<RelayDeps & SessionAskDeps & HandOverDeps> = {},
   dest: Partial<Destination> = {}
 ) {
   const posts: { text: string; replyTo?: string }[] = []
@@ -67,6 +68,7 @@ function setup(
   const answered: { tab: string; reply: string }[] = []
   const session = { takesKeys: true }
   const conductor: Destination = {
+    key: CHANNEL,
     channelId: CHANNEL,
     name: 'Assist',
     liveTab: () => TAB,
@@ -75,7 +77,9 @@ function setup(
     seen: (id) => void last.push(id),
     ...dest
   }
-  const deps: Omit<RelayDeps, 'asks'> & SessionAskDeps = {
+  const deps: Omit<RelayDeps, 'asks' | 'handOver'> &
+    SessionAskDeps &
+    Omit<HandOverDeps, 'typable' | 'beforeHanding' | 'quiet' | 'type'> = {
     link: {
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
       card: async (_c, card) => {
@@ -154,9 +158,19 @@ function setup(
     asksChanged: (t) => void asksChanged.push(t),
     answered: (tab, reply) => void answered.push({ tab, reply })
   })
-  const relay = new DiscordRelay({ ...deps, asks })
+  const handOver = new HandOver({
+    ...deps,
+    typable: (t) => asks.typable(t),
+    beforeHanding: (t, text, id, asPeerLine) => relay.noteDiscordWords(t, text, id, asPeerLine),
+    quiet: {
+      handing: (t, said) => relay.quietMarks.handing(t, said),
+      notHanded: (t, said) => relay.quietMarks.notHanded(t, said)
+    }
+  })
+  const relay = new DiscordRelay({ ...deps, asks, handOver })
   return {
     relay,
+    handOver,
     asks,
     session,
     conductor,
@@ -227,6 +241,7 @@ describe('DiscordRelay: offline catch-up', () => {
     const ROOM_TAB = 'pty-room-1'
     const seenInRoom: string[] = []
     const room: Destination = {
+      key: ROOM,
       channelId: ROOM,
       name: 'Fix login',
       liveTab: () => ROOM_TAB,
@@ -825,8 +840,8 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   })
 
   it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is, and uses that notice up', async () => {
-    const { relay, posts, conductor } = setup()
-    await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    const { relay, handOver, posts, conductor } = setup()
+    await handOver.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
       said: [
         { who: 'owner', text: '[Discord] what is new?', at: 1 },
@@ -835,7 +850,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       reply: 'Two things.',
       at: 1
     })
-    await relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    await handOver.tellQuietly(conductor, 'NOTICE about koloft todo')
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE about koloft todo', at: 1 }],
       reply: 'Noted.',
@@ -850,11 +865,11 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   })
 
   it('the same quiet notice told twice before the first answer to it ends keeps both answers off Discord', async () => {
-    const { relay, posts, conductor } = setup()
+    const { relay, handOver, posts, conductor } = setup()
     const notice = 'NOTICE: the same away digest'
     const quietTurn = { said: [{ who: 'owner' as const, text: notice, at: 1 }], at: 1 }
-    expect(await relay.tellQuietly(conductor, notice)).toBe(true)
-    expect(await relay.tellQuietly(conductor, notice)).toBe(true)
+    expect(await handOver.tellQuietly(conductor, notice)).toBe(true)
+    expect(await handOver.tellQuietly(conductor, notice)).toBe(true)
     relay.turnEnded(TAB, { ...quietTurn, reply: 'Nothing to tell.' })
     relay.turnEnded(TAB, { ...quietTurn, reply: 'Still nothing.' })
     relay.turnEnded(TAB, {
@@ -866,10 +881,10 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   })
 
   it('two copies of a quiet notice that land in one turn are both used up, so a later turn of the owner’s that quotes the notice is still posted', async () => {
-    const { relay, posts, conductor } = setup()
+    const { relay, handOver, posts, conductor } = setup()
     const notice = 'NOTICE: the same away digest'
-    await relay.tellQuietly(conductor, notice)
-    await relay.tellQuietly(conductor, notice)
+    await handOver.tellQuietly(conductor, notice)
+    await handOver.tellQuietly(conductor, notice)
     relay.turnEnded(TAB, {
       said: [
         { who: 'owner', text: notice, at: 1 },
@@ -887,9 +902,9 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   })
 
   it('the turn that took Koloft’s quiet notice counts as quiet, so no typing shows in Discord, until that turn ends', async () => {
-    const { relay, conductor } = setup()
+    const { relay, handOver, conductor } = setup()
     expect(relay.quietTurn(TAB)).toBe(false)
-    expect(await relay.tellQuietly(conductor, 'NOTICE while away')).toBe(true)
+    expect(await handOver.tellQuietly(conductor, 'NOTICE while away')).toBe(true)
     expect(relay.quietTurn(TAB)).toBe(true)
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE while away', at: 1 }],
@@ -988,6 +1003,7 @@ describe('DiscordRelay: a session’s room', () => {
   it('takes the owner’s words to that session at once while the butler is still busy with an earlier message: each has a queue of its own', async () => {
     let butlerReady: (tab: string) => void = () => {}
     const room: Destination = {
+      key: ROOM,
       channelId: ROOM,
       name: 'Fix login',
       liveTab: () => ROOM_TAB,
@@ -995,7 +1011,7 @@ describe('DiscordRelay: a session’s room', () => {
       typeCommand: async () => undefined,
       seen: () => {}
     }
-    const { relay, sent, conductor } = setup(
+    const { relay, handOver, sent, conductor } = setup(
       {},
       [],
       { destinationOf: (c) => (c === ROOM ? room : c === CHANNEL ? conductor : undefined) },
@@ -1005,8 +1021,8 @@ describe('DiscordRelay: a session’s room', () => {
     relay.onMessage(roomMessage('802', 'for the room'))
     await vi.waitFor(() => expect(sent).toHaveLength(1))
     expect(sent[0].tab).toBe(ROOM_TAB)
-    expect(relay.delivering(CHANNEL)).toBe(true)
-    expect(relay.delivering(ROOM)).toBe(false)
+    expect(handOver.delivering(CHANNEL)).toBe(true)
+    expect(handOver.delivering(ROOM)).toBe(false)
     butlerReady(TAB)
     await vi.waitFor(() => expect(sent.map((s) => s.tab)).toEqual([ROOM_TAB, TAB]), {
       timeout: 3000
@@ -1152,7 +1168,7 @@ describe('DiscordRelay: what a session showed at the Mac goes with its next ques
 
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {
   it('Koloft’s own notices end with where the owner is right now; the owner’s Discord words stay exactly as written, so its hook quotes only them, and a slash command gets nothing', async () => {
-    const { relay, bodies, commands, conductor } = setup(
+    const { relay, handOver, bodies, commands, conductor } = setup(
       {},
       [],
       {},
@@ -1160,7 +1176,7 @@ describe('DiscordRelay: what Koloft hands the butler says where the owner is', (
     )
     relay.onMessage(message('811', OWNER, 'hi'))
     await vi.waitFor(() => expect(bodies()).toHaveLength(1))
-    relay.tell(conductor, '[Koloft] a note')
+    handOver.tell(conductor, '[Koloft] a note')
     await vi.waitFor(() => expect(bodies()).toHaveLength(2))
     relay.onMessage(message('812', OWNER, '/compact'))
     await vi.waitFor(() => expect(commands).toEqual(['/compact']))
@@ -1303,8 +1319,8 @@ describe('DiscordRelay: the owner at the Mac', () => {
 
 describe('DiscordRelay: Koloft telling a conductor something', () => {
   it('goes the way an owner message does, to its message socket, but is not noted as one of the owner’s Discord messages', async () => {
-    const { relay, bodies, conductor } = setup()
-    relay.tell(conductor, '[Koloft] Could not deliver to fix-login: it closed.')
+    const { relay, handOver, bodies, conductor } = setup()
+    handOver.tell(conductor, '[Koloft] Could not deliver to fix-login: it closed.')
     await vi.waitFor(() =>
       expect(bodies()).toEqual(['[Koloft] Could not deliver to fix-login: it closed.'])
     )
