@@ -124,7 +124,7 @@ interface AppState {
   attention: AttentionEvent[]
   secretAsks: SecretAskView[]
   inbox: InboxSnapshot
-  inboxOpen: boolean
+  centrePage: string | null
   revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
@@ -214,7 +214,7 @@ interface AppState {
   setAttention: (pending: AttentionEvent[]) => void
   setSecretAsks: (asks: SecretAskView[]) => void
   setInbox: (inbox: InboxSnapshot) => void
-  setInboxOpen: (open: boolean) => void
+  setCentrePage: (id: string | null) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   openSettingsPane: (pane: SettingsPaneId) => void
@@ -490,8 +490,8 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
-function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxOpen: false } {
-  return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
+function shownTab(id: string): { activeTabId: string; resumeLaunch: null; centrePage: null } {
+  return { activeTabId: id, resumeLaunch: null, centrePage: null }
 }
 
 function takeOverTab(old: Tab, t: Tab, select: boolean): void {
@@ -706,7 +706,7 @@ export const useStore = create<AppState>((set, get) => ({
   attention: [],
   secretAsks: [],
   inbox: { cards: [], ready: [] },
-  inboxOpen: false,
+  centrePage: null,
   revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
@@ -838,7 +838,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...workbenchStateDropped(s, [id])
       }
     })
-    if (toLand && !get().inboxOpen) landingAfterClose?.land()
+    if (toLand && !get().centrePage) landingAfterClose?.land()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
@@ -1100,7 +1100,7 @@ export const useStore = create<AppState>((set, get) => ({
   setAttention: (attention) => set({ attention }),
   setSecretAsks: (secretAsks) => set({ secretAsks }),
   setInbox: (inbox) => set({ inbox }),
-  setInboxOpen: (inboxOpen) => set({ inboxOpen }),
+  setCentrePage: (centrePage) => set({ centrePage }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
   openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),
