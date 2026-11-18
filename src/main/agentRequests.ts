@@ -3,6 +3,17 @@ import path from 'path'
 import type { SessionInfo } from '@shared/types'
 import { agentGuide } from '@shared/agentGuide'
 import { errorText } from '@core/errorText'
+import {
+  answered,
+  EXIT_USAGE,
+  fail,
+  refused,
+  splitAtDashes,
+  type AgentCaller,
+  type AgentReply,
+  type AgentVerb,
+  type Parsed
+} from '@core/command'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
 
@@ -13,49 +24,21 @@ export interface AgentRequest {
   pid?: number
 }
 
-export interface AgentReply {
-  text: string
-  exit: number
-}
-
-export interface AgentCaller {
-  tabId: string
-  cwd: string
-  session: SessionInfo
-}
-
-export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Promise<AgentReply>
 export type AgentVerbs = Record<string, AgentVerb>
 
-export const EXIT_USAGE = 2
-
-export function answered(text: string): AgentReply {
-  return { text, exit: 0 }
-}
-
-export function refused(text: string, exit = 1): AgentReply {
-  return { text, exit }
-}
-
-export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
-
-export function fail<T>(error: string): Parsed<T> {
-  return { ok: false, error }
+export {
+  answered,
+  EXIT_USAGE,
+  fail,
+  refused,
+  splitAtDashes,
+  type AgentCaller,
+  type AgentReply,
+  type AgentVerb,
+  type Parsed
 }
 
 export { errorText }
-
-export function splitAtDashes(args: string[]): { before: string[]; after: string } {
-  const dashes = args.indexOf('--')
-  if (dashes < 0) return { before: args, after: '' }
-  return {
-    before: args.slice(0, dashes),
-    after: args
-      .slice(dashes + 1)
-      .join(' ')
-      .trim()
-  }
-}
 
 export const helpVerb =
   (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>

@@ -1,10 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { todoVerb, TODO_ONLY_FOR_THE_BUTLER, type TodoVerbDeps } from '../../src/main/agentTodo'
-import type { TodoPull, TodoPulls } from '../../src/main/github'
-import type { McpServer } from '../../src/main/mcpServers'
-import { GITHUB_NOT_ASKED } from '../../src/main/sessionClose'
-import { formatRemoteKey } from '../../src/shared/remoteKey'
-import type { BackendId, SessionInfo, SessionRow, WorkspaceRows } from '../../src/shared/types'
+import {
+  todoVerb,
+  TODO_ONLY_FOR_THE_BUTLER,
+  type McpServer,
+  type TodoVerbDeps
+} from '../../../../src/plugins/todo/main/todoVerb'
+import type { TodoPull, TodoPulls } from '../../../../src/plugins/github/api'
+import { GITHUB_NOT_ASKED } from '../../../../src/plugins/sessions/api'
+import { formatRemoteKey } from '../../../../src/shared/remoteKey'
+import type {
+  BackendId,
+  SessionInfo,
+  SessionRow,
+  WorkspaceRows
+} from '../../../../src/shared/types'
 
 const NOW = Date.parse('2026-10-22T12:00:00Z')
 const DAY = 86_400_000

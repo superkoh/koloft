@@ -397,7 +397,7 @@ import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from './thisMacsServers'
-import { mapAtMost } from './mapAtMost'
+import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import createUsageScanWorker from './usageScanWorker?nodeWorker'
@@ -583,7 +583,7 @@ import {
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
-import { todoVerb } from './agentTodo'
+import { todoVerb } from '@plugins/todo/main/todoVerb'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
@@ -634,16 +634,15 @@ import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
-  resolveWorkspace,
   sessionVerb,
   workspaceVerb,
   type ButlerHelperTask,
   type ClosableSession,
-  type PlacedRow,
   type SessionScreen,
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
+import { resolveWorkspace, type PlacedRow } from '@plugins/sessions/api'
 import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
