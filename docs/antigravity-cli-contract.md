@@ -518,6 +518,15 @@ only downloaded the public release.
   | `--conversation=<id>` or `-c` launch | that id, at once |
   | During and after a subagent | the parent's id |
 
+- **A conversation id is a lower-case UUID** (8-4-4-4-12 hex). Counted 2026-11-18 on
+  agy 1.5.11 in one account folder used since 1.4.0: all 215 folder names under
+  `brain/` and every `<id>.db` and `<id>.pb` under `conversations/` have that shape.
+
+Koloft dependents: `agyLogLine` drops a title or hook line that names any other id (a
+title line may name `""`): such a line was not written for agy. On 2026-11-18 a unit
+test run inside an agy tab ran Koloft's title script with the tab's own env, and so
+wrote `{"conversation_id":"abc-123"}` into the live tab's log.
+
 ## §10 Status: OSC 7501
 
 - agy speaks the terminal "program status" protocol, OSC 7501, as Claude Code and Muse

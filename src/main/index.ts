@@ -306,7 +306,9 @@ import {
 } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
-import { StallWatchWhileFocused } from './mainThreadStalls'
+import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
+import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
+import { envMs } from './sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -363,7 +365,6 @@ import {
   guestDrivenFromAnotherMachine,
   originDrivenFromAnotherMachine,
   notePageOpenedForAMachine,
-  openForMachine,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -371,9 +372,9 @@ import {
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
-  relayAttached,
-  type RelayDeps
-} from './cdpRelay'
+  relayAttached
+} from '@plugins/browser-control/main/cdpRelay'
+import { CdpOps } from '@plugins/browser-control/main/cdpOps'
 import { pickElement, pickText, stopPick } from '@plugins/workbench/main/elementPick'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
@@ -386,7 +387,6 @@ import {
   type PermissionName
 } from '@plugins/workbench/main/browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
-import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from './thisMacsServers'
@@ -453,10 +453,7 @@ import type {
   BrowserDialogAnswer,
   BrowserDownload,
   BrowserJsDialog,
-  BrowserCdpAttached,
   BrowserPagesInUse,
-  BrowserCdpOp,
-  BrowserCdpOpResult,
   ScreenAnswer,
   ScreenRequest,
   TerminalExit,
@@ -708,6 +705,33 @@ const OFF_SCREEN_TEST = BACKGROUND_TEST && process.env.KOLOFT_TEST_REAL_WINDOW !
 if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
+}
+
+const AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS = 60_000
+const MAIN_ERRORS_LOG = 'main-errors.log'
+
+// PLATFORM§4
+function takeErrorsNobodyCaught(): void {
+  const log = signalLog(path.join(app.getPath('userData'), MAIN_ERRORS_LOG))
+  let shownAt = -Infinity
+  process.on('uncaughtException', (error) => {
+    console.error(error)
+    const message = error instanceof Error ? error.message : String(error)
+    const [firstLine] = message.split('\n')
+    log(error instanceof Error && error.stack ? error.stack : message)
+    if (Date.now() - shownAt < AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS) return
+    const shown = sendToRenderer(
+      CH.toast.show,
+      `Koloft hit an error it did not expect and kept going (details in ${MAIN_ERRORS_LOG}, in its data folder): ${firstLine}`
+    )
+    if (shown) shownAt = Date.now()
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error(reason)
+    log(
+      `a promise nobody handled was rejected: ${reason instanceof Error && reason.stack ? reason.stack : String(reason)}`
+    )
+  })
 }
 
 const ptyMgr = new PtyManager()
@@ -3481,8 +3505,16 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
-  const stalls = new StallWatchWhileFocused(
-    signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  const stallLog = signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  const stalls = new StallWatchWhileFocused(stallLog)
+  answerTheStuckWatch(
+    (workerData) => createMainThreadStuckWorker({ workerData }),
+    {
+      pid: process.pid,
+      samplesDir: path.join(app.getPath('userData'), 'main-stuck'),
+      stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS) || STUCK_AFTER_MS
+    },
+    stallLog
   )
   const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
   app.on('browser-window-focus', followFocus)
@@ -3554,7 +3586,7 @@ app.whenReady().then(() => {
   setInterval(prunePastedPictures, PASTED_PICTURES_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
-  startRelay(relayDeps())
+  startRelay(cdpOps.relay)
   setRelayEnabled(loadSettings().browserControl, ptyTabIds())
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
@@ -4637,6 +4669,7 @@ app.whenReady().then(() => {
 
   markKeyAccountsSavedOnDisk()
   createWindow()
+  takeErrorsNobodyCaught()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
   probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
@@ -5099,7 +5132,7 @@ function setupGuestBackgroundOpen(): void {
       routeGuestPopup(url, e.sender)
       return
     }
-    if (openAsDrivingAgentsTab(e.sender, decision.target)) return
+    if (cdpOps.openAsDrivingAgentsTab(e.sender.id, decision.target)) return
     const tabId = tabOwningGuest(e.sender)
     if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
@@ -5206,7 +5239,6 @@ function overlayListenerLost(): void {
   overlayListening = false
 }
 
-const cdpOps = new Map<string, (res: BrowserCdpOpResult) => void>()
 const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
 const unexpectedExits = new Map<string, string>()
@@ -5280,70 +5312,16 @@ function ptyTabIds(): string[] {
     .map((p) => p.id)
 }
 
-function cdpOp(
-  kind: BrowserCdpOp['kind'],
-  sessionId: string,
-  extra: { targetId?: string; url?: string } = {}
-): Promise<BrowserCdpOpResult> {
-  const opId = crypto.randomUUID()
-  return new Promise<BrowserCdpOpResult>((resolve) => {
-    const timer = setTimeout(() => {
-      cdpOps.delete(opId)
-      resolve({ opId, ok: false, error: 'the Koloft window did not answer' })
-    }, CDP_OP_BUDGET_MS)
-    cdpOps.set(opId, (res) => {
-      clearTimeout(timer)
-      resolve(res)
-    })
-    const payload: BrowserCdpOp = { opId, kind, sessionId, ...extra }
-    sendToRenderer(CH.browser.cdpOp, payload)
-  })
-}
-
-function relayDeps(): RelayDeps {
-  return {
-    anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
-    sessionForTab: (tabId) =>
-      claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
-    mount: async (sessionId, targetId) => {
-      const r = await cdpOp('mount', sessionId, { targetId })
-      if (!r.ok || typeof r.guestId !== 'number')
-        throw new Error(r.error ?? 'could not open that tab')
-      return r.guestId
-    },
-    create: async (sessionId, url) => {
-      const r = await cdpOp('create', sessionId, { url })
-      if (!r.ok || !r.targetId || typeof r.guestId !== 'number') {
-        throw new Error(r.error ?? 'could not create a tab')
-      }
-      return { targetId: r.targetId, url, title: '', guestId: r.guestId }
-    },
-    close: async (sessionId, targetId) => {
-      await cdpOp('close', sessionId, { targetId })
-    },
-    stage: async (sessionId, targetId) => {
-      await cdpOp('stage', sessionId, { targetId })
-    },
-    setAttached: (sessionId, targetIds) => {
-      const payload: BrowserCdpAttached = { sessionId, targetIds }
-      sendToRenderer(CH.browser.cdpAttached, payload)
-    },
-    cameThroughAForward: (guestId, url) => {
-      const port = loopbackPortOf(url)
-      return port !== null && pageForwards.carries(guestId, port)
-    }
+const cdpOps = new CdpOps({
+  send: sendToRenderer,
+  anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
+  sessionForTab: (tabId) =>
+    claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
+  cameThroughAForward: (guestId, url) => {
+    const port = loopbackPortOf(url)
+    return port !== null && pageForwards.carries(guestId, port)
   }
-}
-
-function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
-  const driver = sessionDrivingGuest(from.id)
-  if (guestDrivenFromAnotherMachine(from.id)) {
-    if (driver) void openForMachine(driver, url, relayDeps().create).catch(() => {})
-    return true
-  }
-  if (driver) void cdpOp('create', driver, { url })
-  return driver !== null
-}
+})
 
 function routeGuestPopup(url: string, from: WebContents): void {
   if (isOverlayGuest(from)) {
@@ -5355,7 +5333,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
   }
   const decision = routeFor(url, 'user')
   if (decision.dest !== 'browser' && guestDrivenFromAnotherMachine(from.id)) return
-  if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
+  if (decision.dest === 'browser' && cdpOps.openAsDrivingAgentsTab(from.id, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
   if (decision.dest === 'browser') {
@@ -7441,14 +7419,7 @@ function registerIpc(): void {
     if (!s || typeof s.id !== 'string' || !Array.isArray(s.lines)) return
     logUnexpectedExit({ id: s.id, lines: s.lines.map(String) })
   })
-  ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => {
-    const r = res as BrowserCdpOpResult
-    if (!r || typeof r.opId !== 'string') return
-    const pending = cdpOps.get(r.opId)
-    if (!pending) return
-    cdpOps.delete(r.opId)
-    pending(r)
-  })
+  ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => cdpOps.done(res))
   ipcMain.on(CH.browser.openExternal, (_e, url: string) => {
     if (typeof url === 'string') openUrlExternally(url)
   })

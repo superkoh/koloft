@@ -734,6 +734,16 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
   })
 
+  it("skips a line that names an id agy never makes, written into the tab's log by a program that inherited the tab's env, and still takes the lines after it", async () => {
+    const id = await boundTab()
+    title(id, { conversation_id: 'abc-123' })
+    hook(id, 'Stop', { conversationId: 'abc-123' })
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
+  })
+
   // AGY§8 AGY§19
   it("the tab's Scratchpad is agy's own folder for the conversation it holds, under the account folder agy runs with, so it is the very path agy writes its plans to, and follows the tab to the next conversation after /clear", async () => {
     const id = await boundTab()
@@ -3860,19 +3870,19 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
         },
         {
           event: 'SessionStart',
-          input: { conversationId: 'scout-conv' }
+          input: { conversationId: CHILD }
         },
         {
           event: 'PreToolUse',
           input: {
-            conversationId: 'scout-conv',
+            conversationId: CHILD,
             stepIdx: 1,
             toolCall: { name: 'swarm_wait', args: { since: 1 } }
           }
         },
         {
           event: 'Stop',
-          input: { conversationId: 'scout-conv', fullyIdle: true }
+          input: { conversationId: CHILD, fullyIdle: true }
         },
         {
           event: 'PreToolUse',
@@ -3897,7 +3907,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     })
     await vi.waitFor(() =>
       expect(sessions.list().find((s) => s.tabId === reattached.id)?.background).toEqual([
-        { id: 'scout-conv', kind: 'agent', label: 'scout', state: 'working' },
+        { id: CHILD, kind: 'agent', label: 'scout', state: 'working' },
         { id: 'cur-sub', kind: 'agent', label: 'current', state: 'working' }
       ])
     )

@@ -330,7 +330,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;
   without it a test run counts the owner as away, so Discord posts as before),
   `KOLOFT_AWAY_DIGEST_MS` (how long the away digest gathers before it goes to the
-  butler), the session timing knobs
+  butler), `KOLOFT_MAIN_STUCK_MS` (how long the main thread takes no new work before
+  the stuck watch writes it down), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_TEST_MACHINE_FILE` and
   `KOLOFT_TEST_PRESENCE_FILE` are read on every use, so a spec may rewrite them after launch.

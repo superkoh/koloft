@@ -89,8 +89,10 @@ const mainHandles = new Set([
 const mainOns = new Set([...channels(MAIN, String.raw`ipcMain\.on`), ...fromPlugins('on')])
 const menuMapStart = MAIN.indexOf('const MENU_SHORTCUT_CHANNEL')
 const menuMap = MAIN.slice(menuMapStart, MAIN.indexOf('\n}\n', menuMapStart))
+const PLUGIN_MAINS = PLUGIN_PARTS.map((p) => p.main).join('\n')
 const mainSends = new Set([
   ...channels(MAIN, 'sendToRenderer'),
+  ...channels(PLUGIN_MAINS, String.raw`\bd\.send`),
   ...(MAIN.includes('sendToRenderer(MENU_SHORTCUT_CHANNEL[') ? tokens(menuMap) : []),
   ...fromPlugins('push')
 ])
