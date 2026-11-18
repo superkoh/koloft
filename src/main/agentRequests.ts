@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { SessionInfo } from '@shared/types'
 import { agentGuide } from '@shared/agentGuide'
+import { errorText } from '@core/errorText'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
 
@@ -42,9 +43,7 @@ export function fail<T>(error: string): Parsed<T> {
   return { ok: false, error }
 }
 
-export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
+export { errorText }
 
 export function splitAtDashes(args: string[]): { before: string[]; after: string } {
   const dashes = args.indexOf('--')
