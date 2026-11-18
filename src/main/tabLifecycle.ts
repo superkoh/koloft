@@ -7,6 +7,7 @@ import type { Butler } from './discord/butler'
 import type { ButlerTyping } from './discord/butlerTyping'
 import type { SecretAsks } from './discord/secretAsks'
 import type { DiscordRelay } from './discord/relay'
+import type { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import type { SlashCommands } from './discord/slash'
 import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
@@ -39,6 +40,7 @@ export interface TabSubsystems {
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
   toast: (message: string) => void
   typing: MadeLater<Pick<ButlerTyping, 'forget'>>
+  asks: MadeLater<Pick<SessionAsks, 'forget'>>
   relay: MadeLater<Pick<DiscordRelay, 'forget'>>
   buttons: MadeLater<Pick<AskButtons, 'forget'>>
   secrets: MadeLater<Pick<SecretAsks, 'forget'>>
@@ -53,6 +55,7 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
 
   lifecycle.on('exit', ({ tabId }) => s.slash.closed(tabId))
   lifecycle.on('exit', ({ tabId }) => s.typing()?.forget(tabId))
+  lifecycle.on('exit', ({ tabId }) => s.asks()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.relay()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.buttons()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.secrets()?.forget(tabId))
