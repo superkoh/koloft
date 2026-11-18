@@ -1,4 +1,4 @@
-import type { AccountMeta, SessionInfo, Settings } from '@shared/types'
+import type { AccountMeta, SessionInfo, Settings, WorkspaceRows } from '@shared/types'
 
 export function butlerSetUp(s: {
   accounts: readonly AccountMeta[] | null
@@ -30,3 +30,5 @@ export function isButlerTab(
 ): boolean {
   return !!sessions.find((s) => s.tabId === tabId)?.butler || opened === tabId
 }
+
+export const isButlersWorkspace = (w: WorkspaceRows): boolean => !!w.workspace.butler

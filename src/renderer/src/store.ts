@@ -141,7 +141,7 @@ interface AppState {
   sidebarWidth: number
   notesHeight: number
   workspaceRows: WorkspaceRows[]
-  butlerWorkspace: WorkspaceRows | null
+  claimedWorkspaces: WorkspaceRows[]
   toast: string | null
   toastReveal: string | null
   workbenchOpen: Record<string, boolean>
@@ -328,7 +328,7 @@ function killTerminalsOf(tabId: string): string[] {
 }
 
 function rowOfTab(
-  s: Pick<AppState, 'workspaceRows' | 'butlerWorkspace'>,
+  s: Pick<AppState, 'workspaceRows' | 'claimedWorkspaces'>,
   tab: Tab
 ): { row: SessionRow; wsPath: string } | undefined {
   const cwd = tab.launch?.cwd ?? tab.cwd
@@ -370,6 +370,14 @@ let landingAfterClose: LandingAfterClose | null = null
 
 export function landAfterClosingAWatchedSession(landing: LandingAfterClose): void {
   landingAfterClose = landing
+}
+
+export type ClaimsWorkspace = (w: WorkspaceRows) => boolean
+
+let claimsWorkspace: ClaimsWorkspace = () => false
+
+export function keepWorkspacesOutOfTheList(claims: ClaimsWorkspace): void {
+  claimsWorkspace = claims
 }
 
 function watchedSessionLeaves(s: AppState, tabId: string): boolean {
@@ -715,7 +723,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,
   notesHeight: DEFAULT_SETTINGS.notesHeight,
   workspaceRows: [],
-  butlerWorkspace: null,
+  claimedWorkspaces: [],
   toast: null,
   toastReveal: null,
   workbenchOpen: {},
@@ -1136,24 +1144,26 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       const workspaceRows = keepUnchangedWorkspaces(
         s.workspaceRows,
-        all.filter((w) => !w.workspace.butler)
+        all.filter((w) => !claimsWorkspace(w))
       )
-      const butler = all.find((w) => w.workspace.butler)
-      const butlerWorkspace = butler ? keepIfSame(s.butlerWorkspace ?? undefined, butler) : null
+      const claimedWorkspaces = keepUnchangedWorkspaces(
+        s.claimedWorkspaces,
+        all.filter(claimsWorkspace)
+      )
       const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
         ? s.selectedWs
         : null
       if (
         gone.length === 0 &&
         workspaceRows === s.workspaceRows &&
-        butlerWorkspace === s.butlerWorkspace &&
+        claimedWorkspaces === s.claimedWorkspaces &&
         selectedWs === s.selectedWs
       )
         return s
       return {
         ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
-        butlerWorkspace,
+        claimedWorkspaces,
         selectedWs
       }
     })
