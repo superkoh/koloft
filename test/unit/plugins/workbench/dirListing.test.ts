@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { directoryListingHtml, fileNotFoundHtml } from '../../src/main/dirListing'
+import {
+  directoryListingHtml,
+  fileNotFoundHtml
+} from '../../../../src/plugins/workbench/main/dirListing'
 
 describe('directoryListingHtml', () => {
   it('lists every entry, directories first, each as an absolute file:// link', () => {

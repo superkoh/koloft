@@ -124,7 +124,7 @@ function makeDeps(): Harness {
 type Relay = typeof import('../../src/main/cdpRelay')
 
 let relay: Relay
-let composition: typeof import('../../src/main/hostComposition')
+let composition: typeof import('../../src/plugins/workbench/main/hostComposition')
 let deps: Harness
 const sockets: WebSocket[] = []
 
@@ -196,7 +196,7 @@ beforeEach(async () => {
   fakeGuest(11)
   deps = makeDeps()
   relay = await import('../../src/main/cdpRelay')
-  composition = await import('../../src/main/hostComposition')
+  composition = await import('../../src/plugins/workbench/main/hostComposition')
   relay.startRelay(deps)
   relay.relayStripChanged(SESSION, deps.strip)
   relay.setRelayEnabled(true, [TAB])

@@ -19,7 +19,7 @@ import {
   writeDisabledState,
   sameTabTarget,
   type ManagedExtension
-} from '../../src/main/extensionManager'
+} from '../../../../src/plugins/workbench/main/extensionManager'
 
 describe('parseInstallDirs (the seam is env text: absolute dirs, colon separated)', () => {
   it('is empty for an unset or blank variable', () => {

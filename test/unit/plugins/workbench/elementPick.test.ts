@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { cssLines, elementLabel, pickText, pictureOf } from '../../src/main/elementPick'
+import {
+  cssLines,
+  elementLabel,
+  pickText,
+  pictureOf
+} from '../../../../src/plugins/workbench/main/elementPick'
 import {
   closeOwnSession,
   hiddenFromClients,
   holdDebugger,
   openOwnSession
-} from '../../src/main/guestDebugger'
+} from '../../../../src/plugins/workbench/main/guestDebugger'
 
 const picked = {
   url: 'http://127.0.0.1:5173/cart',
