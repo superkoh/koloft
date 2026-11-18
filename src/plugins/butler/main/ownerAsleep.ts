@@ -113,7 +113,7 @@ export class OwnerAsleep {
   constructor(private readonly d: OwnerAsleepDeps) {
     const since = d.presence.asleepSince()
     this.answered = since === null ? [] : answeredSince(d.answeredFile, since)
-    d.presence.listenToSleep((now, sleptAt) => this.sleepChanged(now, sleptAt))
+    d.presence.listenToSleep((asleepSince, sleptAt) => this.sleepChanged(asleepSince, sleptAt))
   }
 
   private since(): number | null {

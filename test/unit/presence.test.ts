@@ -89,7 +89,7 @@ describe('OwnerPresence — one answer to where the owner is: at the Mac, away, 
     presence.listenToSleep((since, sleptAt) => heard.push([since, sleptAt]))
     presence.ownerWrote()
     expect(t.woken).toBe(0)
-    expect(presence.asleepSinceIs(null)).toBe(false)
+    presence.asleepSinceIs(null)
     presence.asleepSinceIs(7)
     presence.ownerWrote()
     expect(t.woken).toBe(1)

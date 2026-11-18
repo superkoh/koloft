@@ -57,11 +57,11 @@ export type SleepChanged = (since: number | null, sleptAt: number | null) => voi
 export interface OwnerPresenceDeps extends PresenceDeps {
   asleepSince: number | null
   wake(): void
-  awayForTests(): boolean | undefined
+  awayForTests?(): boolean | undefined
 }
 
 export class OwnerPresence {
-  readonly hands: Presence
+  private readonly hands: Presence
   private since: number | null
   private readonly sleepListeners: SleepChanged[] = []
 
@@ -80,7 +80,7 @@ export class OwnerPresence {
 
   away(): boolean {
     if (this.asleep()) return false
-    return this.d.awayForTests() ?? this.hands.away()
+    return this.d.awayForTests?.() ?? this.hands.away()
   }
 
   where(): OwnerWhere {
@@ -91,16 +91,27 @@ export class OwnerPresence {
     return this.hands.lastHandsAt()
   }
 
+  macLastUsed(): void {
+    this.hands.macLastUsed()
+  }
+
+  handsOn(): void {
+    this.hands.handsOn()
+  }
+
+  screenLocked(): void {
+    this.hands.screenLocked()
+  }
+
   ownerWrote(): void {
     if (this.asleep()) this.d.wake()
   }
 
-  asleepSinceIs(since: number | null): boolean {
+  asleepSinceIs(since: number | null): void {
     const sleptAt = this.since
-    if (since === sleptAt) return false
+    if (since === sleptAt) return
     this.since = since
     for (const listener of this.sleepListeners) listener(since, sleptAt)
-    return true
   }
 
   listenToSleep(listener: SleepChanged): void {

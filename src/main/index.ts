@@ -519,7 +519,7 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { butlerHelperRole, conductorFolder } from '@plugins/butler/api'
+import { butlerHelperRole, conductorFolder, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
@@ -653,7 +653,6 @@ import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
-import { OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -1135,7 +1134,7 @@ const presence = new OwnerPresence({
 })
 const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
-  if (isHandsOn(input.type)) presence.hands.handsOn()
+  if (isHandsOn(input.type)) presence.handsOn()
 }
 const ownerAsleep = new OwnerAsleep({
   presence,
@@ -3450,7 +3449,7 @@ app.whenReady().then(() => {
   const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
   app.on('browser-window-focus', followFocus)
   app.on('browser-window-blur', () => setImmediate(followFocus))
-  presence.hands.macLastUsed()
+  presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
     const data = file === null ? null : await bytesOfAFileHere(file)
@@ -4581,7 +4580,7 @@ app.whenReady().then(() => {
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
   powerMonitor.on('lock-screen', () => {
-    presence.hands.screenLocked()
+    presence.screenLocked()
     awayDigest?.marked()
     discordRelay?.checkHeld()
   })

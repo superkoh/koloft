@@ -27,8 +27,7 @@ const presenceAsleepSince = (asleepSince: number | null): OwnerPresence =>
     now: () => 0,
     macIdleSeconds: () => 0,
     asleepSince,
-    wake: () => undefined,
-    awayForTests: () => undefined
+    wake: () => undefined
   })
 
 function setup(over: Partial<OwnerAsleepDeps> = {}) {
