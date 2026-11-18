@@ -1,12 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
-import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@plugins/discord/shared/channels'
 import { safeDownloadName } from '@shared/downloadName'
 import { errorText } from '../agentRequests'
-import { sleep } from '../codexTransport'
 import {
   BYTES_PER_FILE,
   type DiscordAttachment,
@@ -21,12 +20,7 @@ import type { PlacedAsk } from './buttons'
 import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
-import {
-  MESSAGE_SOCKET_SHOWS_WITHIN_MS,
-  crossSessionLine,
-  fitsACrossSessionMessage,
-  type ModeClass
-} from '../crossSessionMessage'
+import type { HandOver, HandingMarks, Recipient } from '@plugins/sessions/api'
 import {
   ANSWER_NOT_TAKEN,
   askHow,
@@ -54,20 +48,12 @@ export const answerItFirst = (name: string): string =>
 const QUEUED = '⏳'
 const DELIVERED = '✅'
 const PAGE = 100
-const PROMPT_SETTLES_AFTER_BIND_MS = 1000
-const BUTLER_GETS_READY_WITHIN_MS = 10 * 60_000
-// AGY§8
-const FIRST_PROMPT_BINDS_WITHIN_MS = 10_000
 export const HELD_ASKS_CHECKED_EVERY_MS = 30_000
 
-export interface Destination {
+export interface Destination extends Recipient {
   channelId: string
-  name: string
-  liveTab(): string | undefined
-  open(): Promise<string>
   typeCommand(tab: string, command: string): Promise<void>
   seen(messageId: string): void
-  ownerIsWhere?(): string
   ownerSpoke?(): void
 }
 
@@ -82,7 +68,6 @@ export interface RelayDeps {
   backendOf(tabId: string): BackendId | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
-  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
   pendingApproval(tabId: string): CodexApproval | undefined
   pendingQuestion(tabId: string): CodexQuestion | undefined
   asks: Pick<
@@ -114,22 +99,8 @@ export interface RelayDeps {
   inRoom(tabId: string): boolean
   withButtons(tabId: string, view: DialogView, card: Card): Card
   askPlaced(card: Card, at: PlacedAsk | undefined): void
-  boundKey(tabId: string): string | undefined
-  alive(tabId: string): boolean
-  ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
-  queue(tabId: string, text: string, clientId: string): Promise<void>
-  sendLine(tabId: string, line: string, ms: number): Promise<void>
-  modeOf(tabId: string): ModeClass
+  handOver: Pick<HandOver, 'hand' | 'delivering'>
   attachmentsDir: string
-}
-
-interface Inbound {
-  clientId: string
-  text(): Promise<string>
-  command?: boolean
-  fromDiscord?: boolean
-  quiet?: boolean
-  settle(failed?: string): void
 }
 
 type DiscordAnswer = 'message' | 'turn'
@@ -147,8 +118,7 @@ function withoutOne(texts: string[], text: string): string[] {
 }
 
 export class DiscordRelay {
-  private queues = new Map<string, Inbound[]>()
-  private told = 0
+  private commands = 0
   private seenLive = new Set<string>()
   private codexAsks = new Map<string, string | number>()
   private quietTexts = new Map<string, string[]>()
@@ -281,13 +251,17 @@ export class DiscordRelay {
     }
     const takes =
       command === undefined ? this.d.asks.typable(tab ?? '') : this.d.asks.takesCommand(tab ?? '')
-    const waits = !tab || this.delivering(dest.channelId) || !takes
+    const waits = !tab || this.d.handOver.delivering(dest.key) || !takes
     if (waits) this.react(m, QUEUED, true)
-    this.enqueue(dest, {
-      clientId: `koloft-discord-${m.id}`,
+    const answer: DiscordAnswer = command === undefined ? 'message' : 'turn'
+    const clientId = `koloft-discord-${m.id}`
+    this.d.handOver.hand(dest, {
+      clientId,
       text: command === undefined ? () => this.textOf(m) : async () => command,
-      command: command !== undefined,
-      fromDiscord: true,
+      ...(command !== undefined && { typeAsCommand: (t, c) => dest.typeCommand(t, c) }),
+      beforeHanding: (t, text, asPeerLine) => this.noteDiscordWords(t, text, clientId, asPeerLine),
+      handing: (t) => this.answersDiscord(t, answer),
+      notHanded: (t) => void this.answering.delete(t),
       settle: (failed) => {
         if (waits) this.react(m, QUEUED, false)
         if (failed)
@@ -313,120 +287,39 @@ export class DiscordRelay {
   }
 
   command(dest: Destination, command: string, channelId: string): void {
-    this.enqueue(dest, {
-      clientId: `koloft-command-${++this.told}`,
+    this.d.handOver.hand(dest, {
+      clientId: `koloft-command-${++this.commands}`,
       text: async () => command,
-      command: true,
+      typeAsCommand: (t, c) => dest.typeCommand(t, c),
       settle: (failed) => failed && this.say(channelId, `⚠ ${failed}`)
     })
   }
 
-  tell(
-    dest: Destination,
-    text: string,
-    delivered: (ok: boolean) => void = () => undefined,
-    quiet = false
-  ): void {
-    this.enqueue(dest, {
-      clientId: `koloft-notice-${++this.told}`,
-      text: async () => text,
-      quiet,
-      settle: (failed) => delivered(!failed)
-    })
-  }
-
-  private enqueue(dest: Destination, item: Inbound): void {
-    const waiting = this.queues.get(dest.channelId)
-    if (waiting) return void waiting.push(item)
-    const items = [item]
-    this.queues.set(dest.channelId, items)
-    void this.pump(dest, items)
-  }
-
-  private async pump(dest: Destination, items: Inbound[]): Promise<void> {
-    try {
-      while (items.length) {
-        const item = items[0]
-        const failed = await this.deliver(dest, item)
-          .then(() => undefined)
-          .catch(errorText)
-        items.shift()
-        item.settle(failed)
-      }
-    } finally {
-      this.queues.delete(dest.channelId)
-    }
-  }
-
-  private async deliver(dest: Destination, item: Inbound): Promise<void> {
-    const tab = await this.readyTab(dest)
-    const first = !this.d.boundKey(tab)
-    const said = await item.text()
-    const fromKoloft = !item.command && !item.fromDiscord
-    const text = fromKoloft && dest.ownerIsWhere ? `${said} ${dest.ownerIsWhere()}` : said
-    const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
-    if (answer) this.answersDiscord(tab, answer)
-    if (item.quiet) {
+  readonly quietMarks: HandingMarks = {
+    handing: (tab, said) => {
       this.quietTurns.add(tab)
       this.quietTexts.set(tab, [...(this.quietTexts.get(tab) ?? []), said])
+    },
+    notHanded: (tab, said) => {
+      this.quietTurns.delete(tab)
+      this.quietTexts.set(tab, withoutOne(this.quietTexts.get(tab) ?? [], said))
     }
-    try {
-      await this.hand(dest, tab, item, text)
-    } catch (error) {
-      if (answer) this.answering.delete(tab)
-      if (item.quiet) {
-        this.quietTurns.delete(tab)
-        this.quietTexts.set(tab, withoutOne(this.quietTexts.get(tab) ?? [], said))
-      }
-      throw error
-    }
-    // AGY§8
-    if (first) await this.d.ready(tab, () => !!this.d.boundKey(tab), FIRST_PROMPT_BINDS_WITHIN_MS)
   }
 
   quietTurn(tab: string): boolean {
     return this.quietTurns.has(tab)
   }
 
-  delivering(channelId: string): boolean {
-    return this.queues.has(channelId)
-  }
-
-  private async hand(dest: Destination, tab: string, item: Inbound, text: string): Promise<void> {
-    if (item.command) return dest.typeCommand(tab, text)
-    const backend = this.d.backendOf(tab)
-    const route = backend && messagingOf(backend, false)
-    if (route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
-    // ADR-0028 AGY§16
-    if (backend !== 'agy' && text.startsWith(DISCORD_PREFIX))
-      await this.d.noteDiscordSaid(tab, text)
-    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
-    await this.d.type(tab, [text, '\r'])
-  }
-
-  // CC§13 ADR-0028
-  private async sendAsPeer(tab: string, text: string, id: string): Promise<void> {
-    if (!fitsACrossSessionMessage(text))
-      throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
-    if (text.startsWith(DISCORD_PREFIX)) await this.d.noteDiscordId(tab, id)
-    await this.d.sendLine(
-      tab,
-      crossSessionLine(this.d.modeOf(tab), text, id),
-      MESSAGE_SOCKET_SHOWS_WITHIN_MS
-    )
-  }
-
-  private async readyTab(dest: Destination): Promise<string> {
-    const already = dest.liveTab()
-    const tab = await dest.open()
-    if (!(await this.d.ready(tab, () => this.d.asks.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
-      throw new Error(
-        this.d.alive(tab)
-          ? `${dest.name} did not get ready in time.`
-          : `${dest.name} closed before it was ready.`
-      )
-    if (tab !== already) await sleep(PROMPT_SETTLES_AFTER_BIND_MS)
-    return tab
+  // CC§13 ADR-0028 AGY§16
+  private async noteDiscordWords(
+    tab: string,
+    text: string,
+    id: string,
+    asPeerLine: boolean
+  ): Promise<void> {
+    if (!text.startsWith(DISCORD_PREFIX)) return
+    if (asPeerLine) return this.d.noteDiscordId(tab, id)
+    if (this.d.backendOf(tab) !== 'agy') await this.d.noteDiscordSaid(tab, text)
   }
 
   private async textOf(m: DiscordMessage): Promise<string> {
@@ -442,10 +335,6 @@ export class DiscordRelay {
     const file = path.join(dir, safeDownloadName(a.filename))
     fs.writeFileSync(file, await this.d.download(a.url))
     return `(attached file: ${JSON.stringify(file)})`
-  }
-
-  tellQuietly(dest: Destination, text: string): Promise<boolean> {
-    return new Promise((resolve) => this.tell(dest, text, resolve, true))
   }
 
   turnEnded(tabId: string, turn: Turn): void {

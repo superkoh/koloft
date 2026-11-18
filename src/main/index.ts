@@ -577,7 +577,7 @@ import {
   type DialogView
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
-import { registerDiscordCommand } from './agentDiscord'
+import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
 import { registerGithubCommand, repoFlagOf } from './agentGithub'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
@@ -604,8 +604,8 @@ import {
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { asPeerName } from '@plugins/butler/shared/names'
 import { inviteLink, isDiscordId, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
-import { registerCronCommand } from './agentCron'
-import { registerWorkbenchCommands } from './agentWorkbench'
+import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
+import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { moment, type FileOpened } from '@core/moment'
@@ -615,7 +615,7 @@ import {
   registerChannels as registerCronChannels,
   pushState as pushCronState
 } from '@plugins/scheduled-tasks/main/channels'
-import { registerInboxCommand } from './agentInbox'
+import { registerInboxCommand } from '@plugins/inbox/main/inboxVerb'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
 import {
@@ -640,7 +640,7 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { resolveWorkspace, type PlacedRow } from '@plugins/sessions/api'
+import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
   TODO_NOTICE_FROM_KOLOFT,
@@ -1163,7 +1163,7 @@ const ownerAsleep = new OwnerAsleep(
     answer: answerSession,
     titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
     changedSince: (since) => awayDigest?.changedSince(since) ?? [],
-    report: (text) => discordRelay?.tell(butlerDestination(), text),
+    report: (text) => void handOver?.tell(butlerRecipient(), text),
     now: Date.now,
     answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
   },
@@ -1525,6 +1525,7 @@ let butler: Butler | null = null
 let discordBinding: DiscordBinding | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
+let handOver: HandOver | null = null
 let sessionAsks: SessionAsks | null = null
 let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
@@ -2177,7 +2178,7 @@ const sessionDeps: SessionVerbDeps = {
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
       discordRelay.say(channelId, `⚠ ${text}`)
     else sendToRenderer(CH.toast.show, text)
-    if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
+    if (callerChannel) void handOver?.tell(butlerRecipient(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
     target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
@@ -4078,7 +4079,8 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.toast.show, text),
-    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    notice: async (text) =>
+      (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
     todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
@@ -4240,9 +4242,20 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
+  const handOverNow = new HandOver({
+    ...tabState,
+    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
+    typable: (tabId) => asks.typable(tabId),
+    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
+    queue: queueCodexMessage,
+    sendLine: sendPeerLine,
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId)
+  })
+  handOver = handOverNow
   discordRelay = new DiscordRelay({
     ...tabState,
     asks,
+    handOver: handOverNow,
     link,
     download: async (url) => {
       const res = await fetch(url)
@@ -4300,15 +4313,9 @@ app.whenReady().then(() => {
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     askPlaced: (card, at) => buttons.placed(card, at),
-    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
-    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    queue: queueCodexMessage,
-    sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     attachmentsDir
   })
   asks.watchAsks()
-  const relay = discordRelay
   awayDigest = new AwayDigest({
     away: ownerAway,
     lastHandsAt: () => presence.lastHandsAt(),
@@ -4329,10 +4336,9 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      const lobby = bindingNow.channel()?.channelId
-      return (!!lobby && relay.delivering(lobby)) || (!!tab && !asks.takesCommand(tab))
+      return handOverNow.delivering(BUTLER_RECIPIENT) || (!!tab && !asks.takesCommand(tab))
     },
-    tell: (text) => relay.tellQuietly(butlerDestination(), text),
+    tell: (text) => handOverNow.tell(butlerRecipient(), text, discordRelay?.quietMarks),
     now: Date.now,
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
@@ -5867,7 +5873,7 @@ async function leftOnceRemovalsEnd(
 
 function tellTheOwner(text: string): void {
   sendToRenderer(CH.toast.show, text)
-  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
+  if (handOver && ownerAway()) void handOver.tell(butlerRecipient(), `[Koloft] ${text}`)
 }
 
 async function closeSessionFully(
@@ -6435,6 +6441,7 @@ function roomDestination(threadId: string): Destination | undefined {
   if (!room) return undefined
   const liveTab = (): string | undefined => liveTabOfRoom(threadId, room.keys)
   return {
+    key: threadId,
     channelId: threadId,
     name: room.name,
     liveTab,
@@ -6531,9 +6538,11 @@ async function roomForNew(
   return threadId && roomLink(threadId)
 }
 
-function butlerDestination(): Destination {
+const BUTLER_RECIPIENT = 'butler'
+
+function butlerRecipient(): Recipient {
   return {
-    channelId: discordBinding?.channel()?.channelId ?? '',
+    key: BUTLER_RECIPIENT,
     ownerIsWhere,
     name: butlerNameNow(),
     liveTab: () => butler?.liveTab(),
@@ -6543,7 +6552,14 @@ function butlerDestination(): Destination {
       if (!opened.ok) throw new Error(opened.error)
       butler?.firstWordsComing(opened.tabId)
       return opened.tabId
-    },
+    }
+  }
+}
+
+function butlerDestination(): Destination {
+  return {
+    ...butlerRecipient(),
+    channelId: discordBinding?.channel()?.channelId ?? '',
     typeCommand: async (tabId, command) => {
       const channelId = discordBinding?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
