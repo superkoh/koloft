@@ -4,13 +4,14 @@ import os from 'os'
 import path from 'path'
 import {
   Butler,
-  conductorFolder,
   type AssistBackendChoice,
   type ButlerDeps
 } from '../../../../src/plugins/butler/main/butler'
+import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
-import { TODO_NOTICE } from '../../../../src/plugins/todo/api'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
+
+const TODO_NOTICE = 'Koloft got koloft todo since this conversation began.'
 
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
@@ -82,6 +83,7 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
+    todoNotice: TODO_NOTICE,
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
@@ -236,7 +238,7 @@ describe('the butler', () => {
     noticeArrives = false
     const c = make()
     expect(await c.open()).toEqual({ ok: true, tabId: tab })
-    expect(notices).toEqual([`(From Koloft:) ${TODO_NOTICE}`])
+    expect(notices).toEqual([TODO_NOTICE])
     c.onPtyExit(tab)
     noticeArrives = true
     await c.open()

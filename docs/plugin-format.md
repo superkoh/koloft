@@ -117,7 +117,7 @@ flowchart LR
 | `src/plugins/<id>/prompts/` | the plugin's text blocks for prompts | six plugins |
 | `src/plugins/<id>/skill/` | the plugin's text blocks for `koloft help` and the `koloft` skill | nine plugins |
 | `src/plugins/<id>/api.ts` | what other plugins may import | four plugins |
-| `src/plugins/<id>/main/` | code that runs in Koloft's main process | sessions, discord |
+| `src/plugins/<id>/main/` | code that runs in Koloft's main process | sessions, butler, discord |
 | `src/plugins/<id>/renderer/` | code that runs in Koloft's window | none yet |
 | `src/plugins/<id>/shared/` | code both of them use | none yet |
 
@@ -251,7 +251,7 @@ These are the slots, values and facts in use today:
 | value | `butler-name` | the caller; the butler's name |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
-| fact | `discord-bound` | Discord, when it has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
+| fact | `discord-bound` | the app's Discord code, when Discord has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
 
 Who may add a slot, a value or a fact, and whether these names are kept stable for plugins
 written outside Koloft, is not decided.

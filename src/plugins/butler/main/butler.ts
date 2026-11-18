@@ -10,9 +10,8 @@ import type {
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '@shared/conductors'
 import { errorText } from '@core/errorText'
-import { TODO_NOTICE } from '@plugins/todo/api'
-import { butlerRole } from '../api'
-import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
+import { butlerRole } from '../prompts/role'
+import { conductorFolder } from './folder'
 import { realpathSafe } from '../../../main/projectInfo'
 
 export interface ButlerLaunch {
@@ -50,13 +49,9 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
+  todoNotice: string
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
-}
-
-// ADR-0029 CC§3 CODEX§2
-export function conductorFolder(userData: string): string {
-  return path.join(userData, 'conductors', 'global')
 }
 
 function refusal(error: string): ConductorOpenResult {
@@ -247,7 +242,7 @@ export class Butler {
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
   private tellOfTodo(key: string): void {
-    void this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`).then((told) => {
+    void this.d.notice(this.d.todoNotice).then((told) => {
       if (told && !this.session.knowsTodo?.includes(key))
         this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
     })

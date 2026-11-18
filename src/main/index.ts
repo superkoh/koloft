@@ -519,12 +519,8 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import {
-  Butler,
-  butlerHelperRole,
-  conductorFolder,
-  type AssistBackendChoice
-} from '@plugins/butler/api'
+import { butlerHelperRole, conductorFolder } from '@plugins/butler/api'
+import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
@@ -649,7 +645,13 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
+import {
+  A_HELPER_HAS_IT,
+  FROM_KOLOFT,
+  crossSessionLine,
+  writeLineInTurn
+} from './crossSessionMessage'
+import { TODO_NOTICE } from '@plugins/todo/api'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from './turnNews'
@@ -1628,11 +1630,12 @@ async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestio
 }
 
 function syncAnswerable(): void {
-  const all = discordBinding
-  if (!hookRegDir || !all) return
+  const binding = discordBinding
+  if (!hookRegDir || !binding) return
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
-    const on = ownerAsleep.answersFor(s.tabId) || (discordConnected && !!all.channelOfTab(s.tabId))
+    const on =
+      ownerAsleep.answersFor(s.tabId) || (discordConnected && !!binding.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -4074,6 +4077,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    todoNotice: `${FROM_KOLOFT}${TODO_NOTICE}`,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -4113,30 +4117,30 @@ app.whenReady().then(() => {
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
-    owner: () => discordBinding?.owner(),
-    foundAppOwner: (owner) => discordBinding?.setOwner(owner),
+    owner: () => bindingNow.owner(),
+    foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
       sendToRenderer(CH.discord.status, status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
     onMessage: (m) => {
-      if (discordBinding?.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
+      if (bindingNow.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
         discordRelay?.onMessage(m)
       else void oldThreads.onMessage(m)
     },
     onInteraction: (i) =>
-      void (discordBinding?.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
+      void (bindingNow.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
         ? interactions.handle(i)
         : oldThreads.onInteraction(i)),
     onReady: () => {
-      if (discordBinding?.channel()) void butler?.open()
+      if (bindingNow.channel()) void butler?.open()
       void discordRelay?.catchUp()
       void oldThreads.archiveOnce()
       registerSlashCommands()
     },
     postFailed: (channelId, error) => {
-      const channel = discordBinding?.channel()
+      const channel = bindingNow.channel()
       const name = channel?.channelId === channelId ? channel.name : channelId
       sendToRenderer(CH.cron.toast, `Koloft could not post to #${name} in Discord: ${error}`)
     }
