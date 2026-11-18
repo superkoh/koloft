@@ -29,13 +29,14 @@ import {
   type InboxSort,
   type InboxState
 } from '@shared/inbox'
-import { useStore } from '../store'
-import { IconInbox } from '../icons'
-import { isComposing } from '../keys'
-import { openSessionRow, visitTab } from '../sessionClick'
-import { everyWorkspaceRows, relTime } from '../sessionRows'
-import { useDismissOnOutside } from './WorkspaceSidebar'
-import '../inbox.css'
+import { useStore } from '@renderer/store'
+import { IconInbox } from '@renderer/icons'
+import { isComposing } from '@renderer/keys'
+import { openSessionRow, visitTab } from '@renderer/sessionClick'
+import { everyWorkspaceRows, relTime } from '@renderer/sessionRows'
+import { useDismissOnOutside } from '@renderer/components/menuPlace'
+import { INBOX_PAGE } from '../plugin'
+import './inbox.css'
 
 const TAB_NAME: Record<InboxState, string> = {
   'needs-you': 'Needs you',
@@ -107,7 +108,7 @@ function ordered(
 
 function openSessionRef(ref: string): void {
   const st = useStore.getState()
-  st.setInboxOpen(false)
+  st.setCentrePage(null)
   if (st.tabs.some((t) => t.id === ref)) return visitTab(ref)
   const live = st.sessions.find((s) => s.sessionId === ref && s.alive && s.tabId)
   if (live?.tabId) return visitTab(live.tabId)
@@ -157,7 +158,7 @@ function lastArrival(cards: InboxCard[]): number {
 }
 
 export function InboxRow(): JSX.Element {
-  const open = useStore((s) => s.inboxOpen)
+  const open = useStore((s) => s.centrePage === INBOX_PAGE)
   const cards = useStore((s) => s.inbox.cards)
   const c = inboxCounts(cards, Date.now())
   const entry = useRef<HTMLDivElement>(null)
@@ -179,7 +180,7 @@ export function InboxRow(): JSX.Element {
       <div
         ref={entry}
         className={'ibx-entry' + (c.badge > 0 ? ' lit' : '') + (open ? ' on' : '')}
-        onClick={() => useStore.getState().setInboxOpen(true)}
+        onClick={() => useStore.getState().setCentrePage(INBOX_PAGE)}
       >
         <svg className="ibx-ink-defs" aria-hidden>
           <linearGradient id="ibx-ink" x1="0" y1="0" x2="1" y2="1">

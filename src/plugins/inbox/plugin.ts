@@ -2,6 +2,9 @@ import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './skill/text'
 import { CHANNELS } from './shared/channels'
 
+export const INBOX_ROW = 'inbox-row'
+export const INBOX_PAGE = 'inbox-page'
+
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'inbox',
@@ -10,5 +13,9 @@ export const plugin: PluginManifest = {
   needs: ['sessions'],
   commands: [{ verb: 'inbox' }],
   text: TEXT,
-  channels: Object.values(CHANNELS)
+  channels: Object.values(CHANNELS),
+  ui: [
+    { place: 'sidebar-head', id: INBOX_ROW },
+    { place: 'centre-page', id: INBOX_PAGE }
+  ]
 }

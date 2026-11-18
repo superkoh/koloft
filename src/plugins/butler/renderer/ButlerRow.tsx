@@ -12,7 +12,7 @@ import { rowStateClass, statusWithSecrets } from '@renderer/sessionRows'
 import { assistInputs } from '@renderer/assistInputs'
 import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
-import { menuPosFor, useDismissOnOutside } from '@renderer/components/WorkspaceSidebar'
+import { menuPosFor, useDismissOnOutside } from '@renderer/components/menuPlace'
 import type { ButlerRowEntry } from '../api'
 import { butlerSetUp, butlerTabOf } from './butlerTabs'
 
