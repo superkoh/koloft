@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from 'timers/promises'
 import type { BackendId } from '@shared/types'
 import { messagingOf } from '@shared/sessionBackend'
 import { errorText } from '@core/errorText'
@@ -14,6 +13,8 @@ const RECIPIENT_GETS_READY_WITHIN_MS = 10 * 60_000
 // AGY§8
 const FIRST_PROMPT_BINDS_WITHIN_MS = 10_000
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
 export interface Recipient {
   key: string
   name: string
@@ -22,19 +23,18 @@ export interface Recipient {
   ownerIsWhere?(): string
 }
 
-export interface Words {
+export interface HandingMarks {
+  handing(tab: string, said: string): void
+  notHanded(tab: string, said: string): void
+}
+
+export interface Words extends Partial<HandingMarks> {
   clientId: string
   text(): Promise<string>
   typeAsCommand?(tab: string, command: string): Promise<void>
-  ownersOwn?: boolean
-  handing?(tab: string, said: string): void
-  notHanded?(tab: string, said: string): void
+  saysWhereOwnerIs?: boolean
+  beforeHanding?(tab: string, text: string, asPeerLine: boolean): Promise<void>
   settle(failed?: string): void
-}
-
-export interface QuietMarks {
-  handing(tab: string, said: string): void
-  notHanded(tab: string, said: string): void
 }
 
 export interface HandOverDeps {
@@ -47,8 +47,6 @@ export interface HandOverDeps {
   queue(tab: string, text: string, clientId: string): Promise<void>
   sendLine(tab: string, line: string, ms: number): Promise<void>
   modeOf(tab: string): ModeClass
-  beforeHanding(tab: string, text: string, clientId: string, asPeerLine: boolean): Promise<void>
-  quiet: QuietMarks
 }
 
 export class HandOver {
@@ -57,25 +55,16 @@ export class HandOver {
 
   constructor(private d: HandOverDeps) {}
 
-  tell(
-    to: Recipient,
-    text: string,
-    delivered: (ok: boolean) => void = () => undefined,
-    quiet = false
-  ): void {
-    this.hand(to, {
-      clientId: `koloft-notice-${++this.told}`,
-      text: async () => text,
-      ...(quiet && {
-        handing: (tab, said) => this.d.quiet.handing(tab, said),
-        notHanded: (tab, said) => this.d.quiet.notHanded(tab, said)
-      }),
-      settle: (failed) => delivered(!failed)
-    })
-  }
-
-  tellQuietly(to: Recipient, text: string): Promise<boolean> {
-    return new Promise((resolve) => this.tell(to, text, resolve, true))
+  tell(to: Recipient, text: string, marks?: HandingMarks): Promise<boolean> {
+    return new Promise((resolve) =>
+      this.hand(to, {
+        clientId: `koloft-notice-${++this.told}`,
+        text: async () => text,
+        saysWhereOwnerIs: true,
+        ...marks,
+        settle: (failed) => resolve(!failed)
+      })
+    )
   }
 
   hand(to: Recipient, words: Words): void {
@@ -109,8 +98,7 @@ export class HandOver {
     const tab = await this.readyTab(to)
     const first = !this.d.boundKey(tab)
     const said = await words.text()
-    const fromKoloft = !words.typeAsCommand && !words.ownersOwn
-    const text = fromKoloft && to.ownerIsWhere ? `${said} ${to.ownerIsWhere()}` : said
+    const text = words.saysWhereOwnerIs && to.ownerIsWhere ? `${said} ${to.ownerIsWhere()}` : said
     words.handing?.(tab, said)
     try {
       await this.handTo(tab, words, text)
@@ -126,20 +114,20 @@ export class HandOver {
     if (words.typeAsCommand) return words.typeAsCommand(tab, text)
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
-    if (route === 'peerLine') return this.sendAsPeer(tab, text, words.clientId)
-    await this.d.beforeHanding(tab, text, words.clientId, false)
+    if (route === 'peerLine') return this.sendAsPeer(tab, words, text)
+    await words.beforeHanding?.(tab, text, false)
     if (route === 'queue') return this.d.queue(tab, text, words.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 
-  // CC§13
-  private async sendAsPeer(tab: string, text: string, id: string): Promise<void> {
+  // CC§13 ADR-0028
+  private async sendAsPeer(tab: string, words: Words, text: string): Promise<void> {
     if (!fitsACrossSessionMessage(text))
       throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
-    await this.d.beforeHanding(tab, text, id, true)
+    await words.beforeHanding?.(tab, text, true)
     await this.d.sendLine(
       tab,
-      crossSessionLine(this.d.modeOf(tab), text, id),
+      crossSessionLine(this.d.modeOf(tab), text, words.clientId),
       MESSAGE_SOCKET_SHOWS_WITHIN_MS
     )
   }

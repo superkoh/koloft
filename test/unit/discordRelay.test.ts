@@ -79,7 +79,7 @@ function setup(
   }
   const deps: Omit<RelayDeps, 'asks' | 'handOver'> &
     SessionAskDeps &
-    Omit<HandOverDeps, 'typable' | 'beforeHanding' | 'quiet' | 'type'> = {
+    Omit<HandOverDeps, 'typable'> = {
     link: {
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
       card: async (_c, card) => {
@@ -128,7 +128,7 @@ function setup(
       while (!ready()) await new Promise((r) => setTimeout(r, 50))
       return true
     },
-    type: async (t, keys, stillWanted) => {
+    type: async (t: string, keys: string[], stillWanted?: () => boolean) => {
       const typed = await typeKeys(
         (data) => writes.push({ data, at: Date.now() }),
         keys,
@@ -158,15 +158,7 @@ function setup(
     asksChanged: (t) => void asksChanged.push(t),
     answered: (tab, reply) => void answered.push({ tab, reply })
   })
-  const handOver = new HandOver({
-    ...deps,
-    typable: (t) => asks.typable(t),
-    beforeHanding: (t, text, id, asPeerLine) => relay.noteDiscordWords(t, text, id, asPeerLine),
-    quiet: {
-      handing: (t, said) => relay.quietMarks.handing(t, said),
-      notHanded: (t, said) => relay.quietMarks.notHanded(t, said)
-    }
-  })
+  const handOver = new HandOver({ ...deps, typable: (t) => asks.typable(t) })
   const relay = new DiscordRelay({ ...deps, asks, handOver })
   return {
     relay,
@@ -841,7 +833,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
 
   it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is, and uses that notice up', async () => {
     const { relay, handOver, posts, conductor } = setup()
-    await handOver.tellQuietly(conductor, 'NOTICE about koloft todo')
+    await handOver.tell(conductor, 'NOTICE about koloft todo', relay.quietMarks)
     relay.turnEnded(TAB, {
       said: [
         { who: 'owner', text: '[Discord] what is new?', at: 1 },
@@ -850,7 +842,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       reply: 'Two things.',
       at: 1
     })
-    await handOver.tellQuietly(conductor, 'NOTICE about koloft todo')
+    await handOver.tell(conductor, 'NOTICE about koloft todo', relay.quietMarks)
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE about koloft todo', at: 1 }],
       reply: 'Noted.',
@@ -868,8 +860,8 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     const { relay, handOver, posts, conductor } = setup()
     const notice = 'NOTICE: the same away digest'
     const quietTurn = { said: [{ who: 'owner' as const, text: notice, at: 1 }], at: 1 }
-    expect(await handOver.tellQuietly(conductor, notice)).toBe(true)
-    expect(await handOver.tellQuietly(conductor, notice)).toBe(true)
+    expect(await handOver.tell(conductor, notice, relay.quietMarks)).toBe(true)
+    expect(await handOver.tell(conductor, notice, relay.quietMarks)).toBe(true)
     relay.turnEnded(TAB, { ...quietTurn, reply: 'Nothing to tell.' })
     relay.turnEnded(TAB, { ...quietTurn, reply: 'Still nothing.' })
     relay.turnEnded(TAB, {
@@ -883,8 +875,8 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   it('two copies of a quiet notice that land in one turn are both used up, so a later turn of the owner’s that quotes the notice is still posted', async () => {
     const { relay, handOver, posts, conductor } = setup()
     const notice = 'NOTICE: the same away digest'
-    await handOver.tellQuietly(conductor, notice)
-    await handOver.tellQuietly(conductor, notice)
+    await handOver.tell(conductor, notice, relay.quietMarks)
+    await handOver.tell(conductor, notice, relay.quietMarks)
     relay.turnEnded(TAB, {
       said: [
         { who: 'owner', text: notice, at: 1 },
@@ -904,7 +896,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   it('the turn that took Koloft’s quiet notice counts as quiet, so no typing shows in Discord, until that turn ends', async () => {
     const { relay, handOver, conductor } = setup()
     expect(relay.quietTurn(TAB)).toBe(false)
-    expect(await handOver.tellQuietly(conductor, 'NOTICE while away')).toBe(true)
+    expect(await handOver.tell(conductor, 'NOTICE while away', relay.quietMarks)).toBe(true)
     expect(relay.quietTurn(TAB)).toBe(true)
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE while away', at: 1 }],
@@ -1176,7 +1168,7 @@ describe('DiscordRelay: what Koloft hands the butler says where the owner is', (
     )
     relay.onMessage(message('811', OWNER, 'hi'))
     await vi.waitFor(() => expect(bodies()).toHaveLength(1))
-    handOver.tell(conductor, '[Koloft] a note')
+    void handOver.tell(conductor, '[Koloft] a note')
     await vi.waitFor(() => expect(bodies()).toHaveLength(2))
     relay.onMessage(message('812', OWNER, '/compact'))
     await vi.waitFor(() => expect(commands).toEqual(['/compact']))
@@ -1320,7 +1312,7 @@ describe('DiscordRelay: the owner at the Mac', () => {
 describe('DiscordRelay: Koloft telling a conductor something', () => {
   it('goes the way an owner message does, to its message socket, but is not noted as one of the owner’s Discord messages', async () => {
     const { relay, handOver, bodies, conductor } = setup()
-    handOver.tell(conductor, '[Koloft] Could not deliver to fix-login: it closed.')
+    void handOver.tell(conductor, '[Koloft] Could not deliver to fix-login: it closed.')
     await vi.waitFor(() =>
       expect(bodies()).toEqual(['[Koloft] Could not deliver to fix-login: it closed.'])
     )

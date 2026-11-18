@@ -1164,7 +1164,7 @@ const ownerAsleep = new OwnerAsleep(
     answer: answerSession,
     titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
     changedSince: (since) => awayDigest?.changedSince(since) ?? [],
-    report: (text) => handOver?.tell(butlerRecipient(), text),
+    report: (text) => void handOver?.tell(butlerRecipient(), text),
     now: Date.now,
     answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
   },
@@ -2171,7 +2171,7 @@ const sessionDeps: SessionVerbDeps = {
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
       discordRelay.say(channelId, `⚠ ${text}`)
     else sendToRenderer(CH.cron.toast, text)
-    if (callerChannel) handOver?.tell(butlerRecipient(), `[Koloft] ${text}`)
+    if (callerChannel) void handOver?.tell(butlerRecipient(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
     target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
@@ -4065,7 +4065,8 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
-    notice: async (text) => (await handOver?.tellQuietly(butlerRecipient(), text)) ?? false,
+    notice: async (text) =>
+      (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
     todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
@@ -4236,13 +4237,7 @@ app.whenReady().then(() => {
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-    beforeHanding: async (tabId, text, id, asPeerLine) =>
-      discordRelay?.noteDiscordWords(tabId, text, id, asPeerLine),
-    quiet: {
-      handing: (tabId, said) => discordRelay?.quietMarks.handing(tabId, said),
-      notHanded: (tabId, said) => discordRelay?.quietMarks.notHanded(tabId, said)
-    }
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId)
   })
   handOver = handOverNow
   discordRelay = new DiscordRelay({
@@ -4329,12 +4324,9 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      const lobby = bindingNow.channel()?.channelId
-      return (
-        (!!lobby && handOverNow.delivering(BUTLER_RECIPIENT)) || (!!tab && !asks.takesCommand(tab))
-      )
+      return handOverNow.delivering(BUTLER_RECIPIENT) || (!!tab && !asks.takesCommand(tab))
     },
-    tell: (text) => handOverNow.tellQuietly(butlerRecipient(), text),
+    tell: (text) => handOverNow.tell(butlerRecipient(), text, discordRelay?.quietMarks),
     now: Date.now,
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
@@ -5869,7 +5861,7 @@ async function leftOnceRemovalsEnd(
 
 function tellTheOwner(text: string): void {
   sendToRenderer(CH.cron.toast, text)
-  if (handOver && ownerAway()) handOver.tell(butlerRecipient(), `[Koloft] ${text}`)
+  if (handOver && ownerAway()) void handOver.tell(butlerRecipient(), `[Koloft] ${text}`)
 }
 
 async function closeSessionFully(

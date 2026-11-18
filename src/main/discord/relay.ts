@@ -20,7 +20,7 @@ import type { PlacedAsk } from './buttons'
 import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
-import type { HandOver, QuietMarks, Recipient, Words } from '@plugins/sessions/api'
+import type { HandOver, HandingMarks, Recipient } from '@plugins/sessions/api'
 import {
   ANSWER_NOT_TAKEN,
   askHow,
@@ -68,7 +68,6 @@ export interface RelayDeps {
   backendOf(tabId: string): BackendId | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
-  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
   pendingApproval(tabId: string): CodexApproval | undefined
   pendingQuestion(tabId: string): CodexQuestion | undefined
   asks: Pick<
@@ -255,11 +254,12 @@ export class DiscordRelay {
     const waits = !tab || this.d.handOver.delivering(dest.key) || !takes
     if (waits) this.react(m, QUEUED, true)
     const answer: DiscordAnswer = command === undefined ? 'message' : 'turn'
+    const clientId = `koloft-discord-${m.id}`
     this.d.handOver.hand(dest, {
-      clientId: `koloft-discord-${m.id}`,
+      clientId,
       text: command === undefined ? () => this.textOf(m) : async () => command,
       ...(command !== undefined && { typeAsCommand: (t, c) => dest.typeCommand(t, c) }),
-      ownersOwn: true,
+      beforeHanding: (t, text, asPeerLine) => this.noteDiscordWords(t, text, clientId, asPeerLine),
       handing: (t) => this.answersDiscord(t, answer),
       notHanded: (t) => void this.answering.delete(t),
       settle: (failed) => {
@@ -295,7 +295,7 @@ export class DiscordRelay {
     })
   }
 
-  readonly quietMarks: QuietMarks = {
+  readonly quietMarks: HandingMarks = {
     handing: (tab, said) => {
       this.quietTurns.add(tab)
       this.quietTexts.set(tab, [...(this.quietTexts.get(tab) ?? []), said])
@@ -311,7 +311,7 @@ export class DiscordRelay {
   }
 
   // CC§13 ADR-0028 AGY§16
-  async noteDiscordWords(
+  private async noteDiscordWords(
     tab: string,
     text: string,
     id: string,

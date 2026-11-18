@@ -19,7 +19,7 @@ export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
 export {
   HandOver,
   type HandOverDeps,
-  type QuietMarks,
+  type HandingMarks,
   type Recipient,
   type Words
 } from './main/handOver'
