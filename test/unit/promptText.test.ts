@@ -7,6 +7,7 @@ import {
 } from '../../src/shared/agentGuide'
 import { koloftPrompt } from '../../src/plugins/sessions/api'
 import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
+import { ownerInstructionsPart } from '../../src/plugins/butler/prompts/role'
 import { DISCORD_BOUND } from '../../src/plugins/discord/api'
 import { TODO_NOTICE } from '../../src/plugins/todo/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -16,6 +17,7 @@ import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
 const PINNED = './prompt-text'
 const RULES = 'Docs: sonnet, low.\nNever start a Codex session for work in src/renderer.'
 const BUTLER = 'Alfred'
+const OWNER_INSTRUCTIONS = 'Answer me in Chinese, short.\nAsk me before any session merges.'
 
 const pin = (text: string, name: string): Promise<void> =>
   expect(text).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
@@ -41,6 +43,12 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
     await pin(projectRulesForTheButler('koloft', RULES), 'butler/project-rules')
     await pin(ownerSays('«Merge it.»'), 'butler/message-for-the-owner')
     await pin(TODO_NOTICE, 'butler/todo-notice')
+  })
+
+  it('the butler and its helper when the owner wrote instructions, and the part a Claude Code butler gets beside its role', async () => {
+    await pin(butlerRole(BUTLER, [], OWNER_INSTRUCTIONS), 'butler/butler-owner-instructions')
+    await pin(butlerHelperRole(BUTLER, OWNER_INSTRUCTIONS), 'butler/helper-owner-instructions')
+    await pin(ownerInstructionsPart(OWNER_INSTRUCTIONS), 'butler/owner-instructions-part')
   })
 
   it("what koloft help prints, with and without a project's own rules for picking a model", async () => {

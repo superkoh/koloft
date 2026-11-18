@@ -16,7 +16,7 @@ export function butlerNames(b: ButlerSetting): string[] {
 }
 
 export function renamedButler(current: ButlerSetting, typed: string): ButlerSetting {
-  return butlerSetting(butlerName(typed), [...current.formerNames, current.name])
+  return { ...current, ...butlerSetting(butlerName(typed), [...current.formerNames, current.name]) }
 }
 
 export function butlerTitle(name: string): string {

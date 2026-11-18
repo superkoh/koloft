@@ -39,7 +39,13 @@ export interface PluginSettings {
 }
 
 export type UiPlace =
-  'sidebar-head' | 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item' | 'settings-page'
+  | 'sidebar-head'
+  | 'sidebar-row'
+  | 'centre-page'
+  | 'below-terminal'
+  | 'dialog'
+  | 'palette-item'
+  | 'settings-page'
 
 export interface UiEntry {
   place: UiPlace
