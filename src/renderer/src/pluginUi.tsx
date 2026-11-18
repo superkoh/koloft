@@ -12,9 +12,13 @@ let placedOnce: PlacedUi | undefined
 function placed(): PlacedUi {
   if (placedOnce) return placedOnce
   placedOnce = placeUi(PLUGINS, PLUGIN_UIS)
-  for (const landing of placedOnce.fillsOf(LANDING_AFTER_CLOSE))
-    landAfterClosingAWatchedSession(landing)
+  const [landing] = placedOnce.fillsOf(LANDING_AFTER_CLOSE)
+  if (landing) landAfterClosingAWatchedSession(landing)
   return placedOnce
+}
+
+export function placePluginUi(): void {
+  placed()
 }
 
 export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)

@@ -18,7 +18,7 @@ import { fillsOf } from '@renderer/pluginUi'
 import { ROW_EXTRAS } from '@renderer/slots'
 import { BUTLER_ROW_PART } from '../plugin'
 import { butlerSetUp, butlerTabOf } from './butlerTabs'
-import { openButler, useButler } from './state'
+import { openButler, renameButler, useButler } from './state'
 
 function useButlerFolderRows(): JSX.Element[] | null {
   const rowsOf = useContext(SessionRowsOfContext)
@@ -50,7 +50,6 @@ export function ButlerRow(): JSX.Element {
   const secretAsks = useStore((s) => s.secretAsks)
   const opened = useButler((s) => s.openedTab)
   const askToSetUp = (): void => useButler.setState({ setUpAsked: true })
-  const setRenameButler = (renaming: boolean): void => useButler.setState({ renaming })
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   useDismissOnOutside(!!menu, setMenu)
 
@@ -76,7 +75,7 @@ export function ButlerRow(): JSX.Element {
 
   const menuItems = [
     item('Open', () => void openButler(), 'mi', '↩'),
-    item('Rename…', () => setRenameButler(true)),
+    item('Rename…', () => renameButler(true)),
     item('Start a fresh conversation', () => void openButler(true)),
     <div key="sep" className="sep" />,
     ...moreMenu.map((e) => item(e.label, e.run, e.danger ? 'mi danger' : 'mi'))
@@ -187,10 +186,9 @@ export function RenameButlerDialog(): JSX.Element | null {
 
 function RenameForm(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
-  const setRenameButler = (renaming: boolean): void => useButler.setState({ renaming })
   const [typed, setTyped] = useState(butler.name)
   const name = butlerName(typed)
-  const close = (): void => setRenameButler(false)
+  const close = (): void => renameButler(false)
   const submit = (): void => {
     updateSettings({ butler: renamedButler(butler, name) })
     close()

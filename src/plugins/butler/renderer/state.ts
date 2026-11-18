@@ -13,6 +13,8 @@ export const useButler = create<ButlerState>(() => ({
   setUpAsked: false
 }))
 
+export const renameButler = (renaming: boolean): void => useButler.setState({ renaming })
+
 export async function openButler(fresh = false): Promise<void> {
   const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
   if (!r.ok) return useStore.getState().showToast(r.error)
