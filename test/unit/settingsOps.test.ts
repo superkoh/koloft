@@ -9,9 +9,10 @@ import {
   WORKBENCH_WIDTH_FLOOR,
   sanitizeNotesHeight,
   NOTES_HEIGHT_FLOOR,
-  sanitizeLoadedSettings
+  sanitizeLoadedSettings,
+  DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
+import { HINT_IDS } from '@shared/types'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 describe('buildResetPatch (FR-12)', () => {
@@ -85,6 +86,14 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
   it('strips the Discord block, which only the main process writes', () => {
     const patch = { discord: { bindings: [] }, fontSize: 20 } as never
     expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
+  })
+
+  it('strips the butler’s conversation, which only the main process writes, and lets his name through', () => {
+    const patch = {
+      butlerSession: { sessionIds: ['s'] },
+      butler: { name: 'Jeeves', formerNames: [] }
+    } as never
+    expect(sanitizeSettingsPatch(patch)).toEqual({ butler: { name: 'Jeeves', formerNames: [] } })
   })
 
   it('lets the git auto-fetch switch through untouched (no whitelist to extend)', () => {
@@ -580,6 +589,97 @@ describe('a settings file an older Koloft wrote', () => {
         },
       }
     `)
+  })
+
+  it('loads every key exactly as before: each key the file holds cleaned as before, retired keys dropped, a key Koloft does not know kept, every other key at its default', () => {
+    const loaded = sanitizeLoadedSettings(older) as unknown as Record<string, unknown>
+    const fromFile = Object.fromEntries(
+      Object.keys(older)
+        .filter((k) => k in loaded)
+        .map((k) => [k, loaded[k]])
+    )
+    expect(fromFile).toMatchInlineSnapshot(`
+      {
+        "aKeyANewerKoloftWrote": {
+          "kept": true,
+        },
+        "assist": {
+          "backend": "claude",
+        },
+        "butler": {
+          "formerNames": [
+            "Alfred",
+            "A name far longer than the forty charact",
+          ],
+          "name": "Jeeves the butler",
+        },
+        "butlerSession": {
+          "carried": {
+            "effort": "high",
+            "model": "opus",
+          },
+          "knowsTodo": [
+            "todo-1",
+            "todo-2",
+            "todo-3",
+          ],
+          "lastSessionKey": "key-butler",
+          "sessionIds": [
+            "s-butler",
+            "s-assist",
+            "s-binding",
+          ],
+        },
+        "discord": {
+          "category": {
+            "channelId": "300",
+            "guildId": "100",
+            "name": "Koloft",
+          },
+          "channel": {
+            "channelId": "200",
+            "guildId": "100",
+            "name": "global",
+          },
+          "lastMessageId": "800",
+          "oldThreadsArchived": true,
+          "rooms": [
+            {
+              "keys": [
+                "claude:abc",
+                "claude:def",
+              ],
+              "lastMessageId": "510",
+              "name": "fix login",
+              "putDown": true,
+              "threadId": "500",
+            },
+            {
+              "keys": [
+                "codex:jkl",
+              ],
+              "name": "plain room",
+              "threadId": "502",
+            },
+          ],
+          "userId": "4242",
+          "userName": "owner",
+        },
+        "fontSize": 13,
+        "skipPermissions": true,
+      }
+    `)
+    expect(Object.keys(loaded).sort()).toEqual(
+      [...Object.keys(DEFAULT_SETTINGS), 'aKeyANewerKoloftWrote'].sort()
+    )
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS))
+      if (
+        !(k in older) &&
+        k !== 'skipPermissionsAgreed' &&
+        k !== 'onboardingSeen' &&
+        k !== 'hintsSeen'
+      )
+        expect(loaded[k], k).toEqual(v)
   })
 
   it('loads the same again from what it writes back', () => {

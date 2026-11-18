@@ -1,3 +1,4 @@
+import { setting, type SettingKeys } from '@core/settings'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { isDiscordId, newerSnowflake } from './channels'
@@ -37,7 +38,7 @@ function legacyBindings(rawDiscord: unknown): LegacyBinding[] {
   })
 }
 
-export function oldBindingRecords(rawDiscord: unknown): Record<string, unknown>[] {
+function oldBindingRecords(rawDiscord: unknown): Record<string, unknown>[] {
   return legacyBindings(rawDiscord).map((b) => b.raw)
 }
 
@@ -103,3 +104,15 @@ function cleanRooms(raw: unknown): SessionRoom[] {
     ]
   })
 }
+
+const THE_BUTLERS_CONVERSATION = 'butlerSession'
+
+export const SETTINGS = {
+  discord: setting<DiscordSettings>({
+    default: {},
+    clean: sanitizeDiscord,
+    keptOnReset: true,
+    writtenByMainOnly: true,
+    handsTo: { [THE_BUTLERS_CONVERSATION]: oldBindingRecords }
+  })
+} satisfies SettingKeys
