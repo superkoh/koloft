@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 import type { PluginManifest, UiEntry } from '@core/plugin'
 import { PLUGIN_FORMAT_VERSION } from '@core/plugin'
 import { placeUi, type UiParts } from '@core/ui'
 import { PLUGINS } from '@plugins/list'
-import { partsByPlugin } from '../../src/renderer/src/pluginUi'
+import { PLUGIN_UIS } from '@plugins/uis'
+import '../../src/renderer/src/pluginUi'
 
 const manifest = (id: string, ui: UiEntry[]): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -14,6 +17,8 @@ const manifest = (id: string, ui: UiEntry[]): PluginManifest => ({
   needs: [],
   ui
 })
+
+const PLUGIN_FOLDERS = path.join(__dirname, '..', '..', 'src', 'plugins')
 
 const Part = (): null => null
 const Other = (): null => null
@@ -46,11 +51,13 @@ describe('UI parts a plugin registers', () => {
     expect(placed['centre-page']).toEqual([{ id: 'two', Part: Other }])
   })
 
-  it('finds the renderer/ui.tsx of every plugin on the list that lists UI, and none of a folder off the list', () => {
-    const ids = PLUGINS.map((p) => p.id)
-    for (const found of partsByPlugin.keys()) expect(ids).toContain(found)
+  it('the list of UIs holds the renderer/ui.tsx of every plugin folder that has one, keyed by its id, and each holds the parts its manifest lists', () => {
+    const withUi = fs
+      .readdirSync(PLUGIN_FOLDERS)
+      .filter((id) => fs.existsSync(path.join(PLUGIN_FOLDERS, id, 'renderer', 'ui.tsx')))
+    expect(Object.keys(PLUGIN_UIS).sort()).toEqual(withUi.sort())
     for (const p of PLUGINS.filter((q) => q.ui?.length))
-      expect(Object.keys(partsByPlugin.get(p.id) ?? {}).sort(), p.id).toEqual(
+      expect(Object.keys(PLUGIN_UIS[p.id] ?? {}).sort(), p.id).toEqual(
         p.ui!.map((e) => e.id).sort()
       )
   })
