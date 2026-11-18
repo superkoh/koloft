@@ -561,8 +561,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  // AGY§12 AGY§17
-  test('a command agy leaves running in the background shows breathing green with ↻, named by its command line, until it ends; /compact shows the row working while agy compacts and ends done, not working', async ({
+  // AGY§12 AGY§13 AGY§17
+  test('a command or subagent agy leaves running in the background shows breathing green with ↻, named by its command line or subagent role, until it ends; /compact shows the row working while agy compacts and ends done, not working', async ({
     env
   }) => {
     installAgy(env)
@@ -572,6 +572,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       path.join(env.home, 'fake-agy-compact-ms'),
       COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS
     )
+    fs.writeFileSync(path.join(env.home, 'fake-agy-subagent-ms'), '5000')
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -583,6 +584,17 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(row).toHaveClass(/st-waiting/)
       await oneStillRunning(row).click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('command · sleep 6 · working')
+      await page.keyboard.press('Escape')
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 20_000 })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 20_000 })
+
+      await runIn(page, centerTerm(page), '/subagent Check auth flow')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await expect(row).toHaveClass(/st-waiting/)
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText(
+        'agent · Check auth flow · working'
+      )
       await page.keyboard.press('Escape')
       await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 20_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 20_000 })

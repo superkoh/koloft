@@ -5,6 +5,7 @@ import { pathToFileURL } from 'url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   agyTranscript,
+  ancestryOfAgyConversation,
   diffCounts,
   lastDiffFor,
   listAgyConversations,
@@ -346,5 +347,40 @@ describe('the transcript (AGY§8)', () => {
     ])
     const read = await follower.catchUp()
     expect([read.turns.map((t) => t.reply), read.tokens.input]).toEqual([['new'], 10])
+  })
+
+  it('reads parent_conversation_id and full ancestor chains (including agent_name and killed) for child and grandchild conversations', async () => {
+    writeSummaries(gemini, [
+      { conversation_id: 'parent-1', workspace_uris: uris('/w/a') },
+      {
+        conversation_id: 'child-1',
+        workspace_uris: uris('/w/a'),
+        parent_conversation_id: 'parent-1',
+        agent_name: 'teamwork'
+      },
+      {
+        conversation_id: 'grandchild-1',
+        workspace_uris: uris('/w/a'),
+        parent_conversation_id: 'child-1',
+        agent_name: 'teamwork_interviewer',
+        killed: 1
+      }
+    ])
+    expect(await ancestryOfAgyConversation(gemini, 'child-1')).toEqual({
+      parentId: 'parent-1',
+      ancestors: ['parent-1'],
+      agentName: 'teamwork'
+    })
+    expect(await ancestryOfAgyConversation(gemini, 'parent-1')).toEqual({
+      parentId: '',
+      ancestors: []
+    })
+    expect(await ancestryOfAgyConversation(gemini, 'missing')).toBeUndefined()
+    expect(await ancestryOfAgyConversation(gemini, 'grandchild-1')).toEqual({
+      parentId: 'child-1',
+      ancestors: ['child-1', 'parent-1'],
+      agentName: 'teamwork_interviewer',
+      killed: true
+    })
   })
 })

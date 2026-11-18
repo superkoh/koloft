@@ -41,6 +41,42 @@ describe('what a row says each agent did, in plain words', () => {
     expect(agyToolDid('write_to_file', arg)).toBe('Wrote e.go')
     expect(agyToolDid('search_web', arg)).toBe('Used search_web')
     expect(agyToolDid('ask_question', arg)).toBeUndefined()
+
+    const modern = (name: string, raw: Record<string, unknown>): string | undefined =>
+      agyToolDid(name, (k) => (typeof raw[k] === 'string' ? raw[k] : undefined), raw)
+    expect(modern('write_file', { Path: '/r/new.ts' })).toBe('Wrote new.ts')
+    expect(modern('edit_file', { Path: '/r/app.ts' })).toBe('Edited app.ts')
+    expect(modern('read_file', { Path: '/r/doc.md' })).toBe('Read doc.md')
+    expect(modern('view_file', { AbsolutePath: '/r/old.md' })).toBe('Read old.md')
+    expect(modern('search_web', { query: 'vitest workspaces' })).toBe(
+      'Searched the web for vitest workspaces'
+    )
+    expect(
+      modern('invoke_subagent', {
+        TypeName: 'teamwork',
+        Role: 'Teamwork Multi-Agent Team',
+        Prompt: 'Inspect'
+      })
+    ).toBe('Started a helper: Teamwork Multi-Agent Team')
+    expect(
+      modern('invoke_subagent', {
+        Subagents: [{ TypeName: 'research', Role: 'Check auth flow', Prompt: 'Inspect' }]
+      })
+    ).toBe('Started a helper: Check auth flow')
+    expect(modern('swarm', { action: 'add', name: 'parser' })).toBe('Started a helper: parser')
+    expect(modern('swarm', { action: 'kill', name: 'parser' })).toBe('Stopped helper parser')
+    expect(modern('manage_subagents', { Action: 'kill', ConversationIds: ['c1'] })).toBe(
+      'Stopped subagents'
+    )
+    expect(modern('schedule', { DurationSeconds: 30, Prompt: 'Check build' })).toBe(
+      'Scheduled Check build'
+    )
+    expect(modern('schedule', { DurationSeconds: 45 })).toBe('Scheduled 45s timer')
+    expect(modern('manage_task', { Action: 'kill', TaskId: 'task-2' })).toBe('Stopped task task-2')
+    expect(modern('send_message', { Recipient: 'c2', Message: 'Status?' })).toBe('Messaged c2')
+    expect(modern('run_command', { CommandLine: '   ' })).toBeUndefined()
+    expect(modern('schedule', { DurationSeconds: Number.NaN })).toBe('Used schedule')
+    expect(modern('schedule', { DurationSeconds: Number.POSITIVE_INFINITY })).toBe('Used schedule')
   })
 })
 

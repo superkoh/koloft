@@ -51,4 +51,18 @@ describe('a session takes typing once its turn is over, whatever background work
     expect(edges).toEqual([true])
     runtime.off('turn-over', listen)
   })
+
+  it('a manual compaction restores heldByBackground when it finishes, and an idle auto-compaction is ignored', () => {
+    runtime.recordTurn(TAB, 'ended')
+    runtime.recordCompaction(TAB, { type: 'compacting', trigger: 'auto' })
+    expect(runtime.statusOf(TAB)).toBe('waiting')
+
+    runtime.recordTurn(TAB, 'ended', true)
+    expect(runtime.statusOf(TAB)).toBe('working')
+    runtime.recordCompaction(TAB, { type: 'compacting' })
+    expect(runtime.statusOf(TAB)).toBe('working')
+    runtime.recordCompaction(TAB, { type: 'compacted' })
+    expect(runtime.statusOf(TAB)).toBe('working')
+    expect(runtime.turnOver(TAB)).toBe(true)
+  })
 })

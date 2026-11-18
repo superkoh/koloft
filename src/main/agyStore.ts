@@ -5,7 +5,7 @@ import readline from 'readline'
 import { fileURLToPath } from 'url'
 import type { SaidLine, Turn } from '@shared/turns'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
-import { record } from './codexObservation'
+import { nonEmptyString, record } from './codexObservation'
 import { readAppendedLines, type AppendCursor } from './appendedLines'
 import type { HistoryEntry } from './storedSessions'
 
@@ -80,6 +80,73 @@ export const TOP_LEVEL_ROWS = `select conversation_id, title, preview, workspace
   where (parent_conversation_id is null or parent_conversation_id = '')
     and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')
     and step_count > 0`
+
+const MAX_ANCESTOR_HOPS = 16
+
+export interface AgyConversationAncestry {
+  parentId: string
+  ancestors: string[]
+  agentName?: string
+  killed?: boolean
+}
+
+// AGY§8 AGY§13
+export async function ancestryOfAgyConversation(
+  geminiDir: string,
+  conversationId: string
+): Promise<AgyConversationAncestry | undefined> {
+  const db = summariesDb(geminiDir)
+  if (!fs.existsSync(db)) return undefined
+  const { DatabaseSync } = await import('node:sqlite')
+  const sqlite = new DatabaseSync(db, { readOnly: true })
+  try {
+    let stmt: ReturnType<InstanceType<typeof DatabaseSync>['prepare']>
+    try {
+      stmt = sqlite.prepare(
+        'select parent_conversation_id, agent_name, killed from conversation_summaries where conversation_id = ?'
+      )
+    } catch {
+      stmt = sqlite.prepare(
+        'select parent_conversation_id from conversation_summaries where conversation_id = ?'
+      )
+    }
+    const first = stmt.get(conversationId) as
+      { parent_conversation_id?: unknown; agent_name?: unknown; killed?: unknown } | undefined
+    if (!first) return undefined
+    const parentId = nonEmptyString(first.parent_conversation_id) ?? ''
+    const agentName = nonEmptyString(first.agent_name)
+    const killed = first.killed === 1 || first.killed === true
+    if (!parentId) {
+      return {
+        parentId: '',
+        ancestors: [],
+        ...(agentName && { agentName }),
+        ...(killed && { killed: true })
+      }
+    }
+    const ancestors = [parentId]
+    const seen = new Set([conversationId, parentId])
+    let cur: string | undefined = parentId
+    while (cur && ancestors.length < MAX_ANCESTOR_HOPS) {
+      const nextRow = stmt.get(cur) as { parent_conversation_id?: unknown } | undefined
+      const nextParent = nonEmptyString(nextRow?.parent_conversation_id)
+      if (!nextParent || seen.has(nextParent)) break
+      seen.add(nextParent)
+      ancestors.push(nextParent)
+      cur = nextParent
+    }
+    return {
+      parentId,
+      ancestors,
+      ...(agentName && { agentName }),
+      ...(killed && { killed: true })
+    }
+  } catch {
+    return undefined
+  } finally {
+    sqlite.close()
+  }
+}
 
 export async function listAgyConversations(geminiDir: string): Promise<HistoryEntry[]> {
   const db = summariesDb(geminiDir)

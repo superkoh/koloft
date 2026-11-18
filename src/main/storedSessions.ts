@@ -822,6 +822,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const turn = turnOf(event)
     if (turn) return runtime.recordTurn(run.tabId, turn)
     switch (event.type) {
+      case 'compacting':
+      case 'compacted':
+        return runtime.recordCompaction(run.tabId, event)
       case 'background-changed':
         if (!runtime.setBackground(run.tabId, event.items)) return
         info.background = event.items.length ? event.items : undefined

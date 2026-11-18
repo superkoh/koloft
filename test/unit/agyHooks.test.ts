@@ -408,6 +408,43 @@ describe('the title script agy runs on every state change (AGY§9 AGY§11)', () 
     )
     expect(run(titleCommand(), input)).toBe('')
   })
+
+  it('strips multi-kilobyte subagent role prompts from oversized title payloads while preserving short roles, spaced JSON and the raw owner title stdin', () => {
+    const hugePrompt = 'You are Challenger 1 with "quoted" rules.\n'.repeat(150)
+    const input = JSON.stringify(
+      {
+        conversation_id: 'c1',
+        agent_state: 'working',
+        subagents: [
+          { name: 'self', role: 'Reviewer', model: 'm1', status: 'running' },
+          { name: 'teamwork_challenger', role: hugePrompt, model: 'm1', status: 'running' },
+          { name: 'teamwork_auditor', role: hugePrompt, model: 'm1', status: 'completed' }
+        ]
+      },
+      null,
+      2
+    )
+    expect(input.length).toBeGreaterThan(8000)
+    const owner = `/usr/bin/wc -c`
+    const ownerBytes = Number(
+      run(titleCommand(), input, { KOLOFT_AGY_LOG: log, KOLOFT_AGY_OWNER_TITLE: owner }).trim()
+    )
+    expect(ownerBytes).toBe(Buffer.byteLength(input))
+    const written = fs.readFileSync(log, 'utf8').trim()
+    expect(written.length).toBeLessThan(600)
+    expect(agyLogLine(written)).toEqual({
+      title: {
+        conversationId: 'c1',
+        agentState: 'working',
+        confirmationPending: false,
+        subagents: [
+          { name: 'self', role: 'Reviewer', state: 'running', model: 'm1' },
+          { name: 'teamwork_challenger', state: 'running', model: 'm1' },
+          { name: 'teamwork_auditor', state: 'completed', model: 'm1' }
+        ]
+      }
+    })
+  })
 })
 
 describe('reading the log the scripts leave', () => {
@@ -454,10 +491,40 @@ describe('reading the log the scripts leave', () => {
 
   it('takes a hook line only for an event it knows and with a conversation id', () => {
     const line = (v: unknown): string => JSON.stringify(v)
-    expect(agyLogLine(line({ event: 'PostInvocation', input: { conversationId: 'c1' } }))).toBe(
+    expect(agyLogLine(line({ event: 'PermissionRequest', input: { conversationId: 'c1' } }))).toBe(
       undefined
     )
     expect(agyLogLine(line({ event: 'Stop', input: {} }))).toBeUndefined()
+    expect(
+      agyLogLine(
+        line({
+          event: 'PreInvocation',
+          input: {
+            conversationId: 'c2',
+            parentConversationId: 'c1',
+            rootConversationId: 'c0',
+            agentName: 'research',
+            hookEventName: 'PreInvocation'
+          }
+        })
+      )
+    ).toEqual({
+      hook: {
+        event: 'PreInvocation',
+        conversationId: 'c2',
+        parentConversationId: 'c1',
+        rootConversationId: 'c0',
+        agentName: 'research',
+        hookEventName: 'PreInvocation',
+        input: {
+          conversationId: 'c2',
+          parentConversationId: 'c1',
+          rootConversationId: 'c0',
+          agentName: 'research',
+          hookEventName: 'PreInvocation'
+        }
+      }
+    })
     expect(
       agyLogLine(line({ event: 'Stop', input: { conversationId: 'c1', fullyIdle: true } }))
     ).toEqual({
@@ -465,6 +532,53 @@ describe('reading the log the scripts leave', () => {
         event: 'Stop',
         conversationId: 'c1',
         input: { conversationId: 'c1', fullyIdle: true }
+      }
+    })
+  })
+
+  it('reads subagents from a title line when present, handling objects, strings and empty lists', () => {
+    expect(
+      agyLogLine(
+        JSON.stringify({
+          conversation_id: 'c1',
+          agent_state: 'idle',
+          subagents: [
+            {
+              conversation_id: 'child-1',
+              name: 'research',
+              role: 'Explore auth',
+              state: 'running',
+              model: 'gemini-3.8-flash-low'
+            },
+            'helper-2'
+          ]
+        })
+      )
+    ).toEqual({
+      title: {
+        conversationId: 'c1',
+        agentState: 'idle',
+        confirmationPending: false,
+        subagents: [
+          {
+            id: 'child-1',
+            name: 'research',
+            role: 'Explore auth',
+            state: 'running',
+            model: 'gemini-3.8-flash-low'
+          },
+          { name: 'helper-2' }
+        ]
+      }
+    })
+    expect(
+      agyLogLine(JSON.stringify({ conversation_id: 'c1', agent_state: 'idle', subagents: [] }))
+    ).toEqual({
+      title: {
+        conversationId: 'c1',
+        agentState: 'idle',
+        confirmationPending: false,
+        subagents: []
       }
     })
   })
