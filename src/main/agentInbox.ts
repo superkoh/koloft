@@ -10,6 +10,7 @@ import {
 } from './agentRequests'
 import type { Inbox } from './inbox'
 import { KOLOFT_SOURCE } from './koloftInbox'
+import type { Commands } from '@core/commands'
 
 export const INBOX_USAGE =
   "koloft inbox: add <key> -- '<card JSON>' | update <key> -- '<fields JSON>' | move <key> <needs-you|in-progress|closed> [-- \"<status>\"] | delete <key> | list [<state>]"
@@ -29,6 +30,10 @@ function parseJson(text: string, what: string): Record<string, unknown> {
 
 function warned(text: string, warnings: string[]): AgentReply {
   return answered(warnings.length ? `${text}\nNote: ${warnings.join('; ')}.` : text)
+}
+
+export function registerInboxCommand(commands: Commands, d: InboxVerbDeps): void {
+  commands.register({ inbox: inboxVerb(d) })
 }
 
 export function inboxVerb(d: InboxVerbDeps): AgentVerb {

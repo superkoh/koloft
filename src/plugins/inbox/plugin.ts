@@ -10,6 +10,7 @@ export const plugin: PluginManifest = {
   name: 'Inbox',
   mandatory: true,
   needs: ['sessions'],
+  commands: [{ verb: 'inbox' }],
   text: TEXT,
   ui: [
     { place: 'sidebar-head', id: INBOX_ROW },
