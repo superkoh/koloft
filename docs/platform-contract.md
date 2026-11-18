@@ -310,7 +310,9 @@ method. A recheck adds its date, version and command to the bullet.
   alone while a window had focus, the `main-stalls.log` line spans from the box coming
   up to within 100 ms of the click that closed it (2.2 s, and 6 h 52 min while nobody
   was at the Mac); all 38 `koloft` calls from sessions that got no answer that night
-  fell between a box coming up and its click.
+  fell between a box coming up and its click. A `sample` of that app taken while a
+  seventh box was up shows its main thread in `-[NSAlert runModal]`, called from
+  JavaScript run by `node::Environment::RunTimers`.
 
 Koloft dependents: `index.ts` listens for `uncaughtException` itself, writes the stack
 to `main-errors.log` in `userData` and shows a toast.
@@ -3928,7 +3930,8 @@ registry folders stat them through `fs.promises`.
   policy, no window), a 1 s timer on the main thread was never more than 5 ms late and
   a 5 s wait in the worker never timed out. A worker that never returns to its own
   event loop still gets `parentPort.postMessage` through to the main thread at once
-  (Koloft's e2e, the same day). Not probed: a Developer ID signed, notarized build; an
+  (Koloft's e2e, the same day). Run from a shell, `sample` also reads the installed,
+  Developer ID signed and notarized Koloft 0.73.0 (the same day, once). Not probed: an
   app with a Dock icon whose window stays covered for hours, where App Nap might hold
   back the main thread's timers; what the watch sees when the Mac sleeps and wakes.
 
