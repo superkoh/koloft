@@ -180,6 +180,9 @@ describe('koloft todo', () => {
       text: TODO_ONLY_FOR_THE_BUTLER,
       exit: 1
     })
+    expect(TODO_ONLY_FOR_THE_BUTLER).toBe(
+      'koloft todo: only the butler and the helpers it starts in its own folder can use it.'
+    )
   })
 
   it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; a session whose tab is asleep is listed, on this Mac or another machine, while one running with no tab here is left out as working; every idle local open or asleep session is checked for work left, a closed one only in a listed worktree, and an open or asleep one not asking the owner says when nothing is left in its worktree or closing it deletes no worktree', async () => {
@@ -468,6 +471,51 @@ describe('koloft todo', () => {
     expect(tools).toMatch(/^- jira: Claude \(only in \/work\/shop\)$/m)
     expect(tools).toContain('- linear: Claude (everywhere), Codex (everywhere)')
     expect(tools).toContain('You and your helpers run on Codex, so you can use: linear.')
+  })
+
+  it('with nothing set up, prints the way to sort out to-dos and each section, word for word', async () => {
+    const { run } = harness({ sidebar: sidebarOf([]), sessions: [] })
+    const { text } = await run([])
+    expect(text.slice(text.indexOf('\n\nWORKSPACES\n'))).toBe(
+      [
+        '',
+        '',
+        'WORKSPACES',
+        '',
+        '',
+        'SESSIONS (every workspace; the butler and its helpers left out; working sessions left out; a session on another machine shows no work left, which Koloft cannot check there)',
+        '',
+        'None.',
+        '',
+        "PULL REQUESTS (a pull request whose branch is a listed worktree session's is listed with that session above)",
+        '',
+        'No workspace is on GitHub.',
+        '',
+        'TOOLS SET UP FOR THE AGENTS (MCP servers; to-do tools such as Linear or Jira are among them)',
+        '',
+        'No agent has an MCP server set up.'
+      ].join('\n')
+    )
+  })
+
+  it('answers wrong arguments with its usage, word for word', async () => {
+    const { run } = harness({ sidebar: sidebarOf([[NOTES_WS, []]]), sessions: [] })
+    expect(await run(['list'])).toEqual({
+      text: 'koloft todo: run it alone, or: koloft todo note <workspace> [-- "<note>"] | koloft todo file <workspace> <file>',
+      exit: 2
+    })
+    expect(await run(['note'])).toEqual({
+      text: 'koloft todo note: give a workspace, and a note after -- to save it, like: koloft todo note koloft -- "To-dos are GitHub issues assigned to me."',
+      exit: 2
+    })
+    expect(await run(['file', 'notes'])).toEqual({
+      text: 'koloft todo file: give a workspace and one of the files koloft todo listed for it, like: koloft todo file koloft CLAUDE.md',
+      exit: 2
+    })
+    expect(await run(['file', 'notes', '.env'])).toEqual({
+      text: 'koloft todo file: .env is not one of the files koloft todo reads there.',
+      exit: 1
+    })
   })
 })
 
