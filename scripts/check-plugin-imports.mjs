@@ -8,6 +8,7 @@ const ROOT = process.cwd()
 const SOURCE_FILE = /\.tsx?$/
 const PLUGINS = 'src/plugins/'
 const PLUGIN_LIST = 'src/plugins/list'
+const LIST_ENTRY = { [PLUGIN_LIST]: 'plugin', 'src/plugins/bridges': 'preload/bridge' }
 const ALIASES = {
   '@shared': 'src/shared',
   '@core': 'src/core',
@@ -16,7 +17,8 @@ const ALIASES = {
 }
 const RULE =
   'A plugin imports only src/core, its own folder and the api.ts of a plugin in its needs; ' +
-  'outside src/plugins, only src/plugins/list.ts imports a plugin, and only its plugin.ts (ADR-0051).'
+  'outside src/plugins, only the lists import a plugin: src/plugins/list.ts its plugin.ts, ' +
+  'src/plugins/bridges.ts its preload/bridge.ts (ADR-0051).'
 
 const withoutExtension = (p) => p.replace(SOURCE_FILE, '')
 
@@ -82,7 +84,7 @@ function target(fromRel, spec) {
 
 function pluginOf(file) {
   const rel = withoutExtension(file)
-  if (!rel.startsWith(PLUGINS) || rel === PLUGIN_LIST) return undefined
+  if (!rel.startsWith(PLUGINS) || Object.hasOwn(LIST_ENTRY, rel)) return undefined
   const [id, ...rest] = rel.slice(PLUGINS.length).split('/')
   return { id, inside: rest.join('/') }
 }
@@ -92,11 +94,13 @@ const inCore = (rel) => rel === 'src/core' || rel.startsWith('src/core/')
 function breach(fromRel, to, needs) {
   const from = pluginOf(fromRel)
   const into = pluginOf(to)
-  if (withoutExtension(fromRel) === PLUGIN_LIST)
-    return into && into.inside !== 'plugin'
-      ? `imports plugin ${into.id} past its plugin.ts`
+  const list = withoutExtension(fromRel)
+  const entry = Object.hasOwn(LIST_ENTRY, list) && LIST_ENTRY[list]
+  if (entry)
+    return into && into.inside !== entry
+      ? `imports plugin ${into.id} past its ${entry}.ts`
       : undefined
-  if (!from) return into && `names plugin ${into.id} outside the list of plugins`
+  if (!from) return into && `names plugin ${into.id} outside the lists of plugins`
   if (into?.id === from.id || inCore(to)) return undefined
   if (into)
     return into.inside !== 'api'
@@ -104,7 +108,7 @@ function breach(fromRel, to, needs) {
       : needs.get(from.id)?.has(into.id)
         ? undefined
         : `imports the api.ts of ${into.id}, which its manifest does not list in needs`
-  if (to === PLUGIN_LIST) return 'imports the list of plugins'
+  if (Object.hasOwn(LIST_ENTRY, to)) return 'imports a list of plugins'
   if (to.startsWith('src/shared/'))
     return 'imports src/shared, which is not core (whether it becomes core is not decided)'
   return 'imports app code outside src/core'

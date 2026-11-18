@@ -2305,7 +2305,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await page.evaluate(() => {
         const w = window as unknown as { __toasts: string[] }
         w.__toasts = []
-        window.api.cron.onToast((text) => w.__toasts.push(text))
+        window.api.toast.onShow((text) => w.__toasts.push(text))
       })
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })

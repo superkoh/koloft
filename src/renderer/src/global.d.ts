@@ -1,4 +1,4 @@
-import type { KoloftApi } from '@shared/types'
+import type { KoloftApi } from '@plugins/bridges'
 import type { ActionRowState } from './components/extensionActions'
 
 interface BrowserActionBridge {
