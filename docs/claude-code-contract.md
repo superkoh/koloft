@@ -2695,11 +2695,12 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   resumed and scrolled by SGR wheel reports; 3 replay runs per case. 2.1.232's binary
   wrapped every frame; the versions between were not read. While a window is open, a
   terminal resize can land inside it (PLATFORM§21).
-- **The cheap scroll (a scroll region, `ESC[<top>;<bottom>r`, and `ESC[<n>S`/`T`, then
-  only the rows that came into view) needs synchronized output on, no tmux, zellij or
-  JetBrains terminal, an XTVERSION reply that does not start `xterm.js`, and
-  `CLAUDE_CODE_DECSTBM` set or the remote flag `tengu_marlin_porch` on** (off by
-  default; it was on during the run). With both switches, a wheel report cost 134–511
+- **Up to 2.1.325 the cheap scroll (a scroll region, `ESC[<top>;<bottom>r`, and
+  `ESC[<n>S`/`T`, then only the rows that came into view) needs synchronized output on,
+  no tmux, zellij or JetBrains terminal, and `CLAUDE_CODE_DECSTBM` set or the remote flag
+  `tengu_marlin_porch` on; 2.1.327 needs neither switch** (the flag is off by default; it
+  was on during the run; the 2.1.319 strings also named an XTVERSION reply that does not
+  start `xterm.js`, which the 2026-11-18 run below did not bear out). With both switches, a wheel report cost 134–511
   bytes instead of 3.1–3.4 KB, and 60 trackpad-speed reports 48.6–88 KB instead of
   314–342 KB. Same strings and run as above; whether the network reached the flag
   service is inferred, not checked.
@@ -2708,8 +2709,8 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   them are gone, and the scroll region turns on wherever synchronized output is on and no
   `TMUX`, `ZELLIJ`, JetBrains terminal or `WT_SESSION` is set; a debug line `DECSTBM:
   enabled|gated (TMUX=… ZELLIJ=… TERM_PROGRAM=… TERM=…)` is new. So on 2.1.327 a local
-  tab with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1` gets the cheap scroll without the env var,
-  which stays set only for older builds. Run the same day (a Mac pty at 120×40,
+  tab with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1` gets the cheap scroll without the env var;
+  only builds up to 2.1.325 read it. Run the same day (a Mac pty at 120×40,
   `"tui": "fullscreen"`, a resumed 300-turn transcript, DECRQM 2026 answered, 40 SGR
   wheel-up reports 150 ms apart, one run per case): with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1`
   both builds scrolled every report with `ESC[2;35r ESC[<n>T ESC[r`, with or without
@@ -2717,7 +2718,8 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   `xterm.js(6.1.0)` reply (more, smaller frames), byte for byte the same on both. So the
   flag was on for this Mac even on 2.1.325 (inferred, not checked: it is not in the
   cached `.claude.json`), and an `xterm.js` reply changes the pacing, not whether the
-  scroll region is used — the `xterm.js` condition in the first sentence did not hold here.
+  scroll region is used — the 2.1.319 `xterm.js` condition did not hold here, on either
+  build.
 - **The `tui` setting still takes only `default` and `fullscreen` on 2.1.327**, though
   that release names the non-fullscreen renderer `/tui classic`: `"tui": "classic"` in
   `settings.json` opens a blocking "Settings Error … tui: Invalid value. Expected one of:
@@ -3125,7 +3127,10 @@ sessions.
   ran with no `PermissionRequest`: the 2.1.326 changelog's "some tool calls in bypass
   permissions mode … ask" and "some `cp` and `mv` commands … ask first" were not found.
   An interactive tab started Koloft's way with no permission flag started in auto mode
-  (`permissionMode: "auto"`) on both builds, in a never-used and a reused config dir.
+  (`permissionMode: "auto"`) on both builds, in a never-used and a reused config dir —
+  with an API key and no account or organization policy behind it, so whether a real
+  login's tab starts there too is **inferred, not checked**. The 54 calls above ran under
+  `-p` in the mode each names; auto mode was not among them.
 - **Read-only git aimed at another checkout asks on 2.1.323 and 2.1.325 alike.**
   2026-11-14, the same `-p` setup in `default` and `acceptEdits`: from a `-w` worktree,
   `git -C <main checkout> status|log`, `git -C <other repo>` (trusted in `.claude.json`

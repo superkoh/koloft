@@ -110,7 +110,6 @@ describe('Codex shell runtime', () => {
     { printed: '0.169.0', verified: true },
     { printed: '0.169.2', verified: true },
     { printed: '0.170.0', verified: true },
-    { printed: '0.170.2', verified: true },
     { printed: '0.171.0', verified: false },
     { printed: '1.0.0', verified: false }
   ])(

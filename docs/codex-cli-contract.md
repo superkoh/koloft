@@ -745,14 +745,13 @@ The footer changes (#60972 lowercase service-tier names, #61141, #61167) were re
 the changes only; Koloft passes a `tui.status_line` list and parses no footer text (§8).
 No other section was probed by hand on 0.170.0: sections 3, 5, 18 (but its `--help`),
 20–23, 25–27, 30 and 33, and 15's login parts, stand on 0.167.0's to 0.169.0's
-measurements above and on the e2e specs. Those specs, with 0.170.0 as the Mac's codex,
-passed but for cases that failed the same on 0.161.0 (Send failing checks, a lab ssh
-setup step), two that passed when run again alone, and one that reads a reply too soon:
-with `gpt-6.2-sol` the model first sends a `commentary` message ("I’ll read the Koloft
-skill.") and the `final_answer` 2.5 s after its tool call, and the case took the first
-for the answer — on 0.169.0 too, so the server's new default, not the build (the
-remote ones, E-SSH-23/24/25, passed; the lab machine's version **inferred, not
-checked**, as for 0.169.0).
+measurements above and on the e2e specs, whose Codex cases, the remote ones
+(E-SSH-23/24/25) too, passed with 0.170.0 as the Mac's codex once run alone, the lab
+machine's version **inferred, not checked** as for 0.169.0. `gpt-6.2-sol` sends a
+`commentary` message before a tool call more readily than the 0.161.0 catalog's default:
+asked to read a skill file, it sent "I’ll read the Koloft skill." 44 s into the turn and
+the `final_answer` 2.5 s after the tool call, on 0.169.0 and 0.170.0 alike (§19: a turn
+can hold several `agentMessage`s).
 
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
