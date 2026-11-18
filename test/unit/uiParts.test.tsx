@@ -4,16 +4,16 @@ import fs from 'fs'
 import path from 'path'
 import type { PluginManifest, UiEntry } from '@core/plugin'
 import { PLUGIN_FORMAT_VERSION } from '@core/plugin'
-import { fill, placeUi, slot, type PluginUi, type Slot } from '@core/ui'
+import { fill, placeUi, slot, type PluginUi } from '@core/ui'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import { PLUGIN_PALETTE_ACTIONS } from '@shared/paletteFeatures'
+import { PLUGIN_ROUTE_KINDS } from '@shared/sessionRoute'
 import {
   PALETTE_HAND_OFF,
   PALETTE_ROUTE,
   PALETTE_RUN,
   ROW_EXTRAS,
-  type PaletteRoute,
   type PaletteRun,
   type RowExtrasFill
 } from '../../src/renderer/src/slots'
@@ -118,13 +118,14 @@ describe('UI parts a plugin registers', () => {
     expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
   })
 
-  it('exactly one plugin takes the ⌘P words core cannot route itself, and no ⌘P route kind is taken twice', () => {
-    const filled = (into: Slot<unknown>): unknown[] =>
-      Object.values(PLUGIN_UIS).flatMap((ui) =>
-        (ui.fills ?? []).filter((f) => f.slot === into).map((f) => f.value)
-      )
-    expect(filled(PALETTE_HAND_OFF)).toHaveLength(1)
-    const kinds = filled(PALETTE_ROUTE).map((r) => (r as PaletteRoute).kind)
-    expect(new Set(kinds).size).toBe(kinds.length)
+  it('exactly one plugin takes the ⌘P words core cannot route itself, and each route kind core leaves to plugins has exactly one taker', () => {
+    const placed = placeUi(PLUGINS, PLUGIN_UIS)
+    expect(placed.fillsOf(PALETTE_HAND_OFF)).toHaveLength(1)
+    expect(
+      placed
+        .fillsOf(PALETTE_ROUTE)
+        .map((r) => r.kind)
+        .sort()
+    ).toEqual([...PLUGIN_ROUTE_KINDS].sort())
   })
 })

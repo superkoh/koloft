@@ -3,7 +3,7 @@ import type { ComponentType } from 'react'
 import { slot } from '@core/ui'
 import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
-import type { SessionRoute } from '@shared/sessionRoute'
+import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { LandingAfterClose } from './store'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
@@ -67,7 +67,7 @@ export interface PaletteRun {
 export const PALETTE_RUN = slot<PaletteRun>('palette-run')
 
 export interface PaletteRoute {
-  kind: SessionRoute['kind']
+  kind: PluginRouteKind
   run: (prompt: string) => Promise<string | null>
 }
 
