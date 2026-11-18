@@ -112,10 +112,10 @@ test.describe('a session’s password ask that cannot reach the owner on Discord
       await markedAtTheMac(app, page)
       expect(await marksAsking(page)).toEqual([tab])
       await page.locator('.ibx-entry').click()
-      const card = page.locator('.inbox-page .ibx-item', {
-        has: page.locator('.ibx-what', { hasText: /is waiting for you in its tab/ })
-      })
-      await card.getByText('Open session', { exact: true }).click()
+      await expect(
+        page.locator('.inbox-page .ibx-what', { hasText: /is waiting for you in its tab/ })
+      ).toBeVisible()
+      await page.locator('.inbox-page .ibx-link', { hasText: /^Open session/ }).click()
       await expect(page.locator('.inbox-page')).toHaveCount(0)
       await expect(page.locator(SUDO_BOX)).toBeVisible()
       await answerTheSudoBox(page, tab, 'pw')
