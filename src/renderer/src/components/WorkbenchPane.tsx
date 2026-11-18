@@ -1410,7 +1410,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           branch={ghInfo?.branch ?? null}
           onCancel={() => setCommitOpen(false)}
           onCommit={async (message) => {
-            const ok = await gh.gitStep(window.api.github.commit(treeRoot, message), 'Committed.')
+            const ok = await gh.gitStep(window.api.git.commit(treeRoot, message), 'Committed.')
             if (ok) setCommitOpen(false)
             return ok
           }}

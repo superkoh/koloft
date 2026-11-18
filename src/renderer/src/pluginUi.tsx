@@ -3,15 +3,36 @@ import type { JSX } from 'react'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import type { UiPlace } from '@core/plugin'
-import { placeUi } from '@core/ui'
-import { useStore } from './store'
+import { placeUi, type PlacedUi, type Slot } from '@core/ui'
+import { landAfterClosingAWatchedSession, useStore } from './store'
+import { GLOBAL_NOTE, LANDING_AFTER_CLOSE } from './slots'
 
-const PLACED = placeUi(PLUGINS, PLUGIN_UIS)
+let placedOnce: PlacedUi | undefined
+
+function placed(): PlacedUi {
+  if (placedOnce) return placedOnce
+  placedOnce = placeUi(PLUGINS, PLUGIN_UIS)
+  const [landing] = placedOnce.fillsOf(LANDING_AFTER_CLOSE)
+  if (landing) landAfterClosingAWatchedSession(landing)
+  return placedOnce
+}
+
+export function placePluginUi(): void {
+  placed()
+}
+
+export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+
+export function useShowsGlobalNote(tabId: string | null, rowId: string | null): boolean {
+  return fillsOf(GLOBAL_NOTE)
+    .map((shows) => shows(tabId, rowId))
+    .some(Boolean)
+}
 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
   return (
     <>
-      {(PLACED[place] ?? []).map(({ id, Part }) => (
+      {(placed().parts[place] ?? []).map(({ id, Part }) => (
         <Part key={id} />
       ))}
     </>
@@ -20,6 +41,6 @@ export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
 
 export function OpenCentrePage(): JSX.Element | null {
   const open = useStore((s) => s.centrePage)
-  const page = PLACED['centre-page']?.find((p) => p.id === open)
+  const page = placed().parts['centre-page']?.find((p) => p.id === open)
   return page ? <page.Part /> : null
 }

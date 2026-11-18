@@ -71,9 +71,7 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
-import { ButlerRow } from '@plugins/butler/renderer/ButlerRow'
 import { StartedByButler, useStartedByButler } from '@plugins/butler/renderer/startedBy'
-import { useDiscordOnButlerRow } from '@plugins/discord/renderer/onButlerRow'
 import {
   CronMark,
   NextJobLine,
@@ -82,6 +80,7 @@ import {
   useNextJobClock
 } from '@plugins/scheduled-tasks/renderer/sidebarMarks'
 import { PartsAt } from '../pluginUi'
+import { SessionRowsOfContext } from './sidebarRows'
 import { MENU_PAD_H, menuPosFor, useDismissOnOutside } from './menuPlace'
 import {
   discardAll,
@@ -1012,13 +1011,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const welcomeActive = useStore((s) => s.welcomeActive)
   const listedButler = useStore((s) => s.butlerWorkspace)
   const startedByButler = useStartedByButler()
-  const discordOnButlerRow = useDiscordOnButlerRow()
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
   const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
-  const { workspaceRows: rows, butlerWorkspace } = useMemo(
+  const { workspaceRows: rows } = useMemo(
     () => shownRows({ workspaceRows: listedRows, butlerWorkspace: listedButler, tabs: storeTabs }),
     [listedRows, listedButler, storeTabs]
   )
@@ -1335,12 +1333,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
-          <ButlerRow {...discordOnButlerRow}>
-            {butlerWorkspace &&
-              sessionTree(butlerWorkspace.rows).map(
-                rowRenderer(butlerWorkspace.workspace.path, butlerWorkspace.rows)
-              )}
-          </ButlerRow>
+          <SessionRowsOfContext.Provider
+            value={(ws) => sessionTree(ws.rows).map(rowRenderer(ws.workspace.path, ws.rows))}
+          >
+            <PartsAt place="sidebar-row" />
+          </SessionRowsOfContext.Provider>
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
