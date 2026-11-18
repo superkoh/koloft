@@ -112,7 +112,7 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
-import { InboxPage } from './components/Inbox'
+import { InboxPage } from '@plugins/inbox/renderer/Inbox'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'

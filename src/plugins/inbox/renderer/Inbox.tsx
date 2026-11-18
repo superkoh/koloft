@@ -29,13 +29,13 @@ import {
   type InboxSort,
   type InboxState
 } from '@shared/inbox'
-import { useStore } from '../store'
-import { IconInbox } from '../icons'
-import { isComposing } from '../keys'
-import { openSessionRow, visitTab } from '../sessionClick'
-import { everyWorkspaceRows, relTime } from '../sessionRows'
-import { useDismissOnOutside } from './WorkspaceSidebar'
-import '../inbox.css'
+import { useStore } from '@renderer/store'
+import { IconInbox } from '@renderer/icons'
+import { isComposing } from '@renderer/keys'
+import { openSessionRow, visitTab } from '@renderer/sessionClick'
+import { everyWorkspaceRows, relTime } from '@renderer/sessionRows'
+import { useDismissOnOutside } from '@renderer/components/menuPlace'
+import './inbox.css'
 
 const TAB_NAME: Record<InboxState, string> = {
   'needs-you': 'Needs you',

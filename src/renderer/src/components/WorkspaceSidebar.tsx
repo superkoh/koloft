@@ -81,7 +81,8 @@ import {
   startedByAJob,
   useNextJobClock
 } from '@plugins/scheduled-tasks/renderer/sidebarMarks'
-import { InboxRow } from './Inbox'
+import { InboxRow } from '@plugins/inbox/renderer/Inbox'
+import { MENU_PAD_H, menuPosFor, useDismissOnOutside } from './menuPlace'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -122,9 +123,6 @@ function removeConfirmText(running: number, jobs: number): string {
 
 const HOVER_MENU_MS = 350
 const MENU_LEAVE_MS = 140
-const MENU_W = 190
-const MENU_ITEM_H = 31
-const MENU_PAD_H = 10
 const NO_INHERITED_TOOLTIP = ''
 const FRESH_POP_W = 300
 
@@ -144,34 +142,6 @@ interface MenuState {
   target: MenuTarget
   left: number
   top: number
-}
-
-export function useDismissOnOutside(open: boolean, dismiss: (none: null) => void): void {
-  // PLATFORM§25
-  useLayoutEffect(() => {
-    if (!open) return
-    const close = (): void => dismiss(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') dismiss(null)
-    }
-    window.addEventListener('click', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open, dismiss])
-}
-
-export function menuPosFor(el: HTMLElement, itemCount: number): { left: number; top: number } {
-  const r = el.getBoundingClientRect()
-  let left = r.right - 6
-  if (left + MENU_W > window.innerWidth - 4) left = Math.max(4, r.left - MENU_W + 6)
-  const estH = itemCount * MENU_ITEM_H + MENU_PAD_H
-  const top = Math.min(r.top, Math.max(4, window.innerHeight - estH - 4))
-  return { left, top }
 }
 
 const DROP_GAP = 4
