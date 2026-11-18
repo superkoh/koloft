@@ -615,6 +615,10 @@ import {
 } from '@plugins/inbox/main/channels'
 import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
 import {
+  registerChannels as registerSecretChannels,
+  pushAsks as pushSecretAsks
+} from '@plugins/passwords/main/channels'
+import {
   registerChannels as registerWorkbenchChannels,
   pushOpenFile
 } from '@plugins/workbench/main/channels'
@@ -4134,7 +4138,7 @@ app.whenReady().then(() => {
   })
   sessionAsks = asks
   const secrets = new SecretAsks<OwnerAsk>({
-    show: (views) => sendToRenderer(CH.secret.asks, views),
+    show: pushSecretAsks(pluginIpc),
     owner: {
       waitsOnTheOwner: (tabId) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
       ownerAnswered: (tabId) => {
@@ -6966,16 +6970,7 @@ function registerIpc(): void {
     sync: () => koloftInbox.sync(),
     toast: (text) => sendToRenderer(CH.toast.show, text)
   })
-  ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
-  ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
-    if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)
-  })
-  ipcMain.on(CH.secret.done, (_e, id: unknown) => {
-    if (typeof id === 'string') secretAsks?.done(id)
-  })
-  ipcMain.on(CH.secret.decline, (_e, id: unknown) => {
-    if (typeof id === 'string') secretAsks?.decline(id)
-  })
+  registerSecretChannels(pluginIpc, () => secretAsks)
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {
