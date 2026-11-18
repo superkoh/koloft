@@ -2,18 +2,18 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { SessionInfo } from '../../src/shared/types'
+import type { SessionInfo } from '../../../../src/shared/types'
 import {
   discordVerb,
   NOT_A_PAGE,
   NOT_THE_BUTLER,
   OWNER_AT_THE_MAC
-} from '../../src/main/agentDiscord'
-import { EXIT_USAGE } from '../../src/main/agentRequests'
-import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
-import type { DiscordFile } from '../../src/main/discord/link'
-import { WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/api'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
+} from '../../../../src/plugins/discord/main/discordVerb'
+import { EXIT_USAGE } from '../../../../src/core/command'
+import { DISCORD_SETUP_STEPS } from '../../../../src/main/discord/setupSteps'
+import type { DiscordFile } from '../../../../src/main/discord/link'
+import { WAITING_QUESTION_TOOL } from '../../../../src/plugins/sessions/api'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../../../src/shared/sessionBackend'
 
 let cwd: string
 beforeEach(() => {
@@ -57,6 +57,15 @@ function verb(butler: boolean, pageHeight = 900, pageWidth = 1280, quiet = false
   const call = (args: string[]) => run(args, { tabId: 'pty-1', cwd, session: {} as SessionInfo })
   return { call, sent, shot, opened, bound: () => bound }
 }
+
+describe('koloft discord usage', () => {
+  it('a wrong call is answered with the usage line, exit code 2', async () => {
+    expect(await verb(true).call(['frob'])).toEqual({
+      exit: 2,
+      text: 'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
+    })
+  })
+})
 
 describe('koloft discord thread open', () => {
   it('opens the named session’s room for the butler, taking a name with spaces whole', async () => {

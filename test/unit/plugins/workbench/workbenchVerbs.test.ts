@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { workbenchVerbs } from '../../src/main/agentWorkbench'
-import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../src/main/agentRequests'
-import type { FileOpened } from '../../src/core/moment'
+import { workbenchVerbs } from '../../../../src/plugins/workbench/main/workbenchVerbs'
+import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../../../src/core/command'
+import type { FileOpened } from '../../../../src/core/moment'
 
 let dir: string
 let note: string
@@ -102,6 +102,24 @@ describe('koloft open / diff', () => {
     expect(reply.text).toBe(
       `Opened ${path.join(dir, 'plan.md')} in this session's Workbench. Sent it to Discord as text, with the file. B.`
     )
+  })
+})
+
+describe('the usage line each Workbench command answers a wrong call with', () => {
+  it('open, diff and note each say how to call them, exit code 2', async () => {
+    const v = verbs()
+    expect(await v.open([], caller())).toEqual({
+      exit: EXIT_USAGE,
+      text: 'koloft open: give one file or web address, like "koloft open docs/plan.md".'
+    })
+    expect(await v.diff([], caller())).toEqual({
+      exit: EXIT_USAGE,
+      text: 'koloft diff: give one file, like "koloft diff src/app.ts".'
+    })
+    expect(await v.note(['erase'], caller())).toEqual({
+      exit: EXIT_USAGE,
+      text: 'koloft note: run "koloft note" to read the note, or "koloft note append <text>" to add to it.'
+    })
   })
 })
 
