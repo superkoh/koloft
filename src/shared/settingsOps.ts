@@ -1,5 +1,5 @@
 import {
-  DEFAULT_SETTINGS,
+  APP_DEFAULT_SETTINGS,
   HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
@@ -10,100 +10,71 @@ import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
 import { stringsIn } from './workbenchState'
-import { sanitizeButler, sanitizeButlerSession } from '@plugins/butler/shared/settings'
-import { oldBindingRecords, sanitizeDiscord } from '@plugins/discord/shared/settings'
+import { registerSettings } from '@core/settings'
+import { PLUGINS } from '@plugins/list'
+import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
+
+const PLUGIN_KEYS = registerSettings(PLUGINS, PLUGIN_SETTINGS)
+
+export const DEFAULT_SETTINGS: Settings = {
+  ...APP_DEFAULT_SETTINGS,
+  ...(PLUGIN_KEYS.defaults as PluginSettingValues)
+}
+
+const KEPT_ON_RESET: readonly string[] = [
+  'accounts',
+  'skipPermissions',
+  'skipPermissionsAgreed',
+  'fablePriority',
+  'sessionMethods',
+  'assist',
+  'newProjectFolders',
+  'gitAccounts',
+  'gitPicks',
+  'gitSuggestionsDismissed',
+  'gitMachines',
+  'todoNotes',
+  'sessionDefaults',
+  ...PLUGIN_KEYS.keptOnReset
+]
+
+const WRITTEN_BY_MAIN_ONLY: readonly string[] = [
+  'accounts',
+  'gitAccounts',
+  'gitPicks',
+  'gitSuggestionsDismissed',
+  'gitMachines',
+  'todoNotes',
+  'sessionDefaults',
+  ...PLUGIN_KEYS.writtenByMainOnly
+]
+
+const RETIRED: readonly string[] = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
+
+const without = <T extends object>(from: T, keys: readonly string[]): Partial<T> =>
+  Object.fromEntries(Object.entries(from).filter(([key]) => !keys.includes(key))) as Partial<T>
 
 export function buildResetPatch(): Partial<Settings> {
-  const {
-    accounts,
-    skipPermissions,
-    skipPermissionsAgreed,
-    fablePriority,
-    sessionMethods,
-    discord,
-    assist,
-    butler,
-    butlerSession,
-    newProjectFolders,
-    gitAccounts,
-    gitPicks,
-    gitSuggestionsDismissed,
-    gitMachines,
-    todoNotes,
-    sessionDefaults,
-    ...rest
-  } = DEFAULT_SETTINGS
-  void todoNotes
-  void sessionDefaults
-  void butler
-  void gitAccounts
-  void gitPicks
-  void gitSuggestionsDismissed
-  void gitMachines
-  void assist
-  void butlerSession
-  void newProjectFolders
-  void accounts
-  void skipPermissions
-  void skipPermissionsAgreed
-  void fablePriority
-  void sessionMethods
-  void discord
-  return rest
+  return without(DEFAULT_SETTINGS, KEPT_ON_RESET)
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const {
-    accounts,
-    discord,
-    butlerSession,
-    gitAccounts,
-    gitPicks,
-    gitSuggestionsDismissed,
-    gitMachines,
-    todoNotes,
-    sessionDefaults,
-    ...rest
-  } = patch
-  void todoNotes
-  void sessionDefaults
-  void gitAccounts
-  void gitPicks
-  void gitSuggestionsDismissed
-  void gitMachines
-  void accounts
-  void discord
-  void butlerSession
-  return rest
+  return without(patch, WRITTEN_BY_MAIN_ONLY)
 }
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
-  const doc: Partial<Settings> = raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}
-  const {
-    assistSessions,
-    lastSeenVersion: _retired,
-    showUsage: _retiredShowUsage,
-    ...kept
-  } = doc as Partial<Settings> & {
-    assistSessions?: unknown
-    lastSeenVersion?: unknown
-    showUsage?: unknown
-  }
-  const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
+  const doc: Record<string, unknown> =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const merged = { ...DEFAULT_SETTINGS, ...without(doc, RETIRED) } as Settings
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
   merged.gitSuggestionsDismissed = stringsIn(merged.gitSuggestionsDismissed)
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, [
-    ...(Array.isArray(assistSessions) ? assistSessions : []),
-    ...oldBindingRecords(merged.discord)
-  ])
-  merged.discord = sanitizeDiscord(merged.discord)
+  Object.assign(merged, PLUGIN_KEYS.clean(doc))
   const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
-  merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
   merged.todoNotes = sanitizeTextMap(merged.todoNotes)
   merged.sessionDefaults = sanitizeSessionDefaults(merged.sessionDefaults)

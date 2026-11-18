@@ -6,7 +6,8 @@ import {
   assistRunsOn,
   withAssistPick
 } from '../../src/shared/assistPicks'
-import { DEFAULT_SETTINGS, type AssistSetting } from '../../src/shared/types'
+import type { AssistSetting } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { meta } from './helpers/accounts'
 
 const METHODS = DEFAULT_SETTINGS.sessionMethods

@@ -9,9 +9,10 @@ import {
   WORKBENCH_WIDTH_FLOOR,
   sanitizeNotesHeight,
   NOTES_HEIGHT_FLOOR,
-  sanitizeLoadedSettings
+  sanitizeLoadedSettings,
+  DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
+import { HINT_IDS } from '@shared/types'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 describe('buildResetPatch (FR-12)', () => {
