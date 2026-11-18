@@ -114,7 +114,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     digit picks that option and `1` runs the command; a command starting `slow ` runs on
     only once `<home>/go-run` exists; a lone Esc on it ends the turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
     tool use]`, no Stop, CC§2), `/plan <text>` (asks to approve `<text>` as a plan, the
-    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s), `/hold` (a turn held
+    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s, or as many ms as `<home>/fake-claude-busy-ms` holds), `/hold` (a turn held
     open until a lone Esc, which ends it with `[Request interrupted by user]` and no
     Stop), `/need-approval`,
     `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
