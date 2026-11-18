@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { assistLaunchOn, sanitizeAssist } from '../../src/shared/assistPicks'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
-import { DEFAULT_SETTINGS } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 
 function anyApi(): unknown {
   return new Proxy(function () {}, {
