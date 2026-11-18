@@ -1,36 +1,18 @@
-export type SettingsPaneId =
-  | 'welcome'
-  | 'sessions'
-  | 'accounts'
-  | 'usage'
-  | 'appearance'
-  | 'shortcuts'
-  | 'assist'
-  | 'discord'
-  | 'notifications'
-  | 'extensions'
-  | 'about'
+import { settingsPages } from '@core/settings'
+import { PLUGINS } from '@plugins/list'
+import {
+  PANES_AFTER_PLUGIN_PAGES,
+  PANES_BEFORE_PLUGIN_PAGES,
+  type SettingsPane,
+  type SettingsPaneId
+} from './settingsPanes'
 
-export function settingsPaneName(id: SettingsPaneId): string {
-  return `Settings ▸ ${SETTINGS_PANES.find((p) => p.id === id)!.label}`
-}
+export type { SettingsPaneId } from './settingsPanes'
 
-export const SETTINGS_PANES: { id: SettingsPaneId; label: string; words: string[] }[] = [
-  { id: 'welcome', label: 'Welcome', words: ['欢迎', '入门', 'getting started'] },
-  { id: 'sessions', label: 'Sessions', words: ['会话设置'] },
-  { id: 'accounts', label: 'Accounts', words: ['账号', '账户', 'token'] },
-  { id: 'usage', label: 'Usage', words: ['用量', '花费', '费用', 'cost', 'spend'] },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-    words: ['外观', '字号', '字体', '主题', '深色', 'font']
-  },
-  { id: 'shortcuts', label: 'Shortcuts', words: ['快捷键', 'keyboard', 'hotkey'] },
-  { id: 'assist', label: 'Assist', words: ['助手'] },
-  { id: 'discord', label: 'Discord', words: ['机器人'] },
-  { id: 'notifications', label: 'Notifications', words: ['通知', '提醒'] },
-  { id: 'extensions', label: 'Extensions', words: ['扩展', '插件', 'plugin'] },
-  { id: 'about', label: 'About', words: ['关于', '版本号', 'version'] }
+export const SETTINGS_PANES: readonly SettingsPane[] = [
+  ...PANES_BEFORE_PLUGIN_PAGES,
+  ...settingsPages(PLUGINS),
+  ...PANES_AFTER_PLUGIN_PAGES
 ]
 
 export type CorePaletteAction =
@@ -110,7 +92,7 @@ export const PALETTE_FEATURES: PaletteFeature[] = [
   ...SETTINGS_PANES.map((p): PaletteFeature => ({
     key: `settings-${p.id}`,
     label: `Settings ▸ ${p.label}`,
-    words: p.words,
+    words: [...p.words],
     pane: p.id
   }))
 ]

@@ -346,13 +346,10 @@ export interface AppSettings {
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
   gitAutoPull: boolean
-  // PLATFORM§17
-  browserControl: boolean
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
-  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
@@ -363,7 +360,6 @@ export interface AppSettings {
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
-  todoNotes: Record<string, string>
   sessionDefaults: Record<string, SessionDefaults>
 }
 
@@ -458,12 +454,10 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   statuslineBuiltin: true,
   gitAutoFetch: true,
   gitAutoPull: false,
-  browserControl: true,
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
-  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: {},
@@ -474,7 +468,6 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  todoNotes: {},
   sessionDefaults: {}
 }
 
