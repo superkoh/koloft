@@ -1,15 +1,11 @@
 import type { MainIpc } from '@core/ipc'
 import type { SecretAskView } from '@shared/types'
 import { CHANNELS } from '../shared/channels'
+import type { SecretAsks } from './secretAsks'
 
-export interface Asks {
-  views(): SecretAskView[]
-  answer(id: string, typed: string): void
-  done(id: string): void
-  decline(id: string): void
-}
+type Asks = Pick<SecretAsks, 'views' | 'answer' | 'done' | 'decline'>
 
-export function registerChannels(ipc: MainIpc, asks: () => Asks | null | undefined): void {
+export function registerChannels(ipc: MainIpc, asks: () => Asks | null): void {
   ipc.handle(CHANNELS.list, () => asks()?.views() ?? [])
   ipc.on(CHANNELS.answer, (id: unknown, value: unknown) => {
     if (typeof id === 'string' && typeof value === 'string') asks()?.answer(id, value)
