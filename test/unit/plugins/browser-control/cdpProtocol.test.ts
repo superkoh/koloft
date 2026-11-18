@@ -6,7 +6,7 @@ import {
   stripDiff,
   type RelayBackend,
   type RelayTarget
-} from '../../src/main/cdpProtocol'
+} from '../../../../src/plugins/browser-control/main/cdpProtocol'
 
 const VERSION = {
   product: 'Chrome/150.0.7871.212',

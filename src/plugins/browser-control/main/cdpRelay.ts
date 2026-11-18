@@ -5,10 +5,9 @@ import { app, webContents } from 'electron'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './cdpProtocol'
 import { inputEmulation } from './cdpInput'
-import { compositionDone } from '@plugins/workbench/main/hostComposition'
-import { hiddenFromClients, holdDebugger } from '@plugins/workbench/main/guestDebugger'
+import { compositionDone, hiddenFromClients, holdDebugger } from '@plugins/workbench/api'
 import { loopbackPortOf, machinePageOf, urlOrNull } from '@shared/browserRoute'
-import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
+import { namesThisMacsServer, reachesThisMacsServer } from '../../../main/thisMacsServers'
 
 export interface RelayDeps {
   sessionForTab(tabId: string): string | null
