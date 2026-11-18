@@ -68,6 +68,11 @@ export class SecretAsks<A extends SecretAsk = SecretAsk> {
     return this.pending.get(id)?.ask
   }
 
+  notShownElsewhere(id: string): void {
+    const p = this.pending.get(id)
+    if (p) this.d.owner.waitsOnTheOwner(p.ask.tabId)
+  }
+
   views(): SecretAskView[] {
     return [...this.pending].map(([id, p]) => ({ ...p.ask.shape, id, tabId: p.ask.tabId }))
   }

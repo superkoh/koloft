@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
+  A_CARD_REACHES_DISCORD_WITHIN_MS,
   ANSWERED_IN_KOLOFT,
   NO_LONGER_WAITING,
   NOTHING_TYPED,
@@ -64,11 +65,13 @@ function setup(over: Partial<SecretCardDeps> = {}) {
     customId: cards[0]?.buttons?.[0].id,
     ...over
   })
-  const posted = (): Promise<void> =>
+  const until = (done: () => boolean): Promise<void> =>
     new Promise((resolve) => {
-      const tick = (): void => (cards.length ? resolve() : void setTimeout(tick, 1))
+      const tick = (): void => (done() ? resolve() : void setTimeout(tick, 1))
       tick()
     })
+  const posted = (): Promise<void> => until(() => cards.length > 0)
+  const marked = (): Promise<void> => until(() => onlyInKoloft.length > 0)
   const lastShown = (): SecretAskView[] => shown.at(-1) ?? []
   return {
     asks,
@@ -79,6 +82,7 @@ function setup(over: Partial<SecretCardDeps> = {}) {
     onlyInKoloft,
     interaction,
     posted,
+    marked,
     lastShown
   }
 }
@@ -334,5 +338,103 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     await settle()
     expect(pictures).toBe(2)
     expect(JSON.stringify(responses)).toMatch(/still at the last taps/)
+  })
+
+  it('once the ask has ended while the first card was still uploading, a failed upload posts no second card and marks nothing', async () => {
+    let fail!: (e: Error) => void
+    let places = 0
+    const { asks, onlyInKoloft, lastShown } = setup({
+      place: (): Promise<PlacedCard> => {
+        places++
+        return places === 1
+          ? new Promise((_resolve, reject) => (fail = reject))
+          : Promise.resolve(PLACED)
+      }
+    })
+    const answer = asks.ask(
+      tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped.' }),
+      LONG
+    )
+    await settle()
+    expect(places).toBe(1)
+    asks.decline(lastShown()[0].id)
+    expect(await answer).toEqual({ ended: 'declined' })
+    fail(new Error('Discord answered 413'))
+    await settle()
+    await settle()
+    expect(places).toBe(1)
+    expect(onlyInKoloft).toEqual([])
+  })
+
+  it('a tap card counts as not taken only when neither the picture nor the card without it goes up', async () => {
+    const tapsWith = (fails: (files: unknown[] | undefined) => boolean) => {
+      const t = setup({
+        place: async (_tab, card, files): Promise<PlacedCard> => {
+          if (fails(files)) throw new Error('Discord answered 413')
+          t.cards.push(card('fix-login'))
+          return PLACED
+        }
+      })
+      void t.asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped.' }), LONG)
+      return t
+    }
+    const pictureRefused = tapsWith((files) => !!files?.length)
+    await pictureRefused.posted()
+    expect(pictureRefused.onlyInKoloft).toEqual([])
+    const allRefused = tapsWith(() => true)
+    await allRefused.marked()
+    expect(allRefused.onlyInKoloft).toEqual(['tab-1'])
+  })
+})
+
+describe('a secret card Discord does not take', () => {
+  it('a card that goes up keeps Koloft quiet; one Discord does not take marks the session as waiting on the owner in Koloft, where the ask still waits', async () => {
+    const taken = setup()
+    void taken.asks.ask(ask, LONG)
+    await taken.posted()
+    expect(taken.onlyInKoloft).toEqual([])
+
+    const refused = setup({
+      place: async () => {
+        throw new Error('Discord answered 403')
+      }
+    })
+    const answer = refused.asks.ask(ask, LONG)
+    await refused.marked()
+    expect(refused.onlyInKoloft).toEqual(['tab-1'])
+    refused.asks.answer(refused.lastShown()[0].id, 'pw')
+    expect(await answer).toEqual({ typed: 'pw' })
+  })
+
+  it('an ask that moved to another tab before its card failed marks the tab it is in now', async () => {
+    let fail!: (e: Error) => void
+    const { asks, onlyInKoloft, marked } = setup({
+      place: () => new Promise((_resolve, reject) => (fail = reject))
+    })
+    void asks.ask(ask, LONG)
+    asks.rehome('tab-1', 'tab-9')
+    fail(new Error('Discord answered 404'))
+    await marked()
+    expect(onlyInKoloft).toEqual(['tab-9'])
+  })
+
+  it('a card Discord has neither taken nor refused within its time marks the session in Koloft once, even when Discord refuses it later', async () => {
+    vi.useFakeTimers()
+    try {
+      let fail!: (e: Error) => void
+      const { asks, onlyInKoloft } = setup({
+        place: () => new Promise((_resolve, reject) => (fail = reject))
+      })
+      void asks.ask(ask, 2 * A_CARD_REACHES_DISCORD_WITHIN_MS)
+      await vi.advanceTimersByTimeAsync(A_CARD_REACHES_DISCORD_WITHIN_MS - 1)
+      expect(onlyInKoloft).toEqual([])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(onlyInKoloft).toEqual(['tab-1'])
+      fail(new Error('Discord answered 403'))
+      await vi.advanceTimersByTimeAsync(1)
+      expect(onlyInKoloft).toEqual(['tab-1'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
