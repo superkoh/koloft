@@ -12,7 +12,8 @@ runs (handlers, React parts) stays in the plugin's own `main/`, `renderer/` and 
 folders and registers itself; it is never put into the manifest. `src/core/` and the rest
 of the app never name a plugin: the files that name plugins are the lists in
 `src/plugins/` — `list.ts`, the manifests, which core reads, and `bridges.ts`, each
-plugin's part of the window's preload bridge, which the preload reads. So a text block names no reader: it
+plugin's part of the window's preload bridge, which the preload builds `window.api` from
+and the window takes its type from. So a text block names no reader: it
 names the slot it fills, and core keeps no list of readers. A plugin
 imports core, the `api.ts` of the plugins it says it needs, and itself. Until a test holds
 the manifest's shape, that shape may still change at version 1; once one does, the

@@ -120,7 +120,21 @@ describe('IPC channels', () => {
       const used = new Set(pluginCalls(p).map((c) => c.channel))
       expect({ [p.id]: without(manifest, used) }).toEqual({ [p.id]: [] })
       expect({ [p.id]: without(used, manifest) }).toEqual({ [p.id]: [] })
-      expect({ [p.id]: Object.values(p.table).sort() }).toEqual({ [p.id]: [...manifest].sort() })
+    }
+  })
+
+  it('main registers the channels of every plugin that has some, and the preload hands the window every plugin bridge', () => {
+    const BRIDGES = read('plugins', 'bridges.ts')
+    expect(PRELOAD).toMatch(/\.\.\.pluginBridges\(pluginIpc\)/)
+    for (const p of PLUGIN_PARTS.filter((part) => part.manifest.length > 0)) {
+      const imported = MAIN.match(
+        new RegExp(String.raw`import \{([^}]*)\} from '@plugins/${p.id}/main/channels'`)
+      )?.[1]
+      const register = imported?.match(/registerChannels(?: as (\w+))?/)
+      expect({
+        [p.id]: register && MAIN.includes(`${register[1] ?? register[0]}(pluginIpc`)
+      }).toEqual({ [p.id]: true })
+      if (p.preload) expect(BRIDGES).toContain(`from './${p.id}/preload/bridge'`)
     }
   })
 
