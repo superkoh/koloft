@@ -32,6 +32,10 @@ export type SessionRoute =
   | (RouteText & { kind: 'feature'; key: string })
   | (RouteText & { kind: 'session'; path: string; id: string })
 
+export const PLUGIN_ROUTE_KINDS = ['discord'] as const
+
+export type PluginRouteKind = (typeof PLUGIN_ROUTE_KINDS)[number]
+
 export const LOCAL_MACHINE = 'local'
 
 const SESSIONS_SENT_PER_WORKSPACE = 5

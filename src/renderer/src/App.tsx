@@ -113,7 +113,7 @@ import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits 
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
 import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
-import { PALETTE_RUN } from './slots'
+import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -124,7 +124,6 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { setUpDiscordWithButler } from '@plugins/discord/renderer/setUpWithButler'
 import { someAccountCanRunAssist } from './assistInputs'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
@@ -1183,13 +1182,14 @@ export default function App(): JSX.Element {
       })
       return
     }
-    if (route?.kind === 'discord') {
-      void setUpDiscordWithButler(prompt).then((error) => {
+    const pluginRoute = route && fillsOf(PALETTE_ROUTE).find((r) => r.kind === route.kind)
+    if (pluginRoute) {
+      void pluginRoute.run(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
     }
-    const toButler = (title: string, about: string | null): void => {
+    const handOff = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
       const request = {
         words: prompt,
@@ -1199,7 +1199,8 @@ export default function App(): JSX.Element {
         about: about ?? undefined,
         at
       }
-      void window.api.conductors.fromPalette(request).then((r) => {
+      const [toPlugin] = fillsOf(PALETTE_HAND_OFF)
+      void toPlugin(request).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew(
@@ -1221,11 +1222,11 @@ export default function App(): JSX.Element {
         .find((w) => w.workspace.path === route.path)
         ?.rows.find((r) => r.id === route.id)
       if (row) openSessionRow(row, route.path)
-      else toButler(route.title, null)
+      else handOff(route.title, null)
       return
     }
     if (route?.kind === 'assist') {
-      toButler(route.title, route.path)
+      handOff(route.title, route.path)
       return
     }
     if (!route && !someAccountCanRunAssist(useStore.getState())) {
@@ -1236,7 +1237,7 @@ export default function App(): JSX.Element {
       route?.kind === 'workspace' &&
       workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
     if (route?.kind !== 'workspace' || !ws) {
-      toButler(route?.title ?? '', null)
+      handOff(route?.title ?? '', null)
       return
     }
     const pending: PendingStart = {
