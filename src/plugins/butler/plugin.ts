@@ -1,6 +1,7 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './prompts/text'
 import { ASSIST_JOBS } from './shared/assistJobs'
+import { CHANNELS } from './shared/ipc'
 
 export const BUTLER_ROW_PART = 'butler-row'
 export const BUTLER_RENAME = 'butler-rename'
@@ -18,5 +19,6 @@ export const plugin: PluginManifest = {
     { place: 'sidebar-row', id: BUTLER_ROW_PART },
     { place: 'dialog', id: BUTLER_RENAME },
     { place: 'dialog', id: BUTLER_SET_UP }
-  ]
+  ],
+  channels: Object.values(CHANNELS)
 }

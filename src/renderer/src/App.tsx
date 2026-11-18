@@ -1204,7 +1204,7 @@ export default function App(): JSX.Element {
         about: about ?? undefined,
         at
       }
-      void window.api.conductors.fromPalette(request).then((r) => {
+      void window.api.butler.fromPalette(request).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew(

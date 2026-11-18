@@ -471,7 +471,6 @@ import type {
   ConductorOpenResult,
   PaletteRequest,
   ConductorSaveResult,
-  DiscordChannel,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
@@ -594,7 +593,7 @@ import {
 } from './claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { asPeerName } from '@plugins/butler/shared/names'
-import { inviteLink, isDiscordId, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
+import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
 import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
@@ -611,6 +610,11 @@ import {
   pushChanged as pushInboxChanged
 } from '@plugins/inbox/main/channels'
 import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
+import {
+  registerChannels as registerDiscordChannels,
+  pushStatus
+} from '@plugins/discord/main/channels'
+import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import {
   registerChannels as registerSecretChannels,
   pushAsks as pushSecretAsks
@@ -1399,6 +1403,7 @@ const pluginIpc: MainIpc = {
 }
 const pushInbox = pushInboxChanged(pluginIpc)
 const pushOpenRequest = pushOpenFile(pluginIpc)
+const pushDiscordStatus = pushStatus(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -4141,7 +4146,7 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
-      sendToRenderer(CH.discord.status, status)
+      pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
@@ -7222,43 +7227,31 @@ function registerIpc(): void {
     cronRunner?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  ipcMain.handle(CH.conductors.bind, (_e, channel: DiscordChannel | undefined) => {
-    if (
-      !isDiscordId(channel?.guildId) ||
-      !isDiscordId(channel.channelId) ||
-      typeof channel.name !== 'string'
-    )
-      return { ok: false, error: 'Pick a channel.' }
-    const { guildId, channelId, name } = channel
-    const saved = discordBinding?.bind({ guildId, channelId, name }) ?? {
-      ok: false,
-      error: STILL_STARTING
-    }
-    if (saved.ok) registerSlashCommands()
-    return saved
+  registerDiscordChannels(pluginIpc, {
+    bind: (channel) => {
+      const saved = discordBinding?.bind(channel) ?? { ok: false, error: STILL_STARTING }
+      if (saved.ok) registerSlashCommands()
+      return saved
+    },
+    bindNewChannel: bindWithNewChannel,
+    unbind: () => {
+      discordBinding?.unbind()
+      syncAnswerable()
+    },
+    status: () => discordLink?.status() ?? DISCORD_OFF,
+    pair: (isMe) => {
+      const owner = discordLink?.pair(isMe)
+      if (owner) discordBinding?.setOwner(owner)
+    },
+    channels: () => discordLink?.channels() ?? [],
+    setUpWithButler: setUpDiscordWithButler
   })
-  ipcMain.handle(CH.conductors.bindNewChannel, () => bindWithNewChannel())
-  ipcMain.handle(CH.conductors.unbind, () => {
-    discordBinding?.unbind()
-    syncAnswerable()
+  registerButlerChannels(pluginIpc, {
+    open: () => butler?.open() ?? { ok: false, error: STILL_STARTING },
+    startFresh: () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING },
+    fromPalette: handFromPalette,
+    savePicture: savePastedPicture
   })
-  ipcMain.handle(CH.conductors.open, () => butler?.open() ?? { ok: false, error: STILL_STARTING })
-  ipcMain.handle(
-    CH.conductors.startFresh,
-    () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING }
-  )
-  ipcMain.handle(CH.conductors.fromPalette, (_e, request: PaletteRequest) =>
-    handFromPalette(request)
-  )
-  ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
-  ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
-    const owner = discordLink?.pair(isMe === true)
-    if (owner) discordBinding?.setOwner(owner)
-  })
-  ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
-  ipcMain.handle(CH.discord.setUpWithButler, (_e, ownerWords?: string) =>
-    setUpDiscordWithButler(typeof ownerWords === 'string' ? ownerWords : undefined)
-  )
   ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )
@@ -7538,9 +7531,6 @@ function registerIpc(): void {
       : null
     return pickText(picked, picture)
   })
-  ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
-    typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
-  )
   ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
     if (typeof id === 'number') stopPick(id)
   })
