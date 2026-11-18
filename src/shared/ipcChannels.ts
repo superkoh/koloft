@@ -163,6 +163,10 @@ export const CH = {
     commit: 'github:commit',
     push: 'github:push'
   },
+  os: {
+    open: 'preview:os-open',
+    reveal: 'fs:reveal'
+  },
   workspace: {
     pickFolder: 'workspace:pickFolder',
     add: 'workspace:add',

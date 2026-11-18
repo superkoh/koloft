@@ -369,6 +369,10 @@ const api: KoloftApi = {
     commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),
     push: (root) => ipcRenderer.invoke(CH.git.push, root)
   },
+  os: {
+    open: (p) => ipcRenderer.send(CH.os.open, p),
+    reveal: (p) => ipcRenderer.send(CH.os.reveal, p)
+  },
   workspace: {
     pickFolder: () => ipcRenderer.invoke(CH.workspace.pickFolder),
     add: (p) => ipcRenderer.invoke(CH.workspace.add, p),

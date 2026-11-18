@@ -148,7 +148,7 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import { barePath, formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -7683,12 +7683,6 @@ function registerIpc(): void {
   registerWorkbenchChannels(pluginIpc, {
     files: (p) => hosts.of(p),
     base: sanitizeBase,
-    // PLATFORM§30
-    gitHeadLog: async (root) => {
-      const host = hosts.of(root)
-      const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
-      return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
-    },
     notesFile: notesFileOfScope,
     pickFile: async () => {
       const stub = process.env.KOLOFT_FILE_DIALOG_FILE
@@ -7748,6 +7742,13 @@ function registerIpc(): void {
     const res = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
     if (res.canceled || res.filePaths.length === 0) return null
     return res.filePaths[0]
+  })
+
+  ipcMain.on(CH.os.open, (_e, p: string) => {
+    if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
+  })
+  ipcMain.on(CH.os.reveal, (_e, p: string) => {
+    if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
 
   ipcMain.on(CH.app.home, (e) => {

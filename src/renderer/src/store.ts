@@ -1529,7 +1529,7 @@ export function openInterceptedFile(
     return
   }
   if (!activeTabId) {
-    window.api.preview.osOpen(src)
+    window.api.os.open(src)
     return
   }
   setOpenFile(file)

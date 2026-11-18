@@ -1,58 +1,79 @@
+import path from 'path'
 import type { MainIpc } from '@core/ipc'
 import type {
   BaseChoice,
+  ContentHit,
   DirChangeListener,
+  DirEntry,
+  EditCreateResult,
+  EditFingerprint,
+  EditOpenResult,
+  EditWriteResult,
+  GitChanges,
   OpenRequest,
+  SearchHit,
   SessionWorkbenchState
 } from '@shared/types'
-import { isAbsoluteOnHost } from '@shared/remoteKey'
+import { barePath, isAbsoluteOnHost } from '@shared/remoteKey'
 import { CHANNELS } from '../shared/channels'
 
 interface ShowIgnored {
   showIgnored?: boolean
 }
 
+interface Diff {
+  text: string
+  truncated: boolean
+}
+
 export interface Files {
-  listDir(dir: string, opts?: ShowIgnored): Promise<unknown>
+  listDir(dir: string, opts?: ShowIgnored): Promise<DirEntry[]>
   dirExistsOrThrow(dir: string): Promise<boolean>
   fileExists(file: string): Promise<boolean>
-  search(root: string, q: string, opts?: ShowIgnored): Promise<unknown>
-  searchContent(root: string, q: string, opts?: ShowIgnored): Promise<unknown>
-  gitChanges(root: string, base: BaseChoice): Promise<unknown>
-  gitDiff(root: string, base?: string): Promise<unknown>
-  gitFileDiff(file: string, base?: string, untracked?: boolean): Promise<unknown>
-  gitFileDiffFull(file: string, base?: string, untracked?: boolean): Promise<unknown>
+  search(
+    root: string,
+    q: string,
+    opts?: ShowIgnored
+  ): Promise<{ hits: SearchHit[]; truncated: boolean }>
+  searchContent(
+    root: string,
+    q: string,
+    opts?: ShowIgnored
+  ): Promise<{ hits: ContentHit[]; truncated: boolean }>
+  gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
+  gitDiff(
+    root: string,
+    base?: string
+  ): Promise<Diff & { notRepo: boolean; toplevel: string | null }>
+  gitFileDiff(file: string, base?: string, untracked?: boolean): Promise<Diff>
+  gitFileDiffFull(file: string, base?: string, untracked?: boolean): Promise<Diff>
+  gitOut(dir: string, args: string[]): Promise<string | null>
+  keyed(p: string): string
   readText(file: string): Promise<string>
-  openForEdit(file: string): Promise<unknown>
+  openForEdit(file: string): Promise<EditOpenResult>
   writeText(
     file: string,
     text: string,
     expect: unknown,
     opts?: { force?: unknown; eol?: unknown }
-  ): Promise<unknown>
-  createFile(dir: string, name: string): Promise<unknown>
+  ): Promise<EditWriteResult>
+  createFile(dir: string, name: string): Promise<EditCreateResult>
   watchDir(
     root: string,
     onChange: DirChangeListener,
     reportsWhatChangedWhileUnwatched?: boolean
   ): Promise<boolean>
   unwatchDir(root: string): void
-  watchFile(
-    file: string,
-    onChange: (file: string, fp: { mtimeMs: number; size: number }) => void
-  ): void
+  watchFile(file: string, onChange: (file: string, fp: EditFingerprint) => void): void
   unwatchFile(file: string): void
-  reveal(p: string): void
-  osOpen(p: string): void
 }
 
 export interface ChannelDeps {
   files(p: string): Files
   base(b: unknown): string | undefined
-  gitHeadLog(root: string): Promise<string | null>
   notesFile(scope: string): string | undefined
   pickFile(): Promise<string | null>
-  state(sessionId: string): unknown
+  state(sessionId: string): SessionWorkbenchState | undefined
   setState(sessionId: string, state: SessionWorkbenchState): void
   setAvailable(available: boolean, terminal: boolean): void
   setFindAvailable(available: boolean): void
@@ -102,9 +123,13 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
       ? files(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
       : { base: null, status: {}, numstat: {}, missing: false }
   )
-  ipc.handle(CHANNELS.gitHeadLog, (root: string) =>
-    typeof root !== 'string' || !root ? null : deps.gitHeadLog(root)
-  )
+  // PLATFORM§30
+  ipc.handle(CHANNELS.gitHeadLog, async (root: string) => {
+    if (typeof root !== 'string' || !root) return null
+    const host = files(root)
+    const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
+    return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
+  })
   ipc.handle(CHANNELS.gitDiff, (root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? files(root).gitDiff(root, deps.base(base))
@@ -144,9 +169,6 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.on(CHANNELS.unwatchFile, (p: string) => {
     if (typeof p === 'string' && p) files(p).unwatchFile(p)
   })
-  ipc.on(CHANNELS.reveal, (p: string) => {
-    if (typeof p === 'string' && p) files(p).reveal(p)
-  })
   ipc.handle(CHANNELS.editOpen, (p: unknown) => files(p as string).openForEdit(p as string))
   ipc.handle(CHANNELS.editWrite, (p: unknown, text: unknown, expect: unknown, opts: unknown) =>
     files(p as string).writeText(
@@ -164,9 +186,6 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     return deps.notesFile(ws) ?? null
   })
   ipc.handle(CHANNELS.openFileDialog, () => deps.pickFile())
-  ipc.on(CHANNELS.osOpen, (p: string) => {
-    if (typeof p === 'string' && p) files(p).osOpen(p)
-  })
 }
 
 export const pushOpenFile =

@@ -1551,7 +1551,7 @@ export default function App(): JSX.Element {
           className={'toast' + (toastReveal ? ' link' : '')}
           onClick={() => {
             if (!toastReveal) return
-            window.api.fs.reveal(toastReveal)
+            window.api.os.reveal(toastReveal)
             dismissToast()
           }}
         >

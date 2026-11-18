@@ -705,7 +705,7 @@ function GitTokenBox({
       <span className="field-hint">
         {create ? (
           <>
-            <button className="ob-link" onClick={() => window.api.preview.osOpen(create)}>
+            <button className="ob-link" onClick={() => window.api.os.open(create)}>
               Create a token
             </button>{' '}
             opens {host} — tick <code>{scopes}</code>, then paste it here. Koloft checks it, reads

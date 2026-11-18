@@ -1231,6 +1231,10 @@ export interface CoreApi {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
   }
+  os: {
+    open(path: string): void
+    reveal(path: string): void
+  }
   workspace: {
     pickFolder(): Promise<string | null>
     add(path: string): Promise<WorkspaceAddResult>

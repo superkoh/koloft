@@ -27,7 +27,6 @@ export interface WorkbenchBridge {
   preview: {
     readText(path: string): Promise<string>
     openFileDialog(): Promise<string | null>
-    osOpen(path: string): void
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   fs: {
@@ -48,7 +47,6 @@ export interface WorkbenchBridge {
     unwatchFile(path: string): void
     // PLATFORM§28
     onFileChange(cb: (path: string, fp?: EditFingerprint) => void): () => void
-    reveal(path: string): void
     gitDiff(
       root: string,
       base?: string
@@ -97,7 +95,6 @@ export const bridge = (ipc: PreloadIpc): WorkbenchBridge => ({
   preview: {
     readText: (p) => ipc.invoke(CHANNELS.readText, p),
     openFileDialog: () => ipc.invoke(CHANNELS.openFileDialog),
-    osOpen: (p) => ipc.send(CHANNELS.osOpen, p),
     onOpenRequest: (cb) => ipc.listen(CHANNELS.openFile, cb)
   },
   fs: {
@@ -114,7 +111,6 @@ export const bridge = (ipc: PreloadIpc): WorkbenchBridge => ({
     watchFile: (p) => ipc.send(CHANNELS.watchFile, p),
     unwatchFile: (p) => ipc.send(CHANNELS.unwatchFile, p),
     onFileChange: (cb) => ipc.listen(CHANNELS.fileChanged, cb),
-    reveal: (p) => ipc.send(CHANNELS.reveal, p),
     gitDiff: (root, base) => ipc.invoke(CHANNELS.gitDiff, root, base),
     gitFileDiff: (p, base, untracked) => ipc.invoke(CHANNELS.gitFileDiff, p, base, untracked),
     gitFileDiffFull: (p, base, untracked) =>

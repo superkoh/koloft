@@ -699,7 +699,7 @@ function SidebarFloating({
         onClick={() => {
           setMenu(null)
           if (remoteHost) copy(remoteCopyText(remoteHost, dir))
-          else window.api.fs.reveal(dir)
+          else window.api.os.reveal(dir)
         }}
       >
         {label}
