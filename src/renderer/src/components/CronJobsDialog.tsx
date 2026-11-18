@@ -35,7 +35,6 @@ import { effortsFor, NAMED_MODELS, namedModel } from '@shared/cronModels'
 import {
   effortOf,
   emptyFields,
-  modelValue,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
@@ -44,6 +43,7 @@ import {
   type JobFields,
   type WhenKind
 } from '../cronForm'
+import { modelValue } from '../modelPick'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { mixesBackends } from '../sessionRows'
