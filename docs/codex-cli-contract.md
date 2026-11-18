@@ -37,8 +37,9 @@ Schema availability is distinguished from behavior actually seen on the wire.
   createdAt, updatedAt, recencyAt, status, path, cwd, cliVersion, originator, source,
   canAcceptDirectInput, threadSource, agentNickname, agentRole, gitInfo, name,
   daybreakEnabled, turns`; `status {type: "notLoaded"}`, `turns []`, `historyMode
-  "paginated"`; 0.169.0 under `experimentalApi` adds `attachedToThreadId`, 33 keys,
-  2026-11-14); a rollout the full-screen TUI wrote has `source: "vscode"`, one `codex
+  "paginated"`; 0.169.0 adds `attachedToThreadId`, 33 keys, 2026-11-14 — and sends it
+  with `experimentalApi` off or no `capabilities` at all, on 0.169.0 and 0.170.0 alike,
+  2026-11-18); a rollout the full-screen TUI wrote has `source: "vscode"`, one `codex
   exec` wrote has `source: "exec"` and is left out by that list; `initialize` now also
   brings a `remoteControl/status/changed` notification. **0.163.0 adds `readStates` to
   the `thread/list` result** (a map from thread id to `{firstUnread: {type: "turn",
@@ -448,7 +449,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0 or 0.169.0. Koloft
+0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0, 0.169.0 or 0.170.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -706,6 +707,45 @@ checked**); `thread/searchOccurrences`, paging a forked history (#59793, #60559)
 `thread/queue/add` (§17, §33), `git-credential get` (§29; it is off until someone sets
 it up, and a run left no `.gitconfig` in the scratch home), a real-model turn and
 compaction (§21 stays **inferred, not checked**).
+
+On 0.170.0 (2026-11-18, against 0.169.0, each probe in its own throwaway `CODEX_HOME`,
+every turn against a stand-in Responses server; 0.169.1, whose release has no notes and
+three commits — Bedrock tool declarations, Bedrock replay, and the `gpt-6.2-*` catalog —
+was read from the upstream compare, not run): all 76 `--help` pages (every subcommand
+and sub-subcommand, the hidden ones too) are byte-identical to 0.169.0's. `features
+list` turns `incremental_tools_legacy` to `stable true` (openai/codex#60848; it acts only
+on Bedrock and Google Cloud providers) and adds `multi_environment_mcp` (off, #60905).
+`app-server generate-json-schema` (plain and `--experimental`) adds and removes no
+method, notification or request; it reshapes `AgentMessageDisplay` under
+`ThreadItem.moderation` into a versioned `{version: 1, mode: show | hide | block, …}`
+(its old fields removed) and, experimental, adds `UserVerificationBiometricType`.
+Measured again: sections 1 (`initialize` keys, `thread/start`'s 14 keys, `thread/list`
+keys and 33 keys per thread; a text turn, an interrupted turn and a background-terminal
+turn sent the same notifications in the same order on both; the rollout record types
+and counts and the `token_count` and `turn_context` keys the same), 11 (the three
+permission shapes Koloft starts — no flags, `on-request` / `workspace-write`, and `never`
+/ `danger-full-access` — each resumed in a new app-server given Koloft's resume `-c`
+come back as they started, `turn_context` agreeing, the `-c` ignored; a sandbox asked
+for on a thread already loaded is ignored with a `WARN … thread/resume overrides
+ignored for loaded thread`; the same on both, at the app-server only — the TUI side of
+#60936 was not run), 13/14 (`model/list` with a ChatGPT login lists the new
+`gpt-6.2-sol` as `isDefault` and adds `gpt-6.2-astra`, on 0.169.0 and 0.170.0 alike, and
+a `thread/start` with no model runs `gpt-6.2-sol` on both — the server's list, not the
+build, decides; with an API-key login the bundled list answers `gpt-6.1-sol` on 0.169.0
+and `gpt-6.2-sol` on 0.170.0; both new models take efforts `low` … `ultra`, windows
+500000 for Sol and 272000 for Astra), 16 (Linux, there),
+24 (a term with repeated white space now matches, there; `fuzzyFileSearch` no longer
+lists a file twice from overlapping roots, #60845, which Koloft does not call) and 34
+(an app-server over `--listen ws://` whose first client closes mid-turn: a second
+client's `thread/resume` 0.3 s later answers `active` and gets the turn's
+`turn/completed: completed`, on both; #61014's unannounced recovery turn was not
+reached, and #60969 touches only the Cloud backend). Assist's exact one-shot argv
+against a stand-in provider: exit 0, the same stdout, `config.toml` untouched, on both.
+The footer changes (#60972 lowercase service-tier names, #61141, #61167) were read from
+the changes only; Koloft passes a `tui.status_line` list and parses no footer text (§8).
+No other section was probed by hand on 0.170.0: sections 3, 5, 18 (but its `--help`),
+20–23, 25–27, 30 and 33, and 15's login parts, stand on 0.167.0's to 0.169.0's
+measurements above and on the e2e specs.
 
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
@@ -2078,6 +2118,13 @@ checked**, §7).
 **Rechecked in part on 0.169.0** (2026-11-14, the same image, user and npm line; what it
 showed is in the 0.169.0 paragraph of §7).
 
+**Rechecked in part on 0.170.0** (2026-11-18, the same image, user and npm line, against
+0.169.0 in its own prefix): `codex --version` prints `codex-cli 0.170.0`; `app-server
+--stdio` answered `initialize` in 147 ms (0.169.0 179 ms) with the same keys, then an
+empty `thread/list` and a `config/read` of 107 keys, the same on both; the missing-bubblewrap
+ERROR line is word for word the same on both (openai/codex#60898 changed only a test
+fixture).
+
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
@@ -2993,6 +3040,13 @@ word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it an
   `searchTerm` is refused with `-32600 "thread/search requires a non-empty searchTerm"`.
 - Not probed: how long it takes on a home with thousands of threads (no real home was
   searched), and Codex on a remote machine (§16).
+- **From 0.170.0 a term with repeated spaces, a tab or a line break matches** (2026-11-18,
+  0.170.0 against 0.169.0, a stand-in Responses server, a prompt holding
+  `alpha  beta\n\tgamma`): `"alpha  beta"` and `"beta\n\tgamma"` returned no hit on
+  0.169.0 and one on 0.170.0, whose snippet has the white space squeezed to single
+  spaces (`… alpha beta gamma delta. …`; openai/codex#60846). A single-space `"alpha
+  beta"` matched the double-spaced text on neither. `thread/searchOccurrences` found it on
+  both, with the same keys and the white space kept as written.
 
 Rechecked 2026-10-25 on this Mac with Codex CLI 0.162.0, and the schema,
 `thread/searchOccurrences` and `thread/turns/list` again with 0.161.0 (`npm install
