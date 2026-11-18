@@ -2590,6 +2590,74 @@ describe('koloft workspace list', () => {
   })
 })
 
+describe('the one-line usage error of each koloft session and workspace subcommand', () => {
+  const usage = (text: string): AgentReply => ({ text, exit: EXIT_USAGE })
+
+  it('says what to give, word for word', async () => {
+    const { verb } = harness(
+      [
+        session('fix', 'claude'),
+        session('butler', 'claude'),
+        session('lost', 'claude', { cwd: '' })
+      ],
+      {},
+      [],
+      { scopes: { butler: 'global' } }
+    )
+    expect(await verb(['bogus'], from('fix'))).toEqual(
+      usage(
+        'koloft session: use list, read, new, send, command, screen, keys, answer, resume, stop or close. Run "koloft help" to see how.'
+      )
+    )
+    expect(await verb(['read'], from('fix'))).toEqual(
+      usage(
+        'koloft session read: give an id or name, and if you like --last <1 to 20>, like: koloft session read fix-login --last 3'
+      )
+    )
+    expect(await verb(['list', 'x'], from('butler'))).toEqual(
+      usage(
+        'koloft session list: it takes no options here; it lists every session in every workspace.'
+      )
+    )
+    expect(await verb(['list', '--bad'], from('fix'))).toEqual(
+      usage(
+        'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
+      )
+    )
+    expect(await verb(['list'], { tabId: 'lost', cwd: '' })).toEqual({
+      text: 'koloft session: Koloft does not know which workspace this session is in.',
+      exit: 1
+    })
+    expect(await verb(['new'], from('fix'))).toEqual(
+      usage(
+        'koloft session new: put the first message after --, like: -- "Fix the broken links in docs/."'
+      )
+    )
+    expect(await verb(['send'], from('fix'))).toEqual(
+      usage(
+        'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
+      )
+    )
+    const acts: Record<string, string> = {
+      command:
+        'koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact',
+      screen:
+        'koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login',
+      keys: 'koloft session keys: give an id or name, then the keys to press in order, like: koloft session keys fix-login Down Enter',
+      answer:
+        'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2',
+      resume:
+        'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."',
+      stop: 'koloft session stop: give an id or name, like: koloft session stop fix-login'
+    }
+    for (const [sub, text] of Object.entries(acts))
+      expect(await verb([sub], from('fix'))).toEqual(usage(text))
+    expect(await workspaceVerb({ sidebar: () => [] })(['bogus'], from('fix') as never)).toEqual(
+      usage('koloft workspace: use list, like: koloft workspace list')
+    )
+  })
+})
+
 describe('the session a room opens for', () => {
   it('keeps the title the sidebar shows, even when it is reached by another name', async () => {
     const live = session('t1', 'claude', { title: 'Sandbox greeting' })
