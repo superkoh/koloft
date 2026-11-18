@@ -609,7 +609,7 @@ import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerb
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { moment, type FileOpened, type SessionStarted, type SessionStarting } from '@core/moment'
-import { fromTheButler, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
+import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
@@ -2151,7 +2151,7 @@ const sessionDeps: SessionVerbDeps = {
         if (!closed) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow },
+  overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow, ...butlersWords },
   speaksForTheOwner: butlerSide,
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
@@ -2202,7 +2202,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   announceStarting: sessionStarting.announce,
   announceStarted: sessionStarted.announce,
-  ownersWords: (said) => (fromTheButler(said) ? undefined : withoutTheRelayTag(said))
+  ownersWords: withoutTheRelayTag
 }
 const sessionCommand = sessionVerb(sessionDeps)
 

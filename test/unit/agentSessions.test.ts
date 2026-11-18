@@ -19,7 +19,7 @@ import type { TranscriptPlaces } from '../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../src/main/inbox'
 import type { SendResult } from '../../src/plugins/sessions/api'
 import { moment, type SessionStarted, type SessionStarting } from '../../src/core/moment'
-import { fromTheButler, tellEachHelperItsRole } from '../../src/plugins/butler/main/sessionHooks'
+import { butlersWords, tellEachHelperItsRole } from '../../src/plugins/butler/main/sessionHooks'
 import {
   giveEachStartedSessionARoom,
   withoutTheRelayTag
@@ -201,7 +201,8 @@ function harness(
     overseer: {
       is: (tabId) => !!conducting.scopes?.[tabId],
       target: (ref) => conducting.conductors?.[ref],
-      folder: () => BUTLER_FOLDER
+      folder: () => BUTLER_FOLDER,
+      ...butlersWords
     },
     speaksForTheOwner: (tabId) =>
       !!conducting.scopes?.[tabId] ||
@@ -251,7 +252,7 @@ function harness(
     rowNote: (key) => conducting.rooms?.[key],
     announceStarting: sessionStarting.announce,
     announceStarted: sessionStarted.announce,
-    ownersWords: (said) => (fromTheButler(said) ? undefined : withoutTheRelayTag(said))
+    ownersWords: withoutTheRelayTag
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
@@ -2152,7 +2153,13 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       backend: 'claude'
     })
     await h.verb(['new', ...PICKED, '--', 'dig deeper'], from('helper'))
-    const [byNew, codexByNew, byPalette, byHelper] = h.launched
+    await h.startHelper(
+      { ...live[0], tabId: 'butler-reopened' },
+      { prompt: 'Sort the inbox.', ownerWords: 'sort it', backend: 'claude' }
+    )
+    const [byNew, codexByNew, byPalette, byHelper, afterAReopen] = h.launched
+    expect(afterAReopen.trustFolder).toBe(true)
+    expect(afterAReopen.firstPrompt?.startsWith(`${BUTLER_HELPER_ROLE}\n\n`)).toBe(true)
     for (const told of [byNew.firstPrompt, codexByNew.role, byPalette.firstPrompt])
       expect(
         told?.startsWith(

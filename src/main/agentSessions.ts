@@ -12,7 +12,6 @@ import {
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
 import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
-import { ownerSays } from '@shared/agentGuide'
 import {
   PICK_FOR_THE_TASK,
   placedRows,
@@ -395,13 +394,15 @@ export interface SessionVerbDeps {
   rowNote(key: string): string | undefined
   announceStarting(starting: SessionStarting): Promise<string[]>
   announceStarted(started: SessionStarted): Promise<string[]>
-  ownersWords(said: string): string | undefined
+  ownersWords(said: string): string
 }
 
 export interface Overseer {
   is(tabId: string): boolean
   target(ref: string): Target | undefined
   folder(): string
+  says(text: string): string
+  wrote(said: string): boolean
 }
 
 export type SessionScreen = { lines: string[]; notes: string[] } | { error: string }
@@ -452,7 +453,8 @@ function modelAndEffortRefusal(
 }
 
 type StartPlace =
-  { ok: true; workspace: string; conductorTab?: string } | { ok: false; reply: AgentReply }
+  | { ok: true; workspace: string; conductorTab?: string; helper?: true }
+  | { ok: false; reply: AgentReply }
 
 function newSessionPlace(
   d: SessionVerbDeps,
@@ -469,7 +471,7 @@ function newSessionPlace(
   }
   if (overseer) {
     if (args.worktree !== undefined) return no(NO_WORKTREE_IN_OWN_FOLDER)
-    return { ok: true, workspace: d.overseer.folder(), conductorTab: callerTab }
+    return { ok: true, workspace: d.overseer.folder(), conductorTab: callerTab, helper: true }
   }
   return ws ? { ok: true, workspace: ws } : no(NO_WORKSPACE)
 }
@@ -529,7 +531,8 @@ async function startSibling(
   workspace: string,
   conductorTab: string | undefined,
   ownerWords: string | undefined,
-  oweReply: (tabId: string) => void
+  oweReply: (tabId: string) => void,
+  helper: boolean
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
   const turnedOff = d.turnedOff(backend)
@@ -547,7 +550,8 @@ async function startSibling(
     workspace,
     conductorTab,
     ownerWords,
-    oweReply
+    oweReply,
+    helper
   )
   if (!launched) return refused('koloft session new: Koloft could not start the session.')
   const { tabId, name } = launched
@@ -623,7 +627,8 @@ async function launchSibling(
   workspace: string,
   conductorTab: string | undefined,
   ownerWords: string | undefined,
-  oweReply: (tabId: string) => void
+  oweReply: (tabId: string) => void,
+  helper: boolean
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
   const traits = PEER_TRAITS[backend]
@@ -634,7 +639,6 @@ async function launchSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const helper = d.overseer.is(me.tabId) && workspace === d.overseer.folder()
   let held: HeldName | undefined
   let tabId: string | null = null
   try {
@@ -946,14 +950,18 @@ type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?:
 
 export function lastOwnerWords(
   turns: Turn[],
-  ownersWords: (said: string) => string | undefined
+  d: Pick<SessionVerbDeps, 'ownersWords'> & { overseer: Pick<Overseer, 'wrote'> }
 ): string | undefined {
-  return turns
+  const line = turns
     .flatMap((t) => t.said)
-    .filter((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
-    .map((l) => ownersWords(l.text))
-    .findLast((words) => words !== undefined)
-    ?.slice(0, OWNER_WORDS_QUOTED_CHARS)
+    .findLast(
+      (l) =>
+        l.who === 'owner' &&
+        !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)) &&
+        !d.overseer.wrote(l.text)
+    )
+  if (!line) return undefined
+  return d.ownersWords(line.text).slice(0, OWNER_WORDS_QUOTED_CHARS)
 }
 
 function isMe(
@@ -1013,7 +1021,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     const [parent] = d.startedSessions.startersOf(s)
     const holder = parent && !seen.has(parent) ? holderOf(parent) : undefined
     if (holder) return ownerWordsOf(holder, seen)
-    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS), d.ownersWords)
+    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS), d)
   }
 
   const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
@@ -1257,7 +1265,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     const toAnotherHelper = !d.overseer.is(caller.tabId) && t.workspace === d.overseer.folder()
     return forTheOwner && !t.overseer && !toAnotherHelper
-      ? deliver(sub, t, ownerSays(text), caller, true)
+      ? deliver(sub, t, d.overseer.says(text), caller, true)
       : deliver(sub, t, sessionSays(caller.session, text), caller, false)
   }
 
@@ -1300,7 +1308,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const backend = parsed.value.backend ?? caller.session.backendId
       const place = newSessionPlace(d, parsed.value, caller.tabId, ws, overseer)
       if (!place.ok) return place.reply
-      const { workspace, conductorTab } = place
+      const { workspace, conductorTab, helper } = place
       const { model, effort } = parsed.value
       const unpicked = modelAndEffortRefusal(backend, parsed.value)
       if (unpicked || !effort)
@@ -1325,7 +1333,8 @@ export function sessionVerb(d: SessionVerbDeps): {
         workspace,
         conductorTab,
         ownerWords,
-        (tab) => repliesOwed.oweSession(tab, { owner: caller.session.sessionId })
+        (tab) => repliesOwed.oweSession(tab, { owner: caller.session.sessionId }),
+        !!helper
       )
       return resolved?.note && reply.exit === 0
         ? { ...reply, text: `${reply.text} ${resolved.note}` }
@@ -1406,7 +1415,8 @@ export function sessionVerb(d: SessionVerbDeps): {
         d.overseer.folder(),
         overseer.tabId,
         ownerWords,
-        (tab) => repliesOwed.oweSession(tab, { owner: overseer.sessionId })
+        (tab) => repliesOwed.oweSession(tab, { owner: overseer.sessionId }),
+        true
       )
     )?.tabId ?? null
 
