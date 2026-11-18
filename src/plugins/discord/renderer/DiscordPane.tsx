@@ -5,13 +5,13 @@ import { channelLabel, setUpWith } from '../shared/channels'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '@renderer/store'
 import { setUpDiscordWithButler } from './setUpWithButler'
+import { openBinding } from './state'
 import { messageContentByHand, statusClass, statusText, useDiscordStatus } from './status'
 import '@renderer/accounts.css'
 
 export function DiscordPane(): JSX.Element {
   const discord = useStore((s) => s.settings.discord)
   const name = useStore((s) => s.settings.butler.name)
-  const setBindButler = useStore((s) => s.setBindButler)
   const loaded = useDiscordStatus()
   const [assistError, setAssistError] = useState('')
   const channel = discord.channel
@@ -137,7 +137,7 @@ export function DiscordPane(): JSX.Element {
               )}
             </div>
             <div className="acct-foot">
-              <button className="mini" onClick={() => setBindButler(true)}>
+              <button className="mini" onClick={() => openBinding(true)}>
                 {channel ? (
                   'Change channel…'
                 ) : (

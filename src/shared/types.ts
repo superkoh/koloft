@@ -1,15 +1,9 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
-import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
-import {
-  DEFAULT_BUTLER_NAME,
-  type ButlerSession,
-  type ButlerSetting
-} from '@plugins/butler/shared/types'
+import type { PluginSettingValues } from '@plugins/settings'
 import type {
   ConductorSaveResult,
   DiscordChannel,
-  DiscordSettings,
   DiscordStatus
 } from '@plugins/discord/shared/types'
 
@@ -334,7 +328,7 @@ export interface AccountAddResult {
   account?: AccountView
 }
 
-export interface Settings {
+export interface AppSettings {
   sessionMethods: SessionMethods
   fontFamily: string
   fontSize: number
@@ -367,12 +361,9 @@ export interface Settings {
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
-  butler: ButlerSetting
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
-  discord: DiscordSettings
-  butlerSession: ButlerSession
   gitAccounts: GitAccount[]
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
@@ -380,6 +371,8 @@ export interface Settings {
   todoNotes: Record<string, string>
   sessionDefaults: Record<string, SessionDefaults>
 }
+
+export type Settings = AppSettings & PluginSettingValues
 
 export interface OwnPick {
   model?: string
@@ -444,7 +437,7 @@ export const WORLD_CLOCK_MAX = 3
 
 export const SIDEBAR_MIN = 240
 
-export const DEFAULT_SETTINGS: Settings = {
+export const APP_DEFAULT_SETTINGS: AppSettings = {
   sessionMethods: {
     defaultBackend: 'claude',
     enabled: { claude: true, codex: true, muse: true, agy: true }
@@ -479,12 +472,9 @@ export const DEFAULT_SETTINGS: Settings = {
   worldClocks: [],
   onboardingSeen: false,
   assist: {},
-  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
-  discord: {},
-  butlerSession: { sessionIds: [] },
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],
@@ -1170,18 +1160,6 @@ export interface CoreApi {
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
-  inbox: {
-    list(): Promise<InboxSnapshot>
-    onChanged(cb: (snapshot: InboxSnapshot) => void): () => void
-    press(cardId: string, actionId: string, answers: InboxAnswers): void
-    confirm(cardId: string): void
-    undo(cardId: string): void
-    retry(cardId: string): void
-    dismiss(cardId: string): void
-    level(cardId: string, level: InboxLevel | null): void
-    top(cardId: string): void
-    clearNotes(): void
-  }
   secret: {
     list(): Promise<SecretAskView[]>
     onAsks(cb: (asks: SecretAskView[]) => void): () => void
@@ -1307,16 +1285,9 @@ export interface CoreApi {
   notes: {
     path(ws: string): Promise<string | null>
   }
-  github: {
-    info(root: string, force?: boolean): Promise<GithubInfo | null>
-    target(root: string, what: GithubTarget): Promise<string | null>
-    onInfo(cb: (root: string, info: GithubInfo) => void): () => void
-    checks(root: string, pr: number): Promise<PrChecks>
-    failingChecksText(root: string, pr: number): Promise<string | null>
+  git: {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
-    openItems(root: string): Promise<GithubOpenItems>
-    prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
   }
   workspace: {
     pickFolder(): Promise<string | null>

@@ -2282,6 +2282,15 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **A passthrough a pane prints while no client is attached is never sent later.** A
+  client that attaches gets the pane's screen redrawn, not the `ESC P tmux; … ESC \` it
+  missed; one printed while a client is attached reaches it. So a remote tab that
+  attaches again after Koloft restarts sees no old 7501 frame, only the ones printed
+  from then on (2026-11-18, tmux 3.3a in the `koloft-e2e-sshd` Docker image,
+  `allow-passthrough on` from a `-f` config, a wrapped `ESC ] 7501 ; state=working`
+  printed in a detached session, then `attach` in a python pty with
+  `TERM=xterm-256color`: the pane's text arrived, the frame did not; a frame printed in
+  a new window after attaching arrived).
 - **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
   ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
   (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq

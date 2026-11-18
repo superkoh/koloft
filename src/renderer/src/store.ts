@@ -2,8 +2,8 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import type { InboxSnapshot } from '@shared/inbox'
+import { DEFAULT_SETTINGS } from '@shared/settingsOps'
 import {
-  DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
   type AccountView,
   type AdoptableTab,
@@ -185,10 +185,6 @@ interface AppState {
     onDiscard(): void
     onSave(): void | Promise<void>
   } | null
-  butlerTab: string | null
-  assistAsked: boolean
-  bindButler: boolean
-  renameButler: boolean
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
@@ -198,7 +194,6 @@ interface AppState {
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
-  openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
@@ -243,10 +238,6 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setButlerTab: (tabId: string) => void
-  setAssistAsked: (asked: boolean) => void
-  setBindButler: (open: boolean) => void
-  setRenameButler: (open: boolean) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -752,10 +743,6 @@ export const useStore = create<AppState>((set, get) => ({
   cron: { jobs: [], live: [], folders: {}, notes: {} },
   machine: null,
   unsavedPrompt: null,
-  butlerTab: null,
-  assistAsked: false,
-  bindButler: false,
-  renameButler: false,
   orphanConfirm: null,
 
   addTab: (t) => {
@@ -844,14 +831,6 @@ export const useStore = create<AppState>((set, get) => ({
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
-  },
-  openButler: async (fresh = false) => {
-    const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
-    if (!r.ok) return r.error
-    const st = get()
-    st.setButlerTab(r.tabId)
-    st.activateTab(r.tabId)
-    return null
   },
   setActive: (id) => set({ activeTabId: id }),
   setTabTitle: (id, title) =>
@@ -1196,10 +1175,6 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setButlerTab: (butlerTab) => set({ butlerTab }),
-  setAssistAsked: (assistAsked) => set({ assistAsked }),
-  setBindButler: (bindButler) => set({ bindButler }),
-  setRenameButler: (renameButler) => set({ renameButler }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {
