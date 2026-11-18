@@ -744,14 +744,18 @@ against a stand-in provider: exit 0, the same stdout, `config.toml` untouched, o
 The footer changes (#60972 lowercase service-tier names, #61141, #61167) were read from
 the changes only; Koloft passes a `tui.status_line` list and parses no footer text (§8).
 No other section was probed by hand on 0.170.0: sections 3, 5, 18 (but its `--help`),
-20–23, 25–27, 30 and 33, and 15's login parts, stand on 0.167.0's to 0.169.0's
-measurements above and on the e2e specs, whose Codex cases, the remote ones
-(E-SSH-23/24/25) too, passed with 0.170.0 as the Mac's codex once run alone, the lab
-machine's version **inferred, not checked** as for 0.169.0. `gpt-6.2-sol` sends a
-`commentary` message before a tool call more readily than the 0.161.0 catalog's default:
-asked to read a skill file, it sent "I’ll read the Koloft skill." 44 s into the turn and
-the `final_answer` 2.5 s after the tool call, on 0.169.0 and 0.170.0 alike (§19: a turn
-can hold several `agentMessage`s).
+20–23, 25 and 30, and 15's login parts, stand on 0.167.0's measurements above; 4, 19, 26
+and 27 on 0.169.0's. The real-binary e2e specs ran with 0.170.0 as the Mac's codex: the
+remote Codex cases (E-SSH-23/24/25) passed, the lab machine's version **inferred, not
+checked** as for 0.169.0; of the local Codex cases, three that failed once passed when
+run again, two that paste failing checks failed on every build, 0.161.0 too, and the one
+that asks the model to read the `koloft` skill failed 3 of 3 (on 0.169.0 2 of 2, with no
+reply in 180 s; on 0.161.0 it passed). Its saved 0.170.0 rollout, `turn_context`
+`model: gpt-6.2-sol`, shows the turn ending right: a `commentary` message ("I’ll read
+the Koloft skill.") 44 s in, the tool call, then the `final_answer` 2.5 s later (§19: a
+turn can hold several `agentMessage`s), which the case read too early. That 0.161.0
+passed because its catalog has another default model, not because of the build, is
+**inferred, not checked**: `model/list` was not read on 0.161.0.
 
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the

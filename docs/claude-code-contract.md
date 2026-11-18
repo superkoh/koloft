@@ -1275,7 +1275,9 @@ never wrote a transcript.
 - **Since 2.1.326 the statusLine command runs again after a terminal resize, with the new
   `COLUMNS`.** 2026-11-18, a Mac pty resized 120 → 90 → 140: 2.1.325 ran the command once
   (`COLUMNS=120`) and not after either resize; 2.1.327 ran it again each time, with
-  `COLUMNS=90`, then `140`. One run each.
+  `COLUMNS=90`, then `140`. One run each; 2.1.326 was not run, and that it starts there
+  is read from its release notes ("Fixed a custom status line keeping its old width …
+  after a terminal resize").
 - statusLine (like hooks) only runs after the workspace trust dialog is accepted, and
   `disableAllHooks: true` turns off both statusLine and hooks.
 - CC also supports `subagentStatusLine` (the key is in the 2.1.281 binary, `strings`,
@@ -2885,7 +2887,8 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
 - **Since 2.1.326 a turn that leaves a background shell running does not end in `done`,
   and the folder trust question is reported.** 2026-11-18, CC 2.1.327 beside 2.1.325, a
   Mac pty answering with Koloft's `PROGRAM_STATUS_REPLY` (sent before the DA1 reply: in
-  the other order the reports never turned on), a stand-in API, one run each, every run
+  the other order the reports never turned on), a stand-in API, one run each (2.1.326
+  was not run; that it starts there is read from its release notes), every run
   replayed through `ClaudeDialogWatch`. A plain turn (`idle`, `working`, `done`, a bare
   `state=clear` on exit) and a Bash permission dialog (`blocked:kind=permission`, then
   `working` on `1`, then `done`) are the same on both. A turn whose Bash `sleep 30` runs
