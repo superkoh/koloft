@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
+  morningReport,
   OWNER_ASLEEP_ANSWER,
   OwnerAsleep,
   SENDING_THE_ANSWER_FAILED,
@@ -308,5 +309,40 @@ describe('owner asleep', () => {
 
     new OwnerAsleep(t.d, HOUR_MS).set(null)
     expect(t.reports).toHaveLength(1)
+  })
+})
+
+describe('the full text of what Koloft answers while the owner sleeps and of the morning report, pinned so that moving them changes no character', () => {
+  it('the answer, and the report for each mix of changed sessions and answers, every way an answer ends and each way a night’s length reads', async () => {
+    const long = 'Which one? '.repeat(30)
+    const changed = [
+      {
+        kind: 'turn-done' as const,
+        title: 'Fix login',
+        sessionId: 's-1',
+        workspace: 'app',
+        reply: 'Opened PR #12.'
+      },
+      { kind: 'approval' as const, title: 'Deploy' },
+      { kind: 'exited' as const }
+    ]
+    const answered = [
+      { title: 'Session a', asked: question('Blue or red?'), gave: OWNER_ASLEEP_ANSWER },
+      { title: 'Session b', asked: question('Pick one'), gave: '1' },
+      { title: 'Session c', asked: approval('npm publish'), gave: 'yes' },
+      { title: 'Session d', asked: question(long), failed: SENDING_THE_ANSWER_FAILED },
+      { title: 'Session e', asked: approval('rm -rf build'), failed: ANSWER_NOT_TAKEN }
+    ]
+    const lines = [
+      `answer: ${OWNER_ASLEEP_ANSWER}`,
+      `nothing: ${morningReport(HOUR_MS, [], [])}`,
+      `changed, 45 min: ${morningReport(45 * 60_000, changed, [])}`,
+      `answered, 2 h: ${morningReport(2 * HOUR_MS, [], answered)}`,
+      `both, 7 h 35 min: ${morningReport(7 * HOUR_MS + 35 * 60_000, changed, answered)}`,
+      `both, under a minute: ${morningReport(1000, changed.slice(0, 1), answered.slice(0, 1))}`
+    ]
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot(
+      './plugins/butler/text/owner-asleep.txt'
+    )
   })
 })
