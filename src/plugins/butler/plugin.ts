@@ -16,7 +16,7 @@ export const plugin: PluginManifest = {
   name: 'Butler',
   mandatory: true,
   needs: ['sessions'],
-  settings: { keys: ['butler', 'butlerSession'] },
+  settings: { keys: ['butler', 'butlerSession', 'ownerAsleepSince'] },
   text: TEXT,
   channels: Object.values(CHANNELS),
   assistJobs: ASSIST_JOBS,

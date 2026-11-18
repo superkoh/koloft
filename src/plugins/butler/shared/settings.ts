@@ -60,5 +60,9 @@ export const SETTINGS = {
     keptOnReset: true,
     writtenByMainOnly: true,
     retires: { assistSessions: (raw) => (Array.isArray(raw) ? raw : []) }
+  }),
+  ownerAsleepSince: setting<number | null>({
+    default: null,
+    clean: (raw) => raw as number | null
   })
 } satisfies SettingKeys

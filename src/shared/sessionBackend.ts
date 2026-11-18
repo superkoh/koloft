@@ -7,7 +7,7 @@ import type {
   SessionSource
 } from './types'
 import { hostOf } from './remoteKey'
-import { settingsPaneName } from './paletteFeatures'
+import { settingsPaneName } from './settingsPanes'
 
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
