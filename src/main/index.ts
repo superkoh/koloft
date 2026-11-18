@@ -567,7 +567,8 @@ import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
-import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
+import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
+import { toChannel } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
@@ -861,18 +862,8 @@ const slash = new SlashCommands({
   outputOnlyOnScreen: (tabId) =>
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
-      : undefined,
-  post: slashReply,
-  card: (to, card) =>
-    'channelId' in to
-      ? discordRelay?.card(to.channelId, card)
-      : to.tell(`${card.header}\n${card.body}`)
+      : undefined
 })
-
-function slashReply(to: SlashReplyTo, text: string): void {
-  if ('channelId' in to) discordRelay?.say(to.channelId, text)
-  else to.tell(text)
-}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -2187,7 +2178,7 @@ const sessionDeps: SessionVerbDeps = {
   command: async (callerTab, target, text, tellCaller) =>
     target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
-      : typeCommandInto(target, text, { tell: tellCaller }),
+      : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
   roomOf: (key) => {
     const room = rooms?.ofKey(key)
@@ -6438,9 +6429,11 @@ function roomDestination(threadId: string): Destination | undefined {
       return sessionDeps.resume(row)
     },
     typeCommand: async (tabId, command) => {
-      await slash.typeWhenIdle({ name: room.name, tabId, butler: false }, command, {
-        channelId: threadId
-      })
+      await slash.typeWhenIdle(
+        { name: room.name, tabId, butler: false },
+        command,
+        toChannel(threadId, () => discordRelay)
+      )
     },
     seen: (id) => rooms?.seen(threadId, id),
     ownerSpoke: () => rooms?.ownerSpoke(threadId)
@@ -6536,9 +6529,11 @@ function butlerDestination(): Destination {
     typeCommand: async (tabId, command) => {
       const channelId = discordBinding?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
-      await slash.typeWhenIdle({ name: butlerNameNow(), tabId, butler: true }, command, {
-        channelId
-      })
+      await slash.typeWhenIdle(
+        { name: butlerNameNow(), tabId, butler: true },
+        command,
+        toChannel(channelId, () => discordRelay)
+      )
     },
     seen: (id) => discordBinding?.setLastMessage(id)
   }
@@ -6550,8 +6545,8 @@ function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
   void t
     .open()
     .then((tabId) => slash.typeWhenIdle(target(tabId), text, to))
-    .catch((error: unknown) => slashReply(to, `⚠ ${errorText(error)}`))
-  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and will ${replyWhere(to)}.`
+    .catch((error: unknown) => to.say(`⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and will ${to.where}.`
 }
 
 function commandIntoButler(text: string): string {
