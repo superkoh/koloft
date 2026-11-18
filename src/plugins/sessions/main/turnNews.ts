@@ -1,6 +1,7 @@
 import type { BackgroundItem } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import type { Assist } from './assist'
+
+type TurnAssist = (job: { row: 'turn'; system: string; prompt: string }) => Promise<string | null>
 
 const REPLY_CHARS_SENT = 4000
 const MOST_REPLIES_OFFERED = 4
@@ -96,7 +97,7 @@ export function waitsOnOtherWork(
   )
 }
 
-export async function judgeTurn(assist: Assist, turn: Turn): Promise<Verdict> {
+export async function judgeTurn(assist: TurnAssist, turn: Turn): Promise<Verdict> {
   const reply = turn.reply.trim()
   if (!reply) return { news: false }
   if (saysNothingForYou(reply)) return { news: true }
@@ -118,15 +119,21 @@ export interface NewsJudgeDeps {
   judge(turn: Turn): Promise<Verdict>
   awaitingVerdict(tabId: string): boolean
   markFyi(tabId: string): void
-  judged(tabId: string, verdict: Verdict): void
 }
+
+type VerdictListener = (tabId: string, verdict: Verdict) => void
 
 export class NewsJudge {
   private round = new Map<string, number>()
   private unjudged = new Map<string, Turn>()
   private beingJudged = new Map<string, number>()
+  private listeners: VerdictListener[] = []
 
   constructor(private readonly d: NewsJudgeDeps) {}
+
+  onVerdict(listener: VerdictListener): void {
+    this.listeners.push(listener)
+  }
 
   judging(tabId: string): boolean {
     return this.beingJudged.has(tabId)
@@ -157,7 +164,7 @@ export class NewsJudge {
         if (verdict.news && this.round.get(tabId) === round) this.d.markFyi(tabId)
         if (this.beingJudged.get(tabId) !== round) return
         this.beingJudged.delete(tabId)
-        this.d.judged(tabId, verdict)
+        for (const listener of this.listeners) listener(tabId, verdict)
       })
   }
 
