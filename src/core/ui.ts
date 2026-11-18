@@ -4,24 +4,47 @@ import type { PluginManifest, UiPlace } from './plugin'
 
 export type UiParts = Readonly<Record<string, ComponentType>>
 
+export interface Slot<T> {
+  name: string
+  filledWith?: T
+}
+
+export const slot = <T>(name: string): Slot<T> => ({ name })
+
+export interface SlotFill {
+  slot: Slot<unknown>
+  value: unknown
+}
+
+export const fill = <T>(into: Slot<T>, value: T): SlotFill => ({ slot: into, value })
+
+export interface PluginUi {
+  parts?: UiParts
+  fills?: readonly SlotFill[]
+}
+
 export interface PlacedPart {
   id: string
   Part: ComponentType
 }
 
-export type PlacedUi = Readonly<Partial<Record<UiPlace, readonly PlacedPart[]>>>
+export interface PlacedUi {
+  parts: Readonly<Partial<Record<UiPlace, readonly PlacedPart[]>>>
+  fillsOf: <T>(into: Slot<T>) => readonly T[]
+}
 
 export function placeUi(
   plugins: readonly PluginManifest[],
-  partsByPlugin: Readonly<Record<string, UiParts>>
+  uis: Readonly<Record<string, PluginUi>>
 ): PlacedUi {
-  for (const id of Object.keys(partsByPlugin))
+  for (const id of Object.keys(uis))
     if (!plugins.some((p) => p.id === id))
       throw new Error(`UI parts are given for "${id}", which is not on the list of plugins`)
   const placed: Partial<Record<UiPlace, PlacedPart[]>> = {}
+  const fills: SlotFill[] = []
   const taken = new Set<string>()
   for (const plugin of plugins) {
-    const parts = partsByPlugin[plugin.id] ?? {}
+    const parts = uis[plugin.id]?.parts ?? {}
     const declared = plugin.ui ?? []
     for (const id of Object.keys(parts))
       if (!declared.some((entry) => entry.id === id))
@@ -33,6 +56,10 @@ export function placeUi(
       taken.add(id)
       ;(placed[place] ??= []).push({ id, Part })
     }
+    fills.push(...(uis[plugin.id]?.fills ?? []))
   }
-  return placed
+  return {
+    parts: placed,
+    fillsOf: <T>(into: Slot<T>) => fills.filter((f) => f.slot === into).map((f) => f.value as T)
+  }
 }

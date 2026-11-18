@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import type { SessionInfo } from '@shared/types'
 import { landAfterClosingAWatchedSession, useStore } from '../../../../src/renderer/src/store'
 import { butlerLanding } from '../../../../src/plugins/butler/renderer/landing'
+import { useButler } from '../../../../src/plugins/butler/renderer/state'
 
 function session(tabId: string): SessionInfo {
   return {
@@ -20,8 +21,11 @@ function session(tabId: string): SessionInfo {
 
 describe('closing the session you watch lands on the butler, whichever of session end and terminal exit comes first', () => {
   let butlersOpened: number
-  const { settings, butlerTab } = useStore.getState()
-  afterEach(() => useStore.setState({ settings, butlerTab }))
+  const { settings } = useStore.getState()
+  afterEach(() => {
+    useStore.setState({ settings })
+    useButler.setState({ openedTab: null })
+  })
   beforeEach(() => {
     landAfterClosingAWatchedSession(butlerLanding)
     butlersOpened = 0
@@ -40,7 +44,6 @@ describe('closing the session you watch lands on the butler, whichever of sessio
       sessions: [],
       activeTabId: null,
       openFiles: {},
-      butlerTab: null,
       accounts: null,
       settings: {
         ...useStore.getState().settings,

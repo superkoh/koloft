@@ -5,18 +5,18 @@ import { distinctName } from '@shared/sessionRoute'
 import type { DiscordChannel } from '../shared/types'
 import { useStore } from '@renderer/store'
 import { useDiscordStatus } from './status'
+import { openBinding, useBinding } from './state'
 
 const NEW = 'new'
 
 export function BindConductorDialog(): JSX.Element | null {
-  const open = useStore((s) => s.bindButler)
+  const open = useBinding((s) => s.open)
   return open ? <BindForm /> : null
 }
 
 function BindForm(): JSX.Element {
   const editing = useStore((s) => s.settings.discord.channel)
   const name = useStore((s) => s.settings.butler.name)
-  const setBindButler = useStore((s) => s.setBindButler)
   const [channels, setChannels] = useState<DiscordChannel[] | null>(null)
   const [channel, setChannel] = useState<DiscordChannel | typeof NEW | undefined>(
     editing ? undefined : NEW
@@ -32,7 +32,7 @@ function BindForm(): JSX.Element {
     NEW_CHANNEL_NAME,
     (channels ?? []).filter((c) => c.guildId === guildId).map((c) => c.name)
   )
-  const close = (): void => setBindButler(false)
+  const close = (): void => openBinding(false)
   const editedChannelId = editing?.channelId
 
   useEffect(() => {
@@ -62,11 +62,11 @@ function BindForm(): JSX.Element {
       }
       if (e.key !== 'Escape') return
       e.stopPropagation()
-      setBindButler(false)
+      openBinding(false)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [setBindButler])
+  }, [])
 
   const submit = async (): Promise<void> => {
     if (busy) return
