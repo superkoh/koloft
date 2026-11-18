@@ -8,5 +8,6 @@ export const plugin: PluginManifest = {
   name: 'Discord',
   mandatory: false,
   needs: ['butler'],
+  commands: [{ verb: 'discord' }],
   text: [...TEXT, ...SKILL_TEXT]
 }

@@ -7,5 +7,6 @@ export const plugin: PluginManifest = {
   name: 'Passwords and sign-in',
   mandatory: false,
   needs: ['sessions', 'workbench'],
+  commands: [{ verb: 'secret' }, { verb: 'page' }],
   text: TEXT
 }
