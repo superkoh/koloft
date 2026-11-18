@@ -115,15 +115,12 @@ import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
-  chromeClientHints,
   enforceGuestAttach,
   guestMenuItems,
   isAppNavigation,
-  isAttachmentResponse,
-  isUnderAnyRoot,
-  standardUserAgent
+  isUnderAnyRoot
 } from './browserSecurity'
-import { directoryListingHtml, fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
+import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -372,9 +369,10 @@ import { pickElement, pickText, stopPick } from '@plugins/workbench/main/element
 import { WebPages } from '@plugins/workbench/main/webPages'
 import { SitePermissions } from '@plugins/workbench/main/sitePermissions'
 import { PageDialogs } from '@plugins/workbench/main/pageDialogs'
+import { PageDownloads } from '@plugins/workbench/main/pageDownloads'
+import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
-import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
@@ -439,7 +437,6 @@ import type {
   SignInResult,
   SignInFailure,
   BrowserDialogAnswer,
-  BrowserDownload,
   BrowserPagesInUse,
   ScreenAnswer,
   ScreenRequest,
@@ -3514,7 +3511,13 @@ app.whenReady().then(() => {
     return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
-  setupBrowserPartition()
+  setupBrowserPartition({
+    machinePage: machinePageResponse,
+    permissions: sitePermissions,
+    beforeRequest: routePageRequest,
+    downloads: pageDownloads,
+    guestPreload: path.join(__dirname, '../preload/guest.js')
+  })
   setupPageShotPartition()
   updateDockBadge(attention.list())
   // PLATFORM§15
@@ -4999,7 +5002,10 @@ function setupGuestAudioState(): void {
 }
 
 function pagesInUse(): BrowserPagesInUse {
-  const guestIds = new Set<number>([...pagesDownloading.values(), ...sitePermissions.pagesHeld()])
+  const guestIds = new Set<number>([
+    ...pageDownloads.pagesDownloading(),
+    ...sitePermissions.pagesHeld()
+  ])
   const modalPage = pageDialogs.modalPage()
   if (modalPage !== null) guestIds.add(modalPage)
   const owners = new Set<string>()
@@ -5179,32 +5185,7 @@ function browserGuestLimit(): number {
   return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
 }
 
-function localFilePath(url: string): string | null {
-  try {
-    const u = new URL(url)
-    if (u.host && u.host !== 'localhost') return null
-    return decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
-}
-
-async function isDirectory(target: string): Promise<boolean> {
-  try {
-    return (await fs.promises.stat(target)).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
-
-const liveDownloads = new Map<string, Electron.DownloadItem>()
-const pagesDownloading = new Map<string, number>()
-
-const downloadSources = new Map<string, string>()
-
-const retryTargets = new Map<string, string>()
+const pageDownloads = new PageDownloads({ send: sendToRenderer })
 
 // PLATFORM§8
 function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
@@ -5310,135 +5291,30 @@ function setupPageShotPartition(): void {
   onShotPageGone((page) => pageForwards.pageGone(page))
 }
 
-function setupBrowserPartition(): void {
-  const ses = session.fromPartition(BROWSER_PARTITION)
-  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
-  ses.setPermissionRequestHandler((page, permission, callback, details) =>
-    sitePermissions.request(page, permission, callback, details)
+// PLATFORM§39 PLATFORM§12
+function routePageRequest(
+  details: Electron.OnBeforeRequestListenerDetails,
+  callback: (response: Electron.CallbackResponse) => void
+): void {
+  if (
+    webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+    machinePageRequestRefused(details)
   )
-  ses.setPermissionCheckHandler((_wc, permission, _origin, details) =>
-    sitePermissions.check(permission, details)
-  )
-  ses.protocol.handle(PREVIEW_FILE_SCHEME, async () => new Response('Forbidden', { status: 403 }))
-  // PLATFORM§12
-  ses.protocol.handle('file', async (request) => {
-    const target = localFilePath(request.url)
-    if (target && (await isDirectory(target))) {
-      const entries = (await fs.promises.readdir(target, { withFileTypes: true })).map((e) => ({
-        name: e.name,
-        isDir: e.isDirectory()
-      }))
-      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
-    }
-    try {
-      return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
-    } catch (err) {
-      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
-      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
-    }
-  })
-  const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
-  // PLATFORM§14
-  ses.setUserAgent(guestUA, app.getPreferredSystemLanguages().join(','))
-  // PLATFORM§14
-  app.userAgentFallback = guestUA
-  const guestHints = chromeClientHints(guestUA)
-  if (guestHints) {
-    const managed = new Set(Object.keys(guestHints).map((k) => k.toLowerCase()))
-    ses.webRequest.onBeforeSendHeaders((details, callback) => {
-      if (!/^https:/i.test(details.url)) return callback({})
-      const headers = details.requestHeaders
-      for (const name of Object.keys(headers)) {
-        if (managed.has(name.toLowerCase())) delete headers[name]
-      }
-      callback({ requestHeaders: { ...headers, ...guestHints } })
+    return callback({ cancel: true })
+  const guest = details.webContentsId
+  const machinePort = loopbackPortOf(details.url)
+  if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
+    return fenceRequest(details, callback)
+  void webPages
+    .reportedOwner(guest)
+    .then((owner) => {
+      const host = owner ? webPages.machineOfOwner(owner) : undefined
+      return host ? loopbackOnTheMachine(details, guest, machinePort, host) : null
     })
-  }
-  ses.registerPreloadScript({
-    type: 'frame',
-    filePath: path.join(__dirname, '../preload/guest.js')
-  })
-  // PLATFORM§39 PLATFORM§12
-  ses.webRequest.onBeforeRequest((details, callback) => {
-    if (
-      webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
-      machinePageRequestRefused(details)
+    .then(
+      (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
+      () => callback({ cancel: true })
     )
-      return callback({ cancel: true })
-    const guest = details.webContentsId
-    const machinePort = loopbackPortOf(details.url)
-    if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
-      return fenceRequest(details, callback)
-    void webPages
-      .reportedOwner(guest)
-      .then((owner) => {
-        const host = owner ? webPages.machineOfOwner(owner) : undefined
-        return host ? loopbackOnTheMachine(details, guest, machinePort, host) : null
-      })
-      .then(
-        (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
-        () => callback({ cancel: true })
-      )
-  })
-  // PLATFORM§13
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    const headers = details.responseHeaders
-    if (!headers || !isAttachmentResponse(headers)) return callback({})
-    callback({ responseHeaders: { ...headers, 'x-content-type-options': ['nosniff'] } })
-  })
-  ses.on('will-download', (_e, item, contents) => {
-    const dir = process.env.KOLOFT_DOWNLOAD_DIR || app.getPath('downloads')
-    try {
-      fs.mkdirSync(dir, { recursive: true })
-    } catch {
-      return
-    }
-    const name = uniqueDownloadName(
-      safeDownloadName(suggestedDownloadName(item.getContentDisposition(), item.getFilename())),
-      (candidate) => fs.existsSync(path.join(dir, candidate))
-    )
-    const savePath = path.join(dir, name)
-    item.setSavePath(savePath)
-
-    const url = item.getURL()
-    const retryId = retryTargets.get(url)
-    retryTargets.delete(url)
-    const id = retryId ?? crypto.randomUUID()
-    if (retryId) downloadSources.delete(retryId)
-    liveDownloads.set(id, item)
-    if (contents) pagesDownloading.set(id, contents.id)
-    sendToRenderer(CH.browser.downloadEvent, {
-      id,
-      kind: 'started',
-      name,
-      total: item.getTotalBytes()
-    })
-    item.on('updated', (_ev, state) => {
-      if (state !== 'progressing') return
-      sendToRenderer(CH.browser.downloadEvent, {
-        id,
-        kind: 'progress',
-        received: item.getReceivedBytes()
-      })
-    })
-    item.once('done', (_ev, state) => {
-      liveDownloads.delete(id)
-      pagesDownloading.delete(id)
-      if (state === 'completed') downloadSources.set(id, url)
-      sendToRenderer(CH.browser.downloadEvent, {
-        id,
-        kind: 'done',
-        state,
-        path: state === 'completed' ? savePath : undefined
-      })
-      if (state !== 'completed') {
-        downloadSources.set(id, url)
-        return
-      }
-      const payload: BrowserDownload = { name, path: savePath }
-      sendToRenderer(CH.browser.download, payload)
-    })
-  })
 }
 
 function handleOpenRequest(obj: OpenDrop, full: string): void {
@@ -7251,19 +7127,9 @@ function registerIpc(): void {
 
   ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => sitePermissions.cancel(id))
 
-  ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => {
-    if (typeof id !== 'string') return
-    liveDownloads.get(id)?.cancel()
-  })
+  ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => pageDownloads.cancel(id))
 
-  ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => {
-    if (typeof id !== 'string') return
-    const url = downloadSources.get(id)
-    if (!url) return
-    retryTargets.set(url, id)
-    sendToRenderer(CH.browser.downloadEvent, { id, kind: 'retrying' })
-    session.fromPartition(BROWSER_PARTITION).downloadURL(url)
-  })
+  ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => pageDownloads.retry(id))
 
   ipcMain.on(CH.browser.copyText, (_e, text: unknown) => {
     if (typeof text !== 'string' || !text) return
