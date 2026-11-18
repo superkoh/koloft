@@ -33,9 +33,14 @@ import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { endedTabsLiveElsewhere, selectionRoot, welcomeTarget, workspaceOfRow } from './sessionRows'
+import {
+  endedTabsLiveElsewhere,
+  everyWorkspaceRows,
+  selectionRoot,
+  welcomeTarget,
+  workspaceOfRow
+} from './sessionRows'
 import { inRoot } from './browseModel'
-import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -193,7 +198,6 @@ interface AppState {
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
-  landOnButler: () => void
   openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
@@ -366,14 +370,25 @@ export function tabAsItsAgent(tab: Tab | undefined): Tab | undefined {
   return agent ? { ...tab, ...agent, sessionId: lastSessionId.get(tab.id) } : tab
 }
 
-function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
+export interface LandingAfterClose {
+  isLandingTab: (s: AppState, tabId: string) => boolean
+  land: () => void
+}
+
+let landingAfterClose: LandingAfterClose | null = null
+
+export function landAfterClosingAWatchedSession(landing: LandingAfterClose): void {
+  landingAfterClose = landing
+}
+
+function watchedSessionLeaves(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
+    !!landingAfterClose &&
     s.activeTabId === tabId &&
     (isSessionKind(leaving?.kind) || watchedSessionEndedIn.has(tabId)) &&
     !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
-    butlerSetUp(s) &&
-    !isButlerTab(s.sessions, s.butlerTab, tabId)
+    !landingAfterClose.isLandingTab(s, tabId)
   )
 }
 
@@ -801,7 +816,7 @@ export const useStore = create<AppState>((set, get) => ({
     }))
   },
   removeTab: (id) => {
-    const toButler = watchedSessionLeavesForButler(get(), id)
+    const toLand = watchedSessionLeaves(get(), id)
     killTerminalsOf(id)
     endEditsOf(id)
     set((s) => {
@@ -823,22 +838,12 @@ export const useStore = create<AppState>((set, get) => ({
         ...workbenchStateDropped(s, [id])
       }
     })
-    if (toButler && !get().inboxOpen) get().landOnButler()
+    if (toLand && !get().inboxOpen) landingAfterClose?.land()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
-  },
-  landOnButler: () => {
-    const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
-    if (live) return get().activateTab(live)
-    const landedOn = get().activeTabId
-    void window.api.conductors.open().then((r) => {
-      if (!r.ok) return get().showToast(r.error)
-      get().setButlerTab(r.tabId)
-      if (get().activeTabId === landedOn) get().activateTab(r.tabId)
-    })
   },
   openButler: async (fresh = false) => {
     const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
@@ -1075,7 +1080,8 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           if (t.id === s.activeTabId) {
             activeReverted = true
-            if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
+            if (landingAfterClose && !landingAfterClose.isLandingTab(s, t.id))
+              watchedSessionEndedIn.add(t.id)
           }
           agentBeforeSessionEnded.set(t.id, { kind: t.kind, title: t.title })
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }

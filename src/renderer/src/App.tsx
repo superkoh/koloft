@@ -68,6 +68,7 @@ import {
   rowIdOfTab,
   workspaceOfTab,
   DOCK_GUTTER_PX,
+  everyWorkspaceRows,
   liveTabOf,
   mixesBackends,
   notesHeightFromDrag,
@@ -122,9 +123,11 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
-import { BindConductorDialog } from './components/BindConductorDialog'
-import { butlerSetUp, everyWorkspaceRows, isButlerTab, someAccountCanRunAssist } from './butlerRows'
+import { RenameButlerDialog } from '@plugins/butler/renderer/ButlerRow'
+import { butlerSetUp, isButlerTab } from '@plugins/butler/renderer/butlerTabs'
+import { setUpDiscordWithButler } from '@plugins/discord/renderer/setUpWithButler'
+import { BindConductorDialog } from '@plugins/discord/renderer/BindConductorDialog'
+import { someAccountCanRunAssist } from './assistInputs'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { PastSessions } from './components/PastSessions'
