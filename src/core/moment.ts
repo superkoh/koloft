@@ -7,6 +7,13 @@ export interface FileOpened {
   view?: ArtifactView
 }
 
+export interface SessionStarted {
+  by: string
+  tabId: string
+  workspace: string
+  name?: string
+}
+
 export type SaysInReply<T> = (moment: T) => Promise<string | undefined>
 
 export interface Moment<T> {

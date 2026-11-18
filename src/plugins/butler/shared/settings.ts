@@ -2,9 +2,10 @@ import { GLOBAL_SCOPE } from '@shared/conductors'
 import { cleanOwnPick } from '@shared/sessionPicks'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
-import type { ButlerSession, ButlerSetting } from './types'
+import { setting, type SettingKeys } from '@core/settings'
+import { DEFAULT_BUTLER_NAME, type ButlerSession, type ButlerSetting } from './types'
 
-export function sanitizeButler(raw: unknown): ButlerSetting {
+function sanitizeButler(raw: unknown): ButlerSetting {
   const doc = isRecord(raw) ? raw : {}
   return butlerSetting(butlerName(doc.name), stringsIn(doc.formerNames).map(butlerName))
 }
@@ -32,7 +33,7 @@ function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   }
 }
 
-export function sanitizeButlerSession(raw: unknown, olderRecords: unknown[]): ButlerSession {
+function sanitizeButlerSession(raw: unknown, olderRecords: readonly unknown[]): ButlerSession {
   return mergedSessions([
     ...(isRecord(raw) ? [cleanSession(raw)] : []),
     ...olderRecords
@@ -41,3 +42,18 @@ export function sanitizeButlerSession(raw: unknown, olderRecords: unknown[]): Bu
       .map(cleanSession)
   ])
 }
+
+export const SETTINGS = {
+  butler: setting<ButlerSetting>({
+    default: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
+    clean: sanitizeButler,
+    keptOnReset: true
+  }),
+  butlerSession: setting<ButlerSession>({
+    default: { sessionIds: [] },
+    clean: sanitizeButlerSession,
+    keptOnReset: true,
+    writtenByMainOnly: true,
+    retires: { assistSessions: (raw) => (Array.isArray(raw) ? raw : []) }
+  })
+} satisfies SettingKeys
