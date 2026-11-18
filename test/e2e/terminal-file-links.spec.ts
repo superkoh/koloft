@@ -55,11 +55,12 @@ async function waitTerminalRefittedBesideTheOpenWorkbench(
       () =>
         page.evaluate((id) => {
           const term = (
-            window as unknown as { __koloftTerms: Record<string, { element: HTMLElement }> }
+            window as unknown as { __koloftTerms: Record<string, { element?: HTMLElement }> }
           ).__koloftTerms[id]
-          const screen = term.element.querySelector('.xterm-screen')!.getBoundingClientRect()
-          const island = term.element.closest('.term-island')!.getBoundingClientRect()
-          return screen.right <= island.right
+          const screen = term?.element?.querySelector('.xterm-screen')
+          const island = term?.element?.closest('.term-island')
+          if (!screen || !island) return false
+          return screen.getBoundingClientRect().right <= island.getBoundingClientRect().right
         }, tabId),
       { timeout: 30_000 }
     )
