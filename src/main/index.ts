@@ -316,7 +316,6 @@ import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
-import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
@@ -475,7 +474,6 @@ import type {
   LoginProgress,
   CreateTabOptions,
   CreateTabResult,
-  CronSaveInput,
   ConductorOpenResult,
   PaletteRequest,
   ConductorSaveResult,
@@ -617,6 +615,11 @@ import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { moment, type FileOpened } from '@core/moment'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
+import type { MainIpc } from '@core/ipc'
+import {
+  registerChannels as registerCronChannels,
+  pushState as pushCronState
+} from '@plugins/scheduled-tasks/main/channels'
 import { registerInboxCommand } from './agentInbox'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
@@ -1388,6 +1391,12 @@ function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   }
 }
 
+const pluginIpc: MainIpc = {
+  handle: (channel, handler) =>
+    ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
+  push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
+}
+
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
 } = {
@@ -1599,7 +1608,7 @@ async function withPastedPicturesOnItsMachine(
         firstPrompt = firstPrompt.replaceAll(file, there)
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
-        sendToRenderer(CH.cron.toast, `A pasted picture could not be copied to ${machine}: ${why}`)
+        sendToRenderer(CH.toast.show, `A pasted picture could not be copied to ${machine}: ${why}`)
       }
     })
   )
@@ -2087,7 +2096,7 @@ async function rulesOf(workspace: string): Promise<string | undefined> {
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
   const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
   const resolved = resolveOwnPick(backend, asked, listed)
-  if (resolved.note) sendToRenderer(CH.cron.toast, resolved.note)
+  if (resolved.note) sendToRenderer(CH.toast.show, resolved.note)
   return resolved
 }
 
@@ -2172,7 +2181,7 @@ const sessionDeps: SessionVerbDeps = {
     const butlerTab = callerChannel ? callerTab : butler?.liveTab()
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
       discordRelay.say(channelId, `⚠ ${text}`)
-    else sendToRenderer(CH.cron.toast, text)
+    else sendToRenderer(CH.toast.show, text)
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
@@ -2309,7 +2318,7 @@ registerCronCommand(commands, {
     const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
     return found.ok ? { ok: true, value: found.value.path } : found
   },
-  toast: (text) => sendToRenderer(CH.cron.toast, text),
+  toast: (text) => sendToRenderer(CH.toast.show, text),
   now: () => new Date()
 })
 
@@ -3625,7 +3634,7 @@ app.whenReady().then(() => {
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
-    toast: (message) => sendToRenderer(CH.cron.toast, message),
+    toast: (message) => sendToRenderer(CH.toast.show, message),
     typing: () => discordTyping,
     asks: () => sessionAsks,
     relay: () => discordRelay,
@@ -3698,7 +3707,7 @@ app.whenReady().then(() => {
       const claudeSaid = claudeExit.watch.failure()
       if (sessionId) workspaceMgr?.leftWorktree(sessionId, !claudeSaid)
       if (claudeSaid)
-        sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
+        sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
@@ -3781,7 +3790,7 @@ app.whenReady().then(() => {
     },
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
-    error: (message: string) => sendToRenderer(CH.cron.toast, message),
+    error: (message: string) => sendToRenderer(CH.toast.show, message),
     noAccountMessage: noAccountNow,
     hookRegDir: hookPaths.regDir
   }
@@ -3911,14 +3920,14 @@ app.whenReady().then(() => {
     void agySessions
       .availability()
       .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
+      .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
   if (museSessions) {
     sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
     void museSessions
       .availability()
       .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
+      .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
   if (codexSessions) {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
@@ -3930,7 +3939,7 @@ app.whenReady().then(() => {
         for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
         return codexSessions!.refreshHistory()
       })
-      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
+      .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
   for (const stored of [codexSessions, museSessions, agySessions])
     if (stored) void watchHistoryOf(stored).catch(() => undefined)
@@ -4073,7 +4082,7 @@ app.whenReady().then(() => {
     },
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
-    toast: (text) => sendToRenderer(CH.cron.toast, text),
+    toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
     todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind,
@@ -4149,7 +4158,7 @@ app.whenReady().then(() => {
     postFailed: (channelId, error) => {
       const channel = bindingNow.channel()
       const name = channel?.channelId === channelId ? channel.name : channelId
-      sendToRenderer(CH.cron.toast, `Koloft could not post to #${name} in Discord: ${error}`)
+      sendToRenderer(CH.toast.show, `Koloft could not post to #${name} in Discord: ${error}`)
     }
   })
   discordLink = link
@@ -4435,7 +4444,7 @@ app.whenReady().then(() => {
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
-    toast: (text) => sendToRenderer(CH.cron.toast, text),
+    toast: (text) => sendToRenderer(CH.toast.show, text),
     onChange: () => workspaceMgr?.restampLive(),
     onDefaultMoved: (move) => void sessionSync.defaultMoved(move, syncSessionsOf(allSessions())),
     runner: (wsPath) => {
@@ -4505,9 +4514,9 @@ app.whenReady().then(() => {
       const status = tracker.statusOf(tabId)
       return status === 'working' || status === 'approval'
     },
-    toast: (text) => sendToRenderer(CH.cron.toast, text),
+    toast: (text) => sendToRenderer(CH.toast.show, text),
     notify: notifyPlain,
-    push: (state) => sendToRenderer(CH.cron.state, state),
+    push: pushCronState(pluginIpc),
     killed: (tabId) => sendToRenderer(CH.tab.killedByMain, tabId),
     endpointAccountWithModelOf: (tabId) => {
       const name = tracker.infoOf(tabId)?.pickedAccount
@@ -5771,7 +5780,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   return stopped.then(
     () => true,
     (error) => {
-      sendToRenderer(CH.cron.toast, String(error))
+      sendToRenderer(CH.toast.show, String(error))
       return false
     }
   )
@@ -5862,7 +5871,7 @@ async function leftOnceRemovalsEnd(
 }
 
 function tellTheOwner(text: string): void {
-  sendToRenderer(CH.cron.toast, text)
+  sendToRenderer(CH.toast.show, text)
   if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
 }
 
@@ -5935,7 +5944,7 @@ async function removeUntouchedWorktree(
       branches: [`worktree-${resource.worktreeName}`]
     })
   )
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.cron.toast, problem)
+  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.toast.show, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -6092,7 +6101,7 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
     const reopenedTab = resumed?.ok && ptyMgr.get(resumed.tabId)?.alive ? resumed.tabId : undefined
     cronRunner?.reopenedIn(id, reopenedTab)
     if (!resumed?.ok) {
-      if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
+      if (resumed) sendToRenderer(CH.toast.show, resumed.error)
       return
     }
     const ranUnder = savedOpenTabs.tabs.find((t) => t.sessionId === id)?.tabIds
@@ -6793,7 +6802,7 @@ const claudeBackend = new ClaudeBackend({
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
-  error: (message) => sendToRenderer(CH.cron.toast, message),
+  error: (message) => sendToRenderer(CH.toast.show, message),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     storedSessions()
@@ -6931,7 +6940,7 @@ function registerIpc(): void {
       try {
         act(cardId, ...rest)
       } catch (error) {
-        sendToRenderer(CH.cron.toast, errorText(error))
+        sendToRenderer(CH.toast.show, errorText(error))
       }
     }
   ipcMain.on(
@@ -7016,29 +7025,11 @@ function registerIpc(): void {
     rememberOpenTabs()
   })
 
-  ipcMain.handle(
-    CH.cron.list,
-    () => cronRunner?.state() ?? { jobs: [], live: [], folders: {}, notes: {} }
-  )
-  ipcMain.handle(
-    CH.cron.save,
-    (_e, input: CronSaveInput) =>
-      cronRunner?.save(input) ?? { ok: false, errors: [CRON_SAVE_MESSAGES.workspace] }
-  )
-  ipcMain.handle(CH.cron.delete, (_e, jobId: string) => cronRunner?.delete(jobId))
-  ipcMain.handle(CH.cron.setEnabled, (_e, arg: { jobId: string; on: boolean }) =>
-    cronRunner?.setEnabled(arg.jobId, arg.on)
-  )
-  ipcMain.handle(
-    CH.cron.runNow,
-    (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
-  )
-  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string, backend: BackendId) =>
-    hosts.of(workspacePath).listSkills(workspacePath, backend)
-  )
-  ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
-    sessionBackends.get(backend).trustsFolder(workspacePath)
-  )
+  registerCronChannels(pluginIpc, {
+    runner: () => cronRunner,
+    skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
+    trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
+  })
   ipcMain.handle(
     CH.sessionDefaults.read,
     async (_e, workspacePath: string): Promise<SessionDefaultsRead> => {
@@ -7153,7 +7144,7 @@ function registerIpc(): void {
   }
   const historyPartlyUnread = (id: BackendId, error: unknown): void => {
     sendToRenderer(
-      CH.cron.toast,
+      CH.toast.show,
       `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
     )
   }
@@ -7587,7 +7578,7 @@ function registerIpc(): void {
     if (!picked) return null
     if (picked.pictureFailed)
       sendToRenderer(
-        CH.cron.toast,
+        CH.toast.show,
         `The picture of the element could not be taken: ${picked.pictureFailed}`
       )
     const machine = machineOfTab(tabId)
@@ -7599,7 +7590,7 @@ function registerIpc(): void {
         ).catch((error) => {
           const why = error instanceof Error ? error.message : String(error)
           sendToRenderer(
-            CH.cron.toast,
+            CH.toast.show,
             machine
               ? `The picture of the element could not be copied to ${machine}: ${why}`
               : `The picture of the element could not be saved: ${why}`
