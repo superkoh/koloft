@@ -33,7 +33,8 @@ export interface PluginSettings {
   keys: readonly string[]
 }
 
-export type UiPlace = 'sidebar-head' | 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item'
+export type UiPlace =
+  'sidebar-head' | 'sidebar-row' | 'centre-page' | 'below-terminal' | 'dialog' | 'palette-item'
 
 export interface UiEntry {
   place: UiPlace
