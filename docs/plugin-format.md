@@ -43,8 +43,7 @@ refused with one sentence, its listeners and code are not started, and its UI en
 not shown, except a "Set up" action and its ⌘P item. Its settings and data stay on disk.
 
 The example column says what the Discord plugin is meant to own. Today its folder holds its
-manifest, its text blocks, its `api.ts`, one main-process listener and its settings page,
-channel dialog and part of the butler's row; the rest of its code still lives elsewhere in
+manifest, its text blocks and its `api.ts`; the rest of its code still lives elsewhere in
 the app.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
@@ -113,13 +112,15 @@ flowchart LR
 | `src/core/prompt.ts` | `composePrompt`, which puts text blocks together | yes |
 | `src/core/moment.ts` | `moment()`, a stand-in for one moment ("a file was opened") until the registry of #1985: listeners hand back a sentence for the agent's reply | yes |
 | `src/core/errorText.ts` | `errorText`, the text of a thrown error | yes |
+| `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks | yes |
+| `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in | yes |
 | `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports a plugin's manifest | yes |
 | `src/plugins/<id>/plugin.ts` | the plugin's manifest | all eleven |
 | `src/plugins/<id>/prompts/` | the plugin's text blocks for prompts | six plugins |
 | `src/plugins/<id>/skill/` | the plugin's text blocks for `koloft help` and the `koloft` skill | nine plugins |
 | `src/plugins/<id>/api.ts` | what other plugins may import | four plugins |
-| `src/plugins/<id>/main/` | code that runs in Koloft's main process | sessions, discord |
-| `src/plugins/<id>/renderer/` | code that runs in Koloft's window | butler, discord, scheduled-tasks |
+| `src/plugins/<id>/main/` | code that runs in Koloft's main process | sessions, discord, passwords |
+| `src/plugins/<id>/renderer/` | code that runs in Koloft's window | none yet |
 | `src/plugins/<id>/shared/` | code both of them use | none yet |
 
 Koloft's main-process type check skips every plugin's `renderer/` folder, and its window type
@@ -301,8 +302,7 @@ imports from it. Whether a plugin may import `src/shared/` directly is not decid
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build; #1991 makes it fail. Today it
 lists imports that the steps of #1964 still have to move: app code that imports a plugin's
-`api.ts`, `main/` or `renderer/` files directly, plugins that import `src/shared/`, and plugin
-code that imports app code (such as the window's store) that is not core yet.
+`api.ts` directly, and plugins that import `src/shared/`.
 
 ## Not promised yet
 
