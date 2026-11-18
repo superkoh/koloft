@@ -354,7 +354,7 @@ describe('koloft cron: changing tasks', () => {
     expect((await cron([]).run('add')).exit).toBe(EXIT_USAGE)
   })
 
-  it('an unknown or missing subcommand is answered with the usage line, exit code 2', async () => {
+  it('an unknown or missing subcommand is answered with the subcommands there are, exit code 2', async () => {
     expect(await cron([]).run('frob')).toEqual({
       exit: 2,
       text: 'koloft cron: there is no "frob" command: use list, show, add, edit, rm, on, off, run. Run "koloft help" to see how.'

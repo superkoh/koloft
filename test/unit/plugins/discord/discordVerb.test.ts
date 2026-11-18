@@ -9,7 +9,7 @@ import {
   NOT_THE_BUTLER,
   OWNER_AT_THE_MAC
 } from '../../../../src/plugins/discord/main/discordVerb'
-import { EXIT_USAGE } from '../../../../src/main/agentRequests'
+import { EXIT_USAGE } from '../../../../src/core/command'
 import { DISCORD_SETUP_STEPS } from '../../../../src/main/discord/setupSteps'
 import type { DiscordFile } from '../../../../src/main/discord/link'
 import { WAITING_QUESTION_TOOL } from '../../../../src/plugins/sessions/api'
