@@ -5,7 +5,7 @@ import {
   permissionOriginOf,
   permissionQueryAsk,
   type PermissionAsk
-} from '../../src/main/browserPermission'
+} from '../../../../src/plugins/workbench/main/browserPermission'
 
 // PLATFORM§11
 describe('permissionAsk — what a raw permission request becomes', () => {

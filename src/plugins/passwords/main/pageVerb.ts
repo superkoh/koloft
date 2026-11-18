@@ -1,19 +1,15 @@
 import { urlOrNull } from '@shared/browserRoute'
 import type { Commands } from '@core/commands'
-import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
-import type { SecretAnswer, SecretAsk } from '@plugins/passwords/main/secretAsks'
-import type { TapRounds } from './discord/secretCards'
-import type { DiscordFile } from './discord/link'
-import type { PartOnPage } from './guestTap'
 import {
-  boxAround,
-  clipTo,
-  gridOver,
-  readSquares,
-  type Box,
-  type Grid,
-  type Point
-} from './tapGrid'
+  answered,
+  EXIT_USAGE,
+  refused,
+  type AgentReply,
+  type AgentVerb
+} from '../../../main/agentRequests'
+import type { Box, PartOnPage, Point } from '@plugins/workbench/api'
+import type { SecretAnswer, SecretAsk } from './secretAsks'
+import { boxAround, clipTo, gridOver, readSquares, type Grid } from './tapGrid'
 
 const PAGE_USAGE =
   'koloft: usage: koloft page tap <css selector> -- "<one line that tells the owner what to do>"'
@@ -37,6 +33,16 @@ const BETWEEN_TAPS_MS = 250
 // PLATFORM§9
 const A_PAGE_BROUGHT_TO_THE_FRONT_PAINTS_MS = 800
 
+export interface PictureFile {
+  name: string
+  data: Buffer
+}
+
+export interface TapRounds {
+  picture(): Promise<{ file: PictureFile; seen(): void }>
+  tap(squares: string, going: () => boolean): Promise<string>
+}
+
 export interface TapPage {
   guestId: number
   url(): string
@@ -50,7 +56,7 @@ export interface PageVerbDeps {
   ask(a: SecretAsk & { taps: TapRounds }): Promise<SecretAnswer>
   ownerAsleep(): boolean
   pages(tabId: string): TapPage[]
-  draw(png: Buffer, grid: Grid): Promise<DiscordFile>
+  draw(png: Buffer, grid: Grid): Promise<PictureFile>
   sleep(ms: number): Promise<void>
 }
 

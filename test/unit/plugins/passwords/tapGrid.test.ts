@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { boxAround, clipTo, gridOver, readSquares } from '../../src/main/tapGrid'
+import {
+  boxAround,
+  clipTo,
+  gridOver,
+  readSquares
+} from '../../../../src/plugins/passwords/main/tapGrid'
 
 describe('the grid the owner names squares on', () => {
   it('has squares of at least 24 px, about 120 of them, and at most 26 columns (A to Z)', () => {

@@ -1,14 +1,4 @@
-export interface Box {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-export interface Point {
-  x: number
-  y: number
-}
+import type { Box, Point } from '@plugins/workbench/api'
 
 export interface Grid {
   box: Box

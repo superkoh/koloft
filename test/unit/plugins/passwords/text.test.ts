@@ -6,8 +6,11 @@ import {
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
   SUDO_SHIM_FILES
 } from '../../../../src/plugins/passwords/main/sudoShim'
-import { pageVerb, type TapPage } from '../../../../src/main/agentPageTap'
-import type { TapRounds } from '../../../../src/main/discord/secretCards'
+import {
+  pageVerb,
+  type TapPage,
+  type TapRounds
+} from '../../../../src/plugins/passwords/main/pageVerb'
 import type { WebPage } from '../../../../src/core/webPage'
 import type { AgentCaller } from '../../../../src/main/agentRequests'
 import type { SessionInfo } from '../../../../src/shared/types'
