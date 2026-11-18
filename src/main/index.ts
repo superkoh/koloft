@@ -128,7 +128,7 @@ import {
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
-import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
+import { directoryListingHtml, fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -234,7 +234,7 @@ import {
   setWorkbenchAvailable,
   type MenuShortcut
 } from './menu'
-import { openSignInWindow } from './signInWindow'
+import { openSignInWindow } from '@plugins/workbench/main/signInWindow'
 import { applyKeepAwake } from './keepAwake'
 import {
   approve as approveQuit,
@@ -245,7 +245,7 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
-import { mutedWhileHidden } from './mutedWhileHidden'
+import { mutedWhileHidden } from '@plugins/workbench/main/mutedWhileHidden'
 import { flushSettings, loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
@@ -374,9 +374,9 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
-import { pickElement, pickText, stopPick } from './elementPick'
+import { pickElement, pickText, stopPick } from '@plugins/workbench/main/elementPick'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
-import { compositionDone, hostComposing } from './hostComposition'
+import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
   permissionAsk,
@@ -384,7 +384,7 @@ import {
   permissionQueryAsk,
   type PermissionDetails,
   type PermissionName
-} from './browserPermission'
+} from '@plugins/workbench/main/browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
@@ -435,7 +435,7 @@ import {
   setExtensionEnabled,
   setupExtensions,
   uninstallExtension
-} from './extensionManager'
+} from '@plugins/workbench/main/extensionManager'
 import type {
   AccountAddResult,
   AccountKind,
@@ -530,16 +530,16 @@ import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/password
 import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from './discord/secretCards'
 import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
-import { registerPageCommand, type TapPage } from './agentPageTap'
+import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
 import {
   A_PAGE_ANSWERS_WITHIN_MS,
   findPart,
   pictureOfPart,
   tapAt,
   type PartOnPage
-} from './guestTap'
+} from '@plugins/workbench/main/guestTap'
 import { within } from './within'
-import { gridPictureHtml } from './tapGrid'
+import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
 import { ButlerTyping } from './discord/butlerTyping'
 import {
   machineOfShotPage,

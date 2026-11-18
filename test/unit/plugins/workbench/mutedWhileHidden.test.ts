@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { mutedWhileHidden, type SoundingPage } from '../../src/main/mutedWhileHidden'
+import {
+  mutedWhileHidden,
+  type SoundingPage
+} from '../../../../src/plugins/workbench/main/mutedWhileHidden'
 
 function page(muted = false): SoundingPage & { muted: boolean; destroyed: boolean } {
   return {

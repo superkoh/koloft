@@ -1,7 +1,18 @@
 import { BrowserWindow, screen, type WebContents } from 'electron'
 import { holdDebugger } from './guestDebugger'
-import { within } from './within'
-import type { Box, Point } from './tapGrid'
+import { within } from '../../../main/within'
+
+export interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface Point {
+  x: number
+  y: number
+}
 
 export interface FrameOnPage {
   key: string
