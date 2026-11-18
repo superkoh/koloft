@@ -1,5 +1,5 @@
 import { ASSIST_JOBS, assistJobDefaults } from '@core/assistJobs'
-import { EVERY_ACCOUNT_TAKES, type ModelAndEffort } from '@core/assistModels'
+import type { ModelAndEffort } from '@core/assistModels'
 import {
   isCronEffort,
   type AccountMeta,
@@ -159,7 +159,7 @@ export function assistOnMethodsThatAreOn(
 ): AssistSetting {
   const off = (b: BackendId): boolean => !methods.enabled[b]
   const rows = Object.fromEntries(
-    Object.entries(assist.rows ?? {}).filter(([, pick]) => !off(pick.backend))
+    Object.entries(assist.rows ?? {}).filter(([, pick]) => pick && !off(pick.backend))
   )
   return {
     ...(assist.backend && {

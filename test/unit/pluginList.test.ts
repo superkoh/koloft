@@ -36,4 +36,9 @@ describe('the list of plugins', () => {
       for (const need of p.needs)
         expect(byId.get(need)?.mandatory, `${p.id} needs ${need}`).toBe(true)
   })
+
+  it('no two Assist jobs share an id, and none takes the butler row’s, since the owner’s pick is saved under it', () => {
+    const ids = [...PLUGINS.flatMap((p) => p.assistJobs ?? []).map((j) => j.id), 'butler']
+    expect(new Set(ids).size).toBe(ids.length)
+  })
 })

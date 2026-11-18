@@ -398,7 +398,7 @@ export interface AssistPick {
 
 export interface AssistSetting {
   backend?: BackendId
-  rows?: Record<AssistRowId, AssistPick>
+  rows?: Partial<Record<AssistRowId, AssistPick>>
 }
 
 export interface ButlerSetting {

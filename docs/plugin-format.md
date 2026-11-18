@@ -165,6 +165,7 @@ The unit test `test/unit/pluginList.test.ts` holds these rules:
 - Each plugin comes after every plugin it needs on the list. So no plugin needs itself, no
   two plugins need each other, and every id in `needs` is on the list.
 - A mandatory plugin needs only mandatory plugins.
+- No two Assist jobs share an id, and none is `butler` ([Assist jobs](#assist-jobs)).
 
 There is no other naming rule for an id.
 
@@ -300,9 +301,11 @@ one row per job in that order, under "Small jobs". `SMALL_AND_QUICK` in
 `src/core/assistModels.ts` is a `defaults` table for a job that wants the smallest, quickest
 model of each agent.
 
-The manifest says only what a job is. The code that runs it lives in the plugin's own folder
-and asks Assist with the job's `id`, and Assist runs it with the owner's pick for that id or
-else the job's `defaults`.
+The manifest says only what a job is. The code that runs a job asks Assist with the job's
+`id`, and Assist runs it with the owner's pick for that id or else the job's `defaults`. Of
+today's jobs only `turn` runs from its plugin's folder
+(`src/plugins/sessions/main/turnNews.ts`); the others still run from `src/main/` until their
+code moves.
 
 These are the jobs today:
 
