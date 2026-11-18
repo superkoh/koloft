@@ -44,8 +44,11 @@ function check(dir: string): { code: number | null; reported: string[] } {
 const lines = (...l: string[]): string => l.join('\n') + '\n'
 
 describe('check-plugin-imports', () => {
-  it('lets a plugin import core, its own folder and the api.ts of a plugin it needs, and lets the app import the list, the list of preload bridges and the list of UIs', () => {
+  it('lets a plugin import core, its own folder and the api.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs and the list of settings', () => {
     const dir = fixtureRepo({
+      'src/plugins/settings.ts': "import { SETTINGS } from './a/shared/settings'\n",
+      'src/plugins/a/shared/settings.ts': 'export const SETTINGS = {}\n',
+      'src/shared/settingsOps.ts': "import { PLUGIN_SETTINGS } from '@plugins/settings'\n",
       'src/plugins/bridges.ts': "import { bridge } from './a/preload/bridge'\n",
       'src/plugins/a/preload/bridge.ts': 'export const bridge = 1\n',
       'src/preload/index.ts': "import { pluginBridges } from '@plugins/bridges'\n",
@@ -80,6 +83,7 @@ describe('check-plugin-imports', () => {
       ),
       'src/plugins/bridges.ts': "import { start } from './a/main/start'\n",
       'src/plugins/uis.ts': "import { bridge } from './a/preload/bridge'\n",
+      'src/plugins/settings.ts': "import { ui } from './a/renderer/ui'\n",
       'src/core/bad.ts': "import { fromA } from '@plugins/a/api'\n",
       'src/renderer/src/bad.tsx': "const b = import('../../plugins/b/api')\n",
       'src/plugins/list.ts':
@@ -103,6 +107,7 @@ describe('check-plugin-imports', () => {
         'src/plugins/c/main/bad.ts:8 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:9 ../../bridges',
         'src/plugins/list.ts:4 ./a/main/start',
+        'src/plugins/settings.ts:1 ./a/renderer/ui',
         'src/plugins/uis.ts:1 ./a/preload/bridge',
         'src/renderer/src/bad.tsx:1 ../../plugins/b/api'
       ]

@@ -29,7 +29,7 @@ export interface PluginMoments {
 }
 
 export interface PluginSettings {
-  page: string
+  page?: string
   keys: readonly string[]
 }
 
