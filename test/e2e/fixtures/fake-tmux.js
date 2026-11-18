@@ -86,7 +86,7 @@ function attach(name, paneJustStarted = false) {
 
   let off = 0
   let held = ''
-  const pump = () => {
+  const pump = (attached) => {
     keysAtOnceOnceThePaneIsRaw()
     try {
       const size = fs.statSync(outPath(io)).size
@@ -96,7 +96,7 @@ function attach(name, paneJustStarted = false) {
       fs.readSync(fd, buf, 0, buf.length, off)
       fs.closeSync(fd)
       off = size
-      process.stdout.write(passThrough(buf, true))
+      process.stdout.write(passThrough(buf, attached))
     } catch {}
   }
   // PLATFORM§35
@@ -113,18 +113,11 @@ function attach(name, paneJustStarted = false) {
     return Buffer.from(text, 'latin1')
   }
   // PLATFORM§35
-  if (!paneJustStarted) {
-    try {
-      const printedWhileDetached = fs.readFileSync(outPath(io))
-      off = printedWhileDetached.length
-      process.stdout.write(passThrough(printedWhileDetached, false))
-      held = ''
-    } catch {}
-  }
-  setInterval(pump, 80)
+  pump(paneJustStarted)
+  setInterval(() => pump(true), 80)
   setInterval(() => {
     if (alive(pid)) return
-    pump()
+    pump(true)
     try {
       fs.unlinkSync(aliveFile(name))
     } catch {}
