@@ -15,8 +15,13 @@ import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessi
 import { BUTLER_SAYS_OPENING, ownerSays } from '@shared/agentGuide'
 import {
   PICK_FOR_THE_TASK,
+  placedRows,
   RepliesOwed,
+  resolveWorkspace,
   withProjectRules,
+  workspaceLabel,
+  type PinnedWorkspace,
+  type PlacedRow,
   type ReplyListener,
   type SendResult,
   type StartResult,
@@ -36,7 +41,6 @@ import { isValidWorktreeName } from '@shared/worktreeName'
 import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
-import { basename } from '@shared/preview'
 import { scopeName } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
 import { MAX_READ_TURNS, type Turn } from '@shared/turns'
@@ -209,43 +213,6 @@ function openSessionLines(
   })
 }
 
-export interface PinnedWorkspace {
-  path: string
-  missing: boolean
-}
-
-export function workspaceLabel(wsPath: string): string {
-  const key = parseRemoteKey(wsPath)
-  return key ? remoteCopyText(key.host, key.path) : wsPath
-}
-
-export interface PlacedRow {
-  workspace: string
-  shownAs: string
-  row: SessionRow
-  title: string
-  live?: SessionInfo
-}
-
-const THE_BUTLERS_FOLDER = "the butler's own folder"
-
-export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
-  return sidebar.flatMap((w) =>
-    w.rows
-      .filter((row) => !row.pending)
-      .map((row) => {
-        const live = sessions.find((s) => s.alive && s.sessionId === row.id)
-        return {
-          workspace: w.workspace.path,
-          shownAs: w.workspace.butler ? THE_BUTLERS_FOLDER : workspaceLabel(w.workspace.path),
-          row,
-          title: live?.title ?? row.title,
-          live
-        }
-      })
-  )
-}
-
 function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string | null)[]> {
   const nameOf = d.peerNames()
   return Promise.all(placed.map((p) => (p.live ? nameOf(p.live) : null)))
@@ -287,23 +254,6 @@ function formatTurns(turns: Turn[]): string {
       ].join('\n')
     )
     .join('\n\n')
-}
-
-export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
-  const hits = pinned.filter(
-    (w) => w.path === ref || workspaceLabel(w.path) === ref || basename(w.path) === ref
-  )
-  const labels = (ws: PinnedWorkspace[]): string =>
-    ws.map((w) => `  ${workspaceLabel(w.path)}`).join('\n')
-  if (hits.length === 0)
-    return fail(
-      `there is no workspace "${ref}" in Koloft's sidebar. Give the folder name or full path of one of these:\n${labels(pinned)}`
-    )
-  if (hits.length > 1)
-    return fail(
-      `${hits.length} workspaces are named "${ref}". Give the full path:\n${labels(hits)}`
-    )
-  return { ok: true, value: hits[0] }
 }
 
 function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<string> {
