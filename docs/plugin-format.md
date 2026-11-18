@@ -251,7 +251,7 @@ These are the slots, values and facts in use today:
 | value | `butler-name` | the caller; the butler's name |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
-| fact | `discord-bound` | the caller, when Discord has a bound channel |
+| fact | `discord-bound` | Discord, when it has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
 
 Who may add a slot, a value or a fact, and whether these names are kept stable for plugins
 written outside Koloft, is not decided.

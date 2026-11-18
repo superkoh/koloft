@@ -908,7 +908,7 @@ each run: started `--model sonnet`; `--resume <id>` with no `--model` ran Sonnet
 and leaving `--model` out never goes back to the account's own model. `--effort` on a
 resume was passed and taken without error; that it is kept the same way is inferred,
 not checked. The TUI's `--resume` was not run. Koloft dependent: the butler
-(`src/main/discord/butler.ts`) remembers the model and thinking it last carried, and
+(`src/plugins/butler/main/butler.ts`) remembers the model and thinking it last carried, and
 starts a new conversation when it is set back to the tool's own.
 
 ## §4 Worktree session exit
@@ -4290,7 +4290,7 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
   first launch's inline word only.
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
-conversation (`src/main/discord/butler.ts`).
+conversation (`src/plugins/butler/main/butler.ts`).
 
 ## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
 

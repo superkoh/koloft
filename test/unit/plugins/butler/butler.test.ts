@@ -7,11 +7,11 @@ import {
   conductorFolder,
   type AssistBackendChoice,
   type ButlerDeps
-} from '../../src/main/discord/butler'
-import type { BackendId, ButlerSession, DiscordSettings } from '@shared/types'
-import { TODO_NOTICE } from '../../src/plugins/todo/api'
+} from '../../../../src/plugins/butler/main/butler'
+import type { BackendId, ButlerSession } from '@shared/types'
+import { TODO_NOTICE } from '../../../../src/plugins/todo/api'
+import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 
-const CHANNEL = { guildId: '100', channelId: '200', name: 'global' }
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
 const CODEX_KEY = 'codex:019a-thread'
@@ -19,9 +19,8 @@ const CODEX_KEY = 'codex:019a-thread'
 let userData: string
 let name: string
 let formerNames: string[]
-let saved: DiscordSettings
+let facts: string[]
 let session: ButlerSession
-let quiet: DiscordSettings[]
 let rescans: number
 let started: {
   cwd: string
@@ -53,10 +52,8 @@ function make(): Butler {
   const deps: ButlerDeps = {
     userData,
     butler: () => ({ name, formerNames }),
-    load: () => saved,
+    roleFacts: () => facts,
     loadSession: () => session,
-    save: (d) => void (saved = d),
-    saveQuietly: (d) => void quiet.push(d),
     saveSession: (s) => void (session = s),
     backend: async () => choice,
     tabAlive: (tabId) => !killed.includes(tabId),
@@ -106,9 +103,8 @@ beforeEach(() => {
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
-  saved = {}
+  facts = []
   session = { sessionIds: [] }
-  quiet = []
   rescans = 0
   started = []
   resumed = []
@@ -170,7 +166,7 @@ describe('the butler', () => {
     expect(started[0].role).toMatch(/^Who you are\nYou are Jeeves, the owner's butler in Koloft/)
     expect(started[0].role).not.toContain('[Discord]')
     c.onBound('tab-1', 's1')
-    c.bind(CHANNEL)
+    facts = [DISCORD_BOUND]
     expect(c.identityOfLaunch(conductorFolder(userData), 's1')?.role).toContain(
       'start with [Discord]'
     )
@@ -452,50 +448,6 @@ describe('the butler', () => {
     expect(c.firstWordsComing(tab)).toBe(false)
     vi.advanceTimersByTime(DEADLINE_MS)
     expect(killed).toEqual([])
-  })
-
-  it('only while bound to Discord is it kept awake and its channel known by its tab; unbinding keeps its conversation and its tab', async () => {
-    const c = make()
-    c.bind(CHANNEL)
-    const tab = await opened(c)
-    c.onBound(tab, 's1')
-    expect(c.channelOfTab(tab)).toBe('200')
-    expect(c.channelOfTab('another-tab')).toBeUndefined()
-    c.unbind()
-    expect(saved.channel).toBeUndefined()
-    expect(killed).toEqual([])
-    expect(c.channelOfTab(tab)).toBeUndefined()
-    expect(c.isButlerTab(tab)).toBe(true)
-    expect(session.lastSessionKey).toBe('s1')
-  })
-
-  it('binding again changes the one channel; the last message read is kept only when it is the same channel', () => {
-    saved = { channel: CHANNEL, lastMessageId: '9' }
-    const c = make()
-    c.bind(CHANNEL)
-    expect(saved).toEqual({ channel: CHANNEL, lastMessageId: '9' })
-    c.bind({ ...CHANNEL, channelId: '201' })
-    expect(saved.channel).toEqual({ ...CHANNEL, channelId: '201' })
-    expect(saved.lastMessageId).toBeUndefined()
-    expect(c.isButlerChannel('201')).toBe(true)
-    expect(c.isButlerChannel('200')).toBe(false)
-  })
-
-  it('the last Discord message is saved a second later or at quit, never going back, and without a rescan of the sidebar rows', () => {
-    const c = make()
-    c.bind(CHANNEL)
-    rescans = 0
-    vi.useFakeTimers()
-    c.setLastMessage('101')
-    c.setLastMessage('102')
-    c.setLastMessage('100')
-    expect(quiet).toHaveLength(0)
-    vi.advanceTimersByTime(1000)
-    expect(quiet.map((d) => d.lastMessageId)).toEqual(['102'])
-    c.setLastMessage('103')
-    c.flush()
-    expect(quiet.at(-1)?.lastMessageId).toBe('103')
-    expect(rescans).toBe(0)
   })
 
   it('forgets the session ids whose transcript is gone and keeps the rest', () => {
