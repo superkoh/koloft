@@ -6983,7 +6983,7 @@ function registerIpc(): void {
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }
     // CC§7
-    const ptys = ptyMgr.list().filter((h) => !loginWatchers.has(h.id))
+    const ptys = ptyMgr.list().filter((h) => !loginWatchers.has(h.id) && !sleepers.has(h.id))
     const tracked = allSessions()
     const cwdByTab = new Map(tracked.map((s) => [s.tabId, s.cwd]))
     const tabs = adoptableTabs(
