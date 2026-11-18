@@ -39,9 +39,10 @@ import {
   type AgyTitleState
 } from './agyHooks'
 import {
+  agyTranscript,
   AGY_APP_DIR,
   agyBrain,
-  agyTranscript,
+  ancestryOfAgyConversation,
   diffCounts,
   historyEntries,
   lastDiffFor,
@@ -72,7 +73,7 @@ import { readJson } from './museAccounts'
 import { LineTail } from './museSessionLog'
 import { bracketedPaste } from './typeKeys'
 import { TAB_TMUX_NAME_SH, tmuxSessionName } from './remote/launch'
-import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
+import { AgyApi, agentStateUpdate, type AgyBackgroundTask, type PendingInteraction } from './agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
@@ -189,6 +190,42 @@ interface AgyCommand {
   item: BackgroundItem
   shown: boolean
   ran?: boolean
+  startTime?: number
+}
+
+interface AgySchedule {
+  item: BackgroundItem
+  shown: boolean
+  ran?: boolean
+  isDaemon: boolean
+  startTime?: number
+}
+
+interface AgyChild {
+  id: string
+  parentId: string
+  label: string
+  state: 'working' | 'waiting'
+  isSwarm?: boolean
+  swarmGroup?: string
+  fromTitle?: boolean
+  needsRecentClaim?: boolean
+}
+
+interface PendingSpawn {
+  id: string
+  parentId: string
+  stepIdx?: string
+  label: string
+  isSwarm?: boolean
+  swarmGroup?: string
+}
+
+interface KnownChild {
+  parentId: string
+  label: string
+  isSwarm?: boolean
+  swarmGroup?: string
 }
 
 interface AgyRun extends StoredRun {
@@ -208,10 +245,24 @@ interface AgyRun extends StoredRun {
   titleChase?: { id: string; readsLeft: number }
   touched: Map<string, FileAcc>
   liveWrites: number
-  background?: BackgroundItem
+  unattributedBackground?: boolean
+  mainTurnActive?: boolean
+  exitedAskToIdle?: boolean
   lastTool?: { name: string; args: Record<string, unknown> }
-  schedules?: Set<string>
+  schedules?: Map<string, AgySchedule>
   commands?: Map<string, AgyCommand>
+  children?: Map<string, AgyChild>
+  knownChildren?: Map<string, KnownChild>
+  pendingSpawns?: PendingSpawn[]
+  recentSpawns?: PendingSpawn[]
+  foreignChecked?: Set<string>
+  foreignTries?: Map<string, number>
+  foreignResolving?: Set<string>
+  foreignTimers?: Map<string, ReturnType<typeof setTimeout>>
+  pendingForeignHooks?: Map<string, AgyHook[]>
+  wokenBySend?: Map<string, { id: string; prev: 'working' | 'waiting' }[]>
+  askingCommands?: boolean
+  askCommandsAgain?: { run: boolean; pruneFor?: string }
   countsTasks?: boolean
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
@@ -272,7 +323,38 @@ const HELD_ELSEWHERE =
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content', 'write_file', 'edit_file'])
 const COMMAND_LABEL_CHARS = 160
 // AGY§13
-const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
+const TASK_LINE_MARKS = [
+  '"schedule"',
+  '"manage_task"',
+  '"run_command"',
+  '"invoke_subagent"',
+  '"manage_subagents"',
+  '"send_message"',
+  '"post_message"',
+  '"swarm"',
+  '"swarm_wait"',
+  '"subagents"',
+  '"tool_confirmation_pending"',
+  '"SessionStart"',
+  '"PreInvocation"',
+  '"Stop"'
+]
+const FINISHED_TITLE_STATES = new Set([
+  'done',
+  'completed',
+  'complete',
+  'finished',
+  'killed',
+  'cancelled',
+  'canceled',
+  'errored',
+  'failed',
+  'stopped'
+])
+const IDLE_TITLE_STATES = new Set(['idle', 'waiting_for_message', 'waiting'])
+const FOREIGN_DB_MAX_TRIES = 10
+const FOREIGN_DB_RETRY_MS = 100
+const FOREIGN_BUFFER_MAX = 200
 
 // AGY§27
 function withoutTheTerminalName(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -365,6 +447,8 @@ function readText(file: string): string | undefined {
 }
 
 const LOG_TAIL_READ_ON_ATTACH_BYTES = 256 * 1024
+const REPLAY_LOG_MAX_BYTES = 16 * 1024 * 1024
+const SHORT_ROLE_MAX_CHARS = 80
 
 function logTail(file: string): { size: number; text: string } {
   try {
@@ -382,6 +466,26 @@ function logTail(file: string): { size: number; text: string } {
   }
 }
 
+function readReplayLines(file: string): string[] {
+  try {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const size = fs.fstatSync(fd).size
+      if (size === 0) return []
+      const len = Math.min(size, REPLAY_LOG_MAX_BYTES)
+      const start = size - len
+      const buf = Buffer.alloc(len)
+      fs.readSync(fd, buf, 0, len, start)
+      const lines = buf.toString('utf8').split('\n')
+      return start > 0 ? lines.slice(1) : lines
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return []
+  }
+}
+
 function attachedLog(mirror: string, conversationId: string): string | undefined {
   return readText(path.join(mirror, agyLogPointer(conversationId)))?.trim() || undefined
 }
@@ -389,6 +493,103 @@ function attachedLog(mirror: string, conversationId: string): string | undefined
 // AGY§13
 function commandsOf(run: AgyRun, conversationId: string): [string, AgyCommand][] {
   return [...(run.commands ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
+}
+
+function schedulesOf(run: AgyRun, conversationId: string): [string, AgySchedule][] {
+  return [...(run.schedules ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
+}
+
+function formatSeconds(seconds: number): string {
+  if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s`
+  if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60)
+    const rem = Math.round(seconds % 60)
+    return rem ? `${mins}m${rem}s` : `${mins}m`
+  }
+  const hrs = Math.floor(seconds / 3600)
+  const mins = Math.round((seconds % 3600) / 60)
+  return mins ? `${hrs}h${mins}m` : `${hrs}h`
+}
+
+function scheduleLabel(args: Record<string, unknown>): string {
+  const prompt = argOf(args, 'Prompt')?.replace(/\s+/g, ' ').trim()
+  const cron = argOf(args, 'CronExpression')?.trim()
+  const secs =
+    typeof args.DurationSeconds === 'number' && Number.isFinite(args.DurationSeconds)
+      ? args.DurationSeconds
+      : undefined
+  const prefix =
+    secs !== undefined
+      ? `Timer (${formatSeconds(secs)})`
+      : cron
+        ? `Cron (${cron})`
+        : 'Scheduled task'
+  const text = prompt ? `${prefix}: ${prompt}` : prefix
+  return text.slice(0, COMMAND_LABEL_CHARS)
+}
+
+// AGY§13
+function subagentSpecs(args: Record<string, unknown>, stepIdx: unknown): { label: string }[] {
+  const list =
+    Array.isArray(args.Subagents) && args.Subagents.length
+      ? args.Subagents
+      : argOf(args, 'TypeName') || argOf(args, 'Role') || argOf(args, 'Prompt')
+        ? [args]
+        : []
+  if (!list.length) {
+    const summary = argOf(args, 'toolSummary')?.replace(/\s+/g, ' ').trim()
+    return [
+      { label: summary?.slice(0, COMMAND_LABEL_CHARS) || `Subagent (${String(stepIdx ?? '')})` }
+    ]
+  }
+  return list.map((raw) => {
+    const spec = record(raw)
+    const typeName = argOf(spec, 'TypeName')?.trim()
+    const role = argOf(spec, 'Role')?.replace(/\s+/g, ' ').trim()
+    const prompt = argOf(spec, 'Prompt')?.replace(/\s+/g, ' ').trim()
+    const label = role
+      ? typeName && typeName !== 'self' && !role.toLowerCase().includes(typeName.toLowerCase())
+        ? `${typeName}: ${role}`
+        : role
+      : (typeName && typeName !== 'self' ? typeName : undefined) || prompt || 'Subagent'
+    return { label: label.slice(0, COMMAND_LABEL_CHARS) }
+  })
+}
+
+// AGY§13
+function swarmMemberNames(base: string, args: Record<string, unknown>): string[] {
+  if (Array.isArray(args.tasks) && args.tasks.length > 0)
+    return args.tasks.map((_, i) => `${base}-${i + 1}`)
+  const count = typeof args.n === 'number' && Number.isInteger(args.n) && args.n > 1 ? args.n : 1
+  return count > 1 ? Array.from({ length: count }, (_, i) => `${base}-${i + 1}`) : [base]
+}
+
+// AGY§11
+function titleSubagentLabel(sub: { name?: string; role?: string }): string {
+  const shortRole =
+    sub.role && !sub.role.includes('\n') && sub.role.length <= SHORT_ROLE_MAX_CHARS
+      ? sub.role.trim()
+      : undefined
+  const cleanName = sub.name && sub.name !== 'self' ? sub.name.trim() : undefined
+  const fallbackRole = sub.role?.replace(/\s+/g, ' ').trim()
+  return (shortRole || cleanName || fallbackRole || 'Subagent').slice(0, COMMAND_LABEL_CHARS)
+}
+
+function swarmMentions(text: string): { all: boolean; names: Set<string> } {
+  const names = new Set<string>()
+  let all = false
+  for (const m of text.matchAll(/(?:^|[^a-z0-9_-])@([a-z0-9_-]+)/gi)) {
+    const target = m[1]!.toLowerCase()
+    if (target === 'all') all = true
+    else names.add(target)
+  }
+  return { all, names }
+}
+
+function listFromStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : []
 }
 
 // AGY§11 AGY§12 AGY§29
@@ -400,11 +601,14 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
     return undefined
   }
   const { agentState, confirmationPending } = read.title
-  const interruptedMidTurn = run.shown === 'working' && run.lastTitleState === 'working'
+  const interruptedMidTurn =
+    run.shown === 'working' &&
+    (run.lastTitleState === 'working' || run.lastTitleState === 'tool_use')
+  const exitedReview = run.lastTitleState === 'reviewing' && run.shown !== 'done'
   run.lastTitleState = agentState
   if (
     agentState === 'idle' &&
-    (run.shown === undefined || run.shown === 'blocked' || interruptedMidTurn)
+    (run.shown === undefined || run.shown === 'blocked' || interruptedMidTurn || exitedReview)
   )
     return { state: 'idle' }
   if (agentState === 'tool_use' && confirmationPending)
@@ -908,6 +1112,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   protected async endRun(run: AgyRun): Promise<void> {
     run.stream?.close()
     if (run.compacting?.timer) clearTimeout(run.compacting.timer)
+    this.clearForeignTimers(run)
     if (!run.remote || this.shuttingDown) return
     const { host, tmuxName } = run.remote
     const machine = this.deps.remote.machine(host)
@@ -926,73 +1131,353 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       this.ticking = undefined
       return
     }
-    for (const run of this.runs.values()) if (!run.explicitStop && !run.remote) run.log.read()
-  }
-
-  // AGY§11 AGY§13
-  private settleCommands(
-    run: AgyRun,
-    { conversationId, agentState, taskCount }: AgyTitleState
-  ): void {
-    if (taskCount !== undefined) run.countsTasks = true
-    if (agentState !== 'idle' || !run.commands?.size) return
-    if (run.api) return this.askCommands(run)
-    const mine = commandsOf(run, conversationId)
-    if (!taskCount && run.countsTasks)
-      return this.dropCommands(
-        run,
-        mine.map(([id]) => id)
-      )
-    for (const [, command] of mine) command.shown ||= !!command.ran
-    this.publishBackground(run)
-  }
-
-  // AGY§13 AGY§16
-  private askCommands(run: AgyRun): void {
-    const asked = [...run.commands!.keys()]
-    const conversations = new Set(asked.map((id) => id.split('/')[0]))
-    void Promise.all([...conversations].map((id) => run.api!.backgroundTaskIds(id)))
-      .then((lists) => {
-        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
-        const live = new Set(lists.flatMap((ids) => [...ids]))
-        for (const id of asked) {
-          const command = run.commands?.get(id)
-          if (command && live.has(id)) command.shown = true
-        }
-        this.dropCommands(
-          run,
-          asked.filter((id) => !live.has(id))
+    for (const run of this.runs.values()) {
+      if (run.explicitStop || run.remote) continue
+      run.log.read()
+      if (
+        [...(run.commands?.values() ?? [])].some(
+          (c) => c.shown && c.item.kind === 'server' && c.startTime !== undefined
         )
-        this.publishBackground(run)
-      })
-      .catch(() => undefined)
-  }
-
-  // AGY§12 AGY§13
-  private sortAnswered(run: AgyRun, conversationId: string, input: Record<string, unknown>): void {
-    const mine = commandsOf(run, conversationId)
-    if (input.invocationNum !== 0) {
-      for (const [, command] of mine) command.ran = true
-    } else {
-      const declined = mine.filter(([, command]) => !command.ran && !command.shown)
-      this.dropCommands(
-        run,
-        declined.map(([id]) => id)
       )
+        this.publishBackground(run)
     }
   }
 
-  private dropCommands(run: AgyRun, ids: string[]): void {
-    let dropped = false
-    for (const id of ids) if (run.commands?.delete(id)) dropped = true
-    if (dropped) this.publishBackground(run)
+  private dropSpawnsOf(
+    run: AgyRun,
+    drop: (spawn: PendingSpawn) => boolean,
+    includeRecent = true
+  ): boolean {
+    let changed = false
+    if (run.pendingSpawns?.length) {
+      const next = run.pendingSpawns.filter((s) => !drop(s))
+      if (next.length !== run.pendingSpawns.length) {
+        run.pendingSpawns = next.length ? next : undefined
+        changed = true
+      }
+    }
+    if (includeRecent && run.recentSpawns?.length) {
+      const next = run.recentSpawns.filter((s) => !drop(s))
+      if (next.length !== run.recentSpawns.length) {
+        run.recentSpawns = next.length ? next : undefined
+      }
+    }
+    return changed
+  }
+
+  // AGY§11 AGY§13 AGY§19
+  private settleCommands(
+    run: AgyRun,
+    { conversationId, agentState, taskCount, subagents }: AgyTitleState,
+    replaying = false,
+    wasConfirming = false
+  ): void {
+    if (taskCount !== undefined) run.countsTasks = true
+    if (agentState !== 'idle' && agentState !== 'reviewing') return
+    let changed = false
+    const hasActiveTitleSubagent = subagents?.some(
+      (s) => !FINISHED_TITLE_STATES.has((s.state ?? '').toLowerCase())
+    )
+    const blocked =
+      !replaying &&
+      (run.shown === 'blocked' ||
+        ((this.deps.runtime.turn(run.tabId) === 'approval' ||
+          this.deps.runtime.turn(run.tabId) === 'input' ||
+          !!run.exitedAskToIdle) &&
+          !run.waiting?.plan))
+    if (!replaying && (!conversationId || conversationId === run.info?.nativeSessionId))
+      run.exitedAskToIdle = false
+    const declinedConfirm = wasConfirming || blocked
+    const canPruneSpawns =
+      declinedConfirm ||
+      (subagents !== undefined && !hasActiveTitleSubagent) ||
+      !(run.countsTasks && (taskCount ?? 0) > 0)
+    if (!hasActiveTitleSubagent && canPruneSpawns) {
+      if (
+        this.dropSpawnsOf(
+          run,
+          (s) => s.parentId === conversationId,
+          declinedConfirm || subagents !== undefined
+        )
+      )
+        changed = true
+    } else if (!hasActiveTitleSubagent && (declinedConfirm || subagents !== undefined)) {
+      if (run.recentSpawns?.length) {
+        const next = run.recentSpawns.filter((s) => s.parentId !== conversationId)
+        run.recentSpawns = next.length ? next : undefined
+      }
+    }
+    if (declinedConfirm && (!taskCount || !run.api || replaying))
+      this.pruneUnconfirmedTasksFor(run, conversationId)
+    if (!run.commands?.size && !run.schedules?.size) {
+      if (
+        run.unattributedBackground &&
+        run.countsTasks &&
+        !taskCount &&
+        subagents !== undefined &&
+        subagents.length === 0 &&
+        !run.children?.size &&
+        !run.pendingSpawns?.length
+      ) {
+        run.unattributedBackground = false
+        changed = true
+      }
+      if (changed && !replaying) this.publishBackground(run)
+      return
+    }
+    if (run.api && !replaying) {
+      if (changed) this.publishBackground(run)
+      return this.askCommands(run, declinedConfirm ? conversationId : undefined)
+    }
+    const myCommands = commandsOf(run, conversationId)
+    const mySchedules = schedulesOf(run, conversationId)
+    if (!taskCount && run.countsTasks) {
+      const dropped = this.dropTasks(
+        run,
+        myCommands.map(([id]) => id),
+        mySchedules.map(([id]) => id),
+        replaying
+      )
+      if (changed && !dropped && !replaying) this.publishBackground(run)
+      return
+    }
+    for (const [, command] of myCommands) command.shown ||= !!command.ran
+    for (const [, schedule] of mySchedules) schedule.shown ||= !!schedule.ran
+    this.syncWakeupPending(run)
+    if (!replaying) this.publishBackground(run)
+  }
+
+  // AGY§13 AGY§16
+  private askCommands(run: AgyRun, pruneDeclinedFor?: string): void {
+    if (run.askingCommands) {
+      run.askCommandsAgain = {
+        run: true,
+        pruneFor: pruneDeclinedFor ?? run.askCommandsAgain?.pruneFor
+      }
+      return
+    }
+    const asked = new Set([...(run.commands?.keys() ?? []), ...(run.schedules?.keys() ?? [])])
+    const conversations = new Set([...asked].map((id) => id.split('/')[0]))
+    if (!conversations.size) return
+    run.askingCommands = true
+    void Promise.all(
+      [...conversations].map((id) => run.api!.backgroundTasks(id).then((tasks) => ({ id, tasks })))
+    )
+      .then((lists) => {
+        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
+        for (const { id, tasks } of lists) this.applyApiTasks(run, id, tasks, false, true, asked)
+        this.publishBackground(run)
+      })
+      .catch(() => {
+        if (!pruneDeclinedFor || this.runs.get(run.tabId) !== run || run.explicitStop) return
+        if (this.pruneUnconfirmedTasksFor(run, pruneDeclinedFor)) this.publishBackground(run)
+      })
+      .finally(() => {
+        run.askingCommands = false
+        const next = run.askCommandsAgain
+        run.askCommandsAgain = undefined
+        if (next?.run && this.runs.get(run.tabId) === run && !run.explicitStop)
+          this.askCommands(run, next.pruneFor)
+      })
+  }
+
+  private applyApiTasks(
+    run: AgyRun,
+    conversationId: string,
+    tasks: AgyBackgroundTask[],
+    publish = true,
+    dropUnshown = true,
+    asked?: ReadonlySet<string>
+  ): void {
+    const live = new Set(tasks.map((t) => t.taskId))
+    for (const task of tasks) {
+      const richLabel = (task.description || task.toolSummary || '').slice(0, COMMAND_LABEL_CHARS)
+      if (task.toolName === 'schedule') {
+        const existing = run.schedules?.get(task.taskId)
+        if (existing) {
+          existing.shown = true
+          existing.ran = true
+          if (task.isDaemon !== undefined) existing.isDaemon = task.isDaemon
+          existing.item.state = 'waiting'
+          if (richLabel) existing.item.label = richLabel
+          if (task.startTime !== undefined) existing.startTime = task.startTime
+        } else {
+          const isDaemon = task.isDaemon === true
+          const label = richLabel || 'Scheduled task'
+          ;(run.schedules ??= new Map()).set(task.taskId, {
+            item: {
+              id: task.taskId,
+              kind: 'monitor',
+              label,
+              state: 'waiting'
+            },
+            shown: true,
+            ran: true,
+            isDaemon,
+            startTime: task.startTime
+          })
+        }
+      } else {
+        const existing = run.commands?.get(task.taskId)
+        if (existing) {
+          existing.shown = true
+          existing.ran = true
+          if (task.isDaemon !== undefined) {
+            existing.item.kind = task.isDaemon ? 'server' : 'command'
+            existing.item.state = task.isDaemon ? 'waiting' : 'working'
+          }
+          if (richLabel) existing.item.label = richLabel
+          if (task.startTime !== undefined) existing.startTime = task.startTime
+        } else {
+          const isDaemon = task.isDaemon === true
+          const label = richLabel || 'Background command'
+          ;(run.commands ??= new Map()).set(task.taskId, {
+            item: {
+              id: task.taskId,
+              label,
+              ...(isDaemon
+                ? { kind: 'server', state: 'waiting' }
+                : { kind: 'command', state: 'working' })
+            },
+            shown: true,
+            ran: true,
+            startTime: task.startTime
+          })
+        }
+      }
+    }
+    const canDrop = (id: string, shown: boolean): boolean =>
+      !live.has(id) && (shown || (dropUnshown && (!asked || asked.has(id))))
+    const deadCommands = commandsOf(run, conversationId)
+      .filter(([id, c]) => canDrop(id, c.shown))
+      .map(([id]) => id)
+    const deadSchedules = schedulesOf(run, conversationId)
+      .filter(([id, s]) => canDrop(id, s.shown))
+      .map(([id]) => id)
+    for (const id of deadCommands) run.commands?.delete(id)
+    for (const id of deadSchedules) run.schedules?.delete(id)
+    this.syncWakeupPending(run)
+    if (publish) this.publishBackground(run)
+  }
+
+  // AGY§12 AGY§13
+  private sortAnswered(
+    run: AgyRun,
+    conversationId: string,
+    input: Record<string, unknown>,
+    replaying = false
+  ): void {
+    const myCommands = commandsOf(run, conversationId)
+    const mySchedules = schedulesOf(run, conversationId)
+    if (input.invocationNum !== 0) {
+      let revealed = false
+      for (const [, command] of myCommands) {
+        command.ran = true
+        if (!command.shown) {
+          command.shown = true
+          revealed = true
+        }
+      }
+      for (const [, schedule] of mySchedules) {
+        schedule.ran = true
+        if (!schedule.shown) {
+          schedule.shown = true
+          revealed = true
+        }
+      }
+      this.syncWakeupPending(run)
+      if (revealed && !replaying) this.publishBackground(run)
+    } else {
+      const declinedCommands = myCommands
+        .filter(([, command]) => !command.ran && !command.shown)
+        .map(([id]) => id)
+      const declinedSchedules = mySchedules
+        .filter(([, schedule]) => !schedule.ran && !schedule.shown)
+        .map(([id]) => id)
+      const spawnDropped = this.dropSpawnsOf(run, (s) => s.parentId === conversationId)
+      const dropped = this.dropTasks(run, declinedCommands, declinedSchedules, replaying)
+      if (spawnDropped && !dropped && !replaying) this.publishBackground(run)
+    }
+  }
+
+  private dropTasks(
+    run: AgyRun,
+    commandIds: string[],
+    scheduleIds: string[],
+    replaying = false
+  ): boolean {
+    let changed = false
+    for (const id of commandIds) if (run.commands?.delete(id)) changed = true
+    for (const id of scheduleIds) if (run.schedules?.delete(id)) changed = true
+    this.syncWakeupPending(run)
+    if (changed && !replaying) this.publishBackground(run)
+    return changed
+  }
+
+  private syncWakeupPending(run: AgyRun): void {
+    const confirmed = [...(run.schedules?.values() ?? [])].some((s) => s.shown || s.ran)
+    this.deps.runtime.setWakeupPending(run.tabId, confirmed)
+  }
+
+  private hasActiveAttributed(run: AgyRun): boolean {
+    for (const c of run.commands?.values() ?? [])
+      if (c.shown && c.item.state === 'working') return true
+    for (const s of run.schedules?.values() ?? []) if (s.shown && !s.isDaemon) return true
+    for (const ch of run.children?.values() ?? []) if (ch.state === 'working') return true
+    return (run.pendingSpawns?.length ?? 0) > 0
   }
 
   private publishBackground(run: AgyRun): void {
-    const commands = [...(run.commands?.values() ?? [])].flatMap((c) => (c.shown ? [c.item] : []))
+    const items: BackgroundItem[] = []
+    let hasExplainedNonIdle = false
+    let idleTeammates = 0
+    for (const ch of run.children?.values() ?? []) {
+      if (ch.state === 'working') {
+        items.push({ id: ch.id, kind: 'agent', label: ch.label, state: 'working' })
+        hasExplainedNonIdle = true
+      } else {
+        idleTeammates++
+      }
+    }
+    for (const sp of run.pendingSpawns ?? []) {
+      items.push({ id: sp.id, kind: 'agent', label: sp.label, state: 'working' })
+      hasExplainedNonIdle = true
+    }
+    const now = Date.now()
+    for (const c of run.commands?.values() ?? []) {
+      if (!c.shown) continue
+      const item: BackgroundItem =
+        c.item.kind === 'server' && c.startTime !== undefined
+          ? {
+              ...c.item,
+              ageMs: Math.floor(Math.max(0, now - c.startTime) / 60_000) * 60_000
+            }
+          : c.item
+      if (item.state === 'working') hasExplainedNonIdle = true
+      items.push(item)
+    }
+    for (const s of run.schedules?.values() ?? []) {
+      if (!s.shown) continue
+      if (!s.isDaemon) hasExplainedNonIdle = true
+      items.push(s.item)
+    }
+    if (idleTeammates > 0)
+      items.push({
+        id: 'teammates',
+        kind: 'teammate',
+        label: `${idleTeammates} idle`,
+        state: 'waiting'
+      })
+    if (run.unattributedBackground && !hasExplainedNonIdle)
+      items.push({
+        id: 'agy-background',
+        kind: 'agent',
+        label: 'Active background task',
+        state: 'working'
+      })
     this.deps.events(run.tabId, {
       type: 'background-changed',
-      items: [...(run.background ? [run.background] : []), ...commands]
+      items
     })
   }
 
@@ -1045,15 +1530,118 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.replayTasks(run)
   }
 
+  private resetTransientForSwitch(run: AgyRun, nextId: string): void {
+    run.unattributedBackground = false
+    run.mainTurnActive = false
+    run.exitedAskToIdle = false
+    run.pendingSpawns = undefined
+    run.recentSpawns = undefined
+    run.knownChildren = undefined
+    for (const [id, ch] of [...(run.children ?? [])]) {
+      if (ch.fromTitle || id === nextId) this.removeChild(run, id)
+    }
+    run.wokenBySend = undefined
+  }
+
   // AGY§11 AGY§13
   private replayTasks(run: AgyRun): void {
-    for (const line of (readText(run.log.file) ?? '').split('\n')) {
-      const turnOver = line.includes('"conversation_id"') && line.includes('"idle"')
-      if (!turnOver && !TASK_LINE_MARKS.some((mark) => line.includes(mark))) continue
+    const mainId = run.info?.nativeSessionId
+    const titleIds = new Set<string>()
+    const entries: AgyLogLine[] = []
+    for (const line of readReplayLines(run.log.file)) {
+      const isTitleLine = line.includes('"conversation_id"')
+      if (!isTitleLine && !TASK_LINE_MARKS.some((mark) => line.includes(mark))) continue
       const read = agyLogLine(line)
-      if (read && 'hook' in read) this.trackTasks(run, read.hook)
-      else if (read) this.settleCommands(run, read.title)
+      if (!read) continue
+      if ('title' in read && read.title.conversationId) titleIds.add(read.title.conversationId)
+      entries.push(read)
     }
+    let activeConv: string | undefined
+    let mainSeen = false
+    let prevTitle: AgyTitleState | undefined
+    for (const read of entries) {
+      if ('hook' in read) {
+        const { hook } = read
+        if (hook.conversationId === mainId) {
+          mainSeen = true
+          if (activeConv !== mainId) {
+            if (activeConv !== undefined) {
+              this.resetTransientForSwitch(run, hook.conversationId)
+              prevTitle = undefined
+            }
+            activeConv = mainId
+          }
+          this.trackTasks(run, hook, true, activeConv)
+          this.applyMainLifecycleHook(run, hook, true)
+        } else if (
+          !mainSeen &&
+          !hook.parentConversationId &&
+          !hook.rootConversationId &&
+          (titleIds.has(hook.conversationId) ||
+            (hook.event === 'SessionStart' &&
+              !run.children?.has(hook.conversationId) &&
+              !run.pendingSpawns?.length &&
+              !run.recentSpawns?.length))
+        ) {
+          if (activeConv !== undefined && hook.conversationId !== activeConv) {
+            this.resetTransientForSwitch(run, hook.conversationId)
+            prevTitle = undefined
+          }
+          activeConv = hook.conversationId
+          this.trackTasks(run, hook, true, activeConv)
+          this.applyMainLifecycleHook(run, hook, true)
+        } else if (activeConv && this.isAttributedChild(run, hook, activeConv)) {
+          this.trackTasks(run, hook, true, activeConv)
+          this.onChildHook(run, hook, true, activeConv)
+        } else if (
+          !mainSeen &&
+          !hook.parentConversationId &&
+          !hook.rootConversationId &&
+          (activeConv === undefined ||
+            hook.conversationId === activeConv ||
+            hook.event === 'SessionStart')
+        ) {
+          if (activeConv !== undefined && hook.conversationId !== activeConv) {
+            this.resetTransientForSwitch(run, hook.conversationId)
+            prevTitle = undefined
+          }
+          activeConv = hook.conversationId
+          this.trackTasks(run, hook, true, activeConv)
+          this.applyMainLifecycleHook(run, hook, true)
+        } else if (hook.event === 'PostToolUse') {
+          this.trackTasks(run, hook, true, activeConv)
+        }
+      } else {
+        const tid = read.title.conversationId
+        if (!tid) continue
+        if (tid === mainId) {
+          mainSeen = true
+          if (activeConv !== undefined && activeConv !== mainId) {
+            this.resetTransientForSwitch(run, mainId)
+            prevTitle = undefined
+          }
+          activeConv = mainId
+        } else if (!mainSeen && (activeConv === undefined || tid !== activeConv)) {
+          if (activeConv !== undefined) {
+            this.resetTransientForSwitch(run, tid)
+            prevTitle = undefined
+          }
+          activeConv = tid
+        }
+        if (tid === activeConv) {
+          const wasConfirming =
+            prevTitle?.agentState === 'tool_use' && !!prevTitle.confirmationPending
+          prevTitle = read.title
+          if (read.title.agentState === 'idle' || read.title.agentState === 'reviewing')
+            run.mainTurnActive = false
+          if (read.title.subagents !== undefined)
+            this.reconcileTitleSubagents(run, read.title.subagents, true, activeConv)
+          this.settleCommands(run, read.title, true, wasConfirming)
+        }
+      }
+    }
+    this.syncWakeupPending(run)
+    this.publishBackground(run)
   }
 
   // AGY§11 AGY§12
@@ -1063,8 +1651,26 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if ('hook' in read) this.learnBrain(run, read.hook.input.artifactDirectoryPath)
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
     if ('hook' in read) {
-      this.trackTasks(run, read.hook)
-      this.onHook(run, read.hook)
+      const { hook } = read
+      const mainId = run.info?.nativeSessionId
+      if (!mainId || hook.conversationId === mainId) {
+        this.trackTasks(run, hook)
+        this.onHook(run, hook)
+      } else if (this.isAttributedChild(run, hook)) {
+        this.trackTasks(run, hook)
+        this.onChildHook(run, hook)
+      } else if (run.remote || run.foreignChecked?.has(hook.conversationId)) {
+        if (hook.event === 'PostToolUse') this.trackTasks(run, hook)
+      } else {
+        if (hook.event === 'PostToolUse') this.trackTasks(run, hook)
+        const buf = (run.pendingForeignHooks ??= new Map()).get(hook.conversationId) ?? []
+        if (buf.length < FOREIGN_BUFFER_MAX || hook.event === 'Stop') buf.push(hook)
+        run.pendingForeignHooks.set(hook.conversationId, buf)
+        if (!run.foreignResolving?.has(hook.conversationId)) {
+          ;(run.foreignResolving ??= new Set()).add(hook.conversationId)
+          void this.resolveChildFromDb(run, hook.conversationId)
+        }
+      }
     } else this.onTitle(run, read.title)
     const status = run.remote && run.info && !run.explicitStop && remoteStatus(run, read)
     if (status && status.state !== run.shown) {
@@ -1073,7 +1679,77 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     }
   }
 
-  // AGY§9 AGY§11
+  private clearForeignTimers(run: AgyRun): void {
+    for (const timer of run.foreignTimers?.values() ?? []) clearTimeout(timer)
+    run.foreignTimers = undefined
+  }
+
+  private async resolveChildFromDb(run: AgyRun, childId: string): Promise<void> {
+    let retrying = false
+    try {
+      const ancestry = await ancestryOfAgyConversation(this.gemini, childId).catch(() => undefined)
+      if (
+        this.runs.get(run.tabId) !== run ||
+        run.explicitStop ||
+        run.stopping ||
+        !run.pendingForeignHooks?.has(childId)
+      )
+        return
+      const mainId = run.info?.nativeSessionId
+      const belongs =
+        !!mainId &&
+        !!ancestry &&
+        (ancestry.ancestors.includes(mainId) ||
+          ancestry.ancestors.some((a) => run.children?.has(a) || run.knownChildren?.has(a)))
+      if (belongs && !ancestry.killed) {
+        const buffered = run.pendingForeignHooks.get(childId) ?? []
+        run.pendingForeignHooks.delete(childId)
+        run.foreignTries?.delete(childId)
+        for (const hook of buffered) {
+          const attributed: AgyHook = {
+            ...hook,
+            parentConversationId: ancestry.parentId,
+            ...(ancestry.agentName && !hook.agentName ? { agentName: ancestry.agentName } : {})
+          }
+          if (hook.event !== 'PostToolUse') this.trackTasks(run, attributed)
+          this.onChildHook(run, attributed)
+        }
+      } else if (ancestry) {
+        run.pendingForeignHooks.delete(childId)
+        run.foreignTries?.delete(childId)
+        ;(run.foreignChecked ??= new Set()).add(childId)
+      } else {
+        const tries = (run.foreignTries?.get(childId) ?? 0) + 1
+        ;(run.foreignTries ??= new Map()).set(childId, tries)
+        if (tries >= FOREIGN_DB_MAX_TRIES) {
+          run.pendingForeignHooks.delete(childId)
+          run.foreignTries.delete(childId)
+          ;(run.foreignChecked ??= new Set()).add(childId)
+        } else {
+          retrying = true
+          const timer = setTimeout(() => {
+            run.foreignTimers?.delete(childId)
+            if (
+              this.runs.get(run.tabId) !== run ||
+              run.explicitStop ||
+              run.stopping ||
+              !run.pendingForeignHooks?.has(childId)
+            ) {
+              run.foreignResolving?.delete(childId)
+              return
+            }
+            void this.resolveChildFromDb(run, childId)
+          }, FOREIGN_DB_RETRY_MS)
+          timer.unref?.()
+          ;(run.foreignTimers ??= new Map()).set(childId, timer)
+        }
+      }
+    } finally {
+      if (!retrying) run.foreignResolving?.delete(childId)
+    }
+  }
+
+  // AGY§9 AGY§11 AGY§19
   private onTitle(run: AgyRun, state: AgyTitleState): void {
     if (run.explicitStop || run.stopping) return
     // AGY§31
@@ -1082,11 +1758,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       run.firstLine = undefined
     }
     const before = run.title
+    const wasConfirming = before?.agentState === 'tool_use' && !!before.confirmationPending
     run.title = state
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
-    this.settleCommands(run, state)
+    if (
+      (state.agentState === 'idle' || state.agentState === 'reviewing') &&
+      (!state.conversationId || state.conversationId === run.info.nativeSessionId)
+    )
+      run.mainTurnActive = false
+    if (state.subagents !== undefined) this.reconcileTitleSubagents(run, state.subagents)
+    this.settleCommands(run, state, false, wasConfirming)
     if (state.title && state.title !== before?.title) {
       run.givenTitle = undefined
       this.retitle(run.info, state.title)
@@ -1097,17 +1780,122 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     else if (state.agentState !== 'reviewing' && run.waiting?.plan) run.waiting = undefined
   }
 
+  private reconcileTitleSubagents(
+    run: AgyRun,
+    subagents: NonNullable<AgyTitleState['subagents']>,
+    replaying = false,
+    activeMainId = run.info?.nativeSessionId
+  ): void {
+    let changed = false
+    if (subagents.length === 0) {
+      for (const [id, ch] of [...(run.children ?? [])]) {
+        if (ch.fromTitle) {
+          this.removeChild(run, id)
+          changed = true
+        }
+      }
+      if (changed && !replaying) this.publishBackground(run)
+      return
+    }
+    const hadRealChildren = [...(run.children?.values() ?? [])].some((ch) => !ch.fromTitle)
+    const hadPendingSpawns = (run.pendingSpawns?.length ?? 0) > 0
+    const seenIds = new Set<string>()
+    subagents.forEach((sub, idx) => {
+      const st = (sub.state ?? '').toLowerCase()
+      const label = titleSubagentLabel(sub)
+      if (FINISHED_TITLE_STATES.has(st)) {
+        if (sub.id && run.children?.has(sub.id)) {
+          this.removeChild(run, sub.id)
+          changed = true
+        }
+        return
+      }
+      const nextState: 'working' | 'waiting' = IDLE_TITLE_STATES.has(st) ? 'waiting' : 'working'
+      if (sub.id) {
+        seenIds.add(sub.id)
+        const existing = run.children?.get(sub.id)
+        if (existing) {
+          if (existing.state !== nextState) {
+            existing.state = nextState
+            changed = true
+          }
+          if (label !== 'Subagent' && existing.label === 'Subagent') {
+            existing.label = label
+            changed = true
+          }
+          if (nextState === 'working' && run.unattributedBackground) {
+            run.unattributedBackground = false
+            changed = true
+          }
+        } else {
+          const spawn = this.claimSpawn(run, activeMainId ?? '', true, false)
+          ;(run.children ??= new Map()).set(sub.id, {
+            id: sub.id,
+            parentId: spawn?.parentId ?? activeMainId ?? '',
+            label: spawn?.label ?? label,
+            state: nextState,
+            isSwarm: spawn?.isSwarm,
+            swarmGroup: spawn?.swarmGroup,
+            fromTitle: true,
+            needsRecentClaim: !spawn && !!run.recentSpawns?.length
+          })
+          if (nextState === 'working') run.unattributedBackground = false
+          changed = true
+        }
+      } else if (!hadRealChildren && !hadPendingSpawns) {
+        const id = `title-subagent:${idx}`
+        seenIds.add(id)
+        const existing = run.children?.get(id)
+        if (existing) {
+          if (existing.label !== label || existing.state !== nextState) {
+            existing.label = label
+            existing.state = nextState
+            changed = true
+          }
+          if (nextState === 'working' && run.unattributedBackground) {
+            run.unattributedBackground = false
+            changed = true
+          }
+        } else {
+          ;(run.children ??= new Map()).set(id, {
+            id,
+            parentId: activeMainId ?? '',
+            label,
+            state: nextState,
+            fromTitle: true
+          })
+          if (nextState === 'working') run.unattributedBackground = false
+          changed = true
+        }
+      }
+    })
+    for (const [id, ch] of [...(run.children ?? [])]) {
+      if (ch.fromTitle && !seenIds.has(id)) {
+        this.removeChild(run, id)
+        changed = true
+      }
+    }
+    if (changed && !replaying) this.publishBackground(run)
+  }
+
   private bindTo(run: AgyRun, conversationId: string): void {
     const key = agySessionKey(conversationId, run.remote?.host)
     const known = this.history.get(key)
     const switched = !!run.info && !!known
+    const earlyHooks = run.pendingForeignHooks?.get(conversationId)
     if (run.info) run.givenTitle = undefined
     run.touched.clear()
     run.liveWrites = 0
-    run.background = undefined
+    this.resetTransientForSwitch(run, conversationId)
+    this.clearForeignTimers(run)
+    run.foreignChecked = undefined
+    run.foreignTries = undefined
+    run.foreignResolving = undefined
+    run.pendingForeignHooks = undefined
     run.waiting = undefined
     run.shown = undefined
     run.lastTitleState = undefined
+    this.endCompaction(run)
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
@@ -1122,8 +1910,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       historyReadable
     )
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
-    if (run.commands?.size) this.publishBackground(run)
-    if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
+    this.watchApiState(run)
+    if (earlyHooks?.length) {
+      for (const hook of earlyHooks) {
+        if (hook.event !== 'PostToolUse') this.trackTasks(run, hook)
+        this.onHook(run, hook)
+      }
+    }
+    if (run.commands?.size || run.schedules?.size || run.children?.size) this.publishBackground(run)
+    this.syncWakeupPending(run)
     void this.refreshHistory().catch(() => undefined)
     // AGY§10
     const before = run.statesBeforeBind ?? []
@@ -1133,64 +1928,523 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     for (const status of replayed) this.emitState(run, status)
   }
 
+  private isAttributedChild(
+    run: AgyRun,
+    hook: AgyHook,
+    mainId = run.info?.nativeSessionId
+  ): boolean {
+    if (!mainId || hook.conversationId === mainId) return false
+    if (run.children?.has(hook.conversationId) || run.knownChildren?.has(hook.conversationId))
+      return true
+    if (
+      hook.parentConversationId &&
+      (hook.parentConversationId === mainId ||
+        run.children?.has(hook.parentConversationId) ||
+        run.knownChildren?.has(hook.parentConversationId))
+    )
+      return true
+    if (hook.rootConversationId === mainId) return true
+    return (
+      hook.event === 'SessionStart' &&
+      ((run.pendingSpawns?.length ?? 0) > 0 ||
+        (run.recentSpawns?.length ?? 0) > 0 ||
+        !!run.mainTurnActive)
+    )
+  }
+
+  private claimSpawn(
+    run: AgyRun,
+    parentId: string,
+    allowAnyParent = false,
+    includeRecent = true
+  ): PendingSpawn | undefined {
+    const take = (
+      list: PendingSpawn[] | undefined,
+      idx: number,
+      clear: () => void
+    ): PendingSpawn | undefined => {
+      if (!list || idx < 0 || idx >= list.length) return undefined
+      const picked = list.splice(idx, 1)[0]
+      if (!list.length) clear()
+      return picked
+    }
+    const pending = run.pendingSpawns
+    const recent = includeRecent ? run.recentSpawns : undefined
+    const pIdx = pending?.findIndex((s) => s.parentId === parentId) ?? -1
+    if (pIdx >= 0) return take(pending, pIdx, () => (run.pendingSpawns = undefined))
+    const rIdx = recent?.findIndex((s) => s.parentId === parentId) ?? -1
+    if (rIdx >= 0) return take(recent, rIdx, () => (run.recentSpawns = undefined))
+    if (allowAnyParent) {
+      if (!run.mainTurnActive && pending?.length)
+        return take(pending, 0, () => (run.pendingSpawns = undefined))
+      if (recent?.length) return take(recent, 0, () => (run.recentSpawns = undefined))
+    }
+    return undefined
+  }
+
+  private rememberChild(run: AgyRun, child: AgyChild): void {
+    ;(run.knownChildren ??= new Map()).set(child.id, {
+      parentId: child.parentId,
+      label: child.label,
+      isSwarm: child.isSwarm,
+      swarmGroup: child.swarmGroup
+    })
+  }
+
+  private ensureChild(
+    run: AgyRun,
+    hook: AgyHook,
+    activeMainId = run.info?.nativeSessionId
+  ): AgyChild {
+    run.unattributedBackground = false
+    const existing = run.children?.get(hook.conversationId)
+    if (existing) {
+      existing.fromTitle = false
+      if (existing.needsRecentClaim) {
+        existing.needsRecentClaim = false
+        if (run.recentSpawns?.length) {
+          const parentId = hook.parentConversationId ?? existing.parentId ?? activeMainId ?? ''
+          let idx = run.recentSpawns.findIndex((s) => s.parentId === parentId)
+          if (idx < 0 && !hook.parentConversationId) idx = 0
+          if (idx >= 0) {
+            const [spawn] = run.recentSpawns.splice(idx, 1)
+            if (!run.recentSpawns.length) run.recentSpawns = undefined
+            existing.parentId = spawn.parentId
+            existing.label = spawn.label
+            existing.isSwarm ||= spawn.isSwarm
+            existing.swarmGroup ??= spawn.swarmGroup
+          }
+        }
+      }
+      if (
+        hook.agentName &&
+        hook.agentName !== 'self' &&
+        (existing.label === 'Subagent' || existing.label.startsWith('Subagent ('))
+      ) {
+        existing.label = hook.agentName
+      }
+      this.rememberChild(run, existing)
+      return existing
+    }
+    const remembered = run.knownChildren?.get(hook.conversationId)
+    const fallbackParentId = hook.parentConversationId ?? remembered?.parentId ?? activeMainId ?? ''
+    const spawn = remembered
+      ? undefined
+      : this.claimSpawn(run, fallbackParentId, !hook.parentConversationId)
+    const parentId = spawn?.parentId ?? fallbackParentId
+    const label =
+      remembered?.label ??
+      spawn?.label ??
+      (hook.agentName && hook.agentName !== 'self' ? hook.agentName : undefined) ??
+      'Subagent'
+    const child: AgyChild = {
+      id: hook.conversationId,
+      parentId,
+      label,
+      state: 'working',
+      isSwarm: remembered?.isSwarm || spawn?.isSwarm,
+      swarmGroup: remembered?.swarmGroup ?? spawn?.swarmGroup
+    }
+    ;(run.children ??= new Map()).set(hook.conversationId, child)
+    this.rememberChild(run, child)
+    return child
+  }
+
+  private removeChild(run: AgyRun, childId: string, killed = false): boolean {
+    let removed = false
+    if (run.children?.delete(childId)) removed = true
+    if (killed) run.knownChildren?.delete(childId)
+    for (const [id, ch] of [...(run.children ?? [])]) {
+      if (ch.parentId === childId && this.removeChild(run, id, killed)) removed = true
+    }
+    if (killed && run.knownChildren?.size) {
+      for (const [id, kn] of [...run.knownChildren]) {
+        if (kn.parentId === childId) run.knownChildren.delete(id)
+      }
+    }
+    this.dropSpawnsOf(run, (s) => s.parentId === childId)
+    return removed
+  }
+
+  private confirmSpawnsForStep(
+    run: AgyRun,
+    parentId: string,
+    step: string,
+    failed: boolean
+  ): boolean {
+    if (!run.pendingSpawns?.length) return false
+    const matched: PendingSpawn[] = []
+    const next: PendingSpawn[] = []
+    for (const s of run.pendingSpawns) {
+      if (s.parentId === parentId && s.stepIdx === step) matched.push(s)
+      else next.push(s)
+    }
+    if (!matched.length) return false
+    run.pendingSpawns = next.length ? next : undefined
+    if (!failed) run.recentSpawns = [...matched, ...(run.recentSpawns ?? [])]
+    return true
+  }
+
+  private wakeSwarmByMentions(run: AgyRun, key: string, text: string | undefined): boolean {
+    if (!text || !run.children?.size) return false
+    const { all, names } = swarmMentions(text)
+    if (!all && !names.size) return false
+    const woken: { id: string; prev: 'working' | 'waiting' }[] = []
+    for (const ch of run.children.values()) {
+      if (!ch.isSwarm || ch.state === 'working') continue
+      const label = ch.label.toLowerCase()
+      const group = ch.swarmGroup?.toLowerCase()
+      if (all || names.has(label) || (group ? names.has(group) : false)) {
+        woken.push({ id: ch.id, prev: ch.state })
+        ch.state = 'working'
+      }
+    }
+    if (woken.length) (run.wokenBySend ??= new Map()).set(key, woken)
+    return woken.length > 0
+  }
+
+  private rollbackWoken(run: AgyRun, key: string, failed: boolean): boolean {
+    const woken = run.wokenBySend?.get(key)
+    run.wokenBySend?.delete(key)
+    if (!failed || !woken?.length) return false
+    let changed = false
+    for (const w of woken) {
+      const ch = run.children?.get(w.id)
+      if (ch && ch.state === 'working') {
+        ch.state = w.prev
+        changed = true
+      }
+    }
+    return changed
+  }
+
+  private killSwarmMember(run: AgyRun, name: string): boolean {
+    const target = name.toLowerCase()
+    let changed = false
+    for (const [id, ch] of [...(run.children ?? [])]) {
+      if (!ch.isSwarm) continue
+      if (ch.label.toLowerCase() === target || ch.swarmGroup?.toLowerCase() === target) {
+        if (this.removeChild(run, id, true)) changed = true
+      }
+    }
+    for (const [id, kn] of [...(run.knownChildren ?? [])]) {
+      if (!kn.isSwarm) continue
+      if (kn.label.toLowerCase() === target || kn.swarmGroup?.toLowerCase() === target)
+        run.knownChildren?.delete(id)
+    }
+    if (
+      this.dropSpawnsOf(
+        run,
+        (s) =>
+          !!s.isSwarm &&
+          (s.label.toLowerCase() === target || s.swarmGroup?.toLowerCase() === target)
+      )
+    )
+      changed = true
+    return changed
+  }
+
+  private wakeChildrenByRecipient(
+    run: AgyRun,
+    key: string,
+    recipient: string | undefined
+  ): boolean {
+    const woken: { id: string; prev: 'working' | 'waiting' }[] = []
+    if (recipient === '@children') {
+      for (const ch of run.children?.values() ?? []) {
+        if (ch.state !== 'working') {
+          woken.push({ id: ch.id, prev: ch.state })
+          ch.state = 'working'
+        }
+      }
+    } else if (recipient) {
+      const ch = run.children?.get(recipient)
+      if (ch && ch.state !== 'working') {
+        woken.push({ id: ch.id, prev: ch.state })
+        ch.state = 'working'
+      }
+    }
+    if (woken.length) (run.wokenBySend ??= new Map()).set(key, woken)
+    return woken.length > 0
+  }
+
+  private applySubagentPostToolUse(run: AgyRun, hook: AgyHook, isMain: boolean): boolean {
+    const { input } = hook
+    const call = record(input.toolCall)
+    const name = String(call.name ?? '')
+    const args = record(call.args)
+    const step = String(input.stepIdx)
+    if (name === 'invoke_subagent')
+      return this.confirmSpawnsForStep(run, hook.conversationId, step, !!input.error)
+    if (name === 'swarm') {
+      const action = argOf(args, 'action') ?? argOf(args, 'Action')
+      const teammate = argOf(args, 'name') ?? argOf(args, 'Name') ?? argOf(args, 'agentName')
+      if (action === 'add')
+        return this.confirmSpawnsForStep(run, hook.conversationId, step, !!input.error)
+      if ((action === 'kill' || action === 'remove') && teammate && !input.error)
+        return this.killSwarmMember(run, teammate)
+      return false
+    }
+    if (name === 'manage_subagents' && !input.error) {
+      const action = argOf(args, 'Action')
+      if (action === 'kill') {
+        let changed = false
+        for (const cid of listFromStrings(args.ConversationIds))
+          if (this.removeChild(run, cid, true)) changed = true
+        return changed
+      }
+      if (action === 'kill_all') {
+        if (isMain) {
+          if (!run.children?.size && !run.pendingSpawns?.length && !run.recentSpawns?.length)
+            return false
+          run.children?.clear()
+          run.knownChildren?.clear()
+          run.pendingSpawns = undefined
+          run.recentSpawns = undefined
+          return true
+        }
+        let changed = false
+        for (const [id, ch] of [...(run.children ?? [])])
+          if (ch.parentId === hook.conversationId && this.removeChild(run, id, true)) changed = true
+        if (this.dropSpawnsOf(run, (s) => s.parentId === hook.conversationId)) changed = true
+        return changed
+      }
+      return false
+    }
+    if (name === 'send_message' || name === 'post_message')
+      return this.rollbackWoken(run, `${hook.conversationId}:${step}`, !!input.error)
+    return false
+  }
+
+  private settleConversationTasksOnStop(
+    run: AgyRun,
+    conversationId: string,
+    fullyIdle: unknown
+  ): void {
+    for (const [id, command] of commandsOf(run, conversationId)) {
+      if (fullyIdle === false || command.ran) {
+        command.ran = true
+        command.shown = true
+      } else if (!command.shown) {
+        run.commands?.delete(id)
+      }
+    }
+    for (const [id, schedule] of schedulesOf(run, conversationId)) {
+      if (fullyIdle === false || schedule.ran) {
+        schedule.ran = true
+        schedule.shown = true
+      } else if (!schedule.shown) {
+        run.schedules?.delete(id)
+      }
+    }
+  }
+
+  private onChildHook(
+    run: AgyRun,
+    hook: AgyHook,
+    replaying = false,
+    activeMainId = run.info?.nativeSessionId
+  ): void {
+    if (run.explicitStop || run.stopping) return
+    const { input, event } = hook
+    switch (event) {
+      case 'SessionStart':
+      case 'PreInvocation':
+        this.ensureChild(run, hook, activeMainId).state = 'working'
+        break
+      case 'PreToolUse': {
+        const child = this.ensureChild(run, hook, activeMainId)
+        child.state = 'working'
+        const call = record(input.toolCall)
+        const name = String(call.name ?? '')
+        const args = record(call.args)
+        const key = `${hook.conversationId}:${String(input.stepIdx)}`
+        if (name === 'swarm_wait') {
+          child.isSwarm = true
+          this.rememberChild(run, child)
+        } else if (name === 'send_message') {
+          this.wakeChildrenByRecipient(run, key, argOf(args, 'Recipient'))
+        } else if (name === 'post_message') {
+          this.wakeSwarmByMentions(run, key, argOf(args, 'text'))
+        }
+        break
+      }
+      case 'PostToolUse':
+        if (run.children?.has(hook.conversationId)) this.ensureChild(run, hook, activeMainId)
+        this.applySubagentPostToolUse(run, hook, false)
+        break
+      case 'Stop':
+        this.settleConversationTasksOnStop(run, hook.conversationId, input.fullyIdle)
+        if (input.fullyIdle === false) {
+          this.ensureChild(run, hook, activeMainId).state = 'working'
+        } else {
+          const existing = run.children?.get(hook.conversationId)
+          if (existing?.isSwarm) existing.state = 'waiting'
+          else this.removeChild(run, hook.conversationId)
+        }
+        this.syncWakeupPending(run)
+        break
+    }
+    if (!replaying) this.publishBackground(run)
+  }
+
+  private applyMainLifecycleHook(run: AgyRun, hook: AgyHook, replaying = false): boolean {
+    const { input } = hook
+    let changed = false
+    switch (hook.event) {
+      case 'PreInvocation':
+        run.mainTurnActive = true
+        run.exitedAskToIdle = false
+        break
+      case 'PreToolUse': {
+        run.mainTurnActive = true
+        const call = record(input.toolCall)
+        const name = String(call.name ?? '')
+        const args = record(call.args)
+        const key = `${hook.conversationId}:${String(input.stepIdx)}`
+        run.lastTool = { name, args }
+        if (name === 'send_message') {
+          if (this.wakeChildrenByRecipient(run, key, argOf(args, 'Recipient'))) changed = true
+        } else if (name === 'post_message') {
+          if (this.wakeSwarmByMentions(run, key, argOf(args, 'text'))) changed = true
+        }
+        break
+      }
+      case 'PostToolUse':
+        if (this.applySubagentPostToolUse(run, hook, true)) changed = true
+        break
+      case 'Stop':
+        run.mainTurnActive = false
+        run.exitedAskToIdle = false
+        this.onStop(run, input, replaying, hook.conversationId)
+        break
+    }
+    return changed
+  }
+
   // AGY§12
   private onHook(run: AgyRun, hook: AgyHook): void {
     if (run.explicitStop || run.stopping) return
     if (hook.conversationId !== run.info?.nativeSessionId) return
-    const { input } = hook
-    switch (hook.event) {
-      case 'PreToolUse': {
-        const call = record(input.toolCall)
-        run.lastTool = { name: String(call.name ?? ''), args: record(call.args) }
-        return
-      }
-      case 'PostToolUse': {
-        const call = record(input.toolCall)
-        const did = agyToolDid(String(call.name ?? ''), (key) => argOf(record(call.args), key))
-        if (did) this.deps.events(run.tabId, { type: 'did', what: did })
-        return void this.afterTool(run, input)
-      }
-      case 'Stop':
-        return this.onStop(run, input)
+    const changed = this.applyMainLifecycleHook(run, hook, false)
+    if (changed) this.publishBackground(run)
+    if (hook.event === 'PostToolUse') {
+      const call = record(hook.input.toolCall)
+      const name = String(call.name ?? '')
+      const args = record(call.args)
+      const did = agyToolDid(name, (key) => argOf(args, key), args)
+      if (did) this.deps.events(run.tabId, { type: 'did', what: did })
+      void this.afterTool(run, hook.input)
     }
   }
 
   // AGY§13
-  private trackTasks(run: AgyRun, hook: AgyHook): void {
+  private trackTasks(
+    run: AgyRun,
+    hook: AgyHook,
+    replaying = false,
+    activeMainId = run.info?.nativeSessionId
+  ): void {
     if (run.explicitStop || run.stopping) return
     const { event, input, conversationId } = hook
-    if (event === 'PreInvocation') return this.sortAnswered(run, conversationId, input)
+    if (event === 'PreInvocation') return this.sortAnswered(run, conversationId, input, replaying)
     const call = record(input.toolCall)
+    const name = String(call.name ?? '')
     const args = record(call.args)
     const taskId = `${conversationId}/task-${String(input.stepIdx)}`
-    if (call.name === 'run_command') {
-      if (event === 'PreToolUse') {
+    const belongs =
+      !run.info ||
+      conversationId === activeMainId ||
+      this.isAttributedChild(run, hook, activeMainId)
+    if (name === 'run_command') {
+      if (event === 'PreToolUse' && belongs) {
         const label =
           argOf(args, 'CommandLine')?.slice(0, COMMAND_LABEL_CHARS) ?? 'Background command'
-        const item: BackgroundItem = {
-          id: taskId,
-          label,
-          ...(args.IsDaemon === true
-            ? { kind: 'server', state: 'waiting' }
-            : { kind: 'command', state: 'working' })
+        const existing = run.commands?.get(taskId)
+        if (existing) {
+          existing.item.label = label
+        } else {
+          const item: BackgroundItem = {
+            id: taskId,
+            label,
+            ...(args.IsDaemon === true
+              ? { kind: 'server', state: 'waiting' }
+              : { kind: 'command', state: 'working' })
+          }
+          ;(run.commands ??= new Map()).set(taskId, { item, shown: false })
         }
-        ;(run.commands ??= new Map()).set(taskId, { item, shown: false })
-      } else if (event === 'PostToolUse') this.dropCommands(run, [taskId])
+      } else if (event === 'PostToolUse' && run.commands?.has(taskId)) {
+        this.dropTasks(run, [taskId], [], replaying)
+      }
       return
     }
-    if (call.name !== 'schedule' && call.name !== 'manage_task') return
-    const schedules = (run.schedules ??= new Set())
+    if (name === 'invoke_subagent' && event === 'PreToolUse' && belongs) {
+      const specs = subagentSpecs(args, input.stepIdx)
+      const stepIdx = String(input.stepIdx)
+      const spawns = (run.pendingSpawns ??= [])
+      specs.forEach((spec, i) => {
+        spawns.push({
+          id: `${conversationId}/subagent-${stepIdx}-${i}`,
+          parentId: conversationId,
+          stepIdx,
+          label: spec.label
+        })
+      })
+      if (!replaying) this.publishBackground(run)
+      return
+    }
+    if (name === 'swarm' && event === 'PreToolUse' && belongs) {
+      const action = argOf(args, 'action') ?? argOf(args, 'Action')
+      const teammate = argOf(args, 'name') ?? argOf(args, 'Name') ?? argOf(args, 'agentName')
+      if (action === 'add' && teammate) {
+        const stepIdx = String(input.stepIdx)
+        const spawns = (run.pendingSpawns ??= [])
+        swarmMemberNames(teammate, args).forEach((member, i) => {
+          spawns.push({
+            id: `${conversationId}/swarm-${stepIdx}-${i}`,
+            parentId: conversationId,
+            stepIdx,
+            label: member.slice(0, COMMAND_LABEL_CHARS),
+            isSwarm: true,
+            swarmGroup: teammate
+          })
+        })
+        if (!replaying) this.publishBackground(run)
+      }
+      return
+    }
+    if (name !== 'schedule' && name !== 'manage_task') return
+    const schedules = (run.schedules ??= new Map())
     const before = schedules.size
-    if (call.name === 'schedule') {
-      if (event === 'PreToolUse') schedules.add(taskId)
-      else if (event === 'PostToolUse') schedules.delete(taskId)
+    let changed = false
+    if (name === 'schedule') {
+      if (event === 'PreToolUse' && belongs) {
+        const isDaemon = args.IsDaemon === true
+        const label = scheduleLabel(args)
+        const existing = schedules.get(taskId)
+        if (existing) {
+          existing.item.label = label
+          existing.isDaemon = isDaemon
+        } else {
+          const item: BackgroundItem = {
+            id: taskId,
+            kind: 'monitor',
+            label,
+            state: 'waiting'
+          }
+          schedules.set(taskId, { item, shown: false, isDaemon })
+        }
+      } else if (event === 'PostToolUse' && schedules.delete(taskId)) {
+        changed = true
+      }
     } else if (event === 'PostToolUse' && argOf(args, 'Action') === 'kill' && !input.error) {
       const killed = argOf(args, 'TaskId') ?? ''
       const id = killed.includes('/') ? killed : `${conversationId}/${killed}`
-      schedules.delete(id)
-      this.dropCommands(run, [id])
+      if (schedules.delete(id)) changed = true
+      if (run.commands?.delete(id)) changed = true
     }
-    if (schedules.size !== before) this.deps.runtime.setWakeupPending(run.tabId, schedules.size > 0)
+    if (schedules.size !== before) this.syncWakeupPending(run)
+    if (changed && !replaying) this.publishBackground(run)
   }
 
   // AGY§8 AGY§12
@@ -1232,20 +2486,28 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§12 AGY§17
-  private onStop(run: AgyRun, input: Record<string, unknown>): void {
-    if (input.terminationReason === 'TERMINAL_CUSTOM_HOOK') {
+  private onStop(
+    run: AgyRun,
+    input: Record<string, unknown>,
+    replaying = false,
+    conversationId = run.info?.nativeSessionId
+  ): void {
+    if (!replaying && input.terminationReason === 'TERMINAL_CUSTOM_HOOK') {
       if (run.api) this.endCompaction(run)
       else this.deps.events(run.tabId, { type: 'compacted' })
     }
-    const namedCommandRuns = [...(run.commands?.values() ?? [])].some(
-      (command) => command.ran && command.item.kind === 'command'
-    )
-    const busy = input.fullyIdle === false && !namedCommandRuns
-    if (busy === !!run.background) return
-    run.background = busy
-      ? { id: 'agy-background', kind: 'agent', label: 'Background work', state: 'working' }
-      : undefined
-    this.publishBackground(run)
+    if (conversationId) this.settleConversationTasksOnStop(run, conversationId, input.fullyIdle)
+    if (input.fullyIdle !== false) {
+      run.unattributedBackground = false
+      run.pendingSpawns = undefined
+      run.recentSpawns = undefined
+      for (const [id, ch] of [...(run.children ?? [])])
+        if (ch.state === 'working') this.removeChild(run, id)
+    } else {
+      run.unattributedBackground = !this.hasActiveAttributed(run)
+    }
+    this.syncWakeupPending(run)
+    if (!replaying) this.publishBackground(run)
   }
 
   // AGY§10
@@ -1277,7 +2539,42 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     )
   }
 
+  private pruneUnconfirmedTasksFor(run: AgyRun, conversationId: string): boolean {
+    let changed = false
+    for (const [id, c] of commandsOf(run, conversationId))
+      if (!c.ran && !c.shown && run.commands?.delete(id)) changed = true
+    let schedulePruned = false
+    for (const [id, s] of schedulesOf(run, conversationId))
+      if (!s.ran && !s.shown && run.schedules?.delete(id)) {
+        changed = true
+        schedulePruned = true
+      }
+    if (schedulePruned) this.syncWakeupPending(run)
+    return changed
+  }
+
+  private pruneUnconfirmedFor(run: AgyRun, conversationId: string): boolean {
+    let changed = this.pruneUnconfirmedTasksFor(run, conversationId)
+    if (this.dropSpawnsOf(run, (s) => s.parentId === conversationId)) changed = true
+    return changed
+  }
+
   private emitState(run: AgyRun, status: ProgramStatus): void {
+    if (status.state === 'idle' || status.state === 'error') run.mainTurnActive = false
+    if (status.state === 'working') run.exitedAskToIdle = false
+    const turn = this.deps.runtime.turn(run.tabId)
+    if (
+      (status.state === 'idle' || status.state === 'error') &&
+      (turn === 'approval' || turn === 'input') &&
+      !run.waiting?.plan
+    ) {
+      run.exitedAskToIdle = true
+      const id = run.info?.nativeSessionId
+      if (id && this.pruneUnconfirmedFor(run, id)) {
+        run.unattributedBackground &&= !this.hasActiveAttributed(run)
+        this.publishBackground(run)
+      }
+    }
     if (status.state === 'blocked' && status.kind !== 'auth') void this.readAsk(run, status)
     else if (!run.waiting?.plan) run.waiting = undefined
     if (status.state === 'working') this.turnStarted(run)
@@ -1327,7 +2624,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§8 AGY§17
   private turnStarted(run: AgyRun): void {
-    this.watchCompaction(run)
+    this.watchApiState(run)
     const id = run.info?.nativeSessionId
     if (id && !run.givenTitle && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
       this.takeListedTitleSoon(run, id)
@@ -1368,21 +2665,116 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     ).unref?.()
   }
 
-  // AGY§17
-  private watchCompaction(run: AgyRun): void {
+  // AGY§16 AGY§17
+  private watchApiState(run: AgyRun): void {
     const id = run.info?.nativeSessionId
     if (!run.api || !id || run.stream?.conversationId === id) return
     run.stream?.close()
     const stream = run.api.streamState(id, (message) => {
-      const hook = activeHookName(message)
-      if (hook === CONTEXT_SUMMARY && !run.compacting) {
+      if (
+        this.runs.get(run.tabId) !== run ||
+        run.info?.nativeSessionId !== id ||
+        run.explicitStop ||
+        run.stopping
+      )
+        return
+      const update = agentStateUpdate(message)
+      if (update.activeHook === CONTEXT_SUMMARY && !run.compacting) {
         const compacting: AgyRun['compacting'] = { shown: false }
         compacting.timer = setTimeout(() => {
+          if (
+            this.runs.get(run.tabId) !== run ||
+            run.info?.nativeSessionId !== id ||
+            run.compacting !== compacting ||
+            run.explicitStop ||
+            run.stopping
+          )
+            return
           compacting.shown = true
           this.deps.events(run.tabId, { type: 'compacting' })
         }, COMPACTION_SHOWS_AFTER_MS)
         run.compacting = compacting
-      } else if (hook !== CONTEXT_SUMMARY && run.compacting) this.endCompaction(run)
+      } else if (update.activeHook !== CONTEXT_SUMMARY && run.compacting) this.endCompaction(run)
+      const st = update.status ?? update.executorLoopStatus
+      const idleNow = st === 'CASCADE_RUN_STATUS_IDLE'
+      if (idleNow && !run.remote) {
+        run.log.read()
+        if (this.runs.get(run.tabId) !== run || run.info?.nativeSessionId !== id) return
+      }
+      if (update.backgroundTasksTotal === 0) {
+        this.applyApiTasks(run, id, [], true, idleNow)
+      } else if (update.backgroundTasks !== undefined) {
+        if (
+          update.backgroundTasksTotal === undefined ||
+          update.backgroundTasks.length === update.backgroundTasksTotal
+        ) {
+          this.applyApiTasks(
+            run,
+            id,
+            update.backgroundTasks.map((t) => ({
+              ...t,
+              conversationId: t.conversationId || id
+            })),
+            true,
+            idleNow
+          )
+        } else if (run.commands?.size || run.schedules?.size) {
+          this.askCommands(run)
+        }
+      } else if (
+        update.backgroundTasksTotal !== undefined &&
+        (run.commands?.size || run.schedules?.size)
+      ) {
+        this.askCommands(run)
+      }
+      const explicitBusy = update.fullyIdle === false || (update.backgroundTasksTotal ?? 0) > 0
+      const streamBusy = explicitBusy || (update.fullyIdle === undefined && idleNow)
+      if (update.fullyIdle === true && idleNow) {
+        this.endCompaction(run)
+        run.mainTurnActive = false
+        run.exitedAskToIdle = false
+        run.unattributedBackground = false
+        run.pendingSpawns = undefined
+        run.recentSpawns = undefined
+        if (!run.waiting?.plan) run.waiting = undefined
+        for (const [cid, ch] of [...(run.children ?? [])])
+          if (ch.state === 'working') this.removeChild(run, cid)
+        for (const [tid, c] of [...(run.commands ?? [])])
+          if (
+            update.backgroundTasksTotal === 0 ||
+            (!c.ran && !c.shown) ||
+            (c.item.kind !== 'server' && c.item.state === 'working')
+          )
+            run.commands?.delete(tid)
+        for (const [tid, s] of [...(run.schedules ?? [])])
+          if (update.backgroundTasksTotal === 0 || (!s.ran && !s.shown) || !s.isDaemon)
+            run.schedules?.delete(tid)
+        this.syncWakeupPending(run)
+        this.publishBackground(run)
+        if (!run.waiting?.plan) {
+          const turn = this.deps.runtime.turn(run.tabId)
+          if (turn === 'working' || turn === 'approval' || turn === 'input')
+            this.deps.events(run.tabId, { type: 'stop' })
+        }
+      } else if (streamBusy && idleNow) {
+        run.mainTurnActive = false
+        const turn = this.deps.runtime.turn(run.tabId)
+        if (
+          ((turn === 'approval' || turn === 'input') && !run.waiting?.plan) ||
+          !!run.exitedAskToIdle
+        ) {
+          run.exitedAskToIdle = false
+          run.waiting = undefined
+          this.pruneUnconfirmedFor(run, id)
+          run.unattributedBackground = explicitBusy && !this.hasActiveAttributed(run)
+          this.publishBackground(run)
+        } else if (explicitBusy && !this.hasActiveAttributed(run)) {
+          run.unattributedBackground = true
+          this.publishBackground(run)
+        }
+        if (!run.waiting?.plan && (turn === 'working' || turn === 'approval' || turn === 'input'))
+          this.deps.events(run.tabId, { type: 'stop' })
+      }
     })
     run.stream = { conversationId: id, close: stream.close }
   }
@@ -1481,6 +2873,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const stillThere = this.runs.get(run.tabId) === run && !run.explicitStop && !run.stopping
     if (!stillThere || run.info?.nativeSessionId !== id) return
+    if (run.remote && run.lastTitleState !== 'reviewing') return
     const brain = path.join(agyBrain(this.geminiOf(run.cwd)), id)
     let names: string[] = []
     try {
@@ -1498,6 +2891,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       plan,
       approval: { id: askId, command: plan, ...(text && { reason: text }), plan: true }
     }
+    if (run.remote) run.shown = 'blocked'
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
     this.changedSoon()
   }

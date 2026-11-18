@@ -27,6 +27,10 @@ export function record(value: unknown): Record<string, unknown> {
     : {}
 }
 
+export function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined
+}
+
 export function jsonRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string') return record(value)
   try {

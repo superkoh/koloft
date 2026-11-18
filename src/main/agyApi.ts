@@ -1,7 +1,7 @@
 import http from 'http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { record } from './codexObservation'
+import { nonEmptyString, record } from './codexObservation'
 import type { QuestionAnswer } from '@plugins/sessions/main/dialog'
 
 const exec = promisify(execFile)
@@ -69,6 +69,64 @@ async function listeningPorts(pid: number): Promise<number[]> {
   ]
 }
 
+export interface AgyBackgroundTask {
+  taskId: string
+  toolName?: string
+  toolSummary?: string
+  description?: string
+  startTime?: number
+  stepIndex?: number
+  logUri?: string
+  isDaemon?: boolean
+  conversationId: string
+}
+
+export interface AgyStateUpdate {
+  conversationId?: string
+  status?: string
+  executorLoopStatus?: string
+  fullyIdle?: boolean
+  activeHook?: string
+  backgroundTasks?: AgyBackgroundTask[]
+  backgroundTasksTotal?: number
+}
+
+const str = nonEmptyString
+
+function timeMs(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (typeof value !== 'string' || !value) return undefined
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) ? ms : undefined
+}
+
+// AGY§13
+export function taskSnapshotOf(
+  task: Record<string, unknown>,
+  conversationId: string
+): AgyBackgroundTask | undefined {
+  const taskId = str(task.taskId)
+  if (!taskId) return undefined
+  const toolName = str(task.toolName)
+  const toolSummary = str(task.toolSummary)
+  const description = str(task.description)
+  const startTime = timeMs(task.startTime)
+  const stepIndex = typeof task.stepIndex === 'number' ? task.stepIndex : undefined
+  const logUri = str(task.logUri)
+  const isDaemon = typeof task.isDaemon === 'boolean' ? task.isDaemon : undefined
+  return {
+    taskId,
+    conversationId,
+    ...(toolName && { toolName }),
+    ...(toolSummary && { toolSummary }),
+    ...(description && { description }),
+    ...(startTime !== undefined && { startTime }),
+    ...(stepIndex !== undefined && { stepIndex }),
+    ...(logUri && { logUri }),
+    ...(isDaemon !== undefined && { isDaemon })
+  }
+}
+
 export interface PendingInteraction {
   trajectoryId: string
   stepIndex: number
@@ -128,11 +186,31 @@ function latestUserConfig(trajectory: Record<string, unknown>): unknown {
 
 export class AgyApi {
   private port?: number
+  private finding?: Promise<number | undefined>
 
   constructor(
     private pid: number,
     private token: string
   ) {}
+
+  private findPort(): Promise<number | undefined> {
+    return (this.finding ??= (async () => {
+      try {
+        for (const port of await listeningPorts(this.pid)) {
+          try {
+            await post(port, this.token, 'GetStatus', {})
+            this.port = port
+            return port
+          } catch {
+            continue
+          }
+        }
+        return undefined
+      } finally {
+        this.finding = undefined
+      }
+    })())
+  }
 
   // AGY§16
   private async call(method: string, body: unknown): Promise<unknown> {
@@ -144,15 +222,8 @@ export class AgyApi {
         this.port = undefined
       }
     }
-    for (const port of await listeningPorts(this.pid)) {
-      try {
-        await post(port, this.token, 'GetStatus', {})
-      } catch {
-        continue
-      }
-      this.port = port
-      return post(port, this.token, method, body)
-    }
+    const port = await this.findPort()
+    if (port) return post(port, this.token, method, body)
     throw new Error('agy API not found')
   }
 
@@ -167,16 +238,15 @@ export class AgyApi {
   }
 
   // AGY§13
-  async backgroundTaskIds(conversationId: string): Promise<Set<string>> {
+  async backgroundTasks(conversationId: string): Promise<AgyBackgroundTask[]> {
     const tasks = record(
       await this.call('ListBackgroundTasks', { cascadeId: conversationId })
     ).tasks
-    return new Set(
-      (Array.isArray(tasks) ? tasks : []).flatMap((t) => {
-        const id = record(record(t).task).taskId
-        return typeof id === 'string' ? [id] : []
-      })
-    )
+    return (Array.isArray(tasks) ? tasks : []).flatMap((t) => {
+      const entry = record(t)
+      const parsed = taskSnapshotOf(record(entry.task), str(entry.conversationId) ?? conversationId)
+      return parsed ? [parsed] : []
+    })
   }
 
   // AGY§16
@@ -262,8 +332,9 @@ export class AgyApi {
         (res) => {
           let buf = Buffer.alloc(0)
           res.on('data', (chunk: Buffer) => {
+            if (closed) return
             buf = Buffer.concat([buf, chunk])
-            while (buf.length >= 5) {
+            while (!closed && buf.length >= 5) {
               const len = buf.readUInt32BE(1)
               if (buf.length < 5 + len) break
               const flags = buf.readUInt8(0)
@@ -290,8 +361,47 @@ export class AgyApi {
   }
 }
 
-// AGY§17
-export function activeHookName(message: Record<string, unknown>): string | undefined {
-  const hook = record(message.activeHook)
-  return typeof hook.hookName === 'string' ? hook.hookName : undefined
+// AGY§16 AGY§17
+export function agentStateUpdate(message: Record<string, unknown>): AgyStateUpdate {
+  const update = 'update' in message ? record(message.update) : message
+  const conversationId = str(update.conversationId)
+  const status = str(update.status)
+  const executorLoopStatus = str(update.executorLoopStatus)
+  const fullyIdle = typeof update.fullyIdle === 'boolean' ? update.fullyIdle : undefined
+  const activeHook = str(record(update.activeHook).hookName)
+  const hasBtu =
+    'backgroundTasksUpdate' in update &&
+    update.backgroundTasksUpdate !== null &&
+    typeof update.backgroundTasksUpdate === 'object'
+  const btu = record(update.backgroundTasksUpdate)
+  const rawList = Array.isArray(btu.backgroundTasks)
+    ? btu.backgroundTasks
+    : Array.isArray(update.backgroundTasks)
+      ? update.backgroundTasks
+      : hasBtu && btu.totalLength === undefined && !Array.isArray(btu.indices)
+        ? []
+        : undefined
+  const backgroundTasks = rawList?.flatMap((entry) => {
+    const e = record(entry)
+    const snap = 'taskSnapshot' in e ? record(e.taskSnapshot) : 'task' in e ? record(e.task) : e
+    const parsed = taskSnapshotOf(snap, conversationId ?? '')
+    return parsed ? [parsed] : []
+  })
+  const backgroundTasksTotal =
+    typeof btu.totalLength === 'number'
+      ? btu.totalLength
+      : hasBtu && !Array.isArray(btu.indices) && !Array.isArray(btu.backgroundTasks)
+        ? 0
+        : Array.isArray(update.backgroundTasks)
+          ? update.backgroundTasks.length
+          : undefined
+  return {
+    ...(conversationId && { conversationId }),
+    ...(status && { status }),
+    ...(executorLoopStatus && { executorLoopStatus }),
+    ...(fullyIdle !== undefined && { fullyIdle }),
+    ...(activeHook && { activeHook }),
+    ...(backgroundTasks !== undefined && { backgroundTasks }),
+    ...(backgroundTasksTotal !== undefined && { backgroundTasksTotal })
+  }
 }
