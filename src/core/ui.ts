@@ -4,6 +4,8 @@ import type { PluginManifest, UiPlace } from './plugin'
 
 export type UiParts = Readonly<Record<string, ComponentType>>
 
+const ACTION_PLACE: UiPlace = 'palette-item'
+
 export interface Slot<T> {
   name: string
   filledWith?: T
@@ -50,6 +52,7 @@ export function placeUi(
       if (!declared.some((entry) => entry.id === id))
         throw new Error(`plugin ${plugin.id} registers "${id}", which its manifest does not list`)
     for (const { place, id } of declared) {
+      if (place === ACTION_PLACE) continue
       const Part = parts[id]
       if (!Part) throw new Error(`plugin ${plugin.id} lists "${id}" but registers no part for it`)
       if (taken.has(id)) throw new Error(`"${id}" is listed twice`)
