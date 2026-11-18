@@ -72,16 +72,6 @@ export const CH = {
     read: 'usage:read',
     changed: 'usage:changed'
   },
-  cron: {
-    list: 'cron:list',
-    save: 'cron:save',
-    delete: 'cron:delete',
-    setEnabled: 'cron:setEnabled',
-    runNow: 'cron:runNow',
-    skills: 'cron:skills',
-    trusted: 'cron:trusted',
-    state: 'cron:state'
-  },
   toast: {
     show: 'toast:show'
   },

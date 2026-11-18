@@ -15,7 +15,44 @@ for (const [group, leaves] of Object.entries(CH))
   for (const [key, value] of Object.entries(leaves)) byPath.set(`CH.${group}.${key}`, value)
 const TABLE = new Set(byPath.values())
 
-const QUOTED = String.raw`'(?:${Object.keys(CH).join('|')}):[a-zA-Z0-9:-]+'`
+const PLUGINS_DIR = path.join(SRC, 'plugins')
+const filesUnder = (dir: string): string[] =>
+  fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((d) => d.isFile() && /\.tsx?$/.test(d.name))
+        .map((d) => fs.readFileSync(path.join(d.parentPath, d.name), 'utf8'))
+    : []
+const PLUGIN_PARTS = await Promise.all(
+  fs
+    .readdirSync(PLUGINS_DIR)
+    .filter((id) => fs.existsSync(path.join(PLUGINS_DIR, id, 'shared', 'channels.ts')))
+    .map(async (id) => {
+      const dir = path.join(PLUGINS_DIR, id)
+      const { CHANNELS } = (await import(path.join(dir, 'shared', 'channels.ts'))) as {
+        CHANNELS: Record<string, string>
+      }
+      return {
+        id,
+        channels: CHANNELS,
+        main: filesUnder(path.join(dir, 'main')).join('\n'),
+        preload: filesUnder(path.join(dir, 'preload')).join('\n')
+      }
+    })
+)
+const pluginChannels = (text: string, call: string, channels: Record<string, string>): string[] =>
+  [...text.matchAll(new RegExp(String.raw`${call}\(\s*CHANNELS\.(\w+)`, 'g'))].map(
+    (m) => channels[m[1]] ?? `CHANNELS.${m[1]}`
+  )
+const fromPlugins = (side: 'main' | 'preload', call: string): string[] =>
+  PLUGIN_PARTS.flatMap((p) => pluginChannels(p[side], call, p.channels))
+const PLUGIN_TABLE = PLUGIN_PARTS.flatMap((p) => Object.values(p.channels))
+const GROUPS = new Set([
+  ...Object.keys(CH),
+  ...PLUGIN_TABLE.map((channel) => channel.split(':')[0])
+])
+
+const QUOTED = String.raw`'(?:${[...GROUPS].join('|')}):[a-zA-Z0-9:-]+'`
 const TOKEN = String.raw`(CH\.[a-zA-Z]+\.[a-zA-Z0-9]+|${QUOTED})`
 const channelOf = (token: string): string =>
   token.startsWith('CH.') ? (byPath.get(token) ?? token) : token.slice(1, -1)
@@ -25,16 +62,26 @@ const channels = (text: string, call: string): Set<string> =>
   new Set([...text.matchAll(new RegExp(`${call}\\(\\s*${TOKEN}`, 'g'))].map((m) => channelOf(m[1])))
 const without = (a: Set<string>, b: Set<string>): string[] => [...a].filter((c) => !b.has(c))
 
-const rendererInvokes = channels(RENDERER_SIDE, String.raw`ipcRenderer\.invoke`)
+const rendererInvokes = new Set([
+  ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.invoke`),
+  ...fromPlugins('preload', String.raw`ipc\.invoke`)
+])
 const rendererSends = channels(RENDERER_SIDE, String.raw`ipcRenderer\.(?:send|sendSync)`)
-const rendererListens = channels(RENDERER_SIDE, String.raw`ipcRenderer\.on`)
-const mainHandles = channels(MAIN, String.raw`ipcMain\.handle`)
+const rendererListens = new Set([
+  ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.on`),
+  ...fromPlugins('preload', String.raw`ipc\.listen`)
+])
+const mainHandles = new Set([
+  ...channels(MAIN, String.raw`ipcMain\.handle`),
+  ...fromPlugins('main', String.raw`ipc\.handle`)
+])
 const mainOns = channels(MAIN, String.raw`ipcMain\.on`)
 const menuMapStart = MAIN.indexOf('const MENU_SHORTCUT_CHANNEL')
 const menuMap = MAIN.slice(menuMapStart, MAIN.indexOf('\n}\n', menuMapStart))
 const mainSends = new Set([
   ...channels(MAIN, 'sendToRenderer'),
-  ...(MAIN.includes('sendToRenderer(MENU_SHORTCUT_CHANNEL[') ? tokens(menuMap) : [])
+  ...(MAIN.includes('sendToRenderer(MENU_SHORTCUT_CHANNEL[') ? tokens(menuMap) : []),
+  ...fromPlugins('main', String.raw`ipc\.push`)
 ])
 
 describe('IPC channels', () => {
@@ -59,10 +106,30 @@ describe('IPC channels', () => {
     expect(without(used, TABLE)).toEqual([])
   })
 
-  it('main and the app preload name every channel through the table, never as a string', () => {
+  it('every channel a plugin names is one it registers or listens on, and every one it registers or listens on is named', () => {
+    for (const p of PLUGIN_PARTS) {
+      const named = new Set(Object.values(p.channels))
+      const used = new Set(
+        [
+          ['main', String.raw`ipc\.(?:handle|push)`],
+          ['preload', String.raw`ipc\.(?:invoke|listen)`]
+        ].flatMap(([side, call]) => pluginChannels(p[side as 'main' | 'preload'], call, p.channels))
+      )
+      expect({ [p.id]: without(named, used) }).toEqual({ [p.id]: [] })
+      expect({ [p.id]: without(used, named) }).toEqual({ [p.id]: [] })
+    }
+  })
+
+  it('a channel has one owner: no plugin names a core channel or another plugin’s', () => {
+    const all = [...TABLE, ...PLUGIN_TABLE]
+    expect(all.filter((c, i) => all.indexOf(c) !== i)).toEqual([])
+  })
+
+  it('main, the app preload and the plugins name every channel through a table, never as a string', () => {
     const quoted = new RegExp(QUOTED, 'g')
-    const built = /(sendToRenderer|ipcMain\.\w+|ipcRenderer\.\w+)\(\s*`/
-    for (const text of [MAIN, PRELOAD]) {
+    const built = /(sendToRenderer|ipcMain\.\w+|ipcRenderer\.\w+|ipc\.\w+)\(\s*`/
+    const pluginCode = PLUGIN_PARTS.flatMap((p) => [p.main, p.preload])
+    for (const text of [MAIN, PRELOAD, ...pluginCode]) {
       expect(text.match(quoted)).toBeNull()
       expect(text).not.toMatch(built)
     }

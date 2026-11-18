@@ -31,7 +31,6 @@ import type {
   SessionSearchHits,
   SpawnedTab,
   UsageRead,
-  CronState,
   MachineState,
   DiscordStatus,
   AttentionEvent,
@@ -50,12 +49,24 @@ import type {
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
 import type { InboxSnapshot } from '@shared/inbox'
+import type { PreloadIpc } from '@core/ipc'
+import { pluginBridges } from '@plugins/bridges'
 import { TerminalDataSinks } from './terminalDataSinks'
 
 const terminalDataSinks = new TerminalDataSinks()
 ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.deliver(d.id, d.data))
 
+const pluginIpc: PreloadIpc = {
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  listen: (channel, listener) => {
+    const handler = (_e: unknown, ...args: Parameters<typeof listener>): void => listener(...args)
+    ipcRenderer.on(channel, handler)
+    return () => ipcRenderer.removeListener(channel, handler)
+  }
+}
+
 const api: KoloftApi = {
+  ...pluginBridges(pluginIpc),
   isDev: ipcRenderer.sendSync(CH.app.isDev) as boolean,
   domRenderer: process.env.KOLOFT_DOM_RENDERER === '1',
   testMode: process.env.KOLOFT_TEST_BACKGROUND === '1',
@@ -174,21 +185,6 @@ const api: KoloftApi = {
       const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
       ipcRenderer.on(CH.sessions.searchHits, handler)
       return () => ipcRenderer.removeListener(CH.sessions.searchHits, handler)
-    }
-  },
-  cron: {
-    list: () => ipcRenderer.invoke(CH.cron.list),
-    save: (input) => ipcRenderer.invoke(CH.cron.save, input),
-    delete: (jobId) => ipcRenderer.invoke(CH.cron.delete, jobId),
-    setEnabled: (jobId, on) => ipcRenderer.invoke(CH.cron.setEnabled, { jobId, on }),
-    runNow: (jobId) => ipcRenderer.invoke(CH.cron.runNow, jobId),
-    skills: (workspacePath, backend) => ipcRenderer.invoke(CH.cron.skills, workspacePath, backend),
-    trusted: (workspacePath, backend) =>
-      ipcRenderer.invoke(CH.cron.trusted, workspacePath, backend),
-    onState: (cb) => {
-      const handler = (_e: unknown, s: CronState): void => cb(s)
-      ipcRenderer.on(CH.cron.state, handler)
-      return () => ipcRenderer.removeListener(CH.cron.state, handler)
     }
   },
   toast: {

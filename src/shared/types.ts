@@ -1,6 +1,7 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
+import type { PluginBridges } from '@plugins/bridges'
 
 export interface ProjectInfo {
   root: string
@@ -1146,7 +1147,7 @@ export interface ScreenAnswer {
   sizedToPane: boolean
 }
 
-export interface KoloftApi {
+export interface KoloftApi extends PluginBridges {
   isDev: boolean
   domRenderer: boolean
   testMode: boolean
@@ -1480,17 +1481,6 @@ export interface KoloftApi {
   webgl: {
     // PLATFORM§20
     onRepair(cb: () => void): () => void
-  }
-  cron: {
-    list(): Promise<CronState>
-    save(input: CronSaveInput): Promise<CronSaveResult>
-    delete(jobId: string): Promise<void>
-    setEnabled(jobId: string, on: boolean): Promise<void>
-    runNow(jobId: string): Promise<CronRunNowResult>
-    skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
-    // CC§9
-    trusted(workspacePath: string, backend: BackendId): Promise<boolean>
-    onState(cb: (s: CronState) => void): () => void
   }
   toast: {
     onShow(cb: (text: string) => void): () => void

@@ -316,7 +316,6 @@ import { StallWatchWhileFocused } from './mainThreadStalls'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
-import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
@@ -475,7 +474,6 @@ import type {
   LoginProgress,
   CreateTabOptions,
   CreateTabResult,
-  CronSaveInput,
   ConductorOpenResult,
   PaletteRequest,
   ConductorSaveResult,
@@ -615,6 +613,11 @@ import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import { moment, type FileOpened } from '@core/moment'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
+import type { MainIpc } from '@core/ipc'
+import {
+  registerChannels as registerCronChannels,
+  pushState as pushCronState
+} from '@plugins/scheduled-tasks/main/channels'
 import { inboxVerb } from './agentInbox'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
@@ -1369,7 +1372,7 @@ function routeAttentionEvent(event: AttentionEvent): void {
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
-function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
+function sendToRenderer(channel: Channel | string, ...args: unknown[]): boolean {
   try {
     const win = mainWindow
     if (!win || win.isDestroyed()) return false
@@ -1380,6 +1383,12 @@ function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   } catch {
     return false
   }
+}
+
+const pluginIpc: MainIpc = {
+  handle: (channel, handler) =>
+    ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
+  push: (channel, ...args) => void sendToRenderer(channel, ...args)
 }
 
 const MENU_SHORTCUT_CHANNEL: {
@@ -4481,7 +4490,7 @@ app.whenReady().then(() => {
     },
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notify: notifyPlain,
-    push: (state) => sendToRenderer(CH.cron.state, state),
+    push: pushCronState(pluginIpc),
     killed: (tabId) => sendToRenderer(CH.tab.killedByMain, tabId),
     endpointAccountWithModelOf: (tabId) => {
       const name = tracker.infoOf(tabId)?.pickedAccount
@@ -6990,29 +6999,11 @@ function registerIpc(): void {
     rememberOpenTabs()
   })
 
-  ipcMain.handle(
-    CH.cron.list,
-    () => cronRunner?.state() ?? { jobs: [], live: [], folders: {}, notes: {} }
-  )
-  ipcMain.handle(
-    CH.cron.save,
-    (_e, input: CronSaveInput) =>
-      cronRunner?.save(input) ?? { ok: false, errors: [CRON_SAVE_MESSAGES.workspace] }
-  )
-  ipcMain.handle(CH.cron.delete, (_e, jobId: string) => cronRunner?.delete(jobId))
-  ipcMain.handle(CH.cron.setEnabled, (_e, arg: { jobId: string; on: boolean }) =>
-    cronRunner?.setEnabled(arg.jobId, arg.on)
-  )
-  ipcMain.handle(
-    CH.cron.runNow,
-    (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
-  )
-  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string, backend: BackendId) =>
-    hosts.of(workspacePath).listSkills(workspacePath, backend)
-  )
-  ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
-    sessionBackends.get(backend).trustsFolder(workspacePath)
-  )
+  registerCronChannels(pluginIpc, {
+    runner: () => cronRunner ?? undefined,
+    skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
+    trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
+  })
   ipcMain.handle(
     CH.sessionDefaults.read,
     async (_e, workspacePath: string): Promise<SessionDefaultsRead> => {
