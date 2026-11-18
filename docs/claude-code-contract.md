@@ -239,7 +239,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   and linux-arm64 (`strings`, 2026-11-04: the same 33 names in the same order, the same
   reasons and sources), and on 2.1.319, darwin-arm64 and linux-arm64 (`strings`,
   2026-11-07: the same again), and on 2.1.325, darwin-arm64 and linux-arm64 (`strings`,
-  2026-11-14, beside 2.1.323: the same 33 names, reasons and sources).
+  2026-11-14, beside 2.1.323: the same 33 names, reasons and sources), and on 2.1.327,
+  darwin-arm64 (`strings` byte-identical to 2.1.325's list, 2026-11-18; live, `/clear` in
+  a pty fired SessionEnd `reason: "clear"` with keys `cwd, hook_event_name, prompt_id,
+  reason, session_id, transcript_path`, then SessionStart `source: "clear"` with a new
+  id, and `/exit` gave `prompt_input_exit`, the same on both builds).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -1512,7 +1516,10 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `'undefined'` (twice) while the shim's `ANT_ACCOUNT`, exported in the
   same step, was there; the 2.1.316 binary's child-env builder lists
   `CLAUDE_CODE_OAUTH_TOKEN` first in the names it strips (`strings`). So a nested
-  `claude` goes back through the shim and picks an account of its own.
+  `claude` goes back through the shim and picks an account of its own. Still so on
+  2.1.325 and 2.1.327 (2026-11-18, `-p` with the token set and a Bash `env` call against a
+  stand-in API); 2.1.327 also drops `CLAUDE_CODE_OAUTH_SCOPES` from the child (2.1.325
+  passed it on), which Koloft does not set, and adds `CLAUDE_CODE_CHILD_NOTES_DIR`.
 - **Since 2.1.310 a gateway that refuses the effort beta or `role: "system"` turns
   gets the request again without them, and Koloft's hook text still arrives.**
   Measured 2026-10-25 on CC 2.1.309 and 2.1.310: `claude -p` with one Bash tool call
@@ -2143,6 +2150,15 @@ other bullets of §9 were not re-measured on this build.
   stand-in (2026-11-14, darwin-arm64, 2–3 runs per cell). So the 2.1.325 changelog's
   "`claude -p` with no cached account data … wait for that data before its first
   request" did not show offline; how long it waits with a real OAuth token is not probed.
+  On 2.1.327 (2026-11-18, beside 2.1.325, 5 runs per build with an API key and 5 with a
+  made-up `CLAUDE_CODE_OAUTH_TOKEN`, never-used and reused config dirs) the same argv
+  gave the same stdout, an empty stderr and exit 0 on both, and reached the stand-in in
+  0.36–0.64 s (2.1.325 0.34–0.60). `--tools ''` prints no warning on either; the 2.1.326
+  startup warning for a list entry that "doesn't look like a complete rule" (`-p
+  --allowedTools 'Bash(koloft'`) goes to stderr only, the answer and exit code
+  unchanged. A prompt right after a list option (`--add-dir <d> PROMPT`) is taken as
+  part of the list on both builds in `-p` (`Error: Input must be provided…`); with `--`
+  before it, it is the prompt.
 - **The one-shot takes any model alias and `--effort`; only `max` outlasts 15 s.**
   2026-11-11, CC 2.1.322, through Koloft's shim on real accounts, Assist's argv with
   `--model <alias>` and `--effort <level>` after `-p`. A 9.5 KB prompt, three runs each
@@ -2670,6 +2686,14 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   bytes instead of 3.1–3.4 KB, and 60 trackpad-speed reports 48.6–88 KB instead of
   314–342 KB. Same strings and run as above; whether the network reached the flag
   service is inferred, not checked.
+  **2.1.327 drops both switches** (2026-11-18, `strings` of the darwin-arm64 build against
+  2.1.325's, not run): `CLAUDE_CODE_DECSTBM`, `tengu_marlin_porch` and the gate that read
+  them are gone, and the scroll region turns on wherever synchronized output is on and no
+  `TMUX`, `ZELLIJ`, JetBrains terminal or `WT_SESSION` is set; a debug line `DECSTBM:
+  enabled|gated (TMUX=… ZELLIJ=… TERM_PROGRAM=… TERM=…)` is new. So on 2.1.327 a local
+  tab with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1` gets the cheap scroll without the env var,
+  which stays set only for older builds. Not rerun on 2.1.327: the wheel-scroll bytes,
+  and whether the XTVERSION condition above still holds.
 - **With `TERM_PROGRAM=Apple_Terminal`, fullscreen claude asks for the cursor position
   (`ESC[?6n`) about every 200 ms, idle or not, as long as something answers it; with
   `TERM_PROGRAM` unset it never asks, and still draws in true colour (`38;2;`).** Same
@@ -3015,8 +3039,8 @@ sessions.
   <folder>/)` to its `skill_listing` description; 2.1.308 left it out. A `--plugin-dir`
   skill is `<plugin>:<name>` on both builds, beside a same-named user skill (2026-10-23,
   `claude -p` init `skills` and `skill_listing` in a scratch `HOME`). It also opens that
-  folder to the model's file tools. Koloft passes no `--add-dir` to claude, only
-  `--plugin-dir`.
+  folder to the model's file tools. Koloft gives skills with `--plugin-dir`; its only
+  `--add-dir` is the picture folder of a first prompt (§18), always before `--`.
 - **A SessionStart hook's `hookSpecificOutput.additionalContext`** (given through a
   `--settings` file) reached the model.
 - **`--append-system-prompt-file <file>`** reached the model.
@@ -3041,6 +3065,17 @@ sessions.
   …)`, a variable assignment, `X=1 koloft`, `( … )`, `cd` or `>` outside the working
   folders, `./koloft`, an absolute path, `env`, `exec` and a trailing `&` asked on both.
   Auto mode, remote tabs and server-fetched flags were not probed.
+  2.1.327 (2026-11-18, the same setup beside 2.1.325) still refuses the loop as the first
+  call of a session in `default` and `acceptEdits`, on both builds; sent as the 13th call
+  of one session, after plain `koloft` calls, it ran on both, so whether it asks depends
+  on what ran before. 54 calls (the shapes above plus `gh pr list`, `npm test`, `cp`,
+  `mv`, `git push --force`, `git reset --hard`, `rm -rf` outside the work folders, writes
+  into `.git`, `.claude` and `~/.zshrc`, `curl | sh`) got the same allow or deny on both
+  builds in `default`, `acceptEdits` and `--dangerously-skip-permissions`, where all 54
+  ran with no `PermissionRequest`: the 2.1.326 changelog's "some tool calls in bypass
+  permissions mode … ask" and "some `cp` and `mv` commands … ask first" were not found.
+  An interactive tab started Koloft's way with no permission flag started in auto mode
+  (`permissionMode: "auto"`) on both builds, in a never-used and a reused config dir.
 - **Read-only git aimed at another checkout asks on 2.1.323 and 2.1.325 alike.**
   2026-11-14, the same `-p` setup in `default` and `acceptEdits`: from a `-w` worktree,
   `git -C <main checkout> status|log`, `git -C <other repo>` (trusted in `.claude.json`
@@ -3447,7 +3482,16 @@ below was one run.
   `--permission-mode default`) a hook answering `allow` with `updatedInput` set to the
   `tool_input` unchanged, 4 s after `PermissionRequest`, ran a Bash call that 2.1.325
   newly asks for (`for i in 1 2; do koloft …; done`, §13); the `AskUserQuestion` shape
-  was not rerun.
+  was not rerun. On 2.1.327 (2026-11-18, beside 2.1.325, `-p`, a stand-in API, every hook
+  printing the shape Koloft prints): the SessionStart and UserPromptSubmit
+  `additionalContext` reached the first request, PostToolUse's reached the later ones
+  as a `role: "system"` message, the Stop hook's `{"decision": "block", "reason": …}`
+  sent one more request so the turn went on, and a `PermissionRequest` `allow` with
+  `updatedInput` equal to the call's own `tool_input` let `gh pr list`, otherwise
+  refused, run — the same on both builds, with the same stdin keys for every event. The
+  2.1.326 changelog's "`"decision": "block"` … hold in more cases" and "`updatedInput` is
+  kept when more than one hook answers" changed none of these. The `deny` and `answers`
+  shapes were not rerun.
 - **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
   `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
   nothing):
@@ -3835,7 +3879,11 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   Desktop)", flags `--json --event create|remove --name --path --trusted-folder`,
   refusing with `stdout_is_tty` or `spawned_by_session` — the `.command("…")` names in
   `strings` going from 57 to 58 on darwin-arm64 and linux-arm64; 2.1.324 has no
-  changelog section and was not downloaded).
+  changelog section and was not downloaded) and 2.1.327 (`2.1.327 (Claude Code)`,
+  2026-11-18, beside 2.1.325 in a scratch `HOME`: `--help` reworded, no flag added or
+  gone; `mcp --help` lets `add-json` read `-`; `agents` and `install` help reworded;
+  `auth`, `update`, `plugin` and `doctor` help byte-identical; `auth status` and `mcp
+  list` the same output apart from paths; `claude update` itself not run).
   The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
   refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
   `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
