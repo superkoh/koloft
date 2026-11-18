@@ -1543,7 +1543,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       {dlOpen && (
         <BrowserDownloads
           list={downloads}
-          onReveal={(path) => window.api.fs.reveal(path)}
+          onReveal={(path) => window.api.os.reveal(path)}
           onCancel={(id) => window.api.browser.cancelDownload(id)}
           onRetry={(id) => window.api.browser.retryDownload(id)}
           onClear={clearFinished}

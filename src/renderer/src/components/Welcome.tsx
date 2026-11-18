@@ -598,7 +598,7 @@ export function Welcome({
                   {login?.progress?.url && (
                     <button
                       className="ob-link"
-                      onClick={() => window.api.preview.osOpen(login.progress?.url ?? '')}
+                      onClick={() => window.api.os.open(login.progress?.url ?? '')}
                     >
                       Open the page again
                     </button>
