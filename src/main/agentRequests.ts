@@ -1,9 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import type { SessionInfo } from '@shared/types'
-import { agentGuide } from '@shared/agentGuide'
 import { errorText } from '@core/errorText'
-import { answered, refused, splitAtDashes, type AgentReply, type AgentVerb } from '@core/command'
+import { refused, splitAtDashes, type AgentReply } from '@core/command'
 import type { Commands } from '@core/commands'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
@@ -28,11 +27,6 @@ export {
 } from '@core/command'
 
 export { errorText }
-
-export const helpVerb =
-  (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>
-  async (_args, caller) =>
-    answered(agentGuide(await rulesOfTab(caller.tabId)))
 
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."
