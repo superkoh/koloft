@@ -44,8 +44,11 @@ function check(dir: string): { code: number | null; reported: string[] } {
 const lines = (...l: string[]): string => l.join('\n') + '\n'
 
 describe('check-plugin-imports', () => {
-  it('lets a plugin import core, its own folder and the api.ts of a plugin it needs, and lets the app import the list', () => {
+  it('lets a plugin import core, its own folder and the api.ts of a plugin it needs, and lets the app import the list and the list of preload bridges', () => {
     const dir = fixtureRepo({
+      'src/plugins/bridges.ts': "import { bridge } from './a/preload/bridge'\n",
+      'src/plugins/a/preload/bridge.ts': 'export const bridge = 1\n',
+      'src/preload/index.ts': "import { pluginBridges } from '@plugins/bridges'\n",
       'src/plugins/b/main/ok.ts': lines(
         "import { PLUGIN_FORMAT_VERSION } from '@core/plugin'",
         "import { fromA } from '@plugins/a/api'",
@@ -69,8 +72,10 @@ describe('check-plugin-imports', () => {
         "import { app } from '../../../main/index'",
         "const plugin = import('@plugins/b')",
         "import { sneak } from '@core/../plugins/b/main/inner'",
-        "type Inner = typeof import('@plugins/a/main/inner')"
+        "type Inner = typeof import('@plugins/a/main/inner')",
+        "import { pluginBridges } from '../../bridges'"
       ),
+      'src/plugins/bridges.ts': "import { start } from './a/main/start'\n",
       'src/core/bad.ts': "import { fromA } from '@plugins/a/api'\n",
       'src/renderer/src/bad.tsx': "const b = import('../../plugins/b/api')\n",
       'src/plugins/list.ts':
@@ -83,6 +88,7 @@ describe('check-plugin-imports', () => {
       reported: [
         'src/core/bad.ts:1 @plugins/a/api',
         'src/plugins/a/broken.ts: cannot',
+        'src/plugins/bridges.ts:1 ./a/main/start',
         'src/plugins/c/main/bad.ts:1 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:2 @plugins/a/api',
         'src/plugins/c/main/bad.ts:3 ../../list',
@@ -91,6 +97,7 @@ describe('check-plugin-imports', () => {
         'src/plugins/c/main/bad.ts:6 @plugins/b',
         'src/plugins/c/main/bad.ts:7 @core/../plugins/b/main/inner',
         'src/plugins/c/main/bad.ts:8 @plugins/a/main/inner',
+        'src/plugins/c/main/bad.ts:9 ../../bridges',
         'src/plugins/list.ts:4 ./a/main/start',
         'src/renderer/src/bad.tsx:1 ../../plugins/b/api'
       ]
