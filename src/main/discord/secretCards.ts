@@ -12,6 +12,7 @@ const SHORT_TEXT = 1
 const TEXT_INPUT = 4
 const ACTION_ROW = 1
 const LONGEST_SECRET = 4000
+export const A_CARD_REACHES_DISCORD_WITHIN_MS = 60_000
 
 export const PLAIN_TEXT_WARNING =
   '-# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.'
@@ -118,9 +119,14 @@ export class SecretCards {
 
   private async placeCard(id: string, shown: Shown): Promise<void> {
     const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
+    const late = setTimeout(
+      () => this.d.asks.notShownElsewhere(id),
+      A_CARD_REACHES_DISCORD_WITHIN_MS
+    )
     const posted = shown.ask.taps
       ? await this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
       : await this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
+    clearTimeout(late)
     if (!posted) this.d.asks.notShownElsewhere(id)
   }
 
@@ -185,7 +191,8 @@ export class SecretCards {
       if (!this.waiting(id)) return
       const before = shown.placed
       const placed = await this.placeTapCard(id, shown, `-# ${note} This is the page now.`)
-      if (placed && before && this.waiting(id))
+      if (!placed) this.d.asks.notShownElsewhere(id)
+      else if (before && this.waiting(id))
         void this.d
           .edit(before, cardOf(shown.ask, before.name, `-# ${note}`))
           .catch(() => undefined)

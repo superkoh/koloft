@@ -4229,15 +4229,12 @@ app.whenReady().then(() => {
     },
     answered: (tabId, reply) => buttons.answered(tabId, reply)
   })
-  const secretChannelOf = (tabId: string): string | undefined =>
-    roomOfTab(tabId) ?? bindingNow.channel()?.channelId
   const secretCards = new SecretCards({
     asks: secrets,
     owner: () => bindingNow.owner(),
-    cardWanted: (tabId) =>
-      discordConnected && !!secretChannelOf(tabId) && !!discordRelay?.reaches(tabId),
+    cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
     place: async (tabId, card, files) => {
-      const channelId = secretChannelOf(tabId)
+      const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
       if (!channelId) return undefined
       const [name] = await Promise.all([
         secretAskerName(tabId),

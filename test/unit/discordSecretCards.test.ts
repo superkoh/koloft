@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
+  A_CARD_REACHES_DISCORD_WITHIN_MS,
   ANSWERED_IN_KOLOFT,
   NO_LONGER_WAITING,
   NOTHING_TYPED,
@@ -15,6 +16,7 @@ import type { Card } from '../../src/main/discord/cards'
 import type { DiscordInteraction } from '../../src/main/discord/link'
 import type { SecretAskView } from '../../src/shared/types'
 import { ONLY_THE_OWNER_ANSWERS } from '../../src/main/discord/buttons'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS } from '../../src/main/agentShim'
 
 const OWNER = '555'
 const SECRET = 'hunter2 "x" \\ 日本'
@@ -64,11 +66,13 @@ function setup(over: Partial<SecretCardDeps> = {}) {
     customId: cards[0]?.buttons?.[0].id,
     ...over
   })
-  const posted = (): Promise<void> =>
+  const until = (done: () => boolean): Promise<void> =>
     new Promise((resolve) => {
-      const tick = (): void => (cards.length ? resolve() : void setTimeout(tick, 1))
+      const tick = (): void => (done() ? resolve() : void setTimeout(tick, 1))
       tick()
     })
+  const posted = (): Promise<void> => until(() => cards.length > 0)
+  const marked = (): Promise<void> => until(() => onlyInKoloft.length > 0)
   const lastShown = (): SecretAskView[] => shown.at(-1) ?? []
   return {
     asks,
@@ -79,6 +83,7 @@ function setup(over: Partial<SecretCardDeps> = {}) {
     onlyInKoloft,
     interaction,
     posted,
+    marked,
     lastShown
   }
 }
@@ -271,9 +276,9 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     expect(tabs).toEqual(['tab-1', 'tab-9'])
   })
 
-  it('when the next card cannot be posted at all, the card before keeps its buttons', async () => {
+  it('when the next card cannot be posted at all, the card before keeps its buttons and the session is marked as waiting on the owner in Koloft', async () => {
     let placed = 0
-    const { asks, secretCards, cards, edits, interaction, posted } = setup({
+    const { asks, secretCards, cards, edits, onlyInKoloft, interaction, posted, marked } = setup({
       place: async (_tab, card): Promise<PlacedCard> => {
         if (placed++) throw new Error('Discord answered 500')
         cards.push(card('fix-login'))
@@ -282,11 +287,12 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     })
     void asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped A1.' }), LONG)
     await posted()
+    expect(onlyInKoloft).toEqual([])
     await secretCards.submit(interaction(5, { fields: { value: 'A1' } }))
-    await settle()
-    await settle()
+    await marked()
     expect(placed).toBe(3)
     expect(edits).toEqual([])
+    expect(onlyInKoloft).toEqual(['tab-1'])
   })
 
   it('when Discord does not take the new picture, the card still comes, says so, and the squares named next are read on the picture the owner last saw', async () => {
@@ -378,8 +384,7 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     await pictureRefused.posted()
     expect(pictureRefused.onlyInKoloft).toEqual([])
     const allRefused = tapsWith(() => true)
-    await settle()
-    await settle()
+    await allRefused.marked()
     expect(allRefused.onlyInKoloft).toEqual(['tab-1'])
   })
 })
@@ -397,7 +402,7 @@ describe('a secret card Discord does not take', () => {
       }
     })
     const answer = refused.asks.ask(ask, LONG)
-    await settle()
+    await refused.marked()
     expect(refused.onlyInKoloft).toEqual(['tab-1'])
     refused.asks.answer(refused.lastShown()[0].id, 'pw')
     expect(await answer).toEqual({ typed: 'pw' })
@@ -405,13 +410,33 @@ describe('a secret card Discord does not take', () => {
 
   it('an ask that moved to another tab before its card failed marks the tab it is in now', async () => {
     let fail!: (e: Error) => void
-    const { asks, onlyInKoloft } = setup({
+    const { asks, onlyInKoloft, marked } = setup({
       place: () => new Promise((_resolve, reject) => (fail = reject))
     })
     void asks.ask(ask, LONG)
     asks.rehome('tab-1', 'tab-9')
     fail(new Error('Discord answered 404'))
-    await settle()
+    await marked()
     expect(onlyInKoloft).toEqual(['tab-9'])
+  })
+
+  it('a card Discord has neither taken nor refused within its time marks the session in Koloft, and landing later adds no second mark', async () => {
+    vi.useFakeTimers()
+    try {
+      let land!: (p: PlacedCard) => void
+      const { asks, onlyInKoloft } = setup({
+        place: () => new Promise((resolve) => (land = resolve))
+      })
+      void asks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS)
+      await vi.advanceTimersByTimeAsync(A_CARD_REACHES_DISCORD_WITHIN_MS - 1)
+      expect(onlyInKoloft).toEqual([])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(onlyInKoloft).toEqual(['tab-1'])
+      land(PLACED)
+      await vi.advanceTimersByTimeAsync(A_CARD_REACHES_DISCORD_WITHIN_MS)
+      expect(onlyInKoloft).toEqual(['tab-1'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
