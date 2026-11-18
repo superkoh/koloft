@@ -59,7 +59,23 @@ function alive(pid) {
   }
 }
 
-function attach(name) {
+function sizeOf(file) {
+  try {
+    return fs.statSync(file).size
+  } catch {
+    return 0
+  }
+}
+
+function readBetween(file, from, to) {
+  const buf = Buffer.alloc(to - from)
+  const fd = fs.openSync(file, 'r')
+  fs.readSync(fd, buf, 0, buf.length, from)
+  fs.closeSync(fd)
+  return buf
+}
+
+function attach(name, paneJustStarted = false) {
   const rec = recordOf(name)
   const pid = rec?.pid ?? 0
   const io = rec?.io ?? name
@@ -86,21 +102,25 @@ function attach(name) {
 
   let off = 0
   let held = ''
+  // PLATFORM§35
+  const printedWhileDetached = paneJustStarted ? 0 : sizeOf(outPath(io))
   const pump = () => {
     keysAtOnceOnceThePaneIsRaw()
     try {
+      if (off < printedWhileDetached) {
+        const redrawn = readBetween(outPath(io), off, printedWhileDetached)
+        off = printedWhileDetached
+        process.stdout.write(passThrough(redrawn, false))
+      }
       const size = fs.statSync(outPath(io)).size
       if (size <= off) return
-      const buf = Buffer.alloc(size - off)
-      const fd = fs.openSync(outPath(io), 'r')
-      fs.readSync(fd, buf, 0, buf.length, off)
-      fs.closeSync(fd)
+      const buf = readBetween(outPath(io), off, size)
       off = size
-      process.stdout.write(passThrough(buf))
+      process.stdout.write(passThrough(buf, true))
     } catch {}
   }
   // PLATFORM§35
-  const passThrough = (buf) => {
+  const passThrough = (buf, attached) => {
     let text = held + buf.toString('latin1')
     held = ''
     const open = text.lastIndexOf(DCS_OPEN)
@@ -108,7 +128,7 @@ function attach(name) {
       held = text.slice(open)
       text = text.slice(0, open)
     }
-    const passes = !fs.existsSync(path.join(STATE, 'no-passthrough'))
+    const passes = attached && !fs.existsSync(path.join(STATE, 'no-passthrough'))
     text = text.replace(DCS, (_, inner) => (passes ? inner.replace(/\x1b\x1b/g, '\x1b') : ''))
     return Buffer.from(text, 'latin1')
   }
@@ -126,7 +146,8 @@ function attach(name) {
 if (verb === 'new-session') {
   const name = flagVal('-s')
   const cmd = rest[rest.length - 1]
-  if (!alive(pidOf(name))) {
+  const paneJustStarted = !alive(pidOf(name))
+  if (paneJustStarted) {
     const io = name
     const fifo = fifoPath(io)
     try {
@@ -154,7 +175,7 @@ if (verb === 'new-session') {
     child.unref()
     fs.writeFileSync(aliveFile(name), JSON.stringify({ pid: child.pid, io }))
   }
-  attach(name)
+  attach(name, paneJustStarted)
 } else if (verb === 'attach') {
   attach(flagVal('-t'))
 } else if (verb === 'ls') {
