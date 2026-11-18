@@ -10,7 +10,7 @@ import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gi
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
-import { isRecord, stringsIn } from './workbenchState'
+import { stringsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
@@ -50,7 +50,7 @@ const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
 
 const KEPT_ON_RESET = [...APP_KEPT_ON_RESET, ...PLUGIN_KEYS.keptOnReset]
 const WRITTEN_BY_MAIN_ONLY = [...APP_WRITTEN_BY_MAIN_ONLY, ...PLUGIN_KEYS.writtenByMainOnly]
-export const RETIRED_KEYS = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
+const RETIRED_KEYS = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
 
 const without = <T extends object>(from: T, keys: readonly string[]): Partial<T> =>
   Object.fromEntries(Object.entries(from).filter(([key]) => !keys.includes(key))) as Partial<T>
@@ -64,7 +64,8 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
 }
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
-  const doc = isRecord(raw) ? raw : {}
+  const doc: Record<string, unknown> =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const merged = { ...DEFAULT_SETTINGS, ...without(doc, RETIRED_KEYS) } as Settings
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)

@@ -88,25 +88,12 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
     expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
   })
 
-  it('strips exactly the keys only the main process writes, and lets every other key through', () => {
-    const kept = Object.keys(sanitizeSettingsPatch({ ...DEFAULT_SETTINGS }))
-    expect(
-      Object.keys(DEFAULT_SETTINGS)
-        .filter((k) => !kept.includes(k))
-        .sort()
-    ).toEqual(
-      [
-        'accounts',
-        'discord',
-        'butlerSession',
-        'gitAccounts',
-        'gitPicks',
-        'gitSuggestionsDismissed',
-        'gitMachines',
-        'todoNotes',
-        'sessionDefaults'
-      ].sort()
-    )
+  it('strips the butler’s conversation, which only the main process writes, and lets his name through', () => {
+    const patch = {
+      butlerSession: { sessionIds: ['s'] },
+      butler: { name: 'Jeeves', formerNames: [] }
+    } as never
+    expect(sanitizeSettingsPatch(patch)).toEqual({ butler: { name: 'Jeeves', formerNames: [] } })
   })
 
   it('lets the git auto-fetch switch through untouched (no whitelist to extend)', () => {
@@ -604,19 +591,21 @@ describe('a settings file an older Koloft wrote', () => {
     `)
   })
 
-  it('loads every key exactly as before: retired keys dropped, a key Koloft does not know kept', () => {
-    expect(sanitizeLoadedSettings(older)).toMatchInlineSnapshot(`
+  it('loads every key exactly as before: each key the file holds cleaned as before, retired keys dropped, a key Koloft does not know kept, every other key at its default', () => {
+    const loaded = sanitizeLoadedSettings(older) as unknown as Record<string, unknown>
+    const fromFile = Object.fromEntries(
+      Object.keys(older)
+        .filter((k) => k in loaded)
+        .map((k) => [k, loaded[k]])
+    )
+    expect(fromFile).toMatchInlineSnapshot(`
       {
         "aKeyANewerKoloftWrote": {
           "kept": true,
         },
-        "accounts": [],
-        "agentTools": true,
         "assist": {
           "backend": "claude",
         },
-        "browserControl": true,
-        "browserPaneWidth": 560,
         "butler": {
           "formerNames": [
             "Alfred",
@@ -676,56 +665,21 @@ describe('a settings file an older Koloft wrote', () => {
           "userId": "4242",
           "userName": "owner",
         },
-        "dockBadge": true,
-        "fablePriority": true,
-        "filePaneWidth": 560,
-        "fileTreeHeight": 260,
-        "fontFamily": ""JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace",
         "fontSize": 13,
-        "gitAccounts": [],
-        "gitAutoFetch": true,
-        "gitAutoPull": false,
-        "gitMachines": {},
-        "gitPicks": [],
-        "gitSuggestionsDismissed": [],
-        "hintsOff": false,
-        "hintsSeen": [
-          "workbench",
-          "approval",
-          "agent-web",
-          "worktree",
-          "github",
-        ],
-        "keepAwake": true,
-        "newProjectFolders": {},
-        "notesFolded": false,
-        "notesHeight": 260,
-        "notifyApproval": true,
-        "notifyApprovalSound": false,
-        "notifyExited": true,
-        "notifyTurnDone": true,
-        "onboardingSeen": true,
-        "ownerAsleepSince": null,
-        "sessionDefaults": {},
-        "sessionMethods": {
-          "defaultBackend": "claude",
-          "enabled": {
-            "agy": true,
-            "claude": true,
-            "codex": true,
-            "muse": true,
-          },
-        },
-        "sidebarHidden": false,
-        "sidebarWidth": 280,
         "skipPermissions": true,
-        "skipPermissionsAgreed": true,
-        "statuslineBuiltin": true,
-        "todoNotes": {},
-        "workbenchWidth": 560,
-        "worldClocks": [],
       }
     `)
+    expect(Object.keys(loaded).sort()).toEqual(
+      [...Object.keys(DEFAULT_SETTINGS), 'aKeyANewerKoloftWrote'].sort()
+    )
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS))
+      if (
+        !(k in older) &&
+        k !== 'skipPermissionsAgreed' &&
+        k !== 'onboardingSeen' &&
+        k !== 'hintsSeen'
+      )
+        expect(loaded[k], k).toEqual(v)
   })
 
   it('loads the same again from what it writes back', () => {

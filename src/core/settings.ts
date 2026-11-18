@@ -18,9 +18,16 @@ export const setting = <T>(key: SettingKey<T>): SettingKey<T> => key
 
 export type SettingKeys = Readonly<Record<string, SettingKey<unknown>>>
 
-export type SettingValues<K extends SettingKeys> = {
+type SettingValues<K extends SettingKeys> = {
   [P in keyof K]: K[P] extends SettingKey<infer T> ? T : never
 }
+
+type EachAsArgument<L> = { [P in keyof L]: (values: L[P]) => void }[keyof L]
+
+export type AllSettingValues<L extends Readonly<Record<string, SettingKeys>>> =
+  EachAsArgument<{ [P in keyof L]: SettingValues<L[P]> }> extends (values: infer All) => void
+    ? All
+    : never
 
 interface Owned {
   plugin: PluginManifest
