@@ -508,7 +508,7 @@ import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/b
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
-import type { OwnPick, SessionDefaultsRead } from '@shared/types'
+import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import { DiscordBinding } from './discord/binding'
 import { discordApiUrl, DiscordLink } from './discord/link'
@@ -7327,10 +7327,7 @@ function registerIpc(): void {
     backends: sessionBackends,
     noteActivity: (tabId) => tracker.noteActivity(tabId),
     installed: installedBackends,
-    installTool: (backend) => {
-      const id = backendIdOf(backend)
-      return id ? installTool(id) : null
-    },
+    installTool,
     list: allSessions,
     archive: archiveSession,
     setResident: (id, on) => workspaceMgr?.setResident(id, on),
@@ -7346,35 +7343,27 @@ function registerIpc(): void {
     attention: () => attention.list(),
     lookedAt: (tabId) => {
       uiActiveTabId = tabId
-      lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
+      lastTabTheOwnerLookedAt = tabId ?? lastTabTheOwnerLookedAt
       guard?.lookedAtChanged()
-      if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-      if (uiActiveTabId && windowFocused()) ownerSees(uiActiveTabId)
+      if (tabId) tracker.noteActivity(tabId)
+      if (tabId && windowFocused()) ownerSees(tabId)
       rememberOpenTabs()
     },
-    readDefaults: async (workspacePath): Promise<SessionDefaultsRead> => {
-      try {
-        const [defaults, listed] = await Promise.all([
-          defaultsOfProjects.read(workspacePath),
-          loadSettings().sessionMethods.enabled.agy
-            ? Promise.race([
-                listedModels('agy'),
-                new Promise<undefined>((done) =>
-                  setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
-                )
-              ])
-            : undefined
-        ])
-        return { ok: true, defaults, familyEfforts: familyEfforts('agy', listed) }
-      } catch (error) {
-        return { ok: false, error: errorText(error) }
-      }
+    readDefaults: async (workspacePath) => {
+      const [defaults, listed] = await Promise.all([
+        defaultsOfProjects.read(workspacePath),
+        loadSettings().sessionMethods.enabled.agy
+          ? Promise.race([
+              listedModels('agy'),
+              new Promise<undefined>((done) =>
+                setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+              )
+            ])
+          : undefined
+      ])
+      return { defaults, familyEfforts: familyEfforts('agy', listed) }
     },
-    writeDefaults: (workspacePath, raw) =>
-      defaultsOfProjects.write(workspacePath, raw).then(
-        () => ({ ok: true }),
-        (error: unknown) => ({ ok: false, error: errorText(error) })
-      )
+    writeDefaults: (workspacePath, raw) => defaultsOfProjects.write(workspacePath, raw)
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

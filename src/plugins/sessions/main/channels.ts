@@ -1,4 +1,6 @@
 import type { MainIpc } from '@core/ipc'
+import { errorText } from '@core/errorText'
+import { backendIdOf } from '@shared/sessionBackend'
 import type {
   AttentionEvent,
   BackendAvailability,
@@ -32,7 +34,7 @@ export interface ChannelDeps {
   backends: Backends
   noteActivity(tabId: string): void
   installed(): Promise<BackendAvailability[]>
-  installTool(backend: unknown): { tabId: string; cwd: string } | null
+  installTool(backend: BackendId): { tabId: string; cwd: string } | null
   list(): SessionInfo[]
   archive(id: string): boolean
   setResident(id: string, on: boolean): void
@@ -43,8 +45,10 @@ export interface ChannelDeps {
   search(searchId: number, term: string): void
   attention(): AttentionEvent[]
   lookedAt(tabId: string | null): void
-  readDefaults(workspacePath: string): Promise<SessionDefaultsRead>
-  writeDefaults(workspacePath: string, raw: unknown): Promise<{ ok: boolean; error?: string }>
+  readDefaults(
+    workspacePath: string
+  ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
+  writeDefaults(workspacePath: string, raw: unknown): Promise<void>
 }
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
@@ -58,7 +62,10 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     if (recheck === true) backends.forgetAvailability()
     return deps.installed()
   })
-  ipc.handle(CHANNELS.installTool, (backend: unknown) => deps.installTool(backend))
+  ipc.handle(CHANNELS.installTool, (backend: unknown) => {
+    const id = backendIdOf(backend)
+    return id ? deps.installTool(id) : null
+  })
   ipc.handle(CHANNELS.archive, (id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
     return deps.archive(id)
@@ -109,9 +116,18 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.on(CHANNELS.activeTab, (id: string | null) => {
     deps.lookedAt(typeof id === 'string' && id ? id : null)
   })
-  ipc.handle(CHANNELS.defaultsRead, (workspacePath: string) => deps.readDefaults(workspacePath))
+  ipc.handle(CHANNELS.defaultsRead, async (workspacePath: string): Promise<SessionDefaultsRead> => {
+    try {
+      return { ok: true, ...(await deps.readDefaults(workspacePath)) }
+    } catch (error) {
+      return { ok: false, error: errorText(error) }
+    }
+  })
   ipc.handle(CHANNELS.defaultsWrite, (workspacePath: string, raw: unknown) =>
-    deps.writeDefaults(workspacePath, raw)
+    deps.writeDefaults(workspacePath, raw).then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ ok: false, error: errorText(error) })
+    )
   )
 }
 
