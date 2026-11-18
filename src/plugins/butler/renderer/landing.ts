@@ -1,5 +1,5 @@
 import { useStore, type LandingAfterClose } from '@renderer/store'
-import { butlerSetUp, butlerTabOf, isButlerTab } from './butlerTabs'
+import { butlerSetUp, butlerTabOf, isButlerTab, isButlersWorkspace } from './butlerTabs'
 import { useButler } from './state'
 
 function landOnButler(): void {
@@ -26,6 +26,8 @@ export function useButlerShowsGlobalNote(tabId: string | null, rowId: string | n
     (s) =>
       !!tabId &&
       (isButlerTab(s.sessions, openedTab, tabId) ||
-        !!s.butlerWorkspace?.rows.some((r) => r.id === rowId))
+        s.claimedWorkspaces.some(
+          (w) => isButlersWorkspace(w) && w.rows.some((r) => r.id === rowId)
+        ))
   )
 }

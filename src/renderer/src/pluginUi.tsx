@@ -4,8 +4,8 @@ import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import type { UiPlace } from '@core/plugin'
 import { placeUi, type PlacedPart, type PlacedUi, type Slot } from '@core/ui'
-import { landAfterClosingAWatchedSession, useStore } from './store'
-import { GLOBAL_NOTE, LANDING_AFTER_CLOSE } from './slots'
+import { keepWorkspacesOutOfTheList, landAfterClosingAWatchedSession, useStore } from './store'
+import { GLOBAL_NOTE, LANDING_AFTER_CLOSE, WORKSPACE_CLAIM } from './slots'
 
 let placedOnce: PlacedUi | undefined
 
@@ -14,6 +14,8 @@ function placed(): PlacedUi {
   placedOnce = placeUi(PLUGINS, PLUGIN_UIS)
   const [landing] = placedOnce.fillsOf(LANDING_AFTER_CLOSE)
   if (landing) landAfterClosingAWatchedSession(landing)
+  const claims = placedOnce.fillsOf(WORKSPACE_CLAIM)
+  keepWorkspacesOutOfTheList((w) => claims.some((claim) => claim(w)))
   return placedOnce
 }
 

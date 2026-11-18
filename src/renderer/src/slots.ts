@@ -4,11 +4,13 @@ import { slot } from '@core/ui'
 import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
-import type { LandingAfterClose } from './store'
+import type { ClaimsWorkspace, LandingAfterClose } from './store'
 import type { Icon } from './icons'
 import type { Settings } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
+
+export const WORKSPACE_CLAIM = slot<ClaimsWorkspace>('workspace-claim')
 
 export type UseShowsGlobalNote = (tabId: string | null, rowId: string | null) => boolean
 
