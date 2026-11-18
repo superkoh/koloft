@@ -116,6 +116,7 @@ function harness(
   waitsOnAnother: (sessionId: string) => boolean
   sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
   startForReply: ReturnType<typeof sessionVerb>['startForReply']
+  startButlerHelper: ReturnType<typeof sessionVerb>['startButlerHelper']
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -261,6 +262,7 @@ function harness(
     sendFromInbox: (ref, text, toItsOwnSession) =>
       inner.sendFrom(INBOX_SENDER, ref, text, toItsOwnSession),
     startForReply: inner.startForReply,
+    startButlerHelper: inner.startButlerHelper,
     launched,
     queued,
     closed,
@@ -2132,6 +2134,36 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(launched[0].trustFolder).toBe(true)
     expect(launched[0].firstPrompt?.startsWith(BUTLER_HELPER_ROLE)).toBe(true)
     expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
+  })
+
+  it('a helper the butler starts in its own folder, by koloft session new or from ⌘P, is told the butler’s goals, a blank line, then the handover, in its first prompt or, for Codex, in its role, and its folder is trusted; a helper there that starts another is told none and trusts nothing', async () => {
+    const helper = session('helper', 'claude', { sessionId: 'helper-id', cwd: BUTLER_FOLDER })
+    const h = harness([...live, helper], { 'cond-id': 'Alfred' }, [], conducting())
+    await h.verb(['new', ...PICKED, '--', 'look into it'], from('butler'))
+    await h.verb(['new', ...PICKED, '--backend', 'codex', '--', 'look into it'], from('butler'))
+    await h.startButlerHelper(live[0], {
+      prompt: 'Sort the inbox.',
+      ownerWords: 'sort it',
+      backend: 'claude'
+    })
+    await h.verb(['new', ...PICKED, '--', 'dig deeper'], from('helper'))
+    const [byNew, codexByNew, byPalette, byHelper] = h.launched
+    for (const told of [byNew.firstPrompt, codexByNew.role, byPalette.firstPrompt])
+      expect(
+        told?.startsWith(
+          `${BUTLER_HELPER_ROLE}\n\nKoloft started you because the session "Alfred" asked it to`
+        )
+      ).toBe(true)
+    expect(codexByNew.firstPrompt).toBe('look into it')
+    expect(byPalette.firstPrompt?.endsWith('Sort the inbox.')).toBe(true)
+    expect([byNew, codexByNew, byPalette].map((l) => [l.cwd, l.trustFolder])).toEqual([
+      [BUTLER_FOLDER, true],
+      [BUTLER_FOLDER, true],
+      [BUTLER_FOLDER, true]
+    ])
+    expect(byHelper.cwd).toBe(BUTLER_FOLDER)
+    expect(byHelper.trustFolder).toBe(false)
+    expect(byHelper.firstPrompt).not.toContain(BUTLER_HELPER_ROLE)
   })
 
   it('new in a sidebar workspace writes the agent’s folder trust, so nobody has to answer the trust question at the terminal; in a folder the sidebar does not hold it writes none, and a new worktree is left to trust itself', async () => {
