@@ -2111,8 +2111,9 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
 
 const sessionStarted = moment<SessionStarted>()
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
+const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
 giveEachStartedSessionARoom(sessionStarted, {
-  isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  isButler: isButlerNow,
   butlerFolder: butlerFolderNow,
   roomFor: roomForNew
 })
@@ -2152,7 +2153,7 @@ const sessionDeps: SessionVerbDeps = {
         if (!closed) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  isButler: isButlerNow,
   speaksForTheOwner: butlerSide,
   butlerFolder: butlerFolderNow,
   butlerHelperRole: () => butlerHelperRole(butlerNameNow()),

@@ -21,7 +21,6 @@ import type { SendResult } from '../../src/plugins/sessions/api'
 import { moment, type SessionStarted } from '../../src/core/moment'
 import {
   giveEachStartedSessionARoom,
-  roomStarted,
   withoutTheRelayTag
 } from '../../src/plugins/discord/main/sessionHooks'
 
@@ -2188,7 +2187,6 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       ['new', ...PICKED, '--workspace', WS, '--', 'fix it'],
       from('butler')
     )
-    expect(project.text).toContain(roomStarted('<#room-new-tab>'))
     expect(project.text).toMatch(
       /reach it with koloft session send\. The owner asked for it on Discord, so it has a room there, where the owner talks to it: <#room-new-tab>\. Give the owner that link exactly as written\.$/
     )

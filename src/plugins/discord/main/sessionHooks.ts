@@ -1,7 +1,7 @@
 import type { Moment, SessionStarted } from '@core/moment'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 
-export const roomStarted = (link: string): string =>
+const roomStarted = (link: string): string =>
   `The owner asked for it on Discord, so it has a room there, where the owner talks to it: ${link}. Give the owner that link exactly as written.`
 
 export function giveEachStartedSessionARoom(

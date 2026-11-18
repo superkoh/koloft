@@ -557,23 +557,17 @@ async function startSibling(
   const { tabId, name } = launched
   const unnamed = aSessionOf(backend)
   const bySendMessage = sendMessageReaches(me, backend, parseRemoteKey(workspace)?.host)
-  const said = (await d.announceStarted({ by: me.tabId, tabId, workspace, name }))
-    .map((s) => ` ${s}`)
-    .join('')
-  if (conductorTab)
-    return answered(
-      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.${said}`
-    )
+  const said = await d.announceStarted({ by: me.tabId, tabId, workspace, name })
   const listHint =
     args.workspace === undefined
       ? 'koloft session list'
       : `koloft session list --workspace ${JSON.stringify(workspace)}`
-  return answered(
-    (bySendMessage
+  const head = conductorTab
+    ? `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+    : bySendMessage
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`) +
-      said
-  )
+      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+  return answered([head, ...said].join(' '))
 }
 
 interface HeldName {
