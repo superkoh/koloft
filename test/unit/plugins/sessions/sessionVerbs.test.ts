@@ -12,28 +12,31 @@ import {
   type ClosableSession,
   type SessionVerbDeps,
   type Target
-} from '../../src/main/agentSessions'
-import type { PinnedWorkspace } from '../../src/plugins/sessions/api'
-import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
-import type { TranscriptPlaces } from '../../src/main/sessionBackends'
-import { INBOX_SENDER } from '../../src/main/inbox'
-import type { SendResult } from '../../src/plugins/sessions/api'
-import { moment, type SessionStarted, type SessionStarting } from '../../src/core/moment'
-import { butlersWords, tellEachHelperItsRole } from '../../src/plugins/butler/main/sessionHooks'
+} from '../../../../src/plugins/sessions/main/sessionVerbs'
+import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
+import { A_HELPER_HAS_IT, crossSessionLine } from '../../../../src/main/crossSessionMessage'
+import type { TranscriptPlaces } from '../../../../src/main/sessionBackends'
+import { INBOX_SENDER } from '../../../../src/main/inbox'
+import type { SendResult } from '../../../../src/plugins/sessions/api'
+import { moment, type SessionStarted, type SessionStarting } from '../../../../src/core/moment'
+import {
+  butlersWords,
+  tellEachHelperItsRole
+} from '../../../../src/plugins/butler/main/sessionHooks'
 import {
   giveEachStartedSessionARoom,
   withoutTheRelayTag
-} from '../../src/plugins/discord/main/sessionHooks'
+} from '../../../../src/plugins/discord/main/sessionHooks'
 
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
-import { ownerSays } from '../../src/shared/agentGuide'
-import type { PickFacts } from '../../src/shared/sessionPicks'
-import { handoverPreamble } from '../../src/main/handover'
-import { StartedSessions } from '../../src/main/startedSessions'
-import { turnedOffLine } from '../../src/shared/sessionBackend'
-import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
-import { AGENT_SHIM_WAITS_MS } from '../../src/main/agentShim'
+import { ownerSays } from '../../../../src/shared/agentGuide'
+import type { PickFacts } from '../../../../src/shared/sessionPicks'
+import { handoverPreamble } from '../../../../src/main/handover'
+import { StartedSessions } from '../../../../src/main/startedSessions'
+import { turnedOffLine } from '../../../../src/shared/sessionBackend'
+import { EXIT_USAGE, type AgentReply } from '../../../../src/main/agentRequests'
+import { AGENT_SHIM_WAITS_MS } from '../../../../src/main/agentShim'
 import type {
   BackendId,
   CreateTabOptions,
@@ -41,8 +44,8 @@ import type {
   SessionInfo,
   SessionRow,
   WorkspaceRows
-} from '../../src/shared/types'
-import type { Turn } from '../../src/shared/turns'
+} from '../../../../src/shared/types'
+import type { Turn } from '../../../../src/shared/turns'
 
 const WS = '/work/app'
 const BUTLER_FOLDER = '/data/conductors/global'
