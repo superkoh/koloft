@@ -4025,6 +4025,7 @@ app.whenReady().then(() => {
   discordBinding = bindingNow
   butler = new Butler({
     userData,
+    realpath: realpathSafe,
     butler: () => loadSettings().butler,
     roleFacts: () => bindingNow.butlerRoleFacts(),
     loadSession: () => loadSettings().butlerSession,

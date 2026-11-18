@@ -10,6 +10,7 @@ import {
 import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
+import { realpathSafe } from '../../../../src/main/projectInfo'
 
 const TODO_NOTICE = 'Koloft got koloft todo since this conversation began.'
 
@@ -52,6 +53,7 @@ function make(): Butler {
     }
   const deps: ButlerDeps = {
     userData,
+    realpath: realpathSafe,
     butler: () => ({ name, formerNames }),
     roleFacts: () => facts,
     loadSession: () => session,

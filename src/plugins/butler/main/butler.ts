@@ -12,7 +12,6 @@ import { butlerNames, peerNamesOf } from '@shared/conductors'
 import { errorText } from '@core/errorText'
 import { butlerRole } from '../prompts/role'
 import { conductorFolder } from './folder'
-import { realpathSafe } from '../../../main/projectInfo'
 
 export interface ButlerLaunch {
   backend: BackendId
@@ -34,6 +33,7 @@ export type AssistBackendChoice = AssistBackendPick | { error: string }
 
 export interface ButlerDeps {
   userData: string
+  realpath(folder: string): string
   butler(): ButlerSetting
   roleFacts(): readonly string[]
   loadSession(): ButlerSession
@@ -109,8 +109,9 @@ export class Butler {
 
   // ADR-0029
   identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
-    const launched = realpathSafe(path.resolve(cwd))
-    if (realpathSafe(conductorFolder(this.d.userData)) !== launched || !resumeKey) return undefined
+    const launched = this.d.realpath(path.resolve(cwd))
+    if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
+      return undefined
     if (!this.recorded(resumeKey)) return undefined
     return { role: this.role() }
   }
