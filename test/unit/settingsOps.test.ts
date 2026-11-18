@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   buildResetPatch,
@@ -10,6 +12,7 @@ import {
   sanitizeLoadedSettings
 } from '@shared/settingsOps'
 import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
+import { GLOBAL_SCOPE } from '@shared/conductors'
 
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
@@ -435,5 +438,152 @@ describe('session methods', () => {
         sessionMethods: { defaultBackend: 'muse', enabled: off }
       }).assist
     ).toEqual({ backend: 'agy' })
+  })
+})
+
+describe('loading settings written before the butler', () => {
+  const channel = (channelId: string) => ({ guildId: '100', channelId, name: `ch-${channelId}` })
+  const oldBinding = (id: string, scope: string, channelId: string) => ({
+    id,
+    scope,
+    backend: 'claude',
+    channel: channel(channelId),
+    touched: []
+  })
+  const v038 = {
+    discord: {
+      userId: '555',
+      bindings: [
+        {
+          ...oldBinding('g', GLOBAL_SCOPE, '1'),
+          sessionIds: ['old-1', 'old-2'],
+          lastSessionKey: 'old-2'
+        },
+        { ...oldBinding('a', '/ws/a', '2'), backend: 'codex', sessionIds: ['ws-1'] }
+      ]
+    }
+  }
+
+  it('the global Assist’s conversation becomes the butler’s, and a workspace Assist’s is left behind', () => {
+    const s = sanitizeLoadedSettings(v038)
+    expect(s.butlerSession).toEqual({ sessionIds: ['old-1', 'old-2'], lastSessionKey: 'old-2' })
+    expect(s.discord).toEqual({ userId: '555', channel: channel('1') })
+  })
+
+  it('the Assist records of the release before this one become the butler’s conversation, and are not written back', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assistSessions: [
+        { scope: GLOBAL_SCOPE, sessionIds: ['new-1'], lastSessionKey: 'new-1' },
+        { scope: '/ws/a', sessionIds: ['ws-2'], lastSessionKey: 'ws-2' }
+      ]
+    })
+    expect(s.butlerSession).toEqual({
+      sessionIds: ['new-1', 'old-1', 'old-2'],
+      lastSessionKey: 'new-1'
+    })
+    expect(s).not.toHaveProperty('assistSessions')
+  })
+
+  it('reading the file it writes back changes nothing', () => {
+    const once = JSON.parse(JSON.stringify(sanitizeLoadedSettings(v038)))
+    const twice = sanitizeLoadedSettings(once)
+    expect(twice.butlerSession).toEqual(once.butlerSession)
+    expect(twice.discord).toEqual(once.discord)
+  })
+
+  it('the tool Assist ran on is kept, so the owner is not asked to agree to skipping permissions again', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assist: { on: false, backend: 'codex' },
+      skipPermissions: true
+    })
+    expect(s.assist).toEqual({ backend: 'codex' })
+    expect(s.skipPermissionsAgreed).toBe(true)
+  })
+
+  it('the butler’s conversation is left out of a settings reset and of what the window may write', () => {
+    expect(buildResetPatch()).not.toHaveProperty('butlerSession')
+    expect(sanitizeSettingsPatch({ butlerSession: { sessionIds: [] }, fontSize: 12 })).toEqual({
+      fontSize: 12
+    })
+  })
+})
+
+describe('a settings file an older Koloft wrote', () => {
+  const older = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'settings-older-koloft', 'settings.json'), 'utf8')
+  )
+
+  it('loads the butler’s name, his conversation and the Discord block exactly as before', () => {
+    const { butler, butlerSession, discord } = sanitizeLoadedSettings(older)
+    expect({ butler, butlerSession, discord }).toMatchInlineSnapshot(`
+      {
+        "butler": {
+          "formerNames": [
+            "Alfred",
+            "A name far longer than the forty charact",
+          ],
+          "name": "Jeeves the butler",
+        },
+        "butlerSession": {
+          "carried": {
+            "effort": "high",
+            "model": "opus",
+          },
+          "knowsTodo": [
+            "todo-1",
+            "todo-2",
+            "todo-3",
+          ],
+          "lastSessionKey": "key-butler",
+          "sessionIds": [
+            "s-butler",
+            "s-assist",
+            "s-binding",
+          ],
+        },
+        "discord": {
+          "category": {
+            "channelId": "300",
+            "guildId": "100",
+            "name": "Koloft",
+          },
+          "channel": {
+            "channelId": "200",
+            "guildId": "100",
+            "name": "global",
+          },
+          "lastMessageId": "800",
+          "oldThreadsArchived": true,
+          "rooms": [
+            {
+              "keys": [
+                "claude:abc",
+                "claude:def",
+              ],
+              "lastMessageId": "510",
+              "name": "fix login",
+              "putDown": true,
+              "threadId": "500",
+            },
+            {
+              "keys": [
+                "codex:jkl",
+              ],
+              "name": "plain room",
+              "threadId": "502",
+            },
+          ],
+          "userId": "4242",
+          "userName": "owner",
+        },
+      }
+    `)
+  })
+
+  it('loads the same again from what it writes back', () => {
+    const loaded = sanitizeLoadedSettings(older)
+    expect(sanitizeLoadedSettings(JSON.parse(JSON.stringify(loaded)))).toStrictEqual(loaded)
   })
 })

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconLinkOut, IconPlus } from '@renderer/icons'
-import { inviteLink, NEW_CHANNEL_NAME, newChannelGuild, setUpWith } from '@shared/conductors'
+import { inviteLink, NEW_CHANNEL_NAME, newChannelGuild, setUpWith } from '../shared/channels'
 import { distinctName } from '@shared/sessionRoute'
-import type { DiscordChannel } from '@shared/types'
+import type { DiscordChannel } from '../shared/types'
 import { useStore } from '@renderer/store'
 import { useDiscordStatus } from './status'
 
