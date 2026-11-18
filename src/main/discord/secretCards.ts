@@ -118,16 +118,25 @@ export class SecretCards {
   }
 
   private async placeCard(id: string, shown: Shown): Promise<void> {
+    let marked = false
+    const markInKoloft = (): void => {
+      if (!marked) this.d.asks.notShownElsewhere(id)
+      marked = true
+    }
+    const late = setTimeout(markInKoloft, A_CARD_REACHES_DISCORD_WITHIN_MS)
+    let posted = false
+    try {
+      posted = await this.placeFirstCard(id, shown)
+    } finally {
+      clearTimeout(late)
+      if (!posted) markInKoloft()
+    }
+  }
+
+  private placeFirstCard(id: string, shown: Shown): Promise<boolean> {
+    if (shown.ask.taps) return this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
     const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
-    const late = setTimeout(
-      () => this.d.asks.notShownElsewhere(id),
-      A_CARD_REACHES_DISCORD_WITHIN_MS
-    )
-    const posted = shown.ask.taps
-      ? await this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
-      : await this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
-    clearTimeout(late)
-    if (!posted) this.d.asks.notShownElsewhere(id)
+    return this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
   }
 
   private async put(
@@ -191,8 +200,7 @@ export class SecretCards {
       if (!this.waiting(id)) return
       const before = shown.placed
       const placed = await this.placeTapCard(id, shown, `-# ${note} This is the page now.`)
-      if (!placed) this.d.asks.notShownElsewhere(id)
-      else if (before && this.waiting(id))
+      if (placed && before && this.waiting(id))
         void this.d
           .edit(before, cardOf(shown.ask, before.name, `-# ${note}`))
           .catch(() => undefined)

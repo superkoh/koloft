@@ -145,7 +145,6 @@ export interface FakeDiscord {
   rateLimited: number
   closeCodes: number[]
   posted: FakePost[]
-  refusePostsIn: string[]
   failPostsIn: Record<string, PostFailure>
   failedPosts: { channelId: string; how: PostFailure }[]
   reactions: FakeReaction[]
@@ -246,7 +245,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     rateLimited: 0,
     closeCodes: [],
     posted: [],
-    refusePostsIn: [],
     failPostsIn: {},
     failedPosts: [],
     reactions: [],
@@ -485,11 +483,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 204 }
     }
     const message = MESSAGE_ROUTE.exec(route)
-    const failure =
-      message && req.method === 'POST'
-        ? (fake.failPostsIn[message[1]] ??
-          (fake.refusePostsIn.includes(message[1]) ? 'forbidden' : undefined))
-        : undefined
+    const failure = message && req.method === 'POST' ? fake.failPostsIn[message[1]] : undefined
     if (message && failure) {
       await bodyOf(req)
       fake.failedPosts.push({ channelId: message[1], how: failure })
