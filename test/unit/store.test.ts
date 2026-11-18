@@ -302,7 +302,7 @@ describe('store: intercepted file open routing — the open always surfaces, tag
   it('falls back to OS open when there is no tab to attach the preview to (never swallowed)', () => {
     const calls: string[] = []
     ;(globalThis as { window?: unknown }).window = {
-      api: { preview: { osOpen: (p: string) => calls.push(p) } }
+      api: { os: { open: (p: string) => calls.push(p) } }
     }
     openInterceptedFile('gone', '/w/orphan.md')
     expect(calls).toEqual(['/w/orphan.md'])

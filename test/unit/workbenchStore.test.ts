@@ -23,7 +23,7 @@ vi.stubGlobal('window', {
   api: {
     workbench: { get, setState },
     github: { target: githubTarget },
-    preview: { osOpen },
+    os: { open: osOpen },
     browser: { openExternal },
     settings: { set: vi.fn() },
     terminal: { kill: vi.fn() }
