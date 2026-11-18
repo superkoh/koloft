@@ -4,9 +4,9 @@ import os from 'os'
 import path from 'path'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import WebSocket from 'ws'
-import type { RelayTarget } from '../../src/main/cdpProtocol'
-import type { RelayDeps } from '../../src/main/cdpRelay'
-import { machinePageUrl } from '../../src/shared/browserRoute'
+import type { RelayTarget } from '../../../../src/plugins/browser-control/main/cdpProtocol'
+import type { RelayDeps } from '../../../../src/plugins/browser-control/main/cdpRelay'
+import { machinePageUrl } from '../../../../src/shared/browserRoute'
 
 let userData = ''
 const guests = new Map<number, FakeGuest>()
@@ -121,10 +121,10 @@ function makeDeps(): Harness {
   return h
 }
 
-type Relay = typeof import('../../src/main/cdpRelay')
+type Relay = typeof import('../../../../src/plugins/browser-control/main/cdpRelay')
 
 let relay: Relay
-let composition: typeof import('../../src/plugins/workbench/main/hostComposition')
+let composition: typeof import('../../../../src/plugins/workbench/main/hostComposition')
 let deps: Harness
 const sockets: WebSocket[] = []
 
@@ -195,8 +195,8 @@ beforeEach(async () => {
   guests.clear()
   fakeGuest(11)
   deps = makeDeps()
-  relay = await import('../../src/main/cdpRelay')
-  composition = await import('../../src/plugins/workbench/main/hostComposition')
+  relay = await import('../../../../src/plugins/browser-control/main/cdpRelay')
+  composition = await import('../../../../src/plugins/workbench/main/hostComposition')
   relay.startRelay(deps)
   relay.relayStripChanged(SESSION, deps.strip)
   relay.setRelayEnabled(true, [TAB])
@@ -217,7 +217,7 @@ describe('the file each tab reads its relay address from', () => {
     fs.writeFileSync(path.join(dir, 'pty-running-1'), 'ws://running')
     fs.writeFileSync(path.join(dir, 'pty-quit-1'), 'ws://quit')
     vi.resetModules()
-    const starting = await import('../../src/main/cdpRelay')
+    const starting = await import('../../../../src/plugins/browser-control/main/cdpRelay')
     starting.startRelay({ ...deps, anotherLiveKoloftOwns: (tabId) => tabId === 'pty-running-1' })
     starting.writeRelayEnv([])
     expect(fs.readdirSync(dir)).toEqual(['pty-running-1'])
