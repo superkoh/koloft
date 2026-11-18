@@ -526,6 +526,30 @@ describe('koloft todo', () => {
       exit: 1
     })
   })
+
+  it('names the workspaces to pick from when one is unknown or two share a name, word for word, says a note was removed, and cuts a long file where a turn ends', async () => {
+    const { run } = harness({
+      sidebar: sidebarOf([
+        [SHOP, []],
+        ['/other/shop', []],
+        [NOTES_WS, []]
+      ]),
+      sessions: [],
+      files: { [NOTES_WS]: { 'TODO.md': 'x'.repeat(20_001) } }
+    })
+    expect((await run(['note', 'nope'])).text).toBe(
+      'koloft todo note: there is no workspace "nope" in Koloft\'s sidebar. Give the folder name or full path of one of these:\n  /work/shop\n  /other/shop\n  /work/notes'
+    )
+    expect((await run(['note', 'shop'])).text).toBe(
+      'koloft todo note: 2 workspaces are named "shop". Give the full path:\n  /work/shop\n  /other/shop'
+    )
+    expect((await run(['note', 'notes', '--'])).text).toBe(
+      'Removed the to-do note of the workspace /work/notes.'
+    )
+    expect((await run(['file', 'notes', 'TODO.md'])).text).toBe(
+      `${'x'.repeat(20_000)}\n[koloft: cut at 20000 characters]`
+    )
+  })
 })
 
 describe('koloft todo note', () => {
