@@ -4,7 +4,7 @@ import { assistEfforts, assistModels, assistRunsOn, withAssistPick } from '@shar
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
-import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
+import { butlerName, butlerTitle, renamedButler } from '@plugins/butler/shared/names'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import type { AssistPick, AssistRowId, BackendId } from '@shared/types'
 import { IconChevronDown, IconChevronUp } from '../../icons'

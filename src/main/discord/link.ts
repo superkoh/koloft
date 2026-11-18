@@ -5,7 +5,11 @@ import type {
   DiscordStatus,
   DiscordUser
 } from '@shared/types'
-import { newChannelGuild, NEW_CHANNEL_NAME, NEW_CHANNEL_TOPIC } from '@shared/conductors'
+import {
+  newChannelGuild,
+  NEW_CHANNEL_NAME,
+  NEW_CHANNEL_TOPIC
+} from '@plugins/discord/shared/channels'
 import { distinctName } from '@shared/sessionRoute'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
