@@ -5,13 +5,13 @@ import {
   DEFAULT_BUTLER_NAME,
   type ButlerSession,
   type ButlerSetting
-} from '../plugins/butler/shared/types'
+} from '@plugins/butler/shared/types'
 import type {
   ConductorSaveResult,
   DiscordChannel,
   DiscordSettings,
   DiscordStatus
-} from '../plugins/discord/shared/types'
+} from '@plugins/discord/shared/types'
 
 export interface ProjectInfo {
   root: string
@@ -412,8 +412,8 @@ export interface AssistSetting {
   rows?: Partial<Record<AssistRowId, AssistPick>>
 }
 
-export type { ButlerSession, ButlerSetting } from '../plugins/butler/shared/types'
-export { DEFAULT_BUTLER_NAME } from '../plugins/butler/shared/types'
+export type { ButlerSession, ButlerSetting } from '@plugins/butler/shared/types'
+export { DEFAULT_BUTLER_NAME } from '@plugins/butler/shared/types'
 export type {
   ConductorSaveResult,
   DiscordChannel,
@@ -423,8 +423,8 @@ export type {
   DiscordStatus,
   DiscordUser,
   SessionRoom
-} from '../plugins/discord/shared/types'
-export { DISCORD_OFF } from '../plugins/discord/shared/types'
+} from '@plugins/discord/shared/types'
+export { DISCORD_OFF } from '@plugins/discord/shared/types'
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 

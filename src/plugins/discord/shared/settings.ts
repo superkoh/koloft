@@ -1,11 +1,7 @@
 import { GLOBAL_SCOPE } from '@shared/conductors'
-import { isRecord } from '@shared/workbenchState'
+import { isRecord, stringsIn } from '@shared/workbenchState'
 import { isDiscordId, newerSnowflake } from './channels'
 import type { DiscordChannel, DiscordSettings, SessionRoom } from './types'
-
-function strings(raw: unknown): string[] {
-  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
-}
 
 function cleanChannel(raw: unknown): DiscordChannel | null {
   if (
@@ -96,7 +92,7 @@ function cleanRooms(raw: unknown): SessionRoom[] {
   if (!Array.isArray(raw)) return []
   return raw.flatMap((r: unknown) => {
     if (!isRecord(r) || !isDiscordId(r.threadId) || typeof r.name !== 'string') return []
-    const keys = strings(r.keys)
+    const keys = stringsIn(r.keys)
     if (!keys.length) return []
     return [
       {

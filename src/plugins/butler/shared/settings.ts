@@ -1,28 +1,20 @@
 import { GLOBAL_SCOPE } from '@shared/conductors'
 import { cleanOwnPick } from '@shared/sessionPicks'
-import { isRecord } from '@shared/workbenchState'
+import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
 import type { ButlerSession, ButlerSetting } from './types'
 
-function strings(raw: unknown): string[] {
-  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
-}
-
 export function sanitizeButler(raw: unknown): ButlerSetting {
   const doc = isRecord(raw) ? raw : {}
-  const former = Array.isArray(doc.formerNames) ? doc.formerNames : []
-  return butlerSetting(
-    butlerName(doc.name),
-    former.filter((n): n is string => typeof n === 'string').map(butlerName)
-  )
+  return butlerSetting(butlerName(doc.name), stringsIn(doc.formerNames).map(butlerName))
 }
 
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
-  const knowsTodo = strings(raw.knowsTodo)
+  const knowsTodo = stringsIn(raw.knowsTodo)
   const carried = cleanOwnPick(raw.carried)
   return {
-    sessionIds: strings(raw.sessionIds),
+    sessionIds: stringsIn(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
     ...(knowsTodo.length ? { knowsTodo } : {}),
     ...(carried ? { carried } : {})

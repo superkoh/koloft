@@ -9,8 +9,8 @@ import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gi
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
-import { sanitizeButler, sanitizeButlerSession } from '../plugins/butler/shared/settings'
-import { butlerSessionsInOldBindings, sanitizeDiscord } from '../plugins/discord/shared/settings'
+import { sanitizeButler, sanitizeButlerSession } from '@plugins/butler/shared/settings'
+import { butlerSessionsInOldBindings, sanitizeDiscord } from '@plugins/discord/shared/settings'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
