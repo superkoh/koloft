@@ -1,17 +1,17 @@
-import { PLUGIN_FORMAT_VERSION } from '../../../src/core/plugin'
+import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '../../../src/core/plugin'
 import { Commands, type CommandHandlers } from '../../../src/core/commands'
 
+export const testManifest = (id: string, verbs: string[]): PluginManifest => ({
+  formatVersion: PLUGIN_FORMAT_VERSION,
+  id,
+  name: id,
+  mandatory: true,
+  needs: [],
+  commands: verbs.map((verb) => ({ verb }))
+})
+
 export function testCommands(handlers: CommandHandlers): Commands {
-  const commands = new Commands([
-    {
-      formatVersion: PLUGIN_FORMAT_VERSION,
-      id: 'test',
-      name: 'Test',
-      mandatory: true,
-      needs: [],
-      commands: Object.keys(handlers).map((verb) => ({ verb }))
-    }
-  ])
+  const commands = new Commands([testManifest('test', Object.keys(handlers))])
   commands.register(handlers)
   return commands
 }

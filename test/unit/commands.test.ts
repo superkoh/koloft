@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '../../src/core/plugin'
 import { answered } from '../../src/core/command'
 import { Commands } from '../../src/core/commands'
 import { PLUGINS } from '../../src/plugins/list'
-
-const manifest = (id: string, verbs: string[]): PluginManifest => ({
-  formatVersion: PLUGIN_FORMAT_VERSION,
-  id,
-  name: id,
-  mandatory: true,
-  needs: [],
-  commands: verbs.map((verb) => ({ verb }))
-})
+import { testManifest } from './helpers/testCommands'
 
 describe('koloft commands', () => {
   it('no two plugins list the same koloft command, so each command has one owner', () => {
@@ -20,7 +11,7 @@ describe('koloft commands', () => {
   })
 
   it('only a command some plugin lists may be registered, and none twice', () => {
-    const commands = new Commands([manifest('a', ['one'])])
+    const commands = new Commands([testManifest('a', ['one'])])
     const run = (): ReturnType<typeof answered> => answered('')
     expect(() => commands.register({ two: run })).toThrow()
     commands.register({ one: run })
