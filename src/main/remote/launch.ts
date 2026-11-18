@@ -156,7 +156,10 @@ export interface ClaudeTab {
   projectPrompt?: string
   claudeArgs: string[]
   trustFolder?: boolean
+  pictureFolder?: string
 }
+
+export const MACHINE_PICTURES_DIR = '$HOME/.koloft/element-picks'
 
 // PLATFORM§35 MUSE§17
 const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
@@ -171,7 +174,7 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
+    beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${c.pictureFolder ? trustThePicturesFolder(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName,
@@ -223,6 +226,10 @@ export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
 // CC§9 ADR-0026
 const trustTheLaunchFolder = (cwd: string): string =>
   `( cd ${shq(cwd)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1\n`
+
+// CC§18 ADR-0026
+const trustThePicturesFolder = (folder: string): string =>
+  `( cd "${MACHINE_PICTURES_DIR}" 2>/dev/null && [ "$(pwd -P)" = ${shq(folder)} ] && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1\n`
 
 function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
   const T = tabPath(spec.tabId)

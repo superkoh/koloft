@@ -140,6 +140,7 @@ const spec = ({
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
   trustFolder,
+  pictureFolder,
   program,
   ...over
 }: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
@@ -153,7 +154,7 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder, pictureFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -1048,6 +1049,26 @@ describe('U-TAB-*: the tab script on the machine', () => {
     fs.writeFileSync(cj(plain), seeded)
     expect(plain.run().status).toBe(0)
     expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
+  })
+
+  // CC§18 ADR-0026
+  it("a tab handed a picture folder trusts it when it is Koloft's own picture folder on the machine, and leaves .claude.json alone for any other folder", () => {
+    const handedPictures = (pictureFolder: (ownPictures: string) => string): string => {
+      const b = box(spec(), { ensureBringsNode: true })
+      const own = path.join(b.home, '.koloft', 'element-picks')
+      fs.mkdirSync(own, { recursive: true })
+      writeTabPackage(b.tabs, spec({ pictureFolder: pictureFolder(fs.realpathSync(own)) }))
+      expect(b.run().status).toBe(0)
+      const cj = path.join(b.home, '.claude.json')
+      return fs.existsSync(cj) ? fs.readFileSync(cj, 'utf8') : ''
+    }
+
+    expect(handedPictures(() => fs.realpathSync(mkroot('elsewhere')))).toBe('')
+    let pictures = ''
+    const trusted = handedPictures((own) => (pictures = own))
+    expect(JSON.parse(trusted)).toEqual({
+      projects: { [pictures]: { hasTrustDialogAccepted: true } }
+    })
   })
 
   // CC§10

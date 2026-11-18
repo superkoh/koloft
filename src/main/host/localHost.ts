@@ -97,6 +97,7 @@ export interface LocalClaudeDeps {
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   agentHomes(): { codexHome: string; configHome: string }
+  pastedPicturesDir(): string
 }
 
 async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
@@ -114,6 +115,9 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
     console.error('[koloft] could not mark Claude onboarding done', err)
   }
   if (spec.trustFolder) trustFolder(spec.cwd ?? spec.root)
+  // CC§18 ADR-0026
+  const pictures = pictureFolderIn(spec.firstPrompt ?? '')
+  if (pictures === d.pastedPicturesDir()) trustFolder(pictures)
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
   const launchCommand = `exec ${aboveItsTools(args.argv).join(' ')}`
   const worktree = spec.worktree ?? worktreeNameAround(cwd)
@@ -144,7 +148,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
         ? {
             KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '',
             KOLOFT_SESSION_NAME: spec.name ?? '',
-            KOLOFT_PICTURE_FOLDER: pictureFolderIn(spec.firstPrompt ?? '')
+            KOLOFT_PICTURE_FOLDER: pictures
           }
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),

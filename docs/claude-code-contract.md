@@ -3015,8 +3015,8 @@ sessions.
   <folder>/)` to its `skill_listing` description; 2.1.308 left it out. A `--plugin-dir`
   skill is `<plugin>:<name>` on both builds, beside a same-named user skill (2026-10-23,
   `claude -p` init `skills` and `skill_listing` in a scratch `HOME`). It also opens that
-  folder to the model's file tools. Koloft passes no `--add-dir` to claude, only
-  `--plugin-dir`.
+  folder to the model's file tools. Koloft passes `--plugin-dir` for its skills, and
+  `--add-dir` only for its own picture folder (§18).
 - **A SessionStart hook's `hookSpecificOutput.additionalContext`** (given through a
   `--settings` file) reached the model.
 - **`--append-system-prompt-file <file>`** reached the model.
@@ -4078,6 +4078,30 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   - Started by Koloft with `--add-dir <userData>/palette-pictures -- "<prompt>"`: no ask,
     `Read`, `ZEBRA`. 1 run. `--add-dir` is variadic (§9's flag list), so it sits right
     before the `--`.
+- **Since 2.1.326, `--add-dir <folder>` stops at startup on a question when the folder
+  is not trusted.** claude shows "Adding a new directory: <folder> / This session hasn't
+  worked here before. Is this a directory you created or one you trust? / ❯ No, exit /
+  Yes, add it" before anything else: the first prompt given after `--` is not sent, no
+  hook fires, and no OSC 7501 frame goes out (Koloft's row shows nothing to answer).
+  Enter takes "No, exit" and claude quits. `--dangerously-skip-permissions` does not skip
+  it. "Yes, add it" lets this run go on and writes nothing to `.claude.json`, so the next
+  launch asks again. The folder counts as trusted, and the question does not show, when
+  `.claude.json`'s `projects` holds `hasTrustDialogAccepted: true` for the folder itself
+  or for a folder above it (the same entry §9's folder-trust question writes; here
+  `$HOME`, the scratch home, did). 2.1.325 asks nothing. Measured 2026-11-18, CC 2.1.325
+  and 2.1.327, a python `pty` with `pyte`, scratch `HOME` (`.claude.json` under it, no
+  `CLAUDE_CONFIG_DIR`), the launch folder trusted, an `apiKeyHelper`-less
+  `ANTHROPIC_API_KEY` against a local stand-in Messages API, haiku: on darwin-arm64,
+  `--add-dir <HOME>/Library/Application Support/Koloft/palette-pictures -- "hello from
+  first prompt"` with that folder untrusted (question, 1 run per build), with its exact
+  path trusted (no question, the turn ran, 1 run) and with only `<HOME>` trusted (the
+  same, 1 run); on linux-arm64 in a Docker test container, `--add-dir
+  /home/node/.koloft/element-picks` with Koloft's own first prompt shape (`Picture:` line),
+  with and without bypass, with and without `SSH_CONNECTION` set (question each time on
+  2.1.327, none on 2.1.325), and once more after Koloft's remote trust script ran in that
+  folder (no question, the turn ran). Koloft writes the trust entry before every launch
+  whose first prompt names a picture in its own picture folder, locally
+  (`src/main/host/localHost.ts`) and on a remote machine (`src/main/remote/launch.ts`).
 
 ## §19 The PostToolUse hook adds text after every tool result
 

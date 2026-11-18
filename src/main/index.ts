@@ -6769,7 +6769,8 @@ const hosts = new Hosts(
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig()),
       configHome: museConfigHome(museSessions?.defaultEnv ?? process.env)
-    })
+    }),
+    pastedPicturesDir
   }),
   (machine) =>
     new SshHost(machine, {
