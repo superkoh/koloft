@@ -1,8 +1,9 @@
 import fs from 'fs'
-import { FROM_KOLOFT } from './crossSessionMessage'
-import { digestLine, quoteOf, type DigestItem } from './awayDigest'
-import { writeWholeBeforeVisible } from './jsonDrops'
-import { ANSWER_NOT_TAKEN } from '@plugins/sessions/main/dialog'
+import type { OwnerPresence } from '@core/presence'
+import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
+import { digestLine, quoteOf, type DigestItem } from '../../../main/awayDigest'
+import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
+import { ANSWER_NOT_TAKEN } from '@plugins/sessions/api'
 
 export const OWNER_ASLEEP_ANSWER =
   'The owner is asleep and cannot answer. Choose the option you recommend, note the choice in your report, and go on. If that choice cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords), do not make it: leave it for the owner and go on with the rest.'
@@ -28,6 +29,7 @@ interface AnsweredForOwner {
 }
 
 export interface OwnerAsleepDeps {
+  presence: Pick<OwnerPresence, 'asleepSince' | 'listenToSleep'>
   machines(): string[]
   mark(machine: string, awakeTabs: string[] | null): Promise<boolean>
   awakeTabs(): string[]
@@ -108,16 +110,19 @@ export class OwnerAsleep {
   private generation = 0
   private answering = new Map<string, { askedAgain: boolean }>()
 
-  constructor(
-    private readonly d: OwnerAsleepDeps,
-    private since: number | null
-  ) {
+  constructor(private readonly d: OwnerAsleepDeps) {
+    const since = d.presence.asleepSince()
     this.answered = since === null ? [] : answeredSince(d.answeredFile, since)
+    d.presence.listenToSleep((now, sleptAt) => this.sleepChanged(now, sleptAt))
+  }
+
+  private since(): number | null {
+    return this.d.presence.asleepSince()
   }
 
   private keepAnswered(answered: AnsweredForOwner[]): void {
     this.answered = answered
-    const kept: KeptAnswers = { since: this.since, answered }
+    const kept: KeptAnswers = { since: this.since(), answered }
     try {
       writeWholeBeforeVisible(this.d.answeredFile, JSON.stringify(kept))
     } catch {
@@ -125,14 +130,11 @@ export class OwnerAsleep {
     }
   }
 
-  asleep(): boolean {
-    return this.since !== null
+  private asleep(): boolean {
+    return this.since() !== null
   }
 
-  set(since: number | null): boolean {
-    const sleptAt = this.since
-    if (since === sleptAt) return false
-    this.since = since
+  private sleepChanged(since: number | null, sleptAt: number | null): void {
     if (since !== null && sleptAt === null) {
       this.keepAnswered([])
       for (const tabId of this.d.tabs()) void this.asks(tabId)
@@ -147,7 +149,6 @@ export class OwnerAsleep {
       if (text) this.d.report(text)
     }
     this.awakeTabsChanged()
-    return true
   }
 
   awakeTabsChanged(): void {

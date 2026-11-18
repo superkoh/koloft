@@ -10,8 +10,9 @@ import {
   THIS_MAC,
   type AskedOwner,
   type OwnerAsleepDeps
-} from '../../src/main/ownerAsleep'
-import { ANSWER_NOT_TAKEN } from '../../src/plugins/sessions/main/dialog'
+} from '../../../../src/plugins/butler/main/ownerAsleep'
+import { ANSWER_NOT_TAKEN } from '../../../../src/plugins/sessions/api'
+import { OwnerPresence } from '../../../../src/core/presence'
 
 const HOUR_MS = 60 * 60_000
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-'))
@@ -21,8 +22,18 @@ afterAll(() => fs.rmSync(userData, { recursive: true, force: true }))
 const question = (text: string, questions = 1): AskedOwner => ({ question: true, questions, text })
 const approval = (text: string): AskedOwner => ({ question: false, questions: 0, text })
 
-function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null) {
+const presenceAsleepSince = (asleepSince: number | null): OwnerPresence =>
+  new OwnerPresence({
+    now: () => 0,
+    macIdleSeconds: () => 0,
+    asleepSince,
+    wake: () => undefined,
+    awayForTests: () => undefined
+  })
+
+function setup(over: Partial<OwnerAsleepDeps> = {}) {
   let now = 0
+  const presence = presenceAsleepSince(null)
   const asks = new Map<string, AskedOwner>()
   const refuses = new Map<string, string[]>()
   const replies: [string, string][] = []
@@ -31,6 +42,7 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
   const machines = [THIS_MAC, 'lab']
   const reports: string[] = []
   const d: OwnerAsleepDeps = {
+    presence,
     machines: () => machines,
     mark: async (machine, awake) => {
       if (down.has(machine)) return false
@@ -53,15 +65,15 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
     answeredFile: path.join(userData, `answered-${++setups}.json`),
     ...over
   }
-  const asleep = new OwnerAsleep(d, since)
+  const asleep = new OwnerAsleep(d)
   const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
   const fallAsleep = async (): Promise<void> => {
-    asleep.set(now)
+    presence.asleepSinceIs(now)
     await settle()
   }
   const wakeAfter = async (ms: number): Promise<void> => {
     now += ms
-    asleep.set(null)
+    presence.asleepSinceIs(null)
     await settle()
   }
   return {
@@ -299,15 +311,18 @@ describe('owner asleep', () => {
     await t.fallAsleep()
     t.asks.set('a', question('Blue or red?'))
     await t.asleep.asks('a')
-    const restarted = new OwnerAsleep(t.d, 0)
+    const afterRestart = presenceAsleepSince(0)
+    const restarted = new OwnerAsleep({ ...t.d, presence: afterRestart })
     t.asks.set('b', approval('npm publish'))
     await restarted.asks('b')
-    restarted.set(null)
+    afterRestart.asleepSinceIs(null)
     expect(t.reports).toHaveLength(1)
     expect(t.reports[0]).toContain('"Session a" asked the owner "Blue or red?"')
     expect(t.reports[0]).toContain('"Session b" asked to be allowed: "npm publish"')
 
-    new OwnerAsleep(t.d, HOUR_MS).set(null)
+    const nextNight = presenceAsleepSince(HOUR_MS)
+    new OwnerAsleep({ ...t.d, presence: nextNight })
+    nextNight.asleepSinceIs(null)
     expect(t.reports).toHaveLength(1)
   })
 })
@@ -341,8 +356,6 @@ describe('the full text of what Koloft answers while the owner sleeps and of the
       `both, 7 h 35 min: ${morningReport(7 * HOUR_MS + 35 * 60_000, changed, answered)}`,
       `both, under a minute: ${morningReport(1000, changed.slice(0, 1), answered.slice(0, 1))}`
     ]
-    await expect(lines.join('\n') + '\n').toMatchFileSnapshot(
-      './plugins/butler/text/owner-asleep.txt'
-    )
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./text/owner-asleep.txt')
   })
 })

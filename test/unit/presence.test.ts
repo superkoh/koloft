@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AWAY_AFTER_MS, Presence } from '../../src/main/presence'
+import { AWAY_AFTER_MS, OwnerPresence, Presence } from '../../src/core/presence'
 
 const A_SECOND_LATER = 1000
 
@@ -48,5 +48,54 @@ describe('Presence — the owner is at the Mac only while their own hands are on
     t.now += A_SECOND_LATER
     presence.handsOn()
     expect(presence.away()).toBe(false)
+  })
+})
+
+function owner(asleepSince: number | null, awayForTests?: boolean) {
+  const t = { now: 1_000_000, macIdle: 0, woken: 0 }
+  const presence = new OwnerPresence({
+    now: () => t.now,
+    macIdleSeconds: () => t.macIdle,
+    asleepSince,
+    wake: () => {
+      t.woken++
+      presence.asleepSinceIs(null)
+    },
+    awayForTests: () => awayForTests
+  })
+  return { t, presence }
+}
+
+describe('OwnerPresence — one answer to where the owner is: at the Mac, away, or asleep', () => {
+  it('asleep wins over everything, and an asleep owner is never away, so nothing is sent to them for being away', () => {
+    const { t, presence } = owner(5, true)
+    t.now += AWAY_AFTER_MS
+    expect(presence.where()).toBe('asleep')
+    expect(presence.away()).toBe(false)
+  })
+
+  it('awake, a test’s word on whether the owner is away is taken before the hands on Koloft', () => {
+    expect(owner(null, true).presence.where()).toBe('away')
+    expect(owner(null, false).presence.where()).toBe('at-the-mac')
+    const { t, presence } = owner(null)
+    expect(presence.where()).toBe('at-the-mac')
+    t.now += AWAY_AFTER_MS
+    expect(presence.where()).toBe('away')
+  })
+
+  it('the owner writing wakes them only while asleep, and every listener hears the night start and end with when it started', () => {
+    const { t, presence } = owner(null)
+    const heard: [number | null, number | null][] = []
+    presence.listenToSleep((since, sleptAt) => heard.push([since, sleptAt]))
+    presence.ownerWrote()
+    expect(t.woken).toBe(0)
+    expect(presence.asleepSinceIs(null)).toBe(false)
+    presence.asleepSinceIs(7)
+    presence.ownerWrote()
+    expect(t.woken).toBe(1)
+    expect(heard).toEqual([
+      [7, null],
+      [null, 7]
+    ])
   })
 })

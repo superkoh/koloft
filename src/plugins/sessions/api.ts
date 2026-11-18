@@ -16,6 +16,7 @@ export {
   type SlashResult
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
+export { ANSWER_NOT_TAKEN } from './main/dialog'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {
   placedRows,
