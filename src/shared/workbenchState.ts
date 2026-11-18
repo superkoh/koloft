@@ -30,6 +30,15 @@ export function stringsIn(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
 }
 
+export function textsIn(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(v).filter(
+      (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
+    )
+  )
+}
+
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null
 }

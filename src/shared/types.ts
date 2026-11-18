@@ -351,13 +351,10 @@ export interface AppSettings {
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
   gitAutoPull: boolean
-  // PLATFORM§17
-  browserControl: boolean
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
-  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
@@ -368,7 +365,6 @@ export interface AppSettings {
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
-  todoNotes: Record<string, string>
   sessionDefaults: Record<string, SessionDefaults>
 }
 
@@ -463,12 +459,10 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   statuslineBuiltin: true,
   gitAutoFetch: true,
   gitAutoPull: false,
-  browserControl: true,
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
-  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: {},
@@ -479,7 +473,6 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  todoNotes: {},
   sessionDefaults: {}
 }
 
@@ -1151,13 +1144,6 @@ export interface CoreApi {
     ports(tabId: string): Promise<ListeningPort[] | null>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
-  }
-  secret: {
-    list(): Promise<SecretAskView[]>
-    onAsks(cb: (asks: SecretAskView[]) => void): () => void
-    answer(id: string, value: string): void
-    done(id: string): void
-    decline(id: string): void
   }
   attention: {
     list(): Promise<AttentionEvent[]>

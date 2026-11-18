@@ -1,11 +1,11 @@
 import type { AccountMeta, BackendAvailability, BackendId, SessionMethods } from './types'
 import { hasUsableAccount, noUsableAccountLead } from './accountUsage'
 import { BACKEND_LABEL, backendAvailable, turnedOffLead } from './sessionBackend'
-import { settingsPaneName, type SettingsPaneId } from './paletteFeatures'
+import { settingsPaneName, type AppPaneId } from './settingsPanes'
 
 interface CannotRun {
   lead: string
-  fixedIn: SettingsPaneId
+  fixedIn: AppPaneId
 }
 
 function whyButlerCannotRunOn(

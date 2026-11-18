@@ -8,5 +8,6 @@ export const plugin: PluginManifest = {
   name: 'Browser control',
   mandatory: true,
   needs: ['workbench'],
+  settings: { keys: ['browserControl'] },
   text: [...TEXT, ...SKILL_TEXT]
 }

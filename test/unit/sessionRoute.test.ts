@@ -59,6 +59,35 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
   })
+
+  it('lists every routable feature in one fixed order, each settings page in the order of the Settings window', () => {
+    const lines = routeJob(LIST, 'x')
+      .prompt.split('\n')
+      .filter((l) => /^[a-z-]+ \| /.test(l))
+    expect(lines).toMatchInlineSnapshot(`
+      [
+        "new-session | New session… | 新会话, 新建会话",
+        "new-worktree-session | New worktree session… | 新 worktree",
+        "add-workspace | Add workspace… | 添加工作区, 加工作区, 打开文件夹, open folder",
+        "add-remote | Add remote workspace… | 远程工作区, ssh",
+        "toggle-workbench | Toggle Workbench | 工作台, 右侧面板",
+        "toggle-sidebar | Toggle sidebar | 侧栏, 侧边栏",
+        "open-settings | Settings… | 设置, 偏好, preferences",
+        "check-update | Check for updates… | 检查更新, 更新, 升级, 新版本, upgrade",
+        "settings-welcome | Settings ▸ Welcome | 欢迎, 入门, getting started",
+        "settings-sessions | Settings ▸ Sessions | 会话设置",
+        "settings-accounts | Settings ▸ Accounts | 账号, 账户, token",
+        "settings-usage | Settings ▸ Usage | 用量, 花费, 费用, cost, spend",
+        "settings-appearance | Settings ▸ Appearance | 外观, 字号, 字体, 主题, 深色, font",
+        "settings-shortcuts | Settings ▸ Shortcuts | 快捷键, keyboard, hotkey",
+        "settings-assist | Settings ▸ Assist | 助手",
+        "settings-discord | Settings ▸ Discord | 机器人",
+        "settings-notifications | Settings ▸ Notifications | 通知, 提醒",
+        "settings-extensions | Settings ▸ Extensions | 扩展, 插件, plugin",
+        "settings-about | Settings ▸ About | 关于, 版本号, version",
+      ]
+    `)
+  })
 })
 
 describe('parseRoute: an answer is checked before anything uses it', () => {
