@@ -2342,6 +2342,15 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   the client exits with it; `tmux capture-pane -p` run from that shell after the program
   ended still holds the program's last screen (2026-10-28, tmux 3.3a in the
   `koloft-e2e-sshd` Docker image: codes 3, 137 and 0 came through, the screen was captured).
+- **`kill-session` returns at once, and a client attached to that session is gone with
+  it**: `kill-session` came back in 2–4 ms and the attached client had exited within 4 ms
+  of the call, in 5 of 5 runs. Through ssh, a remote Muse tab's pty ended 76–137 ms after
+  Koloft began putting it to sleep (the tab script's name lookup and the kill, two ssh
+  calls on one ControlMaster to a container on the same Mac; 3 runs). The e2e fake tmux
+  is slower on both: its kill waits 0.5 s, and its client exits up to 350 ms after the
+  pane's program died (2026-11-18, tmux 3.3a in the `koloft-e2e-sshd` Docker image, the
+  client run under `script`, a pane running `sleep`; the ssh run through Koloft's own
+  remote Muse tab with the image's fake muse).
 - **On a machine whose `/bin/sh` is dash, a Ctrl-C reaching the pane kills the waiting
   shell** once its child exits, even when the child handled the signal, so nothing after the
   child runs. `trap : INT QUIT` in that shell keeps it alive and still hands the child the
