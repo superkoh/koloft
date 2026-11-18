@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   buildResetPatch,
@@ -435,5 +437,83 @@ describe('session methods', () => {
         sessionMethods: { defaultBackend: 'muse', enabled: off }
       }).assist
     ).toEqual({ backend: 'agy' })
+  })
+})
+
+describe('a settings file an older Koloft wrote', () => {
+  const older = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'settings-older-koloft', 'settings.json'), 'utf8')
+  )
+
+  it('loads the butler’s name, his conversation and the Discord block exactly as before', () => {
+    const { butler, butlerSession, discord } = sanitizeLoadedSettings(older)
+    expect({ butler, butlerSession, discord }).toMatchInlineSnapshot(`
+      {
+        "butler": {
+          "formerNames": [
+            "Alfred",
+            "A name far longer than the forty charact",
+          ],
+          "name": "Jeeves the butler",
+        },
+        "butlerSession": {
+          "carried": {
+            "effort": "high",
+            "model": "opus",
+          },
+          "knowsTodo": [
+            "todo-1",
+            "todo-2",
+            "todo-3",
+          ],
+          "lastSessionKey": "key-butler",
+          "sessionIds": [
+            "s-butler",
+            "s-assist",
+            "s-binding",
+          ],
+        },
+        "discord": {
+          "category": {
+            "channelId": "300",
+            "guildId": "100",
+            "name": "Koloft",
+          },
+          "channel": {
+            "channelId": "200",
+            "guildId": "100",
+            "name": "global",
+          },
+          "lastMessageId": "800",
+          "oldThreadsArchived": true,
+          "rooms": [
+            {
+              "keys": [
+                "claude:abc",
+                "claude:def",
+              ],
+              "lastMessageId": "510",
+              "name": "fix login",
+              "putDown": true,
+              "threadId": "500",
+            },
+            {
+              "keys": [
+                "codex:jkl",
+              ],
+              "name": "plain room",
+              "threadId": "502",
+            },
+          ],
+          "userId": "4242",
+          "userName": "owner",
+        },
+      }
+    `)
+  })
+
+  it('loads the same again from what it writes back', () => {
+    const loaded = sanitizeLoadedSettings(older)
+    expect(sanitizeLoadedSettings(JSON.parse(JSON.stringify(loaded)))).toStrictEqual(loaded)
   })
 })
