@@ -694,18 +694,25 @@ if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.dock?.hide()
 }
 
-let mainErrorLog: ((line: string) => void) | undefined
+const AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS = 60_000
+
 // PLATFORM§4
-process.on('uncaughtException', (error) => {
+function takeErrorsNobodyCaught(): void {
   const file = path.join(app.getPath('userData'), 'main-errors.log')
-  mainErrorLog ??= signalLog(file)
-  mainErrorLog(error instanceof Error && error.stack ? error.stack : String(error))
-  const message = error instanceof Error ? error.message : String(error)
-  sendToRenderer(
-    CH.toast.show,
-    `Koloft hit an error it did not expect and kept going: ${message}. The details are in ${file}`
-  )
-})
+  const log = signalLog(file)
+  let shownAt = -Infinity
+  process.on('uncaughtException', (error) => {
+    console.error(error)
+    const message = error instanceof Error ? error.message : String(error)
+    log(error instanceof Error && error.stack ? error.stack : message)
+    if (Date.now() - shownAt < AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS) return
+    const shown = sendToRenderer(
+      CH.toast.show,
+      `Koloft hit an error it did not expect and kept going: ${message}. The details are in ${file}`
+    )
+    if (shown) shownAt = Date.now()
+  })
+}
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -3492,14 +3499,18 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
-  const stallsLog = path.join(app.getPath('userData'), 'main-stalls.log')
-  const stalls = new StallWatchWhileFocused(signalLog(stallsLog))
-  beatForTheStuckWatch((workerData) => createMainThreadStuckWorker({ workerData }), {
-    pid: process.pid,
-    log: stallsLog,
-    samplesDir: path.join(app.getPath('userData'), 'main-stuck'),
-    stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS)
-  })
+  takeErrorsNobodyCaught()
+  const stallLog = signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  const stalls = new StallWatchWhileFocused(stallLog)
+  beatForTheStuckWatch(
+    (workerData) => createMainThreadStuckWorker({ workerData }),
+    {
+      pid: process.pid,
+      samplesDir: path.join(app.getPath('userData'), 'main-stuck'),
+      stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS)
+    },
+    stallLog
+  )
   const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
   app.on('browser-window-focus', followFocus)
   app.on('browser-window-blur', () => setImmediate(followFocus))

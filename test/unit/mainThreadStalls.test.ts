@@ -22,8 +22,11 @@ function stuckWatch(beatComesAfterMs: number, watchWakesLateByMs = 0): string[] 
       now = cameInTime ? beatComesAfterMs : now + waited + watchWakesLateByMs
       return cameInTime
     },
-    stuck: () => said.push(`stuck at ${now}`),
-    resumed: (afterMs) => said.push(`resumed after ${afterMs}`)
+    leaveWhatItIsIn: () => {
+      said.push(`left at ${now}`)
+      return 'the sample'
+    },
+    resumed: (afterMs, whatItWasIn) => said.push(`back after ${afterMs}, was in ${whatItWasIn}`)
   })
   return said
 }
@@ -57,20 +60,20 @@ describe('the main-thread stall log', () => {
   })
 })
 
-describe('the watch that speaks while the main thread is still stuck', () => {
-  it('says nothing while the main thread keeps beating', () => {
+describe('the watch for a main thread that is still stuck', () => {
+  it('leaves nothing while the main thread keeps beating', () => {
     expect(stuckWatch(STUCK_AFTER_MS - 1)).toEqual([])
   })
 
-  it('says the main thread is stuck as soon as no beat came for the limit, not once it is back, and then how long it was gone', () => {
+  it('leaves what the main thread is in as soon as no beat came for the limit, not once it is back, and then says how long it was gone and where that was left', () => {
     const SEVEN_HOURS_MS = 7 * 3600_000
     expect(stuckWatch(SEVEN_HOURS_MS)).toEqual([
-      `stuck at ${STUCK_AFTER_MS}`,
-      `resumed after ${SEVEN_HOURS_MS}`
+      `left at ${STUCK_AFTER_MS}`,
+      `back after ${SEVEN_HOURS_MS}, was in the sample`
     ])
   })
 
-  it('says nothing when the watch itself woke late, as after the Mac slept: then the whole process was paused, not the main thread stuck', () => {
+  it('leaves nothing when the watch itself woke late, as after the Mac slept: then the whole process was paused, not the main thread stuck', () => {
     expect(stuckWatch(3600_000, THE_WHOLE_PROCESS_WAS_PAUSED_IF_THE_WATCH_WOKE_LATE_BY_MS)).toEqual(
       []
     )

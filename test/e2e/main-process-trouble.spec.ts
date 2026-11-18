@@ -10,9 +10,11 @@ function readOrEmpty(file: string): string {
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 }
 
-const count = (text: string, part: string): number => text.split(part).length - 1
+function filesIn(dir: string): string[] {
+  return fs.existsSync(dir) ? fs.readdirSync(dir).map((name) => path.join(dir, name)) : []
+}
 
-test('an error nobody caught in the main process is written down and shown as a toast, and never opens the box that holds the whole app until someone clicks it', async ({
+test('errors nobody caught in the main process are written down and shown as one toast, and never open the box that holds the whole app until someone clicks it', async ({
   app,
   page,
   env
@@ -24,48 +26,54 @@ test('an error nobody caught in the main process is written down and shown as a 
     dialog.showErrorBox = () => {
       seen.__errorBoxes!++
     }
-    setTimeout(() => {
-      throw new Error('thrown in a timer by the test')
-    }, 0)
+    for (const which of ['first', 'second'])
+      setTimeout(() => {
+        throw new Error(`${which} error thrown in a timer by the test`)
+      }, 0)
   })
-  await expect(page.locator('.toast-msg')).toContainText('thrown in a timer by the test')
+  const toasts = page.locator('.toast-msg', { hasText: /an error it did not expect/ })
+  await expect(toasts).toContainText('first error thrown in a timer by the test')
   await expect
     .poll(() => readOrEmpty(path.join(env.userData, 'main-errors.log')))
-    .toMatch(/Error: thrown in a timer by the test\n\s+at /)
+    .toMatch(/Error: first error thrown[^]+\n\s+at [^]+Error: second error thrown/)
+  await expect(toasts).toHaveCount(1)
   expect(await app.evaluate(() => (globalThis as { __errorBoxes?: number }).__errorBoxes)).toBe(0)
 })
 
-test('while the main thread is stuck, a line and a sample of what it is in are written at that moment, not once it is back, and a line follows when it takes work again', async ({
+test('while the main thread is stuck, a sample of what it is in is saved at that moment, not once it is back, and the stall log names it once the main thread takes work again', async ({
   env
 }) => {
   env.launchEnv.KOLOFT_MAIN_STUCK_MS = String(STUCK_AFTER_MS)
   const app = await launchApp(env)
   try {
     await waitBooted(await app.firstWindow())
+    const samplesDir = path.join(env.userData, 'main-stuck')
     const log = path.join(env.userData, 'main-stalls.log')
-    const STUCK = 'and is still stuck'
-    const BACK = 'main thread took work again after'
-    await expect
-      .poll(() => count(readOrEmpty(log), STUCK) === count(readOrEmpty(log), BACK))
-      .toBe(true)
-    const before = readOrEmpty(log).length
-    const sinceHeld = (): string => readOrEmpty(log).slice(before)
+    const fromStartup = new Set(filesIn(samplesDir))
+    const logFromStartup = readOrEmpty(log).length
+    const sampleOfTheHold = (): string =>
+      filesIn(samplesDir)
+        .filter((file) => !fromStartup.has(file))
+        .find((file) => readOrEmpty(file).includes('com.apple.main-thread')) ?? ''
 
-    const held = app.evaluate((_electron, ms) => {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-    }, MAIN_THREAD_HELD_MS)
+    let back = false
+    const held = app
+      .evaluate((_electron, ms) => {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+      }, MAIN_THREAD_HELD_MS)
+      .then(() => (back = true))
 
-    await expect
-      .poll(sinceHeld, { timeout: MAIN_THREAD_HELD_MS })
-      .toMatch(/what the main thread was in while stuck: .+\.txt\n/)
-    const written = sinceHeld()
-    expect(written).toContain(`no new work for ${STUCK_AFTER_MS} ms ${STUCK}`)
-    expect(written).not.toContain(BACK)
-    const sample = /while stuck: (.+\.txt)\n/.exec(written)![1]
-    expect(fs.readFileSync(sample, 'utf8')).toContain('com.apple.main-thread')
+    await expect.poll(sampleOfTheHold, { timeout: MAIN_THREAD_HELD_MS }).not.toBe('')
+    const sample = sampleOfTheHold()
+    expect(back).toBe(false)
 
     await held
-    await expect.poll(sinceHeld).toMatch(/main thread took work again after \d+ ms\n/)
+    await expect
+      .poll(() => readOrEmpty(log).slice(logFromStartup))
+      .toContain(`what it was in ${STUCK_AFTER_MS} ms into that: ${sample}\n`)
+    expect(readOrEmpty(log).slice(logFromStartup)).toMatch(
+      /main thread took no new work for \d{4,5} ms; what it was in/
+    )
   } finally {
     await quitAndClose(app)
   }

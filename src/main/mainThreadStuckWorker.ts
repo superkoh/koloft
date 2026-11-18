@@ -1,51 +1,49 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import { workerData } from 'worker_threads'
+import { parentPort, workerData } from 'worker_threads'
 import { watchOneBeat, type StuckWatchData } from './mainThreadStalls'
 
 const SAMPLE_SECONDS = 1
 const SAMPLE_GIVES_UP_MS = 30_000
 const SAMPLES_KEPT = 10
+const SAMPLE_SUFFIX = '.txt'
 
-const { beats, pid, log, samplesDir, stuckAfterMs } = workerData as StuckWatchData
+const { beats, pid, samplesDir, stuckAfterMs } = workerData as StuckWatchData
 const beat = new Int32Array(beats)
-
-function say(line: string): void {
-  try {
-    fs.appendFileSync(log, `${new Date().toISOString()} ${line}\n`)
-  } catch {
-    return
-  }
-}
 
 // PLATFORM§70
 function sampleOfTheProcess(): string {
-  const file = path.join(samplesDir, `${new Date().toISOString().replace(/[:.]/g, '-')}.txt`)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const file = path.join(samplesDir, stamp + SAMPLE_SUFFIX)
   try {
     fs.mkdirSync(samplesDir, { recursive: true })
-    const older = fs.readdirSync(samplesDir).sort()
-    for (const name of older.slice(0, Math.max(0, older.length - SAMPLES_KEPT + 1)))
-      fs.rmSync(path.join(samplesDir, name), { force: true })
-    execFileSync('/usr/bin/sample', [String(pid), String(SAMPLE_SECONDS), '-file', file], {
-      stdio: 'ignore',
-      timeout: SAMPLE_GIVES_UP_MS
-    })
-    return `what the main thread was in while stuck: ${file}`
+    try {
+      execFileSync('/usr/bin/sample', [String(pid), String(SAMPLE_SECONDS), '-file', file], {
+        stdio: 'ignore',
+        timeout: SAMPLE_GIVES_UP_MS
+      })
+    } catch (error) {
+      fs.writeFileSync(file, `could not sample the stuck main thread: ${error}\n`)
+    }
+    const samples = fs.readdirSync(samplesDir).filter((name) => name.endsWith(SAMPLE_SUFFIX))
+    for (const old of samples.sort().slice(0, -SAMPLES_KEPT))
+      fs.rmSync(path.join(samplesDir, old), { force: true })
+    return file
   } catch (error) {
-    return `could not sample the stuck main thread: ${String(error).split('\n')[0]}`
+    return `nothing, as ${samplesDir} could not be written (${error})`
   }
 }
 
 for (;;)
   watchOneBeat({
     stuckAfterMs,
-    now: () => performance.now(),
+    now: () => Date.now(),
     beats: () => Atomics.load(beat, 0),
     beatAfter: (seen, withinMs) => Atomics.wait(beat, 0, seen, withinMs) !== 'timed-out',
-    stuck: () => {
-      say(`main thread has taken no new work for ${stuckAfterMs} ms and is still stuck`)
-      say(sampleOfTheProcess())
-    },
-    resumed: (afterMs) => say(`main thread took work again after ${Math.round(afterMs)} ms`)
+    leaveWhatItIsIn: sampleOfTheProcess,
+    resumed: (afterMs, whatItWasIn) =>
+      parentPort?.postMessage(
+        `main thread took no new work for ${afterMs} ms; what it was in ${stuckAfterMs} ms into that: ${whatItWasIn}`
+      )
   })

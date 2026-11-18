@@ -3924,17 +3924,22 @@ registry folders stat them through `fs.promises`.
   `Electron.app` signed ad hoc with the hardened runtime and the three entitlements the
   shipped app carries (`allow-jit`, `allow-unsigned-executable-memory`,
   `disable-library-validation`). Measured 2026-11-18 on macOS 27.2 (Darwin 27.2.0),
-  Apple silicon, once each. Not probed: a Developer ID signed, notarized build; App Nap
-  holding back the main thread's timer but not the worker's wait.
+  Apple silicon, once each. Left alone for 5 minutes in that hidden app (accessory
+  policy, no window), a 1 s timer on the main thread was never more than 5 ms late and
+  a 5 s wait in the worker never timed out. Not probed: a Developer ID signed,
+  notarized build; an app with a Dock icon whose window stays covered for hours, where
+  App Nap might hold back the main thread's timer but not the worker's wait.
 
 Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
 and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
-of that it spent on the CPU. Focus or not, `mainThreadStuckWorker.ts` writes a line
-there once the main thread has taken no new work for 5 s, saves a `sample` of the
-process under `main-stuck/` in `userData` (the newest ten are kept), and writes another
-line when the main thread takes work again. It writes nothing when its own wait came
-back 2 s or more late, as after the Mac slept.
+of that it spent on the CPU. Focus or not, once the main thread has taken no new work
+for 5 s, `mainThreadStuckWorker.ts` saves a `sample` of the process under `main-stuck/`
+in `userData` while it is still stuck (the newest ten are kept; if `sample` fails, the
+file holds the reason). When the main thread takes work again, a line in
+`main-stalls.log` says how long it was gone and names that file. The watch leaves
+nothing when its own wait came back 2 s or more late by the wall clock: the whole
+process was paused then, as when the Mac sleeps (a sleep itself was not probed).
 
 ## §71 1Password for Mac: which browsers its app lets the extension in
 

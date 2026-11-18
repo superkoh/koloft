@@ -1,3 +1,5 @@
+import type { Worker } from 'worker_threads'
+
 export const LOOK_EVERY_MS = 25
 export const LOGGED_ONCE_A_LOOK_COMES_LATE_BY_MS = 50
 
@@ -39,8 +41,8 @@ export interface StuckWatchDeps {
   now(): number
   beats(): number
   beatAfter(seen: number, withinMs?: number): boolean
-  stuck(): void
-  resumed(afterMs: number): void
+  leaveWhatItIsIn(): string
+  resumed(afterMs: number, whatItWasIn: string): void
 }
 
 // PLATFORM§70
@@ -50,27 +52,30 @@ export function watchOneBeat(d: StuckWatchDeps): void {
   if (d.beatAfter(seen, d.stuckAfterMs)) return
   const wokeLateByMs = d.now() - from - d.stuckAfterMs
   if (wokeLateByMs >= THE_WHOLE_PROCESS_WAS_PAUSED_IF_THE_WATCH_WOKE_LATE_BY_MS) return
-  d.stuck()
+  const whatItWasIn = d.leaveWhatItIsIn()
   d.beatAfter(seen)
-  d.resumed(d.now() - from)
+  d.resumed(d.now() - from, whatItWasIn)
 }
 
 export interface StuckWatchData {
   beats: SharedArrayBuffer
   pid: number
-  log: string
   samplesDir: string
   stuckAfterMs: number
 }
 
 // PLATFORM§70
 export function beatForTheStuckWatch(
-  startWatch: (data: StuckWatchData) => { unref(): void },
-  data: Omit<StuckWatchData, 'beats'>
+  startWatch: (data: StuckWatchData) => Pick<Worker, 'on' | 'unref'>,
+  data: Omit<StuckWatchData, 'beats'>,
+  log: (line: string) => void
 ): void {
   const beats = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
   const beat = new Int32Array(beats)
-  startWatch({ ...data, beats }).unref()
+  const watch = startWatch({ ...data, beats })
+  watch.on('message', log)
+  watch.on('error', (error) => log(`the watch for a stuck main thread stopped: ${error}`))
+  watch.unref()
   setInterval(() => {
     Atomics.add(beat, 0, 1)
     Atomics.notify(beat, 0)
