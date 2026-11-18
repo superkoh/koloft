@@ -16,6 +16,7 @@ import {
   type TabFacts
 } from '../../src/main/agentRequests'
 import type { SessionInfo } from '../../src/shared/types'
+import { testCommands } from './helpers/testCommands'
 
 const OTHER_LIVE_INSTANCE = process.pid + 1
 const tabOf = (pid: number, n: number): string => `pty-${pid.toString(36)}-${n}`
@@ -28,13 +29,16 @@ let rulesOf: Map<string, string>
 
 function requests(extra: Partial<AgentRequestDeps> = {}): AgentRequests {
   return new AgentRequests({
-    verbs: {
+    commands: testCommands({
       help: helpVerb(async (tabId) => rulesOf.get(tabId)),
       echo: (args, caller) => {
         calls.push({ args, caller })
         return answered(args.join(' '))
+      },
+      boom: () => {
+        throw new Error('the disk is full')
       }
-    },
+    }),
     tab: (id) => tabs.get(id),
     session: (id) => sessionOf(id),
     enabled: () => on,
@@ -114,12 +118,20 @@ describe('koloft requests from a session', () => {
     const tabId = tabOf(process.pid, 1)
     await requests().answer(dir, 'req-a.json', { tabId, argv: ['frobnicate', 'x'], cwd: '/w' })
     await requests().answer(dir, 'req-b.json', { tabId, argv: ['constructor'], cwd: '/w' })
-    for (const id of ['a', 'b']) {
-      expect(reply(id)).toEqual({
-        exit: 2,
-        text: expect.stringContaining('koloft help')
-      })
-    }
+    expect(reply('a')).toEqual({
+      exit: 2,
+      text: 'koloft: there is no "frobnicate" command. Run "koloft help" to see the commands.'
+    })
+    expect(reply('b')).toEqual({
+      exit: 2,
+      text: 'koloft: there is no "constructor" command. Run "koloft help" to see the commands.'
+    })
+  })
+
+  it('a command that throws is answered with koloft: and the error, exit code 1', async () => {
+    const tabId = tabOf(process.pid, 1)
+    await requests().answer(dir, 'req-a.json', { tabId, argv: ['boom'], cwd: '/w' })
+    expect(reply('a')).toEqual({ exit: 1, text: 'koloft: the disk is full' })
   })
 
   it('hands the command its words after the verb and the session tab it came from', async () => {

@@ -8,6 +8,7 @@ export const plugin: PluginManifest = {
   name: 'Workbench',
   mandatory: true,
   needs: [],
+  commands: [{ verb: 'open' }, { verb: 'diff' }, { verb: 'note' }],
   text: TEXT,
   assistJobs: ASSIST_JOBS
 }

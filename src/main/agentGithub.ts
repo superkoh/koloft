@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { answered, cutForATurn, EXIT_USAGE, refused, type AgentVerb } from '@core/command'
+import type { Commands } from '@core/commands'
 
 export const GH_USAGE =
   "koloft: usage: koloft gh <one of gh's own commands but auth, alias, extension, config or copilot>, like: koloft gh pr view 389"
@@ -111,6 +112,10 @@ function jqFilters(args: string[]): string[] {
     if (attached[1]) return [attached[1]]
     return args[i + 1] === undefined ? [] : [args[i + 1]]
   })
+}
+
+export function registerGithubCommand(commands: Commands, d: GithubVerbDeps): void {
+  commands.register({ gh: githubVerb(d) })
 }
 
 // ADR-0029
