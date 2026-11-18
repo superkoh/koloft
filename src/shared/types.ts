@@ -388,9 +388,7 @@ export type SessionDefaultsRead =
     }
   | { ok: false; error: string }
 
-export const ASSIST_JOBS = ['title', 'handover', 'turn', 'docs', 'route'] as const
-export type AssistJobId = (typeof ASSIST_JOBS)[number]
-export type AssistRowId = AssistJobId | 'butler'
+export type AssistRowId = string
 
 export interface AssistPick {
   backend: BackendId
