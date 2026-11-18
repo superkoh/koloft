@@ -121,6 +121,18 @@ export function callbackText(c: FakeCallback): string {
   return c.data.components ? cardText(c.data.components).text : (c.data.content ?? '')
 }
 
+export type PostFailure = 'forbidden' | 'gone' | 'unreachable'
+
+const UNREACHABLE = -1
+
+const FAILED_POST: Record<
+  Exclude<PostFailure, 'unreachable'>,
+  { status: number; body: unknown }
+> = {
+  forbidden: { status: 403, body: { message: 'Missing Permissions', code: 50013 } },
+  gone: { status: 404, body: { message: 'Unknown Channel', code: 10003 } }
+}
+
 export interface FakeDiscord {
   identifies: number
   closeOnIdentify: number | null
@@ -133,7 +145,8 @@ export interface FakeDiscord {
   rateLimited: number
   closeCodes: number[]
   posted: FakePost[]
-  refusePostsIn: string[]
+  failPostsIn: Record<string, PostFailure>
+  failedPosts: { channelId: string; how: PostFailure }[]
   reactions: FakeReaction[]
   edits: FakePost[]
   typing: string[]
@@ -232,7 +245,8 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     rateLimited: 0,
     closeCodes: [],
     posted: [],
-    refusePostsIn: [],
+    failPostsIn: {},
+    failedPosts: [],
     reactions: [],
     edits: [],
     typing: [],
@@ -469,9 +483,11 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 204 }
     }
     const message = MESSAGE_ROUTE.exec(route)
-    if (message && req.method === 'POST' && fake.refusePostsIn.includes(message[1])) {
+    const failure = message && req.method === 'POST' ? fake.failPostsIn[message[1]] : undefined
+    if (message && failure) {
       await bodyOf(req)
-      return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
+      fake.failedPosts.push({ channelId: message[1], how: failure })
+      return failure === 'unreachable' ? { status: UNREACHABLE } : FAILED_POST[failure]
     }
     if (message && req.method === 'POST') {
       const id = String(++nextId)
@@ -494,7 +510,9 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
 
   const server = http.createServer((req, res) => {
     void answer(req).then(({ status, body }) => {
-      if (body === undefined) {
+      if (status === UNREACHABLE) {
+        req.socket.destroy()
+      } else if (body === undefined) {
         res.writeHead(status)
         res.end()
       } else if (typeof body === 'string') {

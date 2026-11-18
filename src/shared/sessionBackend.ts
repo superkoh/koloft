@@ -7,7 +7,7 @@ import type {
   SessionSource
 } from './types'
 import { hostOf } from './remoteKey'
-import { settingsPaneName } from './paletteFeatures'
+import { settingsPaneName } from './settingsPanes'
 
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
@@ -154,6 +154,18 @@ const CONVERSATION_AT_FIRST_PROMPT: Record<BackendId, boolean> = {
 
 export function conversationAtFirstPrompt(backend: BackendId): boolean {
   return CONVERSATION_AT_FIRST_PROMPT[backend]
+}
+
+const OWNER_TEXT_BESIDE_THE_ROLE: Record<BackendId, boolean> = {
+  // CC§13
+  claude: true,
+  codex: false,
+  muse: false,
+  agy: false
+}
+
+export function ownerTextBesideTheRole(backend: BackendId): boolean {
+  return OWNER_TEXT_BESIDE_THE_ROLE[backend]
 }
 
 const PASTE_KEEPS_ITS_LAST_LINE_FEEDS: Record<BackendId, boolean> = {

@@ -6,8 +6,14 @@ import { bridge as inbox, type InboxBridge } from './inbox/preload/bridge'
 import { bridge as scheduledTasks, type CronBridge } from './scheduled-tasks/preload/bridge'
 import { bridge as github, type GithubBridge } from './github/preload/bridge'
 import { bridge as passwords, type SecretBridge } from './passwords/preload/bridge'
+import { bridge as butler, type ButlerBridge } from './butler/preload/bridge'
 
-export type PluginBridges = WorkbenchBridge & InboxBridge & CronBridge & GithubBridge & SecretBridge
+export type PluginBridges = WorkbenchBridge &
+  InboxBridge &
+  CronBridge &
+  GithubBridge &
+  SecretBridge &
+  ButlerBridge
 
 export type KoloftApi = CoreApi & PluginBridges
 
@@ -16,5 +22,6 @@ export const pluginBridges = (ipc: PreloadIpc): PluginBridges => ({
   ...inbox(ipc),
   ...scheduledTasks(ipc),
   ...github(ipc),
-  ...passwords(ipc)
+  ...passwords(ipc),
+  ...butler(ipc)
 })

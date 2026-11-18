@@ -4,9 +4,13 @@ import { slot } from '@core/ui'
 import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
-import type { LandingAfterClose } from './store'
+import type { ClaimsWorkspace, LandingAfterClose } from './store'
+import type { Icon } from './icons'
+import type { Settings } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
+
+export const WORKSPACE_CLAIM = slot<ClaimsWorkspace>('workspace-claim')
 
 export type UseShowsGlobalNote = (tabId: string | null, rowId: string | null) => boolean
 
@@ -30,6 +34,19 @@ export interface RowExtrasFill {
 
 export const ROW_EXTRAS = slot<RowExtrasFill>('row-extras')
 
+export interface RowSetUpFill {
+  row: string
+  setUp: (settings: Settings) => boolean
+}
+
+export const ROW_SET_UP = slot<RowSetUpFill>('row-set-up')
+
+export interface SettingsPageIcon {
+  page: string
+  Icon: Icon
+}
+
+export const SETTINGS_PAGE_ICON = slot<SettingsPageIcon>('settings-page-icon')
 export type MarkOf = (
   wsPath: string,
   row: SessionRow,
