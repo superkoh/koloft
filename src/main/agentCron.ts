@@ -36,8 +36,9 @@ import {
   type AgentVerb,
   type Parsed
 } from './agentRequests'
+import type { Commands } from '@core/commands'
 
-const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
+const SUBS =['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
 type Sub = (typeof SUBS)[number]
 const TAKES_OPTIONS: Sub[] = ['add', 'edit']
 const TAKES_NO_JOB: Sub[] = ['list', 'add']
@@ -321,6 +322,10 @@ export interface CronVerbDeps {
   resolveWorkspace(ref: string): Parsed<string>
   toast(text: string): void
   now(): Date
+}
+
+export function registerCronCommand(commands: Commands, d: CronVerbDeps): void {
+  commands.register('scheduled-tasks', { cron: cronVerb(d) })
 }
 
 export function cronVerb(d: CronVerbDeps): AgentVerb {

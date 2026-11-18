@@ -7,5 +7,6 @@ export const plugin: PluginManifest = {
   name: 'Inbox',
   mandatory: true,
   needs: ['sessions'],
+  commands: [{ verb: 'inbox' }],
   text: TEXT
 }

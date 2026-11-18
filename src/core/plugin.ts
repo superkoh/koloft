@@ -20,7 +20,6 @@ export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): T
 
 export interface PluginCommand {
   verb: string
-  summary: string
 }
 
 export interface PluginMoments {

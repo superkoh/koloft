@@ -1,4 +1,5 @@
 import { urlOrNull } from '@shared/browserRoute'
+import type { Commands } from '@core/commands'
 import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
 import type { SecretAnswer, SecretAsk } from '@plugins/passwords/main/secretAsks'
 import type { TapRounds } from './discord/secretCards'
@@ -127,6 +128,10 @@ async function tapAsk(
   })
   if ('ended' in a) return refused(a.ended === 'declined' ? OWNER_GAVE_UP : TAPS_NOT_IN_TIME)
   return answered('passed' in a ? TAPS_PASSED : DONE_AT_THE_MAC)
+}
+
+export function registerPageCommand(commands: Commands, d: PageVerbDeps): void {
+  commands.register('passwords', { page: pageVerb(d) })
 }
 
 export function pageVerb(d: PageVerbDeps): AgentVerb {

@@ -2,6 +2,7 @@ import fs from 'fs'
 import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
 import type { FileOpened } from '@core/moment'
+import type { Commands } from '@core/commands'
 import { openDropTarget } from './openDrop'
 import {
   answered,
@@ -40,6 +41,10 @@ async function show(
     return refused(`koloft: there is no file at ${target} that the Workbench can show.`)
   const said = await d.announceOpened({ tabId: caller.tabId, target, view })
   return answered([`Opened ${target} in this session's Workbench.`, ...said].join(' '))
+}
+
+export function registerWorkbenchCommands(commands: Commands, d: WorkbenchVerbDeps): void {
+  commands.register('workbench', workbenchVerbs(d))
 }
 
 export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {

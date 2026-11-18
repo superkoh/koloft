@@ -11,6 +11,7 @@ import {
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
+import type { Commands } from '@core/commands'
 import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
 import type { PagePictures } from './discord/pageShot'
@@ -126,6 +127,10 @@ async function setup(
     return r.ok ? answered('Bound to a new channel.') : refused(`koloft: ${r.error}`)
   }
   return refused(DISCORD_USAGE, EXIT_USAGE)
+}
+
+export function registerDiscordCommand(commands: Commands, d: DiscordVerbDeps): void {
+  commands.register('discord', { discord: discordVerb(d) })
 }
 
 // PLATFORM§39

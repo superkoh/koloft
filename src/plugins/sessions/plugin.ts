@@ -8,5 +8,6 @@ export const plugin: PluginManifest = {
   name: 'Sessions core',
   mandatory: true,
   needs: [],
+  commands: [{ verb: 'help' }, { verb: 'session' }, { verb: 'workspace' }],
   text: [...TEXT, ...SKILL_TEXT]
 }
