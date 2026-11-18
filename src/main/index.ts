@@ -4101,7 +4101,6 @@ app.whenReady().then(() => {
       }
     }
   })
-  secretAsks = secrets
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4205,6 +4204,7 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   secrets.listen(secretCards)
+  secretAsks = secrets
   const interactions = new Interactions({
     owner: () => butlerNow.owner(),
     ownerWrote: ownerCameBack,
