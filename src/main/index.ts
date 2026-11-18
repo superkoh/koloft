@@ -518,11 +518,12 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { butlerHelperRole } from '@plugins/butler/api'
+import { butlerHelperRole, conductorFolder } from '@plugins/butler/api'
+import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
-import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
+import { DiscordBinding } from './discord/binding'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import {
   sendPhoneCopy,
@@ -642,7 +643,12 @@ import {
   type Target
 } from './agentSessions'
 import { resolveWorkspace, type PlacedRow } from '@plugins/sessions/api'
-import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
+import {
+  A_HELPER_HAS_IT,
+  TODO_NOTICE_FROM_KOLOFT,
+  crossSessionLine,
+  writeLineInTurn
+} from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -866,7 +872,7 @@ tracker.heldTabs = () => {
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
     if (
-      butler?.channelOfTab(s.tabId) ||
+      discordBinding?.channelOfTab(s.tabId) ||
       roomOfTab(s.tabId) ||
       workspaceMgr?.isResident(s.sessionId) ||
       cronRunner?.holdsOpenRunThatClosesItself(s.tabId)
@@ -1512,6 +1518,7 @@ let fallbackBin: string | undefined
 let gitFirstBin: string | undefined
 let cronRunner: CronRunner | null = null
 let butler: Butler | null = null
+let discordBinding: DiscordBinding | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let sessionAsks: SessionAsks | null = null
@@ -1611,11 +1618,12 @@ async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestio
 }
 
 function syncAnswerable(): void {
-  const all = butler
-  if (!hookRegDir || !all) return
+  const binding = discordBinding
+  if (!hookRegDir || !binding) return
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
-    const on = ownerAsleep.answersFor(s.tabId) || (discordConnected && !!all.channelOfTab(s.tabId))
+    const on =
+      ownerAsleep.answersFor(s.tabId) || (discordConnected && !!binding.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -2157,8 +2165,9 @@ const sessionDeps: SessionVerbDeps = {
   stop: killTabFromMain,
   answer: answerSession,
   undelivered: (callerTab, target, why) => {
-    const callerChannel = butler?.channelOfTab(callerTab)
-    const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
+    const callerChannel = discordBinding?.channelOfTab(callerTab)
+    const channelId =
+      callerChannel ?? (target.butler ? discordBinding?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
     const butlerTab = callerChannel ? callerTab : butler?.liveTab()
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
@@ -2167,7 +2176,7 @@ const sessionDeps: SessionVerbDeps = {
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
+    target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
@@ -2313,7 +2322,7 @@ registerInboxCommand(commands, {
 })
 
 registerDiscordCommand(commands, {
-  channelOf: (tabId) => butler?.channelOfTab(tabId),
+  channelOf: (tabId) => discordBinding?.channelOfTab(tabId),
   quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
   send: async (channelId, files, text) => {
     if (!discordRelay) throw new Error(STILL_STARTING)
@@ -2321,7 +2330,7 @@ registerDiscordCommand(commands, {
   },
   shoot: shootPage,
   status: () =>
-    setupStatusText(discordLink?.status() ?? DISCORD_OFF, butler?.discordSettings() ?? {}),
+    setupStatusText(discordLink?.status() ?? DISCORD_OFF, discordBinding?.settings() ?? {}),
   tokenFromPage: (tabId) =>
     saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
   reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
@@ -3734,7 +3743,7 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     if (t.prev === 'approval') askEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
-    const onDiscord = !!butler?.channelOfTab(t.tabId)
+    const onDiscord = !!discordBinding?.channelOfTab(t.tabId)
     const asksOnDiscord = !!askChannelOfTab(t.tabId)
     if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
@@ -4000,16 +4009,23 @@ app.whenReady().then(() => {
       ),
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
-  butler = new Butler({
-    userData,
-    butler: () => loadSettings().butler,
+  const bindingNow = new DiscordBinding({
     load: () => loadSettings().discord,
-    loadSession: () => loadSettings().butlerSession,
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
+    rowsChanged: () => workspaceMgr?.refresh(),
+    isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
+  })
+  discordBinding = bindingNow
+  butler = new Butler({
+    userData,
+    realpath: realpathSafe,
+    butler: () => loadSettings().butler,
+    roleFacts: () => bindingNow.butlerRoleFacts(),
+    loadSession: () => loadSettings().butlerSession,
     saveSession: (butlerSession) => void commitSettings({ butlerSession }),
     backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
@@ -4059,6 +4075,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    todoNotice: TODO_NOTICE_FROM_KOLOFT,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -4107,30 +4124,30 @@ app.whenReady().then(() => {
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
-    owner: () => butler?.owner(),
-    foundAppOwner: (owner) => butler?.setOwner(owner),
+    owner: () => bindingNow.owner(),
+    foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
       sendToRenderer(CH.discord.status, status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
     onMessage: (m) => {
-      if (butler?.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
+      if (bindingNow.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
         discordRelay?.onMessage(m)
       else void oldThreads.onMessage(m)
     },
     onInteraction: (i) =>
-      void (butler?.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
+      void (bindingNow.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
         ? interactions.handle(i)
         : oldThreads.onInteraction(i)),
     onReady: () => {
-      if (butler?.channel()) void butler.open()
+      if (bindingNow.channel()) void butler?.open()
       void discordRelay?.catchUp()
       void oldThreads.archiveOnce()
       registerSlashCommands()
     },
     postFailed: (channelId, error) => {
-      const channel = butler?.channel()
+      const channel = bindingNow.channel()
       const name = channel?.channelId === channelId ? channel.name : channelId
       sendToRenderer(CH.cron.toast, `Koloft could not post to #${name} in Discord: ${error}`)
     }
@@ -4139,19 +4156,19 @@ app.whenReady().then(() => {
   const butlerNow = butler
   const roomsNow = new Rooms({
     link,
-    owner: () => butlerNow.owner(),
-    lobby: () => butlerNow.channel(),
-    rooms: () => butlerNow.rooms(),
-    save: (list) => butlerNow.saveRooms(list)
+    owner: () => bindingNow.owner(),
+    lobby: () => bindingNow.channel(),
+    rooms: () => bindingNow.rooms(),
+    save: (list) => bindingNow.saveRooms(list)
   })
   rooms = roomsNow
   const oldThreads = new OldThreads({
     link,
-    owner: () => butlerNow.owner(),
+    owner: () => bindingNow.owner(),
     butlerName: butlerNameNow,
-    channel: () => butlerNow.channel(),
-    archived: () => butlerNow.oldThreadsArchived(),
-    markArchived: () => butlerNow.markOldThreadsArchived(),
+    channel: () => bindingNow.channel(),
+    archived: () => bindingNow.oldThreadsArchived(),
+    markArchived: () => bindingNow.markOldThreadsArchived(),
     isRoom: (threadId) => !!roomsNow.ofThread(threadId),
     now: Date.now
   })
@@ -4159,7 +4176,7 @@ app.whenReady().then(() => {
     link,
     channelOf: (tabId) =>
       discordRelay?.reaches(tabId) && !discordRelay.quietTurn(tabId)
-        ? butlerNow.channelOfTab(tabId)
+        ? bindingNow.channelOfTab(tabId)
         : undefined,
     status: (tabId) => tracker.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
@@ -4169,7 +4186,7 @@ app.whenReady().then(() => {
     return ask ? codexDialog(ask) : asks.dialog(tabId)
   }
   const buttons = new AskButtons({
-    owner: () => butlerNow.owner(),
+    owner: () => bindingNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
     answer: answerSession,
     respond: (i, body) => link.respond(i, body),
@@ -4188,10 +4205,10 @@ app.whenReady().then(() => {
   })
   const secretCards = new SecretCards({
     asks: secrets,
-    owner: () => butlerNow.owner(),
+    owner: () => bindingNow.owner(),
     cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
     place: async (tabId, card, files) => {
-      const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
+      const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
       if (!channelId) return undefined
       const [name] = await Promise.all([
         secretAskerName(tabId),
@@ -4206,11 +4223,11 @@ app.whenReady().then(() => {
   secrets.listen(secretCards)
   secretAsks = secrets
   const interactions = new Interactions({
-    owner: () => butlerNow.owner(),
+    owner: () => bindingNow.owner(),
     ownerWrote: ownerCameBack,
     run: async (text, channelId) =>
       commandInto(
-        butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
+        bindingNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
         text
       ),
     press: (i) =>
@@ -4228,22 +4245,22 @@ app.whenReady().then(() => {
       if (!res.ok) throw new Error(`Discord answered ${res.status} to an attachment download.`)
       return Buffer.from(await res.arrayBuffer())
     },
-    owner: () => butlerNow.owner(),
+    owner: () => bindingNow.owner(),
     ownerAway,
     ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
-      butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
+      bindingNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
     channels: () => {
-      const channel = butlerNow.channel()
+      const channel = bindingNow.channel()
       if (!channel) return []
       return [
         {
           channelId: channel.channelId,
-          lastMessageId: butlerNow.lastMessageId(),
-          seen: (id: string) => butlerNow.setLastMessage(id)
+          lastMessageId: bindingNow.lastMessageId(),
+          seen: (id: string) => bindingNow.setLastMessage(id)
         },
-        ...butlerNow.rooms().flatMap((r) => {
+        ...bindingNow.rooms().flatMap((r) => {
           const dest = roomDestination(r.threadId)
           return dest && r.keys.some((k) => rowOfKey(k))
             ? [
@@ -4261,7 +4278,7 @@ app.whenReady().then(() => {
     replyChannelOf: phoneChannelOf,
     askChannelOf: askChannelOfTab,
     lobbyLink: () => {
-      const lobby = butlerNow.channel()
+      const lobby = bindingNow.channel()
       return lobby && roomLink(lobby.channelId)
     },
     noteDiscordId: async (tabId, id) => {
@@ -4291,7 +4308,7 @@ app.whenReady().then(() => {
   awayDigest = new AwayDigest({
     away: ownerAway,
     lastHandsAt: () => presence.lastHandsAt(),
-    reachable: () => discordConnected && !!butlerNow.channel(),
+    reachable: () => discordConnected && !!bindingNow.channel(),
     marks: () => attention.list(),
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
@@ -4308,7 +4325,7 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      const lobby = butlerNow.channel()?.channelId
+      const lobby = bindingNow.channel()?.channelId
       return (!!lobby && relay.delivering(lobby)) || (!!tab && !asks.takesCommand(tab))
     },
     tell: (text) => relay.tellQuietly(butlerDestination(), text),
@@ -4666,7 +4683,7 @@ app.on('before-quit', (e) => {
   cronRunner?.quitSweep()
   cronRunner?.stop()
   discordLink?.stop()
-  butler?.flush()
+  discordBinding?.flush()
   workspaceMgr?.dispose()
   flushLayout()
   flushSettings()
@@ -6161,7 +6178,7 @@ function tabBound(tabId: string, ms: number): Promise<boolean> {
 }
 
 function registerSlashCommands(): void {
-  const guildId = butler?.channel()?.guildId
+  const guildId = discordBinding?.channel()?.guildId
   if (guildId) void discordLink?.registerCommands([guildId], SLASH_COMMANDS)
 }
 
@@ -6264,7 +6281,7 @@ function discordHelperBackend(butlerBackend: BackendId): BackendId {
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
   const link = discordLink
-  const bound = butler
+  const bound = discordBinding
   if (!bound || !link) return { ok: false, error: STILL_STARTING }
   const saved = await bound.bindNewChannel((category) => link.newChannel(bound.channel(), category))
   if (saved.ok) registerSlashCommands()
@@ -6293,11 +6310,11 @@ function roomOfTab(tabId: string): string | undefined {
 }
 
 function askChannelOfTab(tabId: string): string | undefined {
-  return butlerSide(tabId) ? butler?.channel()?.channelId : roomOfTab(tabId)
+  return butlerSide(tabId) ? discordBinding?.channel()?.channelId : roomOfTab(tabId)
 }
 
 function phoneChannelOf(tabId: string): string | undefined {
-  return butler?.channelOfTab(tabId) ?? roomOfTab(tabId)
+  return discordBinding?.channelOfTab(tabId) ?? roomOfTab(tabId)
 }
 
 async function copyToPhone(
@@ -6329,7 +6346,7 @@ async function copyToPhone(
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
     return undefined
   }
-  const where = butler?.channelOfTab(tabId)
+  const where = discordBinding?.channelOfTab(tabId)
     ? 'the Discord channel the owner talks to you in'
     : butlerSide(tabId)
       ? `${butlerNameNow()}'s Discord channel, where the owner sees your question cards`
@@ -6512,7 +6529,7 @@ async function roomForNew(
 
 function butlerDestination(): Destination {
   return {
-    channelId: butler?.channel()?.channelId ?? '',
+    channelId: discordBinding?.channel()?.channelId ?? '',
     ownerIsWhere,
     name: butlerNameNow(),
     liveTab: () => butler?.liveTab(),
@@ -6524,7 +6541,7 @@ function butlerDestination(): Destination {
       return opened.tabId
     },
     typeCommand: async (tabId, command) => {
-      const channelId = butler?.channel()?.channelId
+      const channelId = discordBinding?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
       await slash.typeWhenIdle(
         { name: butlerNameNow(), tabId, butler: true },
@@ -6532,7 +6549,7 @@ function butlerDestination(): Destination {
         toChannel(channelId, () => discordRelay)
       )
     },
-    seen: (id) => butler?.setLastMessage(id)
+    seen: (id) => discordBinding?.setLastMessage(id)
   }
 }
 
@@ -7253,7 +7270,7 @@ function registerIpc(): void {
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    const saved = butler?.bind({ guildId, channelId, name }) ?? {
+    const saved = discordBinding?.bind({ guildId, channelId, name }) ?? {
       ok: false,
       error: STILL_STARTING
     }
@@ -7262,7 +7279,7 @@ function registerIpc(): void {
   })
   ipcMain.handle(CH.conductors.bindNewChannel, () => bindWithNewChannel())
   ipcMain.handle(CH.conductors.unbind, () => {
-    butler?.unbind()
+    discordBinding?.unbind()
     syncAnswerable()
   })
   ipcMain.handle(CH.conductors.open, () => butler?.open() ?? { ok: false, error: STILL_STARTING })
@@ -7276,7 +7293,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
-    if (owner) butler?.setOwner(owner)
+    if (owner) discordBinding?.setOwner(owner)
   })
   ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
   ipcMain.handle(CH.discord.setUpWithButler, (_e, ownerWords?: string) =>
