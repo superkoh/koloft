@@ -1,5 +1,3 @@
-import type { Worker } from 'worker_threads'
-
 export const LOOK_EVERY_MS = 25
 export const LOGGED_ONCE_A_LOOK_COMES_LATE_BY_MS = 50
 
@@ -33,29 +31,6 @@ export class StallWatch {
 }
 
 export const STUCK_AFTER_MS = 5000
-const BEATS_PER_STUCK_LIMIT = 5
-export const THE_WHOLE_PROCESS_WAS_PAUSED_IF_THE_WATCH_WOKE_LATE_BY_MS = 2000
-
-export interface StuckWatchDeps {
-  stuckAfterMs: number
-  now(): number
-  beats(): number
-  beatAfter(seen: number, withinMs?: number): boolean
-  leaveWhatItIsIn(): string
-  resumed(afterMs: number, whatItWasIn: string): void
-}
-
-// PLATFORM§70
-export function watchOneBeat(d: StuckWatchDeps): void {
-  const seen = d.beats()
-  const from = d.now()
-  if (d.beatAfter(seen, d.stuckAfterMs)) return
-  const wokeLateByMs = d.now() - from - d.stuckAfterMs
-  if (wokeLateByMs >= THE_WHOLE_PROCESS_WAS_PAUSED_IF_THE_WATCH_WOKE_LATE_BY_MS) return
-  const whatItWasIn = d.leaveWhatItIsIn()
-  d.beatAfter(seen)
-  d.resumed(d.now() - from, whatItWasIn)
-}
 
 export interface StuckWatchData {
   beats: SharedArrayBuffer
@@ -64,22 +39,39 @@ export interface StuckWatchData {
   stuckAfterMs: number
 }
 
+export type AskedForABeatAt = number
+export type WhatTheMainThreadWasIn = string
+
+interface StuckWatch {
+  on(event: 'message', listener: (said: AskedForABeatAt | WhatTheMainThreadWasIn) => void): unknown
+  on(event: 'error', listener: (error: unknown) => void): unknown
+  unref(): void
+}
+
 // PLATFORM§70
-export function beatForTheStuckWatch(
-  startWatch: (data: StuckWatchData) => Pick<Worker, 'on' | 'unref'>,
+export function answerTheStuckWatch(
+  startWatch: (data: StuckWatchData) => StuckWatch,
   data: Omit<StuckWatchData, 'beats'>,
   log: (line: string) => void
 ): void {
   const beats = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
   const beat = new Int32Array(beats)
+  let longestAnAskWaitedMs = 0
   const watch = startWatch({ ...data, beats })
-  watch.on('message', log)
+  watch.on('message', (said: AskedForABeatAt | WhatTheMainThreadWasIn) => {
+    if (typeof said === 'number') {
+      longestAnAskWaitedMs = Math.max(longestAnAskWaitedMs, Date.now() - said)
+      Atomics.add(beat, 0, 1)
+      Atomics.notify(beat, 0)
+      return
+    }
+    log(
+      `main thread took no new work for at least ${longestAnAskWaitedMs} ms; what it was in ${data.stuckAfterMs} ms into that: ${said}`
+    )
+    longestAnAskWaitedMs = 0
+  })
   watch.on('error', (error) => log(`the watch for a stuck main thread stopped: ${error}`))
   watch.unref()
-  setInterval(() => {
-    Atomics.add(beat, 0, 1)
-    Atomics.notify(beat, 0)
-  }, data.stuckAfterMs / BEATS_PER_STUCK_LIMIT).unref()
 }
 
 function mainThreadCpuMs(): number {

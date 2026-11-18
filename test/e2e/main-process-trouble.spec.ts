@@ -31,7 +31,7 @@ test('errors nobody caught in the main process are written down and shown as one
         throw new Error(`${which} error thrown in a timer by the test`)
       }, 0)
   })
-  const toasts = page.locator('.toast-msg', { hasText: /an error it did not expect/ })
+  const toasts = page.locator('.toast-msg', { hasText: 'error thrown in a timer by the test' })
   await expect(toasts).toContainText('first error thrown in a timer by the test')
   await expect
     .poll(() => readOrEmpty(path.join(env.userData, 'main-errors.log')))
@@ -40,7 +40,7 @@ test('errors nobody caught in the main process are written down and shown as one
   expect(await app.evaluate(() => (globalThis as { __errorBoxes?: number }).__errorBoxes)).toBe(0)
 })
 
-test('while the main thread is stuck, a sample of what it is in is saved at that moment, not once it is back, and the stall log names it once the main thread takes work again', async ({
+test('while the main thread is stuck, a sample of what it is in is saved at that moment, not once it is back, and the stall log names it, with how long the main thread was gone, once it takes work again', async ({
   env
 }) => {
   env.launchEnv.KOLOFT_MAIN_STUCK_MS = String(STUCK_AFTER_MS)
@@ -50,7 +50,6 @@ test('while the main thread is stuck, a sample of what it is in is saved at that
     const samplesDir = path.join(env.userData, 'main-stuck')
     const log = path.join(env.userData, 'main-stalls.log')
     const fromStartup = new Set(filesIn(samplesDir))
-    const logFromStartup = readOrEmpty(log).length
     const sampleOfTheHold = (): string =>
       filesIn(samplesDir)
         .filter((file) => !fromStartup.has(file))
@@ -68,12 +67,14 @@ test('while the main thread is stuck, a sample of what it is in is saved at that
     expect(back).toBe(false)
 
     await held
-    await expect
-      .poll(() => readOrEmpty(log).slice(logFromStartup))
-      .toContain(`what it was in ${STUCK_AFTER_MS} ms into that: ${sample}\n`)
-    expect(readOrEmpty(log).slice(logFromStartup)).toMatch(
-      /main thread took no new work for \d{4,5} ms; what it was in/
-    )
+    const lineNamingTheSample = (): string =>
+      readOrEmpty(log)
+        .split('\n')
+        .find((line) => line.includes(sample)) ?? ''
+    await expect.poll(lineNamingTheSample).not.toBe('')
+    const goneForMs = Math.max(...(lineNamingTheSample().match(/\d+(?= ms)/g) ?? []).map(Number))
+    expect(goneForMs).toBeGreaterThan(MAIN_THREAD_HELD_MS - 2 * STUCK_AFTER_MS)
+    expect(goneForMs).toBeLessThan(MAIN_THREAD_HELD_MS + STUCK_AFTER_MS)
   } finally {
     await quitAndClose(app)
   }

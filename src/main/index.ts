@@ -306,7 +306,7 @@ import {
 } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
-import { STUCK_AFTER_MS, StallWatchWhileFocused, beatForTheStuckWatch } from './mainThreadStalls'
+import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
 import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
 import { envMs } from './sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
@@ -695,20 +695,21 @@ if (OFF_SCREEN_TEST && process.platform === 'darwin') {
 }
 
 const AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS = 60_000
+const MAIN_ERRORS_LOG = 'main-errors.log'
 
 // PLATFORM§4
 function takeErrorsNobodyCaught(): void {
-  const file = path.join(app.getPath('userData'), 'main-errors.log')
-  const log = signalLog(file)
+  const log = signalLog(path.join(app.getPath('userData'), MAIN_ERRORS_LOG))
   let shownAt = -Infinity
   process.on('uncaughtException', (error) => {
     console.error(error)
     const message = error instanceof Error ? error.message : String(error)
+    const [firstLine] = message.split('\n')
     log(error instanceof Error && error.stack ? error.stack : message)
     if (Date.now() - shownAt < AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS) return
     const shown = sendToRenderer(
       CH.toast.show,
-      `Koloft hit an error it did not expect and kept going: ${message}. The details are in ${file}`
+      `Koloft hit an error it did not expect and kept going (details in ${MAIN_ERRORS_LOG}, in its data folder): ${firstLine}`
     )
     if (shown) shownAt = Date.now()
   })
@@ -3502,12 +3503,12 @@ app.whenReady().then(() => {
   takeErrorsNobodyCaught()
   const stallLog = signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
   const stalls = new StallWatchWhileFocused(stallLog)
-  beatForTheStuckWatch(
+  answerTheStuckWatch(
     (workerData) => createMainThreadStuckWorker({ workerData }),
     {
       pid: process.pid,
       samplesDir: path.join(app.getPath('userData'), 'main-stuck'),
-      stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS)
+      stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS) || STUCK_AFTER_MS
     },
     stallLog
   )

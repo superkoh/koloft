@@ -2,8 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import { parentPort, workerData } from 'worker_threads'
-import { watchOneBeat, type StuckWatchData } from './mainThreadStalls'
+import type { AskedForABeatAt, StuckWatchData, WhatTheMainThreadWasIn } from './mainThreadStalls'
 
+const ASKS_PER_STUCK_LIMIT = 5
 const SAMPLE_SECONDS = 1
 const SAMPLE_GIVES_UP_MS = 30_000
 const SAMPLES_KEPT = 10
@@ -11,9 +12,14 @@ const SAMPLE_SUFFIX = '.txt'
 
 const { beats, pid, samplesDir, stuckAfterMs } = workerData as StuckWatchData
 const beat = new Int32Array(beats)
+const nothingEverWakesThis = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT))
+
+function tellMain(said: AskedForABeatAt | WhatTheMainThreadWasIn): void {
+  parentPort?.postMessage(said)
+}
 
 // PLATFORM§70
-function sampleOfTheProcess(): string {
+function sampleOfTheProcess(): WhatTheMainThreadWasIn {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const file = path.join(samplesDir, stamp + SAMPLE_SUFFIX)
   try {
@@ -35,15 +41,14 @@ function sampleOfTheProcess(): string {
   }
 }
 
-for (;;)
-  watchOneBeat({
-    stuckAfterMs,
-    now: () => Date.now(),
-    beats: () => Atomics.load(beat, 0),
-    beatAfter: (seen, withinMs) => Atomics.wait(beat, 0, seen, withinMs) !== 'timed-out',
-    leaveWhatItIsIn: sampleOfTheProcess,
-    resumed: (afterMs, whatItWasIn) =>
-      parentPort?.postMessage(
-        `main thread took no new work for ${afterMs} ms; what it was in ${stuckAfterMs} ms into that: ${whatItWasIn}`
-      )
-  })
+// PLATFORM§70
+for (;;) {
+  const seen = Atomics.load(beat, 0)
+  tellMain(Date.now())
+  if (Atomics.wait(beat, 0, seen, stuckAfterMs) === 'timed-out') {
+    const whatItWasIn = sampleOfTheProcess()
+    Atomics.wait(beat, 0, seen)
+    tellMain(whatItWasIn)
+  }
+  Atomics.wait(nothingEverWakesThis, 0, 0, stuckAfterMs / ASKS_PER_STUCK_LIMIT)
+}
