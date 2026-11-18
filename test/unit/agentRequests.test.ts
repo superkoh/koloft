@@ -16,6 +16,7 @@ import {
   type TabFacts
 } from '../../src/main/agentRequests'
 import type { SessionInfo } from '../../src/shared/types'
+import { testCommands } from './helpers/testCommands'
 
 const OTHER_LIVE_INSTANCE = process.pid + 1
 const tabOf = (pid: number, n: number): string => `pty-${pid.toString(36)}-${n}`
@@ -28,7 +29,7 @@ let rulesOf: Map<string, string>
 
 function requests(extra: Partial<AgentRequestDeps> = {}): AgentRequests {
   return new AgentRequests({
-    verbs: {
+    commands: testCommands({
       help: helpVerb(async (tabId) => rulesOf.get(tabId)),
       echo: (args, caller) => {
         calls.push({ args, caller })
@@ -37,7 +38,7 @@ function requests(extra: Partial<AgentRequestDeps> = {}): AgentRequests {
       boom: () => {
         throw new Error('the disk is full')
       }
-    },
+    }),
     tab: (id) => tabs.get(id),
     session: (id) => sessionOf(id),
     enabled: () => on,

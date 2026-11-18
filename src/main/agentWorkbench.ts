@@ -2,7 +2,7 @@ import fs from 'fs'
 import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
 import type { FileOpened } from '@core/moment'
-import type { Commands } from '@core/commands'
+import type { CommandHandlers, Commands } from '@core/commands'
 import { openDropTarget } from './openDrop'
 import {
   answered,
@@ -10,8 +10,7 @@ import {
   NOT_PINNED,
   refused,
   type AgentCaller,
-  type AgentReply,
-  type AgentVerbs
+  type AgentReply
 } from './agentRequests'
 
 export interface WorkbenchVerbDeps {
@@ -47,7 +46,7 @@ export function registerWorkbenchCommands(commands: Commands, d: WorkbenchVerbDe
   commands.register('workbench', workbenchVerbs(d))
 }
 
-export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {
+export function workbenchVerbs(d: WorkbenchVerbDeps): CommandHandlers {
   return {
     open: (args, caller) =>
       args.length === 1 ? show(d, args[0], caller) : refused(OPEN_USAGE, EXIT_USAGE),

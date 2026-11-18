@@ -3,7 +3,6 @@ import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '../../src/core/plugi
 import { answered } from '../../src/core/command'
 import { Commands } from '../../src/core/commands'
 import { PLUGINS } from '../../src/plugins/list'
-import type { SessionInfo } from '../../src/shared/types'
 
 const manifest = (id: string, verbs: string[]): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -13,12 +12,6 @@ const manifest = (id: string, verbs: string[]): PluginManifest => ({
   needs: [],
   commands: verbs.map((verb) => ({ verb }))
 })
-
-const caller = {
-  tabId: 'pty-1',
-  cwd: '/w',
-  session: { tabId: 'pty-1', backendId: 'claude', host: 'local', cwd: '/w' } as SessionInfo
-}
 
 describe('koloft commands', () => {
   it("the plugins together list today's thirteen koloft commands, each in one plugin only", () => {

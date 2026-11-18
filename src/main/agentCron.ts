@@ -38,7 +38,7 @@ import {
 } from './agentRequests'
 import type { Commands } from '@core/commands'
 
-const SUBS =['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
+const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
 type Sub = (typeof SUBS)[number]
 const TAKES_OPTIONS: Sub[] = ['add', 'edit']
 const TAKES_NO_JOB: Sub[] = ['list', 'add']
