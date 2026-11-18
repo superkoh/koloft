@@ -1,4 +1,4 @@
-import type { AccountMeta, SessionInfo, Settings } from '@shared/types'
+import type { AccountMeta, SessionInfo, Settings, WorkspaceRows } from '@shared/types'
 import { fillsOf } from '@renderer/pluginUi'
 import { ROW_SET_UP, type RowSetUpFill } from '@renderer/slots'
 import { BUTLER_ROW_PART } from '../plugin'
@@ -40,3 +40,5 @@ export function isButlerTab(
 ): boolean {
   return !!sessions.find((s) => s.tabId === tabId)?.butler || opened === tabId
 }
+
+export const isButlersWorkspace = (w: WorkspaceRows): boolean => !!w.workspace.butler

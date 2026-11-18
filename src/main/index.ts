@@ -969,10 +969,7 @@ attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
 // ADR-0039
-attention.outlivesKoloft = (tabId) => {
-  const s = sessionOfTab(tabId)
-  return !!s?.remote && s.backendId !== 'codex'
-}
+attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (
@@ -6987,7 +6984,7 @@ function registerIpc(): void {
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }
     // CC§7
-    const ptys = ptyMgr.list().filter((h) => !loginWatchers.has(h.id))
+    const ptys = ptyMgr.list().filter((h) => !loginWatchers.has(h.id) && !sleepers.has(h.id))
     const tracked = allSessions()
     const cwdByTab = new Map(tracked.map((s) => [s.tabId, s.cwd]))
     const tabs = adoptableTabs(

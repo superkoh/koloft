@@ -1012,15 +1012,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }): JSX.Element {
   const listedRows = useStore((s) => s.workspaceRows)
   const welcomeActive = useStore((s) => s.welcomeActive)
-  const listedButler = useStore((s) => s.butlerWorkspace)
+  const listedClaimed = useStore((s) => s.claimedWorkspaces)
   const markOfs = fillsOf(ROW_MARK).map((m) => m.useMarkOf())
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
   const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
   const { workspaceRows: rows } = useMemo(
-    () => shownRows({ workspaceRows: listedRows, butlerWorkspace: listedButler, tabs: storeTabs }),
-    [listedRows, listedButler, storeTabs]
+    () =>
+      shownRows({ workspaceRows: listedRows, claimedWorkspaces: listedClaimed, tabs: storeTabs }),
+    [listedRows, listedClaimed, storeTabs]
   )
   const activeTabId = useStore((s) => s.activeTabId)
   const secretAsks = useStore((s) => s.secretAsks)
