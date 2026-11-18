@@ -21,6 +21,7 @@ import {
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
 } from './hooks'
+import { UUID } from './sessionStore'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'
@@ -170,17 +171,19 @@ export interface AgyHook {
 
 const str = nonEmptyString
 
+// AGY§9 AGY§12
 function agyHook(line: Record<string, unknown>): AgyHook | undefined {
   const input = record(line.input)
   const event = EVENTS.find((e) => e === line.event)
-  if (!event || typeof input.conversationId !== 'string') return undefined
+  const conversationId = input.conversationId
+  if (!event || typeof conversationId !== 'string' || !UUID.test(conversationId)) return undefined
   const parentConversationId = str(input.parentConversationId)
   const rootConversationId = str(input.rootConversationId)
   const agentName = str(input.agentName)
   const hookEventName = str(input.hookEventName)
   return {
     event,
-    conversationId: input.conversationId,
+    conversationId,
     ...(parentConversationId && { parentConversationId }),
     ...(rootConversationId && { rootConversationId }),
     ...(agentName && { agentName }),
@@ -231,9 +234,12 @@ function titleSubagents(raw: unknown): AgyTitleSubagent[] | undefined {
   })
 }
 
+const NO_CONVERSATION_YET = ''
+
 // AGY§9 AGY§11
 function titleState(r: Record<string, unknown>): AgyTitleState | undefined {
   if (typeof r.conversation_id !== 'string') return undefined
+  if (r.conversation_id !== NO_CONVERSATION_YET && !UUID.test(r.conversation_id)) return undefined
   const context = record(r.context_window)
   const model = record(r.model)
   const subagents = titleSubagents(r.subagents)

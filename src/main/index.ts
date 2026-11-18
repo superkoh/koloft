@@ -306,7 +306,9 @@ import {
 } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
-import { StallWatchWhileFocused } from './mainThreadStalls'
+import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
+import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
+import { envMs } from './sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -689,6 +691,33 @@ const OFF_SCREEN_TEST = BACKGROUND_TEST && process.env.KOLOFT_TEST_REAL_WINDOW !
 if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
+}
+
+const AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS = 60_000
+const MAIN_ERRORS_LOG = 'main-errors.log'
+
+// PLATFORM§4
+function takeErrorsNobodyCaught(): void {
+  const log = signalLog(path.join(app.getPath('userData'), MAIN_ERRORS_LOG))
+  let shownAt = -Infinity
+  process.on('uncaughtException', (error) => {
+    console.error(error)
+    const message = error instanceof Error ? error.message : String(error)
+    const [firstLine] = message.split('\n')
+    log(error instanceof Error && error.stack ? error.stack : message)
+    if (Date.now() - shownAt < AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS) return
+    const shown = sendToRenderer(
+      CH.toast.show,
+      `Koloft hit an error it did not expect and kept going (details in ${MAIN_ERRORS_LOG}, in its data folder): ${firstLine}`
+    )
+    if (shown) shownAt = Date.now()
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error(reason)
+    log(
+      `a promise nobody handled was rejected: ${reason instanceof Error && reason.stack ? reason.stack : String(reason)}`
+    )
+  })
 }
 
 const ptyMgr = new PtyManager()
@@ -3474,8 +3503,16 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   ptyMgr.sessionScreen = restoredWindowGeometry().sessionScreen
-  const stalls = new StallWatchWhileFocused(
-    signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  const stallLog = signalLog(path.join(app.getPath('userData'), 'main-stalls.log'))
+  const stalls = new StallWatchWhileFocused(stallLog)
+  answerTheStuckWatch(
+    (workerData) => createMainThreadStuckWorker({ workerData }),
+    {
+      pid: process.pid,
+      samplesDir: path.join(app.getPath('userData'), 'main-stuck'),
+      stuckAfterMs: envMs('KOLOFT_MAIN_STUCK_MS', STUCK_AFTER_MS) || STUCK_AFTER_MS
+    },
+    stallLog
   )
   const followFocus = (): void => stalls.follow(!!BrowserWindow.getFocusedWindow())
   app.on('browser-window-focus', followFocus)
@@ -4630,6 +4667,7 @@ app.whenReady().then(() => {
 
   markKeyAccountsSavedOnDisk()
   createWindow()
+  takeErrorsNobodyCaught()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
   probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
