@@ -32,15 +32,12 @@ function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   }
 }
 
-export function sanitizeButlerSession(
-  raw: unknown,
-  legacyAssistSessions: unknown,
-  keptByOtherPlugins: Record<string, unknown>[]
-): ButlerSession {
-  const legacy = Array.isArray(legacyAssistSessions) ? legacyAssistSessions : []
+export function sanitizeButlerSession(raw: unknown, olderRecords: unknown[]): ButlerSession {
   return mergedSessions([
     ...(isRecord(raw) ? [cleanSession(raw)] : []),
-    ...legacy.filter((r) => isRecord(r) && r.scope === GLOBAL_SCOPE).map(cleanSession),
-    ...keptByOtherPlugins.map(cleanSession)
+    ...olderRecords
+      .filter(isRecord)
+      .filter((r) => r.scope === GLOBAL_SCOPE)
+      .map(cleanSession)
   ])
 }

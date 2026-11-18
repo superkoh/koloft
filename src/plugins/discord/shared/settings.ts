@@ -37,10 +37,8 @@ function legacyBindings(rawDiscord: unknown): LegacyBinding[] {
   })
 }
 
-export function butlerSessionsInOldBindings(rawDiscord: unknown): Record<string, unknown>[] {
-  return legacyBindings(rawDiscord)
-    .filter((b) => b.scope === GLOBAL_SCOPE)
-    .map((b) => b.raw)
+export function oldBindingRecords(rawDiscord: unknown): Record<string, unknown>[] {
+  return legacyBindings(rawDiscord).map((b) => b.raw)
 }
 
 function lastUsed(bindings: LegacyBinding[]): LegacyBinding | undefined {

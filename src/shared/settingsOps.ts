@@ -9,8 +9,9 @@ import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gi
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
+import { stringsIn } from './workbenchState'
 import { sanitizeButler, sanitizeButlerSession } from '@plugins/butler/shared/settings'
-import { butlerSessionsInOldBindings, sanitizeDiscord } from '@plugins/discord/shared/settings'
+import { oldBindingRecords, sanitizeDiscord } from '@plugins/discord/shared/settings'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
@@ -93,15 +94,12 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
-  merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)
-    ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
-    : []
+  merged.gitSuggestionsDismissed = stringsIn(merged.gitSuggestionsDismissed)
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.butlerSession = sanitizeButlerSession(
-    doc.butlerSession,
-    assistSessions,
-    butlerSessionsInOldBindings(merged.discord)
-  )
+  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, [
+    ...(Array.isArray(assistSessions) ? assistSessions : []),
+    ...oldBindingRecords(merged.discord)
+  ])
   merged.discord = sanitizeDiscord(merged.discord)
   const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
