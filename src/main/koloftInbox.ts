@@ -1,6 +1,6 @@
 import type { AttentionEvent, BackendId } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import type { ReplyChoices, Verdict } from './turnNews'
+import type { ReplyChoices, Verdict } from '@plugins/sessions/main/turnNews'
 import {
   CARD_SESSION,
   type InboxAction,

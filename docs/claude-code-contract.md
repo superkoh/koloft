@@ -2161,7 +2161,7 @@ other bullets of §9 were not re-measured on this build.
   model came from Koloft's own table, runs once more on `haiku` inside the same wait;
   any other failure is not run again.
 - **On 86 real end-of-turn replies Sonnet judged no better than Haiku.** Same day and
-  build, the owner's hand-labelled set, `src/main/turnNews.ts` as shipped, three runs
+  build, the owner's hand-labelled set, `src/plugins/sessions/main/turnNews.ts` as shipped, three runs
   each, four at a time: `haiku` with no effort 82 / 83 / 83 right, one reply that asks
   the owner read as news in every run, no call over 7.2 s; `sonnet` at `medium` 82 / 81
   / 76 right, none read as news, but 9 of 195 calls over 15 s, 7 of them killed at 60 s

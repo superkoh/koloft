@@ -1911,7 +1911,7 @@ real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-us
 - Every one-shot reads 17–19K input tokens, 11.5–12.3K of them cached, whatever the
   prompt. One 4.1 KB turn judgement at list price: `gpt-6-luna` about $0.0008,
   `gpt-6.1-sol` at `medium` about $0.016.
-- On the owner's 86 hand-labelled end-of-turn replies (`src/main/turnNews.ts` as
+- On the owner's 86 hand-labelled end-of-turn replies (`src/plugins/sessions/main/turnNews.ts` as
   shipped, three runs each, four at a time): `gpt-6-luna` no level 78 / 76 / 76 right,
   1–2 replies that ask the owner read as news each run, 8 / 1 / 2 calls over 15 s
   (longest 34 s); `gpt-6.1-sol` at `medium` 80 / 81 / 80 right, none read as news, no
