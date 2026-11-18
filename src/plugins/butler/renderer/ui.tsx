@@ -35,6 +35,6 @@ export const ui: PluginUi = {
     fill(WORKSPACE_CLAIM, isButlersWorkspace),
     fill(GLOBAL_NOTE, useButlerShowsGlobalNote),
     fill(ROW_MARK, { at: 'sub', useMarkOf: useStartedByButler, Mark: StartedByButler }),
-    fill(PALETTE_HAND_OFF, (request) => window.api.conductors.fromPalette(request))
+    fill(PALETTE_HAND_OFF, (request) => window.api.butler.fromPalette(request))
   ]
 }

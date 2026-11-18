@@ -28,7 +28,7 @@ const PLUGIN_PARTS = await Promise.all(
     const dir = path.join(SRC, 'plugins', p.id)
     const table = p.channels
       ? (
-          (await import(path.join(dir, 'shared', 'channels.ts'))) as {
+          (await import(path.join(dir, 'shared', 'ipc.ts'))) as {
             CHANNELS: Record<string, string>
           }
         ).CHANNELS

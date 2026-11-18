@@ -7,7 +7,7 @@ import type {
   CronState,
   SkillSuggestion
 } from '@shared/types'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface CronBridge {
   cron: {

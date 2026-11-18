@@ -29,7 +29,6 @@ import type {
   SpawnedTab,
   UsageRead,
   MachineState,
-  DiscordStatus,
   AttentionEvent,
   AccountView,
   GitAccountView,
@@ -193,27 +192,8 @@ const api: KoloftApi = {
     now: () => ipcRenderer.invoke(CH.machine.now),
     free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId)
   },
-  conductors: {
-    bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),
-    bindNewChannel: () => ipcRenderer.invoke(CH.conductors.bindNewChannel),
-    unbind: () => ipcRenderer.invoke(CH.conductors.unbind),
-    open: () => ipcRenderer.invoke(CH.conductors.open),
-    startFresh: () => ipcRenderer.invoke(CH.conductors.startFresh),
-    fromPalette: (request) => ipcRenderer.invoke(CH.conductors.fromPalette, request)
-  },
   palette: {
     savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
-  },
-  discord: {
-    status: () => ipcRenderer.invoke(CH.discord.status),
-    onStatus: (cb) => {
-      const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
-      ipcRenderer.on(CH.discord.status, handler)
-      return () => ipcRenderer.removeListener(CH.discord.status, handler)
-    },
-    pair: (isMe) => ipcRenderer.invoke(CH.discord.pair, isMe),
-    channels: () => ipcRenderer.invoke(CH.discord.channels),
-    setUpWithButler: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithButler, ownerWords)
   },
   attention: {
     list: () => ipcRenderer.invoke(CH.attention.list),

@@ -1,6 +1,6 @@
 import type { PreloadIpc } from '@core/ipc'
 import type { SecretAskView } from '@shared/types'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface SecretBridge {
   secret: {

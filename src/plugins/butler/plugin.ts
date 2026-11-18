@@ -1,7 +1,7 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './prompts/text'
 import { ASSIST_JOBS } from './shared/assistJobs'
-import { CHANNELS } from './shared/channels'
+import { CHANNELS } from './shared/ipc'
 
 export const BUTLER_ROW_PART = 'butler-row'
 export const BUTLER_RENAME = 'butler-rename'
