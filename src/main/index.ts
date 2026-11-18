@@ -640,7 +640,7 @@ import {
   type SessionScreen,
   type SessionVerbDeps,
   type Target
-} from './agentSessions'
+} from '@plugins/sessions/main/sessionVerbs'
 import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
