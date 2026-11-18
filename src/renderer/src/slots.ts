@@ -1,8 +1,9 @@
 // ADR-0051
 import type { ComponentType } from 'react'
 import { slot } from '@core/ui'
-import type { SessionRow } from '@shared/types'
+import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
+import type { SessionRoute } from '@shared/sessionRoute'
 import type { LandingAfterClose } from './store'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
@@ -64,3 +65,14 @@ export interface PaletteRun {
 }
 
 export const PALETTE_RUN = slot<PaletteRun>('palette-run')
+
+export interface PaletteRoute {
+  kind: SessionRoute['kind']
+  run: (prompt: string) => Promise<string | null>
+}
+
+export const PALETTE_ROUTE = slot<PaletteRoute>('palette-route')
+
+export type PaletteHandOff = (request: PaletteRequest) => Promise<ConductorOpenResult>
+
+export const PALETTE_HAND_OFF = slot<PaletteHandOff>('palette-hand-off')
