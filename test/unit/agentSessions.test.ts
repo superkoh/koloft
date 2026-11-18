@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   findSessionRow,
   parseNewSessionArgs,
-  roomStarted,
   sessionSays,
   sessionVerb,
   THAT_IS_YOU,
@@ -19,6 +18,11 @@ import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMe
 import type { TranscriptPlaces } from '../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../src/main/inbox'
 import type { SendResult } from '../../src/plugins/sessions/api'
+import { moment, type SessionStarted } from '../../src/core/moment'
+import {
+  giveEachStartedSessionARoom,
+  withoutTheRelayTag
+} from '../../src/plugins/discord/main/sessionHooks'
 
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
@@ -145,6 +149,13 @@ function harness(
   const stopped: string[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
+  const sessionStarted = moment<SessionStarted>()
+  giveEachStartedSessionARoom(sessionStarted, {
+    isButler: (tabId) => !!conducting.scopes?.[tabId],
+    butlerFolder: () => BUTLER_FOLDER,
+    roomFor: async ({ by, tabId }) =>
+      conducting.answeringDiscord?.includes(by) ? `<#room-${tabId}>` : undefined
+  })
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
@@ -232,9 +243,9 @@ function harness(
       tabId === 'fix'
         ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] }
         : { error: 'no window' },
-    roomOf: (key) => conducting.rooms?.[key],
-    roomForNew: async (callerTab, tabId) =>
-      conducting.answeringDiscord?.includes(callerTab) ? `<#room-${tabId}>` : undefined
+    rowNote: (key) => conducting.rooms?.[key],
+    announceStarted: sessionStarted.announce,
+    ownersWords: withoutTheRelayTag
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
@@ -2167,13 +2178,18 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     }
   })
 
-  it('a session the butler starts in a project while it answers the owner’s Discord message prints its room’s link; one started at other times, or a helper in its own folder, gets none', async () => {
-    const answering = harness(live, {}, [], conducting({ answeringDiscord: ['butler'] }))
+  it('a session the butler starts in a project while it answers the owner’s Discord message prints its room’s link; one started at other times, a helper in its own folder, or one another session starts while it answers on Discord, gets none', async () => {
+    const answering = harness(live, {}, [], conducting({ answeringDiscord: ['butler', 'fix'] }))
+    const child = await answering.verb(['new', ...PICKED, '--', 'fix it'], from('fix'))
+    expect(child.exit).toBe(0)
+    expect(child.text).not.toContain('<#room')
     const project = await answering.verb(
       ['new', ...PICKED, '--workspace', WS, '--', 'fix it'],
       from('butler')
     )
-    expect(project.text).toContain(roomStarted('<#room-new-tab>'))
+    expect(project.text).toMatch(
+      /reach it with koloft session send\. The owner asked for it on Discord, so it has a room there, where the owner talks to it: <#room-new-tab>\. Give the owner that link exactly as written\.$/
+    )
     const helper = await answering.verb(['new', ...PICKED, '--', 'sort it'], from('butler'))
     expect(helper.text).not.toContain('<#room')
     const quiet = harness(live, {}, [], conducting())
