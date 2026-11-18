@@ -29,6 +29,25 @@ export type AllSettingValues<L extends Readonly<Record<string, SettingKeys>>> =
     ? All
     : never
 
+export interface PluginSettingsPage {
+  id: string
+  label: string
+  words: readonly string[]
+}
+
+export function settingsPages(plugins: readonly PluginManifest[]): PluginSettingsPage[] {
+  return plugins.flatMap((plugin) => {
+    const places = (plugin.ui ?? []).filter((entry) => entry.place === 'settings-page')
+    const page = plugin.settings?.page
+    if (places.length > 1) throw new Error(`plugin ${plugin.id} lists more than one settings page`)
+    if (!page !== !places.length)
+      throw new Error(
+        `plugin ${plugin.id} must name its settings page in settings.page and list it in ui, or neither`
+      )
+    return page ? [{ id: places[0].id, label: page.label, words: page.words }] : []
+  })
+}
+
 interface Owned {
   plugin: PluginManifest
   key: SettingKey<unknown>
