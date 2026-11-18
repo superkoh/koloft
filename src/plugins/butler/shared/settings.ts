@@ -2,11 +2,16 @@ import { GLOBAL_SCOPE } from '@shared/conductors'
 import { cleanOwnPick } from '@shared/sessionPicks'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
+import { cleanVersions } from './instructions'
 import type { ButlerSession, ButlerSetting } from './types'
 
 export function sanitizeButler(raw: unknown): ButlerSetting {
   const doc = isRecord(raw) ? raw : {}
-  return butlerSetting(butlerName(doc.name), stringsIn(doc.formerNames).map(butlerName))
+  const instructions = cleanVersions(doc.instructions)
+  return {
+    ...butlerSetting(butlerName(doc.name), stringsIn(doc.formerNames).map(butlerName)),
+    ...(instructions.length > 0 && { instructions })
+  }
 }
 
 function cleanSession(raw: Record<string, unknown>): ButlerSession {

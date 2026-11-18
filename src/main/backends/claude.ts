@@ -960,6 +960,7 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
+      ownerText: opts.ownerText,
       conductor: opts.conductor,
       trustFolder: opts.trustFolder || (!!opts.worktree && !opts.scheduled && !opts.resumeSessionId)
     })

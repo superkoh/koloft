@@ -516,7 +516,13 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { butlerHelperRole, conductorFolder, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import {
+  conductorFolder,
+  helperRoleOf,
+  OwnerAsleep,
+  registerChannels as registerButlerChannels,
+  THIS_MAC
+} from '@plugins/butler/api'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
@@ -2142,7 +2148,7 @@ const sessionDeps: SessionVerbDeps = {
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   speaksForTheOwner: butlerSide,
   butlerFolder: () => conductorFolder(app.getPath('userData')),
-  butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
+  butlerHelperRole: () => helperRoleOf(loadSettings().butler),
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
@@ -4044,6 +4050,7 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          ownerText: l.ownerText,
           conductor: true,
           permission: ownersPermission(),
           trustFolder: true,
@@ -7044,6 +7051,10 @@ function registerIpc(): void {
     runner: () => cronRunner,
     skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
     trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
+  })
+  registerButlerChannels(pluginIpc, {
+    butler: () => loadSettings().butler,
+    save: (butler) => void commitSettings({ butler })
   })
   ipcMain.handle(
     CH.sessionDefaults.read,

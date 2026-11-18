@@ -1,8 +1,15 @@
 import type { OwnPick } from '@shared/types'
 
+export interface InstructionsVersion {
+  text: string
+  at: number
+  by: string
+}
+
 export interface ButlerSetting {
   name: string
   formerNames: string[]
+  instructions?: InstructionsVersion[]
 }
 
 export const DEFAULT_BUTLER_NAME = 'Alfred'

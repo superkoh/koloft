@@ -45,6 +45,7 @@ export interface ClaudeLaunch {
   ownerWords?: string
   name?: string
   role?: string
+  ownerText?: string
   conductor?: boolean
   trustFolder?: boolean
   projectRules?: string
@@ -77,6 +78,7 @@ export type ClaudeLaunchPlan =
         KOLOFT_PORT_OFFSET?: string
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
+        KOLOFT_OWNER_TEXT?: string
         KOLOFT_DOCS_PLUGIN?: string
         CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
         CLAUDE_CODE_DECSTBM?: string

@@ -1,17 +1,24 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, ConductorOpenResult, CronEffort } from '@shared/types'
-import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  conversationAtFirstPrompt,
+  identityOf,
+  ownerTextBesideTheRole
+} from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '../shared/names'
 import type { ButlerSession, ButlerSetting } from '../shared/types'
+import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
-import { butlerRole } from '../prompts/role'
+import { butlerRole, ownerInstructionsPart } from '../prompts/role'
 import { conductorFolder } from './folder'
 
 export interface ButlerLaunch {
   backend: BackendId
   cwd: string
   role: string
+  ownerText?: string
   title: string
   firstPrompt?: string
   model?: string
@@ -108,11 +115,18 @@ export class Butler {
     if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
       return undefined
     if (!this.recorded(resumeKey)) return undefined
-    return { role: this.role() }
+    return { role: this.prompt(identityOf(resumeKey).backendId).role }
   }
 
-  private role(): string {
-    return butlerRole(this.d.butler().name, this.d.roleFacts())
+  private prompt(backend: BackendId): { role: string; ownerText?: string } {
+    const butler = this.d.butler()
+    const instructions = instructionsOf(butler)
+    if (!ownerTextBesideTheRole(backend))
+      return { role: butlerRole(butler.name, this.d.roleFacts(), instructions) }
+    return {
+      role: butlerRole(butler.name, this.d.roleFacts()),
+      ...(instructions && { ownerText: ownerInstructionsPart(instructions) })
+    }
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {
@@ -149,7 +163,7 @@ export class Butler {
   private launchFor(backend: BackendId): ButlerLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    return { backend, cwd, role: this.role(), title: this.d.butler().name }
+    return { backend, cwd, ...this.prompt(backend), title: this.d.butler().name }
   }
 
   private async openNow(firstPrompt?: string): Promise<ConductorOpenResult> {
