@@ -7,11 +7,7 @@ import { bridge as scheduledTasks, type CronBridge } from './scheduled-tasks/pre
 import { bridge as github, type GithubBridge } from './github/preload/bridge'
 import { bridge as butler, type ButlerBridge } from './butler/preload/bridge'
 
-export type PluginBridges = WorkbenchBridge &
-  InboxBridge &
-  CronBridge &
-  GithubBridge &
-  ButlerBridge
+export type PluginBridges = WorkbenchBridge & InboxBridge & CronBridge & GithubBridge & ButlerBridge
 
 export type KoloftApi = CoreApi & PluginBridges
 
