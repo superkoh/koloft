@@ -1,5 +1,5 @@
 import { fill, type PluginUi } from '@core/ui'
-import { GLOBAL_NOTE, LANDING_AFTER_CLOSE } from '@renderer/slots'
+import { GLOBAL_NOTE, LANDING_AFTER_CLOSE, ROW_MARK } from '@renderer/slots'
 import {
   BUTLER_FRESH,
   BUTLER_INSTRUCTIONS,
@@ -12,6 +12,7 @@ import { ButlerRow, RenameButlerDialog } from './ButlerRow'
 import { ButlerSetUpDialog } from './SetUpDialog'
 import { FreshConversationDialog, InstructionsDialog, InstructionsStrip } from './InstructionsStrip'
 import { butlerLanding, useButlerShowsGlobalNote } from './landing'
+import { StartedByButler, useStartedByButler } from './startedBy'
 
 export const ui: PluginUi = {
   parts: {
@@ -22,5 +23,9 @@ export const ui: PluginUi = {
     [BUTLER_INSTRUCTIONS]: InstructionsDialog,
     [BUTLER_FRESH]: FreshConversationDialog
   },
-  fills: [fill(LANDING_AFTER_CLOSE, butlerLanding), fill(GLOBAL_NOTE, useButlerShowsGlobalNote)]
+  fills: [
+    fill(LANDING_AFTER_CLOSE, butlerLanding),
+    fill(GLOBAL_NOTE, useButlerShowsGlobalNote),
+    fill(ROW_MARK, { at: 'sub', useMarkOf: useStartedByButler, Mark: StartedByButler })
+  ]
 }

@@ -7,6 +7,10 @@ export interface FileOpened {
   view?: ArtifactView
 }
 
+export interface SessionStarting {
+  helper: boolean
+}
+
 export interface SessionStarted {
   by: string
   tabId: string

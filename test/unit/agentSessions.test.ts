@@ -18,7 +18,8 @@ import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMe
 import type { TranscriptPlaces } from '../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../src/main/inbox'
 import type { SendResult } from '../../src/plugins/sessions/api'
-import { moment, type SessionStarted } from '../../src/core/moment'
+import { moment, type SessionStarted, type SessionStarting } from '../../src/core/moment'
+import { butlersWords, tellEachHelperItsRole } from '../../src/plugins/butler/main/sessionHooks'
 import {
   giveEachStartedSessionARoom,
   withoutTheRelayTag
@@ -116,6 +117,7 @@ function harness(
   waitsOnAnother: (sessionId: string) => boolean
   sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
   startForReply: ReturnType<typeof sessionVerb>['startForReply']
+  startHelper: ReturnType<typeof sessionVerb>['startHelper']
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -149,6 +151,8 @@ function harness(
   const stopped: string[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
+  const sessionStarting = moment<SessionStarting>()
+  tellEachHelperItsRole(sessionStarting, () => BUTLER_HELPER_ROLE)
   const sessionStarted = moment<SessionStarted>()
   giveEachStartedSessionARoom(sessionStarted, {
     isButler: (tabId) => !!conducting.scopes?.[tabId],
@@ -194,12 +198,15 @@ function harness(
       closed.push(...inOrder.map((target) => target.sessionId))
       closeFails.push((text) => tellStarter(inOrder[0], text))
     },
-    isButler: (tabId) => !!conducting.scopes?.[tabId],
+    overseer: {
+      is: (tabId) => !!conducting.scopes?.[tabId],
+      target: (ref) => conducting.conductors?.[ref],
+      folder: () => BUTLER_FOLDER,
+      ...butlersWords
+    },
     speaksForTheOwner: (tabId) =>
       !!conducting.scopes?.[tabId] ||
       sessions.find((s) => s.tabId === tabId)?.cwd === BUTLER_FOLDER,
-    butlerFolder: () => BUTLER_FOLDER,
-    butlerHelperRole: () => BUTLER_HELPER_ROLE,
     sidebar: () => conducting.sidebar ?? [],
     worktrees: async () => (conducting.worktrees ?? []).map((name) => ({ name, dir: name })),
     readTurns: async (key, n) => {
@@ -208,7 +215,6 @@ function harness(
     },
     transcriptPlaces: (key) => conducting.transcripts?.[key],
     quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
-    butlerTarget: (ref) => conducting.conductors?.[ref],
     resume: async (r) => {
       resumed.push(r.id)
       return `${r.id}-tab`
@@ -244,6 +250,7 @@ function harness(
         ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] }
         : { error: 'no window' },
     rowNote: (key) => conducting.rooms?.[key],
+    announceStarting: sessionStarting.announce,
     announceStarted: sessionStarted.announce,
     ownersWords: withoutTheRelayTag
   })
@@ -261,6 +268,7 @@ function harness(
     sendFromInbox: (ref, text, toItsOwnSession) =>
       inner.sendFrom(INBOX_SENDER, ref, text, toItsOwnSession),
     startForReply: inner.startForReply,
+    startHelper: inner.startHelper,
     launched,
     queued,
     closed,
@@ -1655,7 +1663,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     backend: 'claude',
     remote: false,
     tabId: 'butler',
-    butler: true,
+    overseer: true,
     open: async () => 'reopened-tab',
     ...over
   })
@@ -2132,6 +2140,42 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(launched[0].trustFolder).toBe(true)
     expect(launched[0].firstPrompt?.startsWith(BUTLER_HELPER_ROLE)).toBe(true)
     expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
+  })
+
+  it('a helper the butler starts in its own folder, by koloft session new or from ⌘P, is told the butler’s goals, a blank line, then the handover, in its first prompt or, for Codex, in its role, and its folder is trusted; a helper there that starts another is told none and trusts nothing', async () => {
+    const helper = session('helper', 'claude', { sessionId: 'helper-id', cwd: BUTLER_FOLDER })
+    const h = harness([...live, helper], { 'cond-id': 'Alfred' }, [], conducting())
+    await h.verb(['new', ...PICKED, '--', 'look into it'], from('butler'))
+    await h.verb(['new', ...PICKED, '--backend', 'codex', '--', 'look into it'], from('butler'))
+    await h.startHelper(live[0], {
+      prompt: 'Sort the inbox.',
+      ownerWords: 'sort it',
+      backend: 'claude'
+    })
+    await h.verb(['new', ...PICKED, '--', 'dig deeper'], from('helper'))
+    await h.startHelper(
+      { ...live[0], tabId: 'butler-reopened' },
+      { prompt: 'Sort the inbox.', ownerWords: 'sort it', backend: 'claude' }
+    )
+    const [byNew, codexByNew, byPalette, byHelper, afterAReopen] = h.launched
+    expect(afterAReopen.trustFolder).toBe(true)
+    expect(afterAReopen.firstPrompt?.startsWith(`${BUTLER_HELPER_ROLE}\n\n`)).toBe(true)
+    for (const told of [byNew.firstPrompt, codexByNew.role, byPalette.firstPrompt])
+      expect(
+        told?.startsWith(
+          `${BUTLER_HELPER_ROLE}\n\nKoloft started you because the session "Alfred" asked it to`
+        )
+      ).toBe(true)
+    expect(codexByNew.firstPrompt).toBe('look into it')
+    expect(byPalette.firstPrompt?.endsWith('Sort the inbox.')).toBe(true)
+    expect([byNew, codexByNew, byPalette].map((l) => [l.cwd, l.trustFolder])).toEqual([
+      [BUTLER_FOLDER, true],
+      [BUTLER_FOLDER, true],
+      [BUTLER_FOLDER, true]
+    ])
+    expect(byHelper.cwd).toBe(BUTLER_FOLDER)
+    expect(byHelper.trustFolder).toBe(false)
+    expect(byHelper.firstPrompt).not.toContain(BUTLER_HELPER_ROLE)
   })
 
   it('new in a sidebar workspace writes the agent’s folder trust, so nobody has to answer the trust question at the terminal; in a folder the sidebar does not hold it writes none, and a new worktree is left to trust itself', async () => {

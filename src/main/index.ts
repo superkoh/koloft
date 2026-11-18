@@ -148,13 +148,7 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import {
-  barePath,
-  formatRemoteKey,
-  isAbsoluteOnHost,
-  isRemoteKey,
-  parseRemoteKey
-} from '@shared/remoteKey'
+import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -497,7 +491,6 @@ import type {
   OpenRequest,
   UsageSnapshot,
   WindowCommand,
-  SessionWorkbenchState,
   Settings,
   HostId,
   GitStepResult,
@@ -607,7 +600,8 @@ import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
-import { moment, type FileOpened, type SessionStarted } from '@core/moment'
+import { moment, type FileOpened, type SessionStarted, type SessionStarting } from '@core/moment'
+import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
@@ -620,6 +614,10 @@ import {
   pushChanged as pushInboxChanged
 } from '@plugins/inbox/main/channels'
 import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
+import {
+  registerChannels as registerWorkbenchChannels,
+  pushOpenFile
+} from '@plugins/workbench/main/channels'
 import { registerInboxCommand } from '@plugins/inbox/main/inboxVerb'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
@@ -638,7 +636,7 @@ import {
   findSessionRow,
   registerSessionCommands,
   sessionVerb,
-  type ButlerHelperTask,
+  type HelperTask,
   type ClosableSession,
   type SessionScreen,
   type SessionVerbDeps,
@@ -1399,6 +1397,7 @@ const pluginIpc: MainIpc = {
   push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
 }
 const pushInbox = pushInboxChanged(pluginIpc)
+const pushOpenRequest = pushOpenFile(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -2111,9 +2110,11 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
   return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
 }
 
+const sessionStarting = moment<SessionStarting>()
 const sessionStarted = moment<SessionStarted>()
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
 const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
+tellEachHelperItsRole(sessionStarting, () => helperRoleOf(loadSettings().butler))
 giveEachStartedSessionARoom(sessionStarted, {
   isButler: isButlerNow,
   butlerFolder: butlerFolderNow,
@@ -2155,10 +2156,8 @@ const sessionDeps: SessionVerbDeps = {
         if (!closed) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  isButler: isButlerNow,
+  overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow, ...butlersWords },
   speaksForTheOwner: butlerSide,
-  butlerFolder: butlerFolderNow,
-  butlerHelperRole: () => helperRoleOf(loadSettings().butler),
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
@@ -2168,7 +2167,6 @@ const sessionDeps: SessionVerbDeps = {
     const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
     return dir ? quotedPrompt(dir, tabId) : undefined
   },
-  butlerTarget,
   resume: async (row) => {
     const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
     if (!resumed.ok) throw new Error(resumed.error)
@@ -2189,7 +2187,7 @@ const sessionDeps: SessionVerbDeps = {
   undelivered: (callerTab, target, why) => {
     const callerChannel = discordBinding?.channelOfTab(callerTab)
     const channelId =
-      callerChannel ?? (target.butler ? discordBinding?.channel()?.channelId : undefined)
+      callerChannel ?? (target.overseer ? discordBinding?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
     const butlerTab = callerChannel ? callerTab : butler?.liveTab()
     if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
@@ -2198,7 +2196,7 @@ const sessionDeps: SessionVerbDeps = {
     if (callerChannel) void handOver?.tell(butlerRecipient(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
+    target.overseer && discordBinding?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
@@ -2207,6 +2205,7 @@ const sessionDeps: SessionVerbDeps = {
     if (!room) return undefined
     return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
   },
+  announceStarting: sessionStarting.announce,
   announceStarted: sessionStarted.announce,
   ownersWords: withoutTheRelayTag
 }
@@ -2438,7 +2437,7 @@ registerTodoCommand(commands, {
   projectFiles: async (wsPath) => (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
   readText: (file) => hosts.of(file).readText(file),
   servers: mcpServersNow,
-  butlerFolder: sessionDeps.butlerFolder,
+  butlerFolder: butlerFolderNow,
   now: Date.now
 })
 
@@ -5357,7 +5356,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
     sendToRenderer(CH.browser.open, payload)
   } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source: 'user' }
-    sendToRenderer(CH.preview.openFile, payload)
+    pushOpenRequest(payload)
   } else if (decision.dest === 'system') {
     openUrlExternally(decision.target)
   } else {
@@ -5741,7 +5740,7 @@ function openInWorkbench(
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source, view }
-    sendToRenderer(CH.preview.openFile, payload)
+    pushOpenRequest(payload)
     return true
   }
   return false
@@ -5758,7 +5757,7 @@ async function openOnMachine(
   const page = routeFor(keyed, 'agent')
   if (page.dest === 'browser') return openInWorkbench(tabId, page, 'agent')
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
-  sendToRenderer(CH.preview.openFile, payload)
+  pushOpenRequest(payload)
   return true
 }
 
@@ -6477,7 +6476,7 @@ function roomDestination(threadId: string): Destination | undefined {
     },
     typeCommand: async (tabId, command) => {
       await slash.typeWhenIdle(
-        { name: room.name, tabId, butler: false },
+        { name: room.name, tabId, overseer: false },
         command,
         toChannel(threadId, () => discordRelay)
       )
@@ -6586,7 +6585,7 @@ function butlerDestination(): Destination {
       const channelId = discordBinding?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
       await slash.typeWhenIdle(
-        { name: butlerNameNow(), tabId, butler: true },
+        { name: butlerNameNow(), tabId, overseer: true },
         command,
         toChannel(channelId, () => discordRelay)
       )
@@ -6596,7 +6595,7 @@ function butlerDestination(): Destination {
 }
 
 function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
-  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, butler: !!t.butler })
+  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, overseer: !!t.overseer })
   if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()
@@ -6624,7 +6623,7 @@ function fromPalette(
 }
 
 async function startHelper(
-  task: (butler: SessionInfo) => ButlerHelperTask
+  task: (butler: SessionInfo) => HelperTask
 ): Promise<ConductorOpenResult> {
   // AGY§8
   const opened = await butler?.open(A_HELPER_HAS_IT)
@@ -6634,7 +6633,7 @@ async function startHelper(
     ? sessionOfTab(opened.tabId)
     : undefined
   if (!parent) return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
-  const tabId = await sessionCommand.startButlerHelper(parent, task(parent))
+  const tabId = await sessionCommand.startHelper(parent, task(parent))
   return tabId ? { ok: true, tabId } : { ok: false, error: 'Koloft could not start a helper.' }
 }
 
@@ -6659,7 +6658,7 @@ function butlerTarget(ref: string): Target | undefined {
       (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || assistRowBackend('butler', loadSettings()),
     remote: false,
     tabId,
-    butler: true,
+    overseer: true,
     open: async () => {
       const opened = await all.open()
       if (!opened.ok) throw new Error(opened.error)
@@ -7324,37 +7323,6 @@ function registerIpc(): void {
     (_e, p: string, expect: { branch: string; head: string }) =>
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
-  ipcMain.handle(CH.workbench.get, (_e, sessionId: string) =>
-    workspaceMgr?.workbenchState(sessionId)
-  )
-  ipcMain.on(CH.workbench.setState, (_e, sessionId: string, state: SessionWorkbenchState) => {
-    if (typeof sessionId !== 'string' || !sessionId) return
-    if (!state || typeof state !== 'object' || !Array.isArray(state.tabs)) return
-    if (!workspaceMgr) return
-    workspaceMgr.setWorkbenchState(
-      sessionId,
-      sanitizeSessionWorkbench(
-        state,
-        isWorkspaceWorkbenchKey(sessionId)
-          ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
-          : workspaceMgr.defaultOpen()
-      )
-    )
-  })
-  ipcMain.on(CH.workbench.available, (_e, available: unknown, terminal: unknown) => {
-    setWorkbenchAvailable(available === true, terminal === true)
-  })
-  ipcMain.on(CH.workbench.findAvailable, (_e, available: unknown) => {
-    setFindAvailable(available === true)
-  })
-  ipcMain.on(CH.workbench.saveAvailable, (_e, available: unknown) => {
-    setSaveAvailable(available === true)
-  })
-  ipcMain.on(CH.workbench.dirtyTabs, (_e, ids: unknown) => {
-    if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')) return
-    dirtyTabIds.clear()
-    for (const id of ids as string[]) dirtyTabIds.add(id)
-  })
   ipcMain.handle(CH.sessions.archive, (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
     return archiveSession(id)
@@ -7732,99 +7700,38 @@ function registerIpc(): void {
     )
   })
 
-  ipcMain.handle(CH.preview.readText, async (_e, p: string): Promise<string> => {
-    if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
-    return hosts.of(p).readText(p)
-  })
-  ipcMain.handle(CH.fs.listDir, (_e, p: string, opts?: { showIgnored?: boolean }) =>
-    hosts.of(p).listDir(p, opts)
-  )
-  ipcMain.handle(CH.fs.dirExists, (_e, p: string) =>
-    typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
-  )
-  ipcMain.handle(CH.fs.fileExists, (_e, p: string) =>
-    typeof p === 'string' && p ? hosts.of(p).fileExists(p) : false
-  )
-  ipcMain.handle(CH.fs.search, (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
-    hosts.of(p).search(p, q, opts)
-  )
-  const baseArg = sanitizeBase
-  const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle(CH.fs.gitChanges, (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root
-      ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
-      : { base: null, status: {}, numstat: {}, missing: false }
-  )
-  // PLATFORM§30
-  ipcMain.handle(CH.fs.gitHeadLog, async (_e, root: string) => {
-    if (typeof root !== 'string' || !root) return null
-    const host = hosts.of(root)
-    const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
-    return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
-  })
-  ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root
-      ? hosts.of(root).gitDiff(root, baseArg(base))
-      : { text: '', truncated: false, notRepo: true, toplevel: null }
-  )
-  ipcMain.handle(CH.fs.gitFileDiff, (_e, p: string, base?: unknown, untracked?: unknown) =>
-    typeof p === 'string' && p
-      ? hosts.of(p).gitFileDiff(p, baseArg(base), untrackedArg(untracked))
-      : { text: '', truncated: false }
-  )
-  ipcMain.handle(CH.fs.gitFileDiffFull, (_e, p: string, base?: unknown, untracked?: unknown) =>
-    typeof p === 'string' && p
-      ? hosts.of(p).gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
-      : { text: '', truncated: false }
-  )
-  ipcMain.handle(
-    CH.fs.searchContent,
-    (_e, root: string, q: string, opts?: { showIgnored?: boolean }) =>
-      typeof root === 'string' && root
-        ? hosts.of(root).searchContent(root, q, opts)
-        : { hits: [], truncated: false }
-  )
-  ipcMain.handle(CH.fs.watchDir, (_e, root: string, reportsWhatChangedWhileUnwatched: unknown) =>
-    typeof root === 'string' && root
-      ? hosts
-          .of(root)
-          .watchDir(
-            root,
-            (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes),
-            reportsWhatChangedWhileUnwatched === true
-          )
-      : false
-  )
-  ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {
-    if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
-  })
-  ipcMain.on(CH.fs.watchFile, (_e, p: string) => {
-    if (typeof p === 'string' && isAbsoluteOnHost(p))
-      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer(CH.fs.fileChanged, fp, st))
-  })
-  ipcMain.on(CH.fs.unwatchFile, (_e, p: string) => {
-    if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
-  })
-  ipcMain.on(CH.fs.reveal, (_e, p: string) => {
-    if (typeof p === 'string' && p) hosts.of(p).reveal(p)
-  })
-  ipcMain.handle(CH.edit.open, (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
-  ipcMain.handle(CH.edit.write, (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
-    hosts
-      .of(p as string)
-      .writeText(
-        p as string,
-        text as string,
-        expect,
-        (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
+  registerWorkbenchChannels(pluginIpc, {
+    files: (p) => hosts.of(p),
+    base: sanitizeBase,
+    notesFile: notesFileOfScope,
+    pickFile: async () => {
+      const stub = process.env.KOLOFT_FILE_DIALOG_FILE
+      if (stub) return takeStubbedDialogPick(stub)
+      if (!mainWindow) return null
+      const res = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
+      if (res.canceled || res.filePaths.length === 0) return null
+      return res.filePaths[0]
+    },
+    state: (sessionId) => workspaceMgr?.workbenchState(sessionId),
+    setState: (sessionId, state) => {
+      if (!workspaceMgr) return
+      workspaceMgr.setWorkbenchState(
+        sessionId,
+        sanitizeSessionWorkbench(
+          state,
+          isWorkspaceWorkbenchKey(sessionId)
+            ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+            : workspaceMgr.defaultOpen()
+        )
       )
-  )
-  ipcMain.handle(CH.edit.create, (_e, dirPath: unknown, name: unknown) =>
-    hosts.of(dirPath as string).createFile(dirPath as string, name as string)
-  )
-  ipcMain.handle(CH.notes.path, (_e, ws: unknown) => {
-    if (typeof ws !== 'string' || !ws) return null
-    return notesFileOfScope(ws) ?? null
+    },
+    setAvailable: setWorkbenchAvailable,
+    setFindAvailable,
+    setSaveAvailable,
+    setDirtyTabs: (ids) => {
+      dirtyTabIds.clear()
+      for (const id of ids) dirtyTabIds.add(id)
+    }
   })
   registerGithubChannels(pluginIpc, {
     lookup: (root) => hosts.of(root).github,
@@ -7846,15 +7753,6 @@ function registerIpc(): void {
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
-  ipcMain.handle(CH.preview.openFileDialog, async () => {
-    const stub = process.env.KOLOFT_FILE_DIALOG_FILE
-    if (stub) return takeStubbedDialogPick(stub)
-    if (!mainWindow) return null
-    const res = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
-    if (res.canceled || res.filePaths.length === 0) return null
-    return res.filePaths[0]
-  })
-
   ipcMain.handle(CH.window.isFullScreen, () => mainWindow?.isFullScreen() ?? false)
 
   ipcMain.handle(CH.workspace.pickFolder, async () => {
@@ -7866,8 +7764,11 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.on(CH.preview.osOpen, (_e, p: string) => {
+  ipcMain.on(CH.os.open, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
+  })
+  ipcMain.on(CH.os.reveal, (_e, p: string) => {
+    if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
 
   ipcMain.on(CH.app.home, (e) => {
