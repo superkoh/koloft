@@ -968,7 +968,6 @@ export default function App(): JSX.Element {
       pushed = true
       useStore.getState().setCron(s)
     })
-    const offToast = window.api.cron.onToast((text) => useStore.getState().showToast(text))
     void adoptionSettled.then(() =>
       window.api.cron
         .list()
@@ -980,9 +979,10 @@ export default function App(): JSX.Element {
     return () => {
       offSpawned()
       offState()
-      offToast()
     }
   }, [])
+
+  useEffect(() => window.api.toast.onShow((text) => useStore.getState().showToast(text)), [])
 
   useEffect(() => {
     return window.api.tabs.onKilledByMain((tabId) => {
