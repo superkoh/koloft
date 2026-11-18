@@ -1398,7 +1398,13 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 2026-10-11; Codex 0.161.0 made it the default model of the bundled catalog, so a fresh
 account home runs on it). **`gpt-6.1-terra` 1 / 0.05 / 5, long context 2 / 0.10 /
 7.5** (the same page, fetched 2026-10-28; `model/list` offered it on Codex 0.164.0 and
-0.165.0 alike that day, `isDefault: false`, efforts `low` … `ultra`). The page now also lists 30-minute and 12-hour
+0.165.0 alike that day, `isDefault: false`, efforts `low` … `ultra`). **`gpt-6.2-sol` 2 /
+0.10 / 10, long context 4 / 0.20 / 15; `gpt-6.2-astra` 8 / 0.40 / 40, long context 16 /
+0.80 / 60** (the same page, fetched 2026-11-18; its `gpt-6.1-sol` and `gpt-6-astra` rows
+still matched the table above). Both models came with Codex 0.169.1; with a ChatGPT
+login `model/list` on 0.169.0 and 0.170.0 marks `gpt-6.2-sol` `isDefault: true`, so a
+`thread/start` with no model runs on it. Both offer efforts `low` … `ultra`; the
+context window is 500000 for `gpt-6.2-sol` and 272000 for `gpt-6.2-astra`. The page now also lists 30-minute and 12-hour
 cache-write prices (about 1.25 and 2.5 times the input price), but Codex reported
 `cache_write_input_tokens` 0 in every record of a fresh home's turns on 0.164.0 and
 0.165.0 (2026-10-28), so Koloft prices cache writes at 0. The page lists
