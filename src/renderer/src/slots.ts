@@ -57,10 +57,10 @@ export interface WorkspaceMenuEntry {
 
 export const WORKSPACE_MENU = slot<WorkspaceMenuEntry>('workspace-menu')
 
-export interface PaletteAction {
+export interface PaletteRun {
   key: PluginPaletteAction
   run: (currentWs: string | null) => void
   disabled: (currentWs: string | null) => boolean
 }
 
-export const PALETTE_ACTION = slot<PaletteAction>('palette-action')
+export const PALETTE_RUN = slot<PaletteRun>('palette-run')

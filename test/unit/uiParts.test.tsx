@@ -9,9 +9,9 @@ import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import { PLUGIN_PALETTE_ACTIONS } from '@shared/paletteFeatures'
 import {
-  PALETTE_ACTION,
+  PALETTE_RUN,
   ROW_EXTRAS,
-  type PaletteAction,
+  type PaletteRun,
   type RowExtrasFill
 } from '../../src/renderer/src/slots'
 
@@ -109,9 +109,7 @@ describe('UI parts a plugin registers', () => {
 
   it('every ⌘P item a plugin runs is listed by its manifest, is one the palette leaves to plugins, and has exactly one runner', () => {
     const run = Object.values(PLUGIN_UIS).flatMap((ui) =>
-      (ui.fills ?? [])
-        .filter((f) => f.slot === PALETTE_ACTION)
-        .map((f) => (f.value as PaletteAction).key)
+      (ui.fills ?? []).filter((f) => f.slot === PALETTE_RUN).map((f) => (f.value as PaletteRun).key)
     )
     expect(run.sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
     expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())

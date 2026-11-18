@@ -113,7 +113,7 @@ import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits 
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
 import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
-import { PALETTE_ACTION } from './slots'
+import { PALETTE_RUN } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -1277,7 +1277,7 @@ export default function App(): JSX.Element {
     const disabled: Partial<Record<PaletteFeature['key'], boolean>> = {
       'restore-session': !hasHistory
     }
-    const fromPlugins = fillsOf(PALETTE_ACTION)
+    const fromPlugins = fillsOf(PALETTE_RUN)
     return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => {
       const plugin = fromPlugins.find((a) => a.key === f.key)
       return {

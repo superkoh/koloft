@@ -52,17 +52,19 @@ export function placeUi(
       if (!declared.some((entry) => entry.id === id))
         throw new Error(`plugin ${plugin.id} registers "${id}", which its manifest does not list`)
     for (const { place, id } of declared) {
+      if (taken.has(id)) throw new Error(`"${id}" is listed twice`)
+      taken.add(id)
       if (place === ACTION_PLACE) continue
       const Part = parts[id]
       if (!Part) throw new Error(`plugin ${plugin.id} lists "${id}" but registers no part for it`)
-      if (taken.has(id)) throw new Error(`"${id}" is listed twice`)
-      taken.add(id)
       ;(placed[place] ??= []).push({ id, Part })
     }
     fills.push(...(uis[plugin.id]?.fills ?? []))
   }
+  const bySlot = new Map<Slot<unknown>, unknown[]>()
+  for (const f of fills) bySlot.set(f.slot, [...(bySlot.get(f.slot) ?? []), f.value])
   return {
     parts: placed,
-    fillsOf: <T>(into: Slot<T>) => fills.filter((f) => f.slot === into).map((f) => f.value as T)
+    fillsOf: <T>(into: Slot<T>) => (bySlot.get(into) ?? []) as T[]
   }
 }
