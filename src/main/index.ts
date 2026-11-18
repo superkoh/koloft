@@ -507,7 +507,8 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { butlerHelperRole, conductorFolder, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
@@ -2117,7 +2118,7 @@ const sessionStarting = moment<SessionStarting>()
 const sessionStarted = moment<SessionStarted>()
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
 const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
-tellEachHelperItsRole(sessionStarting, () => butlerHelperRole(butlerNameNow()))
+tellEachHelperItsRole(sessionStarting, () => helperRoleOf(loadSettings().butler))
 giveEachStartedSessionARoom(sessionStarted, {
   isButler: isButlerNow,
   butlerFolder: butlerFolderNow,
@@ -4063,6 +4064,7 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          ownerText: l.ownerText,
           conductor: true,
           permission: ownersPermission(),
           trustFolder: true,
@@ -7010,6 +7012,12 @@ function registerIpc(): void {
     runner: () => cronRunner,
     skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
     trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
+  })
+  registerButlerChannels(pluginIpc, {
+    butler: () => loadSettings().butler,
+    save: (butler) => {
+      commitSettings({ butler })
+    }
   })
   ipcMain.handle(
     CH.sessionDefaults.read,

@@ -12,6 +12,7 @@ const SHORT_TEXT = 1
 const TEXT_INPUT = 4
 const ACTION_ROW = 1
 const LONGEST_SECRET = 4000
+export const A_CARD_REACHES_DISCORD_WITHIN_MS = 60_000
 
 export const PLAIN_TEXT_WARNING =
   '-# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.'
@@ -59,6 +60,7 @@ type CardAnswer = { typed: string } | { passed: true } | { ended: 'declined' }
 export interface AsksShownOnCards {
   pendingAsk: (id: string) => CardAsk | undefined
   answerFromElsewhere: (id: string, answer: CardAnswer) => void
+  notShownElsewhere: (id: string) => void
 }
 
 export interface PlacedCard {
@@ -116,12 +118,25 @@ export class SecretCards {
   }
 
   private async placeCard(id: string, shown: Shown): Promise<void> {
-    if (shown.ask.taps) {
-      await this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
-      return
+    let marked = false
+    const markInKoloft = (): void => {
+      if (!marked) this.d.asks.notShownElsewhere(id)
+      marked = true
     }
+    const late = setTimeout(markInKoloft, A_CARD_REACHES_DISCORD_WITHIN_MS)
+    let posted = false
+    try {
+      posted = await this.placeFirstCard(id, shown)
+    } finally {
+      clearTimeout(late)
+      if (!posted) markInKoloft()
+    }
+  }
+
+  private placeFirstCard(id: string, shown: Shown): Promise<boolean> {
+    if (shown.ask.taps) return this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
     const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
-    await this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
+    return this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
   }
 
   private async put(
@@ -167,7 +182,9 @@ export class SecretCards {
       picture.seen?.()
       return true
     }
-    return picture.files.length > 0 && this.put(id, shown, card(NO_PICTURE_POSTED))
+    return (
+      picture.files.length > 0 && this.waiting(id) && this.put(id, shown, card(NO_PICTURE_POSTED))
+    )
   }
 
   private startRound(id: string, shown: Shown, act: () => Promise<string>): void {

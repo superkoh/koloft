@@ -275,6 +275,20 @@ describe('claude shim (registration — unchanged behavior)', () => {
     expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
   })
 
+  // CC§13
+  it("hands claude the owner's text as one inline appended prompt, after Koloft's prompt file and exactly as written, and keeps it out of what claude's own commands inherit", () => {
+    const text = `Written by the owner\nline 'one' "two" \`three\` $HOME $(whoami) \\ %s !! 中文 😀`
+    const { realArgs0, realEnv } = runShim([], {
+      KOLOFT_AGENT_PROMPT: '/koloft/agent-plugin/koloft-prompt.md',
+      KOLOFT_OWNER_TEXT: text
+    })
+    const at = realArgs0!.indexOf('--append-system-prompt')
+    expect(realArgs0![at + 1]).toBe(text)
+    expect(at).toBeGreaterThan(realArgs0!.indexOf('--append-system-prompt-file'))
+    expect(realEnv?.KOLOFT_OWNER_TEXT).toBeUndefined()
+    expect(runShim([]).realArgs).not.toContain('--append-system-prompt')
+  })
+
   it("hides the Apple_Terminal name from the tab's own interactive claude, so it does not poll the cursor and keeps its terminal checks, and leaves -p, --version, a nested claude and any other terminal name as they were", () => {
     const APPLE = { TERM_PROGRAM: 'Apple_Terminal' }
     for (const args of [[], ['--resume'], ['--resume', 'abc-123'], ['--session-id', 'abc-123']]) {

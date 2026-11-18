@@ -1879,6 +1879,7 @@ export default function App(): JSX.Element {
                     </div>
                   ))}
               </div>
+              <PartsAt place="below-terminal" />
             </div>
           </div>
           {panelShown && !panelFull && (

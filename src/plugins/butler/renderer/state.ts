@@ -5,12 +5,16 @@ interface ButlerState {
   openedTab: string | null
   renaming: boolean
   setUpAsked: boolean
+  editingInstructions: boolean
+  askingFresh: boolean
 }
 
 export const useButler = create<ButlerState>(() => ({
   openedTab: null,
   renaming: false,
-  setUpAsked: false
+  setUpAsked: false,
+  editingInstructions: false,
+  askingFresh: false
 }))
 
 export const renameButler = (renaming: boolean): void => useButler.setState({ renaming })

@@ -7,9 +7,17 @@ import {
   WORKSPACE_CLAIM
 } from '@renderer/slots'
 import { isButlersWorkspace } from './butlerTabs'
-import { BUTLER_RENAME, BUTLER_ROW_PART, BUTLER_SET_UP } from '../plugin'
+import {
+  BUTLER_FRESH,
+  BUTLER_INSTRUCTIONS,
+  BUTLER_RENAME,
+  BUTLER_ROW_PART,
+  BUTLER_SET_UP,
+  BUTLER_STRIP
+} from '../plugin'
 import { ButlerRow, RenameButlerDialog } from './ButlerRow'
 import { ButlerSetUpDialog } from './SetUpDialog'
+import { FreshConversationDialog, InstructionsDialog, InstructionsStrip } from './InstructionsStrip'
 import { butlerLanding, useButlerShowsGlobalNote } from './landing'
 import { StartedByButler, useStartedByButler } from './startedBy'
 
@@ -17,7 +25,10 @@ export const ui: PluginUi = {
   parts: {
     [BUTLER_ROW_PART]: ButlerRow,
     [BUTLER_RENAME]: RenameButlerDialog,
-    [BUTLER_SET_UP]: ButlerSetUpDialog
+    [BUTLER_SET_UP]: ButlerSetUpDialog,
+    [BUTLER_STRIP]: InstructionsStrip,
+    [BUTLER_INSTRUCTIONS]: InstructionsDialog,
+    [BUTLER_FRESH]: FreshConversationDialog
   },
   fills: [
     fill(LANDING_AFTER_CLOSE, butlerLanding),
