@@ -15,7 +15,6 @@ import type {
   BrowserJsDialog,
   BrowserOverlayOpen,
   BrowserOpenRequest,
-  EditFingerprint,
   ExtensionPermissionRequest,
   CreateTabOptions,
   TerminalData,
@@ -41,9 +40,7 @@ import type {
   Settings,
   UpdateProgress,
   UpdateCheckResult,
-  OpenRequest,
-  WorkspaceRows,
-  DirChanges
+  WorkspaceRows
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
 import type { PreloadIpc } from '@core/ipc'
@@ -119,15 +116,6 @@ const api: KoloftApi = {
     },
     answerScreen: (a) => ipcRenderer.send(CH.terminal.screenDone, a),
     logUnexpectedExit: (s) => ipcRenderer.send(CH.terminal.unexpectedExit, s)
-  },
-  workbench: {
-    get: (sessionId) => ipcRenderer.invoke(CH.workbench.get, sessionId),
-    setState: (sessionId, state) => ipcRenderer.send(CH.workbench.setState, sessionId, state),
-    setAvailable: (available, terminal) =>
-      ipcRenderer.send(CH.workbench.available, available, terminal),
-    setFindAvailable: (available) => ipcRenderer.send(CH.workbench.findAvailable, available),
-    setSaveAvailable: (available) => ipcRenderer.send(CH.workbench.saveAvailable, available),
-    setDirtyTabs: (ids) => ipcRenderer.send(CH.workbench.dirtyTabs, ids)
   },
   tabs: {
     list: () => ipcRenderer.invoke(CH.tabs.list),
@@ -253,16 +241,6 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.attention.changed, handler)
     }
   },
-  preview: {
-    readText: (p) => ipcRenderer.invoke(CH.preview.readText, p),
-    openFileDialog: () => ipcRenderer.invoke(CH.preview.openFileDialog),
-    osOpen: (p) => ipcRenderer.send(CH.preview.osOpen, p),
-    onOpenRequest: (cb) => {
-      const handler = (_e: unknown, r: OpenRequest): void => cb(r)
-      ipcRenderer.on(CH.preview.openFile, handler)
-      return () => ipcRenderer.removeListener(CH.preview.openFile, handler)
-    }
-  },
   browserGuestLimit: ipcRenderer.sendSync(CH.browser.guestLimit) as number,
   sessionScreenAtLoad: ipcRenderer.sendSync(CH.terminal.sessionScreen) as ScreenSize | null,
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
@@ -386,43 +364,6 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.ext.permissionRequest, handler)
     },
     answerPermissionRequest: (id, granted) => ipcRenderer.send(CH.ext.permissionAnswer, id, granted)
-  },
-  fs: {
-    listDir: (p, opts) => ipcRenderer.invoke(CH.fs.listDir, p, opts),
-    dirExists: (p) => ipcRenderer.invoke(CH.fs.dirExists, p),
-    fileExists: (p) => ipcRenderer.invoke(CH.fs.fileExists, p),
-    search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
-    gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
-    gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),
-    watchDir: (root, reportsWhatChangedWhileUnwatched) =>
-      ipcRenderer.invoke(CH.fs.watchDir, root, reportsWhatChangedWhileUnwatched),
-    unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
-    onDirChange: (cb) => {
-      const handler = (_e: unknown, root: string, changes?: DirChanges): void => cb(root, changes)
-      ipcRenderer.on(CH.fs.dirChanged, handler)
-      return () => ipcRenderer.removeListener(CH.fs.dirChanged, handler)
-    },
-    watchFile: (p) => ipcRenderer.send(CH.fs.watchFile, p),
-    unwatchFile: (p) => ipcRenderer.send(CH.fs.unwatchFile, p),
-    onFileChange: (cb) => {
-      const handler = (_e: unknown, p: string, fp?: EditFingerprint): void => cb(p, fp)
-      ipcRenderer.on(CH.fs.fileChanged, handler)
-      return () => ipcRenderer.removeListener(CH.fs.fileChanged, handler)
-    },
-    reveal: (p) => ipcRenderer.send(CH.fs.reveal, p),
-    gitDiff: (root, base) => ipcRenderer.invoke(CH.fs.gitDiff, root, base),
-    gitFileDiff: (p, base, untracked) => ipcRenderer.invoke(CH.fs.gitFileDiff, p, base, untracked),
-    gitFileDiffFull: (p, base, untracked) =>
-      ipcRenderer.invoke(CH.fs.gitFileDiffFull, p, base, untracked),
-    searchContent: (root, q, opts) => ipcRenderer.invoke(CH.fs.searchContent, root, q, opts)
-  },
-  edit: {
-    open: (p) => ipcRenderer.invoke(CH.edit.open, p),
-    write: (p, text, expect, opts) => ipcRenderer.invoke(CH.edit.write, p, text, expect, opts),
-    create: (dirPath, name) => ipcRenderer.invoke(CH.edit.create, dirPath, name)
-  },
-  notes: {
-    path: (ws) => ipcRenderer.invoke(CH.notes.path, ws)
   },
   git: {
     commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),

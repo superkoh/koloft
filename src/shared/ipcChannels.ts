@@ -29,14 +29,6 @@ export const CH = {
     quitDeclined: 'app:quit-declined',
     version: 'app:version'
   },
-  workbench: {
-    get: 'workbench:get',
-    setState: 'workbench:setState',
-    available: 'workbench:available',
-    findAvailable: 'workbench:findAvailable',
-    saveAvailable: 'workbench:saveAvailable',
-    dirtyTabs: 'workbench:dirtyTabs'
-  },
   tabs: {
     list: 'tabs:list',
     moved: 'tabs:moved'
@@ -114,12 +106,6 @@ export const CH = {
     activateTab: 'attention:activate-tab',
     changed: 'attention:changed'
   },
-  preview: {
-    readText: 'preview:readText',
-    openFileDialog: 'preview:openFileDialog',
-    osOpen: 'preview:os-open',
-    openFile: 'preview:open-file'
-  },
   browser: {
     guestLimit: 'browser:guest-limit',
     open: 'browser:open',
@@ -172,33 +158,6 @@ export const CH = {
     dismissPopup: 'ext:dismiss-popup',
     permissionRequest: 'ext:permission-request',
     permissionAnswer: 'ext:permission-answer'
-  },
-  fs: {
-    listDir: 'fs:listDir',
-    dirExists: 'fs:dirExists',
-    fileExists: 'fs:fileExists',
-    search: 'fs:search',
-    gitChanges: 'fs:gitChanges',
-    gitHeadLog: 'fs:gitHeadLog',
-    watchDir: 'fs:watchDir',
-    unwatchDir: 'fs:unwatchDir',
-    dirChanged: 'fs:dir-changed',
-    watchFile: 'fs:watchFile',
-    unwatchFile: 'fs:unwatchFile',
-    fileChanged: 'fs:file-changed',
-    reveal: 'fs:reveal',
-    gitDiff: 'fs:gitDiff',
-    gitFileDiff: 'fs:gitFileDiff',
-    gitFileDiffFull: 'fs:gitFileDiffFull',
-    searchContent: 'fs:searchContent'
-  },
-  edit: {
-    open: 'edit:open',
-    write: 'edit:write',
-    create: 'edit:create'
-  },
-  notes: {
-    path: 'notes:path'
   },
   git: {
     commit: 'github:commit',
