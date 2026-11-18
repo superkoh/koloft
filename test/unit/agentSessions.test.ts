@@ -11,10 +11,10 @@ import {
   THAT_IS_YOU,
   workspaceVerb,
   type ClosableSession,
-  type PinnedWorkspace,
   type SessionVerbDeps,
   type Target
 } from '../../src/main/agentSessions'
+import type { PinnedWorkspace } from '../../src/plugins/sessions/api'
 import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../src/main/inbox'
