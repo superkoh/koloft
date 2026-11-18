@@ -1,8 +1,7 @@
 # Koloft plugin format
 
 Format version 1, a draft. Only plugins built into Koloft exist. Of a manifest, Koloft reads
-only the `text` and `assistJobs` fields today: the text it gives agents is put together from
-the first, and the small jobs in Settings ▸ Assist come from the second.
+only the `text` field today: the text it gives agents is put together from it.
 
 This page says what a Koloft plugin is and what its manifest (the plain-data file that says
 what the plugin is and what it owns) contains. It is written for someone who has not read
@@ -113,16 +112,16 @@ flowchart LR
 | `src/core/prompt.ts` | `composePrompt`, which puts text blocks together | yes |
 | `src/core/moment.ts` | `moment()`, a stand-in for one moment ("a file was opened") until the registry of #1985: listeners hand back a sentence for the agent's reply | yes |
 | `src/core/errorText.ts` | `errorText`, the text of a thrown error | yes |
-| `src/core/assistJobs.ts` | `ASSIST_JOBS`, every plugin's Assist jobs in list order, and `assistJobDefaults` | yes |
-| `src/core/assistModels.ts` | the `ModelAndEffort` type and the model tables Assist jobs share | yes |
+| `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks | yes |
+| `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in | yes |
 | `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports a plugin's manifest | yes |
 | `src/plugins/<id>/plugin.ts` | the plugin's manifest | all eleven |
 | `src/plugins/<id>/prompts/` | the plugin's text blocks for prompts | six plugins |
 | `src/plugins/<id>/skill/` | the plugin's text blocks for `koloft help` and the `koloft` skill | nine plugins |
 | `src/plugins/<id>/api.ts` | what other plugins may import | four plugins |
-| `src/plugins/<id>/main/` | code that runs in Koloft's main process | sessions, discord |
+| `src/plugins/<id>/main/` | code that runs in Koloft's main process | sessions, discord, passwords |
 | `src/plugins/<id>/renderer/` | code that runs in Koloft's window | none yet |
-| `src/plugins/<id>/shared/` | code both of them use | sessions, workbench, butler |
+| `src/plugins/<id>/shared/` | code both of them use | none yet |
 
 Koloft's main-process type check skips every plugin's `renderer/` folder, and its window type
 check skips every `main/` folder; both read the rest of a plugin folder.
@@ -165,16 +164,14 @@ The unit test `test/unit/pluginList.test.ts` holds these rules:
 - Each plugin comes after every plugin it needs on the list. So no plugin needs itself, no
   two plugins need each other, and every id in `needs` is on the list.
 - A mandatory plugin needs only mandatory plugins.
-- No two Assist jobs share an id, and none is `butler` ([Assist jobs](#assist-jobs)).
 
 There is no other naming rule for an id.
 
 ### Optional fields
 
 Each optional field is a place for one of the things a plugin owns. Koloft reads `text`
-([Text blocks](#text-blocks)) and `assistJobs` ([Assist jobs](#assist-jobs)) today. No
-manifest fills any other optional field yet, and nothing reads them; the steps in #1964 make
-Koloft read them one at a time.
+today ([Text blocks](#text-blocks)). No manifest fills any other optional field yet, and
+nothing reads them; the steps in #1964 make Koloft read them one at a time.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -185,7 +182,7 @@ Koloft read them one at a time.
 | `moments` | `{ announces?, listens? }`, each a list of strings | names of the session moments the plugin announces and those it listens to |
 | `settings` | `{ page, keys }` | the name of its settings page, and the setting keys it owns |
 | `ui` | list of `{ place, id }` | UI entries; `place` is `sidebar-row`, `centre-page`, `dialog` or `palette-item` (⌘P) |
-| `assistJobs` | list of `{ id, name, does, defaults }` | Assist jobs the plugin owns ([Assist jobs](#assist-jobs)) |
+| `assistJobs` | list of `{ id, name }` | Assist jobs the plugin owns |
 | `mcpServers` | list of `{ name, command, args }` | MCP servers the plugin adds to sessions; a place kept for later, which no step plans to fill yet |
 
 ### Text blocks
@@ -260,62 +257,6 @@ These are the slots, values and facts in use today:
 
 Who may add a slot, a value or a fact, and whether these names are kept stable for plugins
 written outside Koloft, is not decided.
-
-### Assist jobs
-
-An Assist job is a small AI task Koloft runs on its own. A plugin lists its jobs in
-`assistJobs`. Each job is:
-
-- `id`: the job's id. The owner's pick for the job (which agent, model and thinking) is saved
-  under it, so an id never changes once a job has shipped. The id `butler` is taken by the
-  butler's own row.
-- `name`: the job's row title in Settings ▸ Assist.
-- `does`: the line under that title, saying what the job does.
-- `defaults`: for each agent (`claude`, `codex`, `muse`, `agy`), the model and thinking
-  (`{ model?, effort? }`) the job runs with while the owner has not picked one. An empty
-  `{}` means that agent's own model and thinking.
-
-This is the Butler plugin's one job, in `src/plugins/butler/shared/assistJobs.ts`:
-
-```ts
-import type { PluginAssistJob } from '@core/plugin'
-
-export const ASSIST_JOBS: readonly PluginAssistJob[] = [
-  {
-    id: 'route',
-    name: 'Route what you type in ⌘P',
-    does: 'Finds the workspace, session or feature your words are for.',
-    defaults: {
-      claude: { model: 'sonnet', effort: 'low' },
-      codex: { model: 'gpt-6.1-sol', effort: 'low' },
-      muse: { effort: 'low' },
-      agy: { model: 'gemini-3.8-flash', effort: 'low' }
-    }
-  }
-]
-```
-
-`ASSIST_JOBS` in `src/core/assistJobs.ts` takes every plugin's jobs in the order of
-`src/plugins/list.ts`, and within one plugin in the order of its list. Settings ▸ Assist shows
-one row per job in that order, under "Small jobs". `SMALL_AND_QUICK` in
-`src/core/assistModels.ts` is a `defaults` table for a job that wants the smallest, quickest
-model of each agent.
-
-The manifest says only what a job is. The code that runs a job asks Assist with the job's
-`id`, and Assist runs it with the owner's pick for that id or else the job's `defaults`. Of
-today's jobs only `turn` runs from its plugin's folder
-(`src/plugins/sessions/main/turnNews.ts`); the others still run from `src/main/` until their
-code moves.
-
-These are the jobs today:
-
-| Id | Plugin | Row in Settings ▸ Assist |
-|---|---|---|
-| `title` | Sessions core | Name a new session |
-| `handover` | Sessions core | Translate a handover |
-| `turn` | Sessions core | After each turn |
-| `docs` | Workbench | Pick the documents to show |
-| `route` | Butler | Route what you type in ⌘P |
 
 ## Format version
 

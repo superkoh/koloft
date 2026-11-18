@@ -212,7 +212,7 @@ import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
-import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
+import { SECRET_VERB, SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
@@ -537,13 +537,10 @@ import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
-import {
-  SECRET_ID_PREFIX,
-  SecretAsks,
-  type SecretAnswer,
-  type SecretAsk
-} from './discord/secretAsks'
-import { secretVerb, type FieldPage } from './agentSecret'
+import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
+import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from './discord/secretCards'
+import { secretVerb } from '@plugins/passwords/main/secretVerb'
+import type { WebPage } from '@core/webPage'
 import { pageVerb, type TapPage } from './agentPageTap'
 import {
   A_PAGE_ANSWERS_WITHIN_MS,
@@ -1522,7 +1519,8 @@ let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
 let rooms: Rooms | null = null
 let askButtons: AskButtons | null = null
-let secretAsks: SecretAsks | null = null
+type OwnerAsk = SecretAsk & { taps?: TapRounds }
+let secretAsks: SecretAsks<OwnerAsk> | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
@@ -2277,7 +2275,7 @@ async function answerSession(tabId: string, reply: string): Promise<string | und
 
 const ownerAsks = {
   sessionTab: (tabId: string): string => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
-  ask: (a: SecretAsk): Promise<SecretAnswer> =>
+  ask: (a: OwnerAsk): Promise<SecretAnswer> =>
     secretAsks
       ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
       : Promise.resolve({ ended: 'timeout' }),
@@ -4085,6 +4083,15 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
+  const secrets = new SecretAsks<OwnerAsk>({
+    show: (views) => sendToRenderer(CH.secret.asks, views),
+    owner: {
+      waitsOnTheOwner: (tabId) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
+      ownerAnswered: (tabId) => {
+        if (tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
+      }
+    }
+  })
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4170,14 +4177,10 @@ app.whenReady().then(() => {
     },
     answered: (tabId, reply) => buttons.answered(tabId, reply)
   })
-  const secrets = new SecretAsks({
+  const secretCards = new SecretCards({
+    asks: secrets,
     owner: () => butlerNow.owner(),
     cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
-    show: (asks) => sendToRenderer(CH.secret.asks, asks),
-    askedOnlyInKoloft: (tabId) => attention.asksForASecret(tabId, attentionSubjectOf(tabId)),
-    ended: (tabId) => {
-      if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
-    },
     place: async (tabId, card, files) => {
       const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
       if (!channelId) return undefined
@@ -4191,6 +4194,7 @@ app.whenReady().then(() => {
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
     respond: (i, body) => link.respond(i, body)
   })
+  secrets.listen(secretCards)
   secretAsks = secrets
   const interactions = new Interactions({
     owner: () => butlerNow.owner(),
@@ -4200,8 +4204,9 @@ app.whenReady().then(() => {
         butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
         text
       ),
-    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
-    submit: (i) => secrets.submit(i),
+    press: (i) =>
+      i.customId?.startsWith(SECRET_ID_PREFIX) ? secretCards.press(i) : buttons.press(i),
+    submit: (i) => secretCards.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
@@ -6187,7 +6192,7 @@ function guestsOfTab(tabId: string): WebContents[] {
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
 }
 
-function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
+function guestPagesOf(tabId: string): (GuestPage & WebPage)[] {
   return guestsOfTab(tabId).map((wc) => ({
     guestId: wc.id,
     url: () => wc.getURL(),
