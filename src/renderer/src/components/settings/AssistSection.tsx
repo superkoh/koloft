@@ -1,17 +1,12 @@
 import { useEffect, useState, type JSX } from 'react'
-import {
-  ASSIST_DEFAULTS,
-  assistEfforts,
-  assistModels,
-  assistRunsOn,
-  withAssistPick
-} from '@shared/assistPicks'
+import { ASSIST_JOBS, assistJobDefaults } from '@core/assistJobs'
+import { assistEfforts, assistModels, assistRunsOn, withAssistPick } from '@shared/assistPicks'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
-import { ASSIST_JOBS, type AssistPick, type AssistRowId, type BackendId } from '@shared/types'
+import type { AssistPick, AssistRowId, BackendId } from '@shared/types'
 import { IconChevronDown, IconChevronUp } from '../../icons'
 import { assistInputs } from '../../butlerRows'
 import { useStore } from '../../store'
@@ -23,29 +18,6 @@ import { useSettingsUpdate } from './useSettingsUpdate'
 import '../../cronJobs.css'
 
 const NO_ACCOUNT_LINE = 'no account — add one in Settings ▸ Accounts'
-
-const JOB_COPY: Record<(typeof ASSIST_JOBS)[number], { title: string; does: string }> = {
-  title: {
-    title: 'Name a new session',
-    does: 'A short title for a session that an agent or your butler starts.'
-  },
-  handover: {
-    title: 'Translate a handover',
-    does: 'The note a new session gets, in your language.'
-  },
-  turn: {
-    title: 'After each turn',
-    does: 'Decides whether a reply needs you or is only news, and offers one-click answers.'
-  },
-  docs: {
-    title: 'Pick the documents to show',
-    does: 'Which files written in a turn are for you to read.'
-  },
-  route: {
-    title: 'Route what you type in ⌘P',
-    does: 'Finds the workspace, session or feature your words are for.'
-  }
-}
 
 const SMALL_JOB_WAIT_HINT =
   'A small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'
@@ -73,7 +45,7 @@ function modelLabel(row: AssistRowId, backend: BackendId, model: string): string
 }
 
 function whatDefaultIs(row: AssistRowId, backend: BackendId): string {
-  const { model, effort } = ASSIST_DEFAULTS[row][backend]
+  const { model, effort } = assistJobDefaults(row, backend)
   const parts = [
     model && modelLabel(row, backend, model),
     effort && `${effortLabel(effort)} thinking`
@@ -105,7 +77,7 @@ function AssistRow({
   const backend = pick?.backend ?? runsOn
   const named = pick?.model && assistModels(row, backend).some((m) => m.id === pick.model)
   const typedModel = otherDraft ?? (pick?.model && !named ? pick.model : null)
-  const efforts = assistEfforts(row, backend, pick?.model ?? ASSIST_DEFAULTS[row][backend].model)
+  const efforts = assistEfforts(row, backend, pick?.model ?? assistJobDefaults(row, backend).model)
 
   const save = (next: Omit<AssistPick, 'backend'>, on = backend): void => {
     const nothingOfItsOwn = on === runsOn && !next.model && !next.effort
@@ -114,7 +86,7 @@ function AssistRow({
     })
   }
   const withModel = (model: string | undefined): void => {
-    const kept = takenEffort(backend, model ?? ASSIST_DEFAULTS[row][backend].model, pick?.effort)
+    const kept = takenEffort(backend, model ?? assistJobDefaults(row, backend).model, pick?.effort)
     save({ ...(model && { model }), ...(kept && { effort: kept }) })
   }
   const typedModelError =
@@ -257,7 +229,7 @@ export function AssistSection(): JSX.Element {
       </div>
       <div className="set-grp">Small jobs</div>
       {ASSIST_JOBS.map((job) => (
-        <AssistRow key={job} row={job} setup={setup} {...JOB_COPY[job]} />
+        <AssistRow key={job.id} row={job.id} title={job.name} does={job.does} setup={setup} />
       ))}
       <div className="set-grp">Butler</div>
       <AssistRow
