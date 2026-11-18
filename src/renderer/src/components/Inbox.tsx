@@ -32,9 +32,8 @@ import {
 import { useStore } from '../store'
 import { IconInbox } from '../icons'
 import { isComposing } from '../keys'
-import { everyWorkspaceRows } from '../butlerRows'
 import { openSessionRow, visitTab } from '../sessionClick'
-import { relTime } from '../sessionRows'
+import { everyWorkspaceRows, relTime } from '../sessionRows'
 import { useDismissOnOutside } from './WorkspaceSidebar'
 import '../inbox.css'
 

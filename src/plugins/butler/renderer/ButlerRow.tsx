@@ -1,40 +1,43 @@
 import { useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { IconAssist, IconClose } from '../icons'
-import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
+import { IconAssist, IconClose } from '@renderer/icons'
+import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
 import { attentionReason } from '@shared/types'
 import { assistBackendsFor, assistRowBackend } from '@shared/assistPicks'
 import { butlerStart } from '@shared/butlerStart'
 import { settingsPaneName } from '@shared/paletteFeatures'
-import { useInstalledBackends } from '../useInstalledBackends'
-import { useStore } from '../store'
-import { rowStateClass, statusWithSecrets } from '../sessionRows'
-import { assistInputs, butlerSetUp, butlerTabOf } from '../butlerRows'
-import { visitTab } from '../sessionClick'
-import { SessionBackendIcon } from './SessionBackendIcon'
-import { updateSettings } from './settings/useSettingsUpdate'
-import { menuPosFor, useDismissOnOutside } from './WorkspaceSidebar'
-
-const NOT_ON_DISCORD = 'not on Discord'
+import { useInstalledBackends } from '@renderer/useInstalledBackends'
+import { useStore } from '@renderer/store'
+import { rowStateClass, statusWithSecrets } from '@renderer/sessionRows'
+import { assistInputs } from '@renderer/assistInputs'
+import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
+import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
+import { menuPosFor, useDismissOnOutside } from '@renderer/components/WorkspaceSidebar'
+import { butlerSetUp, butlerTabOf } from './butlerTabs'
 
 export async function openButler(fresh = false): Promise<void> {
   const error = await useStore.getState().openButler(fresh)
   if (error) useStore.getState().showToast(error)
 }
 
-export async function setUpDiscordWithButler(ownerWords?: string): Promise<string | null> {
-  const r = await window.api.discord.setUpWithButler(ownerWords)
-  if (!r.ok) return r.error
-  useStore.getState().setSettingsOpen(false)
-  visitTab(r.tabId)
-  return null
+export interface ButlerRowEntry {
+  label: string
+  run: () => void
+  danger?: true
 }
 
-export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
+export function ButlerRow({
+  children,
+  menu: moreMenu,
+  where
+}: {
+  children: JSX.Element[] | null
+  menu: readonly ButlerRowEntry[]
+  where: string
+}): JSX.Element {
   const setUp = useStore(butlerSetUp)
   const backend = useStore((s) => assistRowBackend('butler', assistInputs(s)))
   const name = useStore((s) => s.settings.butler.name)
-  const channel = useStore((s) => s.settings.discord.channel)
   const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
@@ -43,7 +46,6 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   const secretAsks = useStore((s) => s.secretAsks)
   const opened = useStore((s) => s.butlerTab)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
-  const setBindButler = useStore((s) => s.setBindButler)
   const setRenameButler = useStore((s) => s.setRenameButler)
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   useDismissOnOutside(!!menu, setMenu)
@@ -73,12 +75,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
     item('Rename…', () => setRenameButler(true)),
     item('Start a fresh conversation', () => void openButler(true)),
     <div key="sep" className="sep" />,
-    ...(channel
-      ? [
-          item('Change Discord channel…', () => setBindButler(true)),
-          item('Unbind Discord', () => void window.api.conductors.unbind(), 'mi danger')
-        ]
-      : [item('Bind Discord channel…', () => setBindButler(true))])
+    ...moreMenu.map((e) => item(e.label, e.run, e.danger ? 'mi danger' : 'mi'))
   ]
 
   const showMenu = (e: MouseEvent<HTMLElement>): void => {
@@ -128,7 +125,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
           </div>
           <div className="ws-tab-sub">
             <SessionBackendIcon backend={sess?.backendId ?? backend} />
-            <span>{channel ? channelLabel(channel) : NOT_ON_DISCORD}</span>
+            <span>{where}</span>
           </div>
           {!tabId && <WhyButlerCannotStart />}
         </div>

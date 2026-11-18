@@ -14,9 +14,15 @@ import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
 import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
-import { everyWorkspaceRows } from './butlerRows'
 
 export { statusUnavailable }
+
+export function everyWorkspaceRows(s: {
+  workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
+}): WorkspaceRows[] {
+  return s.butlerWorkspace ? [...s.workspaceRows, s.butlerWorkspace] : s.workspaceRows
+}
 
 export function relTime(mtimeMs: number, nowMs: number): string {
   const s = Math.floor(Math.max(0, nowMs - mtimeMs) / 1000)
