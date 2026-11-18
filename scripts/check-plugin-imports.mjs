@@ -94,7 +94,8 @@ const inCore = (rel) => rel === 'src/core' || rel.startsWith('src/core/')
 function breach(fromRel, to, needs) {
   const from = pluginOf(fromRel)
   const into = pluginOf(to)
-  const entry = LIST_ENTRY[withoutExtension(fromRel)]
+  const list = withoutExtension(fromRel)
+  const entry = Object.hasOwn(LIST_ENTRY, list) && LIST_ENTRY[list]
   if (entry)
     return into && into.inside !== entry
       ? `imports plugin ${into.id} past its ${entry}.ts`

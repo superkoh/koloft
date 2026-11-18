@@ -1372,7 +1372,7 @@ function routeAttentionEvent(event: AttentionEvent): void {
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
-function sendToRenderer(channel: Channel | string, ...args: unknown[]): boolean {
+function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   try {
     const win = mainWindow
     if (!win || win.isDestroyed()) return false
@@ -1388,7 +1388,7 @@ function sendToRenderer(channel: Channel | string, ...args: unknown[]): boolean 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
     ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
-  push: (channel, ...args) => void sendToRenderer(channel, ...args)
+  push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
 }
 
 const MENU_SHORTCUT_CHANNEL: {
@@ -7000,7 +7000,7 @@ function registerIpc(): void {
   })
 
   registerCronChannels(pluginIpc, {
-    runner: () => cronRunner ?? undefined,
+    runner: () => cronRunner,
     skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
     trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
   })

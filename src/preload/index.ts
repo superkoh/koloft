@@ -18,7 +18,6 @@ import type {
   EditFingerprint,
   ExtensionPermissionRequest,
   GithubInfo,
-  KoloftApi,
   CreateTabOptions,
   TerminalData,
   TerminalExit,
@@ -50,7 +49,7 @@ import type {
 import { CH } from '@shared/ipcChannels'
 import type { InboxSnapshot } from '@shared/inbox'
 import type { PreloadIpc } from '@core/ipc'
-import { pluginBridges } from '@plugins/bridges'
+import { pluginBridges, type KoloftApi } from '@plugins/bridges'
 import { TerminalDataSinks } from './terminalDataSinks'
 
 const terminalDataSinks = new TerminalDataSinks()

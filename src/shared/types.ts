@@ -1,7 +1,6 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
-import type { PluginBridges } from '@plugins/bridges'
 
 export interface ProjectInfo {
   root: string
@@ -1147,7 +1146,7 @@ export interface ScreenAnswer {
   sizedToPane: boolean
 }
 
-export interface KoloftApi extends PluginBridges {
+export interface CoreApi {
   isDev: boolean
   domRenderer: boolean
   testMode: boolean

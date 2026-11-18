@@ -19,7 +19,7 @@ export interface Runner {
 }
 
 export interface ChannelDeps {
-  runner(): Runner | undefined
+  runner(): Runner | null
   skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
   trusted(workspacePath: string, backend: BackendId): boolean | Promise<boolean>
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { CH } from '@shared/ipcChannels'
+import { PLUGINS } from '@plugins/list'
 
 const SRC = path.join(__dirname, '..', '..', 'src')
 const read = (...p: string[]): string => fs.readFileSync(path.join(SRC, ...p), 'utf8')
@@ -15,7 +16,6 @@ for (const [group, leaves] of Object.entries(CH))
   for (const [key, value] of Object.entries(leaves)) byPath.set(`CH.${group}.${key}`, value)
 const TABLE = new Set(byPath.values())
 
-const PLUGINS_DIR = path.join(SRC, 'plugins')
 const filesUnder = (dir: string): string[] =>
   fs.existsSync(dir)
     ? fs
@@ -24,29 +24,37 @@ const filesUnder = (dir: string): string[] =>
         .map((d) => fs.readFileSync(path.join(d.parentPath, d.name), 'utf8'))
     : []
 const PLUGIN_PARTS = await Promise.all(
-  fs
-    .readdirSync(PLUGINS_DIR)
-    .filter((id) => fs.existsSync(path.join(PLUGINS_DIR, id, 'shared', 'channels.ts')))
-    .map(async (id) => {
-      const dir = path.join(PLUGINS_DIR, id)
-      const { CHANNELS } = (await import(path.join(dir, 'shared', 'channels.ts'))) as {
-        CHANNELS: Record<string, string>
-      }
-      return {
-        id,
-        channels: CHANNELS,
-        main: filesUnder(path.join(dir, 'main')).join('\n'),
-        preload: filesUnder(path.join(dir, 'preload')).join('\n')
-      }
-    })
+  PLUGINS.map(async (p) => {
+    const dir = path.join(SRC, 'plugins', p.id)
+    const table = p.channels
+      ? (
+          (await import(path.join(dir, 'shared', 'channels.ts'))) as {
+            CHANNELS: Record<string, string>
+          }
+        ).CHANNELS
+      : {}
+    return {
+      id: p.id,
+      manifest: p.channels ?? [],
+      table,
+      main: filesUnder(path.join(dir, 'main')).join('\n'),
+      preload: filesUnder(path.join(dir, 'preload')).join('\n')
+    }
+  })
 )
-const pluginChannels = (text: string, call: string, channels: Record<string, string>): string[] =>
-  [...text.matchAll(new RegExp(String.raw`${call}\(\s*CHANNELS\.(\w+)`, 'g'))].map(
-    (m) => channels[m[1]] ?? `CHANNELS.${m[1]}`
+const PLUGIN_CALL = String.raw`ipc\.(handle|push|invoke|listen)\(\s*([^,)\s]+)`
+const pluginCalls = (p: (typeof PLUGIN_PARTS)[number]): { call: string; channel: string }[] =>
+  [...`${p.main}\n${p.preload}`.matchAll(new RegExp(PLUGIN_CALL, 'g'))].map((m) => ({
+    call: m[1],
+    channel: p.table[m[2].replace(/^CHANNELS\./, '')] ?? m[2]
+  }))
+const fromPlugins = (call: string): string[] =>
+  PLUGIN_PARTS.flatMap((p) =>
+    pluginCalls(p)
+      .filter((c) => c.call === call)
+      .map((c) => c.channel)
   )
-const fromPlugins = (side: 'main' | 'preload', call: string): string[] =>
-  PLUGIN_PARTS.flatMap((p) => pluginChannels(p[side], call, p.channels))
-const PLUGIN_TABLE = PLUGIN_PARTS.flatMap((p) => Object.values(p.channels))
+const PLUGIN_TABLE = PLUGIN_PARTS.flatMap((p) => p.manifest)
 const GROUPS = new Set([
   ...Object.keys(CH),
   ...PLUGIN_TABLE.map((channel) => channel.split(':')[0])
@@ -64,16 +72,16 @@ const without = (a: Set<string>, b: Set<string>): string[] => [...a].filter((c) 
 
 const rendererInvokes = new Set([
   ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.invoke`),
-  ...fromPlugins('preload', String.raw`ipc\.invoke`)
+  ...fromPlugins('invoke')
 ])
 const rendererSends = channels(RENDERER_SIDE, String.raw`ipcRenderer\.(?:send|sendSync)`)
 const rendererListens = new Set([
   ...channels(RENDERER_SIDE, String.raw`ipcRenderer\.on`),
-  ...fromPlugins('preload', String.raw`ipc\.listen`)
+  ...fromPlugins('listen')
 ])
 const mainHandles = new Set([
   ...channels(MAIN, String.raw`ipcMain\.handle`),
-  ...fromPlugins('main', String.raw`ipc\.handle`)
+  ...fromPlugins('handle')
 ])
 const mainOns = channels(MAIN, String.raw`ipcMain\.on`)
 const menuMapStart = MAIN.indexOf('const MENU_SHORTCUT_CHANNEL')
@@ -81,7 +89,7 @@ const menuMap = MAIN.slice(menuMapStart, MAIN.indexOf('\n}\n', menuMapStart))
 const mainSends = new Set([
   ...channels(MAIN, 'sendToRenderer'),
   ...(MAIN.includes('sendToRenderer(MENU_SHORTCUT_CHANNEL[') ? tokens(menuMap) : []),
-  ...fromPlugins('main', String.raw`ipc\.push`)
+  ...fromPlugins('push')
 ])
 
 describe('IPC channels', () => {
@@ -106,17 +114,13 @@ describe('IPC channels', () => {
     expect(without(used, TABLE)).toEqual([])
   })
 
-  it('every channel a plugin names is one it registers or listens on, and every one it registers or listens on is named', () => {
+  it('a plugin’s manifest lists exactly the channels its code uses, each through its CHANNELS table', () => {
     for (const p of PLUGIN_PARTS) {
-      const named = new Set(Object.values(p.channels))
-      const used = new Set(
-        [
-          ['main', String.raw`ipc\.(?:handle|push)`],
-          ['preload', String.raw`ipc\.(?:invoke|listen)`]
-        ].flatMap(([side, call]) => pluginChannels(p[side as 'main' | 'preload'], call, p.channels))
-      )
-      expect({ [p.id]: without(named, used) }).toEqual({ [p.id]: [] })
-      expect({ [p.id]: without(used, named) }).toEqual({ [p.id]: [] })
+      const manifest = new Set(p.manifest)
+      const used = new Set(pluginCalls(p).map((c) => c.channel))
+      expect({ [p.id]: without(manifest, used) }).toEqual({ [p.id]: [] })
+      expect({ [p.id]: without(used, manifest) }).toEqual({ [p.id]: [] })
+      expect({ [p.id]: Object.values(p.table).sort() }).toEqual({ [p.id]: [...manifest].sort() })
     }
   })
 
