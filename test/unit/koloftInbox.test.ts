@@ -12,7 +12,7 @@ import {
   type KoloftAsk,
   type KoloftInboxDeps
 } from '../../src/main/koloftInbox'
-import { inboxVerb } from '../../src/main/agentInbox'
+import { inboxVerb } from '../../src/plugins/inbox/main/inboxVerb'
 import { ANSWER_NOT_TAKEN } from '../../src/plugins/sessions/main/dialog'
 import { SHOWS_NO_DIALOG } from '../../src/plugins/sessions/main/sessionAsks'
 import type { AgentCaller } from '../../src/main/agentRequests'

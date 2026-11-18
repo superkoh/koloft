@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { workbenchVerbs } from '../../src/main/agentWorkbench'
-import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../src/main/agentRequests'
-import type { FileOpened } from '../../src/core/moment'
+import { workbenchVerbs } from '../../../../src/plugins/workbench/main/workbenchVerbs'
+import { EXIT_USAGE, NOT_PINNED, type AgentCaller } from '../../../../src/main/agentRequests'
+import type { FileOpened } from '../../../../src/core/moment'
 
 let dir: string
 let note: string

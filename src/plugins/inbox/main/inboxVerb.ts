@@ -7,9 +7,9 @@ import {
   type AgentCaller,
   type AgentReply,
   type AgentVerb
-} from './agentRequests'
-import type { Inbox } from './inbox'
-import { KOLOFT_SOURCE } from './koloftInbox'
+} from '@core/command'
+import type { Inbox } from '../../../main/inbox'
+import { KOLOFT_SOURCE } from '../../../main/koloftInbox'
 import type { Commands } from '@core/commands'
 
 export const INBOX_USAGE =
