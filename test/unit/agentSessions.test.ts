@@ -2174,6 +2174,9 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       from('butler')
     )
     expect(project.text).toContain(roomStarted('<#room-new-tab>'))
+    expect(project.text).toMatch(
+      /reach it with koloft session send\. The owner asked for it on Discord, so it has a room there, where the owner talks to it: <#room-new-tab>\. Give the owner that link exactly as written\.$/
+    )
     const helper = await answering.verb(['new', ...PICKED, '--', 'sort it'], from('butler'))
     expect(helper.text).not.toContain('<#room')
     const quiet = harness(live, {}, [], conducting())
