@@ -21,8 +21,10 @@ export interface Lookup {
 
 export interface ChannelDeps {
   lookup(root: string): Lookup
-  prWorktree(root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult>
+  prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
 }
+
+const BAD_REQUEST: PrWorktreeResult = { ok: false, reason: 'bad request' }
 
 const TARGETS: readonly unknown[] = [
   'repo',
@@ -62,7 +64,9 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     if (typeof root !== 'string' || !root) return { state: 'no-repo' }
     return deps.lookup(root).openItems(root)
   })
-  ipc.handle(CHANNELS.prWorktree, (root: unknown, pr: unknown, branch: unknown) =>
-    deps.prWorktree(root, pr, branch)
-  )
+  ipc.handle(CHANNELS.prWorktree, async (root: unknown, pr: unknown, branch: unknown) => {
+    if (typeof root !== 'string' || !root || !Number.isInteger(pr) || typeof branch !== 'string')
+      return BAD_REQUEST
+    return deps.prWorktree(root, pr as number, branch)
+  })
 }

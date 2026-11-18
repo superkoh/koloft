@@ -501,7 +501,6 @@ import type {
   Settings,
   HostId,
   GitStepResult,
-  PrWorktreeResult,
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
@@ -1400,6 +1399,7 @@ const pluginIpc: MainIpc = {
     ipcMain.on(channel, (_e, ...args) => listener(...(args as Parameters<typeof listener>))),
   push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
 }
+const pushInbox = pushInboxChanged(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -2224,7 +2224,7 @@ const inbox = new Inbox(
         inboxPushQueued = false
         const now = inbox.snapshot()
         if (!quitCommitted) saveInbox(now)
-        pushInboxChanged(pluginIpc)(now)
+        pushInbox(now)
       })
     }
   },
@@ -7784,22 +7784,10 @@ function registerIpc(): void {
   })
   registerGithubChannels(pluginIpc, {
     lookup: (root) => hosts.of(root).github,
-    prWorktree: async (root, pr, branch): Promise<PrWorktreeResult> => {
-      if (
-        typeof root !== 'string' ||
-        !root ||
-        !Number.isInteger(pr) ||
-        typeof branch !== 'string' ||
-        !GIT_REF_RE.test(branch)
-      ) {
-        return BAD_GIT_STEP
-      }
+    prWorktree: async (root, pr, branch) => {
+      if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
       const host = hosts.of(root)
-      const r = await addPrWorktree(
-        (args, network) => host.gitRun(root, args, network),
-        pr as number,
-        branch
-      )
+      const r = await addPrWorktree((args, network) => host.gitRun(root, args, network), pr, branch)
       if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
       return r
     }
