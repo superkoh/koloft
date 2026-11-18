@@ -336,47 +336,82 @@ describe('asking the owner to tap a page from Discord, in rounds', () => {
     expect(JSON.stringify(responses)).toMatch(/still at the last taps/)
   })
 
-  it.fails(
-    'once the ask has ended while the first card was still uploading, a failed upload posts no second card',
-    async () => {
-      let fail!: (e: Error) => void
-      let places = 0
-      const { asks, lastShown } = setup({
-        place: (): Promise<PlacedCard> => {
-          places++
-          return places === 1
-            ? new Promise((_resolve, reject) => (fail = reject))
-            : Promise.resolve(PLACED)
+  it('once the ask has ended while the first card was still uploading, a failed upload posts no second card and marks nothing', async () => {
+    let fail!: (e: Error) => void
+    let places = 0
+    const { asks, onlyInKoloft, lastShown } = setup({
+      place: (): Promise<PlacedCard> => {
+        places++
+        return places === 1
+          ? new Promise((_resolve, reject) => (fail = reject))
+          : Promise.resolve(PLACED)
+      }
+    })
+    const answer = asks.ask(
+      tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped.' }),
+      LONG
+    )
+    await settle()
+    expect(places).toBe(1)
+    asks.decline(lastShown()[0].id)
+    expect(await answer).toEqual({ ended: 'declined' })
+    fail(new Error('Discord answered 413'))
+    await settle()
+    await settle()
+    expect(places).toBe(1)
+    expect(onlyInKoloft).toEqual([])
+  })
+
+  it('a tap card counts as not taken only when neither the picture nor the card without it goes up', async () => {
+    const tapsWith = (fails: (files: unknown[] | undefined) => boolean) => {
+      const t = setup({
+        place: async (_tab, card, files): Promise<PlacedCard> => {
+          if (fails(files)) throw new Error('Discord answered 413')
+          t.cards.push(card('fix-login'))
+          return PLACED
         }
       })
-      const answer = asks.ask(
-        tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped.' }),
-        LONG
-      )
-      await settle()
-      expect(places).toBe(1)
-      asks.decline(lastShown()[0].id)
-      expect(await answer).toEqual({ ended: 'declined' })
-      fail(new Error('Discord answered 413'))
-      await settle()
-      await settle()
-      expect(places).toBe(1)
+      void t.asks.ask(tapAsk({ picture: async () => PICTURE, tap: async () => 'Tapped.' }), LONG)
+      return t
     }
-  )
+    const pictureRefused = tapsWith((files) => !!files?.length)
+    await pictureRefused.posted()
+    expect(pictureRefused.onlyInKoloft).toEqual([])
+    const allRefused = tapsWith(() => true)
+    await settle()
+    await settle()
+    expect(allRefused.onlyInKoloft).toEqual(['tab-1'])
+  })
 })
 
 describe('a secret card Discord does not take', () => {
-  it('today, the ask counts as shown on Discord before the card is up, so a failed post leaves the session unmarked in Koloft until the ask times out', async () => {
-    let tried = 0
-    const { asks, onlyInKoloft } = setup({
+  it('a card that goes up keeps Koloft quiet; one Discord does not take marks the session as waiting on the owner in Koloft, where the ask still waits', async () => {
+    const taken = setup()
+    void taken.asks.ask(ask, LONG)
+    await taken.posted()
+    expect(taken.onlyInKoloft).toEqual([])
+
+    const refused = setup({
       place: async () => {
-        tried++
         throw new Error('Discord answered 403')
       }
     })
-    const answer = asks.ask(ask, 5)
-    expect(await answer).toEqual({ ended: 'timeout' })
-    expect(tried).toBe(1)
-    expect(onlyInKoloft).toEqual([])
+    const answer = refused.asks.ask(ask, LONG)
+    await settle()
+    expect(refused.onlyInKoloft).toEqual(['tab-1'])
+    refused.asks.answer(refused.lastShown()[0].id, 'pw')
+    expect(await answer).toEqual({ typed: 'pw' })
+  })
+
+  it('an ask that moved to another tab before its card failed marks the tab it is in now', async () => {
+    let fail!: (e: Error) => void
+    const { asks, onlyInKoloft } = setup({
+      place: () => new Promise((_resolve, reject) => (fail = reject))
+    })
+    void asks.ask(ask, LONG)
+    asks.rehome('tab-1', 'tab-9')
+    fail(new Error('Discord answered 404'))
+    await settle()
+    expect(onlyInKoloft).toEqual(['tab-9'])
   })
 })

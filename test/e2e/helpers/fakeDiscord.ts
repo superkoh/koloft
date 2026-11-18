@@ -147,7 +147,7 @@ export interface FakeDiscord {
   posted: FakePost[]
   refusePostsIn: string[]
   failPostsIn: Record<string, PostFailure>
-  failedPosts: { channelId: string; how: PostFailure; content: string }[]
+  failedPosts: { channelId: string; how: PostFailure }[]
   reactions: FakeReaction[]
   edits: FakePost[]
   typing: string[]
@@ -491,8 +491,8 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
           (fake.refusePostsIn.includes(message[1]) ? 'forbidden' : undefined))
         : undefined
     if (message && failure) {
-      const { content } = await postOf('', message[1], req)
-      fake.failedPosts.push({ channelId: message[1], how: failure, content })
+      await bodyOf(req)
+      fake.failedPosts.push({ channelId: message[1], how: failure })
       return failure === 'unreachable' ? { status: UNREACHABLE } : FAILED_POST[failure]
     }
     if (message && req.method === 'POST') {

@@ -59,6 +59,7 @@ type CardAnswer = { typed: string } | { passed: true } | { ended: 'declined' }
 export interface AsksShownOnCards {
   pendingAsk: (id: string) => CardAsk | undefined
   answerFromElsewhere: (id: string, answer: CardAnswer) => void
+  notShownElsewhere: (id: string) => void
 }
 
 export interface PlacedCard {
@@ -116,12 +117,11 @@ export class SecretCards {
   }
 
   private async placeCard(id: string, shown: Shown): Promise<void> {
-    if (shown.ask.taps) {
-      await this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
-      return
-    }
     const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
-    await this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
+    const posted = shown.ask.taps
+      ? await this.placeTapCard(id, shown, TAPS_FIRST_FOOTER)
+      : await this.put(id, shown, (name) => cardOf(shown.ask, name, PLAIN_TEXT_WARNING, [button]))
+    if (!posted) this.d.asks.notShownElsewhere(id)
   }
 
   private async put(
@@ -167,7 +167,9 @@ export class SecretCards {
       picture.seen?.()
       return true
     }
-    return picture.files.length > 0 && this.put(id, shown, card(NO_PICTURE_POSTED))
+    return (
+      picture.files.length > 0 && this.waiting(id) && this.put(id, shown, card(NO_PICTURE_POSTED))
+    )
   }
 
   private startRound(id: string, shown: Shown, act: () => Promise<string>): void {
