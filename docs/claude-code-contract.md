@@ -3270,6 +3270,30 @@ sessions.
   were written by hand. Both times the request's last `system` block held the file's text and then the
   inline text, each as one exact substring (SHA-256 of the inline text matched), the
   inline text last in the block. Not tried: an inline text much longer than 7 KB.
+- **A `SessionStart` hook's `additionalContext` reaches the model whole up to 10,000
+  UTF-16 code units; past that only a 2 KB preview does.** 2026-11-18, CC 2.1.327
+  darwin-arm64, `claude -p hello --settings <file>` with a scratch `HOME`, an
+  `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` at a local stand-in Messages API that saved
+  each request body; the hook `cat`-ed a JSON file whose `additionalContext` began and
+  ended with marker words. At 1,000, 9,999 and 10,000 units the whole text was in the
+  first user message, inside `<system-reminder>\nSessionStart hook additional context:
+  …`; at 10,001 and 16,000 that place instead held a `<persisted-output>` note naming a
+  file under the session's `tool-results/` and "Preview (first 2KB):" with the first
+  1,986 characters, and the end marker never reached the model. Counted in JS string
+  length: 10,000 Chinese characters (29,948 bytes) went whole and 10,002 did not; with
+  an emoji filler (two units each) 10,000 units went whole and 10,002 did not. One run
+  each.
+- **An inline `--append-system-prompt` of 60 KB still reaches the model whole, last in the
+  system prompt, beside the prompt file and a start hook's text.** Same day, binary and
+  stand-in: one launch with a `SessionStart` hook giving a 4,318-character
+  `additionalContext`, `--append-system-prompt-file` of 3,719 bytes, and an inline
+  `--append-system-prompt` made of newlines, tabs, `'`, `"`, backticks, `$HOME`,
+  `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji, at 1,012, 12,034, 20,020 and 60,016
+  units (up to 67,288 bytes). Each time the request had three `system` blocks; the last
+  held the file's text and then the inline text as exact substrings, the inline text at
+  its very end, and the hook's text sat whole in the first user message, not in `system`.
+  `-p` only; the interactive TUI was checked with 7 KB (above). Koloft hands the
+  butler's role through the hook and the owner's own instructions for it inline.
 
 ## §14 The PermissionRequest hook: answering a dialog from outside
 
@@ -4288,9 +4312,17 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
   `a.txt`'s word, never `b.txt`'s. The same in fullscreen with Koloft's prompt file on
   both launches and the changing word given as an inline `--append-system-prompt`: the
   first launch's inline word only.
+- **An inline `--append-system-prompt` given only at the start survives a resume with no
+  flag.** 2026-11-18, CC 2.1.327 darwin-arm64, `claude -p` with a scratch `HOME`, a
+  stand-in Messages API saving each request body: `-p firstturn --session-id X
+  --append-system-prompt <marker with a newline, Chinese, a quote and $HOME>`, then `-p
+  secondturn --resume X` with no prompt flag at all. The resumed request held three
+  messages and its last `system` block still ended with the marker, exactly. 2 of 2 runs.
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
-conversation (`src/plugins/butler/main/butler.ts`).
+conversation, and the owner's instructions for a Claude Code butler, handed only when a
+conversation starts, since a resume keeps those it started with
+(`src/plugins/butler/main/butler.ts`).
 
 ## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
 

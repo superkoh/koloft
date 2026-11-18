@@ -14,8 +14,12 @@ import {
   PALETTE_ROUTE,
   PALETTE_RUN,
   ROW_EXTRAS,
+  ROW_SET_UP,
+  SETTINGS_PAGE_ICON,
   type PaletteRun,
-  type RowExtrasFill
+  type RowExtrasFill,
+  type RowSetUpFill,
+  type SettingsPageIcon
 } from '../../src/renderer/src/slots'
 
 const listedAt = (place: UiEntry['place']): string[] =>
@@ -93,6 +97,23 @@ describe('UI parts a plugin registers', () => {
     )
     expect(filled.length).toBeGreaterThan(0)
     for (const row of filled) expect(rows).toContain(row)
+    const setUp = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? [])
+        .filter((f) => f.slot === ROW_SET_UP)
+        .map((f) => (f.value as RowSetUpFill).row)
+    )
+    for (const row of setUp) expect(rows).toContain(row)
+  })
+
+  it('every settings page a plugin lists has exactly one icon, and every icon is for a settings page some plugin lists', () => {
+    const pages = listedAt('settings-page')
+    const iconed = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? [])
+        .filter((f) => f.slot === SETTINGS_PAGE_ICON)
+        .map((f) => (f.value as SettingsPageIcon).page)
+    )
+    expect(pages.length).toBeGreaterThan(0)
+    expect([...iconed].sort()).toEqual([...pages].sort())
   })
 
   it('the list of UIs holds the renderer/ui.tsx of every plugin folder that has one, keyed by its id, and each holds the parts its manifest lists', () => {

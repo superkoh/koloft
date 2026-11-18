@@ -65,6 +65,7 @@ interface CreateArgs {
     KOLOFT_PICTURE_FOLDER?: string
     KOLOFT_AGENT_PLUGIN?: string
     KOLOFT_AGENT_PROMPT?: string
+    KOLOFT_OWNER_TEXT?: string
     KOLOFT_DOCS_PLUGIN?: string
     KOLOFT_PORT_OFFSET?: string
     CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
@@ -255,6 +256,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
         key === 'KOLOFT_AGENT_PROMPT' ||
+        key === 'KOLOFT_OWNER_TEXT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
         key === OWNING_TAB_ENV ||
@@ -286,6 +288,7 @@ export class PtyManager extends EventEmitter {
         'KOLOFT_PICTURE_FOLDER',
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
+        'KOLOFT_OWNER_TEXT',
         'KOLOFT_DOCS_PLUGIN',
         'KOLOFT_PORT_OFFSET',
         'CLAUDE_CODE_FORCE_SYNC_OUTPUT',

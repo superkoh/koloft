@@ -3,6 +3,7 @@ import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 
 export const DISCORD_BIND = 'discord-bind'
+export const DISCORD_PAGE = 'discord'
 
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -10,8 +11,11 @@ export const plugin: PluginManifest = {
   name: 'Discord',
   mandatory: false,
   needs: ['butler'],
-  settings: { keys: ['discord'] },
+  settings: { page: { label: 'Discord', words: ['机器人'] }, keys: ['discord'] },
   commands: [{ verb: 'discord' }],
   text: [...TEXT, ...SKILL_TEXT],
-  ui: [{ place: 'dialog', id: DISCORD_BIND }]
+  ui: [
+    { place: 'dialog', id: DISCORD_BIND },
+    { place: 'settings-page', id: DISCORD_PAGE }
+  ]
 }
