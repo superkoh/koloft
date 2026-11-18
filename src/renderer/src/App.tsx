@@ -965,7 +965,7 @@ export default function App(): JSX.Element {
       pushed = true
       useStore.getState().setCron(s)
     })
-    const offToast = window.api.cron.onToast((text) => useStore.getState().showToast(text))
+    const offToast = window.api.toast.onShow((text) => useStore.getState().showToast(text))
     void adoptionSettled.then(() =>
       window.api.cron
         .list()

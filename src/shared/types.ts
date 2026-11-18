@@ -1491,7 +1491,9 @@ export interface KoloftApi {
     // CC§9
     trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void
-    onToast(cb: (text: string) => void): () => void
+  }
+  toast: {
+    onShow(cb: (text: string) => void): () => void
   }
   sessionDefaults: {
     read(workspacePath: string): Promise<SessionDefaultsRead>

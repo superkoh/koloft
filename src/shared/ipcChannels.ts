@@ -80,8 +80,10 @@ export const CH = {
     runNow: 'cron:runNow',
     skills: 'cron:skills',
     trusted: 'cron:trusted',
-    state: 'cron:state',
-    toast: 'cron:toast'
+    state: 'cron:state'
+  },
+  toast: {
+    show: 'toast:show'
   },
   sessionDefaults: {
     read: 'sessionDefaults:read',

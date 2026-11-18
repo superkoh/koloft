@@ -189,11 +189,13 @@ const api: KoloftApi = {
       const handler = (_e: unknown, s: CronState): void => cb(s)
       ipcRenderer.on(CH.cron.state, handler)
       return () => ipcRenderer.removeListener(CH.cron.state, handler)
-    },
-    onToast: (cb) => {
+    }
+  },
+  toast: {
+    onShow: (cb) => {
       const handler = (_e: unknown, text: string): void => cb(text)
-      ipcRenderer.on(CH.cron.toast, handler)
-      return () => ipcRenderer.removeListener(CH.cron.toast, handler)
+      ipcRenderer.on(CH.toast.show, handler)
+      return () => ipcRenderer.removeListener(CH.toast.show, handler)
     }
   },
   sessionDefaults: {
