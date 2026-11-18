@@ -6,7 +6,7 @@ import type { UiPlace } from '@core/plugin'
 import { placeUi } from '@core/ui'
 import { useStore } from './store'
 
-const PLACED = placeUi(PLUGINS, (id) => PLUGIN_UIS[id])
+const PLACED = placeUi(PLUGINS, PLUGIN_UIS)
 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
   return (

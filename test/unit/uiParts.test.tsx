@@ -24,12 +24,19 @@ const Part = (): null => null
 const Other = (): null => null
 
 describe('UI parts a plugin registers', () => {
-  it('a plugin registers only the parts its manifest lists, each one, and no id twice', () => {
+  it('a plugin registers only the parts its manifest lists, each one, no id twice, and only for a plugin on the list', () => {
     const a = manifest('a', [{ place: 'dialog', id: 'one' }])
-    expect(() => placeUi([a], () => ({ one: Part, two: Part }))).toThrow()
-    expect(() => placeUi([a], () => ({}))).toThrow()
+    expect(() => placeUi([a], { a: { one: Part, two: Part } })).toThrow(
+      'plugin a registers "two", which its manifest does not list'
+    )
+    expect(() => placeUi([a], { a: {} })).toThrow('plugin a lists "one" but registers no part')
     const b = manifest('b', [{ place: 'sidebar-row', id: 'one' }])
-    expect(() => placeUi([a, b], () => ({ one: Part }))).toThrow()
+    expect(() => placeUi([a, b], { a: { one: Part }, b: { one: Part } })).toThrow(
+      '"one" is listed twice'
+    )
+    expect(() => placeUi([a], { a: { one: Part }, c: {} })).toThrow(
+      '"c", which is not on the list of plugins'
+    )
   })
 
   it('places each part at its place, in the order of the list of plugins', () => {
@@ -42,7 +49,7 @@ describe('UI parts a plugin registers', () => {
           { place: 'dialog', id: 'three' }
         ])
       ],
-      (id) => parts[id]
+      parts
     )
     expect(placed.dialog).toEqual([
       { id: 'one', Part },

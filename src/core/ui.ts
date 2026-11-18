@@ -13,12 +13,15 @@ export type PlacedUi = Readonly<Partial<Record<UiPlace, readonly PlacedPart[]>>>
 
 export function placeUi(
   plugins: readonly PluginManifest[],
-  partsOf: (pluginId: string) => UiParts | undefined
+  partsByPlugin: Readonly<Record<string, UiParts>>
 ): PlacedUi {
+  for (const id of Object.keys(partsByPlugin))
+    if (!plugins.some((p) => p.id === id))
+      throw new Error(`UI parts are given for "${id}", which is not on the list of plugins`)
   const placed: Partial<Record<UiPlace, PlacedPart[]>> = {}
   const taken = new Set<string>()
   for (const plugin of plugins) {
-    const parts = partsOf(plugin.id) ?? {}
+    const parts = partsByPlugin[plugin.id] ?? {}
     const declared = plugin.ui ?? []
     for (const id of Object.keys(parts))
       if (!declared.some((entry) => entry.id === id))
