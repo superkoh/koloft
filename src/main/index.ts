@@ -966,10 +966,7 @@ attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
 // ADR-0039
-attention.outlivesKoloft = (tabId) => {
-  const s = sessionOfTab(tabId)
-  return !!s?.remote && s.backendId !== 'codex'
-}
+attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (

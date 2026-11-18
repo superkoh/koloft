@@ -19,6 +19,7 @@ import {
 } from './helpers/remote'
 import {
   agyCalls,
+  agyTranscriptOf,
   installAgy,
   installCodex,
   installMuse,
@@ -280,6 +281,8 @@ function worktreeOf(call: ClaudeCall): string {
   const i = call.argv.indexOf('-w')
   return i >= 0 ? call.argv[i + 1] : ''
 }
+
+const TOLD_TO_CARRY_ON = 'Koloft restarted while this scheduled run was working'
 
 test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', () => {
   test.beforeEach(({ env }) => seedClaudeTrust(env, [env.workspaces.a, env.workspaces.b]))
@@ -1247,7 +1250,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
           timeout: 60_000
         })
-        .toContain('Koloft restarted while this scheduled run was working')
+        .toContain(TOLD_TO_CARRY_ON)
       await openCron(page, 'ws-a')
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
@@ -1864,6 +1867,127 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       }
     })
   }
+
+  const A_TURN_THAT_OUTLASTS_A_RESTART_MS = 120_000
+  const A_REOPENED_REMOTE_RUN_SHOWS_ITS_TURN_WITHIN_MS = 90_000
+  const museSessionsIn = (dir: string): string =>
+    fs.existsSync(dir)
+      ? fs
+          .readdirSync(dir)
+          .filter((n) => n.endsWith('.json'))
+          .map((n) => fs.readFileSync(path.join(dir, n), 'utf8'))
+          .join('\n')
+      : ''
+  const AGENTS_THAT_RUN_ON_IN_TMUX: {
+    agent: JobSpec['agent']
+    name: string
+    setUp: (env: E2EEnv) => void
+    task: string
+    heard: (env: E2EEnv) => string
+  }[] = [
+    {
+      agent: undefined,
+      name: 'Claude Code',
+      setUp: (env) => {
+        // CC§9 ADR-0026
+        fs.writeFileSync(
+          path.join(machineHome(env), '.claude.json'),
+          JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+        )
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-claude-busy-ms'),
+          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
+        )
+      },
+      task: '/busy',
+      heard: (env) => {
+        const peerLog = path.join(machineHome(env), 'fake-claude-peer.jsonl')
+        return fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''
+      }
+    },
+    {
+      agent: 'Muse',
+      name: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-muse-delay'),
+          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
+        )
+      },
+      task: 'write the nightly report',
+      heard: (env) =>
+        museSessionsIn(path.join(machineHome(env), '.local', 'share', 'muse', 'sessions', 'fake'))
+    },
+    {
+      agent: 'Antigravity',
+      name: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-agy-delay'),
+          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
+        )
+      },
+      task: 'write the nightly report',
+      heard: (env) => {
+        const gemini = path.join(machineHome(env), '.gemini')
+        const brain = path.join(gemini, 'antigravity-cli', 'brain')
+        return fs.existsSync(brain)
+          ? fs
+              .readdirSync(brain)
+              .map((id) => agyTranscriptOf(env, id, gemini))
+              .join('\n')
+          : ''
+      }
+    }
+  ]
+  for (const { agent, name, setUp, task, heard } of AGENTS_THAT_RUN_ON_IN_TMUX)
+    test(`a "Close it" run in ${name} on the machine that Koloft quit on in the middle of its turn is not told to carry on when the relaunch reopens it, as ${name} ran on in tmux there, and it closes for good once that turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(480_000)
+      installFakeRemote(env)
+      gitInit(remoteDir(env))
+      setUp(env)
+      try {
+        const first = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(first.page, env)
+          const dlg = await openCron(first.page, REMOTE_WS_NAME)
+          await dlg.locator('button.mini', { hasText: 'New job' }).click()
+          await fillForm(dlg, { agent, name: 'Remote report', task })
+          await dlg.locator('.chip', { hasText: 'Close it' }).click()
+          await dlg.locator('.modal-foot .btn-primary').click()
+          await expect(dlg.locator('.fgrid')).toHaveCount(0)
+          await clickRunNow(first.page, 'Remote report')
+          await expect(cronRows(first.page, REMOTE_WS_NAME)).toHaveClass(/\bst-working\b/, {
+            timeout: 120_000
+          })
+        } finally {
+          await quitAndClose(first.app)
+        }
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await expect(cronRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-working\b/, {
+            timeout: A_REOPENED_REMOTE_RUN_SHOWS_ITS_TURN_WITHIN_MS
+          })
+          await openCron(page, REMOTE_WS_NAME)
+          await expect
+            .poll(async () => (await histLines(page))[0]?.state, { timeout: 300_000 })
+            .toBe('Done — closed itself')
+          expect(heard(env)).not.toContain(TOLD_TO_CARRY_ON)
+        } finally {
+          await quitAndClose(app)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
 
   // AGY§5
   test('an Antigravity job in a remote git workspace agy trusts there starts in its new worktree on the machine without agy asking whether to trust that folder', async ({
