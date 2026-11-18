@@ -16,13 +16,7 @@ export {
   type SlashResult
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
-export {
-  HandOver,
-  type HandOverDeps,
-  type HandingMarks,
-  type Recipient,
-  type Words
-} from './main/handOver'
+export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {
   placedRows,

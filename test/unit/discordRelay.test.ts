@@ -39,6 +39,7 @@ import { writeMuseHooks } from '../../src/main/museHooks'
 
 const OWNER = '555'
 const CHANNEL = '222'
+const CONDUCTOR_QUEUE = 'conductor'
 const TAB = 'pty-x-1'
 
 let dir: string
@@ -68,7 +69,7 @@ function setup(
   const answered: { tab: string; reply: string }[] = []
   const session = { takesKeys: true }
   const conductor: Destination = {
-    key: CHANNEL,
+    key: CONDUCTOR_QUEUE,
     channelId: CHANNEL,
     name: 'Assist',
     liveTab: () => TAB,
@@ -1013,7 +1014,7 @@ describe('DiscordRelay: a session’s room', () => {
     relay.onMessage(roomMessage('802', 'for the room'))
     await vi.waitFor(() => expect(sent).toHaveLength(1))
     expect(sent[0].tab).toBe(ROOM_TAB)
-    expect(handOver.delivering(CHANNEL)).toBe(true)
+    expect(handOver.delivering(CONDUCTOR_QUEUE)).toBe(true)
     expect(handOver.delivering(ROOM)).toBe(false)
     butlerReady(TAB)
     await vi.waitFor(() => expect(sent.map((s) => s.tab)).toEqual([ROOM_TAB, TAB]), {

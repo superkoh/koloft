@@ -4229,12 +4229,10 @@ app.whenReady().then(() => {
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   const handOverNow = new HandOver({
-    backendOf: tabState.backendOf,
-    boundKey: tabState.boundKey,
+    ...tabState,
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     typable: (tabId) => asks.typable(tabId),
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId)
