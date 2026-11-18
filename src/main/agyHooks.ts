@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { record } from './codexObservation'
+import { nonEmptyString, record } from './codexObservation'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
@@ -73,7 +73,7 @@ if [ "$event" = "Stop" ]; then
   keep_going_for_the_notice && exit 0
   [ -n "$turn" ] && rm -f "$turn"
 fi
-[ -n "$log" ] && { printf '{"event":"%s","input":' "$event"; printf '%s' "$input" | tr -d '\\n'; printf '}\\n'; } >> "$log" 2>/dev/null
+[ -n "$log" ] && printf '{"event":"%s","input":%s}\\n' "$event" "$(printf '%s' "$input" | tr -d '\\n')" >> "$log" 2>/dev/null
 case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
   PreInvocation)
@@ -93,12 +93,19 @@ esac
 exit 0
 `
 
+const TITLE_ROLE_STRIP_ABOVE_CHARS = 4096
+const LONG_ROLE_BODY = '(([^"\\\\]|\\\\.){160,})'
+
 // AGY§9 AGY§11
 export const AGY_TITLE_SCRIPT = `#!/bin/sh
 : koloft agy title
 input="$(cat)"
 log="$${AGY_LOG_ENV}"
-[ -n "$log" ] && printf '%s\\n' "$(printf '%s' "$input" | tr -d '\\n')" >> "$log" 2>/dev/null
+if [ -n "$log" ]; then
+  logged="$(printf '%s' "$input" | tr -d '\\n')"
+  [ "\${#logged}" -gt ${TITLE_ROLE_STRIP_ABOVE_CHARS} ] && logged="$(printf '%s' "$logged" | LC_ALL=C sed -E 's/"role" *: *"${LONG_ROLE_BODY}"/"role":""/g')"
+  printf '%s\\n' "$logged" >> "$log" 2>/dev/null
+fi
 if [ "$KOLOFT_TMUX_FOLLOW" = 1 ] && [ -n "$TMUX" ]; then
   id="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"conversation_id" *: *"\\([0-9a-f-][0-9a-f-]*\\)".*/\\1/p')"
   # ADR-0044
@@ -155,8 +162,14 @@ export function sessionStartOutput(text: string): string {
 export interface AgyHook {
   event: AgyHookName
   conversationId: string
+  parentConversationId?: string
+  rootConversationId?: string
+  agentName?: string
+  hookEventName?: string
   input: Record<string, unknown>
 }
+
+const str = nonEmptyString
 
 // AGY§9 AGY§12
 function agyHook(line: Record<string, unknown>): AgyHook | undefined {
@@ -164,7 +177,27 @@ function agyHook(line: Record<string, unknown>): AgyHook | undefined {
   const event = EVENTS.find((e) => e === line.event)
   const conversationId = input.conversationId
   if (!event || typeof conversationId !== 'string' || !UUID.test(conversationId)) return undefined
-  return { event, conversationId, input }
+  const parentConversationId = str(input.parentConversationId)
+  const rootConversationId = str(input.rootConversationId)
+  const agentName = str(input.agentName)
+  const hookEventName = str(input.hookEventName)
+  return {
+    event,
+    conversationId,
+    ...(parentConversationId && { parentConversationId }),
+    ...(rootConversationId && { rootConversationId }),
+    ...(agentName && { agentName }),
+    ...(hookEventName && { hookEventName }),
+    input
+  }
+}
+
+export interface AgyTitleSubagent {
+  id?: string
+  name?: string
+  role?: string
+  state?: string
+  model?: string
 }
 
 export interface AgyTitleState {
@@ -175,6 +208,30 @@ export interface AgyTitleState {
   contextUsed?: number
   model?: string
   taskCount?: number
+  subagents?: AgyTitleSubagent[]
+}
+
+function titleSubagents(raw: unknown): AgyTitleSubagent[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw.flatMap((item): AgyTitleSubagent[] => {
+    if (typeof item === 'string' && item) return [{ name: item }]
+    const r = record(item)
+    const id = str(r.conversation_id) ?? str(r.conversationId) ?? str(r.id)
+    const name = str(r.name) ?? str(r.agent_name) ?? str(r.type_name) ?? str(r.typeName)
+    const role = str(r.role)
+    const state = str(r.state) ?? str(r.status)
+    const model = str(r.model)
+    if (!id && !name && !role && !state && !model) return []
+    return [
+      {
+        ...(id && { id }),
+        ...(name && { name }),
+        ...(role && { role }),
+        ...(state && { state }),
+        ...(model && { model })
+      }
+    ]
+  })
 }
 
 const NO_CONVERSATION_YET = ''
@@ -185,6 +242,7 @@ function titleState(r: Record<string, unknown>): AgyTitleState | undefined {
   if (r.conversation_id !== NO_CONVERSATION_YET && !UUID.test(r.conversation_id)) return undefined
   const context = record(r.context_window)
   const model = record(r.model)
+  const subagents = titleSubagents(r.subagents)
   return {
     conversationId: r.conversation_id,
     agentState: typeof r.agent_state === 'string' ? r.agent_state : '',
@@ -195,7 +253,8 @@ function titleState(r: Record<string, unknown>): AgyTitleState | undefined {
         : undefined,
     contextUsed: typeof context.used_percentage === 'number' ? context.used_percentage : undefined,
     model: typeof model.id === 'string' ? model.id : undefined,
-    taskCount: typeof r.task_count === 'number' ? r.task_count : undefined
+    taskCount: typeof r.task_count === 'number' ? r.task_count : undefined,
+    ...(subagents !== undefined && { subagents })
   }
 }
 

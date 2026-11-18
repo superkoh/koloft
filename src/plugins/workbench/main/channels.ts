@@ -15,7 +15,7 @@ import type {
   SessionWorkbenchState
 } from '@shared/types'
 import { barePath, isAbsoluteOnHost } from '@shared/remoteKey'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 interface ShowIgnored {
   showIgnored?: boolean

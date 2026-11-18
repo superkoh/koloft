@@ -6,7 +6,7 @@ import type {
   PrChecks,
   PrWorktreeResult
 } from '@shared/types'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface GithubBridge {
   github: {

@@ -31,7 +31,7 @@ describe('closing the session you watch lands on the butler, whichever of sessio
     butlersOpened = 0
     ;(globalThis as { window?: unknown }).window = {
       api: {
-        conductors: {
+        butler: {
           open: () => {
             butlersOpened++
             return new Promise(() => {})

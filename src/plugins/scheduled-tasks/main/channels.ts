@@ -8,7 +8,7 @@ import type {
   SkillSuggestion
 } from '@shared/types'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface Runner {
   state(): CronState

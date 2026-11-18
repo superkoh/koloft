@@ -321,10 +321,14 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   })
 
   // AGY§11 AGY§13
-  test('a command agy leaves running in the background on the machine shows on its row breathing green with ↻, named by its command line, until it ends', async ({
+  test('a command or subagent agy leaves running in the background on the machine shows on its row breathing green with ↻, named by its command line or subagent role, until it ends', async ({
     env
   }) => {
     setUp(env)
+    fs.writeFileSync(
+      path.join(machineHome(env), 'fake-agy-subagent-ms'),
+      String(BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S * 1000)
+    )
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -341,6 +345,16 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await oneStillRunning(row).click()
       await expect(page.locator('.tbu-pop.parked')).toContainText(
         `command · sleep ${BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S} · working`
+      )
+      await page.keyboard.press('Escape')
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 60_000 })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+
+      await runIn(page, centerTerm(page), '/subagent Check remote auth')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 60_000 })
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText(
+        'agent · Check remote auth · working'
       )
       await page.keyboard.press('Escape')
       await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 60_000 })
