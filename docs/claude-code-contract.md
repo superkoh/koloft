@@ -4078,11 +4078,13 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   - Started by Koloft with `--add-dir <userData>/palette-pictures -- "<prompt>"`: no ask,
     `Read`, `ZEBRA`. 1 run. `--add-dir` is variadic (§9's flag list), so it sits right
     before the `--`.
-- **Since 2.1.326, `--add-dir <folder>` stops at startup on a question when the folder
-  is not trusted.** claude shows "Adding a new directory: <folder> / This session hasn't
-  worked here before. Is this a directory you created or one you trust? / ❯ No, exit /
-  Yes, add it" before anything else: the first prompt given after `--` is not sent, no
-  hook fires, and no OSC 7501 frame goes out (Koloft's row shows nothing to answer).
+- **On 2.1.327 (not on 2.1.325; 2.1.326 not run), `--add-dir <folder>` stops at startup
+  on a question when the folder is not trusted.** claude shows "Adding a new directory:
+  <folder> / This session hasn't worked here before. Is this a directory you created or
+  one you trust? / ❯ No, exit / Yes, add it" before anything else: the first prompt
+  given after `--` is not sent, no hook fires, and the only OSC 7501 traffic is claude's
+  `?` query at startup and a `state=clear` as it exits, never a state that asks
+  (Koloft's row shows nothing to answer).
   Enter takes "No, exit" and claude quits. `--dangerously-skip-permissions` does not skip
   it. "Yes, add it" lets this run go on and writes nothing to `.claude.json`, so the next
   launch asks again. The folder counts as trusted, and the question does not show, when

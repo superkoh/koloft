@@ -39,8 +39,8 @@ for good.
   account that has not had such a resume in the folder, agy still asks.
 - a Claude Code session starts with a first prompt whose picture sits in Koloft's own
   picture folder (`palette-pictures` in Koloft's data folder on the Mac,
-  `~/.koloft/element-picks` on a remote machine): Koloft hands claude that folder with
-  `--add-dir`, and since 2.1.326 claude stops on its own "Adding a new directory"
+  a folder ending in `/.koloft/element-picks` on a remote machine, where Koloft copies
+  pictures): Koloft hands claude that folder with `--add-dir`, and on 2.1.327 claude stops on its own "Adding a new directory"
   question for a folder it does not trust, sends no first prompt and tells Koloft
   nothing (`CC§18`). The folder holds only pictures Koloft saved, so trusting it gives
   nothing away. A `Picture:` line naming any other folder (typed words, an agent's
