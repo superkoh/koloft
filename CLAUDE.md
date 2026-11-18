@@ -125,9 +125,14 @@ Working principles:
   First choose candidates by flow name from `test/e2e` (spec names are flow names;
   its test titles say what it covers), then grep `test/e2e` for the
   identifiers you touched — component names, `.wb-*` selectors, IPC channel names —
-  to catch the rest. A change to a wide fan-out file (types.ts, store.ts, App.tsx,
-  preload, main index.ts) is still picked by the flows whose state or IPC it
-  touched, never by falling back to the whole suite. There is no full-suite gate:
+  and for every string or constant value your diff removed or changed (a label, a
+  refusal line, a launch flag), to catch the rest. A picked spec runs as a whole
+  file, never one case of it. A spec file your diff edits is run too, whatever it
+  needs — a real agent, the Docker lab; one you could not run goes under "did not
+  run" with the command that failed. A change to a wide fan-out file (types.ts,
+  store.ts, App.tsx, preload, main index.ts) is still picked by the flows whose
+  state or IPC it touched, never by falling back to the whole suite. There is no
+  full-suite gate:
   `npm test` runs only when someone asks for it, never as a reflex before a merge or
   after a rebase.
 - A plan, design or audit report the owner will decide on — more than a screen, not
