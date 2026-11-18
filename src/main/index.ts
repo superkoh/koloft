@@ -10,8 +10,7 @@ import {
   powerMonitor,
   screen,
   Notification,
-  webContents,
-  type WebContents
+  webContents
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -229,7 +228,6 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
-import { mutedWhileHidden } from '@plugins/workbench/main/mutedWhileHidden'
 import { flushSettings, loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
@@ -357,12 +355,13 @@ import {
   relayAttached
 } from '@plugins/browser-control/main/cdpRelay'
 import { CdpOps } from '@plugins/browser-control/main/cdpOps'
-import { pickElement, pickText, stopPick } from '@plugins/workbench/main/elementPick'
 import { WebPages } from '@plugins/workbench/main/webPages'
 import { SitePermissions } from '@plugins/workbench/main/sitePermissions'
 import { PageDialogs } from '@plugins/workbench/main/pageDialogs'
 import { PageDownloads } from '@plugins/workbench/main/pageDownloads'
 import { PageRouting } from '@plugins/workbench/main/pageRouting'
+import { PageTools } from '@plugins/workbench/main/pageTools'
+import { pagesInUse, type PagesInUseDeps } from '@plugins/workbench/main/pagesInUse'
 import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
@@ -375,7 +374,7 @@ import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import createUsageScanWorker from './usageScanWorker?nodeWorker'
 import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
-import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
+import { applyWindowCommand } from '@shared/shortcutDispatch'
 import {
   attentionReason,
   BROWSER_PARTITION,
@@ -429,7 +428,6 @@ import type {
   SignInResult,
   SignInFailure,
   BrowserDialogAnswer,
-  BrowserPagesInUse,
   ScreenAnswer,
   ScreenRequest,
   TerminalExit,
@@ -1233,10 +1231,6 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
-const pagesMutedWhileHidden = mutedWhileHidden<WebContents>()
-
-const isWorkbenchPage = (wc: WebContents): boolean => wc.getType() === 'webview'
-
 let hiddenByClose = false
 let hiddenFromFullScreen = false
 
@@ -1247,7 +1241,7 @@ function setHiddenByClose(hidden: boolean): void {
 
 function hideMainWindow(win: BrowserWindow): void {
   setHiddenByClose(true)
-  pagesMutedWhileHidden.hide(webContents.getAllWebContents().filter(isWorkbenchPage))
+  pageTools.windowHidden()
   if (OFF_SCREEN_TEST) return
   // PLATFORM§5
   if (win.isFullScreen()) {
@@ -1263,12 +1257,7 @@ function hideMainWindow(win: BrowserWindow): void {
 
 function showMainWindow(win: BrowserWindow): void {
   setHiddenByClose(false)
-  for (const page of pagesMutedWhileHidden.show())
-    sendToRenderer(CH.browser.audioState, {
-      guestId: page.id,
-      audible: page.isCurrentlyAudible(),
-      muted: false
-    })
+  pageTools.windowShown()
   if (OFF_SCREEN_TEST) return
   if (win.isMinimized()) win.restore()
   if (win.isVisible()) return
@@ -3520,22 +3509,20 @@ app.whenReady().then(() => {
   onExtensionsChanged(() => sendToRenderer(CH.ext.changed))
   pageDialogs.watchSignIns()
   pageDialogs.watchCertificates()
-  setupGuestUnload()
+  pageTools.watchUnload()
   setupSecretLanding()
   setupGuestForwardsEnd()
   pageRouting.watchPopups()
   pageRouting.watchContextMenu()
-  muteGuestsUnderTest()
-  webPages.onEveryWebPage((contents) => {
-    if (isWorkbenchPage(contents)) pagesMutedWhileHidden.opened(contents)
-  })
+  pageTools.muteUnderTest()
+  pageTools.watchMuteWhileHidden()
   webPages.watchGestures()
   setupGuestLinkReports()
   setupGuestPermissionQuery()
   setupPermissionCleanup()
   setupGuestBackgroundOpen()
-  setupGuestAudioState()
-  setupGuestFullscreen()
+  pageTools.watchAudio()
+  pageTools.watchFullscreen()
 
   sweepStaleGitRequestDirs(pidAlive)
   const gitRequestDir = newGitRequestDir()
@@ -3631,7 +3618,8 @@ app.whenReady().then(() => {
     koloftPid: process.pid,
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
-    memoryStaysCritical: () => sendToRenderer(CH.browser.memoryCritical, pagesInUse()),
+    memoryStaysCritical: () =>
+      sendToRenderer(CH.browser.memoryCritical, pagesInUse(pagesInUseDeps)),
     // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
@@ -4602,47 +4590,7 @@ app.whenReady().then(() => {
   )
   holdMacAwake(loadSettings().keepAwake)
 
-  const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
-    if (!cmd) return
-    if (cmd === 'find') sendToRenderer(CH.shortcut.find)
-    else if (cmd === 'cycle-next' || cmd === 'cycle-prev') {
-      sendToRenderer(CH.shortcut.workbench, cmd)
-    } else sendToRenderer(CH.shortcut.browser, cmd)
-  }
-  // PLATFORM§12
-  const pdfKeepsItsNativeFind = (
-    cmd: ReturnType<typeof guestShortcut>,
-    contents: WebContents
-  ): boolean => cmd === 'find' && contents.getURL().toLowerCase().endsWith('.pdf')
-  // PLATFORM§7
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    contents.on('input-event', handsOnKoloft)
-    contents.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown') return
-      if (!(input.meta || input.control)) return
-      const cmd = guestShortcut(input)
-      if (pdfKeepsItsNativeFind(cmd, contents)) return
-      if (cmd) {
-        event.preventDefault()
-        sendGuestCommand(cmd)
-      }
-    })
-    // PLATFORM§7
-    contents.on('input-event', (_event, input) => {
-      if (input.type !== 'rawKeyDown') return
-      const mods = input.modifiers ?? []
-      const cmd = guestShortcut({
-        key: (input as { key?: string }).key ?? '',
-        meta: mods.includes('meta') || mods.includes('command') || mods.includes('cmd'),
-        control: mods.includes('control') || mods.includes('ctrl'),
-        shift: mods.includes('shift'),
-        alt: mods.includes('alt')
-      })
-      if (pdfKeepsItsNativeFind(cmd, contents)) return
-      if (cmd) sendGuestCommand(cmd)
-    })
-  })
+  pageTools.watchKeys()
 
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
@@ -4806,16 +4754,6 @@ function setupSecretLanding(): void {
   })
 }
 
-// PLATFORM§12
-function setupGuestUnload(): void {
-  webPages.onEveryWebPage((contents) => {
-    contents.on('will-prevent-unload', (event) => {
-      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      event.preventDefault()
-    })
-  })
-}
-
 function setupGuestForwardsEnd(): void {
   webPages.onEveryWebPage((contents) => {
     const id = contents.id
@@ -4823,14 +4761,6 @@ function setupGuestForwardsEnd(): void {
       webPages.pageGone(id)
       pageForwards.pageGone(id)
     })
-  })
-}
-
-// PLATFORM§8
-function muteGuestsUnderTest(): void {
-  if (!BACKGROUND_TEST) return
-  webPages.onEveryWebPage((contents) => {
-    contents.setAudioMuted(true)
   })
 }
 
@@ -4850,79 +4780,6 @@ function setupPermissionCleanup(): void {
 
 function setupGuestBackgroundOpen(): void {
   ipcMain.on(CH.browser.openBackground, (e, url: unknown) => pageRouting.openBackground(e, url))
-}
-
-function setupGuestFullscreen(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    let pageFullscreen = false
-    // PLATFORM§7
-    contents.on('input-event', (_event, input) => {
-      if (!pageFullscreen || input.type !== 'rawKeyDown') return
-      if ((input as { key?: string }).key !== 'Escape') return
-      contents.executeJavaScript('document.exitFullscreen?.()').catch(() => {})
-    })
-    contents.on('enter-html-full-screen', () => {
-      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      pageFullscreen = true
-      sendToRenderer(CH.browser.fullscreen, true)
-    })
-    contents.on('leave-html-full-screen', () => {
-      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      pageFullscreen = false
-      sendToRenderer(CH.browser.fullscreen, false)
-    })
-  })
-}
-
-function setupGuestAudioState(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    contents.on('audio-state-changed', (event) => {
-      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      sendToRenderer(CH.browser.audioState, {
-        guestId: contents.id,
-        audible: event.audible,
-        muted: contents.isAudioMuted()
-      })
-    })
-  })
-}
-
-function pagesInUse(): BrowserPagesInUse {
-  const guestIds = new Set<number>([
-    ...pageDownloads.pagesDownloading(),
-    ...sitePermissions.pagesHeld()
-  ])
-  const modalPage = pageDialogs.modalPage()
-  if (modalPage !== null) guestIds.add(modalPage)
-  const owners = new Set<string>()
-  const keepOwnerOf = (page: WebContents): void => {
-    guestIds.add(page.id)
-    const owner = webPages.ownerOf(page)
-    if (owner) owners.add(owner)
-  }
-  for (const opener of pageRouting.signInWindowOpeners())
-    if (!opener.isDestroyed()) keepOwnerOf(opener)
-  for (const ask of secretAsks?.views() ?? []) {
-    if (ask.kind === 'sudo') continue
-    owners.add(ask.tabId)
-    if (ask.kind !== 'url') guestIds.add(ask.guestId)
-  }
-  for (const page of webContents.getAllWebContents()) {
-    if (page.isDestroyed() || !isWorkbenchPage(page)) continue
-    const owner = webPages.ownerOf(page)
-    if (owner && relayAttached(owner)) owners.add(owner)
-    if (
-      page.isLoading() ||
-      page.debugger.isAttached() ||
-      page.isDevToolsOpened() ||
-      page.isCurrentlyAudible() ||
-      guestDrivenFromAnotherMachine(page.id)
-    )
-      guestIds.add(page.id)
-  }
-  return { guestIds: [...guestIds], owners: [...owners] }
 }
 
 const boundSessions = new Map<string, string>()
@@ -5023,10 +4880,24 @@ const pageRouting = new PageRouting({
   showSignInWindows: !BACKGROUND_TEST
 })
 
-const DEFAULT_BROWSER_GUEST_LIMIT = 12
-function browserGuestLimit(): number {
-  const injected = Number(process.env.KOLOFT_BROWSER_GUEST_LIMIT)
-  return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
+const pageTools = new PageTools({
+  send: sendToRenderer,
+  pages: webPages,
+  machineOfTab,
+  savePickOn: (machine, name, png) => hosts.machine(machine).savePick(name, png),
+  savePickOnThisMac,
+  handsOn: handsOnKoloft,
+  underTest: BACKGROUND_TEST
+})
+
+const pagesInUseDeps: PagesInUseDeps = {
+  pages: webPages,
+  held: () => [...pageDownloads.pagesDownloading(), ...sitePermissions.pagesHeld()],
+  modalPage: () => pageDialogs.modalPage(),
+  signInWindowOpeners: () => pageRouting.signInWindowOpeners(),
+  heldElsewhere: () => secretAsks?.pagesHeld() ?? [],
+  ownerDriven: relayAttached,
+  drivenFromAnotherMachine: guestDrivenFromAnotherMachine
 }
 
 const pageDownloads = new PageDownloads({ send: sendToRenderer })
@@ -6859,7 +6730,7 @@ function registerIpc(): void {
   ipcMain.on(CH.shortcut.window, (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
 
   ipcMain.on(CH.browser.guestLimit, (e) => {
-    e.returnValue = browserGuestLimit()
+    e.returnValue = pageTools.guestLimit()
   })
   ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) =>
     webPages.overlayReported(guestId, on)
@@ -6891,48 +6762,11 @@ function registerIpc(): void {
   ipcMain.on(CH.browser.openExternal, (_e, url: string) => {
     if (typeof url === 'string') openUrlExternally(url)
   })
-  ipcMain.on(CH.browser.devtools, (_e, id: unknown) => {
-    if (typeof id !== 'number') return
-    const guest = webContents.fromId(id)
-    if (!guest || guest.getType() !== 'webview') return
-    if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return
-    if (guest.isDevToolsOpened()) guest.closeDevTools()
-    else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
-  })
-  ipcMain.handle(CH.browser.pickElement, async (_e, id: unknown, tabId: unknown) => {
-    if (typeof id !== 'number' || typeof tabId !== 'string') return null
-    const guest = webContents.fromId(id)
-    if (!guest || guest.getType() !== 'webview') return null
-    if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
-    const picked = await pickElement(guest)
-    if (!picked) return null
-    if (picked.pictureFailed)
-      sendToRenderer(
-        CH.toast.show,
-        `The picture of the element could not be taken: ${picked.pictureFailed}`
-      )
-    const machine = machineOfTab(tabId)
-    const picture = picked.png
-      ? await (
-          machine
-            ? hosts.machine(machine).savePick(`${crypto.randomUUID()}.png`, picked.png)
-            : savePickOnThisMac(picked.png)
-        ).catch((error) => {
-          const why = error instanceof Error ? error.message : String(error)
-          sendToRenderer(
-            CH.toast.show,
-            machine
-              ? `The picture of the element could not be copied to ${machine}: ${why}`
-              : `The picture of the element could not be saved: ${why}`
-          )
-          return null
-        })
-      : null
-    return pickText(picked, picture)
-  })
-  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
-    if (typeof id === 'number') stopPick(id)
-  })
+  ipcMain.on(CH.browser.devtools, (_e, id: unknown) => pageTools.devtools(id))
+  ipcMain.handle(CH.browser.pickElement, (_e, id: unknown, tabId: unknown) =>
+    pageTools.pick(id, tabId)
+  )
+  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => pageTools.pickStop(id))
   ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))
   )
@@ -6972,17 +6806,11 @@ function registerIpc(): void {
 
   ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => pageDownloads.retry(id))
 
-  ipcMain.on(CH.browser.copyText, (_e, text: unknown) => {
-    if (typeof text !== 'string' || !text) return
-    clipboard.writeText(text.slice(0, 8192))
-  })
+  ipcMain.on(CH.browser.copyText, (_e, text: unknown) => pageTools.copyText(text))
 
-  ipcMain.on(CH.browser.setMuted, (_e, guestId: unknown, muted: unknown) => {
-    if (typeof guestId !== 'number') return
-    const contents = webContents.fromId(guestId)
-    if (!contents || contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-    contents.setAudioMuted(muted === true)
-  })
+  ipcMain.on(CH.browser.setMuted, (_e, guestId: unknown, muted: unknown) =>
+    pageTools.setMuted(guestId, muted)
+  )
 
   ipcMain.handle(CH.browser.certProceed, (_e, url: string) => pageDialogs.certProceed(url))
   ipcMain.handle(CH.browser.clearData, () => pageDialogs.clearSiteData())
