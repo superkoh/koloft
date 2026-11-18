@@ -8,7 +8,10 @@ import { fill, placeUi, slot, type PluginUi } from '@core/ui'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import { PLUGIN_PALETTE_ACTIONS } from '@shared/paletteFeatures'
+import { PLUGIN_ROUTE_KINDS } from '@shared/sessionRoute'
 import {
+  PALETTE_HAND_OFF,
+  PALETTE_ROUTE,
   PALETTE_RUN,
   ROW_EXTRAS,
   type PaletteRun,
@@ -113,5 +116,16 @@ describe('UI parts a plugin registers', () => {
     )
     expect(run.sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
     expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+  })
+
+  it('exactly one plugin takes the ⌘P words core cannot route itself, and each route kind core leaves to plugins has exactly one taker', () => {
+    const placed = placeUi(PLUGINS, PLUGIN_UIS)
+    expect(placed.fillsOf(PALETTE_HAND_OFF)).toHaveLength(1)
+    expect(
+      placed
+        .fillsOf(PALETTE_ROUTE)
+        .map((r) => r.kind)
+        .sort()
+    ).toEqual([...PLUGIN_ROUTE_KINDS].sort())
   })
 })
