@@ -120,7 +120,6 @@ import {
   certTrusted,
   chromeClientHints,
   enforceGuestAttach,
-  gestureFresh,
   guestMenuItems,
   isAppNavigation,
   isAttachmentResponse,
@@ -273,7 +272,6 @@ import { WorkspaceManager, scratchRootsAround, type LiveSession } from './worksp
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
-  workspaceOfWorkbenchKey,
   sanitizeSessionWorkbench,
   WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
 } from '@shared/workbenchState'
@@ -376,6 +374,7 @@ import {
 } from '@plugins/browser-control/main/cdpRelay'
 import { CdpOps } from '@plugins/browser-control/main/cdpOps'
 import { pickElement, pickText, stopPick } from '@plugins/workbench/main/elementPick'
+import { WebPages } from '@plugins/workbench/main/webPages'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
@@ -3543,10 +3542,10 @@ app.whenReady().then(() => {
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     if (isWorkbenchPage(contents)) pagesMutedWhileHidden.opened(contents)
   })
-  setupGuestGestures()
+  webPages.watchGestures()
   setupGuestLinkReports()
   setupGuestPermissionQuery()
   setupPermissionCleanup()
@@ -4892,16 +4891,8 @@ function keptBySignInWindow(
   return false
 }
 
-const webPageWatchers: ((contents: WebContents) => void)[] = []
-
-app.on('web-contents-created', (_e, contents) => {
-  if (contents.getType() !== 'webview') return
-  for (const w of webPageWatchers) w(contents)
-})
-
-function onEveryWebPage(watch: (contents: WebContents) => void): void {
-  webPageWatchers.push(watch)
-}
+const webPages = new WebPages({ activeTab: () => uiActiveTabId, machineOfTab })
+webPages.start()
 
 function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
   pageOfSignInWindow.set(win, opener)
@@ -4918,14 +4909,14 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
     host?.removeListener('closed', close)
   })
   const popupId = popup.id
-  void reportedOwner(opener.id).then((owner) => {
-    if (owner) recordGuestOwner(popupId, owner)
+  void webPages.reportedOwner(opener.id).then((owner) => {
+    if (owner) webPages.recordOwner(popupId, owner)
   })
-  for (const w of webPageWatchers) w(popup)
+  webPages.popupOpened(popup)
 }
 
 function setupSecretLanding(): void {
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame) secretAsks?.navigationStarted(contents.id, details.url)
     })
@@ -4935,7 +4926,7 @@ function setupSecretLanding(): void {
 
 // PLATFORM§12
 function setupGuestUnload(): void {
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     contents.on('will-prevent-unload', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       event.preventDefault()
@@ -4943,74 +4934,14 @@ function setupGuestUnload(): void {
   })
 }
 
-const guestGestures = new WeakMap<WebContents, number>()
-const guestOwners = new WeakMap<WebContents, string>()
-
-function tabOwningGuest(guest: WebContents): string | null {
-  return guestOwners.get(guest) ?? uiActiveTabId
-}
-
-const A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS = 3000
-const ownerWaiters = new Map<number, ((owner: string | null) => void)[]>()
-
-function reportedOwner(guestId: number): Promise<string | null> {
-  const guest = webContents.fromId(guestId)
-  if (!guest || overlayGuests.has(guestId)) return Promise.resolve(null)
-  const known = guestOwners.get(guest)
-  if (known) return Promise.resolve(known)
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      const left = (ownerWaiters.get(guestId) ?? []).filter((w) => w !== answer)
-      if (left.length) ownerWaiters.set(guestId, left)
-      else ownerWaiters.delete(guestId)
-      resolve(guestOwners.get(guest) ?? null)
-    }, A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
-    const answer = (owner: string | null): void => {
-      clearTimeout(timer)
-      resolve(owner)
-    }
-    ownerWaiters.set(guestId, [...(ownerWaiters.get(guestId) ?? []), answer])
-  })
-}
-
-function recordGuestOwner(guestId: number, owner: string): void {
-  const guest = webContents.fromId(guestId)
-  if (guest) guestOwners.set(guest, owner)
-  for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(owner)
-  ownerWaiters.delete(guestId)
-}
-
-function machineOfOwner(owner: string): string | undefined {
-  return isWorkspaceWorkbenchKey(owner)
-    ? parseRemoteKey(workspaceOfWorkbenchKey(owner))?.host
-    : machineOfTab(owner)
-}
-
 function setupGuestForwardsEnd(): void {
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     const id = contents.id
     contents.once('destroyed', () => {
-      ownerWaiters.delete(id)
+      webPages.pageGone(id)
       pageForwards.pageGone(id)
     })
   })
-}
-const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
-
-function setupGuestGestures(): void {
-  onEveryWebPage((contents) => {
-    contents.on('input-event', (_ev, input) => {
-      if (CHROMIUM_USER_ACTIVATION_INPUTS.has(input.type)) {
-        guestGestures.set(contents, Date.now())
-      }
-    })
-  })
-}
-
-function takeGuestGesture(contents: WebContents): boolean {
-  const fresh = gestureFresh(guestGestures.get(contents), Date.now())
-  guestGestures.delete(contents)
-  return fresh
 }
 
 const POPUP_WINDOW_FEATURES = /(^|[\s,])(popup|(inner)?width|(inner)?height)\s*(=|,|$)/i
@@ -5023,15 +4954,15 @@ function opensAsSignInWindow(
     disposition === 'new-window' &&
     POPUP_WINDOW_FEATURES.test(features) &&
     /^https?:/i.test(url) &&
-    !isOverlayGuest(from) &&
+    !webPages.isOverlay(from) &&
     sessionDrivingGuest(from.id) === null &&
     !guestDrivenFromAnotherMachine(from.id) &&
-    takeGuestGesture(from)
+    webPages.takeGesture(from)
   )
 }
 
 function setupGuestPopups(): void {
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     contents.setWindowOpenHandler((details) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
       // PLATFORM§8
@@ -5052,7 +4983,7 @@ function setupGuestPopups(): void {
 }
 
 function setupGuestContextMenu(): void {
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     contents.on('context-menu', (_event, params) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       const items = guestMenuItems(params)
@@ -5074,7 +5005,7 @@ function setupGuestContextMenu(): void {
 // PLATFORM§8
 function muteGuestsUnderTest(): void {
   if (!BACKGROUND_TEST) return
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     contents.setAudioMuted(true)
   })
 }
@@ -5097,14 +5028,14 @@ function setupGuestPermissionQuery(): void {
     })
     e.returnValue =
       e.sender.session === session.fromPartition(BROWSER_PARTITION) &&
-      !isOverlayGuest(e.sender) &&
+      !webPages.isOverlay(e.sender) &&
       decision.kind === 'ask' &&
       rememberedPermission(decision.origin, decision.permission) === undefined
   })
 }
 
 function setupPermissionCleanup(): void {
-  onEveryWebPage((contents) => {
+  webPages.onEveryWebPage((contents) => {
     // PLATFORM§5
     const guestId = contents.id
     contents.once('destroyed', () => {
@@ -5121,7 +5052,7 @@ function setupGuestBackgroundOpen(): void {
   ipcMain.on(CH.browser.openBackground, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
-    if (isOverlayGuest(e.sender)) {
+    if (webPages.isOverlay(e.sender)) {
       routeGuestPopup(url.slice(0, 4096), e.sender)
       return
     }
@@ -5131,7 +5062,7 @@ function setupGuestBackgroundOpen(): void {
       return
     }
     if (cdpOps.openAsDrivingAgentsTab(e.sender.id, decision.target)) return
-    const tabId = tabOwningGuest(e.sender)
+    const tabId = webPages.tabOwning(e.sender)
     if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
     sendToRenderer(CH.browser.open, payload)
@@ -5175,12 +5106,6 @@ function setupGuestAudioState(): void {
   })
 }
 
-const overlayGuests = new Set<number>()
-
-function isOverlayGuest(contents: WebContents): boolean {
-  return overlayGuests.has(contents.id)
-}
-
 function pagesInUse(): BrowserPagesInUse {
   const guestIds = new Set<number>([
     ...pagesDownloading.values(),
@@ -5191,7 +5116,7 @@ function pagesInUse(): BrowserPagesInUse {
   const owners = new Set<string>()
   const keepOwnerOf = (page: WebContents): void => {
     guestIds.add(page.id)
-    const owner = guestOwners.get(page)
+    const owner = webPages.ownerOf(page)
     if (owner) owners.add(owner)
   }
   for (const opener of pageOfSignInWindow.values()) if (!opener.isDestroyed()) keepOwnerOf(opener)
@@ -5202,7 +5127,7 @@ function pagesInUse(): BrowserPagesInUse {
   }
   for (const page of webContents.getAllWebContents()) {
     if (page.isDestroyed() || !isWorkbenchPage(page)) continue
-    const owner = guestOwners.get(page)
+    const owner = webPages.ownerOf(page)
     if (owner && relayAttached(owner)) owners.add(owner)
     if (
       page.isLoading() ||
@@ -5322,7 +5247,7 @@ const cdpOps = new CdpOps({
 })
 
 function routeGuestPopup(url: string, from: WebContents): void {
-  if (isOverlayGuest(from)) {
+  if (webPages.isOverlay(from)) {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
@@ -5332,7 +5257,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
   const decision = routeFor(url, 'user')
   if (decision.dest !== 'browser' && guestDrivenFromAnotherMachine(from.id)) return
   if (decision.dest === 'browser' && cdpOps.openAsDrivingAgentsTab(from.id, decision.target)) return
-  const tabId = tabOwningGuest(from)
+  const tabId = webPages.tabOwning(from)
   if (!tabId) return
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
@@ -5502,7 +5427,7 @@ function setupBrowserPartition(): void {
   // PLATFORM§11
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
-    if (isOverlayGuest(_wc) && decision.kind === 'ask') {
+    if (webPages.isOverlay(_wc) && decision.kind === 'ask') {
       callback(false)
       return
     }
@@ -5545,7 +5470,7 @@ function setupBrowserPartition(): void {
     // PLATFORM§11
     if (permission !== 'openExternal') return
     const target = (details as { externalURL?: string }).externalURL ?? ''
-    if (canOpenExternally(target) && takeGuestGesture(_wc)) openUrlExternally(target)
+    if (canOpenExternally(target) && webPages.takeGesture(_wc)) openUrlExternally(target)
     else if (target) sendToRenderer(CH.browser.blockedScheme, target)
   })
   // PLATFORM§11
@@ -5605,9 +5530,10 @@ function setupBrowserPartition(): void {
     const machinePort = loopbackPortOf(details.url)
     if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
       return fenceRequest(details, callback)
-    void reportedOwner(guest)
+    void webPages
+      .reportedOwner(guest)
       .then((owner) => {
-        const host = owner ? machineOfOwner(owner) : undefined
+        const host = owner ? webPages.machineOfOwner(owner) : undefined
         return host ? loopbackOnTheMachine(details, guest, machinePort, host) : null
       })
       .then(
@@ -6223,14 +6149,8 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   return r.stdout.trim() || `nothing (${r.stderr.trim()})`
 }
 
-function guestsOfTab(tabId: string): WebContents[] {
-  return webContents
-    .getAllWebContents()
-    .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
-}
-
 function guestPagesOf(tabId: string): (GuestPage & WebPage)[] {
-  return guestsOfTab(tabId).map((wc) => ({
+  return webPages.pagesOf(tabId).map((wc) => ({
     guestId: wc.id,
     url: () => wc.getURL(),
     // PLATFORM§10
@@ -6247,7 +6167,7 @@ function guestPagesOf(tabId: string): (GuestPage & WebPage)[] {
 }
 
 function tapPagesOf(tabId: string): TapPage[] {
-  return guestsOfTab(tabId).map((wc) => ({
+  return webPages.pagesOf(tabId).map((wc) => ({
     guestId: wc.id,
     url: () => wc.getURL(),
     find: (selector, scroll) =>
@@ -6925,8 +6845,7 @@ function registerIpc(): void {
     sessionCommand.tabMoved(oldTabId, newTabId)
     koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
-    for (const wc of webContents.getAllWebContents())
-      if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+    webPages.tabMoved(oldTabId, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
     if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
       carryTabIds(newTabId, tabIdsOf(oldTabId))
@@ -7441,17 +7360,12 @@ function registerIpc(): void {
   ipcMain.on(CH.browser.guestLimit, (e) => {
     e.returnValue = browserGuestLimit()
   })
-  ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) => {
-    if (typeof guestId !== 'number') return
-    if (on) overlayGuests.add(guestId)
-    else overlayGuests.delete(guestId)
-    if (!on) return
-    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(null)
-    ownerWaiters.delete(guestId)
-  })
+  ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) =>
+    webPages.overlayReported(guestId, on)
+  )
   ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
-    recordGuestOwner(guestId, ownerTabId)
+    webPages.recordOwner(guestId, ownerTabId)
   })
   ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
@@ -7636,7 +7550,7 @@ function registerIpc(): void {
         id,
         ...dialog,
         guestId: e.sender.id,
-        overlay: isOverlayGuest(e.sender)
+        overlay: webPages.isOverlay(e.sender)
       }
       sendToRenderer(CH.browser.jsDialog, payload)
     }
