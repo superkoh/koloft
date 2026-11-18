@@ -3,7 +3,6 @@ import type { AttentionTracker } from './attention'
 import type { ClaudeBackend } from './backends/claude'
 import type { AgentExit, CronRunner, LeftTab } from './cronRunner'
 import type { AskButtons } from './discord/buttons'
-import type { Butler } from './discord/butler'
 import type { ButlerTyping } from './discord/butlerTyping'
 import type { SecretAsks } from '@plugins/passwords/main/secretAsks'
 import type { DiscordRelay } from './discord/relay'
@@ -46,7 +45,7 @@ export interface TabSubsystems {
   secrets: MadeLater<Pick<SecretAsks, 'forget'>>
   workspaces: MadeLater<Pick<WorkspaceManager, 'launchEnded' | 'onTrackerUpdate'>>
   cron: MadeLater<Pick<CronRunner, 'onPtyExit'>>
-  butler: MadeLater<Pick<Butler, 'onPtyExit'>>
+  butler: MadeLater<{ onPtyExit(tabId: string): void }>
 }
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
