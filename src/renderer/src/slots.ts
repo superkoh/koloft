@@ -2,6 +2,7 @@
 import { slot } from '@core/ui'
 import type { LandingAfterClose } from './store'
 import type { Icon } from './icons'
+import type { Settings } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
 
@@ -26,6 +27,13 @@ export interface RowExtrasFill {
 }
 
 export const ROW_EXTRAS = slot<RowExtrasFill>('row-extras')
+
+export interface RowSetUpFill {
+  row: string
+  setUp: (settings: Settings) => boolean
+}
+
+export const ROW_SET_UP = slot<RowSetUpFill>('row-set-up')
 
 export interface SettingsPageIcon {
   page: string

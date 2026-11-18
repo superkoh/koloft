@@ -9,8 +9,10 @@ import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import {
   ROW_EXTRAS,
+  ROW_SET_UP,
   SETTINGS_PAGE_ICON,
   type RowExtrasFill,
+  type RowSetUpFill,
   type SettingsPageIcon
 } from '../../src/renderer/src/slots'
 
@@ -88,6 +90,12 @@ describe('UI parts a plugin registers', () => {
     )
     expect(filled.length).toBeGreaterThan(0)
     for (const row of filled) expect(rows).toContain(row)
+    const setUp = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? [])
+        .filter((f) => f.slot === ROW_SET_UP)
+        .map((f) => (f.value as RowSetUpFill).row)
+    )
+    for (const row of setUp) expect(rows).toContain(row)
   })
 
   it('every settings page a plugin lists has exactly one icon, and every icon is for a settings page some plugin lists', () => {
