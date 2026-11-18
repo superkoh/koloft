@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
+import { answered, cutForATurn, EXIT_USAGE, refused, type AgentVerb } from '@core/command'
 
 export const GH_USAGE =
   "koloft: usage: koloft gh <one of gh's own commands but auth, alias, extension, config or copilot>, like: koloft gh pr view 389"
@@ -49,13 +49,6 @@ const HANDS_THE_REST_TO_ANOTHER_PROGRAM = '--'
 
 export const GH_PASSES_THROUGH =
   'koloft: koloft gh takes no --: gh hands what follows it to git, ssh or scp, which run with the GitHub sign-in.'
-
-const REPLY_CHARS_A_TURN_HOLDS = 20_000
-
-export function cutForATurn(text: string, ifCut = ''): string {
-  if (text.length <= REPLY_CHARS_A_TURN_HOLDS) return text
-  return `${text.slice(0, REPLY_CHARS_A_TURN_HOLDS)}\n[koloft: cut at ${REPLY_CHARS_A_TURN_HOLDS} characters${ifCut}]`
-}
 
 export interface GithubVerbDeps {
   run(args: string[], tabId: string, cwd: string): Promise<{ ok: boolean; out: string }>

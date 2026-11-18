@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
-import { fail, type Parsed } from '../../../main/agentRequests'
+import { fail, type Parsed } from '@core/command'
 import type { ToolCall } from '../../../main/sessionTracker'
 import { keysFor, typedPieces } from '../../../main/typeKeys'
 import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
