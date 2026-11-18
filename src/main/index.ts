@@ -595,9 +595,9 @@ import {
   jsonServers,
   ownersClaudePlaywrightMcp,
   textOrNull,
-  type ConfigText,
-  type McpServer
+  type ConfigText
 } from './mcpServers'
+import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudeShowsAPanel,

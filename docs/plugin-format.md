@@ -112,7 +112,7 @@ flowchart LR
 | `src/core/prompt.ts` | `composePrompt`, which puts text blocks together | yes |
 | `src/core/moment.ts` | `moment()`, a stand-in for one moment ("a file was opened") until the registry of #1985: listeners hand back a sentence for the agent's reply | yes |
 | `src/core/errorText.ts` | `errorText`, the text of a thrown error | yes |
-| `src/core/command.ts` | what a `koloft` command answers with: `answered`, `refused`, `EXIT_USAGE`, `splitAtDashes`, `cutForATurn` and their types, until the registry of #1983 | yes |
+| `src/core/command.ts` | what a `koloft` command answers with: `answered`, `refused`, `EXIT_USAGE`, `splitAtDashes`, `fail`, `cutForATurn` and their types, until the registry of #1983 | yes |
 | `src/core/mapAtMost.ts` | `mapAtMost`, a map that runs at most so many at once | yes |
 | `src/plugins/list.ts` | `PLUGINS`, every manifest in order; the only file outside the plugin folders that imports a plugin's manifest | yes |
 | `src/plugins/<id>/plugin.ts` | the plugin's manifest | all eleven |

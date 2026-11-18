@@ -1763,6 +1763,12 @@ export interface WorkspacePullSummary {
 export type WorkspacePullResult =
   { ok: true; summary: WorkspacePullSummary } | { ok: false; reason: string }
 
+export interface McpServer {
+  name: string
+  backend: BackendId
+  onlyIn?: string
+}
+
 export interface WorkspaceRows {
   workspace: {
     path: string

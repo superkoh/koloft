@@ -1,15 +1,9 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendId } from '@shared/types'
+import type { BackendId, McpServer } from '@shared/types'
 import { runsPlaywrightMcp } from './browserControlEnv'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import { realpathSafe } from './projectInfo'
-
-export interface McpServer {
-  name: string
-  backend: BackendId
-  onlyIn?: string
-}
 
 export interface ConfigText {
   text: string | null

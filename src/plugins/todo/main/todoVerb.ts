@@ -1,4 +1,4 @@
-import type { BackendId, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
+import type { BackendId, McpServer, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { ageLabel } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
@@ -41,12 +41,6 @@ const GIT_LOOKUPS_AT_ONCE = 4
 export interface ProjectFile {
   name: string
   path: string
-}
-
-export interface McpServer {
-  name: string
-  backend: BackendId
-  onlyIn?: string
 }
 
 export interface TodoVerbDeps {

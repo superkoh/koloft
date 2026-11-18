@@ -6,13 +6,11 @@ import { errorText } from '@core/errorText'
 import {
   answered,
   EXIT_USAGE,
-  fail,
   refused,
   splitAtDashes,
   type AgentCaller,
   type AgentReply,
-  type AgentVerb,
-  type Parsed
+  type AgentVerb
 } from '@core/command'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
@@ -36,7 +34,7 @@ export {
   type AgentReply,
   type AgentVerb,
   type Parsed
-}
+} from '@core/command'
 
 export { errorText }
 

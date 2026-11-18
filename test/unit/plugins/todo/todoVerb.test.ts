@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   todoVerb,
   TODO_ONLY_FOR_THE_BUTLER,
-  type McpServer,
   type TodoVerbDeps
 } from '../../../../src/plugins/todo/main/todoVerb'
 import type { TodoPull, TodoPulls } from '../../../../src/plugins/github/api'
@@ -10,6 +9,7 @@ import { GITHUB_NOT_ASKED } from '../../../../src/plugins/sessions/api'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
 import type {
   BackendId,
+  McpServer,
   SessionInfo,
   SessionRow,
   WorkspaceRows
