@@ -35,7 +35,7 @@ import type { PickFacts } from '../../../../src/shared/sessionPicks'
 import { handoverPreamble } from '../../../../src/main/handover'
 import { StartedSessions } from '../../../../src/main/startedSessions'
 import { turnedOffLine } from '../../../../src/shared/sessionBackend'
-import { EXIT_USAGE, type AgentReply } from '../../../../src/main/agentRequests'
+import { EXIT_USAGE, type AgentReply } from '../../../../src/core/command'
 import { AGENT_SHIM_WAITS_MS } from '../../../../src/main/agentShim'
 import type {
   BackendId,
