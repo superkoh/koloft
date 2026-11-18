@@ -6,7 +6,7 @@ import { seedSettings, type E2EEnv } from './helpers/env'
 import { startSessionIn, switchToRow, terminalText, waitForCalls } from './helpers/p1'
 import { guestByUrl } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
-import { OWNER_DECLINED, OWNER_FILLED } from '../../src/main/agentSecret'
+import { OWNER_DECLINED, OWNER_FILLED } from '../../src/plugins/passwords/main/secretVerb'
 
 test.setTimeout(120_000)
 

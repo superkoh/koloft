@@ -8,7 +8,7 @@ import {
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
   SUDO_SHIM_FILES,
   writeSudoShims
-} from '../../src/main/sudoShim'
+} from '../../../../src/plugins/passwords/main/sudoShim'
 
 let base: string
 let shimDir: string

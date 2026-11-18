@@ -1,7 +1,14 @@
 import { loopbackHttp, urlOrNull } from '@shared/browserRoute'
 import type { SecretAskShape } from '@shared/types'
-import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
-import type { SecretAnswer, SecretAsk } from './discord/secretAsks'
+import type { WebPage } from '@core/webPage'
+import {
+  answered,
+  EXIT_USAGE,
+  refused,
+  type AgentReply,
+  type AgentVerb
+} from '../../../main/agentRequests'
+import type { SecretAnswer, SecretAsk } from './secretAsks'
 
 export const SECRET_USAGE =
   'koloft: usage: koloft secret page <css selector> | koloft secret url "<sign-in address>"'
@@ -25,18 +32,12 @@ export const OWNER_FILLED_AND_EMPTIED = `The page moved on, or the owner said th
 
 const A_SUBMITTED_PAGE_MOVES_ON_MS = 3000
 
-export interface FieldPage {
-  guestId: number
-  url(): string
-  run(script: string): Promise<unknown>
-}
-
 export interface SecretVerbDeps {
   sessionTab(tabId: string): string
   ask(a: SecretAsk): Promise<SecretAnswer>
   ownerAsleep(): boolean
   machine(tabId: string): string | undefined
-  pages(tabId: string): FieldPage[]
+  pages(tabId: string): WebPage[]
   showSignIn(tabId: string, url: string): void
   open(machine: string | undefined, url: string): Promise<string>
   sleep(ms: number): Promise<void>
@@ -95,7 +96,7 @@ function originOf(url: string): string {
   return urlOrNull(url)?.origin ?? url
 }
 
-async function factsOn(page: FieldPage, selector: string): Promise<FieldFacts> {
+async function factsOn(page: WebPage, selector: string): Promise<FieldFacts> {
   const facts = (await page.run(describeField(selector)).catch(() => null)) as FieldFacts | null
   return facts ?? { count: 0 }
 }

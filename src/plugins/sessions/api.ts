@@ -8,6 +8,13 @@ import {
 } from './prompts/text'
 
 export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
+export {
+  SlashCommands,
+  toCaller,
+  type SlashReplyTo,
+  type SlashTarget,
+  type SlashResult
+} from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {
