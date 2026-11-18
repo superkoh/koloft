@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
-import { registerSettings, setting, type SettingKeys } from '@core/settings'
+import { PLUGIN_FORMAT_VERSION, type PluginManifest, type SettingsPage } from '@core/plugin'
+import { registerSettings, setting, settingsPages, type SettingKeys } from '@core/settings'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS } from '@plugins/settings'
 import { APP_DEFAULT_SETTINGS } from '@shared/types'
@@ -107,5 +107,31 @@ describe('setting keys a plugin registers', () => {
     const pluginKeys = Object.keys(keys.defaults)
     expect(pluginKeys.filter((k) => appKeys.includes(k))).toEqual([])
     expect(keys.retired.filter((k) => [...appKeys, ...pluginKeys].includes(k))).toEqual([])
+  })
+})
+
+describe('a settings page a plugin registers', () => {
+  const withPage = (id: string, pageIds: string[], page?: SettingsPage): PluginManifest => ({
+    ...manifest(id, []),
+    settings: { keys: [], ...(page ? { page } : {}) },
+    ui: pageIds.map((pageId) => ({ place: 'settings-page' as const, id: pageId }))
+  })
+  const PAGE = { label: 'Bot', words: ['机器人'] }
+
+  it('takes its id from the ui entry and its label and words from settings.page, in the order of the list of plugins', () => {
+    expect(settingsPages([withPage('a', ['a-page'], PAGE), withPage('b', [])])).toEqual([
+      { id: 'a-page', label: 'Bot', words: ['机器人'] }
+    ])
+  })
+
+  it('a plugin names its page in both places or neither, and has at most one', () => {
+    expect(() => settingsPages([withPage('a', ['a-page'])])).toThrow(
+      'plugin a must name its settings page in settings.page and list it in ui, or neither'
+    )
+    expect(() => settingsPages([withPage('a', [], PAGE)])).toThrow('or neither')
+    expect(() => settingsPages([withPage('a', ['one', 'two'], PAGE)])).toThrow(
+      'plugin a lists more than one settings page'
+    )
+    expect(() => settingsPages(PLUGINS)).not.toThrow()
   })
 })

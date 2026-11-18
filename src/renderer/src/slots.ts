@@ -1,6 +1,7 @@
 // ADR-0051
 import { slot } from '@core/ui'
 import type { LandingAfterClose } from './store'
+import type { Icon } from './icons'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
 
@@ -25,3 +26,10 @@ export interface RowExtrasFill {
 }
 
 export const ROW_EXTRAS = slot<RowExtrasFill>('row-extras')
+
+export interface SettingsPageIcon {
+  page: string
+  Icon: Icon
+}
+
+export const SETTINGS_PAGE_ICON = slot<SettingsPageIcon>('settings-page-icon')

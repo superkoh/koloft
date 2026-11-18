@@ -7,7 +7,12 @@ import { PLUGIN_FORMAT_VERSION } from '@core/plugin'
 import { fill, placeUi, slot, type PluginUi } from '@core/ui'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
-import { ROW_EXTRAS, type RowExtrasFill } from '../../src/renderer/src/slots'
+import {
+  ROW_EXTRAS,
+  SETTINGS_PAGE_ICON,
+  type RowExtrasFill,
+  type SettingsPageIcon
+} from '../../src/renderer/src/slots'
 
 const manifest = (id: string, ui: UiEntry[] = []): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -83,6 +88,19 @@ describe('UI parts a plugin registers', () => {
     )
     expect(filled.length).toBeGreaterThan(0)
     for (const row of filled) expect(rows).toContain(row)
+  })
+
+  it('every settings page a plugin lists has exactly one icon, and every icon is for a settings page some plugin lists', () => {
+    const pages = PLUGINS.flatMap((p) =>
+      (p.ui ?? []).filter((e) => e.place === 'settings-page').map((e) => e.id)
+    )
+    const iconed = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? [])
+        .filter((f) => f.slot === SETTINGS_PAGE_ICON)
+        .map((f) => (f.value as SettingsPageIcon).page)
+    )
+    expect(pages.length).toBeGreaterThan(0)
+    expect([...iconed].sort()).toEqual([...pages].sort())
   })
 
   it('the list of UIs holds the renderer/ui.tsx of every plugin folder that has one, keyed by its id, and each holds the parts its manifest lists', () => {

@@ -3,7 +3,7 @@ import type { JSX } from 'react'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
 import type { UiPlace } from '@core/plugin'
-import { placeUi, type PlacedUi, type Slot } from '@core/ui'
+import { placeUi, type PlacedPart, type PlacedUi, type Slot } from '@core/ui'
 import { landAfterClosingAWatchedSession, useStore } from './store'
 import { GLOBAL_NOTE, LANDING_AFTER_CLOSE } from './slots'
 
@@ -22,6 +22,8 @@ export function placePluginUi(): void {
 }
 
 export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+
+export const partsAt = (place: UiPlace): readonly PlacedPart[] => placed().parts[place] ?? []
 
 export function useShowsGlobalNote(tabId: string | null, rowId: string | null): boolean {
   return fillsOf(GLOBAL_NOTE)
