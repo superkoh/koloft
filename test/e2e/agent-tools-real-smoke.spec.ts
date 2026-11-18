@@ -335,11 +335,8 @@ function jsonLines(file: string): Record<string, unknown>[] {
     .readFileSync(file, 'utf8')
     .split('\n')
     .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as Record<string, unknown>]
-      } catch {
-        return []
-      }
+      const record = jsonLine(line)
+      return record ? [record] : []
     })
 }
 
@@ -366,7 +363,10 @@ function rolloutThreadId(file: string): string {
 
 function codexThreadRecords(env: E2EEnv, sessionId: string): Record<string, unknown>[] {
   return codexRollouts(env)
-    .filter((f) => !!rolloutThreadId(f) && sessionId.endsWith(rolloutThreadId(f)))
+    .filter((f) => {
+      const threadId = rolloutThreadId(f)
+      return !!threadId && sessionId.endsWith(threadId)
+    })
     .flatMap(jsonLines)
 }
 
@@ -404,17 +404,37 @@ function claudeTranscript(env: E2EEnv, sessionId: string): string {
     .join('\n')
 }
 
+// CC§2
+function claudeLastRepliesOfEndedTurns(jsonl: string): string[] {
+  const ended: string[] = []
+  let lastReply = ''
+  for (const line of jsonl.split('\n')) {
+    const record = jsonLine(line)
+    if (record?.type === 'system' && record.subtype === 'stop_hook_summary') {
+      ended.push(lastReply)
+      lastReply = ''
+    } else lastReply = claudeRepliesIn(line).at(-1) ?? lastReply
+  }
+  return ended
+}
+
+function jsonLine(line: string): Record<string, unknown> | undefined {
+  try {
+    return JSON.parse(line) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
 interface RealTranscript {
   prompts: (env: E2EEnv, sessionId: string) => string[]
-  replies: (env: E2EEnv, sessionId: string) => string[]
   finalReplies: (env: E2EEnv, sessionId: string) => string[]
   pasteOnScreen: RegExp
 }
 
 const CLAUDE_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => claudePromptsIn(claudeTranscript(env, sessionId)),
-  replies: (env, sessionId) => claudeRepliesIn(claudeTranscript(env, sessionId)),
-  finalReplies: (env, sessionId) => claudeRepliesIn(claudeTranscript(env, sessionId)),
+  finalReplies: (env, sessionId) => claudeLastRepliesOfEndedTurns(claudeTranscript(env, sessionId)),
   // CC§18
   pasteOnScreen: /\[Pasted text #\d+ \+\d+ lines\]/
 }
@@ -426,7 +446,6 @@ const NOTE_ASKING_FOR_ONE_WORD = `Koloft paste check.\nReply with only the word 
 
 const CODEX_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => codexItems(env, sessionId, 'UserMessage'),
-  replies: (env, sessionId) => codexItems(env, sessionId, 'AgentMessage'),
   finalReplies: codexLastMessagesOfEndedTurns,
   pasteOnScreen: new RegExp(REPLY_WORD)
 }
@@ -1113,17 +1132,16 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
       )
       if (!resumed.ok) throw new Error(`the resume was refused: ${resumed.code}`)
       await expect.poll(() => live(sessionId), { timeout: 60_000 }).toBe(resumed.id)
-      const repliesBefore = CODEX_TRANSCRIPT.finalReplies(env, sessionId).length
       await sendToCodexTab(
         page,
         resumed.id,
         `This checks your own permissions. Run exactly this one shell command, once: touch ${target} — then reply with exactly TOUCH-DONE if it worked or TOUCH-REFUSED if it failed. Do not retry and do not ask me anything.`
       )
       await expect
-        .poll(() => CODEX_TRANSCRIPT.finalReplies(env, sessionId).length, {
+        .poll(() => CODEX_TRANSCRIPT.finalReplies(env, sessionId).at(-1), {
           timeout: A_REAL_MODEL_TURN_MS
         })
-        .toBeGreaterThan(repliesBefore)
+        .toMatch(/TOUCH-(DONE|REFUSED)/)
       expect(lastCodexTurnPermissions(env, sessionId)).toEqual({
         approval: 'never',
         sandbox: 'danger-full-access'
@@ -1365,9 +1383,9 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
       await expect.poll(() => server.count('/title'), { timeout: 30_000 }).toBe(1)
 
       const readsTheTitle = async (thread: string): Promise<void> => {
-        const before = CODEX_TRANSCRIPT.replies(env, thread).length
+        const before = CODEX_TRANSCRIPT.finalReplies(env, thread).length
         const newReplies = (): string =>
-          CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
+          CODEX_TRANSCRIPT.finalReplies(env, thread).slice(before).join('\n')
         await sendToCodexTab(page, tabId, codexReadsTheTitleWithItsBrowserTool(url))
         await expect
           .poll(
@@ -1459,9 +1477,9 @@ test.describe("REAL agents drive their own tab's Workbench with the playwright-c
         ]
         for (const [i, ask] of asks.entries()) {
           const sessionId = (await boundSessionId(page, ask.tab.tabId))!
-          const before = transcript.replies(env, sessionId).length
+          const before = transcript.finalReplies(env, sessionId).length
           const newReplies = (): string =>
-            transcript.replies(env, sessionId).slice(before).join('\n')
+            transcript.finalReplies(env, sessionId).slice(before).join('\n')
           await sendToCodexTab(page, ask.tab.tabId, ask.text)
           await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(ask.tab.title)
           await test.info().attach(`reply-${i + 1}`, { body: newReplies() })
