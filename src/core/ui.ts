@@ -26,7 +26,7 @@ export function placeUi(
     for (const { place, id } of declared) {
       const Part = parts[id]
       if (!Part) throw new Error(`plugin ${plugin.id} lists "${id}" but registers no part for it`)
-      if (taken.has(id)) throw new Error(`"${id}" is listed by two plugins`)
+      if (taken.has(id)) throw new Error(`"${id}" is listed twice`)
       taken.add(id)
       ;(placed[place] ??= []).push({ id, Part })
     }
