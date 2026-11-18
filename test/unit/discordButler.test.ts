@@ -9,6 +9,7 @@ import {
   type ButlerDeps
 } from '../../src/main/discord/butler'
 import type { BackendId, ButlerSession, DiscordSettings } from '@shared/types'
+import { TODO_NOTICE } from '../../src/plugins/todo/api'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'global' }
 const DEADLINE_MS = 1000
@@ -38,6 +39,8 @@ let transcripts: Set<string>
 let choice: AssistBackendChoice
 let release: () => void
 let promptShown: Set<string>
+let elsewhere: boolean
+let resumeGives: string | null | undefined
 let testRun = 0
 
 function make(): Butler {
@@ -58,7 +61,7 @@ function make(): Butler {
     backend: async () => choice,
     tabAlive: (tabId) => !killed.includes(tabId),
     liveTabFor: () => undefined,
-    runningElsewhere: async () => false,
+    runningElsewhere: async () => elsewhere,
     transcriptExists: async (_backend, key) => transcripts.has(key),
     start: async (l) => {
       started.push({
@@ -73,7 +76,7 @@ function make(): Butler {
     },
     resume: async (l) => {
       resumed.push(l.key)
-      return `tab-resumed-${l.key}`
+      return resumeGives === undefined ? `tab-resumed-${l.key}` : resumeGives
     },
     kill: onlyWhileItsTestRuns((tabId: string) => void killed.push(tabId)),
     rowsChanged: () => void rescans++,
@@ -117,6 +120,8 @@ beforeEach(() => {
   choice = { backend: 'claude' }
   release = () => {}
   promptShown = new Set()
+  elsewhere = false
+  resumeGives = undefined
 })
 
 afterEach(() => {
@@ -235,7 +240,7 @@ describe('the butler', () => {
     noticeArrives = false
     const c = make()
     expect(await c.open()).toEqual({ ok: true, tabId: tab })
-    expect(notices).toEqual([expect.stringContaining('koloft todo')])
+    expect(notices).toEqual([`(From Koloft:) ${TODO_NOTICE}`])
     c.onPtyExit(tab)
     noticeArrives = true
     await c.open()
@@ -351,6 +356,19 @@ describe('the butler', () => {
     c.onPtyExit('tab-1')
     choice = { error: 'Alfred cannot start: no.' }
     expect(await c.open()).toEqual({ ok: false, error: 'Alfred cannot start: no.' })
+  })
+
+  it('refuses to open while its conversation runs in another process, and says so when its tab never comes', async () => {
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
+    elsewhere = true
+    expect(await make().open()).toEqual({
+      ok: false,
+      error: 'Alfred is already running in another claude process.'
+    })
+    elsewhere = false
+    transcripts.add(CLAUDE_KEY)
+    resumeGives = null
+    expect(await make().open()).toEqual({ ok: false, error: 'Alfred could not start.' })
   })
 
   it('one that never binds before the deadline is closed and reported, and its tab counts as the butler’s until it is gone', async () => {
