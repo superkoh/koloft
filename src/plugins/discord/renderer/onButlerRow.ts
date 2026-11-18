@@ -1,5 +1,5 @@
 import type { ButlerRowEntry } from '@plugins/butler/api'
-import { channelLabel } from '@shared/conductors'
+import { channelLabel } from '../shared/channels'
 import { useStore } from '@renderer/store'
 
 const NOT_ON_DISCORD = 'not on Discord'

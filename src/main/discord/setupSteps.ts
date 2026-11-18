@@ -1,5 +1,5 @@
 import { WAITING_QUESTION_TOOL as ASK } from '@plugins/sessions/api'
-import { channelLabel, ownedGuilds } from '@shared/conductors'
+import { channelLabel, ownedGuilds } from '@plugins/discord/shared/channels'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'
 
 export const DISCORD_SETUP_STEPS = `How to set up Discord for the owner, so they can talk to their butler from a Discord channel. Work in the Workbench browser with playwright-cli. The owner sees that browser in Koloft and does the steps you cannot.

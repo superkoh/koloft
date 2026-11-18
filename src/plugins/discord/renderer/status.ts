@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { setUpWith } from '@shared/conductors'
-import type { DiscordStatus } from '@shared/types'
+import { setUpWith } from '../shared/channels'
+import type { DiscordStatus } from '../shared/types'
 
 export function useDiscordStatus(): DiscordStatus | null {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
