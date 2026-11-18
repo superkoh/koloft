@@ -42,6 +42,7 @@ import {
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
+  claudeLastRepliesOfEndedTurnsIn,
   claudeToolResultsIn,
   PLAN_REL,
   PLAN_WORDS,
@@ -335,8 +336,11 @@ function jsonLines(file: string): Record<string, unknown>[] {
     .readFileSync(file, 'utf8')
     .split('\n')
     .flatMap((line) => {
-      const record = jsonLine(line)
-      return record ? [record] : []
+      try {
+        return [JSON.parse(line) as Record<string, unknown>]
+      } catch {
+        return []
+      }
     })
 }
 
@@ -404,28 +408,6 @@ function claudeTranscript(env: E2EEnv, sessionId: string): string {
     .join('\n')
 }
 
-// CC§2
-function claudeLastRepliesOfEndedTurns(jsonl: string): string[] {
-  const ended: string[] = []
-  let lastReply = ''
-  for (const line of jsonl.split('\n')) {
-    const record = jsonLine(line)
-    if (record?.type === 'system' && record.subtype === 'stop_hook_summary') {
-      ended.push(lastReply)
-      lastReply = ''
-    } else lastReply = claudeRepliesIn(line).at(-1) ?? lastReply
-  }
-  return ended
-}
-
-function jsonLine(line: string): Record<string, unknown> | undefined {
-  try {
-    return JSON.parse(line) as Record<string, unknown>
-  } catch {
-    return undefined
-  }
-}
-
 interface RealTranscript {
   prompts: (env: E2EEnv, sessionId: string) => string[]
   finalReplies: (env: E2EEnv, sessionId: string) => string[]
@@ -434,7 +416,8 @@ interface RealTranscript {
 
 const CLAUDE_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => claudePromptsIn(claudeTranscript(env, sessionId)),
-  finalReplies: (env, sessionId) => claudeLastRepliesOfEndedTurns(claudeTranscript(env, sessionId)),
+  finalReplies: (env, sessionId) =>
+    claudeLastRepliesOfEndedTurnsIn(claudeTranscript(env, sessionId)),
   // CC§18
   pasteOnScreen: /\[Pasted text #\d+ \+\d+ lines\]/
 }
@@ -686,12 +669,14 @@ function theAgentsOwnShellSeesItsWorktreesPortOffset(
       const sessionId =
         (await boundSessionId(page, (await rows.getAttribute('data-tab-id'))!)) ?? ''
       expect(sessionId).not.toBe('')
+      const repliesBefore = transcript.finalReplies(env, sessionId).length
       await ask(page, rows, ECHO_THE_PORT_OFFSET[backend])
-      await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
       await expect
-        .poll(() => transcript.finalReplies(env, sessionId).length, { timeout: 30_000 })
-        .toBeGreaterThan(0)
-      const replies = transcript.finalReplies(env, sessionId)
+        .poll(() => transcript.finalReplies(env, sessionId).length, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBeGreaterThan(repliesBefore)
+      const replies = transcript.finalReplies(env, sessionId).slice(repliesBefore)
       const outputs = transcript.shellOutputs(env, sessionId)
       await test.info().attach('the-reply', { body: replies.join('\n') })
       await test.info().attach('the-shell-output', { body: outputs.join('\n') })
