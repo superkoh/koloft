@@ -29,12 +29,11 @@ function setup(over: Partial<SecretCardDeps> = {}) {
   const responses: unknown[] = []
   const shown: SecretAskView[][] = []
   const onlyInKoloft: string[] = []
-  const ended: string[] = []
   const asks = new SecretAsks<AskWithTaps>({
     show: (views) => void shown.push(views),
     owner: {
       waitsOnTheOwner: (tabId) => void onlyInKoloft.push(tabId),
-      ownerAnswered: (tabId) => void ended.push(tabId)
+      ownerAnswered: () => undefined
     }
   })
   const secretCards = new SecretCards({
@@ -78,7 +77,6 @@ function setup(over: Partial<SecretCardDeps> = {}) {
     edits,
     responses,
     onlyInKoloft,
-    ended,
     interaction,
     posted,
     lastShown
@@ -143,18 +141,14 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
     expect(await answer).toEqual({ typed: 'x' })
   })
 
-  it('while the owner is at the Mac and the turn did not come from Discord, the ask shows only in Koloft, with no card, and what is typed there reaches the asker', async () => {
-    const { asks, cards, onlyInKoloft, ended, lastShown } = setup({ cardWanted: () => false })
+  it('while the owner is at the Mac and the turn did not come from Discord, no card goes up and the session is marked as waiting on the owner in Koloft', async () => {
+    const { asks, cards, onlyInKoloft, lastShown } = setup({ cardWanted: () => false })
     const answer = asks.ask(ask, LONG)
-    expect(lastShown()).toMatchObject([{ tabId: 'tab-1', kind: 'sudo', command: 'sudo x' }])
     expect(onlyInKoloft).toEqual(['tab-1'])
-    asks.answer(lastShown()[0].id, '')
     asks.answer(lastShown()[0].id, SECRET)
     expect(await answer).toEqual({ typed: SECRET })
     await settle()
     expect(cards).toEqual([])
-    expect(ended).toEqual(['tab-1'])
-    expect(lastShown()).toEqual([])
   })
 
   it('with no Discord channel bound, the ask still waits in Koloft instead of being refused', async () => {

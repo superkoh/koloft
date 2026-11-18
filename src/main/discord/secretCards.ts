@@ -1,7 +1,7 @@
 import { accentOf, type Card, type CardButton } from './cards'
 import { privately, type DiscordFile, type DiscordInteraction } from './link'
 import { ONLY_THE_OWNER_ANSWERS } from './buttons'
-import { errorText } from '../agentRequests'
+import { errorText } from '@core/errorText'
 
 export const SECRET_ID_PREFIX = 'secret:'
 const OPEN_A_FORM = 9
@@ -57,8 +57,8 @@ const FOOTER_WHEN_ENDED: Record<Exclude<HowItEnded, 'answered-elsewhere'>, strin
 type CardAnswer = { typed: string } | { passed: true } | { ended: 'declined' }
 
 export interface AsksShownOnCards {
-  pendingAsk(id: string): CardAsk | undefined
-  answerFromElsewhere(id: string, answer: CardAnswer): void
+  pendingAsk: (id: string) => CardAsk | undefined
+  answerFromElsewhere: (id: string, answer: CardAnswer) => void
 }
 
 export interface PlacedCard {
@@ -85,7 +85,6 @@ interface Shown {
   placed?: PlacedCard
   footer?: string
   tapping?: boolean
-  placing?: number
 }
 
 type TapAction = 'picture' | 'passed' | 'give-up'
@@ -103,12 +102,13 @@ export class SecretCards {
     return true
   }
 
-  ended(id: string, how: HowItEnded): void {
+  ended(id: string, how: HowItEnded, ask: CardAsk): void {
     const shown = this.shown.get(id)
     if (!shown) return
+    this.shown.delete(id)
+    shown.ask = ask
     if (how !== 'answered-elsewhere') shown.footer = FOOTER_WHEN_ENDED[how]
-    if (shown.placed) this.editCard(id, shown)
-    else if (!shown.placing) this.shown.delete(id)
+    if (shown.placed) this.editCard(shown)
   }
 
   private waiting(id: string): boolean {
@@ -131,15 +131,10 @@ export class SecretCards {
     files?: DiscordFile[]
   ): Promise<boolean> {
     const tabId = (this.d.asks.pendingAsk(id) ?? shown.ask).tabId
-    shown.placing = (shown.placing ?? 0) + 1
     const placed = await this.d.place(tabId, card, files).catch(() => undefined)
-    shown.placing--
-    if (!placed) {
-      if (shown.footer) this.shown.delete(id)
-      return false
-    }
+    if (!placed) return false
     shown.placed = placed
-    if (shown.footer) this.editCard(id, shown)
+    if (shown.footer) this.editCard(shown)
     return true
   }
 
@@ -284,8 +279,7 @@ export class SecretCards {
     await this.d.respond(i, privately(PASSED_ON))
   }
 
-  private editCard(id: string, shown: Shown): void {
-    this.shown.delete(id)
+  private editCard(shown: Shown): void {
     const placed = shown.placed!
     void this.d
       .edit(placed, cardOf(shown.ask, placed.name, `-# ${shown.footer}`))

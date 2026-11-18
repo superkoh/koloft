@@ -21,8 +21,8 @@ export type HowItEnded =
   'timeout' | 'closed' | 'answered-in-koloft' | 'declined-in-koloft' | 'answered-elsewhere'
 
 export interface SecretAskListener<A extends SecretAsk> {
-  asked(id: string, ask: A): boolean
-  ended(id: string, how: HowItEnded): void
+  asked: (id: string, ask: A) => boolean
+  ended: (id: string, how: HowItEnded, ask: A) => void
 }
 
 export interface SecretAskDeps {
@@ -135,6 +135,6 @@ export class SecretAsks<A extends SecretAsk = SecretAsk> {
     const tabId = p.ask.tabId
     if (![...this.pending.values()].some((q) => q.ask.tabId === tabId))
       this.d.owner.ownerAnswered(tabId)
-    for (const l of this.listeners) l.ended(id, how)
+    for (const l of this.listeners) l.ended(id, how, p.ask)
   }
 }
