@@ -516,7 +516,7 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { butlerHelperRole, conductorFolder } from '@plugins/butler/api'
+import { butlerHelperRole, conductorFolder, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick, SessionDefaultsRead } from '@shared/types'
@@ -650,9 +650,8 @@ import {
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
-import { isHandsOn, Presence } from './presence'
+import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
-import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -1120,66 +1119,68 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
-const presence = new Presence({
+const presence = new OwnerPresence({
   now: Date.now,
-  macIdleSeconds: () => powerMonitor.getSystemIdleTime()
+  macIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+  asleepSince: loadSettings().ownerAsleepSince,
+  wake: () => commitSettings({ ownerAsleepSince: null }),
+  awayForTests: () => {
+    const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
+    if (pretend)
+      return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+    return BACKGROUND_TEST || undefined
+  }
 })
 const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
-const ownerAsleep = new OwnerAsleep(
-  {
-    machines: () => [
-      THIS_MAC,
-      ...new Set([
-        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...(codexSessions?.machinesWithTabs() ?? [])
-      ])
-    ],
-    mark: async (machine, awakeTabs) => {
-      if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
-      if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
-      return !!hookRegDir
-    },
-    awakeTabs: () => {
-      const tab = butler?.liveTab()
-      return tab ? [tab] : []
-    },
-    tabs: ptyTabIds,
-    asked: async (tabId) => {
-      const stored = await pendingAskOf(tabId)
-      if (stored) {
-        const questions = 'questions' in stored ? stored.questions.length : 0
-        return { question: questions > 0, questions, text: codexDialog(stored).text }
-      }
-      const claude =
-        sessionAsks?.heldAsk(tabId) ??
-        (tracker.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
-      if (!claude) return undefined
-      const questions = questionsOf(claude).length
-      return { question: questions > 0, questions, text: claudeDialog(claude).text }
-    },
-    answer: answerSession,
-    titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
-    changedSince: (since) => awayDigest?.changedSince(since) ?? [],
-    report: (text) => void handOver?.tell(butlerRecipient(), text),
-    now: Date.now,
-    answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
+const ownerAsleep = new OwnerAsleep({
+  presence,
+  machines: () => [
+    THIS_MAC,
+    ...new Set([
+      ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+      ...(codexSessions?.machinesWithTabs() ?? [])
+    ])
+  ],
+  mark: async (machine, awakeTabs) => {
+    if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
+    if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
+    return !!hookRegDir
   },
-  loadSettings().ownerAsleepSince
-)
+  awakeTabs: () => {
+    const tab = butler?.liveTab()
+    return tab ? [tab] : []
+  },
+  tabs: ptyTabIds,
+  asked: async (tabId) => {
+    const stored = await pendingAskOf(tabId)
+    if (stored) {
+      const questions = 'questions' in stored ? stored.questions.length : 0
+      return { question: questions > 0, questions, text: codexDialog(stored).text }
+    }
+    const claude =
+      sessionAsks?.heldAsk(tabId) ??
+      (tracker.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
+    if (!claude) return undefined
+    const questions = questionsOf(claude).length
+    return { question: questions > 0, questions, text: claudeDialog(claude).text }
+  },
+  answer: answerSession,
+  titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
+  changedSince: (since) => awayDigest?.changedSince(since) ?? [],
+  report: (text) => void handOver?.tell(butlerRecipient(), text),
+  now: Date.now,
+  answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
+})
+presence.listenToSleep(syncAnswerable)
 
 function ownerCameBack(): void {
-  if (ownerAsleep.asleep()) commitSettings({ ownerAsleepSince: null })
+  presence.ownerWrote()
 }
 
 function ownerAway(): boolean {
-  if (ownerAsleep.asleep()) return false
-  const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
-  if (pretend)
-    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
-  if (BACKGROUND_TEST) return true
   return presence.away()
 }
 
@@ -2295,7 +2296,7 @@ const ownerAsks = {
     secretAsks
       ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
       : Promise.resolve({ ended: 'timeout' }),
-  ownerAsleep: (): boolean => ownerAsleep.asleep()
+  ownerAsleep: (): boolean => presence.asleep()
 }
 
 registerSessionCommands(commands, {
@@ -6308,11 +6309,14 @@ function ownersPermission(): 'bypass' | 'default' {
 
 const NO_CHANNEL_BOUND = 'No Discord channel is bound.'
 
+const OWNER_IS: Record<OwnerWhere, string> = {
+  asleep: '(Koloft: the owner is asleep right now.)',
+  away: '(Koloft: the owner is away from the Mac right now.)',
+  'at-the-mac': '(Koloft: the owner is at the Mac right now.)'
+}
+
 function ownerIsWhere(): string {
-  if (ownerAsleep.asleep()) return '(Koloft: the owner is asleep right now.)'
-  return ownerAway()
-    ? '(Koloft: the owner is away from the Mac right now.)'
-    : '(Koloft: the owner is at the Mac right now.)'
+  return OWNER_IS[presence.where()]
 }
 
 function roomOfTab(tabId: string): string | undefined {
@@ -6698,13 +6702,13 @@ function commitSettings(patch: Partial<Settings>): Settings {
   sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
-  if (ownerAsleep.set(s.ownerAsleepSince)) syncAnswerable()
+  presence.asleepSinceIs(s.ownerAsleepSince)
   holdMacAwake(s.keepAwake)
   return s
 }
 
 function holdMacAwake(keepAwake: boolean): void {
-  const asleep = ownerAsleep.asleep()
+  const asleep = presence.asleep()
   applyKeepAwake(keepAwake || asleep)
   setKeepAwakeChecked(keepAwake || asleep, !asleep)
 }

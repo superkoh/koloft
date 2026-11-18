@@ -13,7 +13,7 @@ import {
 } from './helpers/p1'
 import { installCodex, type E2EEnv } from './helpers/env'
 import { fakeCodexLog } from './helpers/codex'
-import { OWNER_ASLEEP_ANSWER } from '../../src/main/ownerAsleep'
+import { OWNER_ASLEEP_ANSWER } from '../../src/plugins/butler/main/ownerAsleep'
 import { OWNER_ASLEEP_FILE, OWNER_ASLEEP_PUSH } from '../../src/main/hooks'
 
 const KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS = 20_000
