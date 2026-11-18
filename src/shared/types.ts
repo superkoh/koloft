@@ -1,5 +1,16 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
+import {
+  DEFAULT_BUTLER_NAME,
+  type ButlerSession,
+  type ButlerSetting
+} from '@plugins/butler/shared/types'
+import type {
+  ConductorSaveResult,
+  DiscordChannel,
+  DiscordSettings,
+  DiscordStatus
+} from '@plugins/discord/shared/types'
 
 export interface ProjectInfo {
   root: string
@@ -400,73 +411,19 @@ export interface AssistSetting {
   rows?: Partial<Record<AssistRowId, AssistPick>>
 }
 
-export interface ButlerSetting {
-  name: string
-  formerNames: string[]
-}
-
-export const DEFAULT_BUTLER_NAME = 'Alfred'
-
-export interface ButlerSession {
-  sessionIds: string[]
-  lastSessionKey?: string
-  knowsTodo?: string[]
-  // CC§3 CODEX§11
-  carried?: OwnPick
-}
-
-export interface DiscordChannel {
-  guildId: string
-  channelId: string
-  name: string
-}
-
-export interface DiscordSettings {
-  userId?: string
-  userName?: string
-  channel?: DiscordChannel
-  lastMessageId?: string
-  category?: DiscordChannel
-  oldThreadsArchived?: true
-  rooms?: SessionRoom[]
-}
-
-export interface SessionRoom {
-  threadId: string
-  keys: string[]
-  name: string
-  lastMessageId?: string
-  putDown?: true
-}
-
-export type DiscordPhase =
-  'off' | 'connecting' | 'connected' | 'token' | 'intents' | 'unreachable' | 'elsewhere'
-
-export interface DiscordStatus {
-  phase: DiscordPhase
-  botName?: string
-  applicationId?: string
-  guilds: DiscordGuild[]
-  appOwner?: DiscordUser
-  failing: Record<string, string>
-  candidate?: { name: string; text: string; at: number }
-}
-
-export interface DiscordGuild {
-  id: string
-  name: string
-  ownerId?: string
-}
-
-export interface DiscordUser {
-  id: string
-  name: string
-}
-
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
-
-export type ConductorSaveResult =
-  { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
+export type { ButlerSession, ButlerSetting } from '@plugins/butler/shared/types'
+export { DEFAULT_BUTLER_NAME } from '@plugins/butler/shared/types'
+export type {
+  ConductorSaveResult,
+  DiscordChannel,
+  DiscordGuild,
+  DiscordPhase,
+  DiscordSettings,
+  DiscordStatus,
+  DiscordUser,
+  SessionRoom
+} from '@plugins/discord/shared/types'
+export { DISCORD_OFF } from '@plugins/discord/shared/types'
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 

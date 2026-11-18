@@ -3,15 +3,15 @@ import {
   HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
-  type ButlerSetting,
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
-import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
-import { isRecord } from './workbenchState'
 import { sanitizeSessionDefaults } from './sessionDefaults'
+import { stringsIn } from './workbenchState'
+import { sanitizeButler, sanitizeButlerSession } from '@plugins/butler/shared/settings'
+import { oldBindingRecords, sanitizeDiscord } from '@plugins/discord/shared/settings'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
@@ -94,11 +94,12 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
-  merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)
-    ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
-    : []
+  merged.gitSuggestionsDismissed = stringsIn(merged.gitSuggestionsDismissed)
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
+  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, [
+    ...(Array.isArray(assistSessions) ? assistSessions : []),
+    ...oldBindingRecords(merged.discord)
+  ])
   merged.discord = sanitizeDiscord(merged.discord)
   const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
@@ -129,15 +130,6 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
       ? merged.hintsSeen
       : []
   return merged
-}
-
-function sanitizeButler(raw: unknown): ButlerSetting {
-  const doc = isRecord(raw) ? raw : {}
-  const former = Array.isArray(doc.formerNames) ? doc.formerNames : []
-  return butlerSetting(
-    butlerName(doc.name),
-    former.filter((n): n is string => typeof n === 'string').map(butlerName)
-  )
 }
 
 function sanitizeTextMap(raw: unknown): Record<string, string> {

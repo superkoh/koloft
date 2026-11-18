@@ -3,7 +3,7 @@ import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
-import { newerSnowflake } from '@shared/conductors'
+import { newerSnowflake } from '@plugins/discord/shared/channels'
 import { safeDownloadName } from '@shared/downloadName'
 import { errorText } from '../agentRequests'
 import {
