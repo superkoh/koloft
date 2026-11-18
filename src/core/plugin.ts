@@ -28,12 +28,18 @@ export interface PluginMoments {
   listens?: readonly string[]
 }
 
+export interface SettingsPage {
+  label: string
+  words: readonly string[]
+}
+
 export interface PluginSettings {
-  page?: string
+  page?: SettingsPage
   keys: readonly string[]
 }
 
-export type UiPlace = 'sidebar-head' | 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item'
+export type UiPlace =
+  'sidebar-head' | 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item' | 'settings-page'
 
 export interface UiEntry {
   place: UiPlace

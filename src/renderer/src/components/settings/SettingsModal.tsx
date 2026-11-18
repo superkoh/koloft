@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentType, type JSX } from 'react'
 import {
   IconAccounts,
   IconAiStart,
@@ -25,10 +25,11 @@ import { NotificationsPane } from './NotificationsPane'
 import { ExtensionsPane } from './ExtensionsPane'
 import { AboutPane } from './AboutPane'
 import { WelcomePane } from './WelcomePane'
-import { DiscordPane } from '@plugins/discord/renderer/DiscordPane'
 import { AssistPane } from './AssistPane'
-import { BsDiscord } from 'react-icons/bs'
 import { SETTINGS_PANES, type SettingsPaneId } from '@shared/paletteFeatures'
+import type { AppPaneId } from '@shared/settingsPanes'
+import { fillsOf, partsAt } from '../../pluginUi'
+import { SETTINGS_PAGE_ICON } from '../../slots'
 import '../../settings.css'
 
 function ClearBrowsingData(): JSX.Element {
@@ -71,21 +72,36 @@ function ClearBrowsingData(): JSX.Element {
   )
 }
 
-const PANE_ICONS: Record<SettingsPaneId, Icon> = {
-  welcome: IconAiStart,
-  sessions: IconTerminal,
-  accounts: IconAccounts,
-  usage: IconUsage,
-  appearance: IconAppearance,
-  shortcuts: IconShortcuts,
-  assist: IconAssist,
-  discord: BsDiscord,
-  notifications: IconNotifications,
-  extensions: IconExtensions,
-  about: IconInfo
+interface PaneParts {
+  Icon: Icon
+  Pane: ComponentType
 }
 
-const PANES = SETTINGS_PANES.map(({ id, label }) => ({ id, label, Icon: PANE_ICONS[id] }))
+const APP_PANES: Record<AppPaneId, PaneParts> = {
+  welcome: { Icon: IconAiStart, Pane: WelcomePane },
+  sessions: { Icon: IconTerminal, Pane: SessionsPane },
+  accounts: { Icon: IconAccounts, Pane: AccountsPane },
+  usage: { Icon: IconUsage, Pane: UsagePane },
+  appearance: { Icon: IconAppearance, Pane: AppearancePane },
+  shortcuts: { Icon: IconShortcuts, Pane: ShortcutsPane },
+  assist: { Icon: IconAssist, Pane: AssistPane },
+  notifications: { Icon: IconNotifications, Pane: NotificationsPane },
+  extensions: { Icon: IconExtensions, Pane: ExtensionsPane },
+  about: { Icon: IconInfo, Pane: AboutPane }
+}
+
+function pluginPage(id: string): PaneParts {
+  const Pane = partsAt('settings-page').find((p) => p.id === id)!.Part
+  const { Icon } = fillsOf(SETTINGS_PAGE_ICON).find((f) => f.page === id)!
+  return { Icon, Pane }
+}
+
+const settingsPanes = (): (PaneParts & { id: SettingsPaneId; label: string })[] =>
+  SETTINGS_PANES.map(({ id, label }) => ({
+    id,
+    label,
+    ...(Object.hasOwn(APP_PANES, id) ? APP_PANES[id as AppPaneId] : pluginPage(id))
+  }))
 
 export function SettingsModal(): JSX.Element | null {
   const open = useStore((s) => s.settingsOpen)
@@ -149,6 +165,9 @@ export function SettingsModal(): JSX.Element | null {
     }
   }
 
+  const PANES = settingsPanes()
+  const OpenPane = PANES.find((p) => p.id === pane)?.Pane
+
   const navKey = (e: React.KeyboardEvent, i: number): void => {
     const move = (next: number): void => {
       const target = PANES[(next + PANES.length) % PANES.length]
@@ -200,19 +219,7 @@ export function SettingsModal(): JSX.Element | null {
           <ClearBrowsingData />
         </nav>
         <div className="set-main">
-          <EscScope.Provider value={registerEsc}>
-            {pane === 'welcome' && <WelcomePane />}
-            {pane === 'sessions' && <SessionsPane />}
-            {pane === 'accounts' && <AccountsPane />}
-            {pane === 'usage' && <UsagePane />}
-            {pane === 'appearance' && <AppearancePane />}
-            {pane === 'shortcuts' && <ShortcutsPane />}
-            {pane === 'notifications' && <NotificationsPane />}
-            {pane === 'assist' && <AssistPane />}
-            {pane === 'discord' && <DiscordPane />}
-            {pane === 'extensions' && <ExtensionsPane />}
-            {pane === 'about' && <AboutPane />}
-          </EscScope.Provider>
+          <EscScope.Provider value={registerEsc}>{OpenPane && <OpenPane />}</EscScope.Provider>
         </div>
         <button
           className="set-x"
