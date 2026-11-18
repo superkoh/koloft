@@ -1,6 +1,5 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
-import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
 
 export interface ProjectInfo {
   root: string
@@ -1213,18 +1212,6 @@ export interface CoreApi {
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
-  inbox: {
-    list(): Promise<InboxSnapshot>
-    onChanged(cb: (snapshot: InboxSnapshot) => void): () => void
-    press(cardId: string, actionId: string, answers: InboxAnswers): void
-    confirm(cardId: string): void
-    undo(cardId: string): void
-    retry(cardId: string): void
-    dismiss(cardId: string): void
-    level(cardId: string, level: InboxLevel | null): void
-    top(cardId: string): void
-    clearNotes(): void
-  }
   secret: {
     list(): Promise<SecretAskView[]>
     onAsks(cb: (asks: SecretAskView[]) => void): () => void
@@ -1350,16 +1337,9 @@ export interface CoreApi {
   notes: {
     path(ws: string): Promise<string | null>
   }
-  github: {
-    info(root: string, force?: boolean): Promise<GithubInfo | null>
-    target(root: string, what: GithubTarget): Promise<string | null>
-    onInfo(cb: (root: string, info: GithubInfo) => void): () => void
-    checks(root: string, pr: number): Promise<PrChecks>
-    failingChecksText(root: string, pr: number): Promise<string | null>
+  git: {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
-    openItems(root: string): Promise<GithubOpenItems>
-    prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
   }
   workspace: {
     pickFolder(): Promise<string | null>

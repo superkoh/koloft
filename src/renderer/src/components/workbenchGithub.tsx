@@ -303,7 +303,7 @@ export function GithubMenu({
         role="menuitem"
         onClick={() => {
           onClose()
-          if (treeRoot) void gh.gitStep(window.api.github.push(treeRoot), 'Pushed.')
+          if (treeRoot) void gh.gitStep(window.api.git.push(treeRoot), 'Pushed.')
         }}
       >
         <IconPush size={14} />
@@ -316,7 +316,7 @@ export function GithubMenu({
           onClick={() => {
             onClose()
             if (!treeRoot) return
-            void gh.gitStep(window.api.github.push(treeRoot), 'Pushed.').then((ok) => {
+            void gh.gitStep(window.api.git.push(treeRoot), 'Pushed.').then((ok) => {
               if (ok) onOpen('compare')
             })
           }}
