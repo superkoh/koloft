@@ -101,18 +101,6 @@ export const CH = {
     channels: 'discord:channels',
     setUpWithButler: 'discord:setUpWithButler'
   },
-  inbox: {
-    changed: 'inbox:changed',
-    list: 'inbox:list',
-    press: 'inbox:press',
-    confirm: 'inbox:confirm',
-    undo: 'inbox:undo',
-    retry: 'inbox:retry',
-    dismiss: 'inbox:dismiss',
-    level: 'inbox:level',
-    top: 'inbox:top',
-    clearNotes: 'inbox:clear-notes'
-  },
   secret: {
     asks: 'secret:asks',
     list: 'secret:list',
@@ -212,15 +200,9 @@ export const CH = {
   notes: {
     path: 'notes:path'
   },
-  github: {
-    info: 'github:info',
-    target: 'github:target',
-    checks: 'github:checks',
-    failingChecksText: 'github:failing-checks-text',
+  git: {
     commit: 'github:commit',
-    push: 'github:push',
-    openItems: 'github:open-items',
-    prWorktree: 'github:pr-worktree'
+    push: 'github:push'
   },
   workspace: {
     pickFolder: 'workspace:pickFolder',

@@ -1,4 +1,4 @@
-import { useState, type JSX, type MouseEvent } from 'react'
+import { useContext, useMemo, useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAssist, IconClose } from '@renderer/icons'
 import { butlerName, butlerTitle, renamedButler } from '../shared/names'
@@ -8,28 +8,37 @@ import { butlerStart } from '@shared/butlerStart'
 import { settingsPaneName } from '@shared/paletteFeatures'
 import { useInstalledBackends } from '@renderer/useInstalledBackends'
 import { useStore } from '@renderer/store'
-import { rowStateClass, statusWithSecrets } from '@renderer/sessionRows'
+import { rowStateClass, shownRows, statusWithSecrets } from '@renderer/sessionRows'
 import { assistInputs } from '@renderer/assistInputs'
 import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from '@renderer/components/menuPlace'
-import type { ButlerRowEntry } from '../api'
+import { SessionRowsOfContext } from '@renderer/components/sidebarRows'
+import { fillsOf } from '@renderer/pluginUi'
+import { ROW_EXTRAS } from '@renderer/slots'
+import { BUTLER_ROW_PART } from '../plugin'
 import { butlerSetUp, butlerTabOf } from './butlerTabs'
+import { openButler, renameButler, useButler } from './state'
 
-export async function openButler(fresh = false): Promise<void> {
-  const error = await useStore.getState().openButler(fresh)
-  if (error) useStore.getState().showToast(error)
+function useButlerFolderRows(): JSX.Element[] | null {
+  const rowsOf = useContext(SessionRowsOfContext)
+  const workspaceRows = useStore((s) => s.workspaceRows)
+  const butlerWorkspace = useStore((s) => s.butlerWorkspace)
+  const tabs = useStore((s) => s.tabs)
+  const shown = useMemo(
+    () => shownRows({ workspaceRows, butlerWorkspace, tabs }).butlerWorkspace,
+    [workspaceRows, butlerWorkspace, tabs]
+  )
+  return shown && rowsOf(shown)
 }
 
-export function ButlerRow({
-  children,
-  menu: moreMenu,
-  where
-}: {
-  children: JSX.Element[] | null
-  menu: readonly ButlerRowEntry[]
-  where: string
-}): JSX.Element {
+export function ButlerRow(): JSX.Element {
+  const fills = fillsOf(ROW_EXTRAS)
+    .filter((f) => f.row === BUTLER_ROW_PART)
+    .map((f) => f.useExtras())
+  const moreMenu = fills.flatMap((f) => f.menu)
+  const where = fills.map((f) => f.where).join('')
+  const children = useButlerFolderRows()
   const setUp = useStore(butlerSetUp)
   const backend = useStore((s) => assistRowBackend('butler', assistInputs(s)))
   const name = useStore((s) => s.settings.butler.name)
@@ -39,9 +48,8 @@ export function ButlerRow({
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
   const secretAsks = useStore((s) => s.secretAsks)
-  const opened = useStore((s) => s.butlerTab)
-  const setAssistAsked = useStore((s) => s.setAssistAsked)
-  const setRenameButler = useStore((s) => s.setRenameButler)
+  const opened = useButler((s) => s.openedTab)
+  const askToSetUp = (): void => useButler.setState({ setUpAsked: true })
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   useDismissOnOutside(!!menu, setMenu)
 
@@ -67,7 +75,7 @@ export function ButlerRow({
 
   const menuItems = [
     item('Open', () => void openButler(), 'mi', '↩'),
-    item('Rename…', () => setRenameButler(true)),
+    item('Rename…', () => renameButler(true)),
     item('Start a fresh conversation', () => void openButler(true)),
     <div key="sep" className="sep" />,
     ...moreMenu.map((e) => item(e.label, e.run, e.danger ? 'mi danger' : 'mi'))
@@ -101,7 +109,7 @@ export function ButlerRow({
   return (
     <div className="ws-tabs isl-butler">
       {!setUp ? (
-        <div className="ws-tab cold" onClick={() => setAssistAsked(true)}>
+        <div className="ws-tab cold" onClick={askToSetUp}>
           <div className="ws-tab-main">{title}</div>
           <div className="ws-tab-sub">
             <span>Not set up — click to start</span>
@@ -172,16 +180,15 @@ function WhyButlerCannotStart(): JSX.Element | null {
 }
 
 export function RenameButlerDialog(): JSX.Element | null {
-  const open = useStore((s) => s.renameButler)
+  const open = useButler((s) => s.renaming)
   return open ? <RenameForm /> : null
 }
 
 function RenameForm(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
-  const setRenameButler = useStore((s) => s.setRenameButler)
   const [typed, setTyped] = useState(butler.name)
   const name = butlerName(typed)
-  const close = (): void => setRenameButler(false)
+  const close = (): void => renameButler(false)
   const submit = (): void => {
     updateSettings({ butler: renamedButler(butler, name) })
     close()

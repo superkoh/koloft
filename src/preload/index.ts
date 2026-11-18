@@ -17,7 +17,6 @@ import type {
   BrowserOpenRequest,
   EditFingerprint,
   ExtensionPermissionRequest,
-  GithubInfo,
   CreateTabOptions,
   TerminalData,
   TerminalExit,
@@ -47,7 +46,6 @@ import type {
   DirChanges
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
-import type { InboxSnapshot } from '@shared/inbox'
 import type { PreloadIpc } from '@core/ipc'
 import { pluginBridges, type KoloftApi } from '@plugins/bridges'
 import { TerminalDataSinks } from './terminalDataSinks'
@@ -57,6 +55,7 @@ ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.deli
 
 const pluginIpc: PreloadIpc = {
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  send: (channel, ...args) => ipcRenderer.send(channel, ...args),
   listen: (channel, listener) => {
     const handler = (_e: unknown, ...args: Parameters<typeof listener>): void => listener(...args)
     ipcRenderer.on(channel, handler)
@@ -228,23 +227,6 @@ const api: KoloftApi = {
     pair: (isMe) => ipcRenderer.invoke(CH.discord.pair, isMe),
     channels: () => ipcRenderer.invoke(CH.discord.channels),
     setUpWithButler: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithButler, ownerWords)
-  },
-  inbox: {
-    list: () => ipcRenderer.invoke(CH.inbox.list),
-    onChanged: (cb) => {
-      const handler = (_e: unknown, snapshot: InboxSnapshot): void => cb(snapshot)
-      ipcRenderer.on(CH.inbox.changed, handler)
-      return () => ipcRenderer.removeListener(CH.inbox.changed, handler)
-    },
-    press: (cardId, actionId, answers) =>
-      ipcRenderer.send(CH.inbox.press, cardId, actionId, answers),
-    confirm: (cardId) => ipcRenderer.send(CH.inbox.confirm, cardId),
-    undo: (cardId) => ipcRenderer.send(CH.inbox.undo, cardId),
-    retry: (cardId) => ipcRenderer.send(CH.inbox.retry, cardId),
-    dismiss: (cardId) => ipcRenderer.send(CH.inbox.dismiss, cardId),
-    level: (cardId, level) => ipcRenderer.send(CH.inbox.level, cardId, level),
-    top: (cardId) => ipcRenderer.send(CH.inbox.top, cardId),
-    clearNotes: () => ipcRenderer.send(CH.inbox.clearNotes)
   },
   secret: {
     list: () => ipcRenderer.invoke(CH.secret.list),
@@ -442,20 +424,9 @@ const api: KoloftApi = {
   notes: {
     path: (ws) => ipcRenderer.invoke(CH.notes.path, ws)
   },
-  github: {
-    info: (root, force) => ipcRenderer.invoke(CH.github.info, root, force),
-    target: (root, what) => ipcRenderer.invoke(CH.github.target, root, what),
-    onInfo: (cb) => {
-      const handler = (_e: unknown, root: string, info: GithubInfo): void => cb(root, info)
-      ipcRenderer.on(CH.github.info, handler)
-      return () => ipcRenderer.removeListener(CH.github.info, handler)
-    },
-    checks: (root, pr) => ipcRenderer.invoke(CH.github.checks, root, pr),
-    failingChecksText: (root, pr) => ipcRenderer.invoke(CH.github.failingChecksText, root, pr),
-    commit: (root, message) => ipcRenderer.invoke(CH.github.commit, root, message),
-    push: (root) => ipcRenderer.invoke(CH.github.push, root),
-    openItems: (root) => ipcRenderer.invoke(CH.github.openItems, root),
-    prWorktree: (root, pr, branch) => ipcRenderer.invoke(CH.github.prWorktree, root, pr, branch)
+  git: {
+    commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),
+    push: (root) => ipcRenderer.invoke(CH.git.push, root)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke(CH.workspace.pickFolder),
