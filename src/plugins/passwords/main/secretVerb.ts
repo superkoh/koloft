@@ -1,6 +1,8 @@
 import { loopbackHttp, urlOrNull } from '@shared/browserRoute'
 import type { SecretAskShape } from '@shared/types'
 import type { WebPage } from '@core/webPage'
+import type { Commands } from '@core/commands'
+import { SECRET_VERB } from './sudoShim'
 import {
   answered,
   EXIT_USAGE,
@@ -204,6 +206,10 @@ async function signInEnd(d: SecretVerbDeps, at: Asker, signIn: string): Promise<
   if (!url) return refused(NOT_LOOPBACK)
   const status = await d.open(machine, url)
   return answered(`Koloft opened the address on ${where}; it answered ${status}.`)
+}
+
+export function registerSecretCommand(commands: Commands, d: SecretVerbDeps): void {
+  commands.register({ [SECRET_VERB]: secretVerb(d) })
 }
 
 export function secretVerb(d: SecretVerbDeps): AgentVerb {

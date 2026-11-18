@@ -9,6 +9,7 @@ export const plugin: PluginManifest = {
   name: 'GitHub',
   mandatory: false,
   needs: ['sessions'],
+  commands: [{ verb: 'gh' }],
   text: [...TEXT, ...SKILL_TEXT],
   channels: Object.values(CHANNELS)
 }
