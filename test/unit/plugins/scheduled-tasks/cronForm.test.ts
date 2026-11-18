@@ -11,7 +11,7 @@ import {
   suggest,
   validate,
   type JobFields
-} from '../../src/renderer/src/cronForm'
+} from '../../../../src/plugins/scheduled-tasks/renderer/cronForm'
 
 const f = (over: Partial<JobFields> = {}): JobFields => ({ ...emptyFields(), ...over })
 

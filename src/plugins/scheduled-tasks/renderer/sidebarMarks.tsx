@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { IconScheduled } from '@renderer/icons'
-import { forecastFor, type Forecast } from '@renderer/cronForm'
+import { forecastFor, type Forecast } from './cronForm'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { capabilitiesFor } from '@shared/sessionBackend'

@@ -13,7 +13,7 @@ import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronN
 import { nextDue } from '@shared/cronHistory'
 import { namedModel, takenEffort } from '@shared/cronModels'
 import { localDayKey } from '@shared/usageFormat'
-import { modelValue } from './modelPick'
+import { modelValue } from '@renderer/modelPick'
 import {
   describeWhen,
   isStepKind,
