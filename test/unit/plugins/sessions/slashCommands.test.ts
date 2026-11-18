@@ -53,7 +53,7 @@ function setup(over: Partial<SlashDeps> = {}) {
   }
 }
 
-const child = { name: 'fix-login', tabId: TAB, butler: false }
+const child = { name: 'fix-login', tabId: TAB, overseer: false }
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -383,7 +383,7 @@ describe('a slash command typed into a session', () => {
 
   it('in the butler itself, a reply is not posted again (its replies already reach the channel), nor the text of the command it ran', async () => {
     const { slash, posts, setStatus } = setup()
-    await slash.typeWhenIdle({ ...child, butler: true }, '/review', CALLER)
+    await slash.typeWhenIdle({ ...child, overseer: true }, '/review', CALLER)
     slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
     setStatus('working')
     slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })

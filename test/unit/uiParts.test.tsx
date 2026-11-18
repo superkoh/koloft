@@ -7,14 +7,23 @@ import { PLUGIN_FORMAT_VERSION } from '@core/plugin'
 import { fill, placeUi, slot, type PluginUi } from '@core/ui'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
+import { PLUGIN_PALETTE_ACTIONS } from '@shared/paletteFeatures'
+import { PLUGIN_ROUTE_KINDS } from '@shared/sessionRoute'
 import {
+  PALETTE_HAND_OFF,
+  PALETTE_ROUTE,
+  PALETTE_RUN,
   ROW_EXTRAS,
   ROW_SET_UP,
   SETTINGS_PAGE_ICON,
+  type PaletteRun,
   type RowExtrasFill,
   type RowSetUpFill,
   type SettingsPageIcon
 } from '../../src/renderer/src/slots'
+
+const listedAt = (place: UiEntry['place']): string[] =>
+  PLUGINS.flatMap((p) => (p.ui ?? []).filter((e) => e.place === place).map((e) => e.id))
 
 const manifest = (id: string, ui: UiEntry[] = []): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -80,9 +89,7 @@ describe('UI parts a plugin registers', () => {
   })
 
   it('every row a plugin adds menu entries and a line to is a sidebar row some plugin lists', () => {
-    const rows = PLUGINS.flatMap((p) =>
-      (p.ui ?? []).filter((e) => e.place === 'sidebar-row').map((e) => e.id)
-    )
+    const rows = listedAt('sidebar-row')
     const filled = Object.values(PLUGIN_UIS).flatMap((ui) =>
       (ui.fills ?? [])
         .filter((f) => f.slot === ROW_EXTRAS)
@@ -99,9 +106,7 @@ describe('UI parts a plugin registers', () => {
   })
 
   it('every settings page a plugin lists has exactly one icon, and every icon is for a settings page some plugin lists', () => {
-    const pages = PLUGINS.flatMap((p) =>
-      (p.ui ?? []).filter((e) => e.place === 'settings-page').map((e) => e.id)
-    )
+    const pages = listedAt('settings-page')
     const iconed = Object.values(PLUGIN_UIS).flatMap((ui) =>
       (ui.fills ?? [])
         .filter((f) => f.slot === SETTINGS_PAGE_ICON)
@@ -119,7 +124,29 @@ describe('UI parts a plugin registers', () => {
     expect(() => placeUi(PLUGINS, PLUGIN_UIS)).not.toThrow()
     for (const p of PLUGINS.filter((q) => q.ui?.length))
       expect(Object.keys(PLUGIN_UIS[p.id]?.parts ?? {}).sort(), p.id).toEqual(
-        p.ui!.map((e) => e.id).sort()
+        p
+          .ui!.filter((e) => e.place !== 'palette-item')
+          .map((e) => e.id)
+          .sort()
       )
+  })
+
+  it('every ⌘P item a plugin runs is listed by its manifest, is one the palette leaves to plugins, and has exactly one runner', () => {
+    const run = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? []).filter((f) => f.slot === PALETTE_RUN).map((f) => (f.value as PaletteRun).key)
+    )
+    expect(run.sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+    expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+  })
+
+  it('exactly one plugin takes the ⌘P words core cannot route itself, and each route kind core leaves to plugins has exactly one taker', () => {
+    const placed = placeUi(PLUGINS, PLUGIN_UIS)
+    expect(placed.fillsOf(PALETTE_HAND_OFF)).toHaveLength(1)
+    expect(
+      placed
+        .fillsOf(PALETTE_ROUTE)
+        .map((r) => r.kind)
+        .sort()
+    ).toEqual([...PLUGIN_ROUTE_KINDS].sort())
   })
 })

@@ -112,7 +112,8 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
-import { OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -123,12 +124,10 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { setUpDiscordWithButler } from '@plugins/discord/renderer/setUpWithButler'
 import { someAccountCanRunAssist } from './assistInputs'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { PastSessions } from './components/PastSessions'
-import { CronJobsDialog } from './components/CronJobsDialog'
 import { SessionDefaultsDialog } from './components/SessionDefaultsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf, isRemoteKey } from '@shared/remoteKey'
@@ -156,7 +155,7 @@ import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
 import {
   PALETTE_FEATURES,
-  type PaletteActionKey,
+  type CorePaletteAction,
   type PaletteFeature
 } from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
@@ -326,7 +325,6 @@ export default function App(): JSX.Element {
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
-  const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
@@ -429,10 +427,6 @@ export default function App(): JSX.Element {
   const newWorktreeSessionIn = useCallback(
     (path: string) => requestNew('worktree', path),
     [requestNew]
-  )
-  const openScheduledJobs = useCallback(
-    (path: string, jobId?: string) => setCronWs({ path, jobId }),
-    []
   )
 
   const startNow = useCallback(
@@ -1188,13 +1182,14 @@ export default function App(): JSX.Element {
       })
       return
     }
-    if (route?.kind === 'discord') {
-      void setUpDiscordWithButler(prompt).then((error) => {
+    const pluginRoute = route && fillsOf(PALETTE_ROUTE).find((r) => r.kind === route.kind)
+    if (pluginRoute) {
+      void pluginRoute.run(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
     }
-    const toButler = (title: string, about: string | null): void => {
+    const handOff = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
       const request = {
         words: prompt,
@@ -1204,7 +1199,8 @@ export default function App(): JSX.Element {
         about: about ?? undefined,
         at
       }
-      void window.api.conductors.fromPalette(request).then((r) => {
+      const [toPlugin] = fillsOf(PALETTE_HAND_OFF)
+      void toPlugin(request).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew(
@@ -1226,11 +1222,11 @@ export default function App(): JSX.Element {
         .find((w) => w.workspace.path === route.path)
         ?.rows.find((r) => r.id === route.id)
       if (row) openSessionRow(row, route.path)
-      else toButler(route.title, null)
+      else handOff(route.title, null)
       return
     }
     if (route?.kind === 'assist') {
-      toButler(route.title, route.path)
+      handOff(route.title, route.path)
       return
     }
     if (!route && !someAccountCanRunAssist(useStore.getState())) {
@@ -1241,7 +1237,7 @@ export default function App(): JSX.Element {
       route?.kind === 'workspace' &&
       workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
     if (route?.kind !== 'workspace' || !ws) {
-      toButler(route?.title ?? '', null)
+      handOff(route?.title ?? '', null)
       return
     }
     const pending: PendingStart = {
@@ -1267,7 +1263,7 @@ export default function App(): JSX.Element {
     const hasHistory = workspaceRows.some(
       (w) => w.workspace.path === currentWs && w.workspace.hasHistory
     )
-    const run: Record<PaletteActionKey, () => void> = {
+    const run: Record<CorePaletteAction, () => void> = {
       'new-session': () => globalNew('main'),
       'new-worktree-session': () => globalNew('worktree'),
       'add-workspace': () => void addWorkspace(),
@@ -1276,20 +1272,26 @@ export default function App(): JSX.Element {
       'toggle-workbench': toggleWorkbench,
       'toggle-sidebar': toggleSidebar,
       'restore-session': () => setRestoreWs(currentWs),
-      'scheduled-jobs': () => currentWs && setCronWs({ path: currentWs }),
       'open-settings': () => setSettingsOpen(true),
       'check-update': () => useStore.getState().openUpdateCheck()
     }
     const disabled: Partial<Record<PaletteFeature['key'], boolean>> = {
-      'restore-session': !hasHistory,
-      'scheduled-jobs': !currentWs
+      'restore-session': !hasHistory
     }
-    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => ({
-      ...f,
-      kind: 'action',
-      disabled: disabled[f.key],
-      run: pane ? () => useStore.getState().openSettingsPane(pane) : run[f.key as PaletteActionKey]
-    }))
+    const fromPlugins = fillsOf(PALETTE_RUN)
+    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => {
+      const plugin = fromPlugins.find((a) => a.key === f.key)
+      return {
+        ...f,
+        kind: 'action',
+        disabled: plugin ? plugin.disabled(currentWs) : disabled[f.key],
+        run: pane
+          ? () => useStore.getState().openSettingsPane(pane)
+          : plugin
+            ? () => plugin.run(currentWs)
+            : run[f.key as CorePaletteAction]
+      }
+    })
   }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
@@ -1551,7 +1553,7 @@ export default function App(): JSX.Element {
           className={'toast' + (toastReveal ? ' link' : '')}
           onClick={() => {
             if (!toastReveal) return
-            window.api.fs.reveal(toastReveal)
+            window.api.os.reveal(toastReveal)
             dismissToast()
           }}
         >
@@ -1624,7 +1626,6 @@ export default function App(): JSX.Element {
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onSessionDefaults={setDefaultsWs}
-            onScheduledJobs={openScheduledJobs}
           />
           {updateOffer && (
             <button
@@ -2045,14 +2046,6 @@ export default function App(): JSX.Element {
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}
               onClose={() => setRemoteDialog(false)}
-            />
-          )}
-          {cronWs && (
-            <CronJobsDialog
-              key={cronWs.path}
-              wsPath={cronWs.path}
-              initialJobId={cronWs.jobId}
-              onClose={() => setCronWs(null)}
             />
           )}
           {defaultsWs && (

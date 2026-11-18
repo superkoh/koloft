@@ -7,12 +7,11 @@ import {
   emptyFields,
   fieldsToSchedule,
   forecastFor,
-  modelValue,
   scheduleToFields,
   suggest,
   validate,
   type JobFields
-} from '../../src/renderer/src/cronForm'
+} from '../../../../src/plugins/scheduled-tasks/renderer/cronForm'
 
 const f = (over: Partial<JobFields> = {}): JobFields => ({ ...emptyFields(), ...over })
 
@@ -240,16 +239,6 @@ describe('validate messages (§7.5)', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.input.task).toBe('first line\nsecond line')
-  })
-})
-
-describe('modelValue', () => {
-  it('maps the chips to what the launch line carries', () => {
-    expect(modelValue(f({ model: '' }))).toBeUndefined()
-    expect(modelValue(f({ model: 'fable' }))).toBe('fable')
-    expect(modelValue(f({ model: 'opus' }))).toBe('opus')
-    expect(modelValue(f({ model: 'sonnet' }))).toBe('sonnet')
-    expect(modelValue(f({ model: 'other', modelOther: '  claude-opus-5  ' }))).toBe('claude-opus-5')
   })
 })
 
