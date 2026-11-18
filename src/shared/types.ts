@@ -1152,13 +1152,6 @@ export interface CoreApi {
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
-  secret: {
-    list(): Promise<SecretAskView[]>
-    onAsks(cb: (asks: SecretAskView[]) => void): () => void
-    answer(id: string, value: string): void
-    done(id: string): void
-    decline(id: string): void
-  }
   attention: {
     list(): Promise<AttentionEvent[]>
     activeTab(id: string | null): void
