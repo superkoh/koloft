@@ -37,39 +37,12 @@ export const CH = {
     killedByMain: 'tab:killedByMain',
     slept: 'tab:slept'
   },
-  sessions: {
-    backends: 'sessions:backends',
-    installTool: 'sessions:installTool',
-    toolsChanged: 'sessions:toolsChanged',
-    update: 'sessions:update',
-    activity: 'sessions:activity',
-    list: 'sessions:list',
-    resumePlan: 'sessions:resumePlan',
-    resume: 'sessions:resume',
-    archive: 'sessions:archive',
-    setResident: 'sessions:setResident',
-    forceClose: 'sessions:forceClose',
-    transcriptExists: 'sessions:transcriptExists',
-    noAccountToResume: 'sessions:noAccountToResume',
-    leftovers: 'sessions:leftovers',
-    stopLeftover: 'sessions:stopLeftover',
-    ports: 'sessions:ports',
-    search: 'sessions:search',
-    searchHits: 'sessions:search-hits'
-  },
-  session: {
-    relocated: 'session:relocated'
-  },
   usage: {
     read: 'usage:read',
     changed: 'usage:changed'
   },
   toast: {
     show: 'toast:show'
-  },
-  sessionDefaults: {
-    read: 'sessionDefaults:read',
-    write: 'sessionDefaults:write'
   },
   machine: {
     state: 'machine:state',
@@ -78,12 +51,6 @@ export const CH = {
   },
   palette: {
     savePicture: 'palette:savePicture'
-  },
-  attention: {
-    list: 'attention:list',
-    activeTab: 'attention:active-tab',
-    activateTab: 'attention:activate-tab',
-    changed: 'attention:changed'
   },
   browser: {
     guestLimit: 'browser:guest-limit',

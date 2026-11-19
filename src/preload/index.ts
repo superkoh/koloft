@@ -23,13 +23,9 @@ import type {
   ScreenRequest,
   ScreenSize,
   TerminalProcessTitle,
-  LeftoverProcess,
-  SessionInfo,
-  SessionSearchHits,
   SpawnedTab,
   UsageRead,
   MachineState,
-  AttentionEvent,
   AccountView,
   GitAccountView,
   GitLoginProgress,
@@ -129,59 +125,12 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.tab.slept, handler)
     }
   },
-  sessions: {
-    backends: (recheck) => ipcRenderer.invoke(CH.sessions.backends, recheck === true),
-    installTool: (backend) => ipcRenderer.invoke(CH.sessions.installTool, backend),
-    onToolsChanged: (cb) => {
-      const handler = (): void => cb()
-      ipcRenderer.on(CH.sessions.toolsChanged, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.toolsChanged, handler)
-    },
-    onUpdate: (cb) => {
-      const handler = (_e: unknown, s: SessionInfo[]): void => cb(s)
-      ipcRenderer.on(CH.sessions.update, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.update, handler)
-    },
-    onRelocated: (cb) => {
-      const handler = (_e: unknown, x: { tabId: string; dir: string }): void => cb(x)
-      ipcRenderer.on(CH.session.relocated, handler)
-      return () => ipcRenderer.removeListener(CH.session.relocated, handler)
-    },
-    noteActivity: (tabId) => ipcRenderer.send(CH.sessions.activity, tabId),
-    list: () => ipcRenderer.invoke(CH.sessions.list),
-    resumePlan: (id) => ipcRenderer.invoke(CH.sessions.resumePlan, id),
-    resume: (req) => ipcRenderer.invoke(CH.sessions.resume, req),
-    archive: (id) => ipcRenderer.invoke(CH.sessions.archive, id),
-    setResident: (id, on) => ipcRenderer.send(CH.sessions.setResident, id, on),
-    forceClose: (id) => ipcRenderer.invoke(CH.sessions.forceClose, id),
-    transcriptExists: (id) => ipcRenderer.invoke(CH.sessions.transcriptExists, id),
-    noAccountToResume: (id) => ipcRenderer.invoke(CH.sessions.noAccountToResume, id),
-    leftovers: () => ipcRenderer.invoke(CH.sessions.leftovers),
-    onLeftovers: (cb) => {
-      const handler = (_e: unknown, l: Record<string, LeftoverProcess[]>): void => cb(l)
-      ipcRenderer.on(CH.sessions.leftovers, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.leftovers, handler)
-    },
-    stopLeftover: (sessionId, pid) => ipcRenderer.invoke(CH.sessions.stopLeftover, sessionId, pid),
-    ports: (tabId) => ipcRenderer.invoke(CH.sessions.ports, tabId),
-    search: (searchId, term) => ipcRenderer.send(CH.sessions.search, searchId, term),
-    onSearchHits: (cb) => {
-      const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
-      ipcRenderer.on(CH.sessions.searchHits, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.searchHits, handler)
-    }
-  },
   toast: {
     onShow: (cb) => {
       const handler = (_e: unknown, text: string): void => cb(text)
       ipcRenderer.on(CH.toast.show, handler)
       return () => ipcRenderer.removeListener(CH.toast.show, handler)
     }
-  },
-  sessionDefaults: {
-    read: (workspacePath) => ipcRenderer.invoke(CH.sessionDefaults.read, workspacePath),
-    write: (workspacePath, defaults) =>
-      ipcRenderer.invoke(CH.sessionDefaults.write, workspacePath, defaults)
   },
   machine: {
     onState: (cb) => {
@@ -194,20 +143,6 @@ const api: KoloftApi = {
   },
   palette: {
     savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
-  },
-  attention: {
-    list: () => ipcRenderer.invoke(CH.attention.list),
-    activeTab: (id) => ipcRenderer.send(CH.attention.activeTab, id),
-    onActivateTab: (cb) => {
-      const handler = (_e: unknown, p: { tabId: string }): void => cb(p.tabId)
-      ipcRenderer.on(CH.attention.activateTab, handler)
-      return () => ipcRenderer.removeListener(CH.attention.activateTab, handler)
-    },
-    onChanged: (cb) => {
-      const handler = (_e: unknown, pending: AttentionEvent[]): void => cb(pending)
-      ipcRenderer.on(CH.attention.changed, handler)
-      return () => ipcRenderer.removeListener(CH.attention.changed, handler)
-    }
   },
   browserGuestLimit: ipcRenderer.sendSync(CH.browser.guestLimit) as number,
   sessionScreenAtLoad: ipcRenderer.sendSync(CH.terminal.sessionScreen) as ScreenSize | null,

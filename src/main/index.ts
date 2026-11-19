@@ -457,14 +457,12 @@ import type {
   ConductorSaveResult,
   ProbeErrorKind,
   LeftoverProcess,
-  ResumePlan,
   ProjectInfo,
   SessionInfo,
   BackendAvailability,
   AttentionEvent,
   OsOutletsSeenByTests,
   AttentionSubject,
-  SessionResumeRequest,
   SessionRow,
   WorkspaceRows,
   SearchSnippet,
@@ -494,7 +492,7 @@ import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/b
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
-import type { OwnPick, SessionDefaultsRead } from '@shared/types'
+import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import { DiscordBinding } from './discord/binding'
 import { discordApiUrl, DiscordLink } from './discord/link'
@@ -668,6 +666,22 @@ import {
   writeDocsPlugin
 } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
+import {
+  registerChannels as registerSessionsChannels,
+  pushes as sessionsPushes
+} from '@plugins/sessions/main/channels'
+
+const pluginIpc: MainIpc = {
+  handle: (channel, handler) =>
+    ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
+  on: (channel, listener) =>
+    ipcMain.on(channel, (_e, ...args) => listener(...(args as Parameters<typeof listener>))),
+  push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
+}
+const pushInbox = pushInboxChanged(pluginIpc)
+const pushOpenRequest = pushOpenFile(pluginIpc)
+const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
+const pushToSessions = sessionsPushes(pluginIpc)
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -738,7 +752,7 @@ const readerDocs = new ReaderDocs({
   assist: (job) => assist(job),
   session: sessionOfTab,
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
-  changed: () => sendToRenderer(CH.sessions.update, onSessionsChanged())
+  changed: () => pushToSessions.sessions(onSessionsChanged())
 })
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
@@ -801,8 +815,7 @@ sessionBackends.askingOf = (tabId) => {
   return ask && claudeAskLine(ask)
 }
 function showAskOnItsRow(tabId: string): void {
-  if (tracker.statusOf(tabId) === 'approval')
-    sendToRenderer(CH.sessions.update, onSessionsChanged())
+  if (tracker.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
@@ -926,7 +939,7 @@ function refreshLeftovers(
       await stopLeftoversOfClosedSessions(next)
       const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
       leftovers = next
-      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+      if (changed) pushToSessions.leftovers(next)
     })
     .catch(() => undefined)
   return leftoverScans
@@ -970,7 +983,7 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
 const attention = new AttentionTracker((pending, event) => {
   if (!quitCommitted) saveAttention(pending)
   updateDockBadge(pending)
-  sendToRenderer(CH.attention.changed, pending)
+  pushToSessions.attention(pending)
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
   awayDigest?.marked()
@@ -1284,7 +1297,7 @@ function activateTabFromNotification(tabId: string): void {
     showMainWindow(win)
     win.focus()
     app.focus({ steal: true })
-    sendToRenderer(CH.attention.activateTab, { tabId })
+    pushToSessions.activateTab(tabId)
     return
   }
   createWindow()
@@ -1403,17 +1416,6 @@ function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
     return false
   }
 }
-
-const pluginIpc: MainIpc = {
-  handle: (channel, handler) =>
-    ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
-  on: (channel, listener) =>
-    ipcMain.on(channel, (_e, ...args) => listener(...(args as Parameters<typeof listener>))),
-  push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
-}
-const pushInbox = pushInboxChanged(pluginIpc)
-const pushOpenRequest = pushOpenFile(pluginIpc)
-const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
 
 const MENU_SHORTCUT_CHANNEL: {
   [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
@@ -3719,7 +3721,7 @@ app.whenReady().then(() => {
     const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
-      sendToRenderer(CH.sessions.toolsChanged)
+      pushToSessions.toolsChanged()
     }
     const signingIn = signInPtys.get(e.id)
     if (signingIn) {
@@ -3762,12 +3764,12 @@ app.whenReady().then(() => {
   })
   tracker.on('update', () => {
     const all = onSessionsChanged()
-    sendToRenderer(CH.sessions.update, all)
+    pushToSessions.sessions(all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
-    sendToRenderer(CH.session.relocated, e)
+    pushToSessions.relocated(e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
@@ -3820,7 +3822,7 @@ app.whenReady().then(() => {
     realFilesOn,
     changed: () => {
       const all = onSessionsChanged()
-      sendToRenderer(CH.sessions.update, all)
+      pushToSessions.sessions(all)
       workspaceMgr?.onAdditionalSessionsChanged()
     },
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
@@ -5871,7 +5873,7 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
     }
     const ranUnder = savedOpenTabs.tabs.find((t) => t.sessionId === id)?.tabIds
     if (ranUnder && reopenedTab) carryTabIds(reopenedTab, ranUnder)
-    if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
+    if (id === active) pushToSessions.activateTab(resumed.tabId)
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
@@ -6647,10 +6649,6 @@ function registerIpc(): void {
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
     if (typeof text === 'string' && text) clipboard.writeText(text)
   })
-  // PLATFORM§21
-  ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
-    if (typeof id === 'string' && id) tracker.noteActivity(id)
-  })
   ipcMain.on(CH.terminal.ack, (_e, id: string, ackedUtf16Units: unknown) =>
     terminalOutput.ack(id, ackedUtf16Units)
   )
@@ -6690,16 +6688,6 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(CH.sessions.list, () => allSessions())
-  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
-    if (recheck === true) sessionBackends.forgetAvailability()
-    return installedBackends()
-  })
-  ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
-    const id = backendIdOf(backend)
-    return id ? installTool(id) : null
-  })
-  ipcMain.handle(CH.attention.list, () => attention.list())
   registerInboxChannels(pluginIpc, {
     cards: inbox,
     sync: () => koloftInbox.sync(),
@@ -6734,47 +6722,12 @@ function registerIpc(): void {
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
-  ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
-    uiActiveTabId = typeof id === 'string' && id ? id : null
-    lastTabTheOwnerLookedAt = uiActiveTabId ?? lastTabTheOwnerLookedAt
-    guard?.lookedAtChanged()
-    if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    if (uiActiveTabId && windowFocused()) ownerSees(uiActiveTabId)
-    rememberOpenTabs()
-  })
 
   registerCronChannels(pluginIpc, {
     runner: () => cronRunner,
     skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
     trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
   })
-  ipcMain.handle(
-    CH.sessionDefaults.read,
-    async (_e, workspacePath: string): Promise<SessionDefaultsRead> => {
-      try {
-        const [defaults, listed] = await Promise.all([
-          defaultsOfProjects.read(workspacePath),
-          loadSettings().sessionMethods.enabled.agy
-            ? Promise.race([
-                listedModels('agy'),
-                new Promise<undefined>((done) =>
-                  setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
-                )
-              ])
-            : undefined
-        ])
-        return { ok: true, defaults, familyEfforts: familyEfforts('agy', listed) }
-      } catch (error) {
-        return { ok: false, error: errorText(error) }
-      }
-    }
-  )
-  ipcMain.handle(CH.sessionDefaults.write, async (_e, workspacePath: string, raw: unknown) =>
-    defaultsOfProjects.write(workspacePath, raw).then(
-      () => ({ ok: true }),
-      (error: unknown) => ({ ok: false, error: errorText(error) })
-    )
-  )
 
   ipcMain.handle(CH.update.check, () => checkForUpdates())
   ipcMain.handle(CH.update.download, () =>
@@ -7041,33 +6994,6 @@ function registerIpc(): void {
     (_e, p: string, expect: { branch: string; head: string }) =>
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
-  ipcMain.handle(CH.sessions.archive, (_e, id: unknown): boolean => {
-    if (typeof id !== 'string' || !id) return false
-    return archiveSession(id)
-  })
-
-  ipcMain.on(CH.sessions.setResident, (_e, id: unknown, on: unknown) => {
-    if (typeof id !== 'string' || !id || typeof on !== 'boolean') return
-    workspaceMgr?.setResident(id, on)
-  })
-
-  ipcMain.handle(CH.sessions.forceClose, async (_e, id: unknown): Promise<{ ok: boolean }> => {
-    if (typeof id !== 'string' || !id) return { ok: false }
-    const tabId = sessionBackends.forSession(id).aliveTabFor(id)
-    if (!tabId) return { ok: false }
-    return { ok: await killTabPty(tabId) }
-  })
-
-  // CC§2
-  ipcMain.handle(CH.sessions.transcriptExists, (_e, id: unknown): boolean | Promise<boolean> => {
-    if (typeof id !== 'string' || !id) return false
-    return sessionBackends.forSession(id).transcriptExists(id)
-  })
-
-  ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
-    if (typeof id !== 'string' || !id) return null
-    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
-  })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string, opts?: { quiet: boolean }) =>
     sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
@@ -7096,7 +7022,7 @@ function registerIpc(): void {
         stop: () => void worker.terminate()
       }
     },
-    send: (found) => sendToRenderer(CH.sessions.searchHits, found)
+    send: (found) => pushToSessions.searchHits(found)
   })
   const usageCache = new UsageCache({
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
@@ -7131,14 +7057,50 @@ function registerIpc(): void {
   })
   ipcMain.handle(CH.usage.read, () => usageCache.read())
 
-  ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
-    if (typeof searchId !== 'number' || typeof term !== 'string') return
-    sessionSearch.start(searchId, term)
+  registerSessionsChannels(pluginIpc, {
+    backends: sessionBackends,
+    noteActivity: (tabId) => tracker.noteActivity(tabId),
+    installed: installedBackends,
+    installTool,
+    list: allSessions,
+    archive: archiveSession,
+    setResident: (id, on) => workspaceMgr?.setResident(id, on),
+    killTab: (tabId) => killTabPty(tabId),
+    leftovers: () => leftovers,
+    stopLeftover: async (sessionId, pid) => {
+      const stopped = await stopLeftover(sessionId, pid)
+      await refreshLeftovers()
+      return stopped
+    },
+    ports: sessionPorts,
+    search: (searchId, term) => sessionSearch.start(searchId, term),
+    attention: () => attention.list(),
+    lookedAt: (tabId) => {
+      uiActiveTabId = tabId
+      lastTabTheOwnerLookedAt = tabId ?? lastTabTheOwnerLookedAt
+      guard?.lookedAtChanged()
+      if (tabId) tracker.noteActivity(tabId)
+      if (tabId && windowFocused()) ownerSees(tabId)
+      rememberOpenTabs()
+    },
+    readDefaults: async (workspacePath) => {
+      const [defaults, listed] = await Promise.all([
+        defaultsOfProjects.read(workspacePath),
+        loadSettings().sessionMethods.enabled.agy
+          ? Promise.race([
+              listedModels('agy'),
+              new Promise<undefined>((done) =>
+                setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+              )
+            ])
+          : undefined
+      ])
+      return { defaults, familyEfforts: familyEfforts('agy', listed) }
+    },
+    writeDefaults: (workspacePath, raw) => defaultsOfProjects.write(workspacePath, raw)
   })
 
-  ipcMain.handle(CH.sessions.leftovers, () => leftovers)
-  ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
-    if (typeof tabId !== 'string') return null
+  async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
     const tags = [
       ...tabIdsOf(tabId),
       ...ptyMgr
@@ -7152,25 +7114,7 @@ function registerIpc(): void {
       tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
     await loginEnvReady()
     return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
-  })
-  ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
-    if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
-    const stopped = await stopLeftover(sessionId, pid)
-    await refreshLeftovers()
-    return stopped
-  })
-
-  ipcMain.handle(CH.sessions.resumePlan, (_e, id: unknown): Promise<ResumePlan> => {
-    if (typeof id !== 'string' || !id) {
-      return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
-    }
-    return sessionBackends.forSession(id).resumePlan(id)
-  })
-
-  ipcMain.handle(CH.sessions.resume, (_e, req: SessionResumeRequest) => {
-    if (typeof req?.sessionId !== 'string') return { ok: false, code: 'invalid-args' }
-    return sessionBackends.forSession(req.sessionId).resume(req)
-  })
+  }
 
   ipcMain.on(CH.app.isDev, (e) => {
     e.returnValue = !app.isPackaged
