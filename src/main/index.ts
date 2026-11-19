@@ -618,7 +618,12 @@ import {
   type Target
 } from '@plugins/sessions/main/sessionVerbs'
 import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
-import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
+import {
+  A_HELPER_HAS_IT,
+  FROM_KOLOFT,
+  crossSessionLine,
+  writeLineInTurn
+} from './crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
@@ -4103,7 +4108,7 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    news: [TODO_NEWS],
+    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })

@@ -16,7 +16,6 @@ import {
 } from '../shared/types'
 import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
-import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
 import { butlerRole, ownerInstructionsPart } from '../prompts/role'
 import { conductorFolder } from './folder'
 
@@ -57,7 +56,7 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
-  news: readonly OldConversationNews[]
+  news: OldConversationNews
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
@@ -218,7 +217,7 @@ export class Butler {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
-    let untold: readonly OldConversationNews[] = []
+    let resumedOld = false
     let started = false
     try {
       if (resumable) {
@@ -232,8 +231,7 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      if (hasTranscript)
-        untold = this.d.news.filter((news) => !this.session[news.knownBy]?.includes(key))
+      resumedOld = hasTranscript && !this.session[this.d.news.knownBy]?.includes(key)
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
@@ -253,7 +251,7 @@ export class Butler {
         }
       })
     }))
-    if (key !== undefined) for (const news of untold) this.tellOnce(news, key)
+    if (resumedOld && key !== undefined) this.tellTheNews(key)
     this.resident = tabId
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
@@ -270,8 +268,9 @@ export class Butler {
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  private tellOnce({ knownBy, text }: OldConversationNews, key: string): void {
-    void this.d.notice(`${FROM_KOLOFT}${text}`).then((told) => {
+  private tellTheNews(key: string): void {
+    const { knownBy, text } = this.d.news
+    void this.d.notice(text).then((told) => {
       if (told && !this.session[knownBy]?.includes(key))
         this.changeSession((s) => ({ ...s, [knownBy]: [...(s[knownBy] ?? []), key] }))
     })
@@ -321,9 +320,7 @@ export class Butler {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
-            ...Object.fromEntries(
-              this.d.news.map(({ knownBy }) => [knownBy, [...(s[knownBy] ?? []), key]])
-            )
+            [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
           }
     )
   }

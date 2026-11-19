@@ -13,6 +13,7 @@ import type { InstructionsVersion } from '../../../../src/plugins/butler/shared/
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
 import { TODO_NEWS } from '../../../../src/plugins/todo/api'
+import { FROM_KOLOFT } from '../../../../src/main/crossSessionMessage'
 
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
@@ -88,7 +89,7 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
-    news: [TODO_NEWS],
+    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
