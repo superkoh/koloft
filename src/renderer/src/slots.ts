@@ -5,6 +5,7 @@ import type { ConductorOpenResult, PaletteRequest, SessionInfo, SessionRow } fro
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { ClaimsWorkspace, LandingAfterClose } from './store'
+import type { HintWords } from './components/hintPic'
 import type { LaunchSeed, WorktreeItem } from './newSession'
 import type { Settings, WorkspaceRows } from '@shared/types'
 
@@ -69,6 +70,15 @@ export interface WorkspaceLine {
 }
 
 export const WORKSPACE_LINE = slot<WorkspaceLine>('workspace-line')
+
+export interface PartHint {
+  id: string
+  part: string
+  selector: string
+  words: HintWords
+}
+
+export const PART_HINT = slot<PartHint>('part-hint')
 
 export interface WorkspaceGitPart {
   shows: (ws: WorkspaceRows['workspace']) => boolean
