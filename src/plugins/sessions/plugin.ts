@@ -28,7 +28,12 @@ export const plugin: PluginManifest = {
   does: 'Sessions, messages between them, worktrees, handoffs, and how a session’s question reaches you.',
   mandatory: true,
   needs: [],
-  commands: [{ verb: 'help' }, { verb: 'session' }, { verb: 'workspace' }],
+  commands: [
+    { verb: 'help' },
+    { verb: 'session' },
+    { verb: 'workspace' },
+    { verb: 'instructions' }
+  ],
   text: [...TEXT, ...SKILL_TEXT],
   assistJobs: ASSIST_JOBS,
   channels: Object.values(CHANNELS),

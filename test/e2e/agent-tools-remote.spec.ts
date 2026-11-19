@@ -5,7 +5,7 @@ import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
 import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
-import { filesNamedUnder, koloftSkillsUnder } from './helpers/koloftSkills'
+import { docsSkillHandedOut, filesNamedUnder, koloftSkillsUnder } from './helpers/koloftSkills'
 import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
@@ -90,6 +90,28 @@ function parentStartedAgainOnTheMachine(
 
 test.describe('`koloft` inside a tab on a remote workspace: the agent on the machine runs the koloft Koloft put there, and it acts for that session on this Mac', () => {
   test.afterEach(({ env }) => killFakeRemote(env))
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Docs writing turned off in Settings ▸ Plugins, a new ${backend} session on the machine is handed no koloft-docs skill`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installOnTheMachine(env, backend)
+      seedSettings(env, { pluginsOn: { 'docs-writing': false } })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        const tab = await startRemoteTab(page, env, backend)
+        expect(await koloftInSession(page, tab, 'help')).toBe('0')
+        expect(
+          docsSkillHandedOut(
+            env.home,
+            readCalls(env).flatMap((c) => c.argv)
+          )
+        ).toEqual([])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   for (const backend of SESSION_BACKENDS)
     test(`with Passwords and sign-in turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help and a koloft skill that say nothing of passwords, koloft secret and koloft page are refused, and the machine gets no sudo of Koloft's`, async ({
