@@ -3,6 +3,8 @@ import { OWNER, cleanInstructions, textInUse, withNewVersion } from '@core/owner
 import type { SessionDefaults } from '@shared/types'
 import { sanitizeDefaults } from '@shared/sessionDefaults'
 import { isRecord } from '@shared/workbenchState'
+import type { InstructionsBlock } from './instructionsVerb'
+import { basename } from '@shared/preview'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
   rulesAndInstructionsOver,
@@ -17,6 +19,11 @@ export function instructionsPartOf(defaults: SessionDefaults | undefined): strin
   return text ? workspaceInstructionsPart(text) : undefined
 }
 
+function checkTheLimit(rules: string, text: string): void {
+  const over = workspaceTextBytes(rules, text) - WORKSPACE_TEXT_MAX_BYTES
+  if (over > 0) throw new Error(rulesAndInstructionsOver(over))
+}
+
 export function savedFromTheDialog(
   saved: SessionDefaults | undefined,
   raw: unknown,
@@ -26,10 +33,49 @@ export function savedFromTheDialog(
   const kept = sanitizeDefaults({ ...draft, instructions: undefined }) ?? { picks: {} }
   const text = cleanInstructions(typeof draft.instructions === 'string' ? draft.instructions : '')
   const rules = kept.rules ?? ''
-  if (rules !== (saved?.rules ?? '') || text !== textInUse(saved?.instructions)) {
-    const over = workspaceTextBytes(rules, text) - WORKSPACE_TEXT_MAX_BYTES
-    if (over > 0) throw new Error(rulesAndInstructionsOver(over))
-  }
+  if (rules !== (saved?.rules ?? '') || text !== textInUse(saved?.instructions))
+    checkTheLimit(rules, text)
   const instructions = withNewVersion(saved?.instructions, text, OWNER, at) ?? saved?.instructions
   return sanitizeDefaults({ ...kept, instructions })
 }
+
+export function savedByAnAgent(
+  saved: SessionDefaults | undefined,
+  text: string,
+  by: string,
+  at: number
+): SessionDefaults | undefined {
+  if (text === textInUse(saved?.instructions)) return saved
+  checkTheLimit(saved?.rules ?? '', text)
+  return sanitizeDefaults({
+    ...saved,
+    instructions: withNewVersion(saved?.instructions, text, by, at)
+  })
+}
+
+export interface DefaultsOfWorkspaces {
+  read(dir: string): Promise<SessionDefaults>
+  write(
+    dir: string,
+    next: (saved: SessionDefaults | undefined) => SessionDefaults | undefined
+  ): Promise<void>
+}
+
+export const workspaceBlock = (
+  defaults: DefaultsOfWorkspaces,
+  workspace: string,
+  now: () => number
+): InstructionsBlock => ({
+  name: `the instructions of workspace ${basename(workspace)}`,
+  read: async () => textInUse((await defaults.read(workspace)).instructions),
+  check: async (text) => checkTheLimit((await defaults.read(workspace)).rules ?? '', text),
+  writeIfStill: async (before, after, by) => {
+    let written = false
+    await defaults.write(workspace, (saved) => {
+      if (textInUse(saved?.instructions) !== before) return saved
+      written = true
+      return savedByAnAgent(saved, after, by, now())
+    })
+    return written
+  }
+})

@@ -2,6 +2,7 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import type { InboxSnapshot } from '@shared/inbox'
+import type { InstructionAskView } from '@plugins/sessions/shared/instructionAsks'
 import { DEFAULT_SETTINGS } from '@shared/settingsOps'
 import {
   DEFAULT_TERMINAL_TITLE,
@@ -123,6 +124,7 @@ interface AppState {
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
   secretAsks: SecretAskView[]
+  instructionAsks: InstructionAskView[]
   inbox: InboxSnapshot
   centrePage: string | null
   revealRow: { tabId: string } | null
@@ -208,6 +210,7 @@ interface AppState {
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setAttention: (pending: AttentionEvent[]) => void
   setSecretAsks: (asks: SecretAskView[]) => void
+  setInstructionAsks: (asks: InstructionAskView[]) => void
   setInbox: (inbox: InboxSnapshot) => void
   setCentrePage: (id: string | null) => void
   setSettings: (s: Settings) => void
@@ -702,6 +705,7 @@ export const useStore = create<AppState>((set, get) => ({
   leftovers: {},
   attention: [],
   secretAsks: [],
+  instructionAsks: [],
   inbox: { cards: [], ready: [] },
   centrePage: null,
   revealRow: null,
@@ -1084,6 +1088,7 @@ export const useStore = create<AppState>((set, get) => ({
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
   setSecretAsks: (secretAsks) => set({ secretAsks }),
+  setInstructionAsks: (instructionAsks) => set({ instructionAsks }),
   setInbox: (inbox) => set({ inbox }),
   setCentrePage: (centrePage) => set({ centrePage }),
   setSettings: (settings) => set({ settings }),

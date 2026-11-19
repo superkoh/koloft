@@ -25,7 +25,8 @@ function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: st
   const moments = new Moments(PLUGINS)
   forgetAsksOfEndedTabs(moments, {
     slash: { closed: say('slash.closed') },
-    asks: () => ({ forget: say('asks.forget') })
+    asks: () => ({ forget: say('asks.forget') }),
+    instructionAsks: () => ({ forget: say('instructionAsks.forget') })
   })
   butlerLetsGoOfEndedTabs(moments, {
     butler: () => ({ onPtyExit: say('butler.onPtyExit') }),
@@ -61,12 +62,13 @@ const exitOf = (over: Partial<TabEnded> = {}): TabEnded => ({
 })
 
 describe('what each plugin lets go of when a tab ends', () => {
-  it('an exit makes what the session was asking, the butler digest, each Discord part and a password ask forget the tab, and a closed tab closes its room only after its password ask cards have ended', () => {
+  it('an exit makes what the session was asking, its ask to change the instructions, the butler digest, each Discord part and a password ask forget the tab, and a closed tab closes its room only after its password ask cards have ended', () => {
     const { moments, calls } = wired()
     void moments.announce(TAB_EXITED, exitOf())
     expect(calls).toEqual([
       'slash.closed t1',
       'asks.forget t1',
+      'instructionAsks.forget t1',
       'digest.forget t1',
       'typing.forget t1',
       'relay.forget t1',
