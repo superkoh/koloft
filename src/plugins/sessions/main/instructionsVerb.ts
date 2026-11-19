@@ -10,23 +10,17 @@ import {
 import { ADD_A_LINE, REPLACE_THE_TEXT, editedText, type AgentEdit } from '@core/ownerInstructions'
 import type { SessionInfo } from '@shared/types'
 import { resolveWorkspace, type PinnedWorkspace } from './placedRows'
+import type { InstructionAsk, OwnersAnswer } from './instructionAsks'
 
 export interface InstructionsBlock {
   name: string
-  workspace?: string
-  changedBy(by: string): string
   read(): Promise<string>
+  check(text: string): Promise<void>
   write(edit: (current: string) => string, by: string): Promise<boolean>
 }
 
-export interface InstructionsChanged {
-  workspace?: string
-  by: string
-  notice: string
-}
-
 export interface InstructionsVerbDeps {
-  changed(c: InstructionsChanged): void
+  askTheOwner(ask: InstructionAsk): Promise<OwnersAnswer>
   overseerSide(tabId: string): boolean
   isOverseer(tabId: string): boolean
   overseerBlock(): InstructionsBlock
@@ -44,10 +38,17 @@ const WORDS_AFTER_DASHES = (edit: AgentEdit): string =>
     : 'koloft instructions set: put the whole new text after --; an empty text clears them.'
 export const ONLY_ITS_OWN_WORKSPACE =
   "koloft instructions: a session reads and changes only its own workspace's instructions."
-export const ONLY_THE_OVERSEER_CHANGES_THEM =
-  'koloft instructions: nothing was changed. A helper only reads them; when the owner asks you to remember something, tell the session that started you, which changes them.'
+export const A_HELPER_ONLY_PROPOSES_FOR_THE_BUTLER =
+  "koloft instructions: a helper may propose changes only to the instructions of the session that started it (leave out --workspace); a project's instructions are changed by a session in that project's workspace."
 const NO_WORKSPACE =
   'koloft instructions: this session is in no workspace of the sidebar, so it has no instructions to change.'
+
+const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
+  declined: 'koloft instructions: the owner did not agree, so nothing was changed.',
+  timeout: 'koloft instructions: the owner did not answer in time, so nothing was changed.',
+  closed:
+    'koloft instructions: this session was closed before the owner answered, so nothing was changed.'
+}
 
 function parsed(
   args: string[]
@@ -66,19 +67,22 @@ function parsed(
 function blockOf(
   d: InstructionsVerbDeps,
   caller: AgentCaller,
-  ref: string | undefined
+  ref: string | undefined,
+  editing: boolean
 ): { ok: true; block: InstructionsBlock } | { ok: false; reply: AgentReply } {
-  const overseer = d.overseerSide(caller.tabId)
+  const overseerSide = d.overseerSide(caller.tabId)
   if (ref === undefined) {
-    if (overseer) return { ok: true, block: d.overseerBlock() }
+    if (overseerSide) return { ok: true, block: d.overseerBlock() }
     const own = d.workspaceOf(caller.tabId)
     return own
       ? { ok: true, block: d.workspaceBlock(own) }
       : { ok: false, reply: refused(NO_WORKSPACE) }
   }
+  if (editing && overseerSide && !d.isOverseer(caller.tabId))
+    return { ok: false, reply: refused(A_HELPER_ONLY_PROPOSES_FOR_THE_BUTLER) }
   const found = resolveWorkspace(ref, d.pinnedWorkspaces())
   if (!found.ok) return { ok: false, reply: refused(`koloft instructions: ${found.error}`) }
-  if (!overseer && found.value.path !== d.workspaceOf(caller.tabId))
+  if (!overseerSide && found.value.path !== d.workspaceOf(caller.tabId))
     return { ok: false, reply: refused(ONLY_ITS_OWN_WORKSPACE) }
   return { ok: true, block: d.workspaceBlock(found.value.path) }
 }
@@ -86,30 +90,40 @@ function blockOf(
 const capitalized = (s: string): string => `${s[0].toUpperCase()}${s.slice(1)}`
 
 const changedLine = (edit: AgentEdit, name: string): string =>
-  `${edit === ADD_A_LINE ? 'Added to' : 'Replaced'} ${name}. The owner is shown the change and can undo it.`
+  `The owner agreed: ${edit === ADD_A_LINE ? 'added to' : 'replaced'} ${name}. Sessions started from now on follow it.`
 
 // CC§27
 export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
   return async (args, caller) => {
     const p = parsed(args)
     if (!p.ok) return refused(USAGE, EXIT_USAGE)
-    const target = blockOf(d, caller, p.workspace)
+    const target = blockOf(d, caller, p.workspace, p.edit !== undefined)
     if (!target.ok) return target.reply
     const { block } = target
     if (!p.edit) {
       const text = await block.read()
       return answered(text || `${capitalized(block.name)} are empty.`)
     }
-    if (d.overseerSide(caller.tabId) && !d.isOverseer(caller.tabId))
-      return refused(ONLY_THE_OVERSEER_CHANGES_THEM)
     if (p.edit === ADD_A_LINE && !p.words) return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     if (p.edit === REPLACE_THE_TEXT && !args.includes('--'))
       return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     const edit = p.edit
-    const by = d.nameOf(caller.session)
-    if (!(await block.write((current) => editedText(current, edit, p.words), by)))
+    const change = (current: string): string => editedText(current, edit, p.words)
+    const before = await block.read()
+    const after = change(before)
+    if (after === before)
       return answered(`${capitalized(block.name)} already say that; nothing changed.`)
-    d.changed({ workspace: block.workspace, by, notice: block.changedBy(by) })
+    await block.check(after)
+    const by = d.nameOf(caller.session)
+    const given = await d.askTheOwner({
+      tabId: caller.tabId,
+      by,
+      what: block.name,
+      before,
+      after
+    })
+    if (given !== 'agreed') return refused(NOT_CHANGED[given])
+    await block.write(change, by)
     return answered(changedLine(edit, block.name))
   }
 }

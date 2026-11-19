@@ -1,14 +1,11 @@
 import { create } from 'zustand'
 import { useStore } from '@renderer/store'
-import type { InstructionsChange } from '@core/ownerInstructions'
 
 interface ButlerState {
   openedTab: string | null
   renaming: boolean
   setUpAsked: boolean
   editingInstructions: boolean
-  viewingChange: InstructionsChange | null
-  changeUndone: boolean
   askingFresh: boolean
 }
 
@@ -17,8 +14,6 @@ export const useButler = create<ButlerState>(() => ({
   renaming: false,
   setUpAsked: false,
   editingInstructions: false,
-  viewingChange: null,
-  changeUndone: false,
   askingFresh: false
 }))
 

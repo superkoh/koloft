@@ -3,20 +3,21 @@ import { instructionsOf, savedInstructions } from '../shared/instructions'
 import type { ButlerSetting } from '../shared/types'
 
 export const butlersBlock = (
-  butler: ButlerSetting,
+  butler: () => ButlerSetting,
   save: (butler: ButlerSetting) => void,
   now: () => number
 ): InstructionsBlock => ({
-  name: `${butler.name}'s instructions`,
-  changedBy: (by) =>
-    by === butler.name
-      ? `${by} changed its instructions.`
-      : `"${by}" changed ${butler.name}'s instructions.`,
-  read: async () => instructionsOf(butler),
-  write: async (edit, by) => {
-    const saved = savedInstructions(butler, edit(instructionsOf(butler)), now(), by)
+  name: `${butler().name}'s instructions`,
+  read: async () => instructionsOf(butler()),
+  check: async (text) => {
+    const saved = savedInstructions(butler(), text, '', now())
     if (!saved.ok) throw new Error(saved.error)
-    if (saved.butler === butler) return false
+  },
+  write: async (edit, by) => {
+    const was = butler()
+    const saved = savedInstructions(was, edit(instructionsOf(was)), by, now())
+    if (!saved.ok) throw new Error(saved.error)
+    if (saved.butler === was) return false
     save(saved.butler)
     return true
   }

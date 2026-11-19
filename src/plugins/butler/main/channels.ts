@@ -1,8 +1,7 @@
 import type { MainIpc } from '@core/ipc'
-import { errorText } from '@core/errorText'
-import { NOT_READ, allSeen, changeToUndo, withChangeUndone } from '@core/ownerInstructions'
 import type { ConductorOpenResult, PaletteRequest } from '@shared/types'
 import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
+import { OWNER } from '@core/ownerInstructions'
 import { savedInstructions } from '../shared/instructions'
 import type { ButlerSetting } from '../shared/types'
 
@@ -20,28 +19,9 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.handle(CHANNELS.fromPalette, (request: PaletteRequest) => deps.fromPalette(request))
   ipc.handle(CHANNELS.saveInstructions, (text: unknown): InstructionsSaveResult => {
     if (typeof text !== 'string') return { ok: false, error: 'Koloft could not read the text.' }
-    const saved = savedInstructions(deps.butler(), text, Date.now())
+    const saved = savedInstructions(deps.butler(), text, OWNER, Date.now())
     if (!saved.ok) return saved
     deps.save(saved.butler)
     return { ok: true }
-  })
-  ipc.handle(CHANNELS.instructionsSeen, () => {
-    const butler = deps.butler()
-    if (butler.instructions?.some((v) => v.unseen))
-      deps.save({ ...butler, instructions: allSeen(butler.instructions) })
-  })
-  ipc.handle(CHANNELS.undoInstructions, (raw: unknown): InstructionsSaveResult => {
-    const butler = deps.butler()
-    try {
-      const change = changeToUndo(raw)
-      if (!change) throw new Error(NOT_READ)
-      deps.save({
-        ...butler,
-        instructions: withChangeUndone(butler.instructions, change, Date.now())
-      })
-      return { ok: true }
-    } catch (error) {
-      return { ok: false, error: errorText(error) }
-    }
   })
 }

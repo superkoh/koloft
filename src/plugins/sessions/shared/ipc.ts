@@ -24,12 +24,7 @@ export const CHANNELS = {
   attentionChanged: 'attention:changed',
   defaultsRead: 'sessionDefaults:read',
   defaultsWrite: 'sessionDefaults:write',
-  instructionsSeen: 'sessionDefaults:instructionsSeen',
-  undoInstructions: 'sessionDefaults:undoInstructions',
-  instructionsChanged: 'sessionDefaults:instructionsChanged'
+  instructionAsks: 'instructions:asks',
+  instructionAsksList: 'instructions:list',
+  instructionAnswer: 'instructions:answer'
 } as const
-
-export interface WorkspaceInstructionsChanged {
-  workspace: string
-  by: string
-}

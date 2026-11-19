@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -7,22 +7,7 @@ import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { ownPickOf, tiersOf } from '@shared/sessionPicks'
 import { ownPickModels } from '@shared/sessionDefaults'
-import {
-  bytesLeft,
-  cleanInstructions,
-  textInUse,
-  unseenChange,
-  type InstructionsChange,
-  type InstructionsVersion
-} from '@core/ownerInstructions'
-import {
-  CHANGE_UNDONE,
-  CHANGE_UNDONE_SHOWS_MS,
-  InstructionsChangeLines,
-  undoTakesBack,
-  changeSummary,
-  changedBy
-} from './InstructionsChange'
+import { bytesLeft, cleanInstructions, textInUse } from '@core/ownerInstructions'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
   workspaceTextBytes
@@ -88,44 +73,6 @@ export function SessionDefaultsDialog({
   const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
-  const [change, setChange] = useState<InstructionsChange | null>(null)
-  const [undone, setUndone] = useState(false)
-  const changeRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    changeRef.current?.scrollIntoView({ block: 'center' })
-  }, [change])
-  useEffect(() => {
-    if (!undone) return
-    const t = setTimeout(() => setUndone(false), CHANGE_UNDONE_SHOWS_MS)
-    return () => clearTimeout(t)
-  }, [undone])
-
-  const savedText = useRef('')
-  const takeInstructions = (versions: InstructionsVersion[] | undefined): void => {
-    const text = textInUse(versions)
-    const was = savedText.current
-    setInstructions((draft) => (draft === was ? text : draft))
-    savedText.current = text
-    setSaved((s) => ({ ...s, instructions: text }))
-    const unseen = unseenChange(versions)
-    if (!unseen) return
-    setChange(unseen)
-    setUndone(false)
-    void window.api.sessionDefaults.instructionsSeen(wsPath)
-  }
-  const readInstructionsAgain = async (): Promise<void> => {
-    const r = await window.api.sessionDefaults.read(wsPath)
-    if (r.ok) takeInstructions(r.defaults.instructions)
-  }
-
-  const undo = async (c: InstructionsChange): Promise<void> => {
-    const r = await window.api.sessionDefaults.undoInstructions(wsPath, c)
-    if (!r.ok) return setError(r.error ?? 'Koloft could not undo the change.')
-    setError('')
-    setChange(null)
-    setUndone(true)
-    await readInstructionsAgain()
-  }
 
   useEffect(() => {
     let live = true
@@ -134,19 +81,16 @@ export function SessionDefaultsDialog({
         if (!live) return
         if (!r.ok) return setError(r.error)
         setPicks(byBackend((b) => fieldsOf(b, r.defaults.picks[b])))
+        const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
-        setSaved((s) => ({ ...s, rules: r.defaults.rules ?? '' }))
+        setInstructions(text)
+        setSaved({ rules: r.defaults.rules ?? '', instructions: text })
         setFamilyEfforts(r.familyEfforts)
-        takeInstructions(r.defaults.instructions)
       },
       (e: unknown) => live && setError(String(e))
     )
-    const stop = window.api.sessionDefaults.onInstructionsChanged(() => {
-      if (live) void readInstructionsAgain()
-    })
     return () => {
       live = false
-      stop()
     }
   }, [wsPath])
 
@@ -296,19 +240,6 @@ export function SessionDefaultsDialog({
 
               <span className="flabel">Instructions</span>
               <div className="fcol">
-                {change && (
-                  <div ref={changeRef} className="fcol">
-                    <p className="field-hint">{`${changeSummary(change)}, ${changedBy(change)}`}</p>
-                    <InstructionsChangeLines change={change} />
-                    <div className="chips">
-                      <button className="mini" onClick={() => void undo(change)}>
-                        Undo this change
-                      </button>
-                    </div>
-                    <p className="field-hint">{undoTakesBack(change)}</p>
-                  </div>
-                )}
-                {undone && <p className="field-hint">{CHANGE_UNDONE}</p>}
                 <div className={inputCls('instructions')}>
                   <textarea
                     className="cb-field task"

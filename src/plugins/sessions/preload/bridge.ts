@@ -13,8 +13,8 @@ import type {
   SessionResumeResult,
   SessionSearchHits
 } from '@shared/types'
-import type { ChangeToUndo } from '@core/ownerInstructions'
-import { CHANNELS, type WorkspaceInstructionsChanged } from '../shared/ipc'
+import { CHANNELS } from '../shared/ipc'
+import type { InstructionAskView } from '../shared/instructionAsks'
 
 export interface SessionsBridge {
   sessions: {
@@ -52,12 +52,11 @@ export interface SessionsBridge {
       workspacePath: string,
       defaults: SessionDefaultsDraft
     ): Promise<{ ok: boolean; error?: string }>
-    instructionsSeen(workspacePath: string): Promise<{ ok: boolean; error?: string }>
-    undoInstructions(
-      workspacePath: string,
-      change: ChangeToUndo
-    ): Promise<{ ok: boolean; error?: string }>
-    onInstructionsChanged(cb: (c: WorkspaceInstructionsChanged) => void): () => void
+  }
+  instructionAsks: {
+    list(): Promise<InstructionAskView[]>
+    onAsks(cb: (asks: InstructionAskView[]) => void): () => void
+    answer(id: string, agreed: boolean): void
   }
 }
 
@@ -92,10 +91,11 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
   },
   sessionDefaults: {
     read: (workspacePath) => ipc.invoke(CHANNELS.defaultsRead, workspacePath),
-    write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults),
-    instructionsSeen: (workspacePath) => ipc.invoke(CHANNELS.instructionsSeen, workspacePath),
-    undoInstructions: (workspacePath, change) =>
-      ipc.invoke(CHANNELS.undoInstructions, workspacePath, change),
-    onInstructionsChanged: (cb) => ipc.listen(CHANNELS.instructionsChanged, cb)
+    write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults)
+  },
+  instructionAsks: {
+    list: () => ipc.invoke(CHANNELS.instructionAsksList),
+    onAsks: (cb) => ipc.listen(CHANNELS.instructionAsks, cb),
+    answer: (id, agreed) => ipc.send(CHANNELS.instructionAnswer, id, agreed)
   }
 })

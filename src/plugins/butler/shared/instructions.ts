@@ -17,12 +17,12 @@ export type InstructionsSaved = { ok: true; butler: ButlerSetting } | { ok: fals
 export function savedInstructions(
   butler: ButlerSetting,
   raw: string,
-  at: number,
-  agent?: string
+  by: string,
+  at: number
 ): InstructionsSaved {
   const text = cleanInstructions(raw)
   const over = instructionsBytes(text) - INSTRUCTIONS_MAX_BYTES
   if (over > 0) return { ok: false, error: overTheLimit(over) }
-  const versions = withNewVersion(butler.instructions, text, at, agent)
+  const versions = withNewVersion(butler.instructions, text, by, at)
   return { ok: true, butler: versions ? { ...butler, instructions: versions } : butler }
 }

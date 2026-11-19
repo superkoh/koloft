@@ -1,43 +1,98 @@
-import { useMemo, type JSX } from 'react'
-import type { InstructionsChange } from '@core/ownerInstructions'
+import { useLayoutEffect, useMemo, useRef, type JSX } from 'react'
+import type { InstructionAskView } from '@plugins/sessions/shared/instructionAsks'
+import { IconClose } from '../icons'
 import { diffLines } from './editDiff'
 import { InlineDiff } from './InlineDiff'
 import '../inlineDiff.css'
 
-export const undoTakesBack = ({ changes }: InstructionsChange): string =>
-  changes === 1
-    ? 'Undo takes back only this change; an earlier change stays.'
-    : `Undo takes back these ${changes} changes together; an earlier change stays.`
-export const CHANGE_UNDONE = 'Change undone'
-export const CHANGE_UNDONE_SHOWS_MS = 4000
+export function instructionAskOf(
+  asks: readonly InstructionAskView[],
+  tabId: string
+): InstructionAskView | undefined {
+  return asks.find((a) => a.tabId === tabId)
+}
 
 const lines = (n: number, what: string): string => `${n} line${n === 1 ? '' : 's'} ${what}`
 
-export function changeSummary({ before, after }: InstructionsChange): string {
+export function changeSummary(before: string, after: string): string {
   const { rows } = diffLines(before, after)
   const added = rows.filter((r) => r.kind === 'add').length
   const removed = rows.filter((r) => r.kind === 'del').length
-  if (!rows.some((r) => r.kind === 'ctx') && added && removed) return 'Whole text replaced'
+  if (!rows.some((r) => r.kind === 'ctx') && added && removed) return 'The whole text replaced'
   return [added && lines(added, 'added'), removed && lines(removed, 'removed')]
     .filter(Boolean)
     .join(', ')
 }
 
-function whenChanged(at: number): string {
-  const when = new Date(at)
-  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-  if (when.toDateString() === new Date().toDateString()) return time
-  return `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`
-}
-
-export const changedBy = ({ by, at }: InstructionsChange): string =>
-  `changed by ${by} · ${whenChanged(at)}`
-
-export function InstructionsChangeLines({ change }: { change: InstructionsChange }): JSX.Element {
-  const parsed = useMemo(() => diffLines(change.before, change.after), [change])
+export function InstructionsChangeLines({
+  before,
+  after
+}: {
+  before: string
+  after: string
+}): JSX.Element {
+  const parsed = useMemo(() => diffLines(before, after), [before, after])
   return (
     <div className="instr-change" aria-label="The change">
       <InlineDiff src="instructions.txt" parsed={parsed} />
+    </div>
+  )
+}
+
+export function InstructionsAskDialog({
+  ask,
+  shown
+}: {
+  ask: InstructionAskView
+  shown: boolean
+}): JSX.Element {
+  const agree = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    if (shown) agree.current?.focus()
+  }, [shown, ask.id])
+  const answer = (agreed: boolean): void => window.api.instructionAsks.answer(ask.id, agreed)
+  return (
+    <div className="modal-backdrop in-session">
+      <div
+        className="modal secret-modal"
+        role="dialog"
+        aria-label="Change the instructions?"
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape') return
+          e.preventDefault()
+          e.stopPropagation()
+          answer(false)
+        }}
+      >
+        <div className="modal-header">
+          <span>Change the instructions?</span>
+          <span className="modal-close" onClick={() => answer(false)} aria-label="Close">
+            <IconClose size={16} />
+          </span>
+        </div>
+        <div className="modal-body">
+          <p className="field-hint">
+            <b>{ask.by}</b> wants to change {ask.what}: {changeSummary(ask.before, ask.after)}.
+          </p>
+          <InstructionsChangeLines before={ask.before} after={ask.after} />
+          <p className="field-hint">
+            Nothing changes until you agree. Sessions started afterwards follow the new text.
+          </p>
+        </div>
+        <div className="modal-foot">
+          <button className="mini" onClick={() => answer(false)}>
+            Don&apos;t change
+          </button>
+          <button
+            ref={agree}
+            className="btn-primary"
+            data-default="true"
+            onClick={() => answer(true)}
+          >
+            Change them<span className="k">⏎</span>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,23 +1,9 @@
-import { useEffect, useLayoutEffect, useState, type JSX, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useState, type JSX, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAiStart, IconClose } from '@renderer/icons'
 import { useStore } from '@renderer/store'
 import { isComposing } from '@renderer/keys'
-import {
-  bytesLeft,
-  cleanInstructions,
-  instructionsBytes,
-  unseenChange,
-  type InstructionsChange
-} from '@core/ownerInstructions'
-import {
-  CHANGE_UNDONE,
-  CHANGE_UNDONE_SHOWS_MS,
-  InstructionsChangeLines,
-  undoTakesBack,
-  changeSummary,
-  changedBy
-} from '@renderer/components/InstructionsChange'
+import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
 import { INSTRUCTIONS_MAX_BYTES, instructionsOf } from '../shared/instructions'
 import { isButlerTab } from './butlerTabs'
 import { openButler, useButler } from './state'
@@ -36,34 +22,13 @@ export function InstructionsStrip(): JSX.Element | null {
     (s) => !!s.activeTabId && isButlerTab(s.sessions, opened, s.activeTabId)
   )
   const name = useStore((s) => s.settings.butler.name)
-  const versions = useStore((s) => s.settings.butler.instructions)
-  const undone = useButler((s) => s.changeUndone)
-  useEffect(() => {
-    if (!undone) return
-    const t = setTimeout(() => useButler.setState({ changeUndone: false }), CHANGE_UNDONE_SHOWS_MS)
-    return () => clearTimeout(t)
-  }, [undone])
   if (!onButler) return null
-  const change = unseenChange(versions)
-  const view = (c: InstructionsChange): void => {
-    useButler.setState({ viewingChange: c })
-    void window.api.butler.instructionsSeen()
-  }
   return (
     <div className="wb-bar butler-strip">
       <span className="wb-title">
         <span className="nm">{name}</span>
         <span className="dir">&nbsp;· Butler</span>
-        {undone && <span className="dir">&nbsp;· {CHANGE_UNDONE}</span>}
       </span>
-      {change && (
-        <>
-          <span className="changed">{`${change.by} changed the instructions`}</span>
-          <button className="mini" onClick={() => view(change)}>
-            View ›
-          </button>
-        </>
-      )}
       <button className="mini" onClick={() => useButler.setState({ askingFresh: true })}>
         Start a fresh conversation
       </button>
@@ -93,66 +58,13 @@ function useEscapeCloses(close: () => void): void {
 
 export function InstructionsDialog(): JSX.Element | null {
   const open = useButler((s) => s.editingInstructions)
-  const change = useButler((s) => s.viewingChange)
-  if (change) return <ChangeView change={change} />
   return open ? <InstructionsEditor /> : null
-}
-
-function ChangeView({ change }: { change: InstructionsChange }): JSX.Element {
-  const name = useStore((s) => s.settings.butler.name)
-  const [error, setError] = useState('')
-  const close = (): void => useButler.setState({ viewingChange: null })
-  useEscapeCloses(close)
-  const undo = async (): Promise<void> => {
-    const r = await window.api.butler
-      .undoInstructions(change)
-      .catch(() => ({ ok: false as const, error: 'Koloft could not undo the change.' }))
-    if (!r.ok) return setError(r.error)
-    useButler.setState({ viewingChange: null, changeUndone: true })
-  }
-  // ADR-0013
-  return createPortal(
-    <div className="modal-backdrop palette-top" onClick={close}>
-      <div
-        className="modal palette"
-        role="dialog"
-        aria-label="Instructions"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="pal-count">{`Instructions for ${name} · ${changedBy(change)}`}</div>
-        <InstructionsChangeLines change={change} />
-        <div className="pal-status">{undoTakesBack(change)}</div>
-        <div className="pal-bar">
-          <span className="pal-tips">
-            {error ? (
-              <span className="field-hint bad">{error}</span>
-            ) : (
-              `${changeSummary(change)} · Esc`
-            )}
-          </span>
-          <button className="pal-pill" onClick={() => void undo()}>
-            Undo this change
-          </button>
-          <button className="pal-pill go" onClick={close}>
-            Close <span className="k">Esc</span>
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
 }
 
 function InstructionsEditor(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const showToast = useStore((s) => s.showToast)
-  const inUse = instructionsOf(butler)
-  const [text, setText] = useState(inUse)
-  const [loaded, setLoaded] = useState(inUse)
-  if (loaded !== inUse) {
-    setLoaded(inUse)
-    if (text === loaded) setText(inUse)
-  }
+  const [text, setText] = useState(() => instructionsOf(butler))
   const [error, setError] = useState('')
   const left = INSTRUCTIONS_MAX_BYTES - instructionsBytes(cleanInstructions(text))
   const close = (): void => useButler.setState({ editingInstructions: false })

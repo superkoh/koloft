@@ -14,8 +14,9 @@ import type {
   SessionResumeResult,
   SessionSearchHits
 } from '@shared/types'
-import { CHANNELS, type WorkspaceInstructionsChanged } from '../shared/ipc'
-import { changeToUndo, NOT_READ, type ChangeToUndo } from '@core/ownerInstructions'
+import { CHANNELS } from '../shared/ipc'
+import type { InstructionAskView } from '../shared/instructionAsks'
+import type { InstructionAsks } from './instructionAsks'
 
 interface SessionBackend {
   id: BackendId
@@ -50,8 +51,7 @@ export interface ChannelDeps {
     workspacePath: string
   ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
   writeDefaults(workspacePath: string, raw: unknown): Promise<void>
-  instructionsSeen(workspacePath: string): Promise<void>
-  undoInstructions(workspacePath: string, change: ChangeToUndo): Promise<void>
+  instructionAsks(): Pick<InstructionAsks, 'views' | 'answer'>
 }
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
@@ -127,22 +127,17 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     }
   })
   ipc.handle(CHANNELS.defaultsWrite, (workspacePath: string, raw: unknown) =>
-    done(deps.writeDefaults(workspacePath, raw))
+    deps.writeDefaults(workspacePath, raw).then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ ok: false, error: errorText(error) })
+    )
   )
-  ipc.handle(CHANNELS.instructionsSeen, (workspacePath: string) =>
-    done(deps.instructionsSeen(workspacePath))
-  )
-  ipc.handle(CHANNELS.undoInstructions, (workspacePath: string, change: unknown) => {
-    const read = changeToUndo(change)
-    return read ? done(deps.undoInstructions(workspacePath, read)) : { ok: false, error: NOT_READ }
+  ipc.handle(CHANNELS.instructionAsksList, () => deps.instructionAsks().views())
+  ipc.on(CHANNELS.instructionAnswer, (id: unknown, agreed: unknown) => {
+    if (typeof id === 'string' && typeof agreed === 'boolean')
+      deps.instructionAsks().answer(id, agreed)
   })
 }
-
-const done = (work: Promise<void>): Promise<{ ok: boolean; error?: string }> =>
-  work.then(
-    () => ({ ok: true }),
-    (error: unknown) => ({ ok: false, error: errorText(error) })
-  )
 
 export const pushes = (ipc: MainIpc) => ({
   sessions: (sessions: SessionInfo[]): boolean => ipc.push(CHANNELS.update, sessions),
@@ -153,6 +148,5 @@ export const pushes = (ipc: MainIpc) => ({
   searchHits: (found: SessionSearchHits): boolean => ipc.push(CHANNELS.searchHits, found),
   attention: (pending: AttentionEvent[]): boolean => ipc.push(CHANNELS.attentionChanged, pending),
   activateTab: (tabId: string): boolean => ipc.push(CHANNELS.activateTab, { tabId }),
-  instructionsChanged: (c: WorkspaceInstructionsChanged): boolean =>
-    ipc.push(CHANNELS.instructionsChanged, c)
+  instructionAsks: (asks: InstructionAskView[]): boolean => ipc.push(CHANNELS.instructionAsks, asks)
 })

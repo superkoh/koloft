@@ -111,6 +111,7 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
+import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
 import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
 import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -297,6 +298,7 @@ export default function App(): JSX.Element {
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
   const secretAsks = useStore((s) => s.secretAsks)
+  const instructionAsks = useStore((s) => s.instructionAsks)
   const centrePage = useStore((s) => s.centrePage)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
@@ -325,17 +327,6 @@ export default function App(): JSX.Element {
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
   const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
-  useEffect(
-    () =>
-      window.api.sessionDefaults.onInstructionsChanged(({ workspace, by }) =>
-        useStore
-          .getState()
-          .showToast(`"${by}" changed the instructions of ${basename(workspace)} · View`, () =>
-            setDefaultsWs(workspace)
-          )
-      ),
-    []
-  )
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -1030,6 +1021,13 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    const set = useStore.getState().setInstructionAsks
+    const off = window.api.instructionAsks.onAsks(set)
+    void window.api.instructionAsks.list().then(set)
+    return off
+  }, [])
+
+  useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
       if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
@@ -1563,8 +1561,7 @@ export default function App(): JSX.Element {
           className={'toast' + (toastReveal ? ' link' : '')}
           onClick={() => {
             if (!toastReveal) return
-            if (typeof toastReveal === 'function') toastReveal()
-            else window.api.os.reveal(toastReveal)
+            window.api.os.reveal(toastReveal)
             dismissToast()
           }}
         >
@@ -1738,6 +1735,8 @@ export default function App(): JSX.Element {
               <div className="terminals">
                 {tabs.flatMap((t) => {
                   const sudo = sudoAskOf(secretAsks, t.id)
+                  const instructionAsk = instructionAskOf(instructionAsks, t.id)
+                  const asked = !!sudo || !!instructionAsk
                   return [
                     t.ghost && (
                       <div
@@ -1783,8 +1782,8 @@ export default function App(): JSX.Element {
                             ? () => window.api.sessions.noteActivity(t.id)
                             : undefined
                         }
-                        autoFocus={!sudo}
-                        focusSignal={sudo ? undefined : tuiFocus}
+                        autoFocus={!asked}
+                        focusSignal={asked ? undefined : tuiFocus}
                         onRepainted={() => {
                           if (t.id === activeTabId) setPaintedGen(switchGen)
                         }}
@@ -1797,6 +1796,13 @@ export default function App(): JSX.Element {
                         <ResumingMask title={t.title} />
                       )}
                       {sudo && <SudoDialog key={sudo.id} ask={sudo} shown={t.id === shown.id} />}
+                      {!sudo && instructionAsk && (
+                        <InstructionsAskDialog
+                          key={instructionAsk.id}
+                          ask={instructionAsk}
+                          shown={t.id === shown.id}
+                        />
+                      )}
                     </div>
                   ]
                 })}

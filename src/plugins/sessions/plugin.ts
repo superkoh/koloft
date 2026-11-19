@@ -2,7 +2,6 @@ import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
   ATTENTION_CHANGED,
   DIALOG_CLOSED,
-  INSTRUCTIONS_CHANGED,
   QUESTION_ASKED,
   SESSION_BOUND,
   SESSION_STARTED,
@@ -40,7 +39,6 @@ export const plugin: PluginManifest = {
   channels: Object.values(CHANNELS),
   moments: {
     announces: [
-      INSTRUCTIONS_CHANGED.name,
       SESSION_STARTING.name,
       SESSION_STARTED.name,
       TAB_EXITED.name,
@@ -55,8 +53,7 @@ export const plugin: PluginManifest = {
       TURN_OVER.name,
       ATTENTION_CHANGED.name,
       TAB_STOPPING.name,
-      DIALOG_CLOSED.name,
-      INSTRUCTIONS_CHANGED.name
+      DIALOG_CLOSED.name
     ],
     listens: [
       TAB_EXITED.name,

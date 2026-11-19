@@ -550,7 +550,6 @@ import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import {
   FILE_OPENED,
-  INSTRUCTIONS_CHANGED,
   Moments,
   QUESTION_ASKED,
   SESSION_BOUND,
@@ -575,7 +574,6 @@ import {
   tellEachHelperItsRole
 } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
-import { tellThePhoneOfInstructionChanges } from '@plugins/discord/main/instructionsNews'
 import {
   closeRoomsOfEndedTabs,
   discordFollowsEachTurn,
@@ -645,8 +643,7 @@ import {
   resolveWorkspace,
   instructionsPartOf,
   savedFromTheDialog,
-  seenDefaults,
-  undoneDefaults,
+  InstructionAsks,
   workspaceBlock,
   type PlacedRow,
   type Recipient
@@ -1564,6 +1561,7 @@ const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = dis
 let askButtons: AskButtons | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
+let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
@@ -1908,12 +1906,6 @@ function notesFileOfScope(scope: string): string | undefined {
 }
 
 copyEachOpenedFile(moments, (o) => copyToPhone(o.tabId, o.target, o.view))
-tellThePhoneOfInstructionChanges(moments, async (text) => {
-  const channelId = discordBinding?.channel()?.channelId
-  if (!discordRelay || !channelId) return false
-  await discordRelay.send(channelId, [], text)
-  return true
-})
 
 const commands = new Commands(PLUGINS)
 
@@ -2379,14 +2371,18 @@ registerSessionCommands(commands, {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
-    changed: ({ workspace, by, notice }) => {
-      if (workspace) pushToSessions.instructionsChanged({ workspace, by })
-      announceNow(INSTRUCTIONS_CHANGED, notice)
-    },
+    askTheOwner: (ask) =>
+      instructionAsks
+        ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS)
+        : Promise.resolve('timeout'),
     overseerSide: butlerSide,
     isOverseer: isButlerNow,
     overseerBlock: () =>
-      butlersBlock(loadSettings().butler, (butler) => commitSettings({ butler }), Date.now),
+      butlersBlock(
+        () => loadSettings().butler,
+        (butler) => commitSettings({ butler }),
+        Date.now
+      ),
     workspaceOf: pinnedWorkspaceOfTab,
     pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
     workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now),
@@ -3732,7 +3728,11 @@ app.whenReady().then(() => {
     workspaces: () => workspaceMgr,
     announce: announceNow
   })
-  forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
+  forgetAsksOfEndedTabs(moments, {
+    slash,
+    asks: () => sessionAsks,
+    instructionAsks: () => instructionAsks
+  })
   followEachState(moments, {
     asks: () => sessionAsks,
     slash,
@@ -4215,14 +4215,16 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
-  const secrets = new SecretAsks<OwnerAsk>({
-    show: pushSecretAsks(pluginIpc),
-    owner: {
-      waitsOnTheOwner: (tabId) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
-      ownerAnswered: (tabId) => {
-        if (tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
-      }
+  const ownerWaits = {
+    waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
+    ownerAnswered: (tabId: string) => {
+      if (tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
     }
+  }
+  const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
+  instructionAsks = new InstructionAsks({
+    show: (asks) => pushToSessions.instructionAsks(asks),
+    owner: ownerWaits
   })
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
@@ -6709,9 +6711,7 @@ function registerIpc(): void {
       defaultsOfProjects.write(workspacePath, (saved) =>
         savedFromTheDialog(saved, raw, Date.now())
       ),
-    instructionsSeen: (workspacePath) => defaultsOfProjects.write(workspacePath, seenDefaults),
-    undoInstructions: (workspacePath, change) =>
-      defaultsOfProjects.write(workspacePath, (saved) => undoneDefaults(saved, change, Date.now()))
+    instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined }
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

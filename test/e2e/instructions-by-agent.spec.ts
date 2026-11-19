@@ -32,14 +32,13 @@ import type { BackendId } from '../../src/shared/types'
 test.afterEach(({ env }) => killFakeRemote(env))
 
 const WRITTEN = 'Answer in Chinese.'
-const lineOf = (who: string): string => `${who} says: run npm test first.`
-const TOAST = /changed the instructions of \S+ · View$/
 const AGENT_LABEL: Record<BackendId, 'Claude' | 'Codex' | 'Muse' | 'Antigravity'> = {
   claude: 'Claude',
   codex: 'Codex',
   muse: 'Muse',
   agy: 'Antigravity'
 }
+const AN_ASK_SHOWS_WITHIN_MS = 20_000
 
 function versionsOnDisk(env: E2EEnv): InstructionsVersion[] {
   const all = Object.values(
@@ -101,48 +100,48 @@ async function startIn(page: Page, wsName: string, backend: BackendId): Promise<
   return tab
 }
 
-async function agentAddsAndOwnerUndoes(
+const askDialog = (page: Page) => page.getByRole('dialog', { name: 'Change the instructions?' })
+
+async function agentProposes(page: Page, line: string): Promise<void> {
+  const typed = `/koloft instructions add -- ${line}`
+  await runIn(page, centerTerm(page), typed)
+  try {
+    await expect(askDialog(page)).toBeVisible({ timeout: AN_ASK_SHOWS_WITHIN_MS })
+  } catch {
+    await runIn(page, centerTerm(page), typed)
+    await expect(askDialog(page)).toBeVisible({ timeout: AN_ASK_SHOWS_WITHIN_MS })
+  }
+  await expect(askDialog(page).locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
+}
+
+async function ownerDeclinesThenAgrees(
   page: Page,
   env: E2EEnv,
+  wsName: string,
   tabId: string,
   backend: BackendId
 ): Promise<void> {
-  const before = versionsOnDisk(env).at(-1)?.text ?? ''
-  const line = lineOf(backend)
-  const typed = `/koloft instructions add -- ${line}`
-  await expect
-    .poll(
-      async () => {
-        if (versionsOnDisk(env).at(-1)?.text.includes(line)) return true
-        await runIn(page, centerTerm(page), typed)
-        return false
-      },
-      { timeout: 60_000, intervals: [3000] }
-    )
-    .toBe(true)
-  const changed = versionsOnDisk(env).at(-1)!
-  expect(changed).toMatchObject({ text: `${before}\n${line}`, agent: true, unseen: true })
-  expect(changed.by).not.toBe('owner')
+  const row = wsRows(page, wsName).and(page.locator(`[data-tab-id="${tabId}"]`))
+  const before = versionsOnDisk(env)
+  const declined = `${backend} asked first: lint before pushing.`
+  await agentProposes(page, declined)
+  await expect(row).toHaveClass(/\bst-approval\b/)
+  await askDialog(page).getByRole('button', { name: "Don't change" }).click()
+  await expect(askDialog(page)).toHaveCount(0)
+  expect(versionsOnDisk(env)).toEqual(before)
 
-  const toast = page.locator('.toast', { hasText: TOAST })
-  await expect(toast).toBeVisible()
-  await expect(toast).toContainText(`"${changed.by}" changed the instructions of `)
-  await toast.click()
-  const dlg = page.getByRole('dialog', { name: 'Session defaults' })
-  await expect(dlg.locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
-  await expect(dlg.getByText(`changed by ${changed.by}`)).toBeVisible()
-  await expect.poll(() => versionsOnDisk(env).some((v) => v.unseen)).toBe(false)
-  await dlg.getByRole('button', { name: 'Undo this change' }).click()
-  await expect(dlg.getByText('Change undone')).toBeVisible()
-  await expect(dlg.locator('.instr-change')).toHaveCount(0)
-  await expect(dlg.getByRole('textbox', { name: 'Instructions' })).toHaveValue(before)
-  await expect.poll(() => versionsOnDisk(env).at(-1)).toMatchObject({ text: before, by: 'owner' })
-  await dlg.getByRole('button', { name: 'Cancel' }).click()
-  await expect(dlg).toHaveCount(0)
+  const agreed = `${backend} says: run npm test first.`
+  await agentProposes(page, agreed)
+  await askDialog(page).getByRole('button', { name: 'Change them' }).click()
+  await expect(askDialog(page)).toHaveCount(0)
+  await expect
+    .poll(() => versionsOnDisk(env).at(-1)?.text)
+    .toBe(`${before.at(-1)?.text ?? ''}\n${agreed}`)
+  expect(versionsOnDisk(env).at(-1)?.by).not.toBe('owner')
 }
 
-test.describe('koloft instructions: an agent adds a line to the owner’s instructions, the owner is shown the change and undoes it', () => {
-  test('on this Mac, a Claude Code, Codex, Muse and Antigravity session each add a line to their own workspace’s instructions; a clickable toast opens Session defaults at the change, which the owner undoes', async ({
+test.describe('koloft instructions: an agent proposes a line for the owner’s instructions, the owner is asked in that session’s own tab, and only what the owner agrees to is kept', () => {
+  test('on this Mac, a Claude Code, Codex, Muse and Antigravity session each propose a line for their own workspace; the ask shows in the session’s tab, which waits on the owner; declined changes nothing, agreed adds the line', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -158,14 +157,19 @@ test.describe('koloft instructions: an agent adds a line to the owner’s instru
       await waitBooted(page)
       await ownerWrites(page, 'ws-a', WRITTEN)
       for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
-        await agentAddsAndOwnerUndoes(page, env, await startIn(page, 'ws-a', backend), backend)
-      expect(versionsOnDisk(env).at(-1)).toMatchObject({ text: WRITTEN, by: 'owner' })
+        await ownerDeclinesThenAgrees(
+          page,
+          env,
+          'ws-a',
+          await startIn(page, 'ws-a', backend),
+          backend
+        )
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test("on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each change that workspace's instructions, which the owner sees and undoes", async ({
+  test("on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each propose a line for that workspace's own instructions, asked in its tab", async ({
     env
   }) => {
     test.setTimeout(400_000)
@@ -176,9 +180,10 @@ test.describe('koloft instructions: an agent adds a line to the owner’s instru
       await addRemoteWorkspace(page, env)
       await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
       for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
-        await agentAddsAndOwnerUndoes(
+        await ownerDeclinesThenAgrees(
           page,
           env,
+          REMOTE_WS_NAME,
           await startIn(page, REMOTE_WS_NAME, backend),
           backend
         )
@@ -190,7 +195,7 @@ test.describe('koloft instructions: an agent adds a line to the owner’s instru
     }
   })
 
-  test('the butler adds a line to its own instructions: its strip says so with View ›, which shows the change and undoes it, then says Change undone', async ({
+  test("the butler proposes a line for its own instructions: the ask shows in the butler's tab, and the line is kept once the owner agrees", async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -201,28 +206,14 @@ test.describe('koloft instructions: an agent adds a line to the owner’s instru
       await waitBooted(page)
       await butlerRow(page).click()
       await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const tabId = (await butlerRow(page).getAttribute('data-tab-id'))!
       const butlerVersions = (): InstructionsVersion[] =>
         (settingsOnDisk(env).butler as { instructions?: InstructionsVersion[] }).instructions ?? []
-      const line = lineOf('Alfred')
-      await page.evaluate(
-        ([tab, t]) => window.api.terminal.write(tab, t),
-        [tabId, `/koloft instructions add -- ${line}\r`]
-      )
-      await expect.poll(() => butlerVersions().at(-1)?.text, { timeout: 30_000 }).toBe(line)
-      const strip = page.locator('.term-island .butler-strip')
-      await expect(strip.locator('.changed')).toHaveText(
-        `${butlerVersions().at(-1)!.by} changed the instructions`
-      )
-      await strip.getByRole('button', { name: 'View ›' }).click()
-      const view = page.getByRole('dialog', { name: 'Instructions' })
-      await expect(view.locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
-      await expect(view.locator('.pal-tips')).toHaveText('1 line added · Esc')
-      await expect(strip.locator('.changed')).toHaveCount(0)
-      await view.getByRole('button', { name: 'Undo this change' }).click()
-      await expect(view).toHaveCount(0)
-      await expect(strip.locator('.wb-title')).toContainText('Change undone')
-      expect(butlerVersions().at(-1)).toMatchObject({ text: '', by: 'owner' })
+      const line = 'Ask me before any session merges a pull request.'
+      await agentProposes(page, line)
+      await expect(askDialog(page)).toContainText("wants to change Alfred's instructions")
+      expect(butlerVersions()).toEqual([])
+      await askDialog(page).getByRole('button', { name: 'Change them' }).click()
+      await expect.poll(() => butlerVersions().at(-1)).toMatchObject({ text: line, by: 'Alfred' })
     } finally {
       await quitAndClose(app)
     }

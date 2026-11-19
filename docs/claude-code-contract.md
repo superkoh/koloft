@@ -4422,6 +4422,6 @@ So no signal Koloft keeps today tells, on Claude Code, that the turn a command r
 started by the owner's own words and not by Koloft typing; the other three agents were not
 probed.
 
-Koloft dependents: `koloft instructions` changes the owner's instructions in any turn and
-shows each change to the owner with an undo (`src/plugins/sessions/main/instructionsVerb.ts`);
-its View shows no "Because you said".
+Koloft dependents: `koloft instructions` does not try to tell whose words started the turn;
+it asks the owner to agree to every change in the proposing session's own tab
+(`src/plugins/sessions/main/instructionsVerb.ts`).

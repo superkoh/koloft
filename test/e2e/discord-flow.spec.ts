@@ -17,10 +17,8 @@ import {
   trustInMuse,
   type E2EEnv
 } from './helpers/env'
-import { SEE_OR_UNDO_IT_IN_KOLOFT } from '../../src/plugins/discord/main/instructionsNews'
 import {
   agyConversationOnceFirstTurnEnded,
-  butlerRow,
   butlerSessionOnDisk,
   centerTerm,
   runIn,
@@ -1708,26 +1706,4 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       }
     })
   }
-
-  test("an agent's change to the owner's instructions reaches the butler's channel as one sentence", async ({
-    env
-  }) => {
-    seedConductor(env, 'claude')
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await expect(butlerRow(page)).toHaveAttribute('data-tab-id', /.+/)
-      const tabId = (await butlerRow(page).getAttribute('data-tab-id'))!
-      await page.evaluate(
-        ([tab, typed]) => window.api.terminal.write(tab, typed),
-        [tabId, '/koloft instructions add -- Ask me before any merge.\r']
-      )
-      await expect
-        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toMatch(new RegExp(`changed its instructions\\. ${SEE_OR_UNDO_IT_IN_KOLOFT}`))
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
 })

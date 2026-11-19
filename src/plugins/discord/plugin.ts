@@ -2,7 +2,6 @@ import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
   DIALOG_CLOSED,
   FILE_OPENED,
-  INSTRUCTIONS_CHANGED,
   SESSION_BOUND,
   SESSION_STARTED,
   STATE_CHANGED,
@@ -42,8 +41,7 @@ export const plugin: PluginManifest = {
       SESSION_BOUND.name,
       STATE_CHANGED.name,
       TOOL_DONE.name,
-      DIALOG_CLOSED.name,
-      INSTRUCTIONS_CHANGED.name
+      DIALOG_CLOSED.name
     ]
   }
 }

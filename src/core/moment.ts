@@ -100,7 +100,6 @@ export const TURN_OVER = named<TurnOver>('turn-over')
 export const ATTENTION_CHANGED = named<readonly AttentionEvent[]>('attention-changed')
 export const TAB_STOPPING = named<TabStopping>('tab-stopping')
 export const DIALOG_CLOSED = named<string>('dialog-closed')
-export const INSTRUCTIONS_CHANGED = named<string>('instructions-changed')
 
 export type Hears<T> = (moment: T) => unknown
 
