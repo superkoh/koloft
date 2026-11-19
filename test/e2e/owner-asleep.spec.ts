@@ -72,8 +72,16 @@ test.describe('owner asleep', () => {
 
     await type('/later /ask Which colour?|Red|Green')
     const asleep = page.locator('.tb-ico[aria-label="Owner asleep"]')
+    await expect(asleep).toHaveAttribute(
+      'title',
+      'Going to sleep — sessions keep going without you'
+    )
     await asleep.click()
     await expect(asleep).toHaveClass(/\bon\b/)
+    await expect(asleep).toHaveAttribute(
+      'title',
+      "Asleep — sessions keep going on their own. Click when you're back"
+    )
     await expect.poll(() => fs.existsSync(marker)).toBe(true)
 
     fs.writeFileSync(path.join(env.home, 'go-later'), '')

@@ -4,6 +4,7 @@ import {
   AwayDigest,
   BUTLER_CHECKED_AGAIN_MS,
   DIGEST_GATHERS_MS,
+  digestText,
   ITEMS_PER_DIGEST,
   VERDICT_WAITED_AT_MOST_MS
 } from '../../src/main/awayDigest'
@@ -253,5 +254,34 @@ describe('AwayDigest — while the owner is away, what sessions did goes to the 
     state.busy = false
     await vi.advanceTimersByTimeAsync(BUTLER_CHECKED_AGAIN_MS)
     expect(told).toHaveLength(1)
+  })
+
+  it('the butler gets the digest word for word: each session, what happened, the rest counted, and what the owner touched before leaving', () => {
+    const stopped = { kind: 'exited' as const, title: 'Deps' }
+    const text = digestText(
+      [
+        {
+          kind: 'turn-done',
+          title: 'Fix login',
+          sessionId: 's1',
+          workspace: 'koloft',
+          reply: 'Done.\n\nShall I open the PR?'
+        },
+        { kind: 'approval', sessionId: 's2' },
+        ...Array<typeof stopped>(11).fill(stopped)
+      ],
+      ['Notes', 'Plan']
+    )
+    expect(text).toBe(
+      '(From Koloft:) The owner is away from Koloft, and these sessions changed since they last used it: ' +
+        '1. "Fix login" (session s1, workspace koloft) finished its turn and waits; it said: "Done. Shall I open the PR?". ' +
+        '2. "A session" (session s2) waits for an answer or an approval. ' +
+        '3. "Deps" stopped unexpectedly. 4. "Deps" stopped unexpectedly. 5. "Deps" stopped unexpectedly. ' +
+        '6. "Deps" stopped unexpectedly. 7. "Deps" stopped unexpectedly. 8. "Deps" stopped unexpectedly. ' +
+        '9. "Deps" stopped unexpectedly. 10. "Deps" stopped unexpectedly. ' +
+        'And 3 more; koloft todo lists them all. ' +
+        'Before leaving, the owner worked at the Mac with "Notes", "Plan". ' +
+        'What you reply to this goes nowhere. If any of it needs the owner, tell them on Discord with koloft discord send -- "<what to say>"; if none of it does, do nothing.'
+    )
   })
 })
