@@ -15,6 +15,7 @@ export interface AgentCaller {
 export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Promise<AgentReply>
 
 export const EXIT_USAGE = 2
+export const AGENT_SHIM_WAITS_MS = 10_000
 
 export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 

@@ -13,7 +13,7 @@ import { sanitizeLoadedSettings } from '../../../../src/shared/settingsOps'
 import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { sessionStartContext } from '../../../../src/main/museHooks'
-import { handoverPreamble } from '../../../../src/main/handover'
+import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
 import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 
 const BUTLER: ButlerSetting = { name: 'Alfred', formerNames: [] }

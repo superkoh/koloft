@@ -33,8 +33,12 @@ import {
   handoverInOwnersLanguage,
   handoverPreamble,
   withHandover
-} from '../../src/main/handover'
-import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
+} from '../../src/plugins/sessions/main/handoverPreamble'
+import {
+  A_HELPER_HAS_IT,
+  FROM_KOLOFT,
+  crossSessionLine
+} from '../../src/plugins/sessions/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../src/main/agyHooks'

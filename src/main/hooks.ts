@@ -4,8 +4,12 @@ import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import type { KoloftHook } from './codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
-import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
-import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
+import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from '@plugins/sessions/main/handoverPreamble'
+import {
+  FROM_A_SESSION,
+  FROM_KOLOFT,
+  type ModeClass
+} from '@plugins/sessions/main/crossSessionMessage'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { OWNER_ASLEEP_PUSH } from '@plugins/butler/api'
 import { REMOTE_HOOK_DIR } from './remote/paths'

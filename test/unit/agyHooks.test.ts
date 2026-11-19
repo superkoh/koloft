@@ -10,9 +10,13 @@ import {
   writeAgyScripts,
   type AgyScripts
 } from '../../src/main/agyHooks'
-import { handoverPreamble, withHandover } from '../../src/main/handover'
+import { handoverPreamble, withHandover } from '../../src/plugins/sessions/main/handoverPreamble'
 import { LineTail } from '../../src/main/museSessionLog'
-import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
+import {
+  A_HELPER_HAS_IT,
+  FROM_A_SESSION,
+  FROM_KOLOFT
+} from '../../src/plugins/sessions/main/crossSessionMessage'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,

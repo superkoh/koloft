@@ -25,7 +25,7 @@ import {
 } from '../../../../src/plugins/discord/main/relay'
 import { SessionAsks, type SessionAskDeps } from '../../../../src/plugins/sessions/main/sessionAsks'
 import { HandOver, type HandOverDeps } from '../../../../src/plugins/sessions/main/handOver'
-import { typeKeys } from '../../../../src/main/typeKeys'
+import { typeKeys } from '../../../../src/core/typeKeys'
 import { waitingForAnswer } from '../../../../src/shared/slashCommands'
 import {
   CODEX_DISCORD_SAID_ENV,

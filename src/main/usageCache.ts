@@ -3,7 +3,7 @@ import path from 'path'
 import type { BackendId, UsageRead, UsageRecord, UsageRow } from '@shared/types'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { AGY_APP_DIR, agyTranscript, conversationDb } from './agyStore'
-import { PrivateRecordFile } from './privateFile'
+import { PrivateRecordFile } from '@core/privateFile'
 import { mapAtMost } from '@core/mapAtMost'
 import { claudeCallKeys, recordsOfClaudeCalls, type ClaudeCalls } from './usageScan'
 

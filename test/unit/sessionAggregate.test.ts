@@ -14,7 +14,10 @@ import {
   type SessionMeta,
   type RescanState
 } from '../../src/main/sessionAggregate'
-import { handoverInOwnersLanguage, withHandover } from '../../src/main/handover'
+import {
+  handoverInOwnersLanguage,
+  withHandover
+} from '../../src/plugins/sessions/main/handoverPreamble'
 import { PENDING_SESSION_TITLE, PLACEHOLDER_SESSION_TITLE, type SessionRow } from '@shared/types'
 
 const WS = '/Users/dev/proj'

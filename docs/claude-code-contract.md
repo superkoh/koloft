@@ -561,7 +561,7 @@ Unless a bullet below says more, it is inferred, not checked.
   2026-10-27, CC 2.1.310 and 2.1.311, interactive haiku in a python pty read with
   `pyte`, one single-line bracketed paste each, Enter 2 s later, a real 8×8 PNG
   outside the cwd. Text Koloft pastes in for the owner (`bracketedPaste` in
-  `src/main/typeKeys.ts`) that ends with an image path therefore reaches the model as
+  `src/core/typeKeys.ts`) that ends with an image path therefore reaches the model as
   typed on 2.1.311, and as an attached image on 2.1.310 (inferred from this probe, not
   run through Koloft).
 - **2.1.311 adds a `tools-used` record** `{type: "tools-used", tools, sessionId}` with no
@@ -3100,7 +3100,7 @@ sessions.
 - **A receiver started with `--dangerously-skip-permissions` holds a message whose sender
   does not say it runs the same way.** Measured 2026-10-02, CC 2.1.288, four interactive
   receivers in a scratch `HOME`, each sent one line on its socket while idle; re-run
-  2026-10-03, CC 2.1.288, with Koloft's own writer (`src/main/crossSessionMessage.ts`)
+  2026-10-03, CC 2.1.288, with Koloft's own writer (`src/plugins/sessions/main/crossSessionMessage.ts`)
   against one logged-in receiver:
   - content `<cross-session-message from-mode="bypass">` + `\n` + body + `\n` +
     `</cross-session-message>`: delivered — the screen showed "Message from @peer: …" and
