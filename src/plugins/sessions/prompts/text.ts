@@ -113,5 +113,10 @@ export const TEXT: readonly TextBlock[] = [
   {
     slot: 'butler-koloft',
     text: ` Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's). ${PICK_FOR_THE_TASK} ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}`
+  },
+  {
+    slot: 'workspace-owner-instructions',
+    text: `Written by the owner for this workspace
+{{owner-instructions}}`
   }
 ]

@@ -3,6 +3,7 @@ import { SESSION_BACKENDS } from './sessionBackend'
 import { NAMED_MODELS, type NamedModel } from './cronModels'
 import { TASK_TIERS, TIER_PICKS, cleanOwnPick, ownPickOf } from './sessionPicks'
 import { isRecord } from './workbenchState'
+import { cleanVersions } from '@core/ownerInstructions'
 
 export const NO_DEFAULTS: SessionDefaults = { picks: {} }
 
@@ -26,8 +27,9 @@ export function sanitizeDefaults(raw: unknown): SessionDefaults | undefined {
     })
   )
   const rules = typeof raw.rules === 'string' ? raw.rules.trim() : ''
-  if (!rules && Object.keys(picks).length === 0) return undefined
-  return { picks, ...(rules && { rules }) }
+  const instructions = cleanVersions(raw.instructions)
+  if (!rules && Object.keys(picks).length === 0 && !instructions.length) return undefined
+  return { picks, ...(rules && { rules }), ...(instructions.length && { instructions }) }
 }
 
 export function sanitizeSessionDefaults(raw: unknown): Record<string, SessionDefaults> {

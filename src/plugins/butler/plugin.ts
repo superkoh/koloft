@@ -20,15 +20,20 @@ export const BUTLER_SET_UP = 'butler-set-up'
 export const BUTLER_STRIP = 'butler-strip'
 export const BUTLER_INSTRUCTIONS = 'butler-instructions'
 export const BUTLER_FRESH = 'butler-fresh'
+export const BUTLER_PAGE = 'butler'
 export const OWNER_ASLEEP_SWITCH = 'owner-asleep'
 
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'butler',
   name: 'Butler',
+  does: '{{butler-name}}’s row and page, his helpers, Ask AI in ⌘P, the away digest and the morning report.',
   mandatory: true,
   needs: ['sessions'],
-  settings: { keys: ['butler', 'butlerSession', 'ownerAsleepSince'] },
+  settings: {
+    page: { label: 'Butler', words: ['管家'] },
+    keys: ['butler', 'butlerSession', 'ownerAsleepSince']
+  },
   text: TEXT,
   channels: Object.values(CHANNELS),
   assistJobs: ASSIST_JOBS,
@@ -52,6 +57,7 @@ export const plugin: PluginManifest = {
     { place: 'below-terminal', id: BUTLER_STRIP },
     { place: 'dialog', id: BUTLER_INSTRUCTIONS },
     { place: 'dialog', id: BUTLER_FRESH },
+    { place: 'settings-page', id: BUTLER_PAGE },
     { place: 'sidebar-foot', id: OWNER_ASLEEP_SWITCH }
   ]
 }

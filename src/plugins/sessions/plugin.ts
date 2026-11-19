@@ -25,6 +25,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'sessions',
   name: 'Sessions core',
+  does: 'Sessions, messages between them, worktrees, handoffs, and how a session’s question reaches you.',
   mandatory: true,
   needs: [],
   commands: [{ verb: 'help' }, { verb: 'session' }, { verb: 'workspace' }],

@@ -7,6 +7,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'passwords',
   name: 'Passwords and sign-in',
+  does: 'An agent asks you for a password, a code or a sign-in; the sudo box.',
   mandatory: false,
   needs: ['sessions', 'workbench'],
   commands: [{ verb: 'secret' }, { verb: 'page' }],

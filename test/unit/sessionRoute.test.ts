@@ -81,9 +81,12 @@ describe('routeJob: what Koloft Assist is told', () => {
         "settings-appearance | Settings ▸ Appearance | 外观, 字号, 字体, 主题, 深色, font",
         "settings-shortcuts | Settings ▸ Shortcuts | 快捷键, keyboard, hotkey",
         "settings-assist | Settings ▸ Assist | 助手",
-        "settings-discord | Settings ▸ Discord | 机器人",
+        "settings-plugins | Settings ▸ Plugins | 插件, plugin, 功能开关",
+        "settings-browser-control | Settings ▸ Plugins ▸ Browser control | 网页控制, 浏览器控制",
+        "settings-butler | Settings ▸ Plugins ▸ Butler | 管家",
+        "settings-discord | Settings ▸ Plugins ▸ Discord | 机器人",
         "settings-notifications | Settings ▸ Notifications | 通知, 提醒",
-        "settings-extensions | Settings ▸ Extensions | 扩展, 插件, plugin",
+        "settings-extensions | Settings ▸ Extensions | 扩展",
         "settings-about | Settings ▸ About | 关于, 版本号, version",
       ]
     `)

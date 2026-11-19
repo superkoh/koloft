@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { PrCheckBucket, PrChecks } from '@shared/types'
-import { checksDot, checksLine } from '../../src/renderer/src/components/prChecksView'
+import { checksDot, checksLine } from '../../../../src/plugins/github/renderer/prChecksView'
 
 function checks(...buckets: PrCheckBucket[]): PrChecks {
   return {

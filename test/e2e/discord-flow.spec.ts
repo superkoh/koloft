@@ -59,7 +59,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { codexAnswers, type CodexWireLine } from './helpers/codex'
-import { openSettings } from './helpers/extensions'
+import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
@@ -1047,7 +1047,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Discord', async ({
+  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Plugins ▸ Discord', async ({
     env
   }) => {
     seedSettings(env, {
@@ -1067,8 +1067,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect(page.locator('.toast')).toHaveText(report, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
       })
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await openPluginPage(page, 'Discord')
       await expect(page.locator('.set-main .acct-login-state.bad')).toHaveText(
         /^Cannot post here: Discord answered 403/
       )

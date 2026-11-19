@@ -10,6 +10,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'inbox',
   name: 'Inbox',
+  does: 'The cards page, and which card a finished turn gets.',
   mandatory: true,
   needs: ['sessions'],
   commands: [{ verb: 'inbox' }],

@@ -1,6 +1,7 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
+import type { InstructionsVersion } from '@core/ownerInstructions'
 
 export interface ProjectInfo {
   root: string
@@ -347,6 +348,7 @@ export interface AppSettings {
   gitAutoFetch: boolean
   gitAutoPull: boolean
   agentTools: boolean
+  pluginsOn: Record<string, boolean>
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
@@ -373,7 +375,10 @@ export interface OwnPick {
 export interface SessionDefaults {
   picks: Partial<Record<BackendId, OwnPick>>
   rules?: string
+  instructions?: InstructionsVersion[]
 }
+
+export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & { instructions: string }
 
 export type SessionDefaultsRead =
   | {
@@ -455,6 +460,7 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   gitAutoFetch: true,
   gitAutoPull: false,
   agentTools: true,
+  pluginsOn: {},
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,

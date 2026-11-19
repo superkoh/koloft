@@ -1,11 +1,10 @@
 // ADR-0051
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import { slot } from '@core/ui'
-import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
+import type { ConductorOpenResult, PaletteRequest, SessionInfo, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { ClaimsWorkspace, LandingAfterClose } from './store'
-import type { Icon } from './icons'
 import type { Settings, WorkspaceRows } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
@@ -41,12 +40,14 @@ export interface RowSetUpFill {
 
 export const ROW_SET_UP = slot<RowSetUpFill>('row-set-up')
 
-export interface SettingsPageIcon {
-  page: string
-  Icon: Icon
+export interface PluginSetUp {
+  plugin: string
+  useLabel: () => string
+  run: () => Promise<string | null>
 }
 
-export const SETTINGS_PAGE_ICON = slot<SettingsPageIcon>('settings-page-icon')
+export const PLUGIN_SET_UP = slot<PluginSetUp>('plugin-set-up')
+
 export type MarkOf = (
   wsPath: string,
   row: SessionRow,
@@ -81,6 +82,28 @@ export interface WorkspaceGitPart {
 }
 
 export const WORKSPACE_GIT_PART = slot<WorkspaceGitPart>('workspace-git-part')
+
+export interface WorkbenchPartContext {
+  visible: boolean
+  treeRoot: string | null
+  session: SessionInfo | null
+  onReturnFocus: () => void
+  reread: () => void
+  openWeb: (url: string) => void
+  closeNewTabMenu: () => void
+  closeDownloads: () => void
+}
+
+export interface WorkbenchPartView {
+  button: ReactNode
+  layer: ReactNode
+  menuOpen: boolean
+  closeMenu: () => void
+}
+
+export type UseWorkbenchPart = (ctx: WorkbenchPartContext) => WorkbenchPartView
+
+export const WORKBENCH_PART = slot<UseWorkbenchPart>('workbench-part')
 
 export interface WorkspaceMenuEntry {
   label: string

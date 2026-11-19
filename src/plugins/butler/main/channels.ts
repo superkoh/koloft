@@ -1,7 +1,8 @@
 import type { MainIpc } from '@core/ipc'
 import type { ConductorOpenResult, PaletteRequest } from '@shared/types'
 import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
-import { OWNER, savedInstructions } from '../shared/instructions'
+import { OWNER } from '@core/ownerInstructions'
+import { savedInstructions } from '../shared/instructions'
 import type { ButlerSetting } from '../shared/types'
 
 export interface ChannelDeps {
