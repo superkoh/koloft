@@ -278,13 +278,7 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import {
-  CronRunner,
-  type LaunchRequest,
-  type LaunchResult,
-  type LeftTab,
-  type RunLeftovers
-} from './cronRunner'
+import { CronRunner, type LaunchRequest, type LaunchResult, type RunLeftovers } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
@@ -296,17 +290,10 @@ import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
-import {
-  GithubLookup,
-  ghOpenCounts,
-  ghRead,
-  openCountsArgs,
-  parseOpenCounts,
-  parseGithubFixture,
-  type GithubOptions
-} from './github'
-import { GithubCountsSweep } from './githubCounts'
-import { runGh } from './prChecks'
+import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
+import { GithubCountsSweep } from '@plugins/github/main/countsSweep'
+import { githubLookups } from '@plugins/github/main/lookup'
+import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
@@ -509,7 +496,7 @@ import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { toChannel } from './discord/slash'
-import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
+import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
@@ -524,8 +511,9 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
-import { registerGithubCommand, repoFlagOf } from './agentGithub'
+import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
+import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
@@ -554,10 +542,29 @@ import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
-import { moment, type FileOpened, type SessionStarted, type SessionStarting } from '@core/moment'
-import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
+import {
+  FILE_OPENED,
+  Moments,
+  SESSION_STARTED,
+  SESSION_STARTING,
+  type LeftTab,
+  type SessionStarted,
+  type TabEnded
+} from '@core/moment'
+import {
+  butlerLetsGoOfEndedTabs,
+  butlersWords,
+  tellEachHelperItsRole
+} from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
-import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
+import {
+  closeRoomsOfEndedTabs,
+  giveEachStartedSessionARoom,
+  withoutTheRelayTag
+} from '@plugins/discord/main/sessionHooks'
+import { forgetAsksOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
+import { forgetSecretAsksOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
+import { closeOutEachEndedRun } from '@plugins/scheduled-tasks/main/sessionHooks'
 import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
@@ -622,13 +629,14 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import {
   closingTree,
+  leftText,
   machineUnreachable,
   removeTree,
   tidyTree,
   whatIsLeft,
   type MergedHeads,
   type TidyResult
-} from './sessionClose'
+} from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -698,6 +706,12 @@ function takeErrorsNobodyCaught(): void {
     )
   })
 }
+
+const moments = new Moments(PLUGINS)
+const throwAsIfNobodyCaughtIt = (error: unknown): void =>
+  queueMicrotask(() => {
+    throw error
+  })
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -1878,8 +1892,7 @@ function notesFileOfScope(scope: string): string | undefined {
     : undefined
 }
 
-const fileOpened = moment<FileOpened>()
-copyEachOpenedFile(fileOpened, (o) => copyToPhone(o.tabId, o.target, o.view))
+copyEachOpenedFile(moments, (o) => copyToPhone(o.tabId, o.target, o.view))
 
 const commands = new Commands(PLUGINS)
 
@@ -1894,7 +1907,7 @@ registerWorkbenchCommands(commands, {
         : routed
     return openInWorkbench(tabId, decision, 'agent', target, view)
   },
-  announceOpened: fileOpened.announce,
+  announceOpened: (opened) => moments.announce(FILE_OPENED, opened),
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
@@ -2105,12 +2118,10 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
   return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
 }
 
-const sessionStarting = moment<SessionStarting>()
-const sessionStarted = moment<SessionStarted>()
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
 const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
-tellEachHelperItsRole(sessionStarting, () => helperRoleOf(loadSettings().butler))
-giveEachStartedSessionARoom(sessionStarted, {
+tellEachHelperItsRole(moments, () => helperRoleOf(loadSettings().butler))
+giveEachStartedSessionARoom(moments, {
   isButler: isButlerNow,
   butlerFolder: butlerFolderNow,
   roomFor: roomForNew
@@ -2199,8 +2210,8 @@ const sessionDeps: SessionVerbDeps = {
     const room = rooms?.ofKey(key)
     return room && roomNote(room)
   },
-  announceStarting: sessionStarting.announce,
-  announceStarted: sessionStarted.announce,
+  announceStarting: (starting) => moments.announce(SESSION_STARTING, starting),
+  announceStarted: (started) => moments.announce(SESSION_STARTED, started),
   ownersWords: withoutTheRelayTag
 }
 const sessionCommand = sessionVerb(sessionDeps)
@@ -2419,7 +2430,10 @@ registerTodoCommand(commands, {
   deleting: (row) => treeRemovals.has(row.cwd),
   worktrees: sessionDeps.worktrees,
   repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
-  pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+  pulls: async (wsPath) => {
+    const at = await hosts.of(wsPath).github.ghOfRepo(wsPath)
+    return at && listTodoPulls(at.gh, at.repo)
+  },
   mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
   mergedHeads: (dir, branch) => mergedHeads(dir, branch),
   notes: () => loadSettings().todoNotes,
@@ -3644,22 +3658,25 @@ app.whenReady().then(() => {
     sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems(tabLifecycle, {
-    slash,
     attention,
     cdpTabClosed: relayTabClosed,
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
+    workspaces: () => workspaceMgr,
+    announce: (moment, m) => void moments.announce(moment, m).catch(throwAsIfNobodyCaughtIt)
+  })
+  forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
+  butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
+  closeOutEachEndedRun(moments, () => cronRunner)
+  closeRoomsOfEndedTabs(moments, {
     typing: () => discordTyping,
-    asks: () => sessionAsks,
     relay: () => discordRelay,
     buttons: () => askButtons,
-    secrets: () => secretAsks,
-    workspaces: () => workspaceMgr,
-    cron: () => cronRunner,
-    butler: () => butler
+    rooms: () => rooms
   })
+  forgetSecretAsksOfEndedTabs(moments, () => secretAsks)
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
     if (!exited?.alive) claudeDialogs.forget(e.id)
@@ -3674,18 +3691,19 @@ app.whenReady().then(() => {
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     const restarting = closedTabs.get(e.id) === null
     closedTabs.delete(e.id)
-    const exit: TabExit = {
+    const asleep = sleepers.has(e.id)
+    const exit: TabEnded = {
       tabId: e.id,
       exitCode: e.exitCode,
       signal: e.signal,
-      asleep: sleepers.has(e.id),
+      asleep,
       crashed: !quitCommitted && exitedAbnormally(e),
+      sessionGoesOn: quitCommitted || asleep || restarting,
       left: left ?? undefined,
       ...(unexpected ? { unexpected } : {})
     }
     for (const id of sleepers.exited(e.id, ptyMgr.get(e.id)?.resumeSessionId)) forgetSleeper(id)
     tabLifecycle.emit('exit', exit)
-    roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
@@ -3693,7 +3711,6 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
-    awayDigest?.forget(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
@@ -4476,7 +4493,7 @@ app.whenReady().then(() => {
   })
   githubCounts = new GithubCountsSweep({
     workspaces: pinnedPathsChecked,
-    openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
+    openCounts: (wsPath) => githubLookup(hosts.of(wsPath).github).openCounts(wsPath),
     onChange: () => workspaceMgr?.restampLive()
   })
   workspaceMgr.start()
@@ -5204,7 +5221,7 @@ async function leftOnceRemovalsEnd(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
+    ...leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
 
@@ -5241,7 +5258,9 @@ async function endAndRemove(
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const leftSinceTheCheck =
-    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+    tabId && tree && !alreadyRemoved
+      ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
+      : []
   if (leftSinceTheCheck.length) {
     tell(
       `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
@@ -5715,12 +5734,6 @@ function touchedBefore(left: number): string[] {
   })
 }
 
-function roomOfEndedTab(tabId: string, sessionGoesOn: boolean, unexpected: boolean): void {
-  if (sessionGoesOn) rooms?.forget(tabId)
-  else if (unexpected) rooms?.stopped(tabId)
-  else void rooms?.closed(tabId)
-}
-
 function rowOfKey(key: string | undefined): SessionRow | undefined {
   return (workspaceMgr?.rows() ?? []).flatMap((w) => w.rows).find((r) => r.id === key)
 }
@@ -6006,20 +6019,17 @@ function holdMacAwake(keepAwake: boolean): void {
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
-const githubOptions: GithubOptions = {
+const githubOptions: GithubReposOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
-  // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedAccount(root),
-  openCounts: async (repo, root) => {
-    await loginEnvReady()
-    const onMachine = await gitAccounts?.machineGh(root, openCountsArgs(repo))
-    if (onMachine) return onMachine.code === 0 ? parseOpenCounts(onMachine.stdout) : null
-    return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
-  },
   gh: async (args, root) => {
     await loginEnvReady()
     return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
-  },
+  }
+}
+
+const githubLookup = githubLookups({
+  // PLATFORM§1
+  countedAs: (root) => gitAccounts?.pickedAccount(root),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -6033,10 +6043,10 @@ const githubOptions: GithubOptions = {
       return false
     }
   }
-}
+})
 
 const hosts = new Hosts(
-  localHost(new GithubLookup(githubOptions), {
+  localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
     docsPlugin: () => claudeDocsPlugin,
@@ -6731,7 +6741,7 @@ function registerIpc(): void {
     }
   })
   registerGithubChannels(pluginIpc, {
-    lookup: (root) => hosts.of(root).github,
+    lookup: (root) => githubLookup(hosts.of(root).github),
     prWorktree: async (root, pr, branch) => {
       if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
       const host = hosts.of(root)
