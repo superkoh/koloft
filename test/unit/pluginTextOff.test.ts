@@ -69,8 +69,10 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     expect(everyText()).toEqual(before)
   })
 
-  it('with Todo off, koloft help, the koloft skill and the butler lose the to-dos, pinned', async () => {
+  it('with Todo off, koloft help, the koloft skill and the butler lose the to-dos, pinned, and every session prompt stays as it was', async () => {
+    const sessions = SESSION_BACKENDS.map((b) => koloftPrompt(b))
     turnOff(['todo'])
+    expect(SESSION_BACKENDS.map((b) => koloftPrompt(b))).toEqual(sessions)
     await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/todo-off/koloft-help.txt')
     await expect(agentPluginFiles()['skills/koloft/SKILL.md']).toMatchFileSnapshot(
       './prompt-text/todo-off/koloft-skill.md'
