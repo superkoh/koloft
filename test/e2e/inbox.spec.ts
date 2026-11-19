@@ -1260,14 +1260,18 @@ test.describe(() => {
     test(`a question of a remote ${agent.label} session still waiting on the owner stays in Needs you when the owner restarts its tab, which stops it on the machine, and a pick there then reaches the restarted session as a message`, async ({
       env
     }) => {
+      test.setTimeout(A_REMOTE_AGENT_CASE_TAKES_MS + A_RESTARTED_TAB_ATTACHES_WITHIN_MS)
       const { app, page } = await launchWith(env, agent)
       try {
-        const { card } = await askOnTheMachine(page, env, agent)
+        const { tabId: before, card } = await askOnTheMachine(page, env, agent)
         await triggerRestart(app)
         await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, {
           timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
         })
         const row = wsRows(page, REMOTE_WS_NAME).first()
+        await expect(row).not.toHaveAttribute('data-tab-id', before, {
+          timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
+        })
         await expect(row).toHaveClass(/\bst-waiting\b/, {
           timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
         })
@@ -1279,6 +1283,7 @@ test.describe(() => {
           })
           .toContain(`?«${asks.pick}»`)
         await showDone(page)
+        await expect(card).toHaveCount(1)
         await expect(card.locator('.ibx-dstat')).toContainText('Answered')
       } finally {
         await quitAndClose(app)
