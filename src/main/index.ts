@@ -190,7 +190,12 @@ import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
-import { SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
+import {
+  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
+  SUDO_SHIM_FILES,
+  writeSudoShims
+} from '@plugins/passwords/main/sudoShim'
+import { passwordsOn } from '@plugins/passwords/api'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
@@ -1512,8 +1517,9 @@ function machinePackage(): MachinePackage {
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
     [AGY_LIST_FILE]: AGY_LIST_JS
   }
-  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
-    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
+  if (passwordsOn())
+    for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+      pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   for (const [rel, text] of Object.entries(docsPluginFiles()))
@@ -3588,6 +3594,7 @@ app.whenReady().then(() => {
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
+    writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
     if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)

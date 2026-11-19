@@ -4,6 +4,7 @@ import type { AskPayload } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { PluginManifest } from './plugin'
 import { errorText } from './errorText'
+import { pluginStateOf } from './switches'
 
 export interface FileOpened {
   tabId: string
@@ -107,6 +108,7 @@ export type MadeLater<T> = () => T | null
 
 interface Listener {
   at: number
+  plugin: string
   hear: Hears<never>
 }
 
@@ -140,7 +142,7 @@ export class Moments {
         return before + 0.5
       })
     )
-    const listener: Listener = { at, hear }
+    const listener: Listener = { at, plugin: pluginId, hear }
     const all = [...(this.listeners.get(moment.name) ?? []), listener]
     this.listeners.set(
       moment.name,
@@ -156,7 +158,8 @@ export class Moments {
   announce<T>(moment: Moment<T>, m: T): Promise<string[]> {
     if (!this.announcedNames.has(moment.name)) return Promise.reject(this.unannounced(moment))
     const failures: unknown[] = []
-    const said = (this.listeners.get(moment.name) ?? []).map(({ hear }) => {
+    const on = (this.listeners.get(moment.name) ?? []).filter((l) => pluginStateOf(l.plugin).on)
+    const said = on.map(({ hear }) => {
       try {
         return Promise.resolve((hear as Hears<T>)(m)).catch((error) => void failures.push(error))
       } catch (error) {

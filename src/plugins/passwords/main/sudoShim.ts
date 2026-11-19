@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { passwordsOn } from '../api'
 
 export const SECRET_VERB = 'secret'
 export const ASKPASS_NAME = 'koloft-askpass'
@@ -60,6 +61,10 @@ export const SUDO_SHIM_FILES = sudoFiles(A_TERMINAL_OPENS_IN_A_KOLOFT_SHELL_TAB)
 export function writeSudoShims(dir: string, files: Record<string, string>): void {
   for (const [name, text] of Object.entries(files)) {
     const file = path.join(dir, name)
+    if (!passwordsOn()) {
+      fs.rmSync(file, { force: true })
+      continue
+    }
     fs.writeFileSync(file, text, { mode: 0o755 })
     fs.chmodSync(file, 0o755)
   }
