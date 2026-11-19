@@ -49,10 +49,15 @@ export type UiPlace =
   | 'palette-item'
   | 'settings-page'
 
-export interface UiEntry {
-  place: UiPlace
-  id: string
-}
+export type UiEntry =
+  | { place: Exclude<UiPlace, 'palette-item'>; id: string }
+  | {
+      place: 'palette-item'
+      id: string
+      label: string
+      words: readonly string[]
+      actsOnCurrent?: true
+    }
 
 export interface PluginAssistJob {
   id: string

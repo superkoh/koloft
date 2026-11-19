@@ -17,6 +17,7 @@ import {
   ROW_SET_UP,
   PLUGIN_SET_UP,
   PART_HINT,
+  WORKSPACE_REMOVAL_LOSS,
   type PaletteRun,
   type PluginSetUp,
   type RowExtrasFill,
@@ -143,6 +144,10 @@ describe('UI parts a plugin registers', () => {
     )
     expect(run.sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
     expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+  })
+
+  it('exactly one plugin says what removing a workspace deletes, since the remove confirm names only one such loss', () => {
+    expect(placeUi(PLUGINS, PLUGIN_UIS).fillsOf(WORKSPACE_REMOVAL_LOSS)).toHaveLength(1)
   })
 
   it('exactly one plugin takes the ⌘P words core cannot route itself, and each route kind core leaves to plugins has exactly one taker', () => {
