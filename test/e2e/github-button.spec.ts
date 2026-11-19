@@ -359,11 +359,13 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       await dialog.getByLabel('Commit message').fill('G11 add the new file')
       await dialog.locator('.btn-primary', { hasText: 'Commit' }).click()
       await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.locator('.toast-msg')).toHaveText('Committed.')
       expect(gitOut(dir, 'log', '-1', '--format=%s')).toBe('G11 add the new file')
       expect(gitOut(dir, 'show', '--name-only', '--format=', 'HEAD')).toContain('G11-new.txt')
 
       await ghButton(page).click({ button: 'right' })
       await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+      await expect(page.locator('.toast-msg')).toHaveText('Pushed.', { timeout: 30_000 })
       await expect
         .poll(
           () =>
