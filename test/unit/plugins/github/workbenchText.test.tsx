@@ -19,7 +19,7 @@ let failingText: string | null = null
 const { render, renderHook, cleanup, act, waitFor } = await import('@testing-library/react')
 const { useStore } = await import('../../../../src/renderer/src/store')
 const { useWorkbenchGithub, GithubButton, GithubMenu } =
-  await import('../../../../src/renderer/src/components/workbenchGithub')
+  await import('../../../../src/plugins/github/renderer/workbench')
 
 afterEach(cleanup)
 
