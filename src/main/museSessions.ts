@@ -59,7 +59,7 @@ import {
   type LogRecord
 } from './museSessionLog'
 import { noteRead, noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
-import { UUID, hostOfPath, museSessionKey } from './sessionStore'
+import { UUID, hostOfPath, museSessionKey } from '@plugins/sessions/main/sessionStore'
 import {
   listMuseSessions,
   readMuseAsk,

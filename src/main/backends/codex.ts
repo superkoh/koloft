@@ -1,6 +1,6 @@
 import { hasUsableAccount } from '@shared/accountUsage'
 import { listAccounts } from '../accounts'
-import type { SessionBackend } from '../sessionBackends'
+import type { SessionBackend } from '@plugins/sessions/main/sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import { acceptCodexTrust, codexConfigFile } from '../codexTrust'
 import type { ResumeProbes } from '../resumePlan'

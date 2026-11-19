@@ -20,10 +20,10 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SleepingTabs } from './sleepingTabs'
+import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
+import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import {
@@ -71,7 +71,7 @@ import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
-import type { WorktreeResource } from './sessionStore'
+import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -83,7 +83,7 @@ import {
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
 import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
-import { SessionBackends } from './sessionBackends'
+import { SessionBackends } from '@plugins/sessions/main/sessionBackends'
 import {
   BACKEND_LABEL,
   backendIdOf,
@@ -105,7 +105,7 @@ import {
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker } from './attention'
+import { AttentionTracker } from '@plugins/sessions/main/attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -288,7 +288,7 @@ import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
 import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
-import { envMs } from './sessionRuntime'
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'

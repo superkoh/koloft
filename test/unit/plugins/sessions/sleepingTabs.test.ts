@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { SleepingTabs, type LiveTab } from '../../src/main/sleepingTabs'
-import type { OpenTab } from '../../src/main/openTabs'
+import { SleepingTabs, type LiveTab } from '../../../../src/plugins/sessions/main/sleepingTabs'
+import type { OpenTab } from '../../../../src/main/openTabs'
 
 const CLICK = '\x1b[<0;10;5M'
 const FOCUS_IN = '\x1b[I'

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { AttentionTracker, type SavedMark } from '../../src/main/attention'
-import type { AttentionEvent } from '../../src/shared/types'
+import { AttentionTracker, type SavedMark } from '../../../../src/plugins/sessions/main/attention'
+import type { AttentionEvent } from '../../../../src/shared/types'
 
 function makeTracker(lastRun?: SavedMark[]): {
   t: AttentionTracker

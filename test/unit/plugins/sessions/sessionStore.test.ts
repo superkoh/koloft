@@ -3,13 +3,13 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BackgroundFile } from '../../src/main/backgroundFile'
+import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import {
   SessionStore,
   codexSessionKey,
   type StoredMember,
   type WorktreeResource
-} from '../../src/main/sessionStore'
+} from '../../../../src/plugins/sessions/main/sessionStore'
 
 let directory: string
 let filename: string

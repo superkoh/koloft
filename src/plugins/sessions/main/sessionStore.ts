@@ -2,7 +2,7 @@ import fs from 'fs'
 import type { LaunchPermission } from '@shared/types'
 import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
 import { sessionKey } from '@shared/sessionBackend'
-import { BackgroundFile } from './backgroundFile'
+import { BackgroundFile } from '../../../main/backgroundFile'
 
 export interface StoredMember {
   id: string

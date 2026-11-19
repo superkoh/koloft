@@ -1,6 +1,6 @@
 import type { ResumePlan } from '@shared/types'
 import { isRemoteKey } from '@shared/remoteKey'
-import type { SessionBackend } from '../sessionBackends'
+import type { SessionBackend } from '@plugins/sessions/main/sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
 import type { AgySessions } from '../agySessions'

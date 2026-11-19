@@ -10,7 +10,7 @@ import {
 } from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { lastCompletedText } from './museSessionLog'
-import { envMs } from './sessionRuntime'
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
