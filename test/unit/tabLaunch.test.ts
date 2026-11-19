@@ -60,6 +60,7 @@ import { GithubRepos } from '../../src/main/githubRepos'
 import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
+import type { LaunchIdentity } from '../../src/main/launchPrompt'
 import { SshHost } from '../../src/main/host/sshHost'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
@@ -103,7 +104,8 @@ function filesUnder(dir: string): string {
 async function claudeTab(
   cwd: string,
   spec: Partial<CreateTabOptions>,
-  withPlugin = true
+  withPlugin = true,
+  assist?: LaunchIdentity
 ): Promise<string> {
   let handed = ''
   let conductor: boolean | undefined
@@ -124,7 +126,7 @@ async function claudeTab(
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         docsPlugin: () => '/koloft/docs-plugin',
-        assistOf: () => undefined,
+        assistOf: () => assist,
         agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' })
       }),
       (machine) =>
@@ -424,6 +426,15 @@ describe('what each of the four kinds of session tab is handed for each launch f
       }
     })
   })
+})
+
+// CC§23
+it("hands a Claude Code butler resumed on this Mac the owner's instructions of today, which its next compaction puts in place of those it started with", async () => {
+  const resumed = await claudeTab(repo, { resumeSessionId: 's1' }, true, {
+    role: 'ROLE-TEXT',
+    ownerText: 'TODAYS-OWNER-TEXT'
+  })
+  expect(resumed).toContain('"KOLOFT_OWNER_TEXT":"TODAYS-OWNER-TEXT"')
 })
 
 it("lets a Claude Code tab on this Mac run koloft without asking only when it brings Koloft's plugin", async () => {

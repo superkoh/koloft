@@ -183,12 +183,12 @@ describe('the butler', () => {
     )
   })
 
-  it('the owner’s instructions go beside its role, both when it starts and when Codex, Muse or Antigravity resume it; with none written, nothing is added', async () => {
+  it('the owner’s instructions go beside its role, both when it starts and when any agent resumes it; with none written, nothing is added', async () => {
     instructions = [
       { text: 'Old words.', at: 1, by: 'owner' },
       { text: 'Answer in Chinese.', at: 2, by: 'owner' }
     ]
-    const others = ['codex:local:t1', 'muse:local:t2', 'agy:local:t3']
+    const others = ['s0', 'codex:local:t1', 'muse:local:t2', 'agy:local:t3']
     session = { sessionIds: others }
     const c = make()
     await opened(c)

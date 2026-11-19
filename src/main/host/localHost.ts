@@ -33,7 +33,7 @@ import { listSkills, type SkillFs } from '../skillList'
 import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
-import { ownerTextOver } from '../launchPrompt'
+import { ownerTextOver, type LaunchIdentity } from '../launchPrompt'
 
 const skillFs: SkillFs = {
   readdir: (p) => fs.readdirSync(p),
@@ -96,7 +96,7 @@ export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
   docsPlugin(): string | undefined
-  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   agentHomes(): { codexHome: string; configHome: string }
 }
 
@@ -123,7 +123,11 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
   // CC§23
-  const ownerText = ownerTextOver(spec.ownerText, conductor, spec.workspaceText)
+  const ownerText = ownerTextOver(
+    spec.ownerText ?? assist?.ownerText,
+    conductor,
+    spec.workspaceText
+  )
   const agentPlugin = d.agentPlugin()
   const prompt =
     agentPlugin && !conductor
