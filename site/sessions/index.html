@@ -153,7 +153,15 @@
             starts without it. The same box has a place for rules: how this folder's agents pick the
             model and thinking of a session they start (see <a href="../agents/">agents</a>). Left
             empty, they use Koloft's own pick. Every agent gets this, on your Mac and in a
-            <a href="../remote/">remote folder</a>.
+            <a href="../remote/">remote folder</a>. Last in the box is <code>Instructions</code>:
+            write what every session in this folder should follow. Each session that starts there
+            after you save gets it, at the end of the text Koloft gives its agent, under "Written by
+            the owner for this workspace". That counts for every agent, on your Mac and in a remote
+            folder, for sessions an agent starts too, but not for your
+            <a href="../accounts/#butler">butler</a>. Where the project's own
+            <code>AGENTS.md</code> or <code>CLAUDE.md</code> says otherwise, an agent may follow
+            that file instead. The rules and the instructions together hold up to 10,000 bytes
+            (about that many English letters).
           </li>
           <li>Click an old row to resume that session.</li>
           <li id="sleep">
@@ -216,6 +224,13 @@
                 <td>
                   its turn is done, but N things it started still run in the background. The light
                   breathes while they run. Hover the mark to see them.
+                </td>
+              </tr>
+              <tr>
+                <td>green with <code>⏸ N</code></td>
+                <td>
+                  its turn is done, and N things it started wait in the background: a server, a
+                  timer, or a helper with nothing to do yet. Hover the mark to see them.
                 </td>
               </tr>
               <tr>
