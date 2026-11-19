@@ -21,7 +21,6 @@ import {
   IconAddProject,
   IconChevronRight,
   IconKeepAwake,
-  IconOwnerAsleep,
   IconNotifications,
   IconOpenedPage,
   IconSettings,
@@ -1687,19 +1686,7 @@ export default function App(): JSX.Element {
           >
             <IconKeepAwake size={20} />
           </button>
-          <button
-            className={'tb-ico' + (asleep ? ' on' : '')}
-            onClick={() => updateSettings({ ownerAsleepSince: asleep ? null : Date.now() })}
-            title={
-              asleep
-                ? "Asleep — sessions keep going on their own. Click when you're back"
-                : 'Going to sleep — sessions keep going without you'
-            }
-            aria-label="Owner asleep"
-            aria-pressed={asleep}
-          >
-            <IconOwnerAsleep size={20} />
-          </button>
+          <PartsAt place="sidebar-foot" />
           <button
             className="tb-ico"
             onClick={() => setSettingsOpen(true)}

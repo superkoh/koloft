@@ -9,10 +9,10 @@ import {
   NOTICE_SUFFIX,
   noticeLine,
   OWNER_ASLEEP_FILE,
-  OWNER_ASLEEP_PUSH,
   ownerAsleepMarker,
   seedHandedOverOwnerWords
 } from '../../src/main/hooks'
+import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
 import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
 import * as museLog from '../../src/main/museSessionLog'
 

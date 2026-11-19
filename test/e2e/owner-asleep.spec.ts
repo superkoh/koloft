@@ -13,8 +13,8 @@ import {
 } from './helpers/p1'
 import { installCodex, type E2EEnv } from './helpers/env'
 import { fakeCodexLog } from './helpers/codex'
-import { OWNER_ASLEEP_ANSWER } from '../../src/plugins/butler/main/ownerAsleep'
-import { OWNER_ASLEEP_FILE, OWNER_ASLEEP_PUSH } from '../../src/main/hooks'
+import { OWNER_ASLEEP_ANSWER, OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/main/ownerAsleep'
+import { OWNER_ASLEEP_FILE } from '../../src/main/hooks'
 
 const KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS = 20_000
 const THE_BUTLER_STARTS_AND_READS_IT_MS = 60_000
@@ -72,8 +72,16 @@ test.describe('owner asleep', () => {
 
     await type('/later /ask Which colour?|Red|Green')
     const asleep = page.locator('.tb-ico[aria-label="Owner asleep"]')
+    await expect(asleep).toHaveAttribute(
+      'title',
+      'Going to sleep — sessions keep going without you'
+    )
     await asleep.click()
     await expect(asleep).toHaveClass(/\bon\b/)
+    await expect(asleep).toHaveAttribute(
+      'title',
+      "Asleep — sessions keep going on their own. Click when you're back"
+    )
     await expect.poll(() => fs.existsSync(marker)).toBe(true)
 
     fs.writeFileSync(path.join(env.home, 'go-later'), '')
