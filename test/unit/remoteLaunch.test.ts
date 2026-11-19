@@ -140,6 +140,7 @@ const spec = ({
   settings = { hooks: {} },
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
+  docsPlugin = true,
   trustFolder,
   program,
   ...over
@@ -154,7 +155,7 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, docsPlugin, trustFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -738,17 +739,12 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
-  it('with Docs writing off, claude on the machine gets no --plugin-dir for the koloft-docs skill, and still gets Koloft’s own', () => {
-    knowPluginStates({ 'docs-writing': { on: false } })
-    try {
-      const b = box(spec({ agentPlugin: true }))
-      expect(b.run().status).toBe(0)
-      const m = `${b.home}/.koloft/m-0000000000000000`
-      expect(b.argv()).not.toContain(`${m}/docs-plugin/`)
-      expect(b.argv()).toContain(`${m}/agent-plugin/`)
-    } finally {
-      knowPluginStates({})
-    }
+  it('without the koloft-docs skill, claude on the machine gets no --plugin-dir for it, and still gets Koloft’s own', () => {
+    const b = box(spec({ agentPlugin: true, docsPlugin: false }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    expect(b.argv()).not.toContain(`${m}/docs-plugin/`)
+    expect(b.argv()).toContain(`${m}/agent-plugin/`)
   })
 
   // PLATFORM§33

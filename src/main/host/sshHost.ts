@@ -98,6 +98,7 @@ import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../ski
 import { worktreeNameAround } from '../resumePlan'
 import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 
 export interface MachineAccount {
   env: Record<string, string>
@@ -1289,6 +1290,7 @@ export class SshHost implements Host {
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              docsPlugin: docsWritingOn(),
               projectPrompt,
               ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
               claudeArgs,

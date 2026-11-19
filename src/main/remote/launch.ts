@@ -156,6 +156,7 @@ export interface TabProgram {
 export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
+  docsPlugin?: boolean
   projectPrompt?: string
   ownerText?: string
   claudeArgs: string[]
@@ -216,7 +217,7 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
     : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
   const ownerText = c.ownerText ? ` --append-system-prompt "$(cat "${T}${OWNER_TEXT_SUFFIX}")"` : ''
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json"${docsWritingOn() ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
+  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 

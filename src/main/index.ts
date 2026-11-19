@@ -1575,6 +1575,7 @@ const PLAIN_KOLOFT_SHIM = {
 }
 let claudeAgentPlugin: string | undefined
 let claudeDocsPlugin: string | undefined
+const docsPluginWhileOn = (): string | undefined => (docsWritingOn() ? claudeDocsPlugin : undefined)
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -3900,8 +3901,10 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
-      docsSkillsFolder: () =>
-        docsWritingOn() && claudeDocsPlugin ? pluginSkills(claudeDocsPlugin) : undefined,
+      docsSkillsFolder: () => {
+        const docs = docsPluginWhileOn()
+        return docs && pluginSkills(docs)
+      },
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
@@ -6089,7 +6092,7 @@ const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
-    docsPlugin: () => (docsWritingOn() ? claudeDocsPlugin : undefined),
+    docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig()),
