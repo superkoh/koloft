@@ -76,5 +76,5 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
 
 export const pushChanged =
   (ipc: MainIpc) =>
-  (snapshot: InboxSnapshot): void =>
+  (snapshot: InboxSnapshot): boolean =>
     ipc.push(CHANNELS.changed, snapshot)
