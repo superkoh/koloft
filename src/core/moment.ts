@@ -81,16 +81,19 @@ export interface TabStopping {
 export interface Moment<T> {
   readonly name: string
   readonly carries?: T
+  readonly heardWhileOff?: true
 }
 
 const named = <T>(name: string): Moment<T> => ({ name })
 
+const aTabsEnd = <T>(name: string): Moment<T> => ({ name, heardWhileOff: true })
+
 export const FILE_OPENED = named<FileOpened>('file-opened')
 export const SESSION_STARTING = named<SessionStarting>('session-starting')
 export const SESSION_STARTED = named<SessionStarted>('session-started')
-export const TAB_EXITED = named<TabEnded>('tab-exited')
-export const TAB_TORN_DOWN = named<TabEnded>('tab-torn-down')
-export const TAB_FORGOTTEN = named<string>('tab-forgotten')
+export const TAB_EXITED = aTabsEnd<TabEnded>('tab-exited')
+export const TAB_TORN_DOWN = aTabsEnd<TabEnded>('tab-torn-down')
+export const TAB_FORGOTTEN = aTabsEnd<string>('tab-forgotten')
 export const TURN_STARTED = named<string>('turn-started')
 export const TURN_ENDED = named<TurnEnded>('turn-ended')
 export const QUESTION_ASKED = named<QuestionAsked>('question-asked')
@@ -158,7 +161,9 @@ export class Moments {
   announce<T>(moment: Moment<T>, m: T): Promise<string[]> {
     if (!this.announcedNames.has(moment.name)) return Promise.reject(this.unannounced(moment))
     const failures: unknown[] = []
-    const on = (this.listeners.get(moment.name) ?? []).filter((l) => pluginStateOf(l.plugin).on)
+    const on = (this.listeners.get(moment.name) ?? []).filter(
+      (l) => moment.heardWhileOff || pluginStateOf(l.plugin).on
+    )
     const said = on.map(({ hear }) => {
       try {
         return Promise.resolve((hear as Hears<T>)(m)).catch((error) => void failures.push(error))

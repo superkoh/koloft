@@ -21,7 +21,7 @@ const DECLARED_SLOTS = new Set(BLOCKS_IN_LIST_ORDER.map(({ block }) => block.slo
 const textFor = (block: TextBlock, agent: BackendId | undefined): string =>
   (agent ? block.byAgent?.[agent] : undefined) ?? block.text
 
-export const OR_LIST = '-or-list'
+const OR_LIST = '-or-list'
 
 const asTheEndOfAList = (items: readonly string[]): string =>
   items.map((item, i) => (i === items.length - 1 ? `, or ${item}` : `, ${item}`)).join('')

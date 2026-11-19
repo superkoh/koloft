@@ -121,4 +121,21 @@ describe('session moments', () => {
     }
     expect(heard).toEqual(['b one', 'a two', 'b two'])
   })
+
+  it('the end of a tab reaches a plugin that is off too, so it can still let go of what it kept for that tab', async () => {
+    const ENDED: Moment<string> = { name: 'ended', heardWhileOff: true }
+    const heard: string[] = []
+    const moments = new Moments([
+      manifest('core', { announces: [ENDED.name] }),
+      manifest('a', { listens: [ENDED.name] })
+    ])
+    moments.listen('a', ENDED, (m) => void heard.push(m))
+    try {
+      knowPluginStates({ a: { on: false } })
+      await moments.announce(ENDED, 'tab-1')
+    } finally {
+      knowPluginStates({})
+    }
+    expect(heard).toEqual(['tab-1'])
+  })
 })

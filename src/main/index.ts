@@ -3594,8 +3594,13 @@ app.whenReady().then(() => {
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
-    writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
-    if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+    if (!passwordsOn()) secretAsks?.declineAll()
+    try {
+      writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
+      if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+    } catch (err) {
+      console.error('[koloft] could not rewrite what a plugin switch changed:', err)
+    }
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
