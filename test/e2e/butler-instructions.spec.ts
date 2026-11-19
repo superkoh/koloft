@@ -12,10 +12,8 @@ import {
   waitBooted,
   waitForAllCalls
 } from './helpers/p1'
-import {
-  INSTRUCTIONS_MAX_BYTES,
-  instructionsBytes
-} from '../../src/plugins/butler/shared/instructions'
+import { INSTRUCTIONS_MAX_BYTES } from '../../src/plugins/butler/shared/instructions'
+import { instructionsBytes } from '../../src/core/ownerInstructions'
 import type { ButlerSetting } from '../../src/plugins/butler/shared/types'
 
 test.setTimeout(120_000)

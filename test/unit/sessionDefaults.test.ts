@@ -97,7 +97,7 @@ describe('where a workspace’s session defaults are kept', () => {
 
   it('under the GitHub repository, so a worktree of it finds what was set for the workspace', async () => {
     const { store, saved } = keeper('octo/app')
-    await store.write('/work/app', { picks: { claude: { model: 'opus' } } })
+    await store.write('/work/app', () => ({ picks: { claude: { model: 'opus' } } }))
     expect(Object.keys(saved())).toEqual(['octo/app'])
     expect(await store.of('/work/app/.claude/worktrees/fix')).toEqual({
       picks: { claude: { model: 'opus' } }
@@ -106,9 +106,9 @@ describe('where a workspace’s session defaults are kept', () => {
 
   it('under the folder when it is on no GitHub repository, and an empty save removes it', async () => {
     const { store, saved } = keeper(null)
-    await store.write('/work/notes', { picks: {}, rules: 'Use sonnet.' })
+    await store.write('/work/notes', () => ({ picks: {}, rules: 'Use sonnet.' }))
     expect(saved()).toEqual({ '/work/notes': { picks: {}, rules: 'Use sonnet.' } })
-    await store.write('/work/notes', { picks: {} })
+    await store.write('/work/notes', () => undefined)
     expect(saved()).toEqual({})
   })
 
@@ -168,7 +168,7 @@ describe('where a workspace’s session defaults are kept', () => {
     const { store, saved } = keeper(null, false)
     await expect(store.read('ssh://box/srv/api')).rejects.toThrow(SET_ONCE_CONNECTED)
     await expect(
-      store.write('ssh://box/srv/api', { picks: { claude: { effort: 'low' } } })
+      store.write('ssh://box/srv/api', () => ({ picks: { claude: { effort: 'low' } } }))
     ).rejects.toThrow(SET_ONCE_CONNECTED)
     expect(saved()).toEqual({})
   })

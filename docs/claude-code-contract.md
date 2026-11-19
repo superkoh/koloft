@@ -4396,4 +4396,6 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
   model called the project file "the more specific rule"), `Signed: WALRUS` three times.
 - **Every run named the clash in its reply** and said which one it followed.
 
-Koloft dependents: none yet; the owner-written workspace block (#1995) is planned on it.
+Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
+`--append-system-prompt` (`src/main/backends/claude.ts`), and the Session defaults dialog
+says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).

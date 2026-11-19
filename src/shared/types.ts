@@ -1,6 +1,7 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
+import type { InstructionsVersion } from '@core/ownerInstructions'
 
 export interface ProjectInfo {
   root: string
@@ -373,7 +374,10 @@ export interface OwnPick {
 export interface SessionDefaults {
   picks: Partial<Record<BackendId, OwnPick>>
   rules?: string
+  instructions?: InstructionsVersion[]
 }
+
+export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & { instructions: string }
 
 export type SessionDefaultsRead =
   | {
