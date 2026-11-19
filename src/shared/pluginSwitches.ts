@@ -8,9 +8,14 @@ const SWITCHES_THAT_ACT: ReadonlySet<string> = new Set(['todo'])
 
 const saved = (settings: Settings): SavedSettings => settings as unknown as SavedSettings
 
-export function knowSwitchesIn(settings: Settings): void {
+let lastKnown = ''
+
+export function knowSwitchesIn(settings: Settings): boolean {
   const all = pluginStates(PLUGINS, saved(settings), saved(DEFAULT_SETTINGS))
-  knowPluginStates(
-    Object.fromEntries(Object.entries(all).filter(([id]) => SWITCHES_THAT_ACT.has(id)))
-  )
+  const acting = Object.fromEntries(Object.entries(all).filter(([id]) => SWITCHES_THAT_ACT.has(id)))
+  knowPluginStates(acting)
+  const now = JSON.stringify(Object.entries(acting).map(([id, s]) => [id, s.on]))
+  const changed = now !== lastKnown
+  lastKnown = now
+  return changed
 }

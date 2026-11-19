@@ -316,7 +316,9 @@ export class Butler {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
-            [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
+            ...(this.d.news.on() && {
+              [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
+            })
           }
     )
   }

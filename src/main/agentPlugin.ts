@@ -73,6 +73,10 @@ function keepFolder(dir: string, files: Files): void {
 
 const skillsCheckedThisRun = new Set<string>()
 
+export function checkSkillsAgain(): void {
+  skillsCheckedThisRun.clear()
+}
+
 function keepSkill(dir: string, files: Files): void {
   if (skillsCheckedThisRun.has(dir) && fs.existsSync(path.join(dir, 'SKILL.md'))) return
   keepFolder(dir, files)

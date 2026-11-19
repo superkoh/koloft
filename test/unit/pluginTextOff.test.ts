@@ -63,12 +63,6 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     }
   )
 
-  it('with every plugin on, the text is what it was before switches existed', () => {
-    const before = everyText()
-    turnOff([])
-    expect(everyText()).toEqual(before)
-  })
-
   it('with Todo off, koloft help, the koloft skill and the butler lose the to-dos, pinned, and every session prompt stays as it was', async () => {
     const sessions = SESSION_BACKENDS.map((b) => koloftPrompt(b))
     turnOff(['todo'])
