@@ -12,7 +12,6 @@ import {
   type AttentionEvent,
   type BaseChoice,
   type BrowserJsDialog,
-  type CronState,
   type SessionWorkbenchState,
   type LoginProgress,
   type LeftoverProcess,
@@ -165,7 +164,6 @@ interface AppState {
   setUpdateOffer: (offer: UpdateCheckResult | null) => void
   resumeDialog: ResumeDialogState | null
   resumeLaunch: { id: string; title: string } | null
-  cron: CronState
   machine: MachineState | null
   closeConfirm: {
     tabId: string
@@ -179,7 +177,7 @@ interface AppState {
   } | null
   unsavedPrompt: {
     files: string[]
-    jobs?: number
+    lost?: number
     ended?: string
     onCancel(): void
     onDiscard(): void
@@ -189,7 +187,6 @@ interface AppState {
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
-  setCron: (s: CronState) => void
   setMachine: (s: MachineState | null) => void
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
@@ -746,7 +743,6 @@ export const useStore = create<AppState>((set, get) => ({
   resumeDialog: null,
   resumeLaunch: null,
   closeConfirm: null,
-  cron: { jobs: [], live: [], folders: {}, notes: {} },
   machine: null,
   unsavedPrompt: null,
   orphanConfirm: null,
@@ -771,7 +767,6 @@ export const useStore = create<AppState>((set, get) => ({
           }
     )
   },
-  setCron: (cron) => set({ cron }),
   setMachine: (machine) => set({ machine }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
     const fresh = tabs.filter((a) => !get().tabs.some((t) => t.id === a.id))
