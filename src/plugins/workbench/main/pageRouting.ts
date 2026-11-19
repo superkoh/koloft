@@ -16,7 +16,7 @@ import {
   type OpenRequest
 } from '@shared/types'
 import { routeFor } from '@shared/browserRoute'
-import { guestMenuItems } from '../../../main/browserSecurity'
+import { guestMenuItems } from './pageRules'
 import { awaitGuestFor } from './extensionManager'
 import { openSignInWindow } from './signInWindow'
 import type { WebPages } from './webPages'

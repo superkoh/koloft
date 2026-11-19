@@ -1,6 +1,6 @@
 import path from 'path'
 import { realpathSafe } from './projectInfo'
-import { within } from './within'
+import { within } from '@core/within'
 
 function keyOf(dir: string): string {
   return `${realpathSafe(path.dirname(dir))}/${path.basename(dir)}`

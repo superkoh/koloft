@@ -1,7 +1,7 @@
 import type { WebContents } from 'electron'
 import { PICTURE_LINE } from '@shared/pastedPictures'
 import { closeOwnSession, forgetOwnSession, holdDebugger, openOwnSession } from './guestDebugger'
-import { within } from '../../../main/within'
+import { within } from '@core/within'
 
 const HTML_KEPT_CHARS = 4000
 // PLATFORM§9
