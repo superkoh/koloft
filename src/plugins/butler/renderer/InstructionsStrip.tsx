@@ -5,6 +5,7 @@ import { useStore } from '@renderer/store'
 import { isComposing } from '@renderer/keys'
 import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
 import { INSTRUCTIONS_MAX_BYTES, instructionsOf } from '../shared/instructions'
+import type { InstructionsSaveResult } from '../shared/ipc'
 import { isButlerTab } from './butlerTabs'
 import { openButler, useButler } from './state'
 import '@renderer/commandPalette.css'
@@ -64,7 +65,8 @@ export function InstructionsDialog(): JSX.Element | null {
 function InstructionsEditor(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const showToast = useStore((s) => s.showToast)
-  const [text, setText] = useState(() => instructionsOf(butler))
+  const [opened, setOpened] = useState(() => instructionsOf(butler))
+  const [text, setText] = useState(opened)
   const [error, setError] = useState('')
   const left = INSTRUCTIONS_MAX_BYTES - instructionsBytes(cleanInstructions(text))
   const close = (): void => useButler.setState({ editingInstructions: false })
@@ -72,9 +74,13 @@ function InstructionsEditor(): JSX.Element {
   const save = async (): Promise<void> => {
     if (left < 0) return
     const r = await window.api.butler
-      .saveInstructions(text)
-      .catch(() => ({ ok: false as const, error: COULD_NOT_SAVE }))
-    if (!r.ok) return setError(r.error)
+      .saveInstructions(text, opened)
+      .catch((): InstructionsSaveResult => ({ ok: false, error: COULD_NOT_SAVE }))
+    if (!r.ok) {
+      setError(r.error)
+      if (r.inUse !== undefined) setOpened(r.inUse)
+      return
+    }
     close()
     showToast(`Instructions saved. ${whenItTakesEffect(butler.name)}`)
   }

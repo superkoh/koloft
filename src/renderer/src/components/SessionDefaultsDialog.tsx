@@ -159,11 +159,14 @@ export function SessionDefaultsDialog({
         })
       ),
       ...(rules.trim() && { rules: rules.trim() }),
-      instructions
+      instructions,
+      instructionsOpened: saved.instructions
     }
     const r = await window.api.sessionDefaults.write(wsPath, out)
-    if (r.ok) onClose()
-    else setError(r.error ?? 'Koloft could not save these.')
+    if (r.ok) return onClose()
+    setError(r.error ?? 'Koloft could not save these.')
+    const { inUse } = r
+    if (inUse !== undefined) setSaved((s) => ({ ...s, instructions: inUse }))
   }
 
   return (

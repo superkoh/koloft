@@ -378,7 +378,10 @@ export interface SessionDefaults {
   instructions?: InstructionsVersion[]
 }
 
-export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & { instructions: string }
+export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & {
+  instructions: string
+  instructionsOpened: string
+}
 
 export type SessionDefaultsRead =
   | {

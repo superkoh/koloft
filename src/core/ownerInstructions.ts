@@ -40,6 +40,20 @@ export function withNewVersion(
   return [...(versions ?? []), { text, at, by }].slice(-VERSIONS_KEPT)
 }
 
+export class ChangedWhileOpen extends Error {
+  constructor(readonly inUse: string) {
+    super(
+      'While this was open, the instructions were changed. Your text is still here: Save again to put it in their place, or Cancel to keep the change.'
+    )
+  }
+}
+
+export function textTheOwnerChose(inUse: string, opened: string, typed: string): string {
+  if (typed === opened) return inUse
+  if (inUse !== opened && inUse !== typed) throw new ChangedWhileOpen(inUse)
+  return typed
+}
+
 export const ADD_A_LINE = 'add'
 export const REPLACE_THE_TEXT = 'set'
 export type AgentEdit = typeof ADD_A_LINE | typeof REPLACE_THE_TEXT
