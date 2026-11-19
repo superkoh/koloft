@@ -80,7 +80,10 @@ describe('the title behind koloft session new', () => {
       '读取并执行task-a.md任务'
     ],
     ['修侧栏\n\n(kept under 16 characters as asked)', '修侧栏'],
-    ['<br>\n修侧栏', '修侧栏']
+    ['<br>\n修侧栏', '修侧栏'],
+    ['- <br>\n修侧栏', '修侧栏'],
+    ['<p>修侧栏<br/></p>', '修侧栏'],
+    ['<SessionRow>', '<SessionRow>']
   ])(
     'a reply of several lines is named by its first line that reads like a title, not like a sentence: %#',
     async (reply, title) => {
