@@ -159,7 +159,7 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
       async ({ page, lab, fake }) => {
         await startSessionIn(page, 'kt-key', { remote: true })
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler
+          (s) => s.alive && !s.overseer
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
         const remoteStatus = async (): Promise<string | undefined> =>
@@ -235,7 +235,7 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
       async ({ page, fake }) => {
         await startSessionIn(page, 'kt-key', { remote: true })
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler
+          (s) => s.alive && !s.overseer
         )!
 
         fake.say(OWNER, `/koloft session command ${remote.sessionId} /context`)
@@ -272,13 +272,13 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           .poll(
             async () =>
               (await page.evaluate(() => window.api.sessions.list())).find(
-                (s) => s.alive && !s.butler && s.sessionId
+                (s) => s.alive && !s.overseer && s.sessionId
               )?.sessionId ?? '',
             { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS }
           )
           .not.toBe('')
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler
+          (s) => s.alive && !s.overseer
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
         const remoteStatus = async (): Promise<string | undefined> =>

@@ -2,8 +2,8 @@ import fs from 'fs'
 import { errorText } from '@core/errorText'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { ArtifactView } from '@shared/types'
-import type { DiscordRelay } from '../../../main/discord/relay'
-import { shootHtml, shootPage } from '../../../main/discord/pageShot'
+import type { DiscordRelay } from './relay'
+import { shootHtml, shootPage } from './pageShot'
 import {
   sendPhoneCopy,
   sendWholeCopy,

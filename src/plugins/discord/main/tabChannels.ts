@@ -1,5 +1,5 @@
 import type { SessionRoom } from '@shared/types'
-import { roomLink } from '../../../main/discord/rooms'
+import { roomLink } from './rooms'
 
 interface TabChannelDeps {
   butlerSide(tabId: string): boolean

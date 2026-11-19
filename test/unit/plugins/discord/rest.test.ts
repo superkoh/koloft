@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import http from 'http'
 import type { AddressInfo } from 'net'
-import { DiscordHttpError, DiscordRest } from '../../src/main/discord/rest'
+import { DiscordHttpError, DiscordRest } from '../../../../src/plugins/discord/main/rest'
 
 const LIMIT_PER_CHANNEL = 5
 const RETRY_AFTER_S = 0.2

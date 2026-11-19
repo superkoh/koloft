@@ -1,5 +1,5 @@
 import { didNotRun, slashCommandProblem } from '@shared/slashCommands'
-import { errorText } from '../agentRequests'
+import { errorText } from '@core/errorText'
 import {
   COMMAND_INTERACTION,
   COMPONENT_INTERACTION,
