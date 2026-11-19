@@ -50,3 +50,21 @@ export function pluginStates(
   for (const plugin of plugins) stateOf(plugin)
   return states
 }
+
+const ON: PluginState = { on: true }
+
+let known: Readonly<Record<string, PluginState>> = {}
+
+export function knowPluginStates(states: Readonly<Record<string, PluginState>>): void {
+  known = states
+}
+
+export const pluginStateOf = (id: string): PluginState => known[id] ?? ON
+
+export function turnedOffLine(plugin: PluginManifest): string | undefined {
+  const state = pluginStateOf(plugin.id)
+  if (state.on) return undefined
+  return state.offBecause
+    ? `${plugin.name} is off because ${state.offBecause.name} is turned off in Settings ▸ Plugins.`
+    : `${plugin.name} is turned off in Settings ▸ Plugins.`
+}

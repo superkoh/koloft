@@ -1,5 +1,4 @@
 import type { TextBlock } from '@core/plugin'
-import type { OldConversationNews } from '@plugins/butler/api'
 
 // MUSE§12
 const SORT_OUT_THE_TO_DOS =
@@ -7,8 +6,7 @@ const SORT_OUT_THE_TO_DOS =
 
 export const TODO_NOTICE = `Koloft got a new command after this conversation began: koloft todo. ${SORT_OUT_THE_TO_DOS} There is nothing to answer now.`
 
-export const TODO_NEWS: OldConversationNews = { knownBy: 'knowsTodo', text: TODO_NOTICE }
-
 export const TEXT: readonly TextBlock[] = [
-  { slot: 'butler-koloft', text: ` ${SORT_OUT_THE_TO_DOS}` }
+  { slot: 'butler-koloft', text: ` ${SORT_OUT_THE_TO_DOS}` },
+  { slot: 'away-digest-more', text: '; koloft todo lists them all' }
 ]
