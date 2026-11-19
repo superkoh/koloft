@@ -1,9 +1,18 @@
-import type { BackendId, CronEffort } from '@shared/types'
+import type { AssistRowId, BackendId, CronEffort } from '@shared/types'
 
 export interface ModelAndEffort {
   model?: string
   effort?: CronEffort
 }
+
+export interface AssistJob {
+  row: AssistRowId
+  system: string
+  prompt: string
+  signal?: AbortSignal
+}
+
+export type Assist = (job: AssistJob) => Promise<string | null>
 
 // CC§9 CODEX§15
 export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {

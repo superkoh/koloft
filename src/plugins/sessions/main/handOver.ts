@@ -6,7 +6,7 @@ import {
   crossSessionLine,
   fitsACrossSessionMessage,
   type ModeClass
-} from '../../../main/crossSessionMessage'
+} from './crossSessionMessage'
 
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const RECIPIENT_GETS_READY_WITHIN_MS = 10 * 60_000

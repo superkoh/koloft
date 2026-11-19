@@ -14,8 +14,11 @@ import {
   type Target
 } from '../../../../src/plugins/sessions/main/sessionVerbs'
 import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
-import { A_HELPER_HAS_IT, crossSessionLine } from '../../../../src/main/crossSessionMessage'
-import type { TranscriptPlaces } from '../../../../src/main/sessionBackends'
+import {
+  A_HELPER_HAS_IT,
+  crossSessionLine
+} from '../../../../src/plugins/sessions/main/crossSessionMessage'
+import type { TranscriptPlaces } from '../../../../src/core/transcriptPlaces'
 import { INBOX_SENDER } from '../../../../src/main/inbox'
 import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type { SendResult } from '../../../../src/plugins/sessions/api'
@@ -34,11 +37,11 @@ const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
 import { ownerSays } from '../../../../src/shared/agentGuide'
 import type { PickFacts } from '../../../../src/shared/sessionPicks'
-import { handoverPreamble } from '../../../../src/main/handover'
-import { StartedSessions } from '../../../../src/main/startedSessions'
+import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
 import { turnedOffLine } from '../../../../src/shared/sessionBackend'
 import { EXIT_USAGE, type AgentReply } from '../../../../src/core/command'
-import { AGENT_SHIM_WAITS_MS } from '../../../../src/main/agentShim'
+import { AGENT_SHIM_WAITS_MS } from '../../../../src/core/command'
 import type {
   BackendId,
   CreateTabOptions,

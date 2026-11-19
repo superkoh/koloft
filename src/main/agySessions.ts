@@ -10,7 +10,7 @@ import type {
   LaunchPermission
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import type { TranscriptPlaces } from './sessionBackends'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
@@ -71,7 +71,7 @@ import {
 } from './agyAccounts'
 import { readJson } from './museAccounts'
 import { LineTail } from './museSessionLog'
-import { bracketedPaste } from './typeKeys'
+import { bracketedPaste } from '@core/typeKeys'
 import { TAB_TMUX_NAME_SH, tmuxSessionName } from './remote/launch'
 import { AgyApi, agentStateUpdate, type AgyBackgroundTask, type PendingInteraction } from './agyApi'
 import {

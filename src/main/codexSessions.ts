@@ -14,7 +14,7 @@ import type {
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
-import type { TranscriptPlaces } from './sessionBackends'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import {
   CodexObservation,
   codexTurns,
@@ -106,7 +106,7 @@ import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { bashEnvFileIn, loginShellIsBash, unlessInAKoloftRunsShim } from './openShimScript'
 import { aboveItsTools } from './agentLift'
-import { AGENT_SHIM_WAITS_MS } from './agentShim'
+import { AGENT_SHIM_WAITS_MS } from '@core/command'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from './browserControlEnv'

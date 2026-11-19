@@ -1,4 +1,4 @@
-import { sleep } from '../../../main/codexTransport'
+import { sleep } from '@core/sleep'
 
 const USER_AGENT = 'DiscordBot (https://github.com/superkoh/koloft, 1)'
 const NO_CONTENT = 204
