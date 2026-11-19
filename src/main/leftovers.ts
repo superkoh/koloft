@@ -4,7 +4,7 @@ import path from 'path'
 import type { LeftoverProcess } from '@shared/types'
 import { makeExec, type Exec } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { museSessionKey, UUID } from './sessionStore'
+import { museSessionKey, UUID } from '@plugins/sessions/main/sessionStore'
 
 const SCAN_DEADLINE_MS = 5000
 const defaultExec = makeExec(SCAN_DEADLINE_MS)

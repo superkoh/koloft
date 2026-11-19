@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { SessionRuntime, type TurnOverEdge } from '../../src/main/sessionRuntime'
+import {
+  SessionRuntime,
+  type TurnOverEdge
+} from '../../../../src/plugins/sessions/main/sessionRuntime'
 
 const runtime = new SessionRuntime()
 const TAB = 'tab-1'

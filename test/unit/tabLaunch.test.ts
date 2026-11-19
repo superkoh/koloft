@@ -61,7 +61,7 @@ import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
 import { SshHost } from '../../src/main/host/sshHost'
-import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
 
 const execFileAsync = promisify(execFile)

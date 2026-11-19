@@ -21,7 +21,7 @@ import {
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
 } from './hooks'
-import { UUID } from './sessionStore'
+import { UUID } from '@plugins/sessions/main/sessionStore'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'

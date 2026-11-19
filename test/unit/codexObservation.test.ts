@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
-import { SessionRuntime, turnOf, type StatusEdge } from '../../src/main/sessionRuntime'
-import { AttentionTracker } from '../../src/main/attention'
+import {
+  SessionRuntime,
+  turnOf,
+  type StatusEdge
+} from '../../src/plugins/sessions/main/sessionRuntime'
+import { AttentionTracker } from '../../src/plugins/sessions/main/attention'
 import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../src/shared/types'
 
 const A = '11111111-1111-4111-8111-111111111111'

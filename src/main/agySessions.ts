@@ -95,7 +95,7 @@ import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
-import { agySessionKey } from './sessionStore'
+import { agySessionKey } from '@plugins/sessions/main/sessionStore'
 import {
   codexKeyFor,
   labelsOf,

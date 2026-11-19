@@ -13,10 +13,10 @@ import {
   type MuseSessionDeps
 } from '../../src/main/museSessions'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { museSessionKey } from '../../src/main/sessionStore'
+import { museSessionKey } from '../../src/plugins/sessions/main/sessionStore'
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { MUSE_HELD_SH } from '../../src/main/museRemote'
-import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'

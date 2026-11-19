@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { ATTENTION_REASON, type AttentionEvent } from '@shared/types'
-import type { SavedMark } from './attention'
+import type { SavedMark } from '@plugins/sessions/main/attention'
 import { BackgroundFile } from './backgroundFile'
 
 function attentionFile(): string {

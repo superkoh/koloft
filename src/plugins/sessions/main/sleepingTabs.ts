@@ -1,5 +1,5 @@
 import type { SessionInfo } from '@shared/types'
-import type { OpenTab } from './openTabs'
+import type { OpenTab } from '../../../main/openTabs'
 import { pasteFor, typedPieces, withoutMouseAndFocusReports } from '@core/typeKeys'
 
 export interface SleepingTabsDeps {

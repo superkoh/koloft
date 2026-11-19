@@ -10,11 +10,14 @@ import {
   type CodexSessionDeps
 } from '../../src/main/codexSessions'
 import { storedBackend } from '../../src/main/backends/stored'
-import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
+import {
+  codexSessionKey,
+  type WorktreeResource
+} from '../../src/plugins/sessions/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
 import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../src/main/remote/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
-import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
 import { CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SHELL_WRITES_HOOKS } from '../../src/main/hooks'
 import { execFileSync } from 'child_process'
 import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
