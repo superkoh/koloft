@@ -97,7 +97,7 @@ export const PALETTE_FEATURES: PaletteFeature[] = [
             key: pluginPaletteKey(entry.id),
             label: entry.label,
             words: [...entry.words],
-            actsOnCurrent: entry.actsOnCurrent
+            ...(entry.actsOnCurrent && { actsOnCurrent: entry.actsOnCurrent })
           }
         ]
       : []
