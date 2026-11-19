@@ -58,11 +58,8 @@ export const SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS = sudoFiles(A_TERMINAL_
 // CODEX§12 MUSE§8 AGY§25
 export const SUDO_SHIM_FILES = sudoFiles(A_TERMINAL_OPENS_IN_A_KOLOFT_SHELL_TAB)
 
-export function writeSudoShims(
-  dir: string,
-  files: Record<string, string>,
-  on = passwordsOn()
-): void {
+export function writeSudoShims(dir: string, files: Record<string, string>): void {
+  const on = passwordsOn()
   for (const [name, text] of Object.entries(files)) {
     const file = path.join(dir, name)
     if (!on) {

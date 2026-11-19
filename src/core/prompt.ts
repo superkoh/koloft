@@ -24,7 +24,7 @@ const textFor = (block: TextBlock, agent: BackendId | undefined): string =>
 const OR_LIST = '-or-list'
 
 const asTheEndOfAList = (items: readonly string[]): string =>
-  items.map((item, i) => (i === items.length - 1 ? `, or ${item}` : `, ${item}`)).join('')
+  items.map((item, i) => (i === items.length - 1 ? ', or ' : ', ') + item).join('')
 
 export function composePrompt(slot: string, context: PromptContext = {}): string {
   const { agent, facts = [], values = {} } = context
