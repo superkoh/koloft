@@ -1,12 +1,12 @@
 // ADR-0051
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import { slot } from '@core/ui'
 import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { ClaimsWorkspace, LandingAfterClose } from './store'
 import type { Icon } from './icons'
-import type { Settings } from '@shared/types'
+import type { Settings, WorkspaceRows } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
 
@@ -67,6 +67,21 @@ export interface WorkspaceLine {
 }
 
 export const WORKSPACE_LINE = slot<WorkspaceLine>('workspace-line')
+
+export interface WorkspaceGitPart {
+  shows: (ws: WorkspaceRows['workspace']) => boolean
+  Mark: ComponentType<{ path: string; reachable: boolean; closeCards: () => void }>
+  fit: (heads: Iterable<HTMLElement>) => void
+  Section: ComponentType<{
+    ws: WorkspaceRows['workspace']
+    offline: boolean
+    account: string | undefined
+    onClose: () => void
+    children: ReactNode
+  }>
+}
+
+export const WORKSPACE_GIT_PART = slot<WorkspaceGitPart>('workspace-git-part')
 
 export interface WorkspaceMenuEntry {
   label: string

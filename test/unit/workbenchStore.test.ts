@@ -1,4 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { openWorkspaceList } from '../../src/plugins/github/renderer/lists'
 import type { SessionInfo, SessionRow, SessionWorkbenchState, WorkspaceRows } from '@shared/types'
 import {
   FILES_TAB_ID,
@@ -739,9 +740,9 @@ describe('a workspace row’s own Workbench', () => {
       [WS_KEY]: { open: false, tabs: [{ kind: 'file', title: 'a.md', path: '/repo/a.md' }] }
     }
 
-    useStore.getState().openWorkspaceList(WS, 'issues')
+    openWorkspaceList(WS, 'issues')
     await vi.waitFor(() => expect(strip(WS_KEY)?.tabs.some((t) => t.kind === 'web')).toBe(true))
-    useStore.getState().openWorkspaceList(WS, 'issues')
+    openWorkspaceList(WS, 'issues')
     await flush()
 
     const s = useStore.getState()
@@ -782,7 +783,7 @@ describe('a workspace row’s own Workbench', () => {
 
   it('when the GitHub page cannot be found, the click says so instead of doing nothing', async () => {
     githubTarget.mockResolvedValueOnce(null as unknown as string)
-    useStore.getState().openWorkspaceList(WS, 'issues')
+    openWorkspaceList(WS, 'issues')
 
     await vi.waitFor(() =>
       expect(useStore.getState().toast).toBe(
@@ -793,7 +794,7 @@ describe('a workspace row’s own Workbench', () => {
   })
 
   it('removing the workspace forgets its Workbench, so adding it back starts clean', async () => {
-    useStore.getState().openWorkspaceList(WS, 'pulls')
+    openWorkspaceList(WS, 'pulls')
     await vi.waitFor(() => expect(strip(WS_KEY)).toBeDefined())
     useStore.getState().setOpenFile({ src: '/repo/a.md', label: 'a.md' }, WS_KEY)
 
