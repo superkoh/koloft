@@ -13,16 +13,16 @@ import {
   type FileDiff,
   type PhoneCopyDeps
 } from './phoneCopy'
+import type { TabChannels } from './tabChannels'
 
 type PhoneRelay = Pick<
   DiscordRelay,
   'quietTurn' | 'reaches' | 'sendWithNextAsk' | 'sendParts' | 'cardsWaitFor'
 >
 
-export interface PhoneCopierDeps {
+interface PhoneCopierDeps {
   relay(): PhoneRelay | null
-  askChannelOf(tabId: string): string | undefined
-  boundChannelOf(tabId: string): string | undefined
+  channels: Pick<TabChannels, 'askChannelOf' | 'boundChannelOf'>
   butlerSide(tabId: string): boolean
   butlerName(): string
   machineOf(tabId: string): string | undefined
@@ -37,7 +37,7 @@ export function phoneCopier(d: PhoneCopierDeps) {
     view?: ArtifactView
   ): Promise<string | undefined> => {
     const relay = d.relay()
-    const channelId = d.askChannelOf(tabId)
+    const channelId = d.channels.askChannelOf(tabId)
     if (!relay || !channelId || relay.quietTurn(tabId)) return undefined
     const shown = shownOf(target, d.machineOf(tabId), view)
     if (!shown) return undefined
@@ -49,7 +49,7 @@ export function phoneCopier(d: PhoneCopierDeps) {
         d.readBytes(file).catch((error: unknown) => {
           throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
         }),
-      fileDiff: (file) => d.fileDiff(file),
+      fileDiff: d.fileDiff,
       send: (files, parts) => relay.sendParts(channelId, files, parts),
       cardsWaitFor: (copy) => relay.cardsWaitFor(tabId, copy)
     })
@@ -57,7 +57,11 @@ export function phoneCopier(d: PhoneCopierDeps) {
       relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
       return undefined
     }
-    const where = whereTheCopyGoes(!!d.boundChannelOf(tabId), d.butlerSide(tabId), d.butlerName)
+    const where = whereTheCopyGoes(
+      !!d.channels.boundChannelOf(tabId),
+      d.butlerSide(tabId),
+      d.butlerName
+    )
     return sendPhoneCopy(copyTo(channelId), shown, where)
   }
 }

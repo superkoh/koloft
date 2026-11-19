@@ -565,8 +565,7 @@ import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessio
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import { phoneCopier } from '@plugins/discord/main/phoneCopier'
-import { roomNote, turnTakenOnDiscord } from '@plugins/discord/main/sessionRoom'
-import { tabChannels } from '@plugins/discord/main/tabChannels'
+import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
 import {
   registerChannels as registerCronChannels,
@@ -1528,16 +1527,14 @@ let sessionAsks: SessionAsks | null = null
 let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
 let rooms: Rooms | null = null
-const {
-  roomOf: roomOfTab,
-  askChannelOf: askChannelOfTab,
-  phoneChannelOf
-} = tabChannels({
+const discordChannels = tabChannels({
   butlerSide,
   lobby: () => discordBinding?.channel()?.channelId,
   boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
-  roomCarrying: (tabId) => rooms?.carried(tabId)
+  roomCarrying: (tabId) => rooms?.carried(tabId),
+  reaches: (tabId) => !!discordRelay?.reaches(tabId)
 })
+const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
 let askButtons: AskButtons | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
@@ -4053,10 +4050,7 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
-  attention.turnTakenElsewhere = turnTakenOnDiscord({
-    boundChannelOf: (tabId) => bindingNow.channelOfTab(tabId),
-    reaches: (tabId) => !!discordRelay?.reaches(tabId)
-  })
+  attention.turnTakenElsewhere = discordChannels.turnTakenOnDiscord
   butler = new Butler({
     userData,
     realpath: realpathSafe,
@@ -5678,8 +5672,7 @@ function ownerIsWhere(): string {
 
 const copyToPhone = phoneCopier({
   relay: () => discordRelay,
-  askChannelOf: askChannelOfTab,
-  boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
+  channels: discordChannels,
   butlerSide,
   butlerName: butlerNameNow,
   machineOf: machineOfTab,
