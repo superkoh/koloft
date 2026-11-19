@@ -13,7 +13,7 @@ import { followEachTurn } from '../../src/plugins/sessions/main/sessionHooks'
 import { pickDocsOfEachTurn } from '../../src/plugins/workbench/main/sessionHooks'
 import { butlerFollowsEachTurn } from '../../src/plugins/butler/main/sessionHooks'
 import { cardEachTurnAndQuestion } from '../../src/plugins/inbox/main/sessionHooks'
-import { closeOutEachEndedRun } from '../../src/plugins/scheduled-tasks/main/sessionHooks'
+import { followEachRun } from '../../src/plugins/scheduled-tasks/main/sessionHooks'
 import { discordFollowsEachTurn } from '../../src/plugins/discord/main/sessionHooks'
 
 const turn = { reply: 'done', said: [] } as unknown as Turn
@@ -61,7 +61,7 @@ function wired(o: { handsOff?: boolean; asksMade?: boolean; butlerTab?: boolean 
     },
     tookTheTurn: turns.tookTheTurn
   })
-  closeOutEachEndedRun(moments, () => ({ onBound: say('cron.onBound'), onPtyExit: () => {} }))
+  followEachRun(moments, () => ({ onBound: say('cron.onBound'), onPtyExit: () => {} }))
   discordFollowsEachTurn(moments, {
     relay: () => ({ turnEnded: (tabId) => say('relay.turnEnded')(tabId) }),
     typing: () => ({ refresh: say('typing.refresh') }),

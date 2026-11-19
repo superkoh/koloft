@@ -8,7 +8,7 @@ import {
 } from '@core/moment'
 import { plugin } from '../plugin'
 
-export function closeOutEachEndedRun(
+export function followEachRun(
   moments: Moments,
   runner: MadeLater<{
     onPtyExit(tabId: string, left?: LeftTab, exit?: AgentExit): void

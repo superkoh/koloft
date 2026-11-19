@@ -593,7 +593,7 @@ import { followEachTurn, forgetAsksOfEndedTabs } from '@plugins/sessions/main/se
 import { pickDocsOfEachTurn } from '@plugins/workbench/main/sessionHooks'
 import { cardEachTurnAndQuestion } from '@plugins/inbox/main/sessionHooks'
 import { forgetSecretAsksOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
-import { closeOutEachEndedRun } from '@plugins/scheduled-tasks/main/sessionHooks'
+import { followEachRun } from '@plugins/scheduled-tasks/main/sessionHooks'
 import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
@@ -3695,7 +3695,7 @@ app.whenReady().then(() => {
   })
   forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
   butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
-  closeOutEachEndedRun(moments, () => cronRunner)
+  followEachRun(moments, () => cronRunner)
   closeRoomsOfEndedTabs(moments, {
     typing: () => discordTyping,
     relay: () => discordRelay,
