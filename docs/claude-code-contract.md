@@ -4399,3 +4399,29 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
 Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
 `--append-system-prompt` (`src/main/backends/claude.ts`), and the Session defaults dialog
 says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).
+
+## §27 Who started a turn: a person's typing and a program's look the same
+
+2026-11-18, CC 2.1.327, read from the transcript of a Koloft session started with
+`koloft session new`, then sent messages with `koloft session send`; and from Koloft's
+own hook script (`src/main/hooks.ts`).
+
+- **A line written into the terminal is `origin: {"kind":"human"}`**, whoever wrote it.
+  The first message `koloft session new` hands a session (typed into its terminal by
+  Koloft, in the owner's language) was recorded exactly like the owner's typing. So is
+  anything `koloft session keys` types.
+- A message sent over Claude Code's socket is `origin.kind: "peer"` (with a
+  `cross-session-message` envelope); a finished background task is
+  `"task-notification"`.
+- Koloft's own record of the owner's words (`<tab>.said`) is rewritten only when the new
+  prompt shows a language and is never cleared at the end of a turn, so it may hold an
+  earlier turn's words. `<tab>.typed` is per turn, but written only for the butler's tab.
+- On Codex, Muse and Antigravity Koloft types every message into the terminal; what tells
+  them apart is only the text Koloft puts in front.
+
+So nothing Koloft has today tells, for every kind of tab, that the turn a command runs in
+was started by the owner's own words, and not by Koloft or another session typing.
+
+Koloft dependents: `koloft instructions` changes the owner's instructions in any turn and
+shows each change to the owner with an undo (`src/plugins/sessions/main/instructionsVerb.ts`);
+its View shows no "Because you said".

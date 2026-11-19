@@ -83,6 +83,7 @@ const capitalized = (s: string): string => `${s[0].toUpperCase()}${s.slice(1)}`
 const changedLine = (edit: AgentEdit, name: string): string =>
   `${edit === ADD_A_LINE ? 'Added to' : 'Replaced'} ${name}. The owner is shown the change and can undo it.`
 
+// CC§27
 export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
   return async (args, caller) => {
     const p = parsed(args)
