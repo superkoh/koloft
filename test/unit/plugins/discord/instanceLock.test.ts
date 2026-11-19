@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { releaseLock, takeLock } from '../../src/main/discord/instanceLock'
+import { releaseLock, takeLock } from '../../../../src/plugins/discord/main/instanceLock'
 
 const OTHER_PID = 424242
 const BOOT_BEFORE_A_REBOOT_S = 1_000_000

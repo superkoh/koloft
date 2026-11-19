@@ -5,7 +5,7 @@ import { pathToFileURL } from 'url'
 import { session, WebContentsView, type WebContents } from 'electron'
 import { pagePathOf } from '@shared/browserRoute'
 import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
-import { within } from '../within'
+import { within } from '../../../main/within'
 
 const SHOT_PARTITION = 'koloft-page-shot'
 // PLATFORM§16

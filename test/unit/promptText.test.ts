@@ -12,7 +12,7 @@ import { DISCORD_BOUND } from '../../src/plugins/discord/api'
 import { TODO_NOTICE } from '../../src/plugins/todo/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
-import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
+import { DISCORD_SETUP_STEPS } from '../../src/plugins/discord/main/setupSteps'
 
 const PINNED = './prompt-text'
 const RULES = 'Docs: sonnet, low.\nNever start a Codex session for work in src/renderer.'

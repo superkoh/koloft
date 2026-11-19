@@ -12,9 +12,9 @@ import {
   type AgentVerb
 } from '@core/command'
 import type { Commands } from '@core/commands'
-import { BYTES_PER_FILE, type DiscordFile } from '../../../main/discord/link'
-import { DISCORD_SETUP_STEPS } from '../../../main/discord/setupSteps'
-import type { PagePictures } from '../../../main/discord/pageShot'
+import { BYTES_PER_FILE, type DiscordFile } from './link'
+import { DISCORD_SETUP_STEPS } from './setupSteps'
+import type { PagePictures } from './pageShot'
 import { picturesSent, tooLarge } from './phoneCopy'
 
 export const DISCORD_USAGE =

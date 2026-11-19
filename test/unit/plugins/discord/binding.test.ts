@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { DiscordBinding } from '../../src/main/discord/binding'
-import { DISCORD_BOUND } from '../../src/plugins/discord/api'
+import { DiscordBinding } from '../../../../src/plugins/discord/main/binding'
+import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import type { DiscordSettings } from '@shared/types'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'global' }

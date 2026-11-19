@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionRoom } from '../../src/shared/types'
+import type { SessionRoom } from '../../../../src/shared/types'
 import {
   CLOSED_IN_ROOM,
   Rooms,
   STARTED_OVER_IN_ROOM,
   STOPPED_IN_ROOM,
   type RoomSubject
-} from '../../src/main/discord/rooms'
+} from '../../../../src/plugins/discord/main/rooms'
 
 const LOBBY = { guildId: '1', channelId: '200', name: 'global' }
 const OWNER = '555'

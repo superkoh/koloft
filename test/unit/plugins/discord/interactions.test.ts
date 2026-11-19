@@ -4,8 +4,12 @@ import {
   ONLY_THE_OWNER,
   SLASH_COMMANDS,
   type InteractionDeps
-} from '../../src/main/discord/interactions'
-import { interactionOf, sameCommand, type DiscordInteraction } from '../../src/main/discord/link'
+} from '../../../../src/plugins/discord/main/interactions'
+import {
+  interactionOf,
+  sameCommand,
+  type DiscordInteraction
+} from '../../../../src/plugins/discord/main/link'
 
 const OWNER = '555'
 const CHANNEL = '222'

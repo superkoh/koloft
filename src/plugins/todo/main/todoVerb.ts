@@ -14,6 +14,7 @@ import {
 } from '@core/command'
 import type { Commands } from '@core/commands'
 import { mapAtMost } from '@core/mapAtMost'
+import { todoNotes, type TodoSettings } from './notes'
 import {
   GITHUB_NOT_ASKED,
   placedRows,
@@ -311,7 +312,7 @@ function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): stri
 
 async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
   const now = d.now()
-  const sidebar = d.sidebar().filter((w) => !w.workspace.butler)
+  const sidebar = d.sidebar().filter((w) => !w.workspace.claim)
   const all = placedRows(sidebar, d.sessions())
   const notes = d.notes()
   const [workspaces, trees, servers] = await Promise.all([
@@ -455,8 +456,11 @@ async function fileVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
   return answered(cutForATurn(await d.readText(file.path)))
 }
 
-export function registerTodoCommand(commands: Commands, d: TodoVerbDeps): void {
-  commands.register({ todo: todoVerb(d) })
+export function registerTodoCommand(
+  commands: Commands,
+  { settings, ...d }: Omit<TodoVerbDeps, 'notes' | 'saveNote'> & { settings: TodoSettings }
+): void {
+  commands.register({ todo: todoVerb({ ...d, ...todoNotes(settings) }) })
 }
 
 export function todoVerb(d: TodoVerbDeps): AgentVerb {
