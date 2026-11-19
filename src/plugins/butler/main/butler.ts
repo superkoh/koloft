@@ -8,9 +8,15 @@ import {
   ownerTextBesideTheRole
 } from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '../shared/names'
-import type { ButlerSession, ButlerSetting } from '../shared/types'
+import {
+  isKnownBy,
+  type ButlerSession,
+  type ButlerSetting,
+  type OldConversationNews
+} from '../shared/types'
 import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
+import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
 import { butlerRole, ownerInstructionsPart } from '../prompts/role'
 import { conductorFolder } from './folder'
 
@@ -51,9 +57,20 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
-  todoNotice: string
+  news: readonly OldConversationNews[]
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
+}
+
+function knownListsOnDisk(
+  s: ButlerSession,
+  stillOnDisk: (key: string) => boolean
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    Object.entries(s).flatMap(([knownBy, keys]) =>
+      isKnownBy(knownBy) && Array.isArray(keys) ? [[knownBy, keys.filter(stillOnDisk)]] : []
+    )
+  )
 }
 
 function refusal(error: string): ConductorOpenResult {
@@ -138,7 +155,7 @@ export class Butler {
     this.changeSession(() => ({
       sessionIds,
       ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
-      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {}),
+      ...knownListsOnDisk(s, stillOnDisk),
       ...(keepLast && s.carried ? { carried: s.carried } : {})
     }))
   }
@@ -201,7 +218,7 @@ export class Butler {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
-    let resumedOld = false
+    let untold: readonly OldConversationNews[] = []
     let started = false
     try {
       if (resumable) {
@@ -215,7 +232,8 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      resumedOld = hasTranscript && !this.session.knowsTodo?.includes(key)
+      if (hasTranscript)
+        untold = this.d.news.filter((news) => !this.session[news.knownBy]?.includes(key))
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
@@ -235,7 +253,7 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined) this.tellOfTodo(key)
+    if (key !== undefined) for (const news of untold) this.tellOnce(news, key)
     this.resident = tabId
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
@@ -252,10 +270,10 @@ export class Butler {
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  private tellOfTodo(key: string): void {
-    void this.d.notice(this.d.todoNotice).then((told) => {
-      if (told && !this.session.knowsTodo?.includes(key))
-        this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
+  private tellOnce({ knownBy, text }: OldConversationNews, key: string): void {
+    void this.d.notice(`${FROM_KOLOFT}${text}`).then((told) => {
+      if (told && !this.session[knownBy]?.includes(key))
+        this.changeSession((s) => ({ ...s, [knownBy]: [...(s[knownBy] ?? []), key] }))
     })
   }
 
@@ -303,7 +321,9 @@ export class Butler {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
-            knowsTodo: [...(s.knowsTodo ?? []), key]
+            ...Object.fromEntries(
+              this.d.news.map(({ knownBy }) => [knownBy, [...(s[knownBy] ?? []), key]])
+            )
           }
     )
   }
