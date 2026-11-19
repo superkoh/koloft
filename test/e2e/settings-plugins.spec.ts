@@ -1,8 +1,8 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
 import { openPluginPage, openSettings, settingsNavItems } from './helpers/extensions'
-import { sendShortcut, settingsOnDisk, waitBooted } from './helpers/p1'
+import { butlerHelperRows, sendShortcut, settingsOnDisk, waitBooted } from './helpers/p1'
 
 const DISCORD_SET_UP = {
   userId: '555555555555555555',
@@ -236,6 +236,37 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
       await expect(main).toContainText('You are owner')
       await expect(main.getByRole('button', { name: 'Change channel…' })).toBeVisible()
       await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('Set up with Alfred on Discord’s row starts the butler’s helper and turns Discord on', async ({
+    env
+  }) => {
+    const { app, page } = await launched(env)
+    try {
+      const main = await openPluginsPane(page)
+      await row(main, 'Discord').getByRole('button', { name: 'Set up with Alfred' }).click()
+      await expect(butlerHelperRows(page)).toHaveCount(1, { timeout: 60_000 })
+      await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
+      await expect.poll(() => pluginsOn(env)).toEqual({ discord: true })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('when the butler cannot start, Set up with Alfred on Discord’s row says why under the row and leaves Discord off', async ({
+    env
+  }) => {
+    seedNoClaudeAccountButStillSetUp(env)
+    const { app, page } = await launched(env)
+    try {
+      const main = await openPluginsPane(page)
+      await row(main, 'Discord').getByRole('button', { name: 'Set up with Alfred' }).click()
+      await expect(main.locator('.acct-login-state.bad')).toBeVisible()
+      await expect(main.getByRole('switch', { name: 'Discord', exact: true })).not.toBeChecked()
+      expect(pluginsOn(env) ?? {}).toEqual({})
     } finally {
       await quitAndClose(app)
     }

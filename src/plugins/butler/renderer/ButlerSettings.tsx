@@ -1,9 +1,9 @@
 import { useEffect, useState, type JSX } from 'react'
-import { AssistRow, BUTLER_DOES } from '@renderer/components/settings/AssistSection'
+import { AssistRow } from '@renderer/components/settings/AssistSection'
 import { useSettingsUpdate } from '@renderer/components/settings/useSettingsUpdate'
 import { useStore } from '@renderer/store'
 import { useAssistSetup } from '@renderer/useAssistSetup'
-import { butlerName, butlerTitle, renamedButler } from '../shared/names'
+import { BUTLER_DOES, butlerName, butlerTitle, renamedButler } from '../shared/names'
 
 export function ButlerSettings(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)

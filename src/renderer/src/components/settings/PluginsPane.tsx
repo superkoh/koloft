@@ -7,7 +7,7 @@ import { PLUGINS_PANE_NAME } from '@shared/settingsPanes'
 import { IconChevronLeft, IconChevronRight } from '../../icons'
 import { fillsOf, partsAt } from '../../pluginUi'
 import { setPluginOn, useDoes, useNeverSetUp, usePluginStates } from '../../pluginSwitches'
-import { PLUGIN_SET_UP } from '../../slots'
+import { PLUGIN_SET_UP, type PluginSetUp } from '../../slots'
 import { useStore } from '../../store'
 import { useAssistSetup } from '../../useAssistSetup'
 import { AssistRow } from './AssistSection'
@@ -57,16 +57,13 @@ function PluginSwitch({
 }
 
 function SetUpButton({
-  plugin,
+  setUp,
   onError
 }: {
-  plugin: PluginManifest
+  setUp: PluginSetUp
   onError: (error: string) => void
-}): JSX.Element | null {
-  const neverSetUp = useNeverSetUp(plugin)
-  const name = useStore((s) => s.settings.butler.name)
-  const setUp = fillsOf(PLUGIN_SET_UP).find((f) => f.plugin === plugin.id)
-  if (!setUp || !neverSetUp) return null
+}): JSX.Element {
+  const label = setUp.useLabel()
   return (
     <button
       className="mini"
@@ -77,7 +74,7 @@ function SetUpButton({
         )
       }
     >
-      {setUp.label(name)}
+      {label}
     </button>
   )
 }
@@ -85,6 +82,8 @@ function SetUpButton({
 function PluginRow({ plugin, state }: { plugin: PluginManifest; state: PluginState }) {
   const go = useSettingsGo()
   const does = useDoes(plugin)
+  const neverSetUp = useNeverSetUp(plugin)
+  const setUp = fillsOf(PLUGIN_SET_UP).find((f) => f.plugin === plugin.id)
   const [error, setError] = useState('')
   return (
     <>
@@ -98,7 +97,7 @@ function PluginRow({ plugin, state }: { plugin: PluginManifest; state: PluginSta
           <span className="acct-note">Always on</span>
         ) : (
           <>
-            <SetUpButton plugin={plugin} onError={setError} />
+            {setUp && neverSetUp && <SetUpButton setUp={setUp} onError={setError} />}
             <PluginSwitch plugin={plugin} state={state} ariaLabel={plugin.name} />
           </>
         )}

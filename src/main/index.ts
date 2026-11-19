@@ -538,7 +538,7 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
-import { plugin as discordPlugin } from '@plugins/discord/plugin'
+import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from './agentGithub'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
@@ -4168,7 +4168,8 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
-      if (status.phase !== 'off') keepDiscordOnOnceItHasABot()
+      const pluginsOn = switchedOnOnceItHasABot(status.phase, loadSettings().pluginsOn)
+      if (pluginsOn) commitSettings({ pluginsOn })
       pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
@@ -5623,12 +5624,6 @@ function tapPagesOf(tabId: string): TapPage[] {
       await tapAt(wc, point)
     }
   }))
-}
-
-function keepDiscordOnOnceItHasABot(): void {
-  const { pluginsOn } = loadSettings()
-  if (!Object.hasOwn(pluginsOn, discordPlugin.id))
-    commitSettings({ pluginsOn: { ...pluginsOn, [discordPlugin.id]: true } })
 }
 
 async function saveDiscordToken(token: string): Promise<boolean> {

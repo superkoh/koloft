@@ -42,7 +42,7 @@ export const ROW_SET_UP = slot<RowSetUpFill>('row-set-up')
 
 export interface PluginSetUp {
   plugin: string
-  label: (butlerName: string) => string
+  useLabel: () => string
   run: () => Promise<string | null>
 }
 

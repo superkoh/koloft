@@ -1,8 +1,9 @@
 import { useState, type JSX } from 'react'
 import { assistJobDefaults } from '@core/assistJobs'
-import type { PluginAssistJob, PluginManifest } from '@core/plugin'
+import type { PluginManifest } from '@core/plugin'
 import { PLUGINS } from '@plugins/list'
 import { plugin as butler } from '@plugins/butler/plugin'
+import { BUTLER_DOES } from '@plugins/butler/shared/names'
 import { assistEfforts, assistModels, assistRunsOn, withAssistPick } from '@shared/assistPicks'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
@@ -59,8 +60,7 @@ function whatDefaultIs(row: AssistRowId, backend: BackendId): string {
   return parts.join(', ') + (model ? '' : `, on ${own} model`)
 }
 
-function useAssistSummary(row: AssistRowId): string {
-  const pick = useStore((s) => s.settings.assist.rows?.[row])
+function assistSummary(row: AssistRowId, pick: AssistPick | undefined): string {
   if (!pick) return 'Default'
   return [
     BACKEND_LABEL[pick.backend],
@@ -117,7 +117,7 @@ export function AssistRow({
   const modelShown =
     otherDraft !== null && !typedModelError ? otherDraft.trim() || undefined : pick?.model
 
-  const summary = useAssistSummary(row)
+  const summary = assistSummary(row, pick)
   const Chevron = open ? IconChevronUp : IconChevronDown
 
   return (
@@ -194,14 +194,27 @@ export function AssistRow({
   )
 }
 
-function JobOverviewRow({ job, plugin }: { job: AssistJobRow; plugin: PluginManifest }) {
-  const summary = useAssistSummary(job.id)
+function JobOverviewRow({
+  row,
+  title,
+  does,
+  plugin
+}: {
+  row: AssistRowId
+  title: string
+  does: string
+  plugin: PluginManifest
+}) {
+  const summary = assistSummary(
+    row,
+    useStore((s) => s.settings.assist.rows?.[row])
+  )
   const go = useSettingsGo()
   return (
     <div className="set-row">
       <div className="set-lab">
-        <b>{job.name}</b>
-        <small>{job.does}</small>
+        <b>{title}</b>
+        <small>{does}</small>
         <small>
           Set on {PLUGINS_PANE_NAME} ▸ {plugin.name}.
         </small>
@@ -209,7 +222,7 @@ function JobOverviewRow({ job, plugin }: { job: AssistJobRow; plugin: PluginMani
       <button
         className="mini"
         title={`Open ${PLUGINS_PANE_NAME} ▸ ${plugin.name}`}
-        aria-label={`${job.name}: ${summary}`}
+        aria-label={`${title}: ${summary}`}
         onClick={() => go(pluginPane(plugin.id))}
       >
         {summary}
@@ -219,14 +232,9 @@ function JobOverviewRow({ job, plugin }: { job: AssistJobRow; plugin: PluginMani
   )
 }
 
-type AssistJobRow = Pick<PluginAssistJob, 'id' | 'name' | 'does'>
-
 const JOBS_BY_PLUGIN = PLUGINS.flatMap((plugin) =>
   (plugin.assistJobs ?? []).map((job) => ({ job, plugin }))
 )
-
-export const BUTLER_DOES =
-  'Your butler, whom you talk to from the top of the sidebar or from Discord.'
 
 export function AssistSection(): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
@@ -262,10 +270,16 @@ export function AssistSection(): JSX.Element {
       </div>
       <div className="set-grp">Small jobs</div>
       {JOBS_BY_PLUGIN.map(({ job, plugin }) => (
-        <JobOverviewRow key={job.id} job={job} plugin={plugin} />
+        <JobOverviewRow
+          key={job.id}
+          row={job.id}
+          title={job.name}
+          does={job.does}
+          plugin={plugin}
+        />
       ))}
       <div className="set-grp">Butler</div>
-      <JobOverviewRow job={{ id: 'butler', name, does: BUTLER_DOES }} plugin={butler} />
+      <JobOverviewRow row="butler" title={name} does={BUTLER_DOES} plugin={butler} />
     </>
   )
 }

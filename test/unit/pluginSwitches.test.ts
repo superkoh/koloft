@@ -24,10 +24,9 @@ const DEFAULTS: SavedSettings = { bot: {} }
 
 const onOf = (switches: Record<string, boolean>, settings: SavedSettings = DEFAULTS) =>
   Object.fromEntries(
-    Object.entries(pluginStates(LIST, switches, settings, DEFAULTS)).map(([id, s]) => [
-      id,
-      s.offBecause ? `off: ${s.offBecause.name} is off` : s.on
-    ])
+    Object.entries(pluginStates(LIST, { ...settings, pluginsOn: switches }, DEFAULTS)).map(
+      ([id, s]) => [id, s.offBecause ? `off: ${s.offBecause.name} is off` : s.on]
+    )
   )
 
 const saved = (s: unknown): SavedSettings => s as SavedSettings
@@ -71,9 +70,7 @@ describe('which plugins are on', () => {
       return Object.fromEntries(
         PLUGINS.filter((p) => !p.mandatory).map((p) => [
           p.id,
-          pluginStates(PLUGINS, s.pluginsOn as Record<string, boolean>, s, saved(DEFAULT_SETTINGS))[
-            p.id
-          ].on
+          pluginStates(PLUGINS, s, saved(DEFAULT_SETTINGS))[p.id].on
         ])
       )
     }

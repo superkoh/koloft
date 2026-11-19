@@ -2,7 +2,7 @@
 import type { PluginManifest } from './plugin'
 import type { SavedSettings } from './settings'
 
-export type PluginSwitches = Readonly<Record<string, boolean>>
+export const SWITCHES_KEY = 'pluginsOn'
 
 export interface PluginState {
   on: boolean
@@ -33,10 +33,10 @@ export function neverSetUp(
 
 export function pluginStates(
   plugins: readonly PluginManifest[],
-  switches: PluginSwitches,
   settings: SavedSettings,
   defaults: SavedSettings
 ): Record<string, PluginState> {
+  const switches = cleanSwitches(plugins, settings[SWITCHES_KEY])
   const states: Record<string, PluginState> = {}
   const stateOf = (plugin: PluginManifest): PluginState => {
     if (states[plugin.id]) return states[plugin.id]

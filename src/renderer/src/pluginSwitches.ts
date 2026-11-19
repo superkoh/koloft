@@ -12,10 +12,7 @@ const saved = (settings: Settings): SavedSettings => settings as unknown as Save
 
 export function usePluginStates(): Record<string, PluginState> {
   const settings = useStore((s) => s.settings)
-  return useMemo(
-    () => pluginStates(PLUGINS, settings.pluginsOn, saved(settings), saved(DEFAULT_SETTINGS)),
-    [settings]
-  )
+  return useMemo(() => pluginStates(PLUGINS, saved(settings), saved(DEFAULT_SETTINGS)), [settings])
 }
 
 export function useNeverSetUp(plugin: PluginManifest): boolean {
