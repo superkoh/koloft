@@ -68,12 +68,12 @@ export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
 
 const usePluginsOnKey = (): string => useStore((s) => actingStatesOf(s.settings).onKey)
 
-export function useFillsOf<T, R>(into: Slot<T>, use: (fill: T) => R): R[] {
+export function useFillsOf<T, R>(into: Slot<T>, use: (fill: T) => R): (R | undefined)[] {
   usePluginsOnKey()
   const every = fillsOfOnOrOff(into)
   const used = every.map(use)
   const on = new Set(fillsOf(into))
-  return used.filter((_, i) => on.has(every[i]))
+  return used.map((result, i) => (on.has(every[i]) ? result : undefined))
 }
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>
