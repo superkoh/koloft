@@ -5,7 +5,7 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@plugins/discord/shared/channels'
 import { safeDownloadName } from '@shared/downloadName'
-import { errorText } from '../agentRequests'
+import { errorText } from '../../../main/agentRequests'
 import {
   BYTES_PER_FILE,
   type DiscordAttachment,

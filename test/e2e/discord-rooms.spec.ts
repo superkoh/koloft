@@ -24,7 +24,7 @@ import {
 } from './helpers/remote'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
-import { CLOSED_IN_ROOM, STARTED_OVER_IN_ROOM } from '../../src/main/discord/rooms'
+import { CLOSED_IN_ROOM, STARTED_OVER_IN_ROOM } from '../../src/plugins/discord/main/rooms'
 
 test.setTimeout(180_000)
 

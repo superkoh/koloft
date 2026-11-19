@@ -468,15 +468,19 @@ import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
-import { DiscordBinding } from './discord/binding'
-import { discordApiUrl, DiscordLink } from './discord/link'
-import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
-import { setupStatusText } from './discord/setupSteps'
-import { releaseLock, takeLock } from './discord/instanceLock'
-import { DiscordRelay, type Destination } from './discord/relay'
+import { DiscordBinding } from '@plugins/discord/main/binding'
+import { discordApiUrl, DiscordLink } from '@plugins/discord/main/link'
+import {
+  reloadDiscordPage,
+  saveTokenFromPage,
+  type GuestPage
+} from '@plugins/discord/main/tokenFromPage'
+import { setupStatusText } from '@plugins/discord/main/setupSteps'
+import { releaseLock, takeLock } from '@plugins/discord/main/instanceLock'
+import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
-import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from './discord/secretCards'
+import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
 import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
 import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
@@ -489,22 +493,22 @@ import {
 } from '@plugins/workbench/main/guestTap'
 import { within } from './within'
 import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
-import { ButlerTyping } from './discord/butlerTyping'
+import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
   machineOfShotPage,
   onShotPageGone,
   shootHtml,
   shootPage,
   shotSession
-} from './discord/pageShot'
-import { OldThreads } from './discord/oldThreads'
-import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
-import { accentOf } from './discord/cards'
-import { AskButtons } from './discord/buttons'
+} from '@plugins/discord/main/pageShot'
+import { OldThreads } from '@plugins/discord/main/oldThreads'
+import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
+import { accentOf } from '@plugins/discord/main/cards'
+import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { toChannel } from './discord/slash'
+import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
-import { Interactions, SLASH_COMMANDS } from './discord/interactions'
+import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {

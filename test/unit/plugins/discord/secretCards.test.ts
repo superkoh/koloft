@@ -10,12 +10,12 @@ import {
   type PlacedCard,
   type SecretCardDeps,
   type TapRounds
-} from '../../src/main/discord/secretCards'
-import { SecretAsks, type SecretAsk } from '../../src/plugins/passwords/main/secretAsks'
-import type { Card } from '../../src/main/discord/cards'
-import type { DiscordInteraction } from '../../src/main/discord/link'
-import type { SecretAskView } from '../../src/shared/types'
-import { ONLY_THE_OWNER_ANSWERS } from '../../src/main/discord/buttons'
+} from '../../../../src/plugins/discord/main/secretCards'
+import { SecretAsks, type SecretAsk } from '../../../../src/plugins/passwords/main/secretAsks'
+import type { Card } from '../../../../src/plugins/discord/main/cards'
+import type { DiscordInteraction } from '../../../../src/plugins/discord/main/link'
+import type { SecretAskView } from '../../../../src/shared/types'
+import { ONLY_THE_OWNER_ANSWERS } from '../../../../src/plugins/discord/main/buttons'
 
 const OWNER = '555'
 const SECRET = 'hunter2 "x" \\ 日本'

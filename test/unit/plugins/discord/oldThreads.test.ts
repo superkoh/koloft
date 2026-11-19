@@ -3,9 +3,9 @@ import {
   OldThreads,
   ONE_REPLY_PER_THREAD_WITHIN_MS,
   talkToTheButler
-} from '../../src/main/discord/oldThreads'
-import type { DiscordInteraction, DiscordMessage } from '../../src/main/discord/link'
-import type { DiscordChannel } from '../../src/shared/types'
+} from '../../../../src/plugins/discord/main/oldThreads'
+import type { DiscordInteraction, DiscordMessage } from '../../../../src/plugins/discord/main/link'
+import type { DiscordChannel } from '../../../../src/shared/types'
 
 const CHANNEL: DiscordChannel = { guildId: '1', channelId: '200', name: 'global' }
 const OLD = '701'

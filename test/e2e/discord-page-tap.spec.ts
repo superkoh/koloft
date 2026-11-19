@@ -39,7 +39,7 @@ import {
 import { guestByUrl } from './helpers/browser'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { DONE_AT_THE_MAC, TAPS_PASSED } from '../../src/plugins/passwords/main/pageVerb'
-import { PASSED, TAPPING } from '../../src/main/discord/secretCards'
+import { PASSED, TAPPING } from '../../src/plugins/discord/main/secretCards'
 
 test.setTimeout(150_000)
 
