@@ -1072,7 +1072,7 @@ starts a new conversation when it is set back to the tool's own.
   logging wrapper), in a repo with no remote.
 - On 2.1.328 (2026-11-19, `strings` beside 2.1.327, not run) the texts Koloft's `src/`
   matches in claude's output — `Resume this session with:`, `Removing worktree`, `Worktree removed`,
-  `<local-command-stdout>`, the two "Request interrupted" lines — appears as often as
+  `<local-command-stdout>`, the two "Request interrupted" lines — appear as often as
   on 2.1.327, and the resume hint is printed by the same code.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
@@ -4385,8 +4385,9 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
   and times above were not re-measured, and that `scripts/code-review.mjs`'s own
   `medium` / `claude-opus-5-5` argv answers the same way on 2.1.318 is inferred, not
-  checked). Still so on 2.1.328 (2026-11-19, the same argv plus `--allowedTools
-  'Bash(git:*)' Read Grep Glob`, a scratch `HOME` and repo, 1 run each): a clean one-line
+  checked). Still so on 2.1.328 (2026-11-19, the same `low` / haiku argv with `--allowedTools
+  'Bash(git:*)' Read Grep Glob` — the script's list without `Agent` — a scratch `HOME`
+  and repo, 1 run each): a clean one-line
   diff answered exit 0, `is_error: false`, `result` starting `(none)`; a one-line diff
   with a plain bug answered the same exit and flag with the finding in `result`, now
   labelled (`math.js:7 — important — …`), where 2.1.327 gave `math.js:8 — …` with no
