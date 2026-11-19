@@ -103,7 +103,12 @@ export class Moments {
     if (!this.announcedNames.has(moment.name)) throw this.unannounced(moment)
     const at = Math.max(
       own,
-      ...afterPlugins.map((id) => this.plugins.findIndex((p) => p.id === id) + 0.5)
+      ...afterPlugins.map((id) => {
+        const before = this.plugins.findIndex((p) => p.id === id)
+        if (before < 0)
+          throw new Error(`"${id}", which ${pluginId} hears after, is not on the list of plugins`)
+        return before + 0.5
+      })
     )
     const listener: Listener = { at, hear }
     const all = [...(this.listeners.get(moment.name) ?? []), listener]

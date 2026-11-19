@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   Moments,
   QUESTION_ASKED,
+  TAB_EXITED,
   SESSION_BOUND,
   TURN_ENDED,
   TURN_STARTED
@@ -88,6 +89,40 @@ describe('what each plugin does when a turn starts or ends, a question is asked 
         'relay.turnEnded t1'
       ])
     }
+  })
+
+  it('who took a turn is decided anew each turn, even when the news judge fails first, and forgotten once the tab ends', async () => {
+    const moments = new Moments(PLUGINS)
+    let handsOff = true
+    const turns = followEachTurn(moments, {
+      judge: {
+        turnEnded: () => {
+          throw new Error('the judge broke')
+        },
+        prompted: () => {}
+      },
+      slash: { turnEnded: () => {}, bound: () => {} },
+      replies: { turnEnded: () => handsOff },
+      asks: () => null,
+      askBeforeAsksAreMade: () => {}
+    })
+    const ended = (): Promise<unknown> =>
+      moments.announce(TURN_ENDED, { tabId: 't1', turn }).catch(() => undefined)
+    await ended()
+    expect(turns.tookTheTurn('t1')).toBe(true)
+    handsOff = false
+    await ended()
+    expect(turns.tookTheTurn('t1')).toBe(false)
+    handsOff = true
+    await ended()
+    await moments.announce(TAB_EXITED, {
+      tabId: 't1',
+      exitCode: 0,
+      asleep: false,
+      crashed: false,
+      sessionGoesOn: false
+    })
+    expect(turns.tookTheTurn('t1')).toBe(false)
   })
 
   it('a new turn tells the news judge before the away digest', () => {

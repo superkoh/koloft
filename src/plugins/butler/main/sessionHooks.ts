@@ -28,6 +28,8 @@ export function butlerLetsGoOfEndedTabs(
   moments.listen(plugin.id, TAB_FORGOTTEN, (tabId) => d.butler()?.onPtyExit(tabId))
 }
 
+const AFTER_SESSIONS_CORE_DECIDED_WHO_TOOK_THE_TURN = ['sessions']
+
 export function butlerFollowsEachTurn(
   moments: Moments,
   d: {
@@ -45,8 +47,11 @@ export function butlerFollowsEachTurn(
   }
 ): void {
   moments.listen(plugin.id, TURN_STARTED, (tabId) => d.digest()?.prompted(tabId))
-  moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) =>
-    d.digest()?.turnEnded(tabId, turn.reply, d.tookTheTurn(tabId))
+  moments.listen(
+    plugin.id,
+    TURN_ENDED,
+    ({ tabId, turn }) => d.digest()?.turnEnded(tabId, turn.reply, d.tookTheTurn(tabId)),
+    AFTER_SESSIONS_CORE_DECIDED_WHO_TOOK_THE_TURN
   )
   moments.listen(plugin.id, SESSION_BOUND, ({ tabId, key }) => {
     const butler = d.butler()

@@ -38,12 +38,13 @@ export function followEachTurn(
 ): { tookTheTurn(tabId: string): boolean } {
   const taken = new Set<string>()
   moments.listen(plugin.id, TURN_STARTED, (tabId) => d.judge.prompted(tabId))
+  moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) => d.judge.turnEnded(tabId, turn))
+  moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) => d.slash.turnEnded(tabId, turn))
   moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) => {
-    d.judge.turnEnded(tabId, turn)
-    d.slash.turnEnded(tabId, turn)
+    taken.delete(tabId)
     if (d.replies.turnEnded(tabId, turn)) taken.add(tabId)
-    else taken.delete(tabId)
   })
+  moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => taken.delete(tabId))
   moments.listen(plugin.id, QUESTION_ASKED, ({ tabId, ask }) => {
     const asks = d.asks()
     if (asks) asks.onAsk(tabId, ask)
