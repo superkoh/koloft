@@ -71,7 +71,7 @@ function wired(o: { onDiscord?: boolean; pendingAsk?: string } = {}): {
 }
 
 describe('what each plugin does when a session changes state, finishes a tool, ends a turn for good or its marks change', () => {
-  it('leaving a question ends the session’s ask before attention marks the new state, and a scheduled run reads the edge only after attention (ADR-0022), then Discord stops showing the question', () => {
+  it('leaving a question ends the session’s ask before attention marks the new state, a scheduled run reads the same edge after attention, then Discord stops showing the question', () => {
     const { moments, calls } = wired()
     void moments.announce(STATE_CHANGED, { tabId: 't1', prev: 'approval', next: 'waiting' })
     expect(calls).toEqual([
