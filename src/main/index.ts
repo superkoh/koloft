@@ -263,9 +263,9 @@ import {
   gitProbes,
   worktreeHomeRoot,
   worktreeNameAround,
-  type GitOut,
   type ResumeProbes
 } from './resumePlan'
+import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { museBackend } from './backends/muse'
@@ -657,8 +657,7 @@ import {
   removeTree,
   tidyTree,
   whatIsLeft,
-  type MergedHeads,
-  type TidyResult
+  type MergedHeads
 } from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -4552,7 +4551,7 @@ app.whenReady().then(() => {
       storedSessions().some((s) =>
         s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
       ),
-    branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
+    branchExists: (root, branch) => branchExists(hostGitOut, root, branch),
     listRunFolders,
     runLeftovers,
     tidyRun,

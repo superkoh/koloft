@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import fs from 'fs'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isGitCheckoutAsync } from './projectInfo'
-import type { GitOut } from './resumePlan'
+import type { GitOut } from '@core/worktree'
 
 const REPO_KEY_GIT_TIMEOUT_MS = 5000
 export const COMMON_GIT_DIR = ['rev-parse', '--path-format=absolute', '--git-common-dir']

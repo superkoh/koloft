@@ -95,7 +95,8 @@ import {
   type RemoteAgyConfig
 } from '../remote/agyTab'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
-import { worktreeNameAround, type GitOut } from '../resumePlan'
+import { worktreeNameAround } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {

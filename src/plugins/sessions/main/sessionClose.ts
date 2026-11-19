@@ -189,8 +189,6 @@ async function deleteBranches(git: GitOut, root: string, branches: string[]): Pr
 
 const MACHINE_UNREACHABLE = 'machine unreachable'
 
-export type { TidyResult }
-
 export function machineUnreachable(why?: string): TidyResult {
   const kept = why ? `${MACHINE_UNREACHABLE}: ${why}` : MACHINE_UNREACHABLE
   return { removed: false, kept: [kept], unreachable: true }

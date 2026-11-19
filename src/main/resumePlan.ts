@@ -41,8 +41,6 @@ export function dirExistsSync(p: string): boolean {
   }
 }
 
-export type { GitOut }
-
 export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
   return {
     branchExists: (repoDir, branch) => branchExists(git, repoDir, branch),
