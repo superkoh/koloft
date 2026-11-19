@@ -1,5 +1,5 @@
 import type { WorkspaceGithub } from '@shared/types'
-import { coalesce } from './gitStatus'
+import { coalesce } from '../../../main/gitStatus'
 
 const RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS = 60_000
 const ONE_SWEEP_AT_A_TIME = 'github-counts-sweep'
