@@ -1,22 +1,17 @@
 import { useMemo } from 'react'
 import type { PluginManifest } from '@core/plugin'
-import type { SavedSettings } from '@core/settings'
-import { neverSetUp, pluginStates, type PluginState } from '@core/switches'
-import { PLUGINS } from '@plugins/list'
-import { DEFAULT_SETTINGS } from '@shared/settingsOps'
-import type { Settings } from '@shared/types'
+import type { PluginState } from '@core/switches'
+import { neverSetUpIn, pluginStatesIn } from '@shared/pluginSwitches'
 import { useStore } from './store'
 import { updateSettings } from './components/settings/useSettingsUpdate'
 
-const saved = (settings: Settings): SavedSettings => settings as unknown as SavedSettings
-
 export function usePluginStates(): Record<string, PluginState> {
   const settings = useStore((s) => s.settings)
-  return useMemo(() => pluginStates(PLUGINS, saved(settings), saved(DEFAULT_SETTINGS)), [settings])
+  return useMemo(() => pluginStatesIn(settings), [settings])
 }
 
 export function useNeverSetUp(plugin: PluginManifest): boolean {
-  return useStore((s) => neverSetUp(plugin, saved(s.settings), saved(DEFAULT_SETTINGS)))
+  return useStore((s) => neverSetUpIn(plugin, s.settings))
 }
 
 export function setPluginOn(id: string, on: boolean): void {

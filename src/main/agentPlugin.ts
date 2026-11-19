@@ -77,16 +77,16 @@ export function checkSkillsAgain(): void {
   skillsCheckedThisRun.clear()
 }
 
-function keepSkill(dir: string, files: Files): void {
+function keepSkill(dir: string, files: () => Files): void {
   if (skillsCheckedThisRun.has(dir) && fs.existsSync(path.join(dir, 'SKILL.md'))) return
-  keepFolder(dir, files)
+  keepFolder(dir, files())
   skillsCheckedThisRun.add(dir)
 }
 
 export function keepSkillsIn(skillsDir: string, koloftOn: boolean): void {
-  keepSkill(path.join(skillsDir, KOLOFT_DOCS_SKILL), DOCS_SKILL_FILES)
+  keepSkill(path.join(skillsDir, KOLOFT_DOCS_SKILL), () => DOCS_SKILL_FILES)
   const koloft = path.join(skillsDir, KOLOFT_SKILL)
-  if (koloftOn) return keepSkill(koloft, koloftSkillFiles())
+  if (koloftOn) return keepSkill(koloft, koloftSkillFiles)
   fs.rmSync(koloft, { recursive: true, force: true })
   skillsCheckedThisRun.delete(koloft)
 }
