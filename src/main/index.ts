@@ -474,7 +474,15 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import {
+  AwayDigest,
+  conductorFolder,
+  DIGEST_GATHERS_MS,
+  helperRoleOf,
+  OwnerAsleep,
+  quoteOf,
+  THIS_MAC
+} from '@plugins/butler/api'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
@@ -630,7 +638,6 @@ import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
-import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'

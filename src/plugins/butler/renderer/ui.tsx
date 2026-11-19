@@ -13,8 +13,10 @@ import {
   BUTLER_RENAME,
   BUTLER_ROW_PART,
   BUTLER_SET_UP,
-  BUTLER_STRIP
+  BUTLER_STRIP,
+  OWNER_ASLEEP_SWITCH
 } from '../plugin'
+import { OwnerAsleepSwitch } from './OwnerAsleepSwitch'
 import { ButlerRow, RenameButlerDialog } from './ButlerRow'
 import { ButlerSetUpDialog } from './SetUpDialog'
 import { FreshConversationDialog, InstructionsDialog, InstructionsStrip } from './InstructionsStrip'
@@ -28,7 +30,8 @@ export const ui: PluginUi = {
     [BUTLER_SET_UP]: ButlerSetUpDialog,
     [BUTLER_STRIP]: InstructionsStrip,
     [BUTLER_INSTRUCTIONS]: InstructionsDialog,
-    [BUTLER_FRESH]: FreshConversationDialog
+    [BUTLER_FRESH]: FreshConversationDialog,
+    [OWNER_ASLEEP_SWITCH]: OwnerAsleepSwitch
   },
   fills: [
     fill(LANDING_AFTER_CLOSE, butlerLanding),
