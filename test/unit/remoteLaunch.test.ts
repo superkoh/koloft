@@ -736,13 +736,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
+  it('with Docs writing off, claude on the machine gets no --plugin-dir for the koloft-docs skill, and still gets Koloft’s own', () => {
     knowPluginStates({ 'docs-writing': { on: false } })
     try {
-      const off = box(spec({ agentPlugin: true }))
-      expect(off.run().status).toBe(0)
-      const offM = `${off.home}/.koloft/m-0000000000000000`
-      expect(off.argv()).not.toContain(`${offM}/docs-plugin/`)
-      expect(off.argv()).toContain(`${offM}/agent-plugin/`)
+      const b = box(spec({ agentPlugin: true }))
+      expect(b.run().status).toBe(0)
+      const m = `${b.home}/.koloft/m-0000000000000000`
+      expect(b.argv()).not.toContain(`${m}/docs-plugin/`)
+      expect(b.argv()).toContain(`${m}/agent-plugin/`)
     } finally {
       knowPluginStates({})
     }
