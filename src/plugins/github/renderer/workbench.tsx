@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { BsGithub } from 'react-icons/bs'
 import { IconNewPullRequest, IconPullRequest, IconReload, IconSend } from '@renderer/icons'
-import type { GitStepResult, GithubInfo, GithubTarget, PrChecks, SessionInfo } from '@shared/types'
+import type { GithubInfo, GithubTarget, PrChecks, SessionInfo } from '@shared/types'
 import { useStore } from '@renderer/store'
 import { GITHUB_BUTTON_PART } from './hint'
 import { commentBlocked } from '@renderer/components/changesModel'
@@ -100,7 +100,6 @@ export interface WorkbenchGithub {
   recheck: () => void
   refreshChecks: () => void
   sendFailingChecks: () => Promise<void>
-  gitStep: (step: Promise<GitStepResult>, done: string) => Promise<boolean>
 }
 
 export function useWorkbenchGithub(
@@ -108,8 +107,7 @@ export function useWorkbenchGithub(
   treeRoot: string | null,
   session: SessionInfo | null,
   onReturnFocus: () => void,
-  reread: () => void,
-  gitSteps = 0
+  gitSteps: number
 ): WorkbenchGithub {
   const github = useGithubInfo(visible ? treeRoot : null)
   const ghChecks = useGithubChecks(visible ? treeRoot : null, github.info?.pr ?? null, gitSteps)
@@ -142,19 +140,6 @@ export function useWorkbenchGithub(
     onReturnFocus()
   }, [treeRoot, pasteTab, info?.pr, onReturnFocus])
 
-  const gitStep = useCallback(
-    async (step: Promise<GitStepResult>, done: string): Promise<boolean> => {
-      const r = await step
-      useStore.getState().showToast(r.ok ? done : r.reason)
-      if (r.ok) {
-        reread()
-        refreshChecks()
-      }
-      return r.ok
-    },
-    [reread, refreshChecks]
-  )
-
   return {
     info,
     dot,
@@ -164,8 +149,7 @@ export function useWorkbenchGithub(
     sendBlocked,
     recheck: github.recheck,
     refreshChecks,
-    sendFailingChecks,
-    gitStep
+    sendFailingChecks
   }
 }
 
@@ -174,13 +158,12 @@ export function useWorkbenchPart({
   treeRoot,
   session,
   onReturnFocus,
-  reread,
   openWeb,
-  closeNewTabMenu,
-  closeDownloads,
-  gitSteps
+  closeOtherMenus,
+  gitSteps,
+  push
 }: WorkbenchPartContext): WorkbenchPartView {
-  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread, gitSteps)
+  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, gitSteps)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const openGithub = useCallback(
@@ -194,19 +177,17 @@ export function useWorkbenchPart({
   )
   const openFromButton = useCallback(
     (what: GithubTarget): void => {
-      closeNewTabMenu()
-      setMenuOpen(false)
+      closeOtherMenus()
       openGithub(what)
     },
-    [closeNewTabMenu, openGithub]
+    [closeOtherMenus, openGithub]
   )
   const refreshChecks = gh.refreshChecks
   const openMenu = useCallback((): void => {
-    closeNewTabMenu()
-    closeDownloads()
+    closeOtherMenus()
     setMenuOpen(true)
     refreshChecks()
-  }, [closeNewTabMenu, closeDownloads, refreshChecks])
+  }, [closeOtherMenus, refreshChecks])
   const closeMenu = useCallback((): void => setMenuOpen(false), [])
 
   const info = gh.info
@@ -226,13 +207,7 @@ export function useWorkbenchPart({
   const layer = (
     <>
       {menuOpen && info && (
-        <GithubMenu
-          gh={gh}
-          info={info}
-          treeRoot={treeRoot}
-          onClose={closeMenu}
-          onOpen={openGithub}
-        />
+        <GithubMenu gh={gh} info={info} push={push} onClose={closeMenu} onOpen={openGithub} />
       )}
     </>
   )
@@ -273,13 +248,13 @@ export const GithubButton = memo(function GithubButton({
 export function GithubMenu({
   gh,
   info,
-  treeRoot,
+  push,
   onClose,
   onOpen
 }: {
   gh: WorkbenchGithub
   info: GithubInfo
-  treeRoot: string | null
+  push: () => Promise<boolean>
   onClose: () => void
   onOpen: (what: GithubTarget) => void
 }): JSX.Element {
@@ -337,8 +312,7 @@ export function GithubMenu({
           role="menuitem"
           onClick={() => {
             onClose()
-            if (!treeRoot) return
-            void gh.gitStep(window.api.git.push(treeRoot), 'Pushed.').then((ok) => {
+            void push().then((ok) => {
               if (ok) onOpen('compare')
             })
           }}

@@ -410,6 +410,7 @@ const CHANGES_NOT_A_REPO = 'norepo'
 const CHANGES_REPO = 'repo'
 const HEAD_ON_BRANCH = 'branch '
 const HEAD_DETACHED = 'detached'
+const HEAD_UNREAD = 'unread'
 
 // PLATFORM§37
 const CHANGES = `r=$1
@@ -422,7 +423,8 @@ o=$(mktemp) || exit 1
 trap 'rm -f "$o"' EXIT
 part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o")"; cat "$o"; }
 printf '${CHANGES_REPO}\\n%s\\n%s\\n' "$b" "$top"
-if h=$(g symbolic-ref --quiet --short HEAD); then printf '${HEAD_ON_BRANCH}%s\\n' "$h"; else echo ${HEAD_DETACHED}; fi
+h=$(g symbolic-ref --quiet --short HEAD); hc=$?
+if [ "$hc" = 0 ]; then printf '${HEAD_ON_BRANCH}%s\\n' "$h"; elif [ "$hc" = 1 ]; then echo ${HEAD_DETACHED}; else echo ${HEAD_UNREAD}; fi
 ns=1 nb=1
 if [ -n "$b" ]; then
   part nameStatus g diff --name-status -z "$b" --; ns=$c
@@ -444,9 +446,11 @@ function parseChanges(stdout: Buffer): GitChanges | null {
   const [base, afterBase] = lineAt(stdout, afterState)
   const [toplevel, afterTop] = lineAt(stdout, afterBase)
   const [headLine, afterHead] = lineAt(stdout, afterTop)
-  const head: GitHead = headLine.startsWith(HEAD_ON_BRANCH)
+  const head: GitHead | null = headLine.startsWith(HEAD_ON_BRANCH)
     ? { branch: headLine.slice(HEAD_ON_BRANCH.length) }
-    : { detached: true }
+    : headLine === HEAD_DETACHED
+      ? { detached: true }
+      : null
   const parts = new Map<string, string | null>()
   for (let at = afterHead; at < stdout.length;) {
     const [header, body] = lineAt(stdout, at)

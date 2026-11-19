@@ -120,24 +120,19 @@ describe('Push', () => {
 })
 
 describe('what the Workbench git menu asks git when it opens', () => {
-  it('says the branch, whether there is anything to commit (an untracked file counts) and whether origin is there to push to', async () => {
-    expect(await readReadiness(run)).toEqual({
-      head: { branch: 'feature/login' },
-      commitable: false,
-      hasPushRemote: true
-    })
+  it('says whether there is anything to commit and whether origin is there to push to', async () => {
+    expect(await readReadiness(run)).toEqual({ commitable: false, hasPushRemote: true })
+  })
+
+  it('counts a new file as something to commit, as git add -A does, even where git status is set to hide new files', async () => {
+    git(repo, 'config', 'status.showUntrackedFiles', 'no')
     fs.writeFileSync(path.join(repo, 'new.txt'), 'new\n')
     expect(await readReadiness(run)).toMatchObject({ commitable: true })
   })
 
-  it('reads a detached HEAD, and a repo whose only remote is not named origin as nowhere to push', async () => {
+  it('reads a repo whose only remote is not named origin as nowhere to push', async () => {
     git(repo, 'remote', 'rename', 'origin', 'upstream')
-    git(repo, 'checkout', '-q', '--detach')
-    expect(await readReadiness(run)).toEqual({
-      head: { detached: true },
-      commitable: false,
-      hasPushRemote: false
-    })
+    expect(await readReadiness(run)).toMatchObject({ hasPushRemote: false })
   })
 
   it('answers nothing outside a git repository', async () => {

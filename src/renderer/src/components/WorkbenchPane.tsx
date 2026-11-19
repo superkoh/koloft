@@ -201,9 +201,20 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     useGitChangeSet(treeRoot, visible, files.baseChoice, files.refreshNonce)
   const openWebHere = useRef<(url: string) => void>(() => {})
   const openWeb = useCallback((url: string): void => openWebHere.current(url), [])
-  const closeNewTabMenu = useCallback((): void => setNewMenuOpen(false), [])
-  const closeDownloads = useCallback((): void => setDlOpen(false), [])
   const [gitSteps, bumpGitSteps] = useReducer((n: number) => n + 1, 0)
+  const closePartMenusHere = useRef<() => void>(() => {})
+  const closeOtherMenus = useCallback((): void => {
+    setNewMenuOpen(false)
+    setDlOpen(false)
+    closePartMenusHere.current()
+  }, [])
+  const gitEntry = useGitEntry({
+    treeRoot,
+    head,
+    reread,
+    onStepped: bumpGitSteps,
+    closeOtherMenus
+  })
   const pluginParts = fillsOf(WORKBENCH_PART).map((usePart) =>
     usePart({
       visible,
@@ -212,29 +223,11 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       onReturnFocus,
       reread,
       openWeb,
-      closeNewTabMenu,
-      closeDownloads,
-      gitSteps
+      closeOtherMenus,
+      gitSteps,
+      push: gitEntry.push
     })
   )
-  const pluginMenuOpen = pluginParts.some((p) => p.menuOpen)
-  const pluginClosers = pluginParts.map((p) => p.closeMenu)
-  const closeAllButGitMenu = useCallback((): void => {
-    setNewMenuOpen(false)
-    setDlOpen(false)
-    pluginClosers.forEach((close) => close())
-  }, pluginClosers)
-  const gitEntry = useGitEntry({
-    treeRoot,
-    head,
-    reread,
-    onStepped: bumpGitSteps,
-    closeOtherMenus: closeAllButGitMenu
-  })
-  const closeGitMenu = gitEntry.closeMenu
-  useEffect(() => {
-    if (pluginMenuOpen) closeGitMenu()
-  }, [pluginMenuOpen, closeGitMenu])
   const parts = [gitEntry, ...pluginParts]
   const partMenuOpen = parts.some((p) => p.menuOpen)
   const partClosers = parts.map((p) => p.closeMenu)
@@ -242,6 +235,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     (): void => partClosers.forEach((close) => close()),
     partClosers
   )
+  closePartMenusHere.current = closePartMenus
   const partButtons = parts.map((p) => p.button)
   const pinnedParts = useMemo(
     () => partButtons.map((button, i) => <Fragment key={i}>{button}</Fragment>),

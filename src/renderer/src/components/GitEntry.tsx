@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState, type JSX } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { IconBranch, IconCommit, IconPush } from '../icons'
 import type { GitHead, GitReadiness, GitStepResult } from '@shared/types'
 import { useStore } from '../store'
@@ -8,7 +8,11 @@ import type { WorkbenchPartView } from '../slots'
 
 const DETACHED_LABEL = 'detached HEAD'
 
-export const headLabel = (head: GitHead): string => branchOf(head) ?? DETACHED_LABEL
+const headLabel = (head: GitHead): string => branchOf(head) ?? DETACHED_LABEL
+
+export interface GitEntry extends WorkbenchPartView {
+  push: () => Promise<boolean>
+}
 
 export function useGitEntry({
   treeRoot,
@@ -22,25 +26,30 @@ export function useGitEntry({
   reread: () => void
   onStepped: () => void
   closeOtherMenus: () => void
-}): WorkbenchPartView {
-  const [menuRoot, setMenuRoot] = useState<string | null>(null)
+}): GitEntry {
+  const [menuOpen, setMenuOpen] = useState(false)
   const [commitRoot, setCommitRoot] = useState<string | null>(null)
   const [pushing, setPushing] = useState<ReadonlySet<string>>(() => new Set())
-  const [readiness, setReadiness] = useState<{ root: string; got: GitReadiness | null } | null>(
-    null
-  )
+  const [readiness, setReadiness] = useState<GitReadiness | null>(null)
+  const asked = useRef(0)
 
-  useEffect(() => setMenuRoot(null), [treeRoot])
+  useEffect(() => setMenuOpen(false), [treeRoot])
 
-  const menuOpen = !!treeRoot && menuRoot === treeRoot
-  const closeMenu = useCallback((): void => setMenuRoot(null), [])
-  const openMenu = useCallback((): void => {
-    if (!treeRoot) return
+  const closeMenu = useCallback((): void => setMenuOpen(false), [])
+  const toggleMenu = useCallback((): void => {
+    if (!treeRoot || menuOpen) {
+      setMenuOpen(false)
+      return
+    }
     closeOtherMenus()
-    setMenuRoot(treeRoot)
+    setMenuOpen(true)
     setReadiness(null)
-    void window.api.git.readiness(treeRoot).then((got) => setReadiness({ root: treeRoot, got }))
-  }, [treeRoot, closeOtherMenus])
+    const mine = ++asked.current
+    const settle = (got: GitReadiness | null): void => {
+      if (mine === asked.current) setReadiness(got)
+    }
+    window.api.git.readiness(treeRoot).then(settle, () => settle(null))
+  }, [treeRoot, menuOpen, closeOtherMenus])
 
   const step = useCallback(
     async (run: Promise<GitStepResult>, done: string): Promise<boolean> => {
@@ -55,35 +64,37 @@ export function useGitEntry({
     [reread, onStepped]
   )
 
-  const push = useCallback(
-    (root: string): void => {
-      setPushing((s) => new Set(s).add(root))
-      void step(window.api.git.push(root), 'Pushed.').finally(() =>
-        setPushing((s) => {
-          const next = new Set(s)
-          next.delete(root)
-          return next
-        })
-      )
-    },
-    [step]
-  )
+  const push = useCallback(async (): Promise<boolean> => {
+    const root = treeRoot
+    if (!root) return false
+    setPushing((s) => new Set(s).add(root))
+    try {
+      return await step(window.api.git.push(root), 'Pushed.')
+    } finally {
+      setPushing((s) => {
+        const next = new Set(s)
+        next.delete(root)
+        return next
+      })
+    }
+  }, [treeRoot, step])
 
   const isPushing = !!treeRoot && pushing.has(treeRoot)
-  const button = treeRoot && head && (
-    <GitButton label={headLabel(head)} pushing={isPushing} onMenu={openMenu} />
+  const label = head && headLabel(head)
+  const button = useMemo(
+    () => treeRoot && label && <GitButton label={label} pushing={isPushing} onMenu={toggleMenu} />,
+    [treeRoot, label, isPushing, toggleMenu]
   )
-  const known = readiness && readiness.root === treeRoot ? readiness.got : null
   const layer = (
     <>
       {menuOpen && head && (
         <GitMenu
-          head={known?.head ?? head}
-          readiness={known}
+          head={head}
+          readiness={readiness}
           pushing={isPushing}
           onClose={closeMenu}
           onCommit={() => setCommitRoot(treeRoot)}
-          onPush={() => push(treeRoot)}
+          onPush={() => void push()}
         />
       )}
       {commitRoot && commitRoot === treeRoot && (
@@ -99,7 +110,7 @@ export function useGitEntry({
       )}
     </>
   )
-  return { button, layer, menuOpen, closeMenu }
+  return { button, layer, menuOpen, closeMenu, push }
 }
 
 const GitButton = memo(function GitButton({
@@ -129,6 +140,12 @@ const GitButton = memo(function GitButton({
   )
 })
 
+function pushRefusal(head: GitHead, readiness: GitReadiness | null): string | null {
+  if (!branchOf(head)) return 'Not on a branch'
+  if (readiness && !readiness.hasPushRemote) return 'No remote named origin to push to'
+  return null
+}
+
 function GitMenu({
   head,
   readiness,
@@ -145,15 +162,9 @@ function GitMenu({
   onPush: () => void
 }): JSX.Element {
   const label = headLabel(head)
-  const branch = branchOf(head)
   const nothingToCommit = readiness !== null && !readiness.commitable
-  const pushBlocked = pushing
-    ? ''
-    : !branch
-      ? 'Not on a branch'
-      : readiness !== null && !readiness.hasPushRemote
-        ? 'No remote named origin to push to'
-        : null
+  const refusal = pushRefusal(head, readiness)
+  const pushOff = pushing || refusal !== null
   return (
     <div
       className="menu wb-gitmenu"
@@ -185,11 +196,15 @@ function GitMenu({
         Commit…
       </button>
       <button
-        className={'mi' + (pushBlocked !== null ? ' disabled' : '')}
+        className={'mi' + (pushOff ? ' disabled' : '')}
         role="menuitem"
-        title={pushBlocked ?? `Push ${label} to the same branch on origin and track it`}
+        title={
+          pushing
+            ? undefined
+            : (refusal ?? `Push ${label} to the same branch on origin and track it`)
+        }
         onClick={() => {
-          if (pushBlocked !== null) return
+          if (pushOff) return
           onClose()
           onPush()
         }}

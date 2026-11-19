@@ -16,6 +16,7 @@ import {
 import type { GithubRepos } from '../githubRepos'
 import { LocalRunner, networkGit } from '../gitFreshness'
 import { GIT_STEP_TIMEOUT_MS, readHead, type GitRunResult } from '../gitSteps'
+import { coalesce } from '@core/coalesce'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { aboveItsTools } from '../agentLift'
@@ -214,7 +215,9 @@ export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {
         gitStatus(root, arg),
         gitNumstat(root, arg),
         dirExists(root),
-        readHead((args) => localGitRun(root, args))
+        coalesce(['local', 'head', root].join('\0'), () =>
+          readHead((args) => localGitRun(root, args))
+        )
       ])
       return { base, head, status, numstat, missing: !exists }
     },

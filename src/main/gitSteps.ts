@@ -63,21 +63,11 @@ export async function readHead(run: GitRun): Promise<GitHead | null> {
   return r.code === HEAD_IS_NOT_A_BRANCH ? { detached: true } : null
 }
 
-const BRANCH_HEAD_LINE = '# branch.head '
-const DETACHED_IN_STATUS = '(detached)'
-
 export async function readReadiness(run: GitRun): Promise<GitReadiness | null> {
   const [status, origin] = await Promise.all([
-    run(['status', '--porcelain=v2', '--branch']),
+    run(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=normal']),
     run(['config', '--get', `remote.${PUSH_REMOTE}.url`])
   ])
   if (status.code !== 0) return null
-  const lines = status.stdout.split('\n').filter((l) => l !== '')
-  const name = lines.find((l) => l.startsWith(BRANCH_HEAD_LINE))?.slice(BRANCH_HEAD_LINE.length)
-  if (!name) return null
-  return {
-    head: name === DETACHED_IN_STATUS ? { detached: true } : { branch: name },
-    commitable: lines.some((l) => !l.startsWith('# ')),
-    hasPushRemote: origin.code === 0
-  }
+  return { commitable: status.stdout.trim() !== '', hasPushRemote: origin.code === 0 }
 }

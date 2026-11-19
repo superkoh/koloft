@@ -38,15 +38,7 @@ const LINK = 'https://github.com/acme/widgets/actions/runs/1/job/2'
 async function hookFor(next: GithubInfo, nextChecks: PrChecks) {
   info = next
   checks = nextChecks
-  const hook = renderHook(() =>
-    useWorkbenchGithub(
-      true,
-      '/repo',
-      SESSION,
-      () => {},
-      () => {}
-    )
-  )
+  const hook = renderHook(() => useWorkbenchGithub(true, '/repo', SESSION, () => {}, 0))
   await waitFor(() => expect(hook.result.current.info).not.toBeNull())
   if (next.pr !== null) await waitFor(() => expect(hook.result.current.checksText).not.toBeNull())
   return hook
@@ -86,7 +78,13 @@ describe('the full text of the Workbench GitHub button, its menu and its toasts,
         />
       )
       const menu = render(
-        <GithubMenu gh={gh} info={next} treeRoot="/repo" onClose={() => {}} onOpen={() => {}} />
+        <GithubMenu
+          gh={gh}
+          info={next}
+          push={async () => true}
+          onClose={() => {}}
+          onOpen={() => {}}
+        />
       )
       lines.push(
         `== ${name}`,
