@@ -18,7 +18,7 @@ export function changeSummary(before: string, after: string): string {
   const { rows } = diffLines(before, after)
   const added = rows.filter((r) => r.kind === 'add').length
   const removed = rows.filter((r) => r.kind === 'del').length
-  if (!rows.some((r) => r.kind === 'ctx') && added && removed) return 'The whole text replaced'
+  if (!rows.some((r) => r.kind === 'ctx') && added && removed) return 'the whole text replaced'
   const counted = [added && lines(added, 'added'), removed && lines(removed, 'removed')]
   return counted.filter(Boolean).join(', ') || 'a small change'
 }

@@ -4412,15 +4412,8 @@ says the project's own file may win (`src/renderer/src/components/SessionDefault
   `cross-session-message` envelope); a finished background task was
   `"task-notification"`.
 
-Read from Koloft's code, not measured: `koloft session keys` writes into the same terminal,
-so its text is inferred to look the same, not checked. Koloft's own record of the owner's
-words (`<tab>.said`, `src/main/hooks.ts`) is rewritten only when a prompt shows a language
-and is never cleared at a turn's end, so it can hold an earlier turn's words; `<tab>.typed`
-is per turn but written only for the butler's tab.
-
-So no signal Koloft keeps today tells, on Claude Code, that the turn a command runs in was
-started by the owner's own words and not by Koloft typing; the other three agents were not
-probed.
+So the transcript does not tell the owner's typing from text a program wrote into the
+terminal; the other three agents were not probed.
 
 Koloft dependents: `koloft instructions` does not try to tell whose words started the turn;
 it asks the owner to agree to every change in the proposing session's own tab

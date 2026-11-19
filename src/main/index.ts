@@ -2374,7 +2374,7 @@ registerSessionCommands(commands, {
     askTheOwner: (ask, stillWaiting) =>
       instructionAsks
         ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS, stillWaiting)
-        : Promise.resolve('timeout'),
+        : Promise.reject(new Error(STILL_STARTING)),
     overseerSide: butlerSide,
     isOverseer: isButlerNow,
     overseerBlock: () =>

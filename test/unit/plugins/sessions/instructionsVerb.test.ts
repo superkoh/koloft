@@ -101,7 +101,7 @@ describe('koloft instructions asks the owner before anything changes', () => {
   it.each([
     ['declined', /did not agree/],
     ['timeout', /did not answer in time/],
-    ['closed', /closed before the owner answered/]
+    ['closed', /stopped waiting, or this session was closed, before the owner answered/]
   ] as const)('when the owner %s, nothing changes and the agent is told so', async (how, said) => {
     const w = world(how)
     const r = await w.run('tab-a', ['set', '--', 'Be brief.'])

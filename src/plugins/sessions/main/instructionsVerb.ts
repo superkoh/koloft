@@ -7,7 +7,13 @@ import {
   type AgentReply,
   type AgentVerb
 } from '@core/command'
-import { ADD_A_LINE, REPLACE_THE_TEXT, editedText, type AgentEdit } from '@core/ownerInstructions'
+import {
+  ADD_A_LINE,
+  REPLACE_THE_TEXT,
+  cleanInstructions,
+  editedText,
+  type AgentEdit
+} from '@core/ownerInstructions'
 import type { SessionInfo } from '@shared/types'
 import { resolveWorkspace, type PinnedWorkspace } from './placedRows'
 import type { InstructionAsk, OwnersAnswer } from './instructionAsks'
@@ -47,7 +53,7 @@ const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
   declined: 'koloft instructions: the owner did not agree, so nothing was changed.',
   timeout: 'koloft instructions: the owner did not answer in time, so nothing was changed.',
   closed:
-    'koloft instructions: this session was closed before the owner answered, so nothing was changed.'
+    'koloft instructions: the command stopped waiting, or this session was closed, before the owner answered, so nothing was changed.'
 }
 
 const CHANGED_WHILE_ASKING =
@@ -107,7 +113,8 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
       const text = await block.read()
       return answered(text || `${capitalized(block.name)} are empty.`)
     }
-    if (p.edit === ADD_A_LINE && !p.words) return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
+    if (p.edit === ADD_A_LINE && !cleanInstructions(p.words))
+      return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     if (p.edit === REPLACE_THE_TEXT && !args.includes('--'))
       return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     const before = await block.read()
