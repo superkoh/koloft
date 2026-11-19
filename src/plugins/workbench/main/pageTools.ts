@@ -2,17 +2,15 @@ import crypto from 'crypto'
 import { app, clipboard, session, webContents, type WebContents } from 'electron'
 import { BROWSER_PARTITION } from '@shared/types'
 import { guestShortcut } from '@shared/shortcutDispatch'
-import { CH, type Channel } from '@shared/ipcChannels'
+import { CH } from '@shared/ipcChannels'
 import { pickElement, pickText, stopPick } from './elementPick'
 import { mutedWhileHidden } from './mutedWhileHidden'
 import { isWorkbenchPage, type WebPages } from './webPages'
+import { CHANNELS } from '../shared/ipc'
 
 const DEFAULT_BROWSER_GUEST_LIMIT = 12
 
-import { CHANNELS } from '../shared/ipc'
-
 export interface PageToolsDeps {
-  send(channel: Channel, ...args: unknown[]): boolean
   push(channel: string, ...args: unknown[]): boolean
   pages: WebPages
   machineOfTab(tabId: string): string | undefined
@@ -109,10 +107,10 @@ export class PageTools {
   watchKeys(): void {
     const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
       if (!cmd) return
-      if (cmd === 'find') this.d.send(CH.shortcut.find)
+      if (cmd === 'find') this.d.push(CH.shortcut.find)
       else if (cmd === 'cycle-next' || cmd === 'cycle-prev') {
-        this.d.send(CH.shortcut.workbench, cmd)
-      } else this.d.send(CH.shortcut.browser, cmd)
+        this.d.push(CH.shortcut.workbench, cmd)
+      } else this.d.push(CH.shortcut.browser, cmd)
     }
     // PLATFORM§12
     const pdfKeepsItsNativeFind = (
@@ -167,7 +165,7 @@ export class PageTools {
     const picked = await pickElement(guest)
     if (!picked) return null
     if (picked.pictureFailed)
-      this.d.send(
+      this.d.push(
         CH.toast.show,
         `The picture of the element could not be taken: ${picked.pictureFailed}`
       )
@@ -179,7 +177,7 @@ export class PageTools {
             : this.d.savePickOnThisMac(picked.png)
         ).catch((error) => {
           const why = error instanceof Error ? error.message : String(error)
-          this.d.send(
+          this.d.push(
             CH.toast.show,
             machine
               ? `The picture of the element could not be copied to ${machine}: ${why}`

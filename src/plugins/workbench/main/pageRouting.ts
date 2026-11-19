@@ -20,7 +20,6 @@ import { guestMenuItems } from '../../../main/browserSecurity'
 import { awaitGuestFor } from './extensionManager'
 import { openSignInWindow } from './signInWindow'
 import type { WebPages } from './webPages'
-
 import { CHANNELS } from '../shared/ipc'
 
 export interface PageRoutingDeps {

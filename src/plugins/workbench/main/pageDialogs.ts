@@ -7,7 +7,6 @@ import {
   type BrowserJsDialog
 } from '@shared/types'
 import { authPromptFor, certHostOf, certTrusted, jsDialogFor } from '../../../main/browserSecurity'
-
 import { CHANNELS } from '../shared/ipc'
 
 export interface PageDialogsDeps {

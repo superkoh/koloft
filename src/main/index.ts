@@ -4853,7 +4853,6 @@ const pageRouting = new PageRouting({
 })
 
 const pageTools = new PageTools({
-  send: sendToRenderer,
   push: pluginIpc.push,
   pages: webPages,
   machineOfTab,

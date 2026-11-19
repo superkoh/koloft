@@ -9,7 +9,6 @@ import {
   type PermissionDetails,
   type PermissionName
 } from './browserPermission'
-
 import { CHANNELS } from '../shared/ipc'
 
 export interface SitePermissionsDeps {

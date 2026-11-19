@@ -21,11 +21,10 @@ const { PageTools } = await import('../../../../src/plugins/workbench/main/pageT
 async function toastsOfAPick(machine: string | undefined): Promise<unknown[]> {
   const toasts: unknown[] = []
   const tools = new PageTools({
-    send: (_channel, text) => {
+    push: (_channel, text) => {
       toasts.push(text)
       return true
     },
-    push: () => true,
     pages: {} as never,
     machineOfTab: () => machine,
     savePickOn: async () => {

@@ -4,7 +4,6 @@ import crypto from 'crypto'
 import { app, session, type DownloadItem, type WebContents } from 'electron'
 import { BROWSER_PARTITION, type BrowserDownload } from '@shared/types'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
-
 import { CHANNELS } from '../shared/ipc'
 
 export interface PageDownloadsDeps {
