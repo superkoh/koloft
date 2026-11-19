@@ -155,9 +155,7 @@ function harness(
   const stopped: string[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
-  const moments = new Moments(PLUGINS, (error) => {
-    throw error
-  })
+  const moments = new Moments(PLUGINS)
   tellEachHelperItsRole(moments, () => BUTLER_HELPER_ROLE)
   giveEachStartedSessionARoom(moments, {
     isButler: (tabId) => !!conducting.scopes?.[tabId],

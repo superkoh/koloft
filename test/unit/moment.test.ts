@@ -19,13 +19,8 @@ const manifest = (
 
 const ANNOUNCER = manifest('core', { announces: [OPENED.name] })
 
-function registry(ids: string[]): { moments: Moments; failed: unknown[] } {
-  const failed: unknown[] = []
-  const moments = new Moments(
-    [ANNOUNCER, ...ids.map((id) => manifest(id))],
-    (error) => void failed.push(error)
-  )
-  return { moments, failed }
+function registry(ids: string[]): { moments: Moments } {
+  return { moments: new Moments([ANNOUNCER, ...ids.map((id) => manifest(id))]) }
 }
 
 describe('session moments', () => {
@@ -35,12 +30,12 @@ describe('session moments', () => {
     expect(heard.filter((name) => !announced.has(name))).toEqual([])
   })
 
-  it('a plugin may listen only to a moment its manifest lists and some plugin announces', () => {
+  it('a plugin may listen only to a moment its manifest lists and some plugin announces, and announcing an unlisted moment fails', async () => {
     const { moments } = registry(['a'])
     expect(() => moments.listen('nobody', OPENED, () => {})).toThrow()
     expect(() => moments.listen('core', OPENED, () => {})).toThrow()
     expect(() => moments.listen('a', { name: 'closed' }, () => {})).toThrow()
-    expect(() => moments.announce({ name: 'closed' }, 'x')).toThrow()
+    await expect(moments.announce({ name: 'closed' }, 'x')).rejects.toThrow()
     moments.listen('a', OPENED, () => {})
   })
 
@@ -72,17 +67,18 @@ describe('session moments', () => {
     expect(await moments.announce(OPENED, 'plan.md')).toEqual(['first', 'last'])
   })
 
-  it('a listener that throws or fails is reported, and the others still hear the moment and speak', async () => {
-    const { moments, failed } = registry(['a', 'b', 'c'])
+  it('a listener that throws or fails does not keep the others from hearing the moment, and the announce then fails with the first failure', async () => {
+    const heard: string[] = []
+    const { moments } = registry(['a', 'b', 'c'])
     moments.listen('a', OPENED, () => {
       throw new Error('a broke')
     })
     moments.listen('b', OPENED, async () => {
       throw new Error('b broke')
     })
-    moments.listen('c', OPENED, async () => 'c said')
-    expect(await moments.announce(OPENED, 'plan.md')).toEqual(['c said'])
-    expect(failed.map(String)).toEqual(['Error: a broke', 'Error: b broke'])
+    moments.listen('c', OPENED, () => void heard.push('c'))
+    await expect(moments.announce(OPENED, 'plan.md')).rejects.toThrow('a broke')
+    expect(heard).toEqual(['c'])
   })
 
   it('a listener that stops listening hears no later moment', async () => {

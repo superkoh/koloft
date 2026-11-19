@@ -1,15 +1,16 @@
-import { TAB_TORN_DOWN, type Moments, type TabEnded } from '@core/moment'
+import {
+  TAB_TORN_DOWN,
+  type AgentExit,
+  type LeftTab,
+  type MadeLater,
+  type Moments
+} from '@core/moment'
 import { plugin } from '../plugin'
 
-export interface EndsRuns {
-  onPtyExit(
-    tabId: string,
-    left: TabEnded['left'],
-    exit: Pick<TabEnded, 'exitCode' | 'signal' | 'unexpected'>
-  ): void
-}
-
-export function closeOutEachEndedRun(moments: Moments, runner: () => EndsRuns | null): void {
+export function closeOutEachEndedRun(
+  moments: Moments,
+  runner: MadeLater<{ onPtyExit(tabId: string, left?: LeftTab, exit?: AgentExit): void }>
+): void {
   moments.listen(plugin.id, TAB_TORN_DOWN, ({ tabId, left, ...exit }) =>
     runner()?.onPtyExit(tabId, left, exit)
   )

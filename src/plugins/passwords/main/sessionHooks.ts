@@ -1,9 +1,9 @@
-import { TAB_EXITED, type Moments } from '@core/moment'
+import { TAB_EXITED, type MadeLater, type Moments } from '@core/moment'
 import { plugin } from '../plugin'
 
-export function letGoOfEachEndedTab(
+export function forgetSecretAsksOfEndedTabs(
   moments: Moments,
-  asks: () => { forget(tabId: string): void } | null
+  asks: MadeLater<{ forget(tabId: string): void }>
 ): void {
   moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => asks()?.forget(tabId))
 }

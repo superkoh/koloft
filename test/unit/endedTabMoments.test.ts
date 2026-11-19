@@ -7,14 +7,14 @@ import {
   type TabEnded
 } from '../../src/core/moment'
 import { PLUGINS } from '../../src/plugins/list'
-import { letGoOfEachEndedTab as sessions } from '../../src/plugins/sessions/main/sessionHooks'
-import { letGoOfEachEndedTab as butler } from '../../src/plugins/butler/main/sessionHooks'
+import { forgetAsksOfEndedTabs } from '../../src/plugins/sessions/main/sessionHooks'
+import { butlerLetsGoOfEndedTabs } from '../../src/plugins/butler/main/sessionHooks'
 import { closeOutEachEndedRun } from '../../src/plugins/scheduled-tasks/main/sessionHooks'
 import {
-  letGoOfEachEndedTab as discord,
+  closeRoomsOfEndedTabs,
   type EndedTabParts
 } from '../../src/plugins/discord/main/sessionHooks'
-import { letGoOfEachEndedTab as passwords } from '../../src/plugins/passwords/main/sessionHooks'
+import { forgetSecretAsksOfEndedTabs } from '../../src/plugins/passwords/main/sessionHooks'
 
 function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: string[] } {
   const calls: string[] = []
@@ -22,21 +22,19 @@ function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: st
     (name: string) =>
     (...args: unknown[]): void =>
       void calls.push([name, ...args.map(String)].join(' '))
-  const moments = new Moments(PLUGINS, (error) => {
-    throw error
-  })
-  sessions(moments, {
+  const moments = new Moments(PLUGINS)
+  forgetAsksOfEndedTabs(moments, {
     slash: { closed: say('slash.closed') },
     asks: () => ({ forget: say('asks.forget') })
   })
-  butler(moments, {
+  butlerLetsGoOfEndedTabs(moments, {
     butler: () => ({ onPtyExit: say('butler.onPtyExit') }),
     digest: () => ({ forget: say('digest.forget') })
   })
   closeOutEachEndedRun(moments, () => ({
     onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot)
   }))
-  discord(moments, {
+  closeRoomsOfEndedTabs(moments, {
     typing: () => ({ forget: say('typing.forget') }),
     relay: () => ({ forget: say('relay.forget') }),
     buttons: () => ({ forget: say('buttons.forget') }),
@@ -47,7 +45,7 @@ function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: st
     }),
     ...over
   })
-  passwords(moments, () => ({ forget: say('secrets.forget') }))
+  forgetSecretAsksOfEndedTabs(moments, () => ({ forget: say('secrets.forget') }))
   return { moments, calls }
 }
 
@@ -86,6 +84,19 @@ describe('what each plugin lets go of when a tab ends', () => {
       void moments.announce(TAB_EXITED, exitOf(over))
       expect(calls.filter((c) => c.startsWith('rooms.'))).toEqual([room])
     }
+  })
+
+  it('a Discord part that fails to forget the tab still lets its room close and the other plugins forget it', async () => {
+    const { moments, calls } = wired({
+      relay: () => ({
+        forget: () => {
+          throw new Error('relay broke')
+        }
+      })
+    })
+    await expect(moments.announce(TAB_EXITED, exitOf())).rejects.toThrow('relay broke')
+    expect(calls).toContain('rooms.closed t1')
+    expect(calls).toContain('secrets.forget t1')
   })
 
   it('a Discord part made after the subscription still hears exits', () => {

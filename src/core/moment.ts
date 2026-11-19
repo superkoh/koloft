@@ -19,12 +19,19 @@ export interface SessionStarted {
   name?: string
 }
 
-export interface TabEnded extends Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'> {
+export interface LeftTab {
+  treeRoot?: string
+  sessionId?: string
+}
+
+export type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
+
+export interface TabEnded extends AgentExit {
   tabId: string
   asleep: boolean
   crashed: boolean
   sessionGoesOn: boolean
-  left?: { treeRoot?: string; sessionId?: string }
+  left?: LeftTab
 }
 
 export interface Moment<T> {
@@ -43,6 +50,8 @@ export const TAB_FORGOTTEN = named<string>('tab-forgotten')
 
 export type Hears<T> = (moment: T) => unknown
 
+export type MadeLater<T> = () => T | null
+
 interface Listener {
   at: number
   hear: Hears<never>
@@ -51,10 +60,7 @@ interface Listener {
 export class Moments {
   private listeners = new Map<string, readonly Listener[]>()
 
-  constructor(
-    private plugins: readonly PluginManifest[],
-    private failed: (error: unknown) => void
-  ) {}
+  constructor(private plugins: readonly PluginManifest[]) {}
 
   listen<T>(pluginId: string, moment: Moment<T>, hear: Hears<T>): () => void {
     const at = this.plugins.findIndex((p) => p.id === pluginId)
@@ -78,22 +84,31 @@ export class Moments {
   }
 
   announce<T>(moment: Moment<T>, m: T): Promise<string[]> {
-    this.mustBeAnnounced(moment)
+    if (!this.announced(moment)) return Promise.reject(this.unannounced(moment))
+    const failures: unknown[] = []
     const said = (this.listeners.get(moment.name) ?? []).map(({ hear }) => {
       try {
-        return Promise.resolve((hear as Hears<T>)(m)).catch(this.failed)
+        return Promise.resolve((hear as Hears<T>)(m)).catch((error) => void failures.push(error))
       } catch (error) {
-        this.failed(error)
+        failures.push(error)
         return undefined
       }
     })
-    return Promise.all(said).then((all) =>
-      all.filter((s): s is string => typeof s === 'string' && !!s)
-    )
+    return Promise.all(said).then((all) => {
+      if (failures.length) throw failures[0]
+      return all.filter((s): s is string => typeof s === 'string' && !!s)
+    })
+  }
+
+  private announced(moment: Moment<unknown>): boolean {
+    return this.plugins.some((p) => p.moments?.announces?.includes(moment.name))
+  }
+
+  private unannounced(moment: Moment<unknown>): Error {
+    return new Error(`"${moment.name}" is announced by no plugin's manifest`)
   }
 
   private mustBeAnnounced(moment: Moment<unknown>): void {
-    if (!this.plugins.some((p) => p.moments?.announces?.includes(moment.name)))
-      throw new Error(`"${moment.name}" is announced by no plugin's manifest`)
+    if (!this.announced(moment)) throw this.unannounced(moment)
   }
 }

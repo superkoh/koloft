@@ -522,7 +522,7 @@ import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { toChannel } from './discord/slash'
-import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
+import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
@@ -572,21 +572,22 @@ import {
   Moments,
   SESSION_STARTED,
   SESSION_STARTING,
-  type SessionStarted
+  type SessionStarted,
+  type TabEnded
 } from '@core/moment'
 import {
+  butlerLetsGoOfEndedTabs,
   butlersWords,
-  letGoOfEachEndedTab as butlerLetsGoOfEndedTabs,
   tellEachHelperItsRole
 } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import {
+  closeRoomsOfEndedTabs,
   giveEachStartedSessionARoom,
-  letGoOfEachEndedTab as discordLetsGoOfEndedTabs,
   withoutTheRelayTag
 } from '@plugins/discord/main/sessionHooks'
-import { letGoOfEachEndedTab as sessionsLetGoOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
-import { letGoOfEachEndedTab as passwordsLetGoOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
+import { forgetAsksOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
+import { forgetSecretAsksOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
 import { closeOutEachEndedRun } from '@plugins/scheduled-tasks/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
 import {
@@ -727,7 +728,7 @@ function takeErrorsNobodyCaught(): void {
   })
 }
 
-const moments = new Moments(PLUGINS, (error) => errorNobodyCaught(error))
+const moments = new Moments(PLUGINS)
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -3675,18 +3676,19 @@ app.whenReady().then(() => {
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
-    moments
+    moments,
+    failed: (error) => errorNobodyCaught(error)
   })
-  sessionsLetGoOfEndedTabs(moments, { slash, asks: () => sessionAsks })
+  forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
   butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
   closeOutEachEndedRun(moments, () => cronRunner)
-  discordLetsGoOfEndedTabs(moments, {
+  closeRoomsOfEndedTabs(moments, {
     typing: () => discordTyping,
     relay: () => discordRelay,
     buttons: () => askButtons,
     rooms: () => rooms
   })
-  passwordsLetGoOfEndedTabs(moments, () => secretAsks)
+  forgetSecretAsksOfEndedTabs(moments, () => secretAsks)
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
     if (!exited?.alive) claudeDialogs.forget(e.id)
@@ -3702,7 +3704,7 @@ app.whenReady().then(() => {
     const restarting = closedTabs.get(e.id) === null
     closedTabs.delete(e.id)
     const asleep = sleepers.has(e.id)
-    const exit: TabExit = {
+    const exit: TabEnded = {
       tabId: e.id,
       exitCode: e.exitCode,
       signal: e.signal,

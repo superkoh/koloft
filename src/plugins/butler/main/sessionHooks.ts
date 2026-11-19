@@ -3,6 +3,7 @@ import {
   TAB_EXITED,
   TAB_FORGOTTEN,
   TAB_TORN_DOWN,
+  type MadeLater,
   type Moments
 } from '@core/moment'
 import { BUTLER_SAYS_OPENING, ownerSays } from '@shared/agentGuide'
@@ -12,9 +13,7 @@ export function tellEachHelperItsRole(moments: Moments, role: () => string): voi
   moments.listen(plugin.id, SESSION_STARTING, async ({ helper }) => (helper ? role() : undefined))
 }
 
-type MadeLater<T> = () => T | null
-
-export function letGoOfEachEndedTab(
+export function butlerLetsGoOfEndedTabs(
   moments: Moments,
   d: {
     butler: MadeLater<{ onPtyExit(tabId: string): void }>

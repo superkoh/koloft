@@ -1,4 +1,10 @@
-import { SESSION_STARTED, TAB_EXITED, type Moments, type SessionStarted } from '@core/moment'
+import {
+  SESSION_STARTED,
+  TAB_EXITED,
+  type MadeLater,
+  type Moments,
+  type SessionStarted
+} from '@core/moment'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { plugin } from '../plugin'
 
@@ -20,8 +26,6 @@ export function giveEachStartedSessionARoom(
   })
 }
 
-type MadeLater<T> = () => T | null
-
 interface ForgetsTabs {
   forget(tabId: string): void
 }
@@ -33,11 +37,10 @@ export interface EndedTabParts {
   rooms: MadeLater<ForgetsTabs & { stopped(tabId: string): void; closed(tabId: string): unknown }>
 }
 
-export function letGoOfEachEndedTab(moments: Moments, d: EndedTabParts): void {
+export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void {
+  for (const part of [d.typing, d.relay, d.buttons])
+    moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => part()?.forget(tabId))
   moments.listen(plugin.id, TAB_EXITED, ({ tabId, sessionGoesOn, unexpected }) => {
-    d.typing()?.forget(tabId)
-    d.relay()?.forget(tabId)
-    d.buttons()?.forget(tabId)
     const rooms = d.rooms()
     if (sessionGoesOn) rooms?.forget(tabId)
     else if (unexpected) rooms?.stopped(tabId)

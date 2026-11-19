@@ -6,9 +6,7 @@ import { copyEachOpenedFile } from '../../src/plugins/discord/main/copyOnOpen'
 const opened = { tabId: 't1', target: '/w/plan.md' }
 
 function saidWhenOpened(copyToPhone: (o: FileOpened) => Promise<string | undefined>) {
-  const moments = new Moments(PLUGINS, (error) => {
-    throw error
-  })
+  const moments = new Moments(PLUGINS)
   copyEachOpenedFile(moments, copyToPhone)
   return moments.announce(FILE_OPENED, opened)
 }

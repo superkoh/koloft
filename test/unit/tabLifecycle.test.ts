@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import type { Moment } from '../../src/core/moment'
+import type { Moment, TabEnded } from '../../src/core/moment'
 import {
   TabLifecycle,
   subscribeTabSubsystems,
-  type TabExit,
   type TabSubsystems
 } from '../../src/main/tabLifecycle'
 
@@ -33,17 +32,18 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     }),
     moments: {
       announce: async <T>(moment: Moment<T>, m: T) => {
-        const tabId = typeof m === 'string' ? m : (m as TabExit).tabId
+        const tabId = typeof m === 'string' ? m : (m as TabEnded).tabId
         calls.push(`announce ${moment.name} ${tabId}`)
         return []
       }
     },
+    failed: say('failed'),
     ...over
   })
   return { lifecycle, calls }
 }
 
-const exitOf = (over: Partial<TabExit> = {}): TabExit => ({
+const exitOf = (over: Partial<TabEnded> = {}): TabEnded => ({
   tabId: 't1',
   exitCode: 0,
   asleep: false,
@@ -95,6 +95,17 @@ describe('TabLifecycle', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls).toContain('owner.stop t1 -1')
     expect(calls).toContain('toast Error: stop failed')
+  })
+
+  it('a plugin that fails while hearing a tab end goes to the error report, and the rest of the teardown still runs', async () => {
+    const { lifecycle, calls } = wired({
+      moments: { announce: async () => Promise.reject(new Error('a plugin broke')) }
+    })
+    lifecycle.emit('exit', exitOf())
+    lifecycle.emit('teardown', exitOf())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls).toContain('failed Error: a plugin broke')
+    expect(calls).toContain('workspaces.launchEnded t1')
   })
 
   it('a tab put to sleep or woken refreshes the workspaces list', () => {
