@@ -711,7 +711,7 @@ export class CodexObservation {
           this.activities.set(key, {
             id: key,
             kind: 'agent',
-            label: childAgentLabel(id),
+            label: this.activities.get(key)?.label ?? childAgentLabel(id),
             state,
             owner: id,
             root,

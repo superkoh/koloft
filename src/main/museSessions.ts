@@ -912,10 +912,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   // MUSE§9
   private nameSubagent(run: MuseRun, input: Record<string, unknown>): void {
-    const id = jsonRecord(input.tool_response).subagent_id
+    const response = jsonRecord(input.tool_response)
+    const id = response.subagent_id
     const role = record(input.tool_input).role
-    if (typeof id !== 'string' || typeof role !== 'string' || !role.trim()) return
-    const label = role.trim().slice(0, 160)
+    if (response.status !== 'accepted' || typeof id !== 'string' || !UUID.test(id)) return
+    const label = typeof role === 'string' ? role.replace(/\s+/g, ' ').trim().slice(0, 160) : ''
+    if (!label) return
     run.subagentRoles.set(id, label)
     const item = run.background.get(`agent:${id}`)
     if (!item) return
@@ -1253,6 +1255,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (run.info) run.boundAt = Date.now()
     run.prompt = undefined
     run.children.clear()
+    run.subagentRoles.clear()
     run.background.clear()
     run.commands.clear()
     run.jobs.clear()
