@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionDefaults, SessionInfo } from '../../../../src/shared/types'
-import { OWNER } from '../../../../src/core/ownerInstructions'
+import { OWNER, unseenChange, withNewVersion } from '../../../../src/core/ownerInstructions'
 import {
   ONLY_ITS_OWN_WORKSPACE,
   instructionsVerb,
   type InstructionsChanged
 } from '../../../../src/plugins/sessions/main/instructionsVerb'
-import { seenDefaults, undoneDefaults, workspaceBlock } from '../../../../src/plugins/sessions/api'
+import {
+  savedFromTheDialog,
+  seenDefaults,
+  undoneDefaults,
+  workspaceBlock
+} from '../../../../src/plugins/sessions/api'
 import { butlersBlock } from '../../../../src/plugins/butler/api'
 import { WORKSPACE_TEXT_MAX_BYTES } from '../../../../src/plugins/sessions/shared/workspaceInstructions'
 import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
@@ -50,18 +55,20 @@ function world(): {
         (b) => (butler.value = b),
         () => AT
       ),
-    workspaceOf: (tabId) => (tabId === 'tab-a' ? WS_A : tabId === 'tab-b' ? WS_B : undefined),
+    workspaceOf: (tabId) => (tabId === 'tab-b' ? WS_B : tabId === BUTLER_TAB ? undefined : WS_A),
     pinnedWorkspaces: () => [
       { path: WS_A, missing: false },
       { path: WS_B, missing: false }
     ],
-    workspaceBlock: (ws) => workspaceBlock(store, ws, () => AT)
+    workspaceBlock: (ws) => workspaceBlock(store, ws, () => AT),
+    nameOf: (s) => s.title || 'Codex'
   })
+  const TITLES: Record<string, string> = { [BUTLER_TAB]: 'Alfred', 'tab-untitled': '' }
   const run = (tabId: string, args: string[]) =>
     verb(args, {
       tabId,
       cwd: '/',
-      session: { tabId, title: tabId === BUTLER_TAB ? 'Alfred' : 'Fix login' } as SessionInfo
+      session: { tabId, title: TITLES[tabId] ?? 'Fix login' } as SessionInfo
     })
   return { defaults, butler, told, run }
 }
@@ -75,6 +82,7 @@ describe('koloft instructions', () => {
       text: 'Answer in Chinese.\nRun npm test first.',
       at: AT,
       by: 'Fix login',
+      agent: true,
       unseen: true
     })
     expect((await w.run('tab-a', [])).text).toBe('Answer in Chinese.\nRun npm test first.')
@@ -105,6 +113,7 @@ describe('koloft instructions', () => {
       text: 'Ask me before any merge.',
       at: AT,
       by: 'Alfred',
+      agent: true,
       unseen: true
     })
     await w.run(BUTLER_TAB, ['add', '--workspace', 'ws-b', '--', 'Commit in English.'])
@@ -145,9 +154,10 @@ describe('the owner sees and undoes an agent’s change', () => {
   it('seeing it clears the mark; undoing it brings back the text before it, as a new version by the owner', async () => {
     const w = world()
     await w.run('tab-a', ['add', '--', 'Run npm test first.'])
+    const change = unseenChange(w.defaults.get(WS_A)?.instructions)!
     const saved = seenDefaults(w.defaults.get(WS_A))
     expect(saved?.instructions?.some((v) => v.unseen)).toBe(false)
-    const undone = undoneDefaults(saved, AT, AT + 5)
+    const undone = undoneDefaults(saved, change, AT + 5)
     expect(undone?.instructions?.at(-1)).toEqual({
       text: 'Answer in Chinese.',
       at: AT + 5,
@@ -155,16 +165,45 @@ describe('the owner sees and undoes an agent’s change', () => {
     })
   })
 
-  it('undoes only that change: once the text changed again, nothing is undone', async () => {
+  it('two changes made before the owner looks are shown and undone together, naming both sessions', async () => {
     const w = world()
     await w.run('tab-a', ['add', '--', 'one'])
-    const first = w.defaults.get(WS_A)
-    expect(() => undoneDefaults(first, AT - 1, AT + 5)).toThrow(/changed again/)
-    await w.run('tab-a', ['add', '--', 'two'])
-    const second = w.defaults.get(WS_A)
-    expect(undoneDefaults(second, AT, AT + 5)?.instructions?.at(-1)?.text).toBe(
-      'Answer in Chinese.\none'
+    await w.run('tab-untitled', ['add', '--', 'two'])
+    const change = unseenChange(w.defaults.get(WS_A)?.instructions)!
+    expect(change).toEqual({
+      by: 'Fix login, Codex',
+      at: AT,
+      before: 'Answer in Chinese.',
+      after: 'Answer in Chinese.\none\ntwo'
+    })
+    expect(undoneDefaults(w.defaults.get(WS_A), change, AT + 5)?.instructions?.at(-1)?.text).toBe(
+      'Answer in Chinese.'
     )
+  })
+
+  it('undoes only that change: once the owner changed the text again, nothing is undone', async () => {
+    const w = world()
+    await w.run('tab-a', ['add', '--', 'one'])
+    const change = unseenChange(w.defaults.get(WS_A)?.instructions)!
+    const ownerSaved = savedFromTheDialog(
+      w.defaults.get(WS_A),
+      { picks: {}, instructions: 'mine' },
+      AT + 1
+    )
+    expect(() => undoneDefaults(ownerSaved, change, AT + 5)).toThrow(/changed again/)
+  })
+
+  it('a session with no title, or one titled "owner", is still recorded as an agent', async () => {
+    const w = world()
+    await w.run('tab-untitled', ['add', '--', 'x'])
+    expect(w.defaults.get(WS_A)?.instructions?.at(-1)).toMatchObject({
+      by: 'Codex',
+      agent: true,
+      unseen: true
+    })
+    expect(withNewVersion([], 'y', 1, OWNER)).toEqual([
+      { text: 'y', at: 1, by: OWNER, agent: true, unseen: true }
+    ])
   })
 
   it.each([[['add']], [['add', '--']], [['set']], [['remove', '--', 'x']], [['--workspace']]])(

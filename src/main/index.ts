@@ -2375,9 +2375,10 @@ registerSessionCommands(commands, {
     overseerSide: butlerSide,
     overseerBlock: () =>
       butlersBlock(loadSettings().butler, (butler) => commitSettings({ butler }), Date.now),
-    workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
+    workspaceOf: pinnedWorkspaceOfTab,
     pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-    workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now)
+    workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now),
+    nameOf: (s) => sidebarTitle(s) ?? BACKEND_LABEL[s.backendId]
   }
 })
 
@@ -6695,10 +6696,8 @@ function registerIpc(): void {
         savedFromTheDialog(saved, raw, Date.now())
       ),
     instructionsSeen: (workspacePath) => defaultsOfProjects.write(workspacePath, seenDefaults),
-    undoInstructions: (workspacePath, changeAt) =>
-      defaultsOfProjects.write(workspacePath, (saved) =>
-        undoneDefaults(saved, changeAt, Date.now())
-      )
+    undoInstructions: (workspacePath, change) =>
+      defaultsOfProjects.write(workspacePath, (saved) => undoneDefaults(saved, change, Date.now()))
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

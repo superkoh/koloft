@@ -1,5 +1,6 @@
 import type { PreloadIpc } from '@core/ipc'
 import type { ConductorOpenResult, PaletteRequest } from '@shared/types'
+import type { ChangeToUndo } from '@core/ownerInstructions'
 import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
 
 export interface ButlerBridge {
@@ -9,7 +10,7 @@ export interface ButlerBridge {
     fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
     saveInstructions(text: string): Promise<InstructionsSaveResult>
     instructionsSeen(): Promise<void>
-    undoInstructions(changeAt: number): Promise<InstructionsSaveResult>
+    undoInstructions(change: ChangeToUndo): Promise<InstructionsSaveResult>
   }
 }
 
@@ -20,6 +21,6 @@ export const bridge = (ipc: PreloadIpc): ButlerBridge => ({
     fromPalette: (request) => ipc.invoke(CHANNELS.fromPalette, request),
     saveInstructions: (text) => ipc.invoke(CHANNELS.saveInstructions, text),
     instructionsSeen: () => ipc.invoke(CHANNELS.instructionsSeen),
-    undoInstructions: (changeAt) => ipc.invoke(CHANNELS.undoInstructions, changeAt)
+    undoInstructions: (change) => ipc.invoke(CHANNELS.undoInstructions, change)
   }
 })

@@ -3,6 +3,14 @@
   border-top: 1px solid var(--line);
 }
 .butler-strip .changed {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--good);
   font-size: 12px;
+}
+.butler-strip .mini {
+  flex-shrink: 0;
+  white-space: nowrap;
 }

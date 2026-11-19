@@ -8,6 +8,7 @@ import {
   type AgentVerb
 } from '@core/command'
 import { ADD_A_LINE, REPLACE_THE_TEXT, editedText, type AgentEdit } from '@core/ownerInstructions'
+import type { SessionInfo } from '@shared/types'
 import { resolveWorkspace, type PinnedWorkspace } from './placedRows'
 
 export interface InstructionsBlock {
@@ -31,6 +32,7 @@ export interface InstructionsVerbDeps {
   workspaceOf(tabId: string): string | undefined
   pinnedWorkspaces(): PinnedWorkspace[]
   workspaceBlock(workspace: string): InstructionsBlock
+  nameOf(session: SessionInfo): string
 }
 
 const USAGE =
@@ -99,7 +101,7 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     if (p.edit === REPLACE_THE_TEXT && !args.includes('--'))
       return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     const edit = p.edit
-    const by = caller.session.title
+    const by = d.nameOf(caller.session)
     if (!(await block.write((current) => editedText(current, edit, p.words), by)))
       return answered(`${capitalized(block.name)} already say that; nothing changed.`)
     const notes = await d.changed({ workspace: block.workspace, by, notice: block.changedBy(by) })

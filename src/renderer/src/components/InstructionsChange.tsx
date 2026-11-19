@@ -21,8 +21,15 @@ export function changeSummary({ before, after }: InstructionsChange): string {
     .join(', ')
 }
 
+function whenChanged(at: number): string {
+  const when = new Date(at)
+  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (when.toDateString() === new Date().toDateString()) return time
+  return `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`
+}
+
 export const changedBy = ({ by, at }: InstructionsChange): string =>
-  `changed by ${by} · ${new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`
+  `changed by ${by} · ${whenChanged(at)}`
 
 export function InstructionsChangeLines({ change }: { change: InstructionsChange }): JSX.Element {
   const parsed = useMemo(() => diffLines(change.before, change.after), [change])

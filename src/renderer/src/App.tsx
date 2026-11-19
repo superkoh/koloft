@@ -330,7 +330,7 @@ export default function App(): JSX.Element {
       window.api.sessionDefaults.onInstructionsChanged(({ workspace, by }) =>
         useStore
           .getState()
-          .showToast(`"${by}" changed this workspace's instructions · View`, () =>
+          .showToast(`"${by}" changed the instructions of ${basename(workspace)} · View`, () =>
             setDefaultsWs(workspace)
           )
       ),

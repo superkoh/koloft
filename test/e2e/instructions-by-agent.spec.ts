@@ -33,7 +33,7 @@ test.afterEach(({ env }) => killFakeRemote(env))
 
 const WRITTEN = 'Answer in Chinese.'
 const lineOf = (who: string): string => `${who} says: run npm test first.`
-const TOAST = "changed this workspace's instructions · View"
+const TOAST = /changed the instructions of \S+ · View$/
 const AGENT_LABEL: Record<BackendId, 'Claude' | 'Codex' | 'Muse' | 'Antigravity'> = {
   claude: 'Claude',
   codex: 'Codex',
@@ -121,12 +121,12 @@ async function agentAddsAndOwnerUndoes(
     )
     .toBe(true)
   const changed = versionsOnDisk(env).at(-1)!
-  expect(changed).toMatchObject({ text: `${before}\n${line}`, unseen: true })
+  expect(changed).toMatchObject({ text: `${before}\n${line}`, agent: true, unseen: true })
   expect(changed.by).not.toBe('owner')
 
   const toast = page.locator('.toast', { hasText: TOAST })
   await expect(toast).toBeVisible()
-  await expect(toast).toContainText(`"${changed.by}" ${TOAST}`)
+  await expect(toast).toContainText(`"${changed.by}" changed the instructions of `)
   await toast.click()
   const dlg = page.getByRole('dialog', { name: 'Session defaults' })
   await expect(dlg.locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])

@@ -1,6 +1,6 @@
 import type { MainIpc } from '@core/ipc'
 import { errorText } from '@core/errorText'
-import { allSeen, withChangeUndone } from '@core/ownerInstructions'
+import { NOT_READ, allSeen, changeToUndo, withChangeUndone } from '@core/ownerInstructions'
 import type { ConductorOpenResult, PaletteRequest } from '@shared/types'
 import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
 import { savedInstructions } from '../shared/instructions'
@@ -30,13 +30,14 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     if (butler.instructions?.some((v) => v.unseen))
       deps.save({ ...butler, instructions: allSeen(butler.instructions) })
   })
-  ipc.handle(CHANNELS.undoInstructions, (changeAt: unknown): InstructionsSaveResult => {
+  ipc.handle(CHANNELS.undoInstructions, (raw: unknown): InstructionsSaveResult => {
     const butler = deps.butler()
     try {
-      if (typeof changeAt !== 'number') throw new Error('Koloft could not read which change.')
+      const change = changeToUndo(raw)
+      if (!change) throw new Error(NOT_READ)
       deps.save({
         ...butler,
-        instructions: withChangeUndone(butler.instructions, changeAt, Date.now())
+        instructions: withChangeUndone(butler.instructions, change, Date.now())
       })
       return { ok: true }
     } catch (error) {

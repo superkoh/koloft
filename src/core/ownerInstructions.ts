@@ -2,6 +2,7 @@ export interface InstructionsVersion {
   text: string
   at: number
   by: string
+  agent?: true
   unseen?: true
 }
 
@@ -38,9 +39,10 @@ export function withNewVersion(
   agent?: string
 ): InstructionsVersion[] | undefined {
   if (text === textInUse(versions)) return undefined
-  const version: InstructionsVersion = agent
-    ? { text, at, by: agent, unseen: true }
-    : { text, at, by: OWNER }
+  const version: InstructionsVersion =
+    agent === undefined
+      ? { text, at, by: OWNER }
+      : { text, at, by: agent, agent: true, unseen: true }
   return [...(versions ?? []), version].slice(-VERSIONS_KEPT)
 }
 
@@ -55,24 +57,35 @@ export function unseenChange(
   versions: readonly InstructionsVersion[] | undefined
 ): InstructionsChange | undefined {
   const last = versions?.at(-1)
-  if (!last?.unseen) return undefined
-  return { by: last.by, at: last.at, before: versions?.at(-2)?.text ?? '', after: last.text }
+  if (!versions || !last?.unseen) return undefined
+  let first = versions.length - 1
+  while (first > 0 && versions[first - 1].unseen) first--
+  const by = [...new Set(versions.slice(first).map((v) => v.by))].join(', ')
+  return { by, at: last.at, before: versions[first - 1]?.text ?? '', after: last.text }
 }
 
 export const allSeen = (versions: readonly InstructionsVersion[]): InstructionsVersion[] =>
-  versions.map(({ text, at, by }) => ({ text, at, by }))
+  versions.map(({ text, at, by, agent }) => ({ text, at, by, ...(agent && { agent }) }))
 
 export const CHANGED_AGAIN = 'The instructions changed again since then, so nothing was undone.'
+export const NOT_READ = 'Koloft could not read which change to undo.'
+
+export type ChangeToUndo = Pick<InstructionsChange, 'at' | 'before'>
+
+export function changeToUndo(raw: unknown): ChangeToUndo | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const { at, before } = raw as Record<string, unknown>
+  return typeof at === 'number' && typeof before === 'string' ? { at, before } : undefined
+}
 
 export function withChangeUndone(
   versions: readonly InstructionsVersion[] | undefined,
-  changeAt: number,
+  change: ChangeToUndo,
   at: number
 ): InstructionsVersion[] {
   const last = versions?.at(-1)
-  if (!versions || !last || last.at !== changeAt || last.by === OWNER)
-    throw new Error(CHANGED_AGAIN)
-  return withNewVersion(allSeen(versions), versions.at(-2)?.text ?? '', at) ?? allSeen(versions)
+  if (!versions || !last?.agent || last.at !== change.at) throw new Error(CHANGED_AGAIN)
+  return withNewVersion(allSeen(versions), change.before, at) ?? allSeen(versions)
 }
 
 export const ADD_A_LINE = 'add'
@@ -88,8 +101,16 @@ export function cleanVersions(raw: unknown): InstructionsVersion[] {
   if (!Array.isArray(raw)) return []
   return raw.flatMap((v: unknown) => {
     if (!v || typeof v !== 'object') return []
-    const { text, at, by, unseen } = v as Record<string, unknown>
+    const { text, at, by, agent, unseen } = v as Record<string, unknown>
     if (typeof text !== 'string' || typeof at !== 'number' || typeof by !== 'string') return []
-    return [{ text: cleanInstructions(text), at, by, ...(unseen === true && { unseen }) }]
+    return [
+      {
+        text: cleanInstructions(text),
+        at,
+        by,
+        ...(agent === true && { agent }),
+        ...(agent === true && unseen === true && { unseen })
+      }
+    ]
   })
 }

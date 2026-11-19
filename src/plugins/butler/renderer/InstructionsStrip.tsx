@@ -105,7 +105,7 @@ function ChangeView({ change }: { change: InstructionsChange }): JSX.Element {
   useEscapeCloses(close)
   const undo = async (): Promise<void> => {
     const r = await window.api.butler
-      .undoInstructions(change.at)
+      .undoInstructions(change)
       .catch(() => ({ ok: false as const, error: 'Koloft could not undo the change.' }))
     if (!r.ok) return setError(r.error)
     useButler.setState({ viewingChange: null, changeUndone: true })
@@ -146,7 +146,13 @@ function ChangeView({ change }: { change: InstructionsChange }): JSX.Element {
 function InstructionsEditor(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const showToast = useStore((s) => s.showToast)
-  const [text, setText] = useState(() => instructionsOf(butler))
+  const inUse = instructionsOf(butler)
+  const [text, setText] = useState(inUse)
+  const [loaded, setLoaded] = useState(inUse)
+  if (loaded !== inUse) {
+    setLoaded(inUse)
+    if (text === loaded) setText(inUse)
+  }
   const [error, setError] = useState('')
   const left = INSTRUCTIONS_MAX_BYTES - instructionsBytes(cleanInstructions(text))
   const close = (): void => useButler.setState({ editingInstructions: false })

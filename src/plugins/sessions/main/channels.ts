@@ -15,6 +15,7 @@ import type {
   SessionSearchHits
 } from '@shared/types'
 import { CHANNELS, type WorkspaceInstructionsChanged } from '../shared/ipc'
+import { changeToUndo, NOT_READ, type ChangeToUndo } from '@core/ownerInstructions'
 
 interface SessionBackend {
   id: BackendId
@@ -50,7 +51,7 @@ export interface ChannelDeps {
   ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
   writeDefaults(workspacePath: string, raw: unknown): Promise<void>
   instructionsSeen(workspacePath: string): Promise<void>
-  undoInstructions(workspacePath: string, changeAt: number): Promise<void>
+  undoInstructions(workspacePath: string, change: ChangeToUndo): Promise<void>
 }
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
@@ -131,11 +132,10 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.handle(CHANNELS.instructionsSeen, (workspacePath: string) =>
     done(deps.instructionsSeen(workspacePath))
   )
-  ipc.handle(CHANNELS.undoInstructions, (workspacePath: string, changeAt: unknown) =>
-    typeof changeAt === 'number'
-      ? done(deps.undoInstructions(workspacePath, changeAt))
-      : { ok: false, error: 'Koloft could not read which change.' }
-  )
+  ipc.handle(CHANNELS.undoInstructions, (workspacePath: string, change: unknown) => {
+    const read = changeToUndo(change)
+    return read ? done(deps.undoInstructions(workspacePath, read)) : { ok: false, error: NOT_READ }
+  })
 }
 
 const done = (work: Promise<void>): Promise<{ ok: boolean; error?: string }> =>

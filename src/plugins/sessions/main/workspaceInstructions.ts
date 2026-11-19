@@ -4,7 +4,8 @@ import {
   cleanInstructions,
   textInUse,
   withChangeUndone,
-  withNewVersion
+  withNewVersion,
+  type ChangeToUndo
 } from '@core/ownerInstructions'
 import type { SessionDefaults } from '@shared/types'
 import { sanitizeDefaults } from '@shared/sessionDefaults'
@@ -52,9 +53,12 @@ export function savedByAnAgent(
   at: number,
   agent: string
 ): SessionDefaults | undefined {
+  if (text === textInUse(saved?.instructions)) return saved
   checkTheLimit(saved?.rules ?? '', text)
-  const instructions = withNewVersion(saved?.instructions, text, at, agent)
-  return instructions ? sanitizeDefaults({ ...saved, instructions }) : saved
+  return sanitizeDefaults({
+    ...saved,
+    instructions: withNewVersion(saved?.instructions, text, at, agent)
+  })
 }
 
 const withVersions = (
@@ -65,12 +69,15 @@ const withVersions = (
 export const seenDefaults = (saved: SessionDefaults | undefined): SessionDefaults | undefined =>
   saved?.instructions ? withVersions(saved, allSeen(saved.instructions)) : saved
 
-export const undoneDefaults = (
+export function undoneDefaults(
   saved: SessionDefaults | undefined,
-  changeAt: number,
+  change: ChangeToUndo,
   at: number
-): SessionDefaults | undefined =>
-  withVersions(saved, withChangeUndone(saved?.instructions, changeAt, at))
+): SessionDefaults | undefined {
+  const instructions = withChangeUndone(saved?.instructions, change, at)
+  checkTheLimit(saved?.rules ?? '', textInUse(instructions))
+  return withVersions(saved, instructions)
+}
 
 export interface DefaultsOfWorkspaces {
   read(dir: string): Promise<SessionDefaults>

@@ -12,7 +12,8 @@ import {
   cleanInstructions,
   textInUse,
   unseenChange,
-  type InstructionsChange
+  type InstructionsChange,
+  type InstructionsVersion
 } from '@core/ownerInstructions'
 import {
   CHANGE_UNDONE,
@@ -99,13 +100,30 @@ export function SessionDefaultsDialog({
     return () => clearTimeout(t)
   }, [undone])
 
+  const savedText = useRef('')
+  const takeInstructions = (versions: InstructionsVersion[] | undefined): void => {
+    const text = textInUse(versions)
+    setInstructions((draft) => (draft === savedText.current ? text : draft))
+    savedText.current = text
+    setSaved((s) => ({ ...s, instructions: text }))
+    const unseen = unseenChange(versions)
+    if (!unseen) return
+    setChange(unseen)
+    setUndone(false)
+    void window.api.sessionDefaults.instructionsSeen(wsPath)
+  }
+  const readInstructionsAgain = async (): Promise<void> => {
+    const r = await window.api.sessionDefaults.read(wsPath)
+    if (r.ok) takeInstructions(r.defaults.instructions)
+  }
+
   const undo = async (c: InstructionsChange): Promise<void> => {
-    const r = await window.api.sessionDefaults.undoInstructions(wsPath, c.at)
+    const r = await window.api.sessionDefaults.undoInstructions(wsPath, c)
     if (!r.ok) return setError(r.error ?? 'Koloft could not undo the change.')
+    setError('')
     setChange(null)
     setUndone(true)
-    setInstructions(c.before)
-    setSaved((s) => ({ ...s, instructions: c.before }))
+    await readInstructionsAgain()
   }
 
   useEffect(() => {
@@ -115,20 +133,19 @@ export function SessionDefaultsDialog({
         if (!live) return
         if (!r.ok) return setError(r.error)
         setPicks(byBackend((b) => fieldsOf(b, r.defaults.picks[b])))
-        const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
-        setInstructions(text)
-        setSaved({ rules: r.defaults.rules ?? '', instructions: text })
+        setSaved((s) => ({ ...s, rules: r.defaults.rules ?? '' }))
         setFamilyEfforts(r.familyEfforts)
-        const unseen = unseenChange(r.defaults.instructions)
-        if (!unseen) return
-        setChange(unseen)
-        void window.api.sessionDefaults.instructionsSeen(wsPath)
+        takeInstructions(r.defaults.instructions)
       },
       (e: unknown) => live && setError(String(e))
     )
+    const stop = window.api.sessionDefaults.onInstructionsChanged(({ workspace }) => {
+      if (live && workspace === wsPath) void readInstructionsAgain()
+    })
     return () => {
       live = false
+      stop()
     }
   }, [wsPath])
 
