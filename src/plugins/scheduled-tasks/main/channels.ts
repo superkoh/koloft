@@ -52,5 +52,5 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
 
 export const pushState =
   (ipc: MainIpc) =>
-  (state: CronState): void =>
+  (state: CronState): boolean =>
     ipc.push(CHANNELS.state, state)

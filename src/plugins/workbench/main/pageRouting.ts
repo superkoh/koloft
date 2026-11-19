@@ -16,14 +16,14 @@ import {
   type OpenRequest
 } from '@shared/types'
 import { routeFor } from '@shared/browserRoute'
-import { CH, type Channel } from '@shared/ipcChannels'
 import { guestMenuItems } from '../../../main/browserSecurity'
 import { awaitGuestFor } from './extensionManager'
 import { openSignInWindow } from './signInWindow'
 import type { WebPages } from './webPages'
+import { CHANNELS } from '../shared/ipc'
 
 export interface PageRoutingDeps {
-  send(channel: Channel, ...args: unknown[]): boolean
+  push(channel: string, ...args: unknown[]): boolean
   pages: WebPages
   openFile(request: OpenRequest): void
   openExternally(url: string): void
@@ -59,7 +59,7 @@ export class PageRouting {
   private flushOverlayOpens(): void {
     if (!this.overlayListening) return
     while (this.pendingOverlayOpens.length) {
-      if (!this.d.send(CH.browser.overlayOpen, this.pendingOverlayOpens[0])) return
+      if (!this.d.push(CHANNELS.overlayOpen, this.pendingOverlayOpens[0])) return
       this.pendingOverlayOpens.shift()
     }
   }
@@ -73,7 +73,7 @@ export class PageRouting {
       const decision = routeFor(url, 'user')
       if (decision.dest === 'browser') this.sendOverlayOpen(decision.target, 'now')
       else if (decision.dest === 'system') this.d.openExternally(decision.target)
-      else this.d.send(CH.browser.blockedScheme, url)
+      else this.d.push(CHANNELS.blockedScheme, url)
       return
     }
     const decision = routeFor(url, 'user')
@@ -84,14 +84,14 @@ export class PageRouting {
     if (!tabId) return
     if (decision.dest === 'browser') {
       const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
-      this.d.send(CH.browser.open, payload)
+      this.d.push(CHANNELS.pageOpen, payload)
     } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
       const payload: OpenRequest = { tabId, path: decision.target, source: 'user' }
       this.d.openFile(payload)
     } else if (decision.dest === 'system') {
       this.d.openExternally(decision.target)
     } else {
-      this.d.send(CH.browser.blockedScheme, url)
+      this.d.push(CHANNELS.blockedScheme, url)
     }
   }
 
@@ -103,7 +103,7 @@ export class PageRouting {
     if (!extensionPage && decision.dest !== 'browser') return null
     const target = extensionPage ? url : decision.target
     const payload: BrowserOpenRequest = { tabId, url: target, source: 'user' }
-    if (!this.d.send(CH.browser.open, payload)) return null
+    if (!this.d.push(CHANNELS.pageOpen, payload)) return null
     return awaitGuestFor(target)
   }
 
@@ -123,14 +123,14 @@ export class PageRouting {
     const tabId = this.d.pages.tabOwning(e.sender)
     if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
-    this.d.send(CH.browser.open, payload)
+    this.d.push(CHANNELS.pageOpen, payload)
   }
 
   // PLATFORM§12
   linkBlocked(e: IpcMainEvent, url: unknown): void {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
-    this.d.send(CH.browser.blockedScheme, url.slice(0, 2048))
+    this.d.push(CHANNELS.blockedScheme, url.slice(0, 2048))
   }
 
   keptBySignInWindow(

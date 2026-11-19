@@ -2,20 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action'
 import type {
   WorkbenchShortcut,
-  BrowserAuthChallenge,
   BrowserCommand,
-  BrowserAudioState,
-  BrowserDownload,
-  BrowserDownloadEvent,
-  BrowserPermissionAsk,
-  BrowserPermissionRefusal,
-  BrowserCdpAttached,
-  BrowserPagesInUse,
-  BrowserCdpOp,
-  BrowserJsDialog,
-  BrowserOverlayOpen,
-  BrowserOpenRequest,
-  ExtensionPermissionRequest,
   CreateTabOptions,
   TerminalData,
   TerminalExit,
@@ -47,6 +34,7 @@ ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.deli
 const pluginIpc: PreloadIpc = {
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   send: (channel, ...args) => ipcRenderer.send(channel, ...args),
+  sendSync: (channel, ...args) => ipcRenderer.sendSync(channel, ...args),
   listen: (channel, listener) => {
     const handler = (_e: unknown, ...args: Parameters<typeof listener>): void => listener(...args)
     ipcRenderer.on(channel, handler)
@@ -144,130 +132,8 @@ const api: KoloftApi = {
   palette: {
     savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
   },
-  browserGuestLimit: ipcRenderer.sendSync(CH.browser.guestLimit) as number,
   sessionScreenAtLoad: ipcRenderer.sendSync(CH.terminal.sessionScreen) as ScreenSize | null,
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
-  browser: {
-    onOpenRequest: (cb) => {
-      const handler = (_e: unknown, r: BrowserOpenRequest): void => cb(r)
-      ipcRenderer.on(CH.browser.open, handler)
-      return () => ipcRenderer.removeListener(CH.browser.open, handler)
-    },
-    onDownload: (cb) => {
-      const handler = (_e: unknown, d: BrowserDownload): void => cb(d)
-      ipcRenderer.on(CH.browser.download, handler)
-      return () => ipcRenderer.removeListener(CH.browser.download, handler)
-    },
-    onDownloadEvent(cb: (e: BrowserDownloadEvent) => void) {
-      const handler = (_e: unknown, ev: BrowserDownloadEvent): void => cb(ev)
-      ipcRenderer.on(CH.browser.downloadEvent, handler)
-      return () => ipcRenderer.removeListener(CH.browser.downloadEvent, handler)
-    },
-    cancelDownload: (id: string) => ipcRenderer.send(CH.browser.downloadCancel, id),
-    retryDownload: (id: string) => ipcRenderer.send(CH.browser.downloadRetry, id),
-    onPermissionAsk(cb: (a: BrowserPermissionAsk) => void) {
-      const handler = (_e: unknown, a: BrowserPermissionAsk): void => cb(a)
-      ipcRenderer.on(CH.browser.permissionAsk, handler)
-      return () => ipcRenderer.removeListener(CH.browser.permissionAsk, handler)
-    },
-    onPermissionRefused(cb: (r: BrowserPermissionRefusal) => void) {
-      const handler = (_e: unknown, r: BrowserPermissionRefusal): void => cb(r)
-      ipcRenderer.on(CH.browser.permissionRefused, handler)
-      return () => ipcRenderer.removeListener(CH.browser.permissionRefused, handler)
-    },
-    onPermissionDrop(cb: (id: string) => void) {
-      const handler = (_e: unknown, id: string): void => cb(id)
-      ipcRenderer.on(CH.browser.permissionDrop, handler)
-      return () => ipcRenderer.removeListener(CH.browser.permissionDrop, handler)
-    },
-    answerPermission: (id: string, granted: boolean) =>
-      ipcRenderer.send(CH.browser.permissionAnswer, id, granted),
-    cancelPermission: (id: string) => ipcRenderer.send(CH.browser.permissionCancel, id),
-    onAudioState(cb: (s: BrowserAudioState) => void) {
-      const handler = (_e: unknown, st: BrowserAudioState): void => cb(st)
-      ipcRenderer.on(CH.browser.audioState, handler)
-      return () => ipcRenderer.removeListener(CH.browser.audioState, handler)
-    },
-    setMuted: (guestId: number, muted: boolean) =>
-      ipcRenderer.send(CH.browser.setMuted, guestId, muted),
-    copyText: (text: string) => ipcRenderer.send(CH.browser.copyText, text),
-    onFullscreen(cb: (on: boolean) => void) {
-      const handler = (_e: unknown, on: boolean): void => cb(on)
-      ipcRenderer.on(CH.browser.fullscreen, handler)
-      return () => ipcRenderer.removeListener(CH.browser.fullscreen, handler)
-    },
-    onBlockedScheme: (cb) => {
-      const handler = (_e: unknown, url: string): void => cb(url)
-      ipcRenderer.on(CH.browser.blockedScheme, handler)
-      return () => ipcRenderer.removeListener(CH.browser.blockedScheme, handler)
-    },
-    onAuthChallenge: (cb) => {
-      const handler = (_e: unknown, c: BrowserAuthChallenge): void => cb(c)
-      ipcRenderer.on(CH.browser.authChallenge, handler)
-      return () => ipcRenderer.removeListener(CH.browser.authChallenge, handler)
-    },
-    answerAuthChallenge: (id, answer) => ipcRenderer.send(CH.browser.authAnswer, id, answer),
-    onJsDialog: (cb) => {
-      const handler = (_e: unknown, d: BrowserJsDialog): void => cb(d)
-      ipcRenderer.on(CH.browser.jsDialog, handler)
-      return () => ipcRenderer.removeListener(CH.browser.jsDialog, handler)
-    },
-    answerJsDialog: (id, answer) => ipcRenderer.send(CH.browser.jsDialogAnswer, id, answer),
-    overlayReady: () => ipcRenderer.send(CH.browser.overlayReady),
-    onOverlayOpen: (cb) => {
-      const handler = (_e: unknown, o: BrowserOverlayOpen): void => cb(o)
-      ipcRenderer.on(CH.browser.overlayOpen, handler)
-      return () => ipcRenderer.removeListener(CH.browser.overlayOpen, handler)
-    },
-    setOverlayGuest: (guestId, on) => ipcRenderer.send(CH.browser.overlayGuest, guestId, on),
-    setGuestOwner: (guestId, ownerTabId) =>
-      ipcRenderer.send(CH.browser.guestOwner, guestId, ownerTabId),
-    reportStrip: (sessionId, targets) => ipcRenderer.send(CH.browser.strip, sessionId, targets),
-    reportComposing: (on) => ipcRenderer.send(CH.browser.hostComposing, on),
-    onCdpOp: (cb) => {
-      const handler = (_e: unknown, op: BrowserCdpOp): void => cb(op)
-      ipcRenderer.on(CH.browser.cdpOp, handler)
-      return () => ipcRenderer.removeListener(CH.browser.cdpOp, handler)
-    },
-    answerCdpOp: (res) => ipcRenderer.send(CH.browser.cdpOpDone, res),
-    onCdpAttached: (cb) => {
-      const handler = (_e: unknown, a: BrowserCdpAttached): void => cb(a)
-      ipcRenderer.on(CH.browser.cdpAttached, handler)
-      return () => ipcRenderer.removeListener(CH.browser.cdpAttached, handler)
-    },
-    onMemoryCritical: (cb) => {
-      const handler = (_e: unknown, inUse: BrowserPagesInUse): void => cb(inUse)
-      ipcRenderer.on(CH.browser.memoryCritical, handler)
-      return () => ipcRenderer.removeListener(CH.browser.memoryCritical, handler)
-    },
-    certProceed: (url) => ipcRenderer.invoke(CH.browser.certProceed, url),
-    clearData: () => ipcRenderer.invoke(CH.browser.clearData),
-    openExternal: (url) => ipcRenderer.send(CH.browser.openExternal, url),
-    toggleDevTools: (guestId) => ipcRenderer.send(CH.browser.devtools, guestId),
-    pickElement: (guestId, sessionTabId) =>
-      ipcRenderer.invoke(CH.browser.pickElement, guestId, sessionTabId),
-    stopPick: (guestId) => ipcRenderer.send(CH.browser.pickStop, guestId)
-  },
-  extensions: {
-    list: () => ipcRenderer.invoke(CH.ext.list),
-    setEnabled: (id, enabled) => ipcRenderer.invoke(CH.ext.setEnabled, id, enabled),
-    uninstall: (id) => ipcRenderer.invoke(CH.ext.uninstall, id),
-    onChanged: (cb) => {
-      const handler = (): void => cb()
-      ipcRenderer.on(CH.ext.changed, handler)
-      return () => ipcRenderer.removeListener(CH.ext.changed, handler)
-    },
-    activeGuest: (webContentsId, url) => ipcRenderer.send(CH.ext.activeGuest, webContentsId, url),
-    openDropped: (url) => ipcRenderer.send(CH.ext.openDropped, url),
-    anchorPopup: (rect) => ipcRenderer.invoke(CH.ext.popupAnchor, rect),
-    dismissPopup: () => ipcRenderer.send(CH.ext.dismissPopup),
-    onPermissionRequest: (cb) => {
-      const handler = (_e: unknown, r: ExtensionPermissionRequest): void => cb(r)
-      ipcRenderer.on(CH.ext.permissionRequest, handler)
-      return () => ipcRenderer.removeListener(CH.ext.permissionRequest, handler)
-    },
-    answerPermissionRequest: (id, granted) => ipcRenderer.send(CH.ext.permissionAnswer, id, granted)
-  },
   git: {
     commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),
     push: (root) => ipcRenderer.invoke(CH.git.push, root)

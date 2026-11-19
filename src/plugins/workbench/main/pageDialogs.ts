@@ -6,11 +6,11 @@ import {
   type BrowserDialogAnswer,
   type BrowserJsDialog
 } from '@shared/types'
-import { CH, type Channel } from '@shared/ipcChannels'
 import { authPromptFor, certHostOf, certTrusted, jsDialogFor } from '../../../main/browserSecurity'
+import { CHANNELS } from '../shared/ipc'
 
 export interface PageDialogsDeps {
-  send(channel: Channel, ...args: unknown[]): boolean
+  push(channel: string, ...args: unknown[]): boolean
   isOverlay(page: WebContents): boolean
 }
 
@@ -42,7 +42,7 @@ export class PageDialogs {
       this.pageOfTheModalUp = contents.id
       this.pendingAuth.set(id, callback)
       const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
-      this.d.send(CH.browser.authChallenge, payload)
+      this.d.push(CHANNELS.authChallenge, payload)
     })
   }
 
@@ -109,7 +109,7 @@ export class PageDialogs {
       guestId: e.sender.id,
       overlay: this.d.isOverlay(e.sender)
     }
-    this.d.send(CH.browser.jsDialog, payload)
+    this.d.push(CHANNELS.jsDialog, payload)
   }
 
   jsDialogAnswer(id: string, answer: BrowserDialogAnswer): void {

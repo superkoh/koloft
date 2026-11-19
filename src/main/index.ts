@@ -358,7 +358,7 @@ import { PageTools } from '@plugins/workbench/main/pageTools'
 import { pagesInUse, type PagesInUseDeps } from '@plugins/workbench/main/pagesInUse'
 import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
-import { compositionDone, hostComposing } from '@plugins/workbench/main/hostComposition'
+import { compositionDone } from '@plugins/workbench/main/hostComposition'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
@@ -396,18 +396,7 @@ import {
   SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
-import {
-  answerPermissionRequest,
-  beforeActivate,
-  dismissActionPopup,
-  listExtensions,
-  onExtensionsChanged,
-  reportActiveGuest,
-  reportOpenDropped,
-  setExtensionEnabled,
-  setupExtensions,
-  uninstallExtension
-} from '@plugins/workbench/main/extensionManager'
+import { onExtensionsChanged, setupExtensions } from '@plugins/workbench/main/extensionManager'
 import type {
   AccountAddResult,
   AccountKind,
@@ -421,14 +410,11 @@ import type {
   CodexResetOutcome,
   SignInResult,
   SignInFailure,
-  BrowserDialogAnswer,
   ScreenAnswer,
   ScreenRequest,
   TerminalExit,
   UnexpectedExitScreen,
   BrowserOpenRequest,
-  BrowserStripTarget,
-  ExtensionPopupAnchor,
   LoginProgress,
   CreateTabOptions,
   CreateTabResult,
@@ -468,7 +454,15 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import {
+  AwayDigest,
+  conductorFolder,
+  DIGEST_GATHERS_MS,
+  helperRoleOf,
+  OwnerAsleep,
+  quoteOf,
+  THIS_MAC
+} from '@plugins/butler/api'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
@@ -636,7 +630,6 @@ import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
-import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -664,18 +657,22 @@ import {
   registerChannels as registerSessionsChannels,
   pushes as sessionsPushes
 } from '@plugins/sessions/main/channels'
+import { registerPageChannels, pagePushes } from '@plugins/workbench/main/pageChannels'
+import { registerChannels as registerBrowserControlChannels } from '@plugins/browser-control/main/channels'
 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
     ipcMain.handle(channel, (_e, ...args) => handler(...(args as Parameters<typeof handler>))),
   on: (channel, listener) =>
     ipcMain.on(channel, (_e, ...args) => listener(...(args as Parameters<typeof listener>))),
-  push: (channel, ...args) => void sendToRenderer(channel as Channel, ...args)
+  onEvent: (channel, listener) => ipcMain.on(channel, listener),
+  push: (channel, ...args) => sendToRenderer(channel as Channel, ...args)
 }
 const pushInbox = pushInboxChanged(pluginIpc)
 const pushOpenRequest = pushOpenFile(pluginIpc)
 const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
 const pushToSessions = sessionsPushes(pluginIpc)
+const pushToPages = pagePushes(pluginIpc)
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -3522,9 +3519,9 @@ app.whenReady().then(() => {
   setupExtensions({
     window: () => mainWindow,
     openTab: (url) => pageRouting.openExtensionTab(url),
-    ask: (request) => sendToRenderer(CH.ext.permissionRequest, request)
+    ask: (request) => pushToPages.extensionAsks(request)
   })
-  onExtensionsChanged(() => sendToRenderer(CH.ext.changed))
+  onExtensionsChanged(() => pushToPages.extensionsChanged())
   pageDialogs.watchSignIns()
   pageDialogs.watchCertificates()
   pageTools.watchUnload()
@@ -3535,10 +3532,7 @@ app.whenReady().then(() => {
   pageTools.muteUnderTest()
   pageTools.watchMuteWhileHidden()
   webPages.watchGestures()
-  setupGuestLinkReports()
-  setupGuestPermissionQuery()
   setupPermissionCleanup()
-  setupGuestBackgroundOpen()
   pageTools.watchAudio()
   pageTools.watchFullscreen()
 
@@ -3636,8 +3630,7 @@ app.whenReady().then(() => {
     koloftPid: process.pid,
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
-    memoryStaysCritical: () =>
-      sendToRenderer(CH.browser.memoryCritical, pagesInUse(pagesInUseDeps)),
+    memoryStaysCritical: () => pushToPages.memoryCritical(pagesInUse(pagesInUseDeps)),
     // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
@@ -4750,7 +4743,7 @@ function watchOpenRequests(openDir: string): fs.FSWatcher | null {
 }
 
 const sitePermissions = new SitePermissions({
-  send: sendToRenderer,
+  push: pluginIpc.push,
   isOverlay: (page) => webPages.isOverlay(page),
   takeGesture: (page) => webPages.takeGesture(page),
   openExternally: openUrlExternally,
@@ -4758,7 +4751,7 @@ const sitePermissions = new SitePermissions({
 })
 
 const pageDialogs = new PageDialogs({
-  send: sendToRenderer,
+  push: pluginIpc.push,
   isOverlay: (page) => webPages.isOverlay(page)
 })
 
@@ -4784,22 +4777,8 @@ function setupGuestForwardsEnd(): void {
   })
 }
 
-function setupGuestLinkReports(): void {
-  ipcMain.on(CH.browser.linkBlocked, (e, url: unknown) => pageRouting.linkBlocked(e, url))
-}
-
-function setupGuestPermissionQuery(): void {
-  ipcMain.on(CH.browser.permissionUndecided, (e, name: unknown) =>
-    sitePermissions.undecided(e, name)
-  )
-}
-
 function setupPermissionCleanup(): void {
   webPages.onEveryWebPage((contents) => sitePermissions.pageOpened(contents))
-}
-
-function setupGuestBackgroundOpen(): void {
-  ipcMain.on(CH.browser.openBackground, (e, url: unknown) => pageRouting.openBackground(e, url))
 }
 
 const boundSessions = new Map<string, string>()
@@ -4876,7 +4855,7 @@ function ptyTabIds(): string[] {
 }
 
 const cdpOps = new CdpOps({
-  send: sendToRenderer,
+  push: pluginIpc.push,
   anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
   sessionForTab: (tabId) =>
     claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
@@ -4887,7 +4866,7 @@ const cdpOps = new CdpOps({
 })
 
 const pageRouting = new PageRouting({
-  send: sendToRenderer,
+  push: pluginIpc.push,
   pages: webPages,
   openFile: pushOpenRequest,
   openExternally: openUrlExternally,
@@ -4901,7 +4880,7 @@ const pageRouting = new PageRouting({
 })
 
 const pageTools = new PageTools({
-  send: sendToRenderer,
+  push: pluginIpc.push,
   pages: webPages,
   machineOfTab,
   savePickOn: (machine, name, png) => hosts.machine(machine).savePick(name, png),
@@ -4920,7 +4899,7 @@ const pagesInUseDeps: PagesInUseDeps = {
   drivenFromAnotherMachine: guestDrivenFromAnotherMachine
 }
 
-const pageDownloads = new PageDownloads({ send: sendToRenderer })
+const pageDownloads = new PageDownloads({ push: pluginIpc.push })
 
 // PLATFORM§8
 function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
@@ -5094,7 +5073,7 @@ function openInWorkbench(
 ): boolean {
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
-    sendToRenderer(CH.browser.open, payload)
+    pushToPages.open(payload)
     return true
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
@@ -6704,22 +6683,6 @@ function registerIpc(): void {
 
   ipcMain.on(CH.shortcut.window, (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
 
-  ipcMain.on(CH.browser.guestLimit, (e) => {
-    e.returnValue = pageTools.guestLimit()
-  })
-  ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) =>
-    webPages.overlayReported(guestId, on)
-  )
-  ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
-    if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
-    webPages.recordOwner(guestId, ownerTabId)
-  })
-  ipcMain.on(CH.browser.overlayReady, () => pageRouting.overlayReady())
-  ipcMain.on(CH.browser.strip, (_e, sessionId: unknown, targets: unknown) => {
-    if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
-    relayStripChanged(sessionId, targets as BrowserStripTarget[])
-  })
-  ipcMain.on(CH.browser.hostComposing, (_e, on: unknown) => hostComposing(on === true))
   ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return
@@ -6733,75 +6696,20 @@ function registerIpc(): void {
     if (!s || typeof s.id !== 'string' || !Array.isArray(s.lines)) return
     logUnexpectedExit({ id: s.id, lines: s.lines.map(String) })
   })
-  ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => cdpOps.done(res))
-  ipcMain.on(CH.browser.openExternal, (_e, url: string) => {
-    if (typeof url === 'string') openUrlExternally(url)
+
+  registerPageChannels(pluginIpc, {
+    webPages,
+    sitePermissions,
+    pageDialogs,
+    pageDownloads,
+    pageRouting,
+    pageTools,
+    openExternal: openUrlExternally
   })
-  ipcMain.on(CH.browser.devtools, (_e, id: unknown) => pageTools.devtools(id))
-  ipcMain.handle(CH.browser.pickElement, (_e, id: unknown, tabId: unknown) =>
-    pageTools.pick(id, tabId)
-  )
-  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => pageTools.pickStop(id))
-  ipcMain.handle(CH.ext.list, () =>
-    listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))
-  )
-  ipcMain.handle(CH.ext.setEnabled, (_e, id: unknown, enabled: unknown) => {
-    if (typeof id !== 'string' || typeof enabled !== 'boolean') return
-    return setExtensionEnabled(id, enabled)
+  registerBrowserControlChannels(pluginIpc, {
+    cdpOps,
+    stripChanged: relayStripChanged
   })
-  ipcMain.handle(CH.ext.uninstall, (_e, id: unknown) => {
-    if (typeof id === 'string') uninstallExtension(id)
-  })
-  ipcMain.on(CH.ext.activeGuest, (_e, id: unknown, url: unknown) => {
-    if (typeof id === 'number') reportActiveGuest(id, typeof url === 'string' ? url : '')
-  })
-  ipcMain.on(CH.ext.openDropped, (_e, url: unknown) => {
-    if (typeof url === 'string') reportOpenDropped(url)
-  })
-  ipcMain.handle(CH.ext.popupAnchor, (_e, rect: ExtensionPopupAnchor) => {
-    if (!rect) return
-    const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v)
-    // PLATFORM§5
-    if (finite(rect.x) && finite(rect.y) && finite(rect.width) && finite(rect.height)) {
-      beforeActivate(rect)
-    }
-  })
-  ipcMain.on(CH.ext.dismissPopup, () => dismissActionPopup())
-  ipcMain.on(CH.ext.permissionAnswer, (_e, id: unknown, granted: unknown) => {
-    if (typeof id === 'string') answerPermissionRequest(id, granted === true)
-  })
-
-  ipcMain.on(CH.browser.permissionAnswer, (_e, id: unknown, granted: unknown) =>
-    sitePermissions.answer(id, granted)
-  )
-
-  ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => sitePermissions.cancel(id))
-
-  ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => pageDownloads.cancel(id))
-
-  ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => pageDownloads.retry(id))
-
-  ipcMain.on(CH.browser.copyText, (_e, text: unknown) => pageTools.copyText(text))
-
-  ipcMain.on(CH.browser.setMuted, (_e, guestId: unknown, muted: unknown) =>
-    pageTools.setMuted(guestId, muted)
-  )
-
-  ipcMain.handle(CH.browser.certProceed, (_e, url: string) => pageDialogs.certProceed(url))
-  ipcMain.handle(CH.browser.clearData, () => pageDialogs.clearSiteData())
-  ipcMain.on(CH.browser.authAnswer, (_e, id: string, answer: BrowserDialogAnswer) =>
-    pageDialogs.authAnswer(id, answer)
-  )
-
-  ipcMain.on(
-    CH.browser.jsDialog,
-    (e, request: { kind?: unknown; message?: unknown; defaultValue?: unknown }) =>
-      pageDialogs.jsDialog(e, request)
-  )
-  ipcMain.on(CH.browser.jsDialogAnswer, (_e, id: string, answer: BrowserDialogAnswer) =>
-    pageDialogs.jsDialogAnswer(id, answer)
-  )
-
   registerWorkbenchChannels(pluginIpc, {
     files: (p) => hosts.of(p),
     base: sanitizeBase,
