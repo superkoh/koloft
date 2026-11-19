@@ -166,7 +166,7 @@
           you are away from the Mac, or talking to that session from Discord, a card comes to
           Discord too (see <a href="../discord/#secrets">passwords and codes on Discord</a>), and
           the first answer wins. The other one closes. With no Discord set up, or when Discord does
-          not take the card within a minute, the box and the bar still work, and the session waits
+          not take the card within a minute, the box and the bar still work. The session then waits
           for you at the Mac the way it does when you are there: a
           <a href="../sessions/#red-dots">red dot</a> on its row and a card in the
           <a href="../sessions/#inbox">Inbox</a>. Koloft does this the same way for every agent, on
@@ -349,6 +349,12 @@
           picture of a page. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
+        <h2 id="plugins">Settings ▸ Plugins</h2>
+        <p>
+          Settings ▸ Plugins lists each part of Koloft as a plugin, under the
+          <code>Let agents use Koloft</code> switch. Click a row's › to open that plugin's own page,
+          where its settings are (Discord's, for one).
+        </p>
         <figure class="shot" style="--ar: 1322 / 687; --ar-phone: 790 / 1000">
           <div class="frame">
             <picture>
@@ -371,17 +377,26 @@
             Settings ▸ Plugins: "Let agents use Koloft" on top, then every part of Koloft
           </figcaption>
         </figure>
-        <p id="plugins">
-          Settings ▸ Plugins lists each part of Koloft as a plugin. Six are
-          <code>Always on</code>: Sessions core, Workbench, Browser control, Butler, Inbox and
-          Scheduled tasks. The rest are <code>Optional</code>, each with a switch: GitHub, Discord,
-          Todo, Passwords and sign-in, and Docs writing. Click a row's › to open that plugin's own
-          page, where its settings are (Discord's, for one). Today the switch that does something is
-          Todo's. Turn Todo off and <code>koloft todo</code> is refused in every session at once,
-          with <code>koloft: Todo is turned off in Settings ▸ Plugins.</code> Sessions you start
-          after that are not told about it. Todo needs GitHub, so turning GitHub off turns Todo off
-          too.
-        </p>
+        <ul class="dash">
+          <li>
+            <code>Always on</code>: Sessions core, Workbench, Browser control, Butler, Inbox and
+            Scheduled tasks
+          </li>
+          <li>
+            <code>Optional</code>, each with a switch: GitHub, Discord, Todo, Passwords and sign-in,
+            and Docs writing
+          </li>
+          <li>
+            Today the switch that does something is Todo's. Turn Todo off and
+            <code>koloft todo</code> is refused in every session at once, with
+            <code>koloft: Todo is turned off in Settings ▸ Plugins.</code> Sessions you start after
+            that are not told about it
+          </li>
+          <li>
+            Todo needs GitHub, so turning GitHub off turns Todo off too. Then the refusal reads
+            <code>koloft: Todo is off because GitHub is turned off in Settings ▸ Plugins.</code>
+          </li>
+        </ul>
 
         <h2 id="docs">A skill for writing documents</h2>
         <p>

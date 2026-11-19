@@ -153,15 +153,19 @@
             starts without it. The same box has a place for rules: how this folder's agents pick the
             model and thinking of a session they start (see <a href="../agents/">agents</a>). Left
             empty, they use Koloft's own pick. Every agent gets this, on your Mac and in a
-            <a href="../remote/">remote folder</a>. Last in the box is <code>Instructions</code>:
-            write what every session in this folder should follow. Each new session that starts
-            there after you save gets it, at the end of the text Koloft gives its agent, under
-            "Written by the owner for this workspace". A session you resume may keep the text it
-            started with. That counts for every agent, on your Mac and in a remote folder, for
-            sessions an agent starts too, but not for your <a href="../accounts/#butler">butler</a>.
-            Where the project's own <code>AGENTS.md</code> or <code>CLAUDE.md</code> says otherwise,
-            an agent may follow that file instead. The rules and the instructions share one limit of
-            10,000 bytes; the box shows how much is left.
+            <a href="../remote/">remote folder</a>.
+          </li>
+          <li id="instructions">
+            Last in the <code>Session defaults…</code> box is <code>Instructions</code>: write what
+            every session in this folder should follow. Each new session that starts there, or in
+            another copy of the same repository, after you save gets it, at the end of the text
+            Koloft gives its agent, under "Written by the owner for this workspace". The
+            instructions count for every agent, on your Mac and in a remote folder, for sessions an
+            agent starts too, but not for your butler, which has
+            <a href="../accounts/#butler-instructions">its own</a>. A session you resume may keep
+            the text it started with. Where the project's own <code>AGENTS.md</code> or
+            <code>CLAUDE.md</code> says otherwise, an agent may follow that file instead. The rules
+            and the instructions share one limit of 10,000 bytes; the box shows how much is left.
           </li>
           <li>Click an old row to resume that session.</li>
           <li id="sleep">
@@ -227,10 +231,10 @@
                 </td>
               </tr>
               <tr>
-                <td>green with <code>⏸ N</code></td>
+                <td>any light with <code>⏸ N</code></td>
                 <td>
-                  its turn is done, and N things it started are still there in the background: a
-                  server, a watcher or a scheduled task, a helper with nothing to do yet, or a
+                  N things it started sit in the background, not working right now: a server, a
+                  watcher or a scheduled task, a helper or a command with nothing to do yet, or a
                   program it left running. Hover the mark to see them.
                 </td>
               </tr>
@@ -270,8 +274,9 @@
         <ul class="dash">
           <li>
             A small <mark class="hl">red dot</mark> after a session's name means it is calling you:
-            its turn is done, it waits for your OK, or it quit on its own. Hover the dot to see
-            which. It sits beside the light; it does not replace it.
+            its turn is done, it waits for your OK (or for a password, a code or a sign-in that has
+            no card on Discord), or it quit on its own. Hover the dot to see which. It sits beside
+            the light; it does not replace it.
           </li>
           <li>
             Looking at the session does not clear the dot. It goes when the session works again: you
@@ -368,7 +373,8 @@
         </div>
         <ul class="dash">
           <li>
-            When Koloft cannot read what a session asks, its card says
+            When Koloft cannot read what a session asks, or the session asks for a password, a code
+            or a sign-in that has no card on Discord, its card says
             <code>“…” is waiting for you in its tab</code>, and <code>Open session</code> takes you
             there. Every card Koloft puts there has that link.
           </li>
@@ -837,7 +843,10 @@
           </li>
           <li>
             <a href="#session-defaults">Session defaults…</a>
-            <span class="why">— the model and thinking its new sessions start on</span>
+            <span class="why"
+              >— the model and thinking its new sessions start on, and
+              <a href="#instructions">instructions</a> for them</span
+            >
           </li>
           <li>
             <a href="../scheduled/">Scheduled jobs…</a>
