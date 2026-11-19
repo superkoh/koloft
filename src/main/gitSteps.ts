@@ -1,4 +1,4 @@
-import type { GitStepResult, PrWorktreeResult } from '@shared/types'
+import type { GitHead, GitReadiness, GitStepResult, PrWorktreeResult } from '@shared/types'
 import { pullErrorReason } from './gitFreshness'
 
 export interface GitRunResult {
@@ -48,7 +48,36 @@ export async function addPrWorktree(
   return added.code === 0 ? { ok: true, dir } : refused(added, 'worktree add')
 }
 
+const PUSH_REMOTE = 'origin'
+
 export async function pushBranch(run: GitRun): Promise<GitStepResult> {
-  const r = await run(['push', '-u', 'origin', 'HEAD'], true)
+  const r = await run(['push', '-u', PUSH_REMOTE, 'HEAD'], true)
   return r.code === 0 ? { ok: true } : refused(r, 'push')
+}
+
+const HEAD_IS_NOT_A_BRANCH = 1
+
+export async function readHead(run: GitRun): Promise<GitHead | null> {
+  const r = await run(['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (r.code === 0) return { branch: r.stdout.trim() }
+  return r.code === HEAD_IS_NOT_A_BRANCH ? { detached: true } : null
+}
+
+const BRANCH_HEAD_LINE = '# branch.head '
+const DETACHED_IN_STATUS = '(detached)'
+
+export async function readReadiness(run: GitRun): Promise<GitReadiness | null> {
+  const [status, origin] = await Promise.all([
+    run(['status', '--porcelain=v2', '--branch']),
+    run(['config', '--get', `remote.${PUSH_REMOTE}.url`])
+  ])
+  if (status.code !== 0) return null
+  const lines = status.stdout.split('\n').filter((l) => l !== '')
+  const name = lines.find((l) => l.startsWith(BRANCH_HEAD_LINE))?.slice(BRANCH_HEAD_LINE.length)
+  if (!name) return null
+  return {
+    head: name === DETACHED_IN_STATUS ? { detached: true } : { branch: name },
+    commitable: lines.some((l) => !l.startsWith('# ')),
+    hasPushRemote: origin.code === 0
+  }
 }

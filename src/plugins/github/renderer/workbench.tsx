@@ -1,18 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { BsGithub } from 'react-icons/bs'
-import {
-  IconCommit,
-  IconNewPullRequest,
-  IconPullRequest,
-  IconPush,
-  IconReload,
-  IconSend
-} from '@renderer/icons'
+import { IconNewPullRequest, IconPullRequest, IconReload, IconSend } from '@renderer/icons'
 import type { GitStepResult, GithubInfo, GithubTarget, PrChecks, SessionInfo } from '@shared/types'
 import { useStore } from '@renderer/store'
 import { GITHUB_BUTTON_PART } from './hint'
 import { commentBlocked } from '@renderer/components/changesModel'
-import { CommitDialog } from '@renderer/components/CommitDialog'
 import type { WorkbenchPartContext, WorkbenchPartView } from '@renderer/slots'
 import { checksDot, checksLine, failingChecks, type ChecksDot } from './prChecksView'
 
@@ -78,7 +70,8 @@ function useGithubInfo(root: string | null): {
 
 function useGithubChecks(
   root: string | null,
-  pr: number | null
+  pr: number | null,
+  gitSteps: number
 ): { checks: PrChecks | null; refresh: () => void } {
   const [got, setGot] = useState<{ key: string; checks: PrChecks } | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -92,7 +85,7 @@ function useGithubChecks(
     return () => {
       alive = false
     }
-  }, [root, pr, nonce])
+  }, [root, pr, nonce, gitSteps])
   const refresh = useCallback((): void => setNonce((n) => n + 1), [])
   return { checks: got && got.key === key ? got.checks : null, refresh }
 }
@@ -115,10 +108,11 @@ export function useWorkbenchGithub(
   treeRoot: string | null,
   session: SessionInfo | null,
   onReturnFocus: () => void,
-  reread: () => void
+  reread: () => void,
+  gitSteps = 0
 ): WorkbenchGithub {
   const github = useGithubInfo(visible ? treeRoot : null)
-  const ghChecks = useGithubChecks(visible ? treeRoot : null, github.info?.pr ?? null)
+  const ghChecks = useGithubChecks(visible ? treeRoot : null, github.info?.pr ?? null, gitSteps)
 
   // ADR-0017
   useEffect(() => {
@@ -183,11 +177,11 @@ export function useWorkbenchPart({
   reread,
   openWeb,
   closeNewTabMenu,
-  closeDownloads
+  closeDownloads,
+  gitSteps
 }: WorkbenchPartContext): WorkbenchPartView {
-  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread)
+  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread, gitSteps)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [commitOpen, setCommitOpen] = useState(false)
 
   const openGithub = useCallback(
     (what: GithubTarget): void => {
@@ -238,18 +232,6 @@ export function useWorkbenchPart({
           treeRoot={treeRoot}
           onClose={closeMenu}
           onOpen={openGithub}
-          onCommit={() => setCommitOpen(true)}
-        />
-      )}
-      {commitOpen && treeRoot && (
-        <CommitDialog
-          branch={info?.branch ?? null}
-          onCancel={() => setCommitOpen(false)}
-          onCommit={async (message) => {
-            const ok = await gh.gitStep(window.api.git.commit(treeRoot, message), 'Committed.')
-            if (ok) setCommitOpen(false)
-            return ok
-          }}
         />
       )}
     </>
@@ -293,15 +275,13 @@ export function GithubMenu({
   info,
   treeRoot,
   onClose,
-  onOpen,
-  onCommit
+  onOpen
 }: {
   gh: WorkbenchGithub
   info: GithubInfo
   treeRoot: string | null
   onClose: () => void
   onOpen: (what: GithubTarget) => void
-  onCommit: () => void
 }): JSX.Element {
   return (
     <div
@@ -351,6 +331,22 @@ export function GithubMenu({
           {`Open pull request #${info.pr}`}
         </button>
       )}
+      {info.pr === null && info.branch !== null && (
+        <button
+          className="mi"
+          role="menuitem"
+          onClick={() => {
+            onClose()
+            if (!treeRoot) return
+            void gh.gitStep(window.api.git.push(treeRoot), 'Pushed.').then((ok) => {
+              if (ok) onOpen('compare')
+            })
+          }}
+        >
+          <IconNewPullRequest size={14} />
+          Open pull request…
+        </button>
+      )}
       <div className="sep" />
       {gh.checksText && (
         <>
@@ -372,45 +368,6 @@ export function GithubMenu({
           <div className="sep" />
         </>
       )}
-      <button
-        className="mi"
-        role="menuitem"
-        onClick={() => {
-          onClose()
-          onCommit()
-        }}
-      >
-        <IconCommit size={14} />
-        Commit…
-      </button>
-      <button
-        className="mi"
-        role="menuitem"
-        onClick={() => {
-          onClose()
-          if (treeRoot) void gh.gitStep(window.api.git.push(treeRoot), 'Pushed.')
-        }}
-      >
-        <IconPush size={14} />
-        Push
-      </button>
-      {info.pr === null && info.branch !== null && (
-        <button
-          className="mi"
-          role="menuitem"
-          onClick={() => {
-            onClose()
-            if (!treeRoot) return
-            void gh.gitStep(window.api.git.push(treeRoot), 'Pushed.').then((ok) => {
-              if (ok) onOpen('compare')
-            })
-          }}
-        >
-          <IconNewPullRequest size={14} />
-          Open pull request…
-        </button>
-      )}
-      <div className="sep" />
       <button
         className="mi"
         role="menuitem"

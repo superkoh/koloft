@@ -103,6 +103,7 @@ export interface WorkbenchPartContext {
   openWeb: (url: string) => void
   closeNewTabMenu: () => void
   closeDownloads: () => void
+  gitSteps: number
 }
 
 export interface WorkbenchPartView {

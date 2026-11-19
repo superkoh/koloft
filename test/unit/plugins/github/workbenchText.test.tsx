@@ -86,14 +86,7 @@ describe('the full text of the Workbench GitHub button, its menu and its toasts,
         />
       )
       const menu = render(
-        <GithubMenu
-          gh={gh}
-          info={next}
-          treeRoot="/repo"
-          onClose={() => {}}
-          onOpen={() => {}}
-          onCommit={() => {}}
-        />
+        <GithubMenu gh={gh} info={next} treeRoot="/repo" onClose={() => {}} onOpen={() => {}} />
       )
       lines.push(
         `== ${name}`,

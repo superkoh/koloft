@@ -3,7 +3,13 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import { addPrWorktree, commitAll, pushBranch, type GitRun } from '../../src/main/gitSteps'
+import {
+  addPrWorktree,
+  commitAll,
+  pushBranch,
+  readReadiness,
+  type GitRun
+} from '../../src/main/gitSteps'
 import { localGitRun } from '../../src/main/host/localHost'
 
 const ID = ['-c', 'user.email=unit@koloft.test', '-c', 'user.name=koloft-unit']
@@ -110,5 +116,32 @@ describe('Push', () => {
     const r = await pushBranch(run)
     expect(r.ok).toBe(false)
     expect(!r.ok && r.reason).toMatch(/^fatal: /)
+  })
+})
+
+describe('what the Workbench git menu asks git when it opens', () => {
+  it('says the branch, whether there is anything to commit (an untracked file counts) and whether origin is there to push to', async () => {
+    expect(await readReadiness(run)).toEqual({
+      head: { branch: 'feature/login' },
+      commitable: false,
+      hasPushRemote: true
+    })
+    fs.writeFileSync(path.join(repo, 'new.txt'), 'new\n')
+    expect(await readReadiness(run)).toMatchObject({ commitable: true })
+  })
+
+  it('reads a detached HEAD, and a repo whose only remote is not named origin as nowhere to push', async () => {
+    git(repo, 'remote', 'rename', 'origin', 'upstream')
+    git(repo, 'checkout', '-q', '--detach')
+    expect(await readReadiness(run)).toEqual({
+      head: { detached: true },
+      commitable: false,
+      hasPushRemote: false
+    })
+  })
+
+  it('answers nothing outside a git repository', async () => {
+    const plain = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-plain-')))
+    expect(await readReadiness((args) => localGitRun(plain, args))).toBeNull()
   })
 })

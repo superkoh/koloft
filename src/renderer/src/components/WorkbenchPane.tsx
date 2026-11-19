@@ -31,6 +31,7 @@ import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
+import { useGitEntry } from './GitEntry'
 import { relOf } from './filesModel'
 import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { fileExists } from '../fileExists'
@@ -196,17 +197,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
-  const { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread } = useGitChangeSet(
-    treeRoot,
-    visible,
-    files.baseChoice,
-    files.refreshNonce
-  )
+  const { git, numstat, base, head, rootMissing, watchDead, firstReadFailed, reread } =
+    useGitChangeSet(treeRoot, visible, files.baseChoice, files.refreshNonce)
   const openWebHere = useRef<(url: string) => void>(() => {})
   const openWeb = useCallback((url: string): void => openWebHere.current(url), [])
   const closeNewTabMenu = useCallback((): void => setNewMenuOpen(false), [])
   const closeDownloads = useCallback((): void => setDlOpen(false), [])
-  const parts = fillsOf(WORKBENCH_PART).map((usePart) =>
+  const [gitSteps, bumpGitSteps] = useReducer((n: number) => n + 1, 0)
+  const pluginParts = fillsOf(WORKBENCH_PART).map((usePart) =>
     usePart({
       visible,
       treeRoot,
@@ -215,9 +213,29 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       reread,
       openWeb,
       closeNewTabMenu,
-      closeDownloads
+      closeDownloads,
+      gitSteps
     })
   )
+  const pluginMenuOpen = pluginParts.some((p) => p.menuOpen)
+  const pluginClosers = pluginParts.map((p) => p.closeMenu)
+  const closeAllButGitMenu = useCallback((): void => {
+    setNewMenuOpen(false)
+    setDlOpen(false)
+    pluginClosers.forEach((close) => close())
+  }, pluginClosers)
+  const gitEntry = useGitEntry({
+    treeRoot,
+    head,
+    reread,
+    onStepped: bumpGitSteps,
+    closeOtherMenus: closeAllButGitMenu
+  })
+  const closeGitMenu = gitEntry.closeMenu
+  useEffect(() => {
+    if (pluginMenuOpen) closeGitMenu()
+  }, [pluginMenuOpen, closeGitMenu])
+  const parts = [gitEntry, ...pluginParts]
   const partMenuOpen = parts.some((p) => p.menuOpen)
   const partClosers = parts.map((p) => p.closeMenu)
   const closePartMenus = useCallback(

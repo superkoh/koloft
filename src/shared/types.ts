@@ -596,8 +596,11 @@ export type GitNumstatMap = Record<string, { added: number; removed: number }>
 
 export type BaseChoice = 'merge-base' | 'head'
 
+export type GitHead = { branch: string } | { detached: true }
+
 export interface GitChanges {
   base: string | null
+  head: GitHead | null
   status: GitStatusMap
   numstat: GitNumstatMap
   missing: boolean
@@ -898,6 +901,12 @@ export type PrChecks =
 
 export type GitStepResult = { ok: true } | { ok: false; reason: string }
 
+export interface GitReadiness {
+  head: GitHead
+  commitable: boolean
+  hasPushRemote: boolean
+}
+
 export interface GithubItem {
   kind: 'issue' | 'pr'
   number: number
@@ -1138,6 +1147,7 @@ export interface CoreApi {
   git: {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
+    readiness(root: string): Promise<GitReadiness | null>
   }
   os: {
     open(path: string): void

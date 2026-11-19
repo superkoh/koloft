@@ -15,7 +15,7 @@ import {
 } from '../gitStatus'
 import type { GithubRepos } from '../githubRepos'
 import { LocalRunner, networkGit } from '../gitFreshness'
-import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
+import { GIT_STEP_TIMEOUT_MS, readHead, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { aboveItsTools } from '../agentLift'
@@ -210,12 +210,13 @@ export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {
     gitChanges: async (root, choice) => {
       const base = choice === 'head' ? 'HEAD' : await diffBase(root).catch(() => null)
       const arg = base ?? undefined
-      const [status, numstat, exists] = await Promise.all([
+      const [status, numstat, exists, head] = await Promise.all([
         gitStatus(root, arg),
         gitNumstat(root, arg),
-        dirExists(root)
+        dirExists(root),
+        readHead((args) => localGitRun(root, args))
       ])
-      return { base, status, numstat, missing: !exists }
+      return { base, head, status, numstat, missing: !exists }
     },
     gitDiff,
     gitFileDiff,
