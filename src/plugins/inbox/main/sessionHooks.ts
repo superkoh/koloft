@@ -1,4 +1,10 @@
-import { QUESTION_ASKED, SESSION_BOUND, TURN_ENDED, type Moments } from '@core/moment'
+import {
+  ATTENTION_CHANGED,
+  QUESTION_ASKED,
+  SESSION_BOUND,
+  TURN_ENDED,
+  type Moments
+} from '@core/moment'
 import { plugin } from '../plugin'
 
 const AFTER_SESSIONS_CORE_DECIDED_WHO_TOOK_THE_TURN = ['sessions']
@@ -10,6 +16,7 @@ export function cardEachTurnAndQuestion(
       turnEnded(tabId: string, reply: string, handedOff: boolean): void
       asked(tabId: string): void
       rebound(oldRef: string, newKey: string): void
+      sync(): void
     }
     tookTheTurn(tabId: string): boolean
   }
@@ -22,4 +29,5 @@ export function cardEachTurnAndQuestion(
   )
   moments.listen(plugin.id, QUESTION_ASKED, ({ tabId }) => d.inbox.asked(tabId))
   moments.listen(plugin.id, SESSION_BOUND, ({ tabId, key }) => d.inbox.rebound(tabId, key))
+  moments.listen(plugin.id, ATTENTION_CHANGED, () => d.inbox.sync())
 }

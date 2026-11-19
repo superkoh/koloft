@@ -333,7 +333,6 @@ import {
   originDrivenFromAnotherMachine,
   notePageOpenedForAMachine,
   relayStripChanged,
-  relayTabClosed,
   relayTabRebound,
   sessionDrivingGuest,
   setRelayEnabled,
@@ -555,7 +554,12 @@ import {
   SESSION_BOUND,
   SESSION_STARTED,
   SESSION_STARTING,
+  STATE_CHANGED,
+  TOOL_DONE,
   TURN_ENDED,
+  TURN_OVER,
+  ATTENTION_CHANGED,
+  DIALOG_CLOSED,
   TURN_STARTED,
   type LeftTab,
   type Moment,
@@ -575,7 +579,12 @@ import {
   giveEachStartedSessionARoom,
   withoutTheRelayTag
 } from '@plugins/discord/main/sessionHooks'
-import { followEachTurn, forgetAsksOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
+import {
+  followEachState,
+  followEachTurn,
+  forgetAsksOfEndedTabs
+} from '@plugins/sessions/main/sessionHooks'
+import { closeEachStoppingTabsEndpoint } from '@plugins/browser-control/main/sessionHooks'
 import { pickDocsOfEachTurn } from '@plugins/workbench/main/sessionHooks'
 import { cardEachTurnAndQuestion } from '@plugins/inbox/main/sessionHooks'
 import { forgetSecretAsksOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
@@ -979,8 +988,7 @@ const attention = new AttentionTracker((pending, event) => {
   pushToSessions.attention(pending)
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
-  awayDigest?.marked()
-  koloftInbox.sync()
+  announceNow(ATTENTION_CHANGED, pending)
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
@@ -2311,7 +2319,11 @@ discordFollowsEachTurn(moments, {
   relay: () => discordRelay,
   typing: () => discordTyping,
   rooms: () => rooms,
-  noTurnsYet: async (key) => !(await sessionBackends.turns(key, 1).catch(() => [])).length
+  buttons: () => askButtons,
+  noTurnsYet: async (key) => !(await sessionBackends.turns(key, 1).catch(() => [])).length,
+  askChannelOf: askChannelOfTab,
+  pendingAskOf,
+  askUnreadablySoon
 })
 
 const claudeDialogs = new ClaudeDialogWatch({
@@ -2322,17 +2334,16 @@ const claudeDialogs = new ClaudeDialogWatch({
   reply: (tabId, text) => ptyMgr.write(tabId, text),
   dialogShown: (tabId, onScreen) => tracker.showDialog(tabId, onScreen),
   closed: (tabId, stateAfter) => {
-    askEnded(tabId, true)
-    void askButtons?.check(tabId)
+    claudeAskEnded(tabId)
+    announceNow(DIALOG_CLOSED, tabId)
     if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
 tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
-function askEnded(tabId: string, dialogClosed = false): void {
+function claudeAskEnded(tabId: string): void {
   claudeAsks.delete(tabId)
   questionSeen.delete(tabId)
-  sessionAsks?.dialogGone(tabId, dialogClosed)
 }
 
 async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
@@ -3682,7 +3693,6 @@ app.whenReady().then(() => {
   })
   subscribeTabSubsystems(tabLifecycle, {
     attention,
-    cdpTabClosed: relayTabClosed,
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
@@ -3691,6 +3701,15 @@ app.whenReady().then(() => {
     announce: announceNow
   })
   forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
+  followEachState(moments, {
+    asks: () => sessionAsks,
+    slash,
+    attention: {
+      stateChanged: ({ tabId, prev, next }) =>
+        attention.onStatusChange(tabId, prev, next, attentionSubjectOf(tabId))
+    }
+  })
+  closeEachStoppingTabsEndpoint(moments)
   butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
   followEachRun(moments, () => cronRunner)
   closeRoomsOfEndedTabs(moments, {
@@ -3791,36 +3810,24 @@ app.whenReady().then(() => {
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
-    if (ask && isAskedCall(ask, call)) askEnded(tabId)
-    sessionAsks?.toolDone(tabId, call)
-    void askButtons?.check(tabId)
+    const endsTheAsk = !!ask && isAskedCall(ask, call)
+    if (endsTheAsk) claudeAskEnded(tabId)
+    announceNow(TOOL_DONE, { tabId, call, endsTheAsk })
   })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
-    slash.turnOver(tabId, over)
+    announceNow(TURN_OVER, { tabId, over })
     if (!over) return
     const workspace = pinnedWorkspaceOfTab(tabId)
     if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
-    if (t.prev === 'approval') askEnded(t.tabId)
+    if (t.prev === 'approval') claudeAskEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
-    const asksOnDiscord = !!askChannelOfTab(t.tabId)
-    if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
-    if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
-      void pendingAskOf(t.tabId).then((a) => {
-        if (a) return discordRelay?.codexAsked(t.tabId, a)
-        if (t.next === 'approval') askUnreadablySoon(t.tabId)
-      })
-    if (asksOnDiscord) void askButtons?.check(t.tabId)
-    discordTyping?.refresh(t.tabId)
-    if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
-    attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
-    // ADR-0022
-    cronRunner?.onStatus(t.tabId, t.prev, t.next)
+    announceNow(STATE_CHANGED, t)
   })
 
   const userData = app.getPath('userData')
