@@ -946,6 +946,7 @@ test.describe('The butler row while Discord is switched in Settings ▸ Plugins'
       await switchDiscord(page, false)
       await expect(where).toHaveText('')
       expect(await butlerMenu(page)).toEqual(plainMenu)
+      await expect(page.locator('.menu .sep')).toHaveCount(0)
       await closeMenu(page)
       await switchDiscord(page, true)
       await expect(where).toHaveText(`#${CHANNEL_A}`)

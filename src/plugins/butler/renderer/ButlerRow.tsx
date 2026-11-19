@@ -81,7 +81,7 @@ export function ButlerRow(): JSX.Element {
     item('Open', () => void openButler(), 'mi', '↩'),
     item('Rename…', () => renameButler(true)),
     item('Start a fresh conversation', () => void openButler(true)),
-    <div key="sep" className="sep" />,
+    ...(moreMenu.length ? [<div key="sep" className="sep" />] : []),
     ...moreMenu.map((e) => item(e.label, e.run, e.danger ? 'mi danger' : 'mi'))
   ]
 
