@@ -87,7 +87,6 @@ import { registeredByTabRoot } from '../shim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
-import { ownerTextOver } from '../launchPrompt'
 import {
   dirExistsSync,
   gitProbes,
@@ -1109,11 +1108,7 @@ export class ClaudeBackend implements SessionBackend {
       ...spec,
       fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
       projectRules: await this.d.projectRules?.(spec.root),
-      ownerText: ownerTextOver(
-        spec.ownerText,
-        !!spec.conductor,
-        await this.d.workspaceInstructions?.(spec.root)
-      )
+      workspaceText: await this.d.workspaceInstructions?.(spec.root)
     })
     if (!plan.ok) return plan
     const machine = plan.machine

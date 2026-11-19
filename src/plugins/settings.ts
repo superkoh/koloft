@@ -5,11 +5,6 @@ import { SETTINGS as butler } from './butler/shared/settings'
 import { SETTINGS as discord } from './discord/shared/settings'
 import { SETTINGS as todo } from './todo/shared/settings'
 
-export const PLUGIN_SETTINGS = {
-  'browser-control': browserControl,
-  butler,
-  discord,
-  todo
-}
+export const PLUGIN_SETTINGS = { 'browser-control': browserControl, butler, discord, todo }
 
 export type PluginSettingValues = AllSettingValues<typeof PLUGIN_SETTINGS>

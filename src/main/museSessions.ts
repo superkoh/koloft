@@ -666,11 +666,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
       context:
-        promptParts(
-          agentTools && koloftPrompt('muse', rules),
-          opts.role,
-          ownerTextFor(ctx, false)
-        ).join('\n\n') || undefined,
+        promptParts(agentTools && koloftPrompt('muse', rules), ownerTextFor(ctx, false)).join(
+          '\n\n'
+        ) || undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords
