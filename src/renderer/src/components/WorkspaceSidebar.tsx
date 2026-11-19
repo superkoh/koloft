@@ -29,7 +29,7 @@ import {
   IconPin,
   IconPlus
 } from '../icons'
-import type { BackendId, HostId, MachineState, SessionRow, WorkspaceRows } from '@shared/types'
+import type { BackendId, HostId, MachineState, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { attentionReason } from '@shared/types'
 import { noAccountLine, popoverX } from '@shared/accountUsage'
@@ -68,7 +68,7 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
-import { fillsOf, PartsAt } from '../pluginUi'
+import { fillsOf, gitPartsOf, PartsAt } from '../pluginUi'
 import {
   ROW_MARK,
   WORKSPACE_GIT_PART,
@@ -115,9 +115,6 @@ function removeConfirmText(running: number, jobs: number): string {
   if (running === 0) return removeJobsNote(jobs)
   return `${s}, and ${j}. ${kept} Jobs do not come back.`
 }
-
-const gitPartShows = (ws: WorkspaceRows['workspace']): boolean =>
-  fillsOf(WORKSPACE_GIT_PART).some((part) => part.shows(ws))
 
 const HOVER_MENU_MS = 350
 const MENU_LEAVE_MS = 140
@@ -951,11 +948,10 @@ function SidebarFloating({
     const w = rows.find((r) => r.workspace.path === fresh.path)
     if (!w) return null
     const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
-    if (!f && !gitPartShows(w.workspace) && !w.workspace.gitPickable) return null
+    if (!f && gitPartsOf(w.workspace).length === 0 && !w.workspace.gitPickable) return null
     return (
       <FreshnessPopover
         key={fresh.path}
-        wsPath={fresh.path}
         f={f}
         ws={w.workspace}
         left={fresh.left}
@@ -1351,7 +1347,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   remoteTitle={ws.remote && remoteCopyText(ws.remote.host, ws.remote.path)}
                   remoteConnected={!!ws.remote?.connected}
                   remoteDot={ws.remote && remoteDotTitle(ws.remote)}
-                  gitPanel={freshnessShown(ws.freshness) || gitPartShows(ws) || !!ws.gitPickable}
+                  gitPanel={
+                    freshnessShown(ws.freshness) || gitPartsOf(ws).length > 0 || !!ws.gitPickable
+                  }
                   open={open}
                   active={selectedWs === ws.path && activeTabId === null}
                   callingInside={callingInside}

@@ -31,8 +31,7 @@ import {
   type PullNote
 } from '../freshnessView'
 import { PullConfirm } from './PullConfirm'
-import { fillsOf } from '../pluginUi'
-import { WORKSPACE_GIT_PART } from '../slots'
+import { gitPartsOf } from '../pluginUi'
 import '../accounts.css'
 
 const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
@@ -354,7 +353,6 @@ function useGitAccountView(
 }
 
 export function FreshnessPopover({
-  wsPath,
   f,
   ws,
   left,
@@ -364,7 +362,6 @@ export function FreshnessPopover({
   onMouseEnter,
   onMouseLeave
 }: {
-  wsPath: string
   f?: WorkspaceFreshness
   ws: WorkspaceRows['workspace']
   left: number
@@ -374,6 +371,7 @@ export function FreshnessPopover({
   onMouseEnter: () => void
   onMouseLeave: () => void
 }): JSX.Element {
+  const wsPath = ws.path
   const showToast = useStore((s) => s.showToast)
   const [fetching, setFetching] = useState(false)
   const [pulling, setPulling] = useState(false)
@@ -444,7 +442,7 @@ export function FreshnessPopover({
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
   const remote = ws.remote
-  const parts = fillsOf(WORKSPACE_GIT_PART).filter((part) => part.shows(ws))
+  const parts = gitPartsOf(ws)
   const hasPart = parts.length > 0
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, hasPart, onClose)
   const offline = !!remote && !remote.connected
@@ -521,20 +519,18 @@ export function FreshnessPopover({
           )}
           {f && hasPart && <div className="tbu-sep" />}
           {parts.map(({ Section }, i) => (
-            <Section key={i} ws={ws} offline={offline} account={acct?.login} onClose={onClose}>
-              {gitNotes.length > 0 && (
-                <div className="tbu-row">
-                  {gitNotes.map((n) => (
-                    <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
-                      {n.text}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {gitBlock}
-            </Section>
+            <Section key={i} ws={ws} offline={offline} account={acct?.login} onClose={onClose} />
           ))}
-          {!hasPart && gitBlock}
+          {gitNotes.length > 0 && (
+            <div className="tbu-row">
+              {gitNotes.map((n) => (
+                <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
+                  {n.text}
+                </div>
+              ))}
+            </div>
+          )}
+          {gitBlock}
         </div>
       )}
       {confirm !== null && (

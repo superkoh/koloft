@@ -1,5 +1,4 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
-import { openWorkspaceList } from '../../src/plugins/github/renderer/lists'
 import type { SessionInfo, SessionRow, SessionWorkbenchState, WorkspaceRows } from '@shared/types'
 import {
   FILES_TAB_ID,
@@ -35,6 +34,7 @@ const { useStore, previewLinkTarget, openWebPage, openInterceptedFile, tabEvicte
   await import('../../src/renderer/src/store')
 const { beginEdit, endEdit, getEntry, setText, allDirtyTabs } =
   await import('../../src/renderer/src/editRegistry')
+const { openWorkspaceList } = await import('../../src/plugins/github/renderer/lists')
 
 const TAB = 'pty-1'
 const SID = 'sess-1'

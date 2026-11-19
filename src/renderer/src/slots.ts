@@ -1,5 +1,5 @@
 // ADR-0051
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType } from 'react'
 import { slot } from '@core/ui'
 import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/types'
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
@@ -77,7 +77,6 @@ export interface WorkspaceGitPart {
     offline: boolean
     account: string | undefined
     onClose: () => void
-    children: ReactNode
   }>
 }
 
