@@ -3,16 +3,17 @@ import os from 'os'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { localGitOut } from '../../src/main/host/localHost'
-import { projectInfoFor } from '../../src/main/projectInfo'
+import { localGitOut } from '../../../../src/main/host/localHost'
+import { projectInfoFor } from '../../../../src/main/projectInfo'
 import {
   closingTree,
   removeTree,
   tidyTree,
+  leftText,
   whatIsLeft,
   type ClosingTree
-} from '../../src/main/sessionClose'
-import type { GitOut } from '../../src/main/resumePlan'
+} from '../../../../src/plugins/sessions/main/sessionClose'
+import type { GitOut } from '../../../../src/main/resumePlan'
 
 let directory: string
 let repo: string
@@ -30,6 +31,9 @@ function commit(cwd: string, file: string, text: string): void {
   git(cwd, 'add', file)
   git(cwd, 'commit', '-m', file)
 }
+
+const textLeft = async (...args: Parameters<typeof whatIsLeft>): Promise<string[]> =>
+  leftText(await whatIsLeft(...args))
 
 async function treeOf(dir: string): Promise<ClosingTree> {
   const found = await closingTree(localGitOut, projectInfoFor(dir))
@@ -71,7 +75,7 @@ describe('closing a session that runs in its own worktree', () => {
     git(tree, 'push', '-q', 'origin', 'fix/1-thing')
     const closing = await treeOf(tree)
     expect(closing.branches.sort()).toEqual(['fix/1-thing', 'worktree-run-1'])
-    expect(await whatIsLeft(localGitOut, closing)).toEqual([])
+    expect(await textLeft(localGitOut, closing)).toEqual([])
     expect(await removeTree(localGitOut, closing)).toBeNull()
     expect(fs.existsSync(tree)).toBe(false)
     expect(branches()).toEqual(['main'])
@@ -105,14 +109,14 @@ describe('closing a session that runs in its own worktree', () => {
   it('a commit another local branch also holds loses nothing, though no remote has it', async () => {
     commit(tree, 'merged.txt', 'merged into main, never pushed')
     git(repo, 'merge', '-q', '--ff-only', 'worktree-run-1')
-    expect(await whatIsLeft(localGitOut, await treeOf(tree))).toEqual([])
+    expect(await textLeft(localGitOut, await treeOf(tree))).toEqual([])
   })
 
   it('names an uncommitted change and a new file, and a commit that is on no other branch and no remote branch', async () => {
     commit(tree, 'local.txt', 'never pushed')
     fs.writeFileSync(path.join(tree, '.gitignore'), 'changed\n')
     fs.writeFileSync(path.join(tree, 'new.txt'), 'untracked')
-    const left = await whatIsLeft(localGitOut, await treeOf(tree))
+    const left = await textLeft(localGitOut, await treeOf(tree))
     expect(left).toHaveLength(2)
     expect(left[0]).toContain('.gitignore')
     expect(left[0]).toContain('new.txt')
@@ -122,7 +126,7 @@ describe('closing a session that runs in its own worktree', () => {
   it('counts a commit left on the worktree branch after switching to another branch', async () => {
     commit(tree, 'stray.txt', 'on worktree-run-1 only')
     git(tree, 'switch', '-q', '--detach', 'main')
-    const left = await whatIsLeft(localGitOut, await treeOf(tree))
+    const left = await textLeft(localGitOut, await treeOf(tree))
     expect(left.join('\n')).toContain('stray.txt')
   })
 
@@ -147,14 +151,14 @@ describe('closing a session that runs in its own worktree', () => {
         asked.push(branch)
         return branch === 'worktree-run-1' ? ['f'.repeat(40), tip] : []
       }
-      expect(await whatIsLeft(localGitOut, await treeOf(tree), merged)).toEqual([])
+      expect(await textLeft(localGitOut, await treeOf(tree), merged)).toEqual([])
       expect(asked).toEqual(['worktree-run-1'])
     })
 
     it('still names a commit made after the merge, which no pull request holds', async () => {
       const tip = squashMergedAndPruned()
       commit(tree, 'after.txt', 'after the merge')
-      const left = await whatIsLeft(localGitOut, await treeOf(tree), async () => [tip])
+      const left = await textLeft(localGitOut, await treeOf(tree), async () => [tip])
       expect(left).toHaveLength(1)
       expect(left[0]).toContain('after.txt')
       expect(left[0]).not.toContain('feat.txt')
@@ -162,11 +166,30 @@ describe('closing a session that runs in its own worktree', () => {
 
     it('keeps the worktree when GitHub cannot be asked, and says pushing would only bring the deleted branch back', async () => {
       squashMergedAndPruned()
-      const left = await whatIsLeft(localGitOut, await treeOf(tree), async () => null)
+      const left = await textLeft(localGitOut, await treeOf(tree), async () => null)
       expect(left).toHaveLength(1)
       expect(left[0]).toContain('feat.txt')
       expect(left[0]).toContain('pushing would only bring back the branch GitHub deleted')
     })
+  })
+
+  it('the full text of what is left, pinned so that moving it changes no character', async () => {
+    commit(tree, 'local.txt', 'never pushed')
+    fs.writeFileSync(path.join(tree, 'new.txt'), 'untracked')
+    const masked = (left: string[]) =>
+      left
+        .join('\n---\n')
+        .replaceAll(directory, '<dir>')
+        .replace(/^[0-9a-f]{7,} /gm, '<sha> ')
+    const noLog: GitOut = (dir, args, ...rest) =>
+      args[0] === 'log' ? Promise.resolve(null) : localGitOut(dir, args, ...rest)
+    const lines = [
+      masked(await textLeft(localGitOut, await treeOf(tree))),
+      masked(await textLeft(localGitOut, await treeOf(tree), async () => null)),
+      masked(await textLeft(noLog, await treeOf(tree))),
+      masked(await textLeft(localGitOut, { ...(await treeOf(tree)), gitFileGone: true }))
+    ]
+    await expect(lines.join('\n===\n') + '\n').toMatchFileSnapshot('./session-close-text/left.txt')
   })
 
   it('a session in the repository itself has no worktree to remove', async () => {
@@ -251,14 +274,12 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     fs.writeFileSync(path.join(repo, 'parent-draft.md'), 'not the run’s')
     const closing = await closingTree(localGitOut, run())
     expect(closing?.branches).toEqual(['worktree-run-1'])
-    expect(await whatIsLeft(localGitOut, closing!)).toEqual([
-      'Changes not committed:\n D .gitignore'
-    ])
+    expect(await textLeft(localGitOut, closing!)).toEqual(['Changes not committed:\n D .gitignore'])
   })
 
   it('still names a deleted file when a session is closed, outside the tidy', async () => {
     removalCutOffHalfWay()
-    const left = await whatIsLeft(localGitOut, await treeOf(tree))
+    const left = await textLeft(localGitOut, await treeOf(tree))
     expect(left).toEqual(['Changes not committed:\n D .gitignore'])
   })
 
