@@ -3,9 +3,9 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
-import type { SessionStatus } from '../../src/shared/types'
-import type { Turn } from '../../src/shared/turns'
-import type { DiscordMessage } from '../../src/main/discord/link'
+import type { SessionStatus } from '../../../../src/shared/types'
+import type { Turn } from '../../../../src/shared/turns'
+import type { DiscordMessage } from '../../../../src/plugins/discord/main/link'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN,
@@ -13,7 +13,7 @@ import {
   ONE_LINE_PER_QUESTION,
   PICK_OR_OWN_WORDS,
   type CodexQuestion
-} from '../../src/plugins/sessions/main/dialog'
+} from '../../../../src/plugins/sessions/main/dialog'
 import {
   answerItFirst,
   butlerAsks,
@@ -22,11 +22,11 @@ import {
   unreadableInRoom,
   type Destination,
   type RelayDeps
-} from '../../src/main/discord/relay'
-import { SessionAsks, type SessionAskDeps } from '../../src/plugins/sessions/main/sessionAsks'
-import { HandOver, type HandOverDeps } from '../../src/plugins/sessions/main/handOver'
-import { typeKeys } from '../../src/main/typeKeys'
-import { waitingForAnswer } from '../../src/shared/slashCommands'
+} from '../../../../src/plugins/discord/main/relay'
+import { SessionAsks, type SessionAskDeps } from '../../../../src/plugins/sessions/main/sessionAsks'
+import { HandOver, type HandOverDeps } from '../../../../src/plugins/sessions/main/handOver'
+import { typeKeys } from '../../../../src/main/typeKeys'
+import { waitingForAnswer } from '../../../../src/shared/slashCommands'
 import {
   CODEX_DISCORD_SAID_ENV,
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -34,8 +34,8 @@ import {
   discordSaidFile,
   NOT_FROM_THE_RELAY,
   noteDiscordSaid
-} from '../../src/main/hooks'
-import { writeMuseHooks } from '../../src/main/museHooks'
+} from '../../../../src/main/hooks'
+import { writeMuseHooks } from '../../../../src/main/museHooks'
 
 const OWNER = '555'
 const CHANNEL = '222'

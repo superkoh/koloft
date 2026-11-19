@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { toChannel } from '../../src/main/discord/slash'
-import { accentOf, CONDUCTOR_ACCENT, type Card } from '../../src/main/discord/cards'
+import { toChannel } from '../../../../src/plugins/discord/main/slash'
+import { accentOf, CONDUCTOR_ACCENT, type Card } from '../../../../src/plugins/discord/main/cards'
 
 describe('a slash command run from Discord', () => {
   it('posts its result card in the butler’s colour for the butler and in the session’s own colour for any other', () => {

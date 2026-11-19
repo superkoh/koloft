@@ -449,6 +449,7 @@ import {
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
+  butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
   helperRoleOf,
@@ -461,15 +462,19 @@ import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
-import { DiscordBinding } from './discord/binding'
-import { discordApiUrl, DiscordLink } from './discord/link'
-import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
-import { setupStatusText } from './discord/setupSteps'
-import { releaseLock, takeLock } from './discord/instanceLock'
-import { DiscordRelay, type Destination } from './discord/relay'
+import { DiscordBinding } from '@plugins/discord/main/binding'
+import { discordApiUrl, DiscordLink } from '@plugins/discord/main/link'
+import {
+  reloadDiscordPage,
+  saveTokenFromPage,
+  type GuestPage
+} from '@plugins/discord/main/tokenFromPage'
+import { setupStatusText } from '@plugins/discord/main/setupSteps'
+import { releaseLock, takeLock } from '@plugins/discord/main/instanceLock'
+import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
-import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from './discord/secretCards'
+import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
 import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
 import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
@@ -482,22 +487,22 @@ import {
 } from '@plugins/workbench/main/guestTap'
 import { within } from './within'
 import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
-import { ButlerTyping } from './discord/butlerTyping'
+import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
   machineOfShotPage,
   onShotPageGone,
   shootHtml,
   shootPage,
   shotSession
-} from './discord/pageShot'
-import { OldThreads } from './discord/oldThreads'
-import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
-import { accentOf } from './discord/cards'
-import { AskButtons } from './discord/buttons'
+} from '@plugins/discord/main/pageShot'
+import { OldThreads } from '@plugins/discord/main/oldThreads'
+import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
+import { accentOf } from '@plugins/discord/main/cards'
+import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { toChannel } from './discord/slash'
+import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
-import { Interactions, SLASH_COMMANDS } from './discord/interactions'
+import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
@@ -625,10 +630,11 @@ import {
 import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
-  TODO_NOTICE_FROM_KOLOFT,
+  FROM_KOLOFT,
   crossSessionLine,
   writeLineInTurn
 } from './crossSessionMessage'
+import { TODO_NEWS } from '@plugins/todo/api'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -783,7 +789,7 @@ const sessionBackends = new SessionBackends({
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
 })
-sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
+sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
@@ -1810,7 +1816,7 @@ function remoteHostOfTab(tabId: string): string | undefined {
 }
 
 function projectRows(): WorkspaceRows[] {
-  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.claim)
 }
 
 function butlerSide(tabId: string): boolean {
@@ -2018,7 +2024,7 @@ const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
 
 function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   return all.flatMap((s) =>
-    s.alive && !s.butler && s.sessionId
+    s.alive && !s.overseer && s.sessionId
       ? [
           {
             tabId: s.tabId,
@@ -2121,7 +2127,7 @@ const sessionDeps: SessionVerbDeps = {
     ...(listsModels(backend) && { listed: await listedModels(backend) })
   }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-  allSessions: () => allSessions().filter((s) => !s.butler),
+  allSessions: () => allSessions().filter((s) => !s.overseer),
   tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
@@ -2430,7 +2436,7 @@ registerTodoCommand(commands, {
   allowed: butlerSide,
   sidebar: () => workspaceMgr?.rows() ?? [],
   pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-  sessions: () => allSessions().filter((s) => !s.butler),
+  sessions: () => allSessions().filter((s) => !s.overseer),
   asking: asksTheOwner,
   asleep: (sessionId) => !!sleepers.tabOf(sessionId),
   workLeft: async (row, merged) => {
@@ -2446,12 +2452,7 @@ registerTodoCommand(commands, {
   },
   mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
   mergedHeads: (dir, branch) => mergedHeads(dir, branch),
-  notes: () => loadSettings().todoNotes,
-  saveNote: (key, text) => {
-    const todoNotes = { ...loadSettings().todoNotes, [key]: text }
-    if (!text) delete todoNotes[key]
-    commitSettings({ todoNotes })
-  },
+  settings: { load: loadSettings, commit: commitSettings },
   projectFiles: async (wsPath) => (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
   readText: (file) => hosts.of(file).readText(file),
   servers: mcpServersNow,
@@ -4045,11 +4046,11 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!butler?.isButlerSession(id),
+    hiddenRow: (id) => sessionBackends.isOverseerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
-    butlerFolder: conductorFolder(userData),
+    claimedFolder: butlersFolderClaim(userData),
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
         (key) =>
@@ -4128,7 +4129,7 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    todoNotice: TODO_NOTICE_FROM_KOLOFT,
+    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -6561,7 +6562,7 @@ function registerIpc(): void {
     },
     backendSnippets: async (term, signal) =>
       (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-    hidden: (id) => sessionBackends.isButlerSession(id),
+    hidden: (id) => sessionBackends.isOverseerSession(id),
     scan: (files, term, found) => {
       // PLATFORM§4
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })
