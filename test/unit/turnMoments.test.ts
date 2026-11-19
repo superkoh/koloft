@@ -49,27 +49,44 @@ function wired(o: { handsOff?: boolean; asksMade?: boolean; butlerTab?: boolean 
   })
   butlerFollowsEachTurn(moments, {
     butler: () => ({ onBound: say('butler.onBound'), isButlerTab: () => !!o.butlerTab }),
-    digest: () => ({ turnEnded: say('digest.turnEnded'), prompted: say('digest.prompted') }),
+    digest: () => ({
+      turnEnded: say('digest.turnEnded'),
+      prompted: say('digest.prompted'),
+      marked: () => {}
+    }),
     tookTheTurn: turns.tookTheTurn,
-    asleep: { awakeTabsChanged: say('asleep.awakeTabsChanged') },
+    asleep: { awakeTabsChanged: say('asleep.awakeTabsChanged'), asks: async () => {} },
     butlerTabChanged: say('answerable synced')
   })
   cardEachTurnAndQuestion(moments, {
     inbox: {
       turnEnded: say('inbox.turnEnded'),
       asked: say('inbox.asked'),
-      rebound: say('inbox.rebound')
+      rebound: say('inbox.rebound'),
+      sync: () => {}
     },
     tookTheTurn: turns.tookTheTurn
   })
-  followEachRun(moments, () => ({ onBound: say('cron.onBound'), onPtyExit: () => {} }))
+  followEachRun(moments, () => ({
+    onBound: say('cron.onBound'),
+    onPtyExit: () => {},
+    onStatus: () => {}
+  }))
   discordFollowsEachTurn(moments, {
-    relay: () => ({ turnEnded: (tabId) => say('relay.turnEnded')(tabId) }),
+    relay: () => ({
+      turnEnded: (tabId) => say('relay.turnEnded')(tabId),
+      stoppedAsking: () => {},
+      codexAsked: () => {}
+    }),
     typing: () => ({ refresh: say('typing.refresh') }),
     rooms: () => ({
       bound: async (tabId, _key, fresh) => say('rooms.bound')(tabId, await fresh())
     }),
-    noTurnsYet: async () => true
+    noTurnsYet: async () => true,
+    buttons: () => null,
+    askChannelOf: () => undefined,
+    pendingAskOf: async () => undefined,
+    askUnreadablySoon: () => {}
   })
   return { moments, calls, settle: () => new Promise((resolve) => setTimeout(resolve, 0)) }
 }

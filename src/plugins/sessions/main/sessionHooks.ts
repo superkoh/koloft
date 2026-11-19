@@ -1,13 +1,18 @@
 import {
+  DIALOG_CLOSED,
   QUESTION_ASKED,
   SESSION_BOUND,
+  STATE_CHANGED,
   TAB_EXITED,
+  TOOL_DONE,
   TURN_ENDED,
+  TURN_OVER,
   TURN_STARTED,
   type MadeLater,
-  type Moments
+  type Moments,
+  type StateChanged,
+  type Turn
 } from '@core/moment'
-import type { Turn } from '@core/moment'
 import { plugin } from '../plugin'
 import type { SessionAsks } from './sessionAsks'
 import type { SlashCommands } from './slashCommands'
@@ -52,4 +57,25 @@ export function followEachTurn(
   })
   moments.listen(plugin.id, SESSION_BOUND, ({ tabId, key }) => d.slash.bound(tabId, key))
   return { tookTheTurn: (tabId) => taken.has(tabId) }
+}
+
+export function followEachState(
+  moments: Moments,
+  d: {
+    asks: MadeLater<Pick<SessionAsks, 'dialogGone' | 'toolDone'>>
+    slash: Pick<SlashCommands, 'turnOver'>
+    attention: { stateChanged(edge: StateChanged): void }
+  }
+): void {
+  moments.listen(plugin.id, STATE_CHANGED, ({ tabId, prev }) => {
+    if (prev === 'approval') d.asks()?.dialogGone(tabId, false)
+  })
+  moments.listen(plugin.id, STATE_CHANGED, (edge) => d.attention.stateChanged(edge))
+  moments.listen(plugin.id, TOOL_DONE, ({ tabId, call, endsTheAsk }) => {
+    const asks = d.asks()
+    if (endsTheAsk) asks?.dialogGone(tabId, false)
+    asks?.toolDone(tabId, call)
+  })
+  moments.listen(plugin.id, TURN_OVER, ({ tabId, over }) => d.slash.turnOver(tabId, over))
+  moments.listen(plugin.id, DIALOG_CLOSED, (tabId) => d.asks()?.dialogGone(tabId, true))
 }
