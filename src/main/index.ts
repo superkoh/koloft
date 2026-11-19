@@ -113,7 +113,7 @@ import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation, isUnderAnyRoot } from './browserSecurity'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
-import { stripTerminalCodes } from './terminalCodes'
+import { stripTerminalCodes } from '@core/terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
@@ -263,9 +263,9 @@ import {
   gitProbes,
   worktreeHomeRoot,
   worktreeNameAround,
-  type GitOut,
   type ResumeProbes
 } from './resumePlan'
+import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { museBackend } from './backends/muse'
@@ -666,8 +666,7 @@ import {
   removeTree,
   tidyTree,
   whatIsLeft,
-  type MergedHeads,
-  type TidyResult
+  type MergedHeads
 } from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -4565,7 +4564,7 @@ app.whenReady().then(() => {
       storedSessions().some((s) =>
         s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
       ),
-    branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
+    branchExists: (root, branch) => branchExists(hostGitOut, root, branch),
     listRunFolders,
     runLeftovers,
     tidyRun,
