@@ -1,5 +1,6 @@
 import path from 'path'
 import { BROWSER_PARTITION } from '@shared/types'
+import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 
 export function isAppNavigation(target: string, appUrl: string): boolean {
   let to: URL
@@ -12,14 +13,6 @@ export function isAppNavigation(target: string, appUrl: string): boolean {
   }
   if (app.protocol === 'file:') return to.protocol === 'file:' && to.pathname === app.pathname
   return to.protocol === app.protocol && to.host === app.host
-}
-
-export function isUnderAnyRoot(target: string, roots: readonly string[]): boolean {
-  const file = path.resolve(target)
-  return roots.some((raw) => {
-    const root = path.resolve(raw)
-    return file === root || file.startsWith(root.endsWith(path.sep) ? root : root + path.sep)
-  })
 }
 
 // PLATFORM§8

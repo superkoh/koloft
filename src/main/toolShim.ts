@@ -11,7 +11,7 @@ import {
   removeFoldersLeftByEndedRuns
 } from './leftovers'
 import { oncePerName, watchAndSweepJsonDrops, type DropHandlerFor } from './jsonDrops'
-import { openDropHandler } from './openDrop'
+import { openDropHandler } from '@core/openDrop'
 import { removeOpenShim, writeOpenShim, type OpenShim } from './openShimScript'
 
 export interface ToolShimDeps {
