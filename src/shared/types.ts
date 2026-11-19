@@ -1525,19 +1525,13 @@ export interface WorkspaceRows {
     isGit: boolean
     hasHistory: boolean
     freshness?: WorkspaceFreshness
-    github?: WorkspaceGithub
+    plugins?: Readonly<Record<string, unknown>>
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
     claim?: WorkspaceClaim
   }
   rows: SessionRow[]
-}
-
-export interface WorkspaceGithub {
-  repo: string
-  issues: number
-  prs: number
 }
 
 export interface WorktreeInfo {

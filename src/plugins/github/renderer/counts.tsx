@@ -3,6 +3,7 @@ import { IconIssue, IconPullRequest } from '@renderer/icons'
 import { useStore } from '@renderer/store'
 import type { WorkspaceRows } from '@shared/types'
 import { countLabel, openIssuesLabel, openPullsLabel } from './labels'
+import { countsOf } from '../shared/counts'
 import { openWorkspaceList } from './lists'
 
 const indexed = new WeakMap<readonly WorkspaceRows[], Map<string, WorkspaceRows['workspace']>>()
@@ -13,7 +14,12 @@ function byPath(rows: readonly WorkspaceRows[]): Map<string, WorkspaceRows['work
   return index
 }
 
-export const hasGithub = (ws: WorkspaceRows['workspace']): boolean => !!ws.github
+const countsAt = (rows: readonly WorkspaceRows[], path: string) => {
+  const ws = byPath(rows).get(path)
+  return ws && countsOf(ws)
+}
+
+export const hasGithub = (ws: WorkspaceRows['workspace']): boolean => !!countsOf(ws)
 
 export function CountsMark({
   path,
@@ -24,8 +30,8 @@ export function CountsMark({
   reachable: boolean
   closeCards: () => void
 }): JSX.Element | null {
-  const issues = useStore((s) => byPath(s.workspaceRows).get(path)?.github?.issues ?? 0)
-  const prs = useStore((s) => byPath(s.workspaceRows).get(path)?.github?.prs ?? 0)
+  const issues = useStore((s) => countsAt(s.workspaceRows, path)?.issues ?? 0)
+  const prs = useStore((s) => countsAt(s.workspaceRows, path)?.prs ?? 0)
   if (issues <= 0 && prs <= 0) return null
   const open = (e: MouseEvent, what: 'issues' | 'pulls'): void => {
     e.stopPropagation()
@@ -69,7 +75,7 @@ export function GithubSection({
   account: string | undefined
   onClose: () => void
 }): JSX.Element | null {
-  const github = ws.github
+  const github = countsOf(ws)
   if (!github) return null
   const openList = (what: 'issues' | 'pulls'): void => {
     onClose()

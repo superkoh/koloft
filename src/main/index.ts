@@ -291,7 +291,7 @@ import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
-import { GithubCountsSweep } from '@plugins/github/main/countsSweep'
+import { GithubCountsSweep, githubCountsData } from '@plugins/github/main/countsSweep'
 import { githubLookups } from '@plugins/github/main/lookup'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
@@ -4049,7 +4049,7 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
-    github: (wsPath) => githubCounts?.get(wsPath),
+    pluginData: (wsPath) => githubCountsData(githubCounts?.get(wsPath)),
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
