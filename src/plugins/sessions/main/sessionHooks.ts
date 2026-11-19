@@ -7,7 +7,7 @@ import {
   type MadeLater,
   type Moments
 } from '@core/moment'
-import type { Turn } from '@shared/turns'
+import type { Turn } from '@core/moment'
 import { plugin } from '../plugin'
 import type { SessionAsks } from './sessionAsks'
 import type { SlashCommands } from './slashCommands'

@@ -37,6 +37,8 @@ export interface TabEnded extends AgentExit {
   left?: LeftTab
 }
 
+export type { Turn }
+
 export interface TurnEnded {
   tabId: string
   turn: Turn

@@ -7,7 +7,7 @@ import {
   type Moments,
   type SessionStarted
 } from '@core/moment'
-import type { Turn } from '@shared/turns'
+import type { Turn } from '@core/moment'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { plugin } from '../plugin'
 
