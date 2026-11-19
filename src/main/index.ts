@@ -482,14 +482,6 @@ import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import { DiscordBinding } from './discord/binding'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import {
-  sendPhoneCopy,
-  sendWholeCopy,
-  shownOf,
-  tooLarge,
-  whereTheCopyGoes,
-  type PhoneCopyDeps
-} from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -518,7 +510,7 @@ import {
   shotSession
 } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
-import { roomLink, roomNote, Rooms, whereOf, type RoomSubject } from './discord/rooms'
+import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
@@ -572,6 +564,9 @@ import { moment, type FileOpened, type SessionStarted, type SessionStarting } fr
 import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
+import { phoneCopier } from '@plugins/discord/main/phoneCopier'
+import { roomNote, turnTakenOnDiscord } from '@plugins/discord/main/sessionRoom'
+import { tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
 import {
   registerChannels as registerCronChannels,
@@ -1533,6 +1528,16 @@ let sessionAsks: SessionAsks | null = null
 let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
 let rooms: Rooms | null = null
+const {
+  roomOf: roomOfTab,
+  askChannelOf: askChannelOfTab,
+  phoneChannelOf
+} = tabChannels({
+  butlerSide,
+  lobby: () => discordBinding?.channel()?.channelId,
+  boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
+  roomCarrying: (tabId) => rooms?.carried(tabId)
+})
 let askButtons: AskButtons | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
@@ -4048,8 +4053,10 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
-  attention.turnTakenElsewhere = (tabId) =>
-    !!bindingNow.channelOfTab(tabId) && !!discordRelay?.reaches(tabId)
+  attention.turnTakenElsewhere = turnTakenOnDiscord({
+    boundChannelOf: (tabId) => bindingNow.channelOfTab(tabId),
+    reaches: (tabId) => !!discordRelay?.reaches(tabId)
+  })
   butler = new Butler({
     userData,
     realpath: realpathSafe,
@@ -5669,54 +5676,16 @@ function ownerIsWhere(): string {
   return OWNER_IS[presence.where()]
 }
 
-function roomOfTab(tabId: string): string | undefined {
-  return butlerSide(tabId) ? undefined : rooms?.carried(tabId)
-}
-
-function askChannelOfTab(tabId: string): string | undefined {
-  return butlerSide(tabId) ? discordBinding?.channel()?.channelId : roomOfTab(tabId)
-}
-
-function phoneChannelOf(tabId: string): string | undefined {
-  return discordBinding?.channelOfTab(tabId) ?? roomOfTab(tabId)
-}
-
-async function copyToPhone(
-  tabId: string,
-  target: string,
-  view?: ArtifactView
-): Promise<string | undefined> {
-  const relay = discordRelay
-  const channelId = askChannelOfTab(tabId)
-  if (!relay || !channelId || relay.quietTurn(tabId)) return undefined
-  const shown = shownOf(target, machineOfTab(tabId), view)
-  if (!shown) return undefined
-  const copyTo = (channelId: string): PhoneCopyDeps => ({
-    shoot: (url, machine) => shootPage(url, { machine }),
-    shootHtml,
-    size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
-    readBytes: (file) =>
-      hosts
-        .of(file)
-        .readBytes(file)
-        .catch((error: unknown) => {
-          throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
-        }),
-    fileDiff: (file) => hosts.of(file).gitFileDiff(file),
-    send: (files, parts) => relay.sendParts(channelId, files, parts),
-    cardsWaitFor: (copy) => relay.cardsWaitFor(tabId, copy)
-  })
-  if (!relay.reaches(tabId)) {
-    relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
-    return undefined
-  }
-  const where = whereTheCopyGoes(
-    !!discordBinding?.channelOfTab(tabId),
-    butlerSide(tabId),
-    butlerNameNow
-  )
-  return sendPhoneCopy(copyTo(channelId), shown, where)
-}
+const copyToPhone = phoneCopier({
+  relay: () => discordRelay,
+  askChannelOf: askChannelOfTab,
+  boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
+  butlerSide,
+  butlerName: butlerNameNow,
+  machineOf: machineOfTab,
+  readBytes: (file) => hosts.of(file).readBytes(file),
+  fileDiff: (file) => hosts.of(file).gitFileDiff(file)
+})
 
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000
 

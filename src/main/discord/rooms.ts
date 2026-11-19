@@ -38,9 +38,6 @@ export function openerCard(s: RoomSubject): Card {
 
 export const roomLink = (threadId: string): string => `<#${threadId}>`
 
-export const roomNote = (room: Pick<SessionRoom, 'threadId' | 'putDown'>): string =>
-  `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
-
 export class Rooms {
   private keyOfTab = new Map<string, string>()
   private unbound = new Map<string, SessionRoom>()

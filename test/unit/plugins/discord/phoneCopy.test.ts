@@ -12,12 +12,12 @@ import {
   whereTheCopyGoes,
   type FileDiff,
   type PhoneCopyDeps
-} from '../../src/main/discord/phoneCopy'
-import { BYTES_PER_FILE, type DiscordFile } from '../../src/main/discord/link'
-import { DISCORD_MESSAGE_LIMIT } from '../../src/main/discord/split'
-import type { PageLook, PagePictures } from '../../src/main/discord/pageShot'
-import { formatRemoteKey } from '../../src/shared/remoteKey'
-import { machinePageUrl } from '../../src/shared/browserRoute'
+} from '../../../../src/plugins/discord/main/phoneCopy'
+import { BYTES_PER_FILE, type DiscordFile } from '../../../../src/main/discord/link'
+import { DISCORD_MESSAGE_LIMIT } from '../../../../src/main/discord/split'
+import type { PageLook, PagePictures } from '../../../../src/main/discord/pageShot'
+import { formatRemoteKey } from '../../../../src/shared/remoteKey'
+import { machinePageUrl } from '../../../../src/shared/browserRoute'
 
 const WHERE = 'the room'
 const page = { width: 1280, height: 900 }
