@@ -32,17 +32,27 @@ export function placePluginUi(): void {
   placed()
 }
 
-let statesFor: { settings: Settings; states: Record<string, PluginState> } | undefined
+interface ActingStates {
+  settings: Settings
+  states: Record<string, PluginState>
+  onKey: string
+}
 
-function actingStatesOf(settings: Settings): Record<string, PluginState> {
-  if (statesFor?.settings !== settings) statesFor = { settings, states: actingStatesIn(settings) }
-  return statesFor.states
+let statesFor: ActingStates | undefined
+
+function actingStatesOf(settings: Settings): ActingStates {
+  if (statesFor?.settings === settings) return statesFor
+  const states = actingStatesIn(settings)
+  const onKey = Object.keys(states)
+    .filter((id) => states[id].on)
+    .join(' ')
+  return (statesFor = { settings, states, onKey })
 }
 
 const onIn =
   (settings: Settings) =>
   (plugin: string): boolean =>
-    actingStatesOf(settings)[plugin]?.on ?? true
+    actingStatesOf(settings).states[plugin]?.on ?? true
 
 const onNow = (plugin: string): boolean => onIn(useStore.getState().settings)(plugin)
 
@@ -56,13 +66,15 @@ const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])
 export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
   (placed().parts[place] ?? []).filter((p) => KEPT_WHILE_OFF.has(place) || onNow(p.plugin))
 
-const usePluginsOnKey = (): string =>
-  useStore((s) =>
-    Object.entries(actingStatesOf(s.settings))
-      .filter(([, state]) => state.on)
-      .map(([id]) => id)
-      .join(' ')
-  )
+const usePluginsOnKey = (): string => useStore((s) => actingStatesOf(s.settings).onKey)
+
+export function useFillsOf<T, R>(into: Slot<T>, use: (fill: T) => R): R[] {
+  usePluginsOnKey()
+  const every = fillsOfOnOrOff(into)
+  const used = every.map(use)
+  const on = new Set(fillsOf(into))
+  return used.filter((_, i) => on.has(every[i]))
+}
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>
   fillsOf(WORKSPACE_GIT_PART).filter((part) => part.shows(ws))
@@ -74,11 +86,11 @@ export function useShowsGlobalNote(tabId: string | null, rowId: string | null): 
 }
 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
-  const onKey = usePluginsOnKey()
+  usePluginsOnKey()
   return (
     <>
       {partsAt(place).map(({ id, Part }) => (
-        <Part key={`${id} ${onKey}`} />
+        <Part key={id} />
       ))}
     </>
   )

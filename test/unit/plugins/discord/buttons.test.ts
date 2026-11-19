@@ -235,6 +235,10 @@ describe('a question answered some other way loses its buttons too', () => {
     await s.buttons.press(s.press(0))
     expect(s.answers).toEqual([])
     expect(s.responses).toEqual([privately(NO_LONGER_OPEN)])
+    const stillPosting = setup()
+    await stillPosting.buttons.endAll(DISCORD_TURNED_OFF)
+    stillPosting.buttons.placed(stillPosting.card, PLACED)
+    expect(footers(stillPosting)).toEqual([`-# ${DISCORD_TURNED_OFF}`])
   })
 
   it('a card Discord never took is forgotten, so nothing is kept for it', async () => {

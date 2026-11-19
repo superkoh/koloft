@@ -4266,14 +4266,17 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     onMessage: (m) => {
+      if (!discordRunning) return
       if (bindingNow.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
         discordRelay?.onMessage(m)
       else void oldThreads.onMessage(m)
     },
-    onInteraction: (i) =>
+    onInteraction: (i) => {
+      if (!discordRunning) return
       void (bindingNow.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
         ? interactions.handle(i)
-        : oldThreads.onInteraction(i)),
+        : oldThreads.onInteraction(i))
+    },
     onReady: () => {
       if (bindingNow.channel()) void butler?.open()
       void discordRelay?.catchUp()
@@ -5705,17 +5708,15 @@ function tapPagesOf(tabId: string): TapPage[] {
   }))
 }
 
-function switchDiscordOnOnceItHasABot(hasABot: boolean): void {
-  const pluginsOn = switchedOnOnceItHasABot(hasABot, loadSettings().pluginsOn)
-  if (pluginsOn) commitSettings({ pluginsOn })
-}
-
 async function startDiscord(): Promise<void> {
-  switchDiscordOnOnceItHasABot(!!(await discordTokenRead()))
+  const hasABot = async (): Promise<boolean> => !!(await discordTokenRead())
+  if (await switchedOnOnceItHasABot(loadSettings().pluginsOn, hasABot))
+    commitSettings({ pluginsOn: withDiscordOn(loadSettings().pluginsOn) })
   followDiscordSwitch()
 }
 
 let discordRunning = false
+let discordEnding: Promise<unknown> = Promise.resolve()
 
 function followDiscordSwitch(): void {
   const link = discordLink
@@ -5723,12 +5724,17 @@ function followDiscordSwitch(): void {
   discordRunning = !discordRunning
   workspaceMgr?.refresh()
   syncAnswerable()
-  if (discordRunning) return void link.connect()
+  if (discordRunning) {
+    void discordEnding.then(() => {
+      if (discordRunning) void link.connect()
+    })
+    return
+  }
   for (const tabId of ptyTabIds()) {
     discordRelay?.forget(tabId)
     discordTyping?.forget(tabId)
   }
-  void Promise.all([
+  discordEnding = Promise.all([
     askButtons?.endAll(DISCORD_TURNED_OFF),
     secretCards?.endAll(DISCORD_TURNED_OFF)
   ]).finally(() => {
@@ -5738,25 +5744,25 @@ function followDiscordSwitch(): void {
 
 async function saveDiscordToken(token: string): Promise<boolean> {
   const saved = await discordTokenWrite(token)
-  if (!saved) return saved
-  const wasRunning = discordRunning
-  switchDiscordOnOnceItHasABot(true)
-  if (wasRunning) void discordLink?.connect()
-  else followDiscordSwitch()
+  if (saved) void discordLink?.connect()
   return saved
 }
 
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
   '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
-function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
-  if (!discordOn()) commitSettings({ pluginsOn: withDiscordOn(loadSettings().pluginsOn) })
+async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+  const before = loadSettings().pluginsOn
+  const turnsItOn = !discordOn()
+  if (turnsItOn) commitSettings({ pluginsOn: withDiscordOn(before) })
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
-  return startHelper((butler) => ({
+  const started = await startHelper((butler) => ({
     prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
     ownerWords: words,
     backend: discordHelperBackend(butler.backendId)
   }))
+  if (!started.ok && turnsItOn) commitSettings({ pluginsOn: before })
+  return started
 }
 
 function discordHelperBackend(butlerBackend: BackendId): BackendId {

@@ -14,8 +14,8 @@ import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from '@renderer/components/menuPlace'
 import { SessionRowsOfContext } from '@renderer/components/sidebarRows'
-import { fillsOf } from '@renderer/pluginUi'
-import { ROW_EXTRAS } from '@renderer/slots'
+import { useFillsOf } from '@renderer/pluginUi'
+import { ROW_EXTRAS, type RowExtras } from '@renderer/slots'
 import { BUTLER_ROW_PART } from '../plugin'
 import { butlerSetUp, butlerTabOf, isButlersWorkspace } from './butlerTabs'
 import { openButler, renameButler, useButler } from './state'
@@ -36,9 +36,9 @@ function useButlerFolderRows(): JSX.Element[] | null {
 }
 
 export function ButlerRow(): JSX.Element {
-  const fills = fillsOf(ROW_EXTRAS)
-    .filter((f) => f.row === BUTLER_ROW_PART)
-    .map((f) => f.useExtras())
+  const fills = useFillsOf(ROW_EXTRAS, (f) =>
+    f.row === BUTLER_ROW_PART ? f.useExtras() : undefined
+  ).filter((f): f is RowExtras => !!f)
   const moreMenu = fills.flatMap((f) => f.menu)
   const where = fills.map((f) => f.where).join('')
   const children = useButlerFolderRows()
