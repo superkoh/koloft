@@ -190,6 +190,16 @@ function codexReplies(home: string): string[] {
     )
 }
 
+function mostPushesInARow(replies: string[]): number {
+  let most = 0
+  let run = 0
+  for (const reply of replies) {
+    run = reply.startsWith(`${STOP_SAID}${OWNER_ASLEEP_PUSH}`) ? run + 1 : 0
+    most = Math.max(most, run)
+  }
+  return most
+}
+
 function linesFrom(file: string): string[] {
   return fileText(file).split('\n').filter(Boolean)
 }
@@ -211,7 +221,7 @@ async function whatItSaid(
       const replies = codexReplies(home)
       return {
         text: [fileText(path.join(home, 'fake-codex-wire.jsonl')), ...replies].join('\n'),
-        pushes: replies.filter((r) => r.startsWith(`${STOP_SAID}${OWNER_ASLEEP_PUSH}`)).length
+        pushes: mostPushesInARow(replies)
       }
     }
     case 'muse': {
@@ -219,7 +229,7 @@ async function whatItSaid(
       const said = museSaid(env, calls[0].sessionId, home)
       return {
         text: said.map((s) => JSON.stringify(s)).join('\n'),
-        pushes: said.filter((s) => s.startsWith(`${STOP_SAID}${OWNER_ASLEEP_PUSH}`)).length
+        pushes: mostPushesInARow(said)
       }
     }
     case 'agy': {
