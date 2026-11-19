@@ -27,14 +27,8 @@ import {
   isFingerprint,
   looksBinary
 } from '../fileEdit'
-import {
-  GIT_TIMEOUT_MS,
-  coalesce,
-  gitOps,
-  numstatFrom,
-  statusFrom,
-  type GitOps
-} from '../gitStatus'
+import { coalesce } from '@core/coalesce'
+import { GIT_TIMEOUT_MS, gitOps, numstatFrom, statusFrom, type GitOps } from '../gitStatus'
 import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
@@ -101,7 +95,8 @@ import {
   type RemoteAgyConfig
 } from '../remote/agyTab'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
-import { worktreeNameAround, type GitOut } from '../resumePlan'
+import { worktreeNameAround } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {

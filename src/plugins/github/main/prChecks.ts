@@ -1,7 +1,7 @@
 import { GH_SIGNED_OUT, ghJsonArray, slug, type Gh, type GhResult } from '@core/gh'
 import type { PrCheck, PrCheckBucket, PrChecks } from '@shared/types'
 import type { GithubRepo } from '@shared/githubUrl'
-import { stripTerminalCodes } from '../../../main/terminalCodes'
+import { stripTerminalCodes } from '@core/terminalCodes'
 
 export const FAILED_LOG_LIMIT = 6000
 const LINES_KEPT_AFTER_FIRST_ERROR = 3

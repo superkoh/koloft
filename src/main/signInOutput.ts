@@ -1,4 +1,4 @@
-import { stripTerminalCodes } from './terminalCodes'
+import { stripTerminalCodes } from '@core/terminalCodes'
 
 const OUTPUT_START = ']7600;koloft-sign-in'
 const OUTPUT_START_SEEN = `\x1b${OUTPUT_START}\x07`
