@@ -155,3 +155,15 @@ export const PALETTE_ROUTE = slot<PaletteRoute>('palette-route')
 export type PaletteHandOff = (request: PaletteRequest) => Promise<ConductorOpenResult>
 
 export const PALETTE_HAND_OFF = slot<PaletteHandOff>('palette-hand-off')
+
+export type WindowFeed = (adopted: Promise<void>) => () => void
+
+export const WINDOW_FEED = slot<WindowFeed>('window-feed')
+
+export interface WorkspaceRemovalLoss {
+  countIn: (wsPath: string) => number
+  willGo: (count: number) => string
+  goneForGood: string
+}
+
+export const WORKSPACE_REMOVAL_LOSS = slot<WorkspaceRemovalLoss>('workspace-removal-loss')

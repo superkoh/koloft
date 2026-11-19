@@ -19,6 +19,12 @@ export const plugin: PluginManifest = {
   moments: { listens: [TAB_TORN_DOWN.name, SESSION_BOUND.name, STATE_CHANGED.name] },
   ui: [
     { place: 'dialog', id: SCHEDULED_JOBS_DIALOG },
-    { place: 'palette-item', id: SCHEDULED_JOBS }
+    {
+      place: 'palette-item',
+      id: SCHEDULED_JOBS,
+      label: 'Scheduled jobs…',
+      words: ['定时任务', '计划任务', 'cron'],
+      actsOnCurrent: true
+    }
   ]
 }

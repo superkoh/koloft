@@ -84,12 +84,20 @@ export const PALETTE_FEATURES: PaletteFeature[] = [
     words: ['恢复会话', '找回会话', '旧会话'],
     actsOnCurrent: true
   },
-  {
-    key: 'scheduled-jobs',
-    label: 'Scheduled jobs…',
-    words: ['定时任务', '计划任务', 'cron'],
-    actsOnCurrent: true
-  },
+  ...PLUGINS.flatMap((plugin) =>
+    (plugin.ui ?? []).flatMap((entry): PaletteFeature[] =>
+      entry.place === 'palette-item'
+        ? [
+            {
+              key: entry.id as PluginPaletteAction,
+              label: entry.label,
+              words: [...entry.words],
+              ...(entry.actsOnCurrent && { actsOnCurrent: entry.actsOnCurrent })
+            }
+          ]
+        : []
+    )
+  ),
   { key: 'open-settings', label: 'Settings…', keys: '⌘,', words: ['设置', '偏好', 'preferences'] },
   {
     key: 'check-update',

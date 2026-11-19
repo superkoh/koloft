@@ -113,7 +113,7 @@ import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
 import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
 import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
-import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
+import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN, WINDOW_FEED } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -954,22 +954,10 @@ export default function App(): JSX.Element {
         ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
     })
-    let pushed = false
-    const offState = window.api.cron.onState((s) => {
-      pushed = true
-      useStore.getState().setCron(s)
-    })
-    void adoptionSettled.then(() =>
-      window.api.cron
-        .list()
-        .then((s) => {
-          if (!pushed) useStore.getState().setCron(s)
-        })
-        .catch(() => {})
-    )
+    const offFeeds = fillsOf(WINDOW_FEED).map((feed) => feed(adoptionSettled))
     return () => {
       offSpawned()
-      offState()
+      for (const off of offFeeds) off()
     }
   }, [])
 
