@@ -43,7 +43,7 @@ export function UnsavedDialog(): JSX.Element | null {
     prompt.ended ??
     [
       unsavedBody(prompt.files),
-      removalLossNote(prompt.jobs ?? 0, fillsOf(WORKSPACE_REMOVAL_LOSS)[0])
+      removalLossNote(prompt.lost ?? 0, fillsOf(WORKSPACE_REMOVAL_LOSS)[0])
     ]
       .filter(Boolean)
       .join(' ')

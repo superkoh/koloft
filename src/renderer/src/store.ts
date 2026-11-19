@@ -179,7 +179,7 @@ interface AppState {
   } | null
   unsavedPrompt: {
     files: string[]
-    jobs?: number
+    lost?: number
     ended?: string
     onCancel(): void
     onDiscard(): void

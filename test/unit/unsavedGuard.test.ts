@@ -23,11 +23,7 @@ import {
   setText
 } from '../../src/renderer/src/editRegistry'
 import { useStore, type Tab } from '../../src/renderer/src/store'
-import {
-  jobsIn,
-  jobsWillGo,
-  JOBS_GONE_FOR_GOOD
-} from '../../src/plugins/scheduled-tasks/renderer/state'
+import { jobsLost } from '../../src/plugins/scheduled-tasks/renderer/state'
 
 const write =
   vi.fn<
@@ -59,15 +55,15 @@ describe('removeUnsavedNote (B-31 workspace removal)', () => {
 })
 
 describe('removalLossNote: one sentence both removal routes read, so a removal that stops for unsaved files still names the scheduled jobs it deletes', () => {
-  const jobs = { countIn: jobsIn, willGo: jobsWillGo, goneForGood: JOBS_GONE_FOR_GOOD }
-
   it('says nothing at all when the workspace has no job', () => {
-    expect(removalLossNote(0, jobs)).toBe('')
+    expect(removalLossNote(0, jobsLost)).toBe('')
   })
 
   it('warns that the jobs go for good, agreeing with the count', () => {
-    expect(removalLossNote(1, jobs)).toBe('1 scheduled job will be deleted. Jobs do not come back.')
-    expect(removalLossNote(2, jobs)).toBe(
+    expect(removalLossNote(1, jobsLost)).toBe(
+      '1 scheduled job will be deleted. Jobs do not come back.'
+    )
+    expect(removalLossNote(2, jobsLost)).toBe(
       '2 scheduled jobs will be deleted. Jobs do not come back.'
     )
   })

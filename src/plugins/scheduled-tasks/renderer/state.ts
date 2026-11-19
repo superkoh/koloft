@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { WorkspaceRemovalLoss } from '@renderer/slots'
 import type { CronState } from '@shared/types'
 
 interface JobsDialog {
@@ -34,10 +35,8 @@ export function feedCron(adopted: Promise<void>): () => void {
   return off
 }
 
-export const jobsIn = (wsPath: string): number =>
-  useCron.getState().jobs.filter((j) => j.workspacePath === wsPath).length
-
-export const jobsWillGo = (n: number): string =>
-  `${n} scheduled job${n === 1 ? '' : 's'} will be deleted`
-
-export const JOBS_GONE_FOR_GOOD = 'Jobs do not come back.'
+export const jobsLost: WorkspaceRemovalLoss = {
+  countIn: (wsPath) => useCron.getState().jobs.filter((j) => j.workspacePath === wsPath).length,
+  willGo: (n) => `${n} scheduled job${n === 1 ? '' : 's'} will be deleted`,
+  goneForGood: 'Jobs do not come back.'
+}

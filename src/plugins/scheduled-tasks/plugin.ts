@@ -5,6 +5,7 @@ import { CHANNELS } from './shared/ipc'
 
 export const SCHEDULED_JOBS_DIALOG = 'scheduled-jobs-dialog'
 export const SCHEDULED_JOBS = 'scheduled-jobs'
+export const SCHEDULED_JOBS_LABEL = 'Scheduled jobs…'
 
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -22,7 +23,7 @@ export const plugin: PluginManifest = {
     {
       place: 'palette-item',
       id: SCHEDULED_JOBS,
-      label: 'Scheduled jobs…',
+      label: SCHEDULED_JOBS_LABEL,
       words: ['定时任务', '计划任务', 'cron'],
       actsOnCurrent: true
     }

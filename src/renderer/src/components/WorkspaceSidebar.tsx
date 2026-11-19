@@ -1017,7 +1017,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [confirmRemove, setConfirmRemove] = useState<{
     path: string
     running: number
-    jobs: number
+    lost: number
     dirty: DirtyTab[]
   } | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -1198,24 +1198,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const running = (rows.find((w) => w.workspace.path === path)?.rows ?? []).filter(
       (r) => look.running(r) || r.pending
     ).length
-    const jobsHere = fillsOf(WORKSPACE_REMOVAL_LOSS)[0]?.countIn(path) ?? 0
+    const lost = fillsOf(WORKSPACE_REMOVAL_LOSS)[0]?.countIn(path) ?? 0
     const plan = removePlan(running, dirty.length)
     if (plan === 'remove') {
       const r = await window.api.workspace.remove(path)
       if (!r.removed) {
         setRemoving(false)
-        setConfirmRemove({ path, running: r.running, jobs: r.jobs, dirty: [] })
+        setConfirmRemove({ path, running: r.running, lost: r.jobs, dirty: [] })
       }
       return
     }
     if (plan === 'confirm-running') {
       setRemoving(false)
-      setConfirmRemove({ path, running, jobs: jobsHere, dirty })
+      setConfirmRemove({ path, running, lost, dirty })
       return
     }
     useStore.getState().setUnsavedPrompt({
       files: labelPaths(dirty),
-      jobs: jobsHere,
+      lost,
       onCancel: () => {},
       onDiscard: () => {
         discardAll(dirty)
@@ -1423,7 +1423,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 </div>
                 <div className="modal-body">
                   <div className="field-hint">
-                    {removeConfirmText(confirmRemove.running, confirmRemove.jobs)}
+                    {removeConfirmText(confirmRemove.running, confirmRemove.lost)}
                     {confirmRemove.dirty.length > 0 &&
                       ' ' + removeUnsavedNote(confirmRemove.dirty.length)}
                   </div>

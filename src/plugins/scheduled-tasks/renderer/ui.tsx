@@ -7,23 +7,22 @@ import {
   WORKSPACE_MENU,
   WORKSPACE_REMOVAL_LOSS
 } from '@renderer/slots'
-import { SCHEDULED_JOBS, SCHEDULED_JOBS_DIALOG } from '../plugin'
+import { SCHEDULED_JOBS, SCHEDULED_JOBS_DIALOG, SCHEDULED_JOBS_LABEL } from '../plugin'
 import { JobsDialog } from './JobsDialog'
 import { CronMark, NextJobLine, useJobMarkOf, useNextJobClock } from './sidebarMarks'
-import { feedCron, jobsIn, jobsWillGo, JOBS_GONE_FOR_GOOD, openScheduledJobs } from './state'
+import { feedCron, jobsLost, openScheduledJobs } from './state'
 
 export const ui: PluginUi = {
   parts: { [SCHEDULED_JOBS_DIALOG]: JobsDialog },
   fills: [
     fill(WINDOW_FEED, feedCron),
-    fill(WORKSPACE_REMOVAL_LOSS, {
-      countIn: jobsIn,
-      willGo: jobsWillGo,
-      goneForGood: JOBS_GONE_FOR_GOOD
-    }),
+    fill(WORKSPACE_REMOVAL_LOSS, jobsLost),
     fill(ROW_MARK, { at: 'title', useMarkOf: useJobMarkOf, Mark: CronMark }),
     fill(WORKSPACE_LINE, { useWatch: useNextJobClock, Line: NextJobLine }),
-    fill(WORKSPACE_MENU, { label: 'Scheduled jobs…', run: (wsPath) => openScheduledJobs(wsPath) }),
+    fill(WORKSPACE_MENU, {
+      label: SCHEDULED_JOBS_LABEL,
+      run: (wsPath) => openScheduledJobs(wsPath)
+    }),
     fill(PALETTE_RUN, {
       key: SCHEDULED_JOBS,
       run: (currentWs) => {
