@@ -367,7 +367,7 @@ import { compositionDone } from '@plugins/workbench/main/hostComposition'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
-import { reachesThisMacsServer } from './thisMacsServers'
+import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
@@ -492,7 +492,7 @@ import {
   tapAt,
   type PartOnPage
 } from '@plugins/workbench/main/guestTap'
-import { within } from './within'
+import { within } from '@core/within'
 import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
 import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {

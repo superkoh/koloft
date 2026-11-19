@@ -7,7 +7,7 @@ import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './c
 import { inputEmulation } from './cdpInput'
 import { compositionDone, hiddenFromClients, holdDebugger } from '@plugins/workbench/api'
 import { loopbackPortOf, machinePageOf, urlOrNull } from '@shared/browserRoute'
-import { namesThisMacsServer, reachesThisMacsServer } from '../../../main/thisMacsServers'
+import { namesThisMacsServer, reachesThisMacsServer } from '@core/thisMacsServers'
 
 export interface RelayDeps {
   sessionForTab(tabId: string): string | null

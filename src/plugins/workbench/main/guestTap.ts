@@ -1,6 +1,6 @@
 import { BrowserWindow, screen, type WebContents } from 'electron'
 import { holdDebugger } from './guestDebugger'
-import { within } from '../../../main/within'
+import { within } from '@core/within'
 
 export interface Box {
   x: number
