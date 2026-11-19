@@ -228,7 +228,7 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
-import { flushSettings, loadSettings, saveSettings } from './settings'
+import { flushSettings, loadSettings, onSwitchesChanged, saveSettings } from './settings'
 import {
   keychainDelete,
   keychainRead,
@@ -673,6 +673,7 @@ import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeEx
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
   agentPluginFiles,
+  checkSkillsAgain,
   pluginSkills,
   docsPluginFiles,
   writeAgentPlugin,
@@ -3584,6 +3585,11 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
+  onSwitchesChanged(() => {
+    checkSkillsAgain()
+    machinePkg = null
+    if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+  })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
