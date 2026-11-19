@@ -12,12 +12,13 @@ it is done.
 
 - A plugin is one feature of Koloft as one piece. It is a folder, `src/plugins/<id>/`, with
   its manifest in `plugin.ts`.
-- A plugin's code registers itself with core through a few registries: its `koloft`
-  commands, its IPC channels, its settings, its UI entries and its Assist jobs
-  ([How a plugin plugs in](#how-a-plugin-plugs-in)). Koloft checks each registration against
-  the manifest and refuses to start when they disagree.
-- Koloft reads six manifest fields today: `text`, `commands`, `channels`, `settings`, `ui`
-  and `assistJobs`. Nothing reads `skills`, `moments` or `mcpServers` yet.
+- A plugin's code registers its `koloft` commands, its IPC channels, its settings and its
+  UI entries with core ([How a plugin plugs in](#how-a-plugin-plugs-in)). Each registration
+  is checked against the manifest: by the code that takes it, which throws an error, or by a
+  unit test.
+- Koloft reads five manifest fields when it runs: `text`, `commands`, `settings`, `ui` and
+  `assistJobs`. A unit test reads `channels`. Nothing reads `skills`, `moments` or
+  `mcpServers` yet.
 - A plugin imports only core, its own folder, and the `api.ts` of plugins it says it needs.
   Much code does not follow this rule yet; a check lists each case
   ([The import rule](#the-import-rule)).
@@ -40,8 +41,9 @@ it is done.
 - **Main process** and **window**: Koloft is an Electron app. Its main process runs the
   sessions and talks to the system; its window draws the screen. A **preload** is the small
   script that hands the window `window.api`, the functions it may call in the main process.
-- **IPC channel**: one named message between the main process and the window, such as
-  `cron:list`.
+- **IPC channel** (inter-process communication): one named message between the main process
+  and the window, such as `cron:list`.
+- **⌘P**: Koloft's command palette, a box where the owner types words or picks an action.
 - **Core**: the code in `src/core/`, which the app and every plugin use. It is not a plugin.
   ("Sessions core" is the name of a plugin, `sessions`.)
 
@@ -56,7 +58,7 @@ relay code still lives in `src/main/discord/`.
 |---|---|---|---|
 | 1 | Text for agents: parts of the butler's prompt, of every session's prompt and of the `koloft` skill | `text`, `skills` | the Discord part of the session prompt |
 | 2 | `koloft` commands | `commands` | `koloft discord …` |
-| 3 | Session moments it announces or listens to | `moments` | a file was opened |
+| 3 | Session moments it announces or listens to | `moments` | a file was opened; a session was started by `koloft session new` |
 | 4 | Settings, with its own settings page | `settings` | the bot and the bound channel; Settings ▸ Discord |
 | 5 | UI entries (things on screen) | `ui` | the dialog that binds a channel |
 | 6 | Code, in its own folder | none: the code lives in the folder | `src/plugins/discord/` |
@@ -121,13 +123,11 @@ flowchart LR
     uis["uis.ts<br/>every renderer/ui.tsx"]
     settings["settings.ts<br/>every shared/settings.ts"]
   end
-  subgraph core["src/core/"]
-    prompt["prompt.ts, commands.ts,<br/>assistJobs.ts, settings.ts, ui.ts"]
-  end
-  prompt -->|reads the manifests| list
+  prompt["core: prompt.ts, assistJobs.ts"] -->|import| list
+  appMain["the app's main process<br/>(src/main/index.ts)"] -->|"passes list.ts to Commands"| list
   preload["the app's preload"] -->|spreads into window.api| bridges
-  window["the app's window"] -->|places UI parts and slot fills| uis
-  settingsOps["the app's settings code"] -->|registers setting keys| settings
+  window["the app's window<br/>(pluginUi.tsx)"] -->|"passes uis.ts and list.ts to placeUi"| uis
+  settingsOps["the app's settings code<br/>(settingsOps.ts)"] -->|"passes settings.ts and list.ts to registerSettings"| settings
   list -->|imports| manifest
   subgraph plugin["src/plugins/todo/"]
     manifest["plugin.ts<br/>the manifest"]
@@ -156,7 +156,7 @@ These files in `src/core/` are what plugins build on.
 | `src/core/prompt.ts` | `composePrompt`, which puts text blocks together ([Text blocks](#text-blocks)) |
 | `src/core/commands.ts` | `Commands`: the registry of `koloft` commands ([Commands](#commands)) |
 | `src/core/command.ts` | what a `koloft` command answers with: `answered`, `refused`, `EXIT_USAGE`, `NOT_PINNED`, `splitAtDashes`, `fail`, `cutForATurn` and their types |
-| `src/core/ipc.ts` | `MainIpc` (`handle`, `on`, `push`) and `PreloadIpc` (`invoke`, `send`, `listen`): the only way a plugin's code registers or uses an IPC channel ([IPC channels](#ipc-channels)) |
+| `src/core/ipc.ts` | `MainIpc` (`handle`, `on`, `push`) and `PreloadIpc` (`invoke`, `send`, `listen`): how a plugin's code registers and uses its own IPC channels ([IPC channels](#ipc-channels)) |
 | `src/core/settings.ts` | `setting`, `registerSettings` and `settingsPages` ([Settings](#settings)) |
 | `src/core/ui.ts` | `slot`, `fill`, `PluginUi` and `placeUi` ([UI entries and slots](#ui-entries-and-slots)) |
 | `src/core/assistJobs.ts` | `ASSIST_JOBS`, every plugin's Assist jobs in list order, and `assistJobDefaults` ([Assist jobs](#assist-jobs)) |
@@ -254,8 +254,10 @@ what reads the field today.
 
 ## How a plugin plugs in
 
-The manifest says what a plugin owns. The plugin's code then registers the matching pieces
-with core. The picture shows the five registries and the file of the plugin each one takes.
+The manifest says what a plugin owns. For commands, IPC channels, settings and UI entries,
+the plugin's code then registers the matching pieces, and each is checked against the
+manifest. Text blocks and Assist jobs live in the manifest itself, so core reads them
+straight from it. The picture shows where each piece goes and what checks it.
 
 ```mermaid
 flowchart LR
@@ -281,9 +283,17 @@ flowchart LR
   placeUi -. checks against .-> manifest
 ```
 
-Each registry throws an error when the code and the manifest disagree, so Koloft stops at
-launch instead of hiding the mistake. For IPC channels a unit test makes the same check. The
-sections below take one registry each.
+A mismatch is caught in one of three ways:
+
+- `Commands` throws when the main process starts and registers the commands.
+- `registerSettings` throws when the settings code first loads, in the main process and in
+  the window; `placeUi` throws when the window first places plugin UI. Either way the app
+  does not run with the mistake.
+- IPC channels and Assist job ids are checked only by unit tests
+  (`test/unit/ipcChannels.test.ts`, `test/unit/pluginList.test.ts`).
+
+The sections below take one kind of piece each, then moments and main-process parts, which
+have no registry yet.
 
 ### Text blocks
 
@@ -375,8 +385,8 @@ commands.register({ cron: cronVerb(d) })
   `answered(text)` gives exit 0, `refused(text, exit = 1)` any other. `EXIT_USAGE` is 2.
   These live in `src/core/command.ts`.
 - `register` accepts only a verb some plugin's manifest lists, and never the same verb twice.
-  Either mistake throws.
-- Koloft finds which plugin owns a verb from the manifests; `register` takes no plugin id.
+  Either mistake throws. `register` takes no plugin id and does not check that the code
+  registering a verb belongs to the plugin that lists it.
 - A request for a verb nobody registered gets
   `koloft: there is no "<verb>" command. Run "koloft help" to see the commands.`, exit 2. A
   handler that throws gets `koloft: <the error>`, exit 1.
@@ -466,8 +476,9 @@ A key registered with `setting` has these parts:
 `src/plugins/settings.ts` lists each plugin's `SETTINGS`. The app's settings code
 (`src/shared/settingsOps.ts`) passes the list to `registerSettings`, which uses it to load,
 clean, reset and save the plugins' settings beside the app's own. `registerSettings` throws
-when a plugin registers a key its manifest does not list, lists a key it does not register,
-two plugins list one key, or a key hands records to a key no plugin it may reach owns.
+when settings are given for a plugin not on the list, a plugin registers a key its manifest
+does not list or lists a key it does not register, two plugins list one key, or a key hands
+records to a key that is neither its own plugin's nor one of a plugin in its own `needs`.
 `test/unit/pluginSettings.test.ts` holds these rules. `src/shared/types.ts` still re-exports
 the butler's and Discord's setting types for the app's `Settings` shape.
 
@@ -490,7 +501,8 @@ A plugin's window code is in `renderer/ui.tsx`, which exports `ui: PluginUi = { 
   of plugins.
 
 `src/plugins/uis.ts` lists each plugin's `ui`, and `placeUi` puts them in place. It throws
-when a plugin registers a part its manifest does not list, lists an entry with no part, uses
+when a plugin registers a part its manifest does not list, lists an entry with no part (a
+`palette-item` entry needs none), uses
 an id another entry already has, or when parts are given for a plugin not on the list.
 `test/unit/uiParts.test.tsx` holds these rules.
 
@@ -604,9 +616,9 @@ There are three moments today:
 
 - `FileOpened`, "a file was opened". Workbench announces it from `koloft open`. Discord
   listens, to send a copy to the owner's phone.
-- `SessionStarting`, "a session is starting". Sessions core announces it. Its listeners hand
-  back text that goes before the new session's handover; the butler hands back a helper's
-  role.
+- `SessionStarting`, "a session is starting from `koloft session new`". Sessions core
+  announces it; a session the owner starts or resumes does not. Its listeners hand back
+  text that goes before the new session's handover; the butler hands back a helper's role.
 - `SessionStarted`, "a session was started by `koloft session new`". Sessions core
   announces it. Discord listens, to give the new session its own place in Discord.
 
@@ -622,7 +634,7 @@ code answers.
 
 Parts whose channels are still in core's `CH` table (the Workbench web page parts and
 Browser control) send to the window through a `send(channel, …args)` dep, and their
-handlers stay in `src/main/index.ts`, one line each. A handler there that needs Electron's own event
+handlers stay in `src/main/index.ts`. A handler there that needs Electron's own event
 (the page that sent it, its frame, or a synchronous answer) takes the `IpcMainEvent`.
 
 ## Format version
@@ -640,8 +652,8 @@ thing:
 - A new required field, or a field renamed, removed, or read differently: an old manifest
   would no longer be valid, or would mean something else. Bump.
 
-This rule starts with #1989, which writes down how a plugin registers and adds a test that
-fails whenever the manifest's shape changes. Until then the shape may still change at
+This rule starts with #1989, which settles how a plugin registers and adds a test that
+fails whenever the manifest's shape or a registry's shape changes. Until then the shape may still change at
 version 1.
 
 ## The import rule
@@ -654,13 +666,20 @@ A plugin imports only:
 
 Outside `src/plugins/`, the app's source imports no plugin. Only the four lists do, each one
 kind of file: `list.ts` each `plugin.ts`, `bridges.ts` each `preload/bridge.ts`, `uis.ts`
-each `renderer/ui.tsx`, and `settings.ts` each `shared/settings.ts`. Core reads the lists,
-never a plugin by name.
+each `renderer/ui.tsx`, and `settings.ts` each `shared/settings.ts`. Core imports only
+`list.ts`, never a plugin by name. The app's preload, window and settings code read the
+other three lists and hand them to core.
+
+One kind of import has no approved path yet. `src/main/index.ts` imports each plugin's
+`main/channels.ts` to call its `registerChannels` (`test/unit/ipcChannels.test.ts` requires
+it), the files that register `koloft` commands and moment listeners, and the main-process
+parts it builds ([Main-process parts](#main-process-parts)). The check lists these as
+breaking the rule ([Not built or not decided](#not-built-or-not-decided)).
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
-not read the tests. It only reports and never fails the build; #1991 makes it fail. When
-this page was written it listed 326 imports, in four kinds. Each is work that the steps of
-#1964 still have to move:
+not read the tests. It only reports and never fails the build; #1991 makes it fail. The
+counts fall as the steps of #1964 land; on `main` at the commit this page was last checked
+against, it listed 326 imports, in four kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
@@ -696,6 +715,8 @@ These are not decided:
 
 - Who may add a text slot, a value or a fact, and whether these names, and the window's UI
   slots, are kept stable for plugins written outside Koloft.
+- How the app's main process starts a plugin's main-process code (its channels, commands,
+  moment listeners and parts) without importing the plugin's files by name.
 - If A needs B and B needs C, whether A may import C's `api.ts` without listing C. The check
   allows only the plugins A lists itself.
 - Whether a plugin may import `src/shared/` directly. `src/shared/` holds code Koloft's main
