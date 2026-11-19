@@ -212,7 +212,7 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
     env
   }) => {
     test.setTimeout(120_000)
-    seedSettings(env, { hintsOff: true })
+    installAll(env)
     const sameRepo = { owner: 'acme', repo: 'app' }
     setGithubFixture(env, {
       [fs.realpathSync(env.workspaces.a)]: sameRepo,
