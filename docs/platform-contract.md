@@ -3682,7 +3682,7 @@ no longer runs a zsh function or `hash` entry named `claude`.
   picked over an `ansi` block and a coloured square at the start of each line.
 
 Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
-`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+`diffCopy` (a diff copy goes as pictures) in `src/plugins/discord/main/phoneCopy.ts`.
 
 ## §65 The `electron` npm package loaded by plain Node
 
