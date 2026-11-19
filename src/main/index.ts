@@ -513,7 +513,7 @@ import {
   type CodexQuestion,
   type DialogView
 } from '@plugins/sessions/main/dialog'
-import { sleep } from './codexTransport'
+import { sleep } from '@core/sleep'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
 import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'

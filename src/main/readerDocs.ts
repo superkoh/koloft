@@ -4,7 +4,7 @@ import type { DocVerdict, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { barePath, formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
-import type { Assist } from './assist'
+import type { Assist } from '@core/assistModels'
 import { PrivateRecordFile } from '@core/privateFile'
 import { localFile } from './realFiles'
 

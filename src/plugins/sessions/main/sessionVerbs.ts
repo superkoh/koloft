@@ -73,7 +73,7 @@ import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
 import { keysFor } from '@core/typeKeys'
 import type { StartedSessions } from './startedSessions'
-import type { TranscriptPlaces } from '../api'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 
 export const helpVerb =
   (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>

@@ -14,7 +14,7 @@ import type {
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
-import type { TranscriptPlaces } from './sessionBackends'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import {
   CodexObservation,
   codexTurns,

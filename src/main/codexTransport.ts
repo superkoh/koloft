@@ -59,7 +59,6 @@ const ROOM_FOR_THE_PLUGIN_LIST_TO_GROW = 5
 export const DEFAULT_MAX_FRAME =
   ROOM_FOR_THE_PLUGIN_LIST_TO_GROW * LARGEST_CODEX_REPLY_MEASURED_BYTES
 export const TUI_STALLED_AFTER_MS = 30_000
-export { sleep }
 
 // CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

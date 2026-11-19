@@ -10,8 +10,8 @@ import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from '@plugins/passwords/main/sudoShim'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '@plugins/sessions/main/dialog'
-
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
+
 const SHIM_POLL_MS = 50
 const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 

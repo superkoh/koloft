@@ -12,8 +12,6 @@ import { takenEffort } from '@shared/cronModels'
 import { lastCompletedText } from './museSessionLog'
 import { envMs } from './sessionRuntime'
 
-export type { Assist, AssistJob }
-
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
 
