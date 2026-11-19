@@ -49,7 +49,7 @@ import {
   tick,
   type Due
 } from './cronScheduler'
-import type { TidyResult } from '@plugins/sessions/main/sessionClose'
+import type { TidyResult } from '@core/worktree'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12

@@ -113,7 +113,7 @@ import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation, isUnderAnyRoot } from './browserSecurity'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
-import { stripTerminalCodes } from './terminalCodes'
+import { stripTerminalCodes } from '@core/terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
