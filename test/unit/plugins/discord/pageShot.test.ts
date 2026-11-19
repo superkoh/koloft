@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pictureClips } from '../../src/main/discord/pageShot'
+import { pictureClips } from '../../../../src/plugins/discord/main/pageShot'
 
 const ys = (clips: { y: number }[]): number[] => clips.map((c) => c.y)
 

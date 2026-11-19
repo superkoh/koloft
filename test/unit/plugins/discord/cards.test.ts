@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { cardMessages, IS_COMPONENTS_V2, TEXT_DISPLAY_LIMIT } from '../../src/main/discord/cards'
+import {
+  cardMessages,
+  IS_COMPONENTS_V2,
+  TEXT_DISPLAY_LIMIT
+} from '../../../../src/plugins/discord/main/cards'
 
 type Container = { components: { type: number; content?: string; components?: unknown[] }[] }
 

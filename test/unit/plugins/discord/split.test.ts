@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DISCORD_MESSAGE_LIMIT, splitForDiscord } from '../../src/main/discord/split'
+import { DISCORD_MESSAGE_LIMIT, splitForDiscord } from '../../../../src/plugins/discord/main/split'
 
 function lines(n: number, width: number): string {
   return Array.from({ length: n }, (_, i) => `${i}`.padEnd(width, 'x')).join('\n')

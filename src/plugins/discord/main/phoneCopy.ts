@@ -7,10 +7,10 @@ import type { ArtifactView } from '@shared/types'
 import { parseUnifiedDiff, type DiffRow } from '@shared/unifiedDiff'
 import { errorText } from '@core/errorText'
 import { AGENT_SHIM_WAITS_MS } from '../../../main/agentShim'
-import { BYTES_PER_FILE, MB, type DiscordFile } from '../../../main/discord/link'
-import { toDiscordMarkdown } from '../../../main/discord/markdown'
-import type { PageLook, PagePictures } from '../../../main/discord/pageShot'
-import { DISCORD_MESSAGE_LIMIT, splitForDiscord } from '../../../main/discord/split'
+import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
+import { toDiscordMarkdown } from './markdown'
+import type { PageLook, PagePictures } from './pageShot'
+import { DISCORD_MESSAGE_LIMIT, splitForDiscord } from './split'
 
 export type Shown =
   { page: string; machine?: string } | { markdown: string } | { file: string } | { diff: string }

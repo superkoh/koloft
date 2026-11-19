@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { SecretCards, type PlacedCard, type TapRounds } from '../../src/main/discord/secretCards'
-import { SecretAsks, type SecretAsk } from '../../src/plugins/passwords/main/secretAsks'
-import type { Card } from '../../src/main/discord/cards'
-import type { DiscordInteraction } from '../../src/main/discord/link'
+import {
+  SecretCards,
+  type PlacedCard,
+  type TapRounds
+} from '../../../../src/plugins/discord/main/secretCards'
+import { SecretAsks, type SecretAsk } from '../../../../src/plugins/passwords/main/secretAsks'
+import type { Card } from '../../../../src/plugins/discord/main/cards'
+import type { DiscordInteraction } from '../../../../src/plugins/discord/main/link'
 
 const OWNER = '555'
 const PLACED: PlacedCard = { channelId: 'thread-1', messageId: 'm1', name: 'fix-login' }

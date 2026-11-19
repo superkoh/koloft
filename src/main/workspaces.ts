@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import type {
   BackendId,
   DiscoveredFolder,
+  FolderClaim,
   FolderUse,
   LayoutV6,
   ProjectInfo,
@@ -147,7 +148,7 @@ export interface WorkspaceManagerDeps {
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
   scratchRoots?: readonly string[]
-  butlerFolder?: string
+  claimedFolder?: FolderClaim
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
 }
@@ -928,8 +929,8 @@ export class WorkspaceManager {
     const listed = new Set<string>()
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
-    const butler = this.deps.butlerFolder
-    for (const ws of [...this.layout.workspaces, ...(butler ? [{ path: butler }] : [])]) {
+    const claimed = this.deps.claimedFolder
+    for (const ws of [...this.layout.workspaces, ...(claimed ? [{ path: claimed.path }] : [])]) {
       const { key, root, scanPath } = this.scope(ws.path)
       const missing = await this.missing(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
@@ -1015,7 +1016,9 @@ export class WorkspaceManager {
           missing,
           isGit,
           hasHistory: hasHistory(visible, owned, wsRunningIds),
-          ...(ws.path === butler && { butler: true as const }),
+          ...(ws.path === claimed?.path && {
+            claim: { by: claimed.by, shownAs: claimed.shownAs }
+          }),
           ...(key
             ? {
                 remote: {

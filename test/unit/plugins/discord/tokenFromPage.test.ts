@@ -7,7 +7,7 @@ import {
   saveTokenFromPage,
   STILL_ATTACHED,
   type GuestPage
-} from '../../src/main/discord/tokenFromPage'
+} from '../../../../src/plugins/discord/main/tokenFromPage'
 
 const TOKEN = 'MTQyNzAwMDAwMDAwMDAwMDAw.GabcDe.abcdefghijklmnopqrstuvwxyz0123456789'
 const BOT = 'https://discord.com/developers/applications/700/bot'

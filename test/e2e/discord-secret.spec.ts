@@ -36,7 +36,7 @@ import {
   ANSWERED_IN_KOLOFT,
   NO_LONGER_WAITING,
   PASSED_ON
-} from '../../src/main/discord/secretCards'
+} from '../../src/plugins/discord/main/secretCards'
 
 test.setTimeout(120_000)
 
