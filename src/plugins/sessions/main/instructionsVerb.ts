@@ -12,11 +12,20 @@ import { resolveWorkspace, type PinnedWorkspace } from './placedRows'
 
 export interface InstructionsBlock {
   name: string
+  workspace?: string
+  changedBy(by: string): string
   read(): Promise<string>
-  write(edit: (current: string) => string, by: string): Promise<void>
+  write(edit: (current: string) => string, by: string): Promise<boolean>
+}
+
+export interface InstructionsChanged {
+  workspace?: string
+  by: string
+  notice: string
 }
 
 export interface InstructionsVerbDeps {
+  changed(c: InstructionsChanged): Promise<string[]>
   overseerSide(tabId: string): boolean
   overseerBlock(): InstructionsBlock
   workspaceOf(tabId: string): string | undefined
@@ -69,6 +78,8 @@ function blockOf(
   return { ok: true, block: d.workspaceBlock(found.value.path) }
 }
 
+const capitalized = (s: string): string => `${s[0].toUpperCase()}${s.slice(1)}`
+
 const changedLine = (edit: AgentEdit, name: string): string =>
   `${edit === ADD_A_LINE ? 'Added to' : 'Replaced'} ${name}. The owner is shown the change and can undo it.`
 
@@ -81,13 +92,16 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     const { block } = target
     if (!p.edit) {
       const text = await block.read()
-      return answered(text || `${block.name[0].toUpperCase()}${block.name.slice(1)} are empty.`)
+      return answered(text || `${capitalized(block.name)} are empty.`)
     }
     if (p.edit === ADD_A_LINE && !p.words) return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     if (p.edit === REPLACE_THE_TEXT && !args.includes('--'))
       return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     const edit = p.edit
-    await block.write((current) => editedText(current, edit, p.words), caller.session.title)
-    return answered(changedLine(edit, block.name))
+    const by = caller.session.title
+    if (!(await block.write((current) => editedText(current, edit, p.words), by)))
+      return answered(`${capitalized(block.name)} already say that; nothing changed.`)
+    const notes = await d.changed({ workspace: block.workspace, by, notice: block.changedBy(by) })
+    return answered([changedLine(edit, block.name), ...notes].join('\n'))
   }
 }

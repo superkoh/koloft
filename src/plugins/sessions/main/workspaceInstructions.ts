@@ -1,10 +1,17 @@
 import { composePrompt } from '@core/prompt'
-import { cleanInstructions, textInUse, withNewVersion } from '@core/ownerInstructions'
+import {
+  allSeen,
+  cleanInstructions,
+  textInUse,
+  withChangeUndone,
+  withNewVersion
+} from '@core/ownerInstructions'
 import type { SessionDefaults } from '@shared/types'
 import { sanitizeDefaults } from '@shared/sessionDefaults'
 import { isRecord } from '@shared/workbenchState'
 import type { InstructionsBlock } from './instructionsVerb'
 import { workspaceLabel } from './placedRows'
+import { basename } from '@shared/preview'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
   rulesAndInstructionsOver,
@@ -50,6 +57,21 @@ export function savedByAnAgent(
   return instructions ? sanitizeDefaults({ ...saved, instructions }) : saved
 }
 
+const withVersions = (
+  saved: SessionDefaults | undefined,
+  instructions: SessionDefaults['instructions']
+): SessionDefaults | undefined => sanitizeDefaults({ ...saved, instructions })
+
+export const seenDefaults = (saved: SessionDefaults | undefined): SessionDefaults | undefined =>
+  saved?.instructions ? withVersions(saved, allSeen(saved.instructions)) : saved
+
+export const undoneDefaults = (
+  saved: SessionDefaults | undefined,
+  changeAt: number,
+  at: number
+): SessionDefaults | undefined =>
+  withVersions(saved, withChangeUndone(saved?.instructions, changeAt, at))
+
 export interface DefaultsOfWorkspaces {
   read(dir: string): Promise<SessionDefaults>
   write(
@@ -64,9 +86,16 @@ export const workspaceBlock = (
   now: () => number
 ): InstructionsBlock => ({
   name: `the instructions of workspace ${workspaceLabel(workspace)}`,
+  workspace,
+  changedBy: (by) => `"${by}" changed the instructions of workspace ${basename(workspace)}.`,
   read: async () => textInUse((await defaults.read(workspace)).instructions),
-  write: (edit, by) =>
-    defaults.write(workspace, (saved) =>
-      savedByAnAgent(saved, edit(textInUse(saved?.instructions)), now(), by)
-    )
+  write: async (edit, by) => {
+    let changed = false
+    await defaults.write(workspace, (saved) => {
+      const next = savedByAnAgent(saved, edit(textInUse(saved?.instructions)), now(), by)
+      changed = next !== saved
+      return next
+    })
+    return changed
+  }
 })

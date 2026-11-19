@@ -23,5 +23,13 @@ export const CHANNELS = {
   activateTab: 'attention:activate-tab',
   attentionChanged: 'attention:changed',
   defaultsRead: 'sessionDefaults:read',
-  defaultsWrite: 'sessionDefaults:write'
+  defaultsWrite: 'sessionDefaults:write',
+  instructionsSeen: 'sessionDefaults:instructionsSeen',
+  undoInstructions: 'sessionDefaults:undoInstructions',
+  instructionsChanged: 'sessionDefaults:instructionsChanged'
 } as const
+
+export interface WorkspaceInstructionsChanged {
+  workspace: string
+  by: string
+}

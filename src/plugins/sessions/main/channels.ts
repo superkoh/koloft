@@ -14,7 +14,7 @@ import type {
   SessionResumeResult,
   SessionSearchHits
 } from '@shared/types'
-import { CHANNELS } from '../shared/ipc'
+import { CHANNELS, type WorkspaceInstructionsChanged } from '../shared/ipc'
 
 interface SessionBackend {
   id: BackendId
@@ -49,6 +49,8 @@ export interface ChannelDeps {
     workspacePath: string
   ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
   writeDefaults(workspacePath: string, raw: unknown): Promise<void>
+  instructionsSeen(workspacePath: string): Promise<void>
+  undoInstructions(workspacePath: string, changeAt: number): Promise<void>
 }
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
@@ -124,12 +126,23 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     }
   })
   ipc.handle(CHANNELS.defaultsWrite, (workspacePath: string, raw: unknown) =>
-    deps.writeDefaults(workspacePath, raw).then(
-      () => ({ ok: true }),
-      (error: unknown) => ({ ok: false, error: errorText(error) })
-    )
+    done(deps.writeDefaults(workspacePath, raw))
+  )
+  ipc.handle(CHANNELS.instructionsSeen, (workspacePath: string) =>
+    done(deps.instructionsSeen(workspacePath))
+  )
+  ipc.handle(CHANNELS.undoInstructions, (workspacePath: string, changeAt: unknown) =>
+    typeof changeAt === 'number'
+      ? done(deps.undoInstructions(workspacePath, changeAt))
+      : { ok: false, error: 'Koloft could not read which change.' }
   )
 }
+
+const done = (work: Promise<void>): Promise<{ ok: boolean; error?: string }> =>
+  work.then(
+    () => ({ ok: true }),
+    (error: unknown) => ({ ok: false, error: errorText(error) })
+  )
 
 export const pushes = (ipc: MainIpc) => ({
   sessions: (sessions: SessionInfo[]): boolean => ipc.push(CHANNELS.update, sessions),
@@ -139,5 +152,7 @@ export const pushes = (ipc: MainIpc) => ({
     ipc.push(CHANNELS.leftovers, leftovers),
   searchHits: (found: SessionSearchHits): boolean => ipc.push(CHANNELS.searchHits, found),
   attention: (pending: AttentionEvent[]): boolean => ipc.push(CHANNELS.attentionChanged, pending),
-  activateTab: (tabId: string): boolean => ipc.push(CHANNELS.activateTab, { tabId })
+  activateTab: (tabId: string): boolean => ipc.push(CHANNELS.activateTab, { tabId }),
+  instructionsChanged: (c: WorkspaceInstructionsChanged): boolean =>
+    ipc.push(CHANNELS.instructionsChanged, c)
 })

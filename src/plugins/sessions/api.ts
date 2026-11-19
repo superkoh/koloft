@@ -30,6 +30,8 @@ export { GITHUB_NOT_ASKED, type MergedHeads, type WorkLeft } from './main/sessio
 export {
   instructionsPartOf,
   savedFromTheDialog,
+  seenDefaults,
+  undoneDefaults,
   workspaceBlock,
   workspaceInstructionsPart
 } from './main/workspaceInstructions'

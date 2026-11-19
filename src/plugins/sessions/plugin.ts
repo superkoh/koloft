@@ -1,5 +1,6 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
+  INSTRUCTIONS_CHANGED,
   SESSION_STARTED,
   SESSION_STARTING,
   TAB_EXITED,
@@ -28,6 +29,7 @@ export const plugin: PluginManifest = {
   channels: Object.values(CHANNELS),
   moments: {
     announces: [
+      INSTRUCTIONS_CHANGED.name,
       SESSION_STARTING.name,
       SESSION_STARTED.name,
       TAB_EXITED.name,

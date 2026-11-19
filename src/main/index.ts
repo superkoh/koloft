@@ -550,6 +550,7 @@ import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import {
   FILE_OPENED,
+  INSTRUCTIONS_CHANGED,
   Moments,
   SESSION_STARTED,
   SESSION_STARTING,
@@ -563,6 +564,7 @@ import {
   tellEachHelperItsRole
 } from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
+import { tellThePhoneOfInstructionChanges } from '@plugins/discord/main/instructionsNews'
 import {
   closeRoomsOfEndedTabs,
   giveEachStartedSessionARoom,
@@ -624,6 +626,8 @@ import {
   resolveWorkspace,
   instructionsPartOf,
   savedFromTheDialog,
+  seenDefaults,
+  undoneDefaults,
   workspaceBlock,
   type PlacedRow,
   type Recipient
@@ -1908,6 +1912,12 @@ function notesFileOfScope(scope: string): string | undefined {
 }
 
 copyEachOpenedFile(moments, (o) => copyToPhone(o.tabId, o.target, o.view))
+tellThePhoneOfInstructionChanges(moments, async (text) => {
+  const channelId = discordBinding?.channel()?.channelId
+  if (!discordRelay || !channelId) return false
+  await discordRelay.send(channelId, [], text)
+  return true
+})
 
 const commands = new Commands(PLUGINS)
 
@@ -2347,6 +2357,10 @@ registerSessionCommands(commands, {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
+    changed: ({ workspace, by, notice }) => {
+      if (workspace) pushToSessions.instructionsChanged({ workspace, by })
+      return moments.announce(INSTRUCTIONS_CHANGED, notice)
+    },
     overseerSide: butlerSide,
     overseerBlock: () =>
       butlersBlock(loadSettings().butler, (butler) => commitSettings({ butler }), Date.now),
@@ -6664,7 +6678,14 @@ function registerIpc(): void {
       return { defaults, familyEfforts: familyEfforts('agy', listed) }
     },
     writeDefaults: (workspacePath, raw) =>
-      defaultsOfProjects.write(workspacePath, (saved) => savedFromTheDialog(saved, raw, Date.now()))
+      defaultsOfProjects.write(workspacePath, (saved) =>
+        savedFromTheDialog(saved, raw, Date.now())
+      ),
+    instructionsSeen: (workspacePath) => defaultsOfProjects.write(workspacePath, seenDefaults),
+    undoInstructions: (workspacePath, changeAt) =>
+      defaultsOfProjects.write(workspacePath, (saved) =>
+        undoneDefaults(saved, changeAt, Date.now())
+      )
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

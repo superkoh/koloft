@@ -44,6 +44,37 @@ export function withNewVersion(
   return [...(versions ?? []), version].slice(-VERSIONS_KEPT)
 }
 
+export interface InstructionsChange {
+  by: string
+  at: number
+  before: string
+  after: string
+}
+
+export function unseenChange(
+  versions: readonly InstructionsVersion[] | undefined
+): InstructionsChange | undefined {
+  const last = versions?.at(-1)
+  if (!last?.unseen) return undefined
+  return { by: last.by, at: last.at, before: versions?.at(-2)?.text ?? '', after: last.text }
+}
+
+export const allSeen = (versions: readonly InstructionsVersion[]): InstructionsVersion[] =>
+  versions.map(({ text, at, by }) => ({ text, at, by }))
+
+export const CHANGED_AGAIN = 'The instructions changed again since then, so nothing was undone.'
+
+export function withChangeUndone(
+  versions: readonly InstructionsVersion[] | undefined,
+  changeAt: number,
+  at: number
+): InstructionsVersion[] {
+  const last = versions?.at(-1)
+  if (!versions || !last || last.at !== changeAt || last.by === OWNER)
+    throw new Error(CHANGED_AGAIN)
+  return withNewVersion(allSeen(versions), versions.at(-2)?.text ?? '', at) ?? allSeen(versions)
+}
+
 export const ADD_A_LINE = 'add'
 export const REPLACE_THE_TEXT = 'set'
 export type AgentEdit = typeof ADD_A_LINE | typeof REPLACE_THE_TEXT

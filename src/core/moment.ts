@@ -48,6 +48,7 @@ export const SESSION_STARTED = named<SessionStarted>('session-started')
 export const TAB_EXITED = named<TabEnded>('tab-exited')
 export const TAB_TORN_DOWN = named<TabEnded>('tab-torn-down')
 export const TAB_FORGOTTEN = named<string>('tab-forgotten')
+export const INSTRUCTIONS_CHANGED = named<string>('instructions-changed')
 
 export type Hears<T> = (moment: T) => unknown
 
