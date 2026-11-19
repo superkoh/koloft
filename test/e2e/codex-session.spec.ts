@@ -1252,10 +1252,11 @@ test.describe('Codex sessions through the real method chooser, process transport
       ])
 
       await runIn(page, centerTerm(page), 'spawn task lint_checker')
-      await running.click()
+      const stillRunning = row.locator('.ws-tab-parked.bg-run')
+      await stillRunning.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('agent · lint_checker · working')
       await page.keyboard.press('Escape')
-      await expect(running).toHaveCount(0, { timeout: 15_000 })
+      await expect(stillRunning).toHaveCount(0, { timeout: 15_000 })
     } finally {
       await quitAndClose(app)
     }
