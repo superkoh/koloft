@@ -4,7 +4,8 @@ import type { Page } from '@playwright/test'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
-import { agyTranscriptOf, museSaid, type E2EEnv } from './helpers/env'
+import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
+import { koloftSkillsUnder } from './helpers/koloftSkills'
 import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
@@ -89,6 +90,33 @@ function parentStartedAgainOnTheMachine(
 
 test.describe('`koloft` inside a tab on a remote workspace: the agent on the machine runs the koloft Koloft put there, and it acts for that session on this Mac', () => {
   test.afterEach(({ env }) => killFakeRemote(env))
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Todo turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help and a koloft skill with no to-dos, and koloft todo is refused with the reason`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installOnTheMachine(env, backend)
+      seedSettings(env, { pluginsOn: { todo: false } })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        const tab = await startRemoteTab(page, env, backend)
+
+        expect(await koloftInSession(page, tab, 'todo')).not.toBe('0')
+        expect(await terminalText(page, tab)).toContain(
+          'koloft: Todo is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, tab, 'help')).toBe('0')
+        const help = await terminalText(page, tab)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft todo note')
+        const skills = koloftSkillsUnder(machineHome(env))
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) expect(skill).not.toContain('gather what waits on the owner')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   for (const backend of SESSION_BACKENDS)
     test(`koloft cron add from a ${backend} session on the machine adds a job to its remote workspace, shown in Scheduled jobs and in koloft cron list, and show and off find it by its name`, async ({

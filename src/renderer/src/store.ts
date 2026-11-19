@@ -159,7 +159,7 @@ interface AppState {
   followsAgentBrowser: Record<string, true>
   overlayDialog: BrowserJsDialog | null
   termFocus: { ptyId: string; n: number }
-  githubBtn: boolean
+  partsShown: Readonly<Record<string, boolean>>
   lastWsPath: string | null
   selectedWs: string | null
   update: UpdateState
@@ -273,7 +273,7 @@ interface AppState {
 
   focusPanelTerm: (ptyId: string) => void
 
-  setGithubBtn: (on: boolean) => void
+  setPartShown: (part: string, on: boolean) => void
   openTerminalTab: (tabId: string) => void
   closeTerminalTab: (ptyId: string) => void
   terminalExited: (ptyId: string) => boolean
@@ -739,7 +739,7 @@ export const useStore = create<AppState>((set, get) => ({
   cdpAttached: {},
   followsAgentBrowser: {},
   termFocus: { ptyId: '', n: 0 },
-  githubBtn: false,
+  partsShown: {},
   lastWsPath: null,
   selectedWs: null,
   update: { open: false, phase: 'checking' },
@@ -1299,8 +1299,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
   // PLATFORM§25
-  setGithubBtn: (on) => {
-    if (get().githubBtn !== on) set({ githubBtn: on })
+  setPartShown: (part, on) => {
+    if ((get().partsShown[part] ?? false) !== on)
+      set({ partsShown: { ...get().partsShown, [part]: on } })
   },
 
   openTerminalTab: (tabId) =>

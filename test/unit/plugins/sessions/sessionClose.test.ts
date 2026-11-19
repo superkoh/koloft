@@ -13,7 +13,7 @@ import {
   whatIsLeft,
   type ClosingTree
 } from '../../../../src/plugins/sessions/main/sessionClose'
-import type { GitOut } from '../../../../src/main/resumePlan'
+import type { GitOut } from '../../../../src/core/worktree'
 
 let directory: string
 let repo: string

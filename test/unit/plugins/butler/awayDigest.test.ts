@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import type { AttentionEvent } from '../../../../src/shared/types'
+import { knowPluginStates } from '../../../../src/core/switches'
 import {
   AwayDigest,
   BUTLER_CHECKED_AGAIN_MS,
@@ -226,6 +227,19 @@ describe('AwayDigest — while the owner is away, what sessions did goes to the 
     expect(told[0]).toContain(`"s${ITEMS_PER_DIGEST - 1} title"`)
     expect(told[0]).not.toContain(`"s${ITEMS_PER_DIGEST} title"`)
     expect(told[0]).toContain('And 2 more; koloft todo lists them all.')
+  })
+
+  it('with Todo off, says only how many more there are, without pointing to koloft todo', async () => {
+    knowPluginStates({ todo: { on: false } })
+    try {
+      const { told, mark, gathered } = setup()
+      for (let i = 0; i < ITEMS_PER_DIGEST + 2; i++) mark(`s${i}`, 'turn-done')
+      await gathered()
+      expect(told[0]).toContain('And 2 more. ')
+      expect(told[0]).not.toContain('koloft todo')
+    } finally {
+      knowPluginStates({})
+    }
   })
 
   it('waits up to a minute for the Assist to judge a finished turn, leaving it out when it was only news, and hands the rest on after a minute either way', async () => {

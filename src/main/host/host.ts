@@ -17,7 +17,7 @@ import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubRepos } from '../githubRepos'
 import type { GitRunResult } from '../gitSteps'
-import type { GitOut } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 import type { RemoteTab } from '../sessionTracker'
 
 export interface ShowIgnored {

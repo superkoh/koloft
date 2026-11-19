@@ -10,6 +10,7 @@ import {
 } from '@renderer/icons'
 import type { GitStepResult, GithubInfo, GithubTarget, PrChecks, SessionInfo } from '@shared/types'
 import { useStore } from '@renderer/store'
+import { GITHUB_BUTTON_PART } from './hint'
 import { commentBlocked } from '@renderer/components/changesModel'
 import { CommitDialog } from '@renderer/components/CommitDialog'
 import type { WorkbenchPartContext, WorkbenchPartView } from '@renderer/slots'
@@ -121,7 +122,7 @@ export function useWorkbenchGithub(
 
   // ADR-0017
   useEffect(() => {
-    useStore.getState().setGithubBtn(visible && !!github.info)
+    useStore.getState().setPartShown(GITHUB_BUTTON_PART, visible && !!github.info)
   }, [visible, github.info])
 
   const info = github.info

@@ -81,6 +81,7 @@ export interface PluginManifest {
   moments?: PluginMoments
   settings?: PluginSettings
   ui?: readonly UiEntry[]
+  hints?: readonly string[]
   assistJobs?: readonly PluginAssistJob[]
   mcpServers?: readonly PluginMcpServer[]
 }

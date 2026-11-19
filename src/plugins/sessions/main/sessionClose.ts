@@ -2,7 +2,7 @@ import path from 'path'
 import { barePath, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import type { ProjectInfo } from '@shared/types'
-import { gitProbes, type GitOut } from '../../../main/resumePlan'
+import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
 
 export type ClosingTree = ProjectInfo & { branches: string[]; gitFileGone?: true }
 
@@ -29,7 +29,7 @@ export async function closingTree(git: GitOut, info: ProjectInfo): Promise<Closi
   const named = `worktree-${path.basename(info.treeRoot)}`
   const [{ head, gitFileGone }, hasNamed] = await Promise.all([
     headOfItsOwn(git, info),
-    gitProbes(git).branchExists(info.root, named)
+    branchExists(git, info.root, named)
   ])
   const branches = new Set<string>()
   if (head?.trim()) branches.add(head.trim())
@@ -188,12 +188,6 @@ async function deleteBranches(git: GitOut, root: string, branches: string[]): Pr
 }
 
 const MACHINE_UNREACHABLE = 'machine unreachable'
-
-export interface TidyResult {
-  removed: boolean
-  kept: string[]
-  unreachable?: true
-}
 
 export function machineUnreachable(why?: string): TidyResult {
   const kept = why ? `${MACHINE_UNREACHABLE}: ${why}` : MACHINE_UNREACHABLE
