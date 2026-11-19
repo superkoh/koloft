@@ -54,7 +54,7 @@ import {
   STATUS_LOG_SUFFIX,
   statusLogOf,
   TO_SESSION_FIELD
-} from '../hooks'
+} from '@plugins/sessions/main/hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'

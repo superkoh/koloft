@@ -37,7 +37,7 @@ import {
   type AgyHook,
   type AgyLogLine,
   type AgyTitleState
-} from './agyHooks'
+} from '@plugins/sessions/main/agyHooks'
 import {
   agyTranscript,
   AGY_APP_DIR,
@@ -91,7 +91,7 @@ import {
 } from './remote/agyTab'
 import { keepSkillsIn } from './agentPlugin'
 import { seedAssistMemory } from './assistMemory'
-import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
+import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'

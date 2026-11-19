@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { SessionSync, type SyncSession, type DefaultMove } from '../../src/main/sessionSync'
-import { FROM_KOLOFT } from '../../src/plugins/sessions/main/crossSessionMessage'
+import {
+  SessionSync,
+  type SyncSession,
+  type DefaultMove
+} from '../../../../src/plugins/sessions/main/sessionSync'
+import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/crossSessionMessage'
 
 const HOLDS_THE_TIP = '/r/held'
 const ON_MAIN = '/r/root'

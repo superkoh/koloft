@@ -79,7 +79,7 @@ import {
   seedHandedOverOwnerWords,
   SHELL_WROTE_FIELD,
   SHELL_WROTE_SUFFIX
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { shellWrittenFiles } from './touchedFiles'
 import {
   acceptCodexHookTrust,

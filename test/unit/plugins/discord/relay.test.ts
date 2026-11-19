@@ -34,7 +34,7 @@ import {
   discordSaidFile,
   NOT_FROM_THE_RELAY,
   noteDiscordSaid
-} from '../../../../src/main/hooks'
+} from '../../../../src/plugins/sessions/main/hooks'
 import { writeMuseHooks } from '../../../../src/main/museHooks'
 
 const OWNER = '555'

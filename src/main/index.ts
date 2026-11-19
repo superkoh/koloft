@@ -50,7 +50,7 @@ import {
   setAgyApiKeyRoute
 } from './agyAccounts'
 import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@plugins/sessions/main/agyHooks'
 import {
   AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
@@ -131,7 +131,7 @@ import {
   setupHooks,
   writeTabHookSettings,
   type NoticeFile
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -294,7 +294,7 @@ import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import { SessionSync, type SyncSession } from './sessionSync'
+import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
 import { GithubCountsSweep, githubCountsData } from '@plugins/github/main/countsSweep'
 import { githubLookups } from '@plugins/github/main/lookup'

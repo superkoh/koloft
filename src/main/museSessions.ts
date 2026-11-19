@@ -81,7 +81,7 @@ import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog
 import { museToolDid } from './rowActivity'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
-import { SHELL_WROTE_FIELD } from './hooks'
+import { SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
