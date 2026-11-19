@@ -16,15 +16,15 @@ it is done.
   UI entries with core ([How a plugin plugs in](#how-a-plugin-plugs-in)). Each registration
   is checked against the manifest: by the code that takes it, which throws an error, or by a
   unit test.
-- Koloft reads five manifest fields when it runs: `text`, `commands`, `settings`, `ui` and
-  `assistJobs`. A unit test reads `channels`. Nothing reads `skills`, `moments` or
+- Koloft reads six manifest fields when it runs: `text`, `commands`, `settings`, `ui`,
+  `assistJobs` and `moments`. A unit test reads `channels`. Nothing reads `skills` or
   `mcpServers` yet.
 - A plugin imports only core, its own folder, and the `api.ts` of plugins it says it needs.
   Much code does not follow this rule yet; a check lists each case
   ([The import rule](#the-import-rule)).
 - The format may still change at version 1 ([Format version](#format-version)).
-- Installing a plugin from outside Koloft, isolation, permissions and switches are not built
-  ([Not built or not decided](#not-built-or-not-decided)).
+- Installing a plugin from outside Koloft, isolation and permissions are not built, and
+  switches only in part ([Not built or not decided](#not-built-or-not-decided)).
 
 ## Words used on this page
 
@@ -51,8 +51,7 @@ it is done.
 
 A plugin owns six things. The example column says what the Discord plugin owns. Its folder
 holds its manifest, its text blocks, its `koloft discord` command, its IPC channels, its
-settings and settings page, its dialogs and what it adds to the butler's row. Its bot and
-relay code still lives in `src/main/discord/`.
+settings and settings page, its dialogs and what it adds to the butler's row.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
 |---|---|---|---|
@@ -161,7 +160,7 @@ These files in `src/core/` are what plugins build on.
 | `src/core/ui.ts` | `slot`, `fill`, `PluginUi` and `placeUi` ([UI entries and slots](#ui-entries-and-slots)) |
 | `src/core/assistJobs.ts` | `ASSIST_JOBS`, every plugin's Assist jobs in list order, and `assistJobDefaults` ([Assist jobs](#assist-jobs)) |
 | `src/core/assistModels.ts` | the `ModelAndEffort` type and the model tables Assist jobs share, such as `SMALL_AND_QUICK` |
-| `src/core/moment.ts` | `moment()`, a stand-in for session moments until the registry of #1985 ([Moments](#moments)) |
+| `src/core/moment.ts` | `Moments`, the registry of session moments, and the moments ([Moments](#moments)) |
 | `src/core/presence.ts` | `OwnerPresence`: where the owner is. `where()` answers `at-the-mac`, `away` or `asleep`, and `listenToSleep` tells a plugin when the night starts and ends. A plugin asks it and never works this out itself |
 | `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks |
 | `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in |
@@ -222,7 +221,7 @@ export const plugin: PluginManifest = {
 | `id` | string | the plugin's id; equal to its folder name |
 | `name` | string | the name a person sees, such as `Passwords and sign-in` |
 | `mandatory` | boolean | `true`: the plugin will have no switch and is always on |
-| `needs` | list of plugin ids | the plugins this plugin needs; once switches exist, turning one of them off turns this one off too |
+| `needs` | list of plugin ids | the plugins this plugin needs; turning one of them off turns this one off too |
 
 The unit test `test/unit/pluginList.test.ts` holds these rules:
 
@@ -249,7 +248,7 @@ what reads the field today.
 | `ui` | list of `{ place, id }` | its UI entries ([UI entries and slots](#ui-entries-and-slots)) | `placeUi`, `settingsPages` |
 | `assistJobs` | list of `{ id, name, does, defaults }` | its Assist jobs ([Assist jobs](#assist-jobs)) | `ASSIST_JOBS` |
 | `skills` | list of strings | names of whole skills the plugin owns, such as `koloft-docs` (Koloft's skill for writing documents) | nothing yet; no manifest fills it |
-| `moments` | `{ announces?, listens? }`, each a list of strings | names of the session moments the plugin announces and those it listens to | nothing yet; no manifest fills it |
+| `moments` | `{ announces?, listens? }`, each a list of strings | names of the session moments the plugin announces and those it listens to | `Moments` |
 | `mcpServers` | list of `{ name, command, args }` | MCP servers the plugin adds to sessions; a place kept for later, which no step plans to fill yet | nothing; no manifest fills it |
 
 ## How a plugin plugs in
@@ -393,9 +392,6 @@ commands.register({ cron: cronVerb(d) })
 - `koloft` with no words, and any `--help` before `--`, run `help`.
 - What `koloft help` prints is text blocks (slot `koloft-help`), not this list.
 
-GitHub's `koloft gh` handler is still registered from `src/main/agentGithub.ts`; #2061 moves
-GitHub's code into its plugin.
-
 ### IPC channels
 
 A plugin that talks between the main process and the window owns its channels in four
@@ -438,9 +434,7 @@ Core keeps its own channels in `CH`, in `src/shared/ipcChannels.ts`, and its par
 `window.api` in `CoreApi`. A channel that screens outside the plugin also use stays core's,
 even when its name starts like a plugin's: `toast:show`, `palette:savePicture`,
 `preview:os-open` and `fs:reveal` (under `window.api.os`), `github:commit` and `github:push`
-(under `window.api.git`). The `browser` and `ext` groups of web page and extension channels
-are still in core's table, although their main-process code moved into Workbench and Browser
-control. Which of core's groups stay core's is settled when #1984 is done.
+(under `window.api.git`).
 
 ### Settings
 
@@ -487,7 +481,7 @@ page's name in the Settings window and in ⌘P, and the extra words ⌘P also fi
 `ui` entry with place `settings-page` gives its id and its part. `settingsPages` reads the
 pages from the manifests and throws when a plugin names its page in only one place, or
 names two. The app's own pages, before and after the plugins' pages, are in
-`src/shared/settingsPanes.ts`. Today only Discord has a page.
+`src/shared/settingsPanes.ts`.
 
 ### UI entries and slots
 
@@ -527,7 +521,6 @@ These are the slots core's window offers, in `src/renderer/src/slots.ts`:
 | `global-note` | a hook that says whether the tab on screen shows the global note instead of its workspace's | Butler |
 | `row-extras` | menu items and a status line for another plugin's sidebar row, named by that row's `ui` id | Discord, for `butler-row` |
 | `row-set-up` | whether another plugin's sidebar row counts as set up | Discord, for `butler-row` |
-| `settings-page-icon` | the icon of a settings page the plugin lists | Discord |
 | `row-mark` | `{ at, useMarkOf, Mark }`: a mark at the start of a session row's title (`at: 'title'`) or second line (`at: 'sub'`) | Scheduled tasks (title), Butler (sub: "started by …") |
 | `workspace-line` | `{ useWatch, Line }`: a line under a workspace's head, above its rows | Scheduled tasks |
 | `workspace-menu` | `{ label, run(wsPath) }`: an item in a workspace's right-click menu, after "Session defaults…" | Scheduled tasks |
@@ -606,21 +599,8 @@ These are the jobs today:
 ### Moments
 
 A moment is something that happens to a session, which one plugin announces and others
-listen to. The registry of moments is not built yet (#1985), and no manifest fills
-`moments`. Until then, `moment()` in `src/core/moment.ts` is a stand-in for one moment at a
-time: `src/main/index.ts` makes each one and hands it to the plugins that announce it or
-listen to it. A listener may hand back a sentence; `announce` returns every sentence in the
-order the listeners started listening.
-
-There are three moments today:
-
-- `FileOpened`, "a file was opened". Workbench announces it from `koloft open`. Discord
-  listens, to send a copy to the owner's phone.
-- `SessionStarting`, "a session is starting from `koloft session new`". Sessions core
-  announces it; a session the owner starts or resumes does not. Its listeners hand back
-  text that goes before the new session's handover; the butler hands back a helper's role.
-- `SessionStarted`, "a session was started by `koloft session new`". Sessions core
-  announces it. Discord listens, to give the new session its own place in Discord.
+listen to. The moments are in `src/core/moment.ts`. A listener may hand back a sentence;
+`announce` returns every sentence in the order of the list of plugins.
 
 ### Main-process parts
 
@@ -631,11 +611,6 @@ past its `api.ts`. When it needs something from a plugin that needs it in turn (
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's
 code answers.
-
-Parts whose channels are still in core's `CH` table (the Workbench web page parts and
-Browser control) send to the window through a `send(channel, …args)` dep, and their
-handlers stay in `src/main/index.ts`. A handler there that needs Electron's own event
-(the page that sent it, its frame, or a synchronous answer) takes the `IpcMainEvent`.
 
 ## Format version
 
@@ -703,11 +678,9 @@ built, and no design for them exists:
 
 These are planned in #1964 but not built yet:
 
-- **Switches.** When an optional plugin is off, sessions started afterwards get none of its
-  text, its commands are refused with one sentence, its listeners and code are not started,
+- **Switches.** When an optional plugin is off, its listeners and code are not started,
   and its UI entries are not shown, except a "Set up" action and its ⌘P item. Its settings
-  and data stay on disk (#1991, with Settings ▸ Plugins in #1990).
-- **The registry of moments** (#1985).
+  and data stay on disk (#1991).
 - **A stable way to register.** Commands, IPC channels, settings, UI entries and Assist jobs
   register as this page says, but the shapes are not kept stable until #1989.
 
