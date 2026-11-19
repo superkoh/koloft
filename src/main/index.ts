@@ -296,17 +296,10 @@ import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
-import {
-  GithubLookup,
-  ghOpenCounts,
-  ghRead,
-  openCountsArgs,
-  parseOpenCounts,
-  parseGithubFixture,
-  type GithubOptions
-} from './github'
-import { GithubCountsSweep } from './githubCounts'
-import { runGh } from './prChecks'
+import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
+import { GithubCountsSweep } from '@plugins/github/main/countsSweep'
+import { githubLookups } from '@plugins/github/main/lookup'
+import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
@@ -537,8 +530,9 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
-import { registerGithubCommand, repoFlagOf } from './agentGithub'
+import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
+import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
@@ -634,13 +628,14 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import {
   closingTree,
+  leftText,
   machineUnreachable,
   removeTree,
   tidyTree,
   whatIsLeft,
   type MergedHeads,
   type TidyResult
-} from './sessionClose'
+} from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -2420,7 +2415,10 @@ registerTodoCommand(commands, {
   deleting: (row) => treeRemovals.has(row.cwd),
   worktrees: sessionDeps.worktrees,
   repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
-  pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+  pulls: async (wsPath) => {
+    const at = await hosts.of(wsPath).github.ghOfRepo(wsPath)
+    return at && listTodoPulls(at.gh, at.repo)
+  },
   mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
   mergedHeads: (dir, branch) => mergedHeads(dir, branch),
   notes: () => loadSettings().todoNotes,
@@ -4482,7 +4480,7 @@ app.whenReady().then(() => {
   })
   githubCounts = new GithubCountsSweep({
     workspaces: pinnedPathsChecked,
-    openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
+    openCounts: (wsPath) => githubLookup(hosts.of(wsPath).github).openCounts(wsPath),
     onChange: () => workspaceMgr?.restampLive()
   })
   workspaceMgr.start()
@@ -5224,7 +5222,7 @@ async function leftOnceRemovalsEnd(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
+    ...leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
 
@@ -5261,7 +5259,9 @@ async function endAndRemove(
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const leftSinceTheCheck =
-    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+    tabId && tree && !alreadyRemoved
+      ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
+      : []
   if (leftSinceTheCheck.length) {
     tell(
       `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
@@ -6065,20 +6065,20 @@ function holdMacAwake(keepAwake: boolean): void {
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
-const githubOptions: GithubOptions = {
-  fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
-  // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedAccount(root),
-  openCounts: async (repo, root) => {
-    await loginEnvReady()
-    const onMachine = await gitAccounts?.machineGh(root, openCountsArgs(repo))
-    if (onMachine) return onMachine.code === 0 ? parseOpenCounts(onMachine.stdout) : null
-    return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
-  },
+const githubFixture = parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE)
+
+const githubOptions: GithubReposOptions = {
+  fixture: githubFixture,
   gh: async (args, root) => {
     await loginEnvReady()
     return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
-  },
+  }
+}
+
+const githubLookup = githubLookups({
+  fixture: githubFixture,
+  // PLATFORM§1
+  countedAs: (root) => gitAccounts?.pickedAccount(root),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -6092,10 +6092,10 @@ const githubOptions: GithubOptions = {
       return false
     }
   }
-}
+})
 
 const hosts = new Hosts(
-  localHost(new GithubLookup(githubOptions), {
+  localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
     docsPlugin: () => claudeDocsPlugin,
@@ -6861,7 +6861,7 @@ function registerIpc(): void {
     }
   })
   registerGithubChannels(pluginIpc, {
-    lookup: (root) => hosts.of(root).github,
+    lookup: (root) => githubLookup(hosts.of(root).github),
     prWorktree: async (root, pr, branch) => {
       if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
       const host = hosts.of(root)

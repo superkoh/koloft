@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { WorkspaceGithub } from '../../src/shared/types'
-import { GithubCountsSweep } from '../../src/main/githubCounts'
+import type { WorkspaceGithub } from '../../../../src/shared/types'
+import { GithubCountsSweep } from '../../../../src/plugins/github/main/countsSweep'
 
 function sweepOver(
   workspaces: { path: string; missing: boolean }[],

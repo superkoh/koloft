@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionInfo } from '../../../../src/shared/types'
-import { githubVerb } from '../../../../src/main/agentGithub'
-import { failingChecksText, type GhResult } from '../../../../src/main/prChecks'
+import { githubVerb } from '../../../../src/plugins/github/main/ghVerb'
+import type { GhResult } from '../../../../src/core/gh'
+import { failingChecksText } from '../../../../src/plugins/github/main/prChecks'
 
 const REPO = { owner: 'acme', repo: 'widgets' }
 const JOB_LINK = 'https://github.com/acme/widgets/actions/runs/1/job/22'

@@ -3,7 +3,7 @@ import path from 'path'
 import { formatRemoteKey } from '@shared/remoteKey'
 import type { GitAccount, GitAccountRemoveResult, GitRepoPick } from '@shared/types'
 import { accountConfigText, fileNameOf, gitAccountFiles } from './gitConfigFile'
-import type { GhResult } from './prChecks'
+import type { GhResult } from '@core/gh'
 import { problemOf, type RunResult } from './remote/ssh'
 import {
   CLUE_ALL,

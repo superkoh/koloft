@@ -1,56 +1,11 @@
-import { execFile } from 'child_process'
+import { GH_SIGNED_OUT, ghJsonArray, slug, type Gh, type GhResult } from '@core/gh'
 import type { PrCheck, PrCheckBucket, PrChecks } from '@shared/types'
 import type { GithubRepo } from '@shared/githubUrl'
-import { FETCH_TIMEOUT_MS } from './gitFreshness'
-import { stripTerminalCodes } from './terminalCodes'
-
-export interface GhResult {
-  code: number | null
-  stdout: string
-  stderr: string
-  missing: boolean
-}
-
-export type Gh = (args: string[]) => Promise<GhResult>
+import { stripTerminalCodes } from '../../../main/terminalCodes'
 
 export const FAILED_LOG_LIMIT = 6000
 const LINES_KEPT_AFTER_FIRST_ERROR = 3
-const GH_MAX_BUFFER = 64 * 1024 * 1024
-export const GH_SIGNED_OUT = 4
 const BUCKETS: readonly PrCheckBucket[] = ['pass', 'fail', 'pending', 'skipping', 'cancel']
-
-export function runGh(args: string[], env?: NodeJS.ProcessEnv): Promise<GhResult> {
-  return new Promise((resolve) => {
-    execFile(
-      'gh',
-      args,
-      { timeout: FETCH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER, ...(env && { env }) },
-      (err, stdout, stderr) => {
-        const code = (err as { code?: unknown } | null)?.code
-        resolve({
-          code: !err ? 0 : typeof code === 'number' ? code : null,
-          stdout: String(stdout),
-          stderr: String(stderr),
-          missing: code === 'ENOENT'
-        })
-      }
-    )
-  })
-}
-
-export function slug(repo: GithubRepo): string {
-  return `${repo.owner}/${repo.repo}`
-}
-
-export function ghJsonArray(stdout: string): any[] | null {
-  let v: unknown
-  try {
-    v = JSON.parse(stdout)
-  } catch {
-    return null
-  }
-  return Array.isArray(v) ? v : null
-}
 
 function checksOf(stdout: string): PrCheck[] | null {
   const v = ghJsonArray(stdout)

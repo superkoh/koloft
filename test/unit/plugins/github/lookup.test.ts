@@ -2,8 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { checkSummary, GithubLookup, listTodoPulls, parseOpenCounts } from '../../src/main/github'
-import { GH_SIGNED_OUT, type Gh, type GhResult } from '../../src/main/prChecks'
+import { GH_SIGNED_OUT, type Gh, type GhResult } from '../../../../src/core/gh'
+import { GithubRepos, type GithubReposOptions } from '../../../../src/main/githubRepos'
+import {
+  GithubLookup,
+  parseOpenCounts,
+  type LookupOptions
+} from '../../../../src/plugins/github/main/lookup'
 import type { GithubInfo } from '@shared/types'
 
 let tmp: string
@@ -92,8 +97,14 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-function make(opts: Partial<ConstructorParameters<typeof GithubLookup>[0]> = {}): GithubLookup {
-  return new GithubLookup({ gitBin: fakeGit, ...opts })
+function make(
+  opts: Omit<GithubReposOptions, 'gh'> & LookupOptions & { gh?: Gh } = {}
+): GithubLookup {
+  const { gh, ...rest } = opts
+  return new GithubLookup(
+    new GithubRepos({ gitBin: fakeGit, ...rest, ...(gh && { gh: (args) => gh(args) }) }),
+    rest
+  )
 }
 
 async function settled(gh: GithubLookup, root: string, force = false): Promise<GithubInfo | null> {
@@ -307,14 +318,30 @@ describe('GithubLookup.target', () => {
 describe('GithubLookup.openCounts', () => {
   function counting(answer: { issues: number; prs: number } | null): {
     asked: string[]
-    openCounts: (repo: { owner: string; repo: string }) => Promise<typeof answer>
+    gh: Gh
   } {
     const asked: string[] = []
     return {
       asked,
-      openCounts: async (r) => {
-        asked.push(`${r.owner}/${r.repo}`)
+      gh: async (args) => {
+        const field = (name: string) =>
+          args.find((a) => a.startsWith(`${name}=`))?.slice(name.length + 1)
+        asked.push(`${field('owner')}/${field('name')}`)
         return answer
+          ? {
+              code: 0,
+              stdout: JSON.stringify({
+                data: {
+                  repository: {
+                    issues: { totalCount: answer.issues },
+                    pullRequests: { totalCount: answer.prs }
+                  }
+                }
+              }),
+              stderr: '',
+              missing: false
+            }
+          : { code: 1, stdout: '', stderr: 'HTTP 502', missing: false }
       }
     }
   }
@@ -322,7 +349,7 @@ describe('GithubLookup.openCounts', () => {
   it('asks gh once per repository for five minutes, whichever worktree asks', async () => {
     let now = 1_000_000
     const gh = counting({ issues: 12, prs: 3 })
-    const lookup = make({ now: () => now, openCounts: gh.openCounts })
+    const lookup = make({ now: () => now, gh: gh.gh })
     const other = path.join(tmp, 'worktree')
     fs.mkdirSync(other)
     expect(await lookup.openCounts(root)).toEqual({ repo: 'acme/widgets', issues: 12, prs: 3 })
@@ -335,7 +362,7 @@ describe('GithubLookup.openCounts', () => {
 
   it('remembers for the same five minutes that gh had no answer', async () => {
     const gh = counting(null)
-    const lookup = make({ openCounts: gh.openCounts })
+    const lookup = make({ gh: gh.gh })
     expect(await lookup.openCounts(root)).toBeNull()
     expect(await lookup.openCounts(root)).toBeNull()
     expect(gh.asked).toHaveLength(1)
@@ -344,7 +371,7 @@ describe('GithubLookup.openCounts', () => {
   it('never asks gh outside a GitHub repository', async () => {
     stage({ remote: 'remote.origin.url git@gitlab.com:acme/widgets.git\n' })
     const gh = counting({ issues: 1, prs: 1 })
-    expect(await make({ openCounts: gh.openCounts }).openCounts(root)).toBeNull()
+    expect(await make({ gh: gh.gh }).openCounts(root)).toBeNull()
     expect(gh.asked).toHaveLength(0)
   })
 })
@@ -454,81 +481,6 @@ describe('GithubLookup.openItems', () => {
   })
 })
 
-describe('GithubLookup.mergedHeads', () => {
-  const ghAnswering =
-    (r: Partial<GhResult>, asked: string[][] = []): Gh =>
-    async (args) => {
-      asked.push(args)
-      return { code: 0, stdout: '[]', stderr: '', missing: false, ...r }
-    }
-
-  it('names the head commit of each merged pull request from the branch', async () => {
-    const asked: string[][] = []
-    const gh = ghAnswering(
-      {
-        stdout: JSON.stringify([
-          { headRefName: 'fix/login', headRefOid: SHA },
-          { headRefName: 'fix/login', headRefOid: 7 }
-        ])
-      },
-      asked
-    )
-    expect(await make({ gh }).mergedHeads(root, 'fix/login')).toEqual([SHA])
-    expect(asked).toEqual([
-      [
-        'pr',
-        'list',
-        '--repo',
-        'acme/widgets',
-        '--state',
-        'merged',
-        '--head',
-        'fix/login',
-        '--json',
-        'headRefName,headRefOid'
-      ]
-    ])
-  })
-
-  it('a repository not on GitHub has no merged pull request, and gh is never asked', async () => {
-    stage({ remote: 'remote.origin.url git@gitlab.com:acme/widgets.git\n' })
-    const asked: string[][] = []
-    expect(await make({ gh: ghAnswering({}, asked) }).mergedHeads(root, 'x')).toEqual([])
-    expect(asked).toHaveLength(0)
-  })
-
-  it('a gh that fails or is missing cannot say', async () => {
-    const heads = (r: Partial<GhResult>): Promise<string[] | null> =>
-      make({ gh: ghAnswering(r) }).mergedHeads(root, 'x')
-    expect(await heads({ code: GH_SIGNED_OUT, stdout: '' })).toBeNull()
-    expect(await heads({ code: null, missing: true, stdout: '' })).toBeNull()
-  })
-
-  it('by branch: one list of the repository’s merged pull requests names each branch’s head commits; a failed gh cannot say', async () => {
-    const asked: string[][] = []
-    const gh = ghAnswering(
-      {
-        stdout: JSON.stringify([
-          { headRefName: 'fix/login', headRefOid: SHA },
-          { headRefName: 'fix/login', headRefOid: 'b'.repeat(40) },
-          { headRefName: 'docs', headRefOid: 7 }
-        ])
-      },
-      asked
-    )
-    expect(await make({ gh }).mergedHeadsByBranch(root)).toEqual(
-      new Map([['fix/login', [SHA, 'b'.repeat(40)]]])
-    )
-    expect(asked).toHaveLength(1)
-    expect(asked[0]).toEqual(
-      expect.arrayContaining(['--state', 'merged', '--repo', 'acme/widgets'])
-    )
-    expect(
-      await make({ gh: ghAnswering({ code: GH_SIGNED_OUT, stdout: '' }) }).mergedHeadsByBranch(root)
-    ).toBeNull()
-  })
-})
-
 describe('parseOpenCounts', () => {
   it('reads the totals gh prints for a repo it can see', () => {
     expect(
@@ -575,87 +527,5 @@ describe('the e2e fixture seam', () => {
     expect(await gh.target(root, 'pr')).toBe('https://github.com/acme/widgets/pull/42')
     expect((await gh.info(path.join(tmp, 'elsewhere'))).now).toBeNull()
     expect(calls()).toHaveLength(0)
-  })
-})
-
-describe('the open pull requests koloft todo lists', () => {
-  const ok = (stdout: string): GhResult => ({ code: 0, stdout, stderr: '', missing: false })
-  const PR = {
-    number: 41,
-    title: 'Bump vite',
-    author: { login: 'alice' },
-    reviewRequests: [{ login: 'bob' }, { slug: 'web-team' }],
-    headRefName: 'bump-vite',
-    isCrossRepository: false,
-    isDraft: false,
-    changedFiles: 2,
-    createdAt: '2026-10-17T00:00:00Z',
-    closingIssuesReferences: [{ number: 12 }],
-    statusCheckRollup: [
-      { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' },
-      { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SKIPPED' }
-    ]
-  }
-
-  it('reads who opened each one, whom it asks to review, its checks, size and the issues it closes, and who the account is', async () => {
-    const asked: string[][] = []
-    const gh: Gh = async (args) => {
-      asked.push(args)
-      return args[0] === 'api' ? ok('alice\n') : ok(JSON.stringify([PR]))
-    }
-    expect(await listTodoPulls(gh, { owner: 'octo', repo: 'shop' })).toEqual({
-      state: 'ok',
-      me: 'alice',
-      closesUnknown: false,
-      pulls: [
-        {
-          number: 41,
-          title: 'Bump vite',
-          author: 'alice',
-          reviewers: ['bob', 'web-team'],
-          branch: 'bump-vite',
-          draft: false,
-          checks: 'passing',
-          files: 2,
-          closes: [12],
-          openedAt: '2026-10-17T00:00:00Z'
-        }
-      ]
-    })
-    expect(asked.find((a) => a[0] === 'pr')).toEqual(
-      expect.arrayContaining(['--repo', 'octo/shop'])
-    )
-  })
-
-  // PLATFORM§61
-  it('with a gh too old to know which issues a pull request closes, lists them again without that and says so', async () => {
-    const gh: Gh = async (args) => {
-      if (args[0] === 'api') return ok('alice')
-      if (args.at(-1)?.includes('closingIssuesReferences'))
-        return {
-          code: 1,
-          stdout: '',
-          stderr: 'Unknown JSON field: "closingIssuesReferences"',
-          missing: false
-        }
-      return ok(JSON.stringify([{ ...PR, closingIssuesReferences: undefined }]))
-    }
-    expect(await listTodoPulls(gh, { owner: 'octo', repo: 'shop' })).toMatchObject({
-      state: 'ok',
-      closesUnknown: true,
-      pulls: [{ number: 41, closes: [] }]
-    })
-  })
-
-  it('sums up checks as failing when any failed, running while any is unfinished, passing when all are done, none when there are none', () => {
-    expect(checkSummary([])).toBe('none')
-    expect(
-      checkSummary([
-        { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' },
-        { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: '' }
-      ])
-    ).toBe('failing')
-    expect(checkSummary([{ __typename: 'StatusContext', state: 'PENDING' }])).toBe('running')
-    expect(checkSummary([{ __typename: 'StatusContext', state: 'SUCCESS' }])).toBe('passing')
   })
 })

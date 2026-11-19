@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type { GithubFixture } from '../../../src/main/github'
+import type { GithubFixture } from '../../../src/main/githubRepos'
 import type { AgentName } from './p1'
 
 export interface E2EEnv {

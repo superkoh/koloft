@@ -4,10 +4,10 @@ import {
   TODO_ONLY_FOR_THE_BUTLER,
   type TodoVerbDeps
 } from '../../../../src/plugins/todo/main/todoVerb'
-import type { TodoPull, TodoPulls } from '../../../../src/plugins/github/api'
-import { GITHUB_NOT_ASKED } from '../../../../src/plugins/sessions/api'
-import { listTodoPulls } from '../../../../src/main/github'
-import type { GhResult } from '../../../../src/main/prChecks'
+import type { TodoPull, TodoPulls } from '../../../../src/plugins/todo/main/pulls'
+import { GITHUB_NOT_ASKED, type WorkLeft } from '../../../../src/plugins/sessions/api'
+import { listTodoPulls } from '../../../../src/plugins/todo/main/pulls'
+import type { GhResult } from '../../../../src/core/gh'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
 import type {
   BackendId,
@@ -25,6 +25,14 @@ const NOTES_WS = '/work/notes'
 const REMOTE = formatRemoteKey('box', '/srv/app')
 const BUTLER_FOLDER = '/data/conductors/global'
 const BUTLER_TAB = 'tab-butler'
+
+const changes = (...lines: string[]): WorkLeft => ({ head: 'Changes not committed', lines })
+const commits = (...lines: string[]): WorkLeft => ({
+  head: 'Commits on no other branch and no remote branch',
+  lines
+})
+const notAsked = (...lines: string[]): WorkLeft => ({ ...commits(...lines), githubNotAsked: true })
+const problem = (head: string): WorkLeft => ({ head, lines: [] })
 
 function row(id: string, over: Partial<SessionRow> = {}): SessionRow {
   return {
@@ -77,7 +85,7 @@ interface World {
   sessions: SessionInfo[]
   asking?: string[]
   asleep?: string[]
-  left?: Record<string, string[] | null>
+  left?: Record<string, WorkLeft[] | null>
   checkFails?: string[]
   deleting?: string[]
   startsDeletingDuringCheck?: string[]
@@ -244,11 +252,8 @@ describe('koloft todo', () => {
       },
       left: {
         done: null,
-        asleep: ['Changes not committed:\n M c.ts'],
-        dirty: [
-          'Changes not committed:\n M a.ts\n?? b.ts',
-          'Commits on no other branch and no remote branch:\nabc1 fix'
-        ]
+        asleep: [changes(' M c.ts')],
+        dirty: [changes(' M a.ts', '?? b.ts'), commits('abc1 fix')]
       }
     })
     const { text } = await run([])
@@ -315,8 +320,8 @@ describe('koloft todo', () => {
         ]
       },
       left: {
-        before: ['Changes not committed:\n D src/a.ts'],
-        during: ['Changes not committed:\n D src/b.ts']
+        before: [changes(' D src/a.ts')],
+        during: [changes(' D src/b.ts')]
       },
       checkFails: ['broke'],
       deleting: ['before', 'unlisted'],
@@ -371,7 +376,7 @@ describe('koloft todo', () => {
       asksMerged: ['stray'],
       merged: null,
       left: {
-        stray: [`Commits on no other branch and no remote branch:\nddd4 work\n${GITHUB_NOT_ASKED}`]
+        stray: [notAsked('ddd4 work')]
       }
     })
     const sessions = section((await run([])).text, 'SESSIONS')
@@ -593,13 +598,11 @@ describe('the text of koloft todo about work left and pull requests it could not
       sessions: [],
       worktrees: { [SHOP]: rows.map((r) => ({ dir: r.cwd, branch: r.id })) },
       left: {
-        changes: ['Changes not committed:\n M a.ts\n?? b.ts'],
-        commits: ['Commits on no other branch and no remote branch:\nabc1 fix\nabc2 more'],
-        unasked: [
-          `Commits on no other branch and no remote branch:\nddd4 work\n${GITHUB_NOT_ASKED}`
-        ],
-        unlisted: [`git could not list the commits in ${at('unlisted')}.`],
-        gone: [`git could not read ${at('gone')}: its .git file is gone.`]
+        changes: [changes(' M a.ts', '?? b.ts')],
+        commits: [commits('abc1 fix', 'abc2 more')],
+        unasked: [notAsked('ddd4 work')],
+        unlisted: [problem(`git could not list the commits in ${at('unlisted')}.`)],
+        gone: [problem(`git could not read ${at('gone')}: its .git file is gone.`)]
       }
     })
     await expect(section((await run([])).text, 'SESSIONS') + '\n').toMatchFileSnapshot(
