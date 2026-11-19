@@ -1,0 +1,20 @@
+== sudo box
+text: Sudo passwordThis session runs sudo make install, and sudo asks: [sudo] password for you:Your sudo passwordKoloft types it into sudo itself: the session never sees it.CancelPass on⏎
+aria-label: Sudo password
+aria-label: Close
+aria-label: Your sudo password
+== sudo box, sudo printed no prompt
+text: Sudo passwordThis session runs sudo make install, and sudo asks: Password:Your sudo passwordKoloft types it into sudo itself: the session never sees it.CancelPass on⏎
+aria-label: Sudo password
+aria-label: Close
+aria-label: Your sudo password
+== page bar, a password field
+text: This session needs your GitHub password on this page.CancelDone
+own aria-label: Secret ask
+== page bar, a click
+text: This session needs you to click on this page: the Approve buttonCancelDone
+own aria-label: Secret ask
+title: the Approve button
+== page bar, a sign-in
+text: This session needs you to finish this sign-in here.Cancel
+own aria-label: Secret ask
