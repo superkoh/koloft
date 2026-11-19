@@ -22,12 +22,12 @@ import {
   markOwnerAsleep,
   noticeFile,
   noticeLine,
-  OWNER_ASLEEP_PUSH,
   quotedPrompt,
   saidFile,
   seedHandedOverOwnerWords,
   seedOwnerWords
 } from '../../src/main/hooks'
+import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,

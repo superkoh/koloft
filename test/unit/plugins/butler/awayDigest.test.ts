@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import type { AttentionEvent } from '../../src/shared/types'
+import type { AttentionEvent } from '../../../../src/shared/types'
 import {
   AwayDigest,
   BUTLER_CHECKED_AGAIN_MS,
@@ -7,7 +7,7 @@ import {
   digestText,
   ITEMS_PER_DIGEST,
   VERDICT_WAITED_AT_MOST_MS
-} from '../../src/main/awayDigest'
+} from '../../../../src/plugins/butler/main/awayDigest'
 
 const LEFT_AT = 1_000
 const LAUNCHED_AT = LEFT_AT + 10
