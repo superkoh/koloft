@@ -11,19 +11,19 @@ import type {
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import { koloftPrompt } from '@plugins/sessions/api'
+import { koloftPrompt } from '../api'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
-import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
-import { startToolShim } from './toolShim'
-import { browserControlEnv } from './browserControlEnv'
+import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
+import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from '../../../main/cliMinimums'
+import { startToolShim } from '../../../main/toolShim'
+import { browserControlEnv } from '../../../main/browserControlEnv'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
   statusEvent,
   type ProgramStatus
-} from './programStatus'
+} from '../../../main/programStatus'
 import {
   AGY_COST_ENV,
   AGY_LOG_ENV,
@@ -51,7 +51,7 @@ import {
   saidInTranscript,
   TranscriptFollower,
   type SummaryRow
-} from './agyStore'
+} from '../../../main/agyStore'
 import {
   agyAccountEnv,
   agyJsonText,
@@ -68,12 +68,17 @@ import {
   prepareAgyHome,
   titleCommandIn,
   trustsIn
-} from './agyAccounts'
-import { readJson } from './museAccounts'
-import { LineTail } from './museSessionLog'
+} from '../../../main/agyAccounts'
+import { readJson } from '../../../main/museAccounts'
+import { LineTail } from '../../../main/museSessionLog'
 import { bracketedPaste } from '@core/typeKeys'
-import { TAB_TMUX_NAME_SH, tmuxSessionName } from './remote/launch'
-import { AgyApi, agentStateUpdate, type AgyBackgroundTask, type PendingInteraction } from './agyApi'
+import { TAB_TMUX_NAME_SH, tmuxSessionName } from '../../../main/remote/launch'
+import {
+  AgyApi,
+  agentStateUpdate,
+  type AgyBackgroundTask,
+  type PendingInteraction
+} from '../../../main/agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
@@ -88,14 +93,14 @@ import {
   type AgyMachineLaunch,
   type AgyMachinePlan,
   type RemoteAgyConfig
-} from './remote/agyTab'
-import { keepSkillsIn } from './agentPlugin'
-import { seedAssistMemory } from './assistMemory'
+} from '../../../main/remote/agyTab'
+import { keepSkillsIn } from '../../../main/agentPlugin'
+import { seedAssistMemory } from '../../../main/assistMemory'
 import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
-import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
-import { agySessionKey } from '@plugins/sessions/main/sessionStore'
+import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from '../../../main/touchedFiles'
+import { agySessionKey } from './sessionStore'
 import {
   codexKeyFor,
   labelsOf,
@@ -104,10 +109,10 @@ import {
   type CodexQuestion,
   type Question,
   type SentAnswer
-} from '@plugins/sessions/main/dialog'
-import { pathWithDirFirst } from './toolInstall'
+} from './dialog'
+import { pathWithDirFirst } from '../../../main/toolInstall'
 import { record } from './codexObservation'
-import { agyToolDid } from './rowActivity'
+import { agyToolDid } from '../../../main/rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -119,7 +124,7 @@ import {
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
-import { promptParts, type LaunchIdentity } from './launchPrompt'
+import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 
 const exec = promisify(execFile)
 

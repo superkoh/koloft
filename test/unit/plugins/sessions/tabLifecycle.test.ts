@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import type { Moment, TabEnded } from '../../src/core/moment'
+import type { Moment, TabEnded } from '../../../../src/core/moment'
 import {
   TabLifecycle,
   subscribeTabSubsystems,
   type TabSubsystems
-} from '../../src/main/tabLifecycle'
+} from '../../../../src/plugins/sessions/main/tabLifecycle'
 
 function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; calls: string[] } {
   const calls: string[] = []

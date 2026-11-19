@@ -158,7 +158,7 @@ import {
   type CorePaletteAction,
   type PaletteFeature
 } from '@shared/paletteFeatures'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 
 const RECENT_MAX = 3
 const CENTER_TERMINAL_MAX_COLS = 140

@@ -15,13 +15,13 @@ import {
   ClaudeBackend,
   rebuildWorktree,
   type ClaudeBackendDeps
-} from '../../src/main/backends/claude'
-import { GIT_CALL_TIMEOUT_MS, localHost } from '../../src/main/host/localHost'
-import { GithubRepos } from '../../src/main/githubRepos'
-import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
-import { answered, replyJson } from '../../src/main/agentRequests'
-import { mirrorHookDir } from '../../src/main/remote/paths'
-import { START_IN_STATUS_LOG } from '../../src/main/hooks'
+} from '../../../../src/plugins/sessions/main/backends/claude'
+import { GIT_CALL_TIMEOUT_MS, localHost } from '../../../../src/main/host/localHost'
+import { GithubRepos } from '../../../../src/main/githubRepos'
+import { gitOnPath, realGit, restorePath, seedRepo } from '../../helpers/gitShim'
+import { answered, replyJson } from '../../../../src/main/agentRequests'
+import { mirrorHookDir } from '../../../../src/main/remote/paths'
+import { START_IN_STATUS_LOG } from '../../../../src/plugins/sessions/main/hooks'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()

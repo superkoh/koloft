@@ -1,19 +1,15 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { StatusLineSetting } from './statusline'
-import type { KoloftHook } from './codexLaunchConfig'
+import type { StatusLineSetting } from '../../../main/statusline'
+import type { KoloftHook } from '../../../main/codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
-import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from '@plugins/sessions/main/handoverPreamble'
-import {
-  FROM_A_SESSION,
-  FROM_KOLOFT,
-  type ModeClass
-} from '@plugins/sessions/main/crossSessionMessage'
+import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handoverPreamble'
+import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { OWNER_ASLEEP_PUSH } from '@plugins/butler/api'
-import { REMOTE_HOOK_DIR } from './remote/paths'
-import { writeWholeBeforeVisible } from './jsonDrops'
+import { REMOTE_HOOK_DIR } from '../../../main/remote/paths'
+import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 
 export interface HookPaths {
   hookScript: string

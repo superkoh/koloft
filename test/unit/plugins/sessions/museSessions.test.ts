@@ -11,24 +11,24 @@ import {
   trustMuseFolder,
   type MuseMachine,
   type MuseSessionDeps
-} from '../../src/main/museSessions'
-import { BackgroundFile } from '../../src/main/backgroundFile'
-import { museSessionKey } from '../../src/plugins/sessions/main/sessionStore'
-import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
-import { MUSE_HELD_SH } from '../../src/main/museRemote'
-import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
-import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
-import type { SessionEvent } from '../../src/shared/sessionEvent'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
-import { museAccountEnv } from '../../src/main/museAccounts'
+} from '../../../../src/plugins/sessions/main/museSessions'
+import { BackgroundFile } from '../../../../src/main/backgroundFile'
+import { museSessionKey } from '../../../../src/plugins/sessions/main/sessionStore'
+import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
+import { MUSE_HELD_SH } from '../../../../src/main/museRemote'
+import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
+import type { SessionEvent } from '../../../../src/shared/sessionEvent'
+import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'
+import { museAccountEnv } from '../../../../src/main/museAccounts'
 
 const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
   list: vi.fn(),
   read: vi.fn()
 }))
-vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
-vi.mock('../../src/main/museServe', () => ({
+vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
+vi.mock('../../../../src/main/museServe', () => ({
   listMuseSessions: mocks.list,
   readMuseTurns: mocks.read,
   readMuseAsk: async () => ({})

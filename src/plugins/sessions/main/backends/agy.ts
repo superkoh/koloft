@@ -1,8 +1,8 @@
 import { hasUsableAccount } from '@shared/accountUsage'
-import { listAccounts } from '../accounts'
-import type { SessionBackend } from '@plugins/sessions/main/sessionBackends'
+import { listAccounts } from '../../../../main/accounts'
+import type { SessionBackend } from '../sessionBackends'
 import type { AgySessions } from '../agySessions'
-import type { ResumeProbes } from '../resumePlan'
+import type { ResumeProbes } from '../../../../main/resumePlan'
 import { storedBackend } from './stored'
 
 export function agyBackend(

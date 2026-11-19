@@ -3,26 +3,32 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BackgroundFile } from '../../src/main/backgroundFile'
+import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import {
   CodexSessions,
   machineImagesDir,
   type CodexSessionDeps
-} from '../../src/main/codexSessions'
-import { storedBackend } from '../../src/main/backends/stored'
+} from '../../../../src/plugins/sessions/main/codexSessions'
+import { storedBackend } from '../../../../src/plugins/sessions/main/backends/stored'
 import {
   codexSessionKey,
   type WorktreeResource
-} from '../../src/plugins/sessions/main/sessionStore'
-import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
-import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../src/main/remote/codexMachine'
-import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
-import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
-import { CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SHELL_WRITES_HOOKS } from '../../src/main/hooks'
+} from '../../../../src/plugins/sessions/main/sessionStore'
+import type {
+  CodexProcessOptions,
+  CodexTransportOptions
+} from '../../../../src/main/codexTransport'
+import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../../../src/main/remote/codexMachine'
+import { CODEX_ASKS_AND_WAITS } from '../../../../src/main/codexLaunchConfig'
+import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
+import {
+  CODEX_REPLY_LANGUAGE_HOOKS,
+  CODEX_SHELL_WRITES_HOOKS
+} from '../../../../src/plugins/sessions/main/hooks'
 import { execFileSync } from 'child_process'
-import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
-import { localGitOut } from '../../src/main/host/localHost'
-import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
+import { dirExistsSync, gitProbes } from '../../../../src/main/resumePlan'
+import { localGitOut } from '../../../../src/main/host/localHost'
+import { MIN_CODEX_VERSION } from '../../../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
 import { keyedOn } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
@@ -39,18 +45,19 @@ const mocks = vi.hoisted(() => ({
   rpcOptions: [] as CodexProcessOptions[],
   crashLeftoverMarkers: [] as string[]
 }))
-vi.mock('../../src/main/leftovers', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/main/leftovers')>()),
+vi.mock('../../../../src/main/leftovers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/main/leftovers')>()),
   endCodexAppServersLeftByACrash: async (marker: string) => {
     mocks.crashLeftoverMarkers.push(marker)
   }
 }))
-vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
+vi.mock('../../../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))
-vi.mock('../../src/main/codexTransport', async (importOriginal) => {
-  const real = (await importOriginal<typeof import('../../src/main/codexTransport')>()).CodexRpc
+vi.mock('../../../../src/main/codexTransport', async (importOriginal) => {
+  const real = (await importOriginal<typeof import('../../../../src/main/codexTransport')>())
+    .CodexRpc
   return {
     createCodexTransport: mocks.create,
     CodexRpc: class {

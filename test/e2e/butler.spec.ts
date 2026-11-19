@@ -60,7 +60,7 @@ import {
   remoteDir,
   seedRemoteWorkspace
 } from './helpers/remote'
-import { GLOBAL_SCOPE } from '../../src/shared/conductors'
+import { GLOBAL_SCOPE } from '../../src/shared/scope'
 
 test.setTimeout(120_000)
 

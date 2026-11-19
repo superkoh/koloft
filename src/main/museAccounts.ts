@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { isDeepStrictEqual } from 'util'
-import { record } from './codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { KOLOFT_SKILLS, keepSkillsIn } from './agentPlugin'
 import { playwrightMcpEnv, runsPlaywrightMcp } from './browserControlEnv'

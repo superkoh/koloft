@@ -11,7 +11,10 @@ import {
   machineAppServerCmd,
   ownerWordsLines
 } from '../../src/main/remote/codexMachine'
-import { CODEX_REPLY_LANGUAGE_SCRIPT, seedHandedOverOwnerWords } from '../../src/main/hooks'
+import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
+  seedHandedOverOwnerWords
+} from '../../src/plugins/sessions/main/hooks'
 import { DEFAULT_MAX_FRAME } from '../../src/main/codexTransport'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')

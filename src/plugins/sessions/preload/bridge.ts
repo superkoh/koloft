@@ -11,7 +11,8 @@ import type {
   SessionInfo,
   SessionResumeRequest,
   SessionResumeResult,
-  SessionSearchHits
+  SessionSearchHits,
+  WorktreeInfo
 } from '@shared/types'
 import { CHANNELS } from '../shared/ipc'
 import type { InstructionAskView } from '../shared/instructionAsks'
@@ -39,6 +40,7 @@ export interface SessionsBridge {
     ports(tabId: string): Promise<ListeningPort[] | null>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
+    worktrees(workspacePath: string): Promise<WorktreeInfo[]>
   }
   attention: {
     list(): Promise<AttentionEvent[]>
@@ -81,7 +83,8 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
     stopLeftover: (sessionId, pid) => ipc.invoke(CHANNELS.stopLeftover, sessionId, pid),
     ports: (tabId) => ipc.invoke(CHANNELS.ports, tabId),
     search: (searchId, term) => ipc.send(CHANNELS.search, searchId, term),
-    onSearchHits: (cb) => ipc.listen(CHANNELS.searchHits, cb)
+    onSearchHits: (cb) => ipc.listen(CHANNELS.searchHits, cb),
+    worktrees: (workspacePath) => ipc.invoke(CHANNELS.worktrees, workspacePath)
   },
   attention: {
     list: () => ipc.invoke(CHANNELS.attentionList),

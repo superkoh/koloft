@@ -1,7 +1,7 @@
 import path from 'path'
 import { barePath } from '@shared/remoteKey'
 import type { PreviewItem } from '@shared/types'
-import { FROM_KOLOFT } from '@plugins/sessions/main/crossSessionMessage'
+import { FROM_KOLOFT } from './crossSessionMessage'
 import type { NoticeFile } from './hooks'
 
 const NAMED_AT_MOST = 10

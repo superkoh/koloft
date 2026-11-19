@@ -26,23 +26,23 @@ import {
   saidFile,
   seedHandedOverOwnerWords,
   seedOwnerWords
-} from '../../src/main/hooks'
-import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
+} from '../../../../src/plugins/sessions/main/hooks'
+import { OWNER_ASLEEP_PUSH } from '../../../../src/plugins/butler/api'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
   handoverPreamble,
   withHandover
-} from '../../src/plugins/sessions/main/handoverPreamble'
+} from '../../../../src/plugins/sessions/main/handoverPreamble'
 import {
   A_HELPER_HAS_IT,
   FROM_KOLOFT,
   crossSessionLine
-} from '../../src/plugins/sessions/main/crossSessionMessage'
-import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
-import { machineHookSettings } from '../../src/main/backends/claude'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../src/main/agyHooks'
-import { museHookScript } from '../../src/main/museHooks'
+} from '../../../../src/plugins/sessions/main/crossSessionMessage'
+import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../../src/main/remote/paths'
+import { machineHookSettings } from '../../../../src/plugins/sessions/main/backends/claude'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../../../src/plugins/sessions/main/agyHooks'
+import { museHookScript } from '../../../../src/main/museHooks'
 
 let hookScript: string
 let codexReplyLanguage: string

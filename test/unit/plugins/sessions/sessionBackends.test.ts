@@ -3,7 +3,7 @@ import {
   SessionBackends,
   type SessionBackend
 } from '../../../../src/plugins/sessions/main/sessionBackends'
-import { sessionEventFromHook } from '../../../../src/main/sessionTracker'
+import { sessionEventFromHook } from '../../../../src/plugins/sessions/main/sessionTracker'
 import {
   capabilitiesFor,
   effectiveBackend,

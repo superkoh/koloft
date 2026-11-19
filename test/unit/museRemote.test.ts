@@ -11,7 +11,7 @@ import {
   OWNER_ASLEEP_FILE,
   ownerAsleepMarker,
   seedHandedOverOwnerWords
-} from '../../src/main/hooks'
+} from '../../src/plugins/sessions/main/hooks'
 import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
 import {
   A_HELPER_HAS_IT,

@@ -15,18 +15,18 @@ import type { SessionEvent } from '@shared/sessionEvent'
 import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
-import type { ModeClass } from '@plugins/sessions/main/crossSessionMessage'
+import type { ModeClass } from '../crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { SessionBackend } from '@plugins/sessions/main/sessionBackends'
+import type { SessionBackend } from '../sessionBackends'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import type { PtyManager } from '../ptyManager'
+import type { PtyManager } from '../../../../main/ptyManager'
 import type { SessionTracker } from '../sessionTracker'
 import type { WorkspaceManager } from '../workspaces'
-import type { Hosts } from '../host/hosts'
-import { publicClaudeSession } from '../host/hosts'
-import type { MachineAccount, SshHost } from '../host/sshHost'
-import type { ClaudeLaunch, Host } from '../host/host'
-import type { RemoteSync } from '../remote/sync'
+import type { Hosts } from '../../../../main/host/hosts'
+import { publicClaudeSession } from '../../../../main/host/hosts'
+import type { MachineAccount, SshHost } from '../../../../main/host/sshHost'
+import type { ClaudeLaunch, Host } from '../../../../main/host/host'
+import type { RemoteSync } from '../../../../main/remote/sync'
 import {
   AGENT_DROP_NAME,
   REQUEST_NAME,
@@ -34,15 +34,15 @@ import {
   replyJson,
   tabSpokenFor,
   type AgentReply
-} from '../agentRequests'
-import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
+} from '../../../../main/agentRequests'
+import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../../main/remote/launch'
 import {
   dq,
   mirrorHookDir,
   mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
   tabPackageDir
-} from '../remote/paths'
+} from '../../../../main/remote/paths'
 import {
   hookSettings,
   FROM_SESSION_FIELD,
@@ -55,26 +55,26 @@ import {
   statusLogOf,
   TO_SESSION_FIELD
 } from '../hooks'
-import type { StatusLineSetting } from '../statusline'
-import { keychainRead, listAccounts } from '../accounts'
-import type { PickResponse } from '../accountPicker'
-import { SESSION_ID_RE } from '../claudeArgs'
-import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
+import type { StatusLineSetting } from '../../../../main/statusline'
+import { keychainRead, listAccounts } from '../../../../main/accounts'
+import type { PickResponse } from '../../../../main/accountPicker'
+import { SESSION_ID_RE } from '../../../../main/claudeArgs'
+import { forgetClaudeProbe, probeClaude } from '../../../../main/claudeProbe'
 import {
   OLD_CLAUDE_GOES_WITHIN_MS,
   claudePeerNames,
   claudePidsHolding,
   runningClaudePidBesides
-} from '../claudeSessionRegistry'
-import { rootsWithClaude } from '../claudeLiveness'
-import { sharedProcessTable } from '../processTable'
+} from '../../../../main/claudeSessionRegistry'
+import { rootsWithClaude } from '../../../../main/claudeLiveness'
+import { sharedProcessTable } from '../../../../main/processTable'
 import {
   findTranscript,
   PROJECTS_ROOT,
   sessionEventFromHook,
   transcriptTurns
 } from '../sessionTracker'
-import { readAppendedLines, type AppendCursor } from '../appendedLines'
+import { readAppendedLines, type AppendCursor } from '../../../../main/appendedLines'
 import {
   continuedInOf,
   conversationMovedTo,
@@ -83,11 +83,11 @@ import {
   ownsHookReport,
   replacesTheConversation,
   type HookReport
-} from '../hookRouting'
-import { registeredByTabRoot } from '../shim'
-import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
-import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
-import { GIT_REF_RE } from '../gitSteps'
+} from '../../../../main/hookRouting'
+import { registeredByTabRoot } from '../../../../main/shim'
+import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../../../main/jsonDrops'
+import { copyWorktreeIncludes, type ScriptRunner } from '../../../../main/sessionWorktrees'
+import { GIT_REF_RE } from '../../../../main/gitSteps'
 import {
   dirExistsSync,
   gitProbes,
@@ -96,7 +96,7 @@ import {
   rebuildsTheWorktree,
   worktreeHomeRoot,
   type ResumeProbes
-} from '../resumePlan'
+} from '../../../../main/resumePlan'
 import type { GitOut } from '@core/worktree'
 
 export interface ClaudeBackendDeps {
