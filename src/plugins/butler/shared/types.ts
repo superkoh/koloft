@@ -1,8 +1,6 @@
 import type { OwnPick } from '@shared/types'
 import type { InstructionsVersion } from '@core/ownerInstructions'
 
-export type { InstructionsVersion }
-
 export interface ButlerSetting {
   name: string
   formerNames: string[]

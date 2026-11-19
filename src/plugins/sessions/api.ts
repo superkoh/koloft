@@ -28,9 +28,9 @@ export {
 } from './main/placedRows'
 export { GITHUB_NOT_ASKED, type MergedHeads } from '../../main/sessionClose'
 export {
-  workspaceInstructions,
-  workspaceInstructionsPart,
-  type WorkspaceInstructions
+  instructionsPartOf,
+  savedFromTheDialog,
+  workspaceInstructionsPart
 } from './main/workspaceInstructions'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>

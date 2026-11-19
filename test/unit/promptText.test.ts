@@ -49,7 +49,10 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   })
 
   it('the butler and its helper when the owner wrote instructions, and the part a Claude Code butler gets beside its role', async () => {
-    await pin(butlerRole(BUTLER, [], OWNER_INSTRUCTIONS), 'butler/butler-owner-instructions')
+    await pin(
+      `${butlerRole(BUTLER)}\n\n${ownerInstructionsPart(OWNER_INSTRUCTIONS)}`,
+      'butler/butler-owner-instructions'
+    )
     await pin(butlerHelperRole(BUTLER, OWNER_INSTRUCTIONS), 'butler/helper-owner-instructions')
     await pin(ownerInstructionsPart(OWNER_INSTRUCTIONS), 'butler/owner-instructions-part')
   })

@@ -7,8 +7,6 @@ import {
 } from '@core/ownerInstructions'
 import type { ButlerSetting } from './types'
 
-export { OWNER, cleanInstructions, cleanVersions, instructionsBytes } from '@core/ownerInstructions'
-
 // CC§13 MUSE§12
 export const INSTRUCTIONS_MAX_BYTES = 10_000
 

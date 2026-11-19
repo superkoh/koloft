@@ -88,11 +88,11 @@ import {
   hostOfKey,
   ownerTextFor,
   type HistoryListing,
-  type LaunchIdentity,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
+import { promptParts, type LaunchIdentity } from './launchPrompt'
 
 const exec = promisify(execFile)
 
@@ -666,9 +666,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
       context:
-        [agentTools ? koloftPrompt('muse', rules) : '', ownerTextFor(ctx, false) ?? '']
-          .filter(Boolean)
-          .join('\n\n') || undefined,
+        promptParts(
+          agentTools && koloftPrompt('muse', rules),
+          opts.role,
+          ownerTextFor(ctx, false)
+        ).join('\n\n') || undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords
@@ -753,12 +755,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
-    const ownerText = ownerTextFor(ctx, conductor, assist)
-    const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
-      ...(role ? [role] : []),
-      ...(ownerText ? [ownerText] : [])
-    ]
+    const instructions = promptParts(
+      !!agent && !conductor && koloftPrompt('muse', rules),
+      role,
+      ownerTextFor(ctx, conductor, assist)
+    )
     let bound: MuseRun | undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),

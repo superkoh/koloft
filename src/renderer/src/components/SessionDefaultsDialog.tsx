@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
-import type { BackendId, CronEffort, OwnPick, SessionDefaults } from '@shared/types'
+import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
 import { BACKEND_LABEL, SESSION_BACKENDS, byBackend, kindsOf } from '@shared/sessionBackend'
 import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { ownPickOf, tiersOf } from '@shared/sessionPicks'
 import { ownPickModels } from '@shared/sessionDefaults'
-import { cleanInstructions } from '@core/ownerInstructions'
+import { bytesLeft, cleanInstructions, textInUse } from '@core/ownerInstructions'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
   workspaceTextBytes
@@ -37,12 +37,7 @@ const PROJECT_FILE_MAY_WIN =
 
 // CC§23 CODEX§17 AGY§12 MUSE§12
 const whenItCounts = (butler: string): string =>
-  `Placed last in the prompt of every session started in this workspace from now on, on all four agents. A resumed conversation keeps the text it started with; Muse takes the new one. ${butler} does not get it.`
-
-const howMuchIsLeft = (left: number): string =>
-  left < 0
-    ? `${(-left).toLocaleString('en-US')} over the limit`
-    : `${left.toLocaleString('en-US')} left`
+  `Placed last in the prompt of every session started from now on in this workspace, or in another copy of the same repository, on all four agents. A resumed conversation keeps the text it started with; Muse 1.4.23 and later take the new one. ${butler} does not get it.`
 
 const modelHint = (label: string): string => `Default = the model ${label} itself starts on.`
 const effortHint = (label: string): string =>
@@ -74,6 +69,7 @@ export function SessionDefaultsDialog({
   const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
   const [rules, setRules] = useState('')
   const [instructions, setInstructions] = useState('')
+  const [saved, setSaved] = useState({ rules: '', instructions: '' })
   const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
@@ -85,8 +81,10 @@ export function SessionDefaultsDialog({
         if (!live) return
         if (!r.ok) return setError(r.error)
         setPicks(byBackend((b) => fieldsOf(b, r.defaults.picks[b])))
+        const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
-        setInstructions(r.instructions)
+        setInstructions(text)
+        setSaved({ rules: r.defaults.rules ?? '', instructions: text })
         setFamilyEfforts(r.familyEfforts)
       },
       (e: unknown) => live && setError(String(e))
@@ -129,6 +127,9 @@ export function SessionDefaultsDialog({
 
   const left =
     WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules.trim(), cleanInstructions(instructions))
+  const tooLong =
+    left < 0 &&
+    (rules.trim() !== saved.rules || cleanInstructions(instructions) !== saved.instructions)
 
   const summary = (): string => {
     const set = picked.flatMap(({ b, pick }) => {
@@ -150,7 +151,7 @@ export function SessionDefaultsDialog({
   }
 
   const save = async (): Promise<void> => {
-    const out: SessionDefaults & { instructions: string } = {
+    const out: SessionDefaultsDraft = {
       picks: Object.fromEntries(
         SESSION_BACKENDS.flatMap((b) => {
           const pick = pickOf(b)
@@ -252,7 +253,7 @@ export function SessionDefaultsDialog({
                   />
                 </div>
                 <p className={'field-hint' + (left < 0 ? ' bad' : '')}>
-                  {`${howMuchIsLeft(left)}. ${whenItCounts(butler)}`}
+                  {`${bytesLeft(left)}. ${whenItCounts(butler)}`}
                 </p>
                 <p className="field-hint">{PROJECT_FILE_MAY_WIN}</p>
               </div>
@@ -266,7 +267,7 @@ export function SessionDefaultsDialog({
           </button>
           <button
             className="btn-primary"
-            disabled={!familyEfforts || !!badModel || left < 0}
+            disabled={!familyEfforts || !!badModel || tooLong}
             onClick={() => void save()}
           >
             Save

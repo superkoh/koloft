@@ -6,7 +6,7 @@ import type {
   LeftoverProcess,
   ListeningPort,
   ResumePlan,
-  SessionDefaults,
+  SessionDefaultsDraft,
   SessionDefaultsRead,
   SessionInfo,
   SessionResumeRequest,
@@ -49,7 +49,7 @@ export interface SessionsBridge {
     read(workspacePath: string): Promise<SessionDefaultsRead>
     write(
       workspacePath: string,
-      defaults: SessionDefaults & { instructions: string }
+      defaults: SessionDefaultsDraft
     ): Promise<{ ok: boolean; error?: string }>
   }
 }

@@ -115,11 +115,11 @@ import {
   type HistoryEntry,
   ownerTextFor,
   type HistoryListing,
-  type LaunchIdentity,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
+import { promptParts, type LaunchIdentity } from './launchPrompt'
 
 const exec = promisify(execFile)
 
@@ -860,12 +860,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    const ownerText = ownerTextFor(ctx, conductor, assist)
-    const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('agy', rules)] : []),
-      ...(role ? [role] : []),
-      ...(ownerText ? [ownerText] : [])
-    ].join('\n\n')
+    const instructions = promptParts(
+      !!agent && !conductor && koloftPrompt('agy', rules),
+      role,
+      ownerTextFor(ctx, conductor, assist)
+    ).join('\n\n')
     const scripts = writeAgyScripts(this.deps.scriptsDir)
     const gemini = this.gemini
     // AGY§4
@@ -1031,12 +1030,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
     )
-    const ownerText = ownerTextFor(ctx, false)
-    const instructions = [
-      ...(agentTools ? [koloftPrompt('agy', rules)] : []),
-      ...(opts.role ? [opts.role] : []),
-      ...(ownerText ? [ownerText] : [])
-    ].join('\n\n')
+    const instructions = promptParts(
+      agentTools && koloftPrompt('agy', rules),
+      opts.role,
+      ownerTextFor(ctx, false)
+    ).join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)
     const plan = await machine.launchAgy({
       tabId,

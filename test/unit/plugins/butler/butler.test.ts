@@ -9,7 +9,7 @@ import {
 } from '../../../../src/plugins/butler/main/butler'
 import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
-import type { InstructionsVersion } from '../../../../src/plugins/butler/shared/types'
+import type { InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
 import { TODO_NOTICE_FROM_KOLOFT } from '../../../../src/main/crossSessionMessage'

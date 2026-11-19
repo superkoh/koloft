@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { instructionsBytes, OWNER } from '../../../../src/core/ownerInstructions'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
-  workspaceTextBytes,
-  type InstructionsOfWorkspaces
+  workspaceTextBytes
 } from '../../../../src/plugins/sessions/shared/workspaceInstructions'
 import {
+  instructionsPartOf,
   koloftPrompt,
-  workspaceInstructions,
+  savedFromTheDialog,
   workspaceInstructionsPart
 } from '../../../../src/plugins/sessions/api'
 import { sessionStartContext } from '../../../../src/main/museHooks'
@@ -60,52 +60,51 @@ describe('how long a workspace’s instructions may be, together with its rules 
   })
 })
 
-function store(roots: Record<string, string> = {}) {
-  let saved: InstructionsOfWorkspaces = {}
-  let now = 0
-  const instructions = workspaceInstructions({
-    rootOf: (dir) => roots[dir] ?? dir,
-    saved: () => saved,
-    save: (all) => {
-      saved = all
-    },
-    now: () => ++now
-  })
-  return { instructions, saved: () => saved }
-}
+const RULES = 'Docs: sonnet.'
 
-describe('a workspace’s instructions, kept per workspace', () => {
-  it('keep each change as a version by the owner, newest last, and record nothing when the text is the same', () => {
-    const { instructions, saved } = store()
-    instructions.write('/ws/a', 'Run the tests first.')
-    instructions.write('/ws/a', 'Run the tests first.')
-    instructions.write('/ws/a', '')
-    expect(saved()['/ws/a']).toEqual([
-      { text: 'Run the tests first.', at: 1, by: OWNER },
-      { text: '', at: 3, by: OWNER }
-    ])
-    expect(instructions.textOf('/ws/a')).toBe('')
-  })
-
-  it('reach a session in a worktree of that workspace and in no other workspace', () => {
-    const { instructions } = store({ '/ws/a/.claude/worktrees/fix': '/ws/a' })
-    instructions.write('/ws/a', 'Run the tests first.')
-    expect(instructions.partOf('/ws/a/.claude/worktrees/fix')).toBe(
+describe('a workspace’s instructions, saved from the Session defaults dialog with its rules', () => {
+  it('keep each change as a version by the owner, newest last; the same text adds none, and clearing it keeps the history', () => {
+    const first = savedFromTheDialog(
+      undefined,
+      { picks: {}, instructions: ' Run the tests first.\r\n' },
+      1
+    )
+    const same = savedFromTheDialog(first, { picks: {}, instructions: 'Run the tests first.' }, 2)
+    const cleared = savedFromTheDialog(same, { picks: {}, instructions: '' }, 3)
+    expect(cleared).toEqual({
+      picks: {},
+      instructions: [
+        { text: 'Run the tests first.', at: 1, by: OWNER },
+        { text: '', at: 3, by: OWNER }
+      ]
+    })
+    expect(instructionsPartOf(cleared)).toBeUndefined()
+    expect(instructionsPartOf(first)).toBe(
       'Written by the owner for this workspace\nRun the tests first.'
     )
-    expect(instructions.partOf('/ws/b')).toBeUndefined()
-    expect(instructions.partOf('devbox:/ws/a')).toBeUndefined()
   })
 
-  it('are cleaned before saving, and refused over the limit with by how much, counting the rules too', () => {
-    const { instructions } = store()
-    expect(instructions.checked(' one\r\n\ttwo\u0007 ', '')).toBe('one\n\ttwo')
-    const rules = 'Docs: sonnet.'
-    const over = 'a'.repeat(WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules, '') + 7)
-    expect(() => instructions.checked(over, rules)).toThrow(
-      'The instructions are 7 over the limit.'
-    )
-    expect(() => instructions.checked(over, '')).not.toThrow()
+  it('are refused, with by how much, when they and the rules together pass the limit and either of them changed', () => {
+    const over = 'a'.repeat(WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(RULES, '') + 7)
+    expect(() =>
+      savedFromTheDialog(undefined, { picks: {}, rules: RULES, instructions: over }, 1)
+    ).toThrow('The rules and instructions together are 7 over the limit.')
+    const longRules = 'r'.repeat(WORKSPACE_TEXT_MAX_BYTES)
+    expect(() =>
+      savedFromTheDialog(undefined, { picks: {}, rules: longRules, instructions: '' }, 1)
+    ).toThrow('over the limit')
+  })
+
+  it('let rules saved before the limit existed stay, so changing only a model pick still saves', () => {
+    const longRules = 'r'.repeat(WORKSPACE_TEXT_MAX_BYTES)
+    const saved = { picks: {}, rules: longRules }
+    expect(
+      savedFromTheDialog(
+        saved,
+        { picks: { claude: { model: 'opus' } }, rules: longRules, instructions: '' },
+        1
+      )
+    ).toEqual({ picks: { claude: { model: 'opus' } }, rules: longRules })
   })
 
   it('arrive in the prompt as written, even when they hold what looks like a slot', () => {
@@ -117,8 +116,11 @@ describe('a workspace’s instructions, kept per workspace', () => {
     const versions = [{ text: 'Be brief.', at: 1, by: OWNER }]
     expect(
       sanitizeLoadedSettings({
-        workspaceInstructions: { '/ws/a': versions, '/ws/b': [{ text: 1 }], '/ws/c': 'x' }
-      }).workspaceInstructions
-    ).toEqual({ '/ws/a': versions })
+        sessionDefaults: {
+          'octo/app': { picks: {}, instructions: versions },
+          '/ws/b': { picks: {}, instructions: [{ text: 1 }] }
+        }
+      }).sessionDefaults
+    ).toEqual({ 'octo/app': { picks: {}, instructions: versions } })
   })
 })

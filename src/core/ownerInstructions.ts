@@ -22,6 +22,11 @@ export const cleanInstructions = (raw: string): string =>
 export const textInUse = (versions: readonly InstructionsVersion[] | undefined): string =>
   versions?.at(-1)?.text ?? ''
 
+const count = (n: number): string => n.toLocaleString('en-US')
+
+export const bytesLeft = (left: number): string =>
+  left < 0 ? `${count(-left)} over the limit` : `${count(left)} left`
+
 export const overTheLimit = (over: number): string =>
   `The instructions are ${over.toLocaleString('en-US')} over the limit.`
 

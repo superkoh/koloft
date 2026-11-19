@@ -87,6 +87,7 @@ import { registeredByTabRoot } from '../shim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
+import { ownerTextOver } from '../launchPrompt'
 import {
   dirExistsSync,
   gitProbes,
@@ -121,7 +122,7 @@ export interface ClaudeBackendDeps {
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
-  workspaceInstructions?(workspace: string): string | undefined
+  workspaceInstructions?(workspace: string): Promise<string | undefined>
 }
 
 // PLATFORM§28
@@ -1108,8 +1109,11 @@ export class ClaudeBackend implements SessionBackend {
       ...spec,
       fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
       projectRules: await this.d.projectRules?.(spec.root),
-      ownerText:
-        spec.ownerText ?? (spec.conductor ? undefined : this.d.workspaceInstructions?.(spec.root))
+      ownerText: ownerTextOver(
+        spec.ownerText,
+        !!spec.conductor,
+        await this.d.workspaceInstructions?.(spec.root)
+      )
     })
     if (!plan.ok) return plan
     const machine = plan.machine

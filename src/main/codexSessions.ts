@@ -117,11 +117,11 @@ import {
   hostOfKey,
   ownerTextFor,
   type HistoryListing,
-  type LaunchIdentity,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
+import { promptParts, type LaunchIdentity } from './launchPrompt'
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 
@@ -936,12 +936,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           })
         : undefined
     )
-    const ownerText = ownerTextFor(ctx, conductor, assist)
-    const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('codex', rules)] : []),
-      ...(role ? [role] : []),
-      ...(ownerText ? [ownerText] : [])
-    ]
+    const instructions = promptParts(
+      !!agent && !conductor && koloftPrompt('codex', rules),
+      role,
+      ownerTextFor(ctx, conductor, assist)
+    )
     const permission = this.permissionOf(opts)
     const permissions = PERMISSIONS[permission]
     const builtInStatusLine = this.deps.builtInStatusLine()
