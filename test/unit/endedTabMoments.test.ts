@@ -9,7 +9,7 @@ import {
 import { PLUGINS } from '../../src/plugins/list'
 import { forgetAsksOfEndedTabs } from '../../src/plugins/sessions/main/sessionHooks'
 import { butlerLetsGoOfEndedTabs } from '../../src/plugins/butler/main/sessionHooks'
-import { closeOutEachEndedRun } from '../../src/plugins/scheduled-tasks/main/sessionHooks'
+import { followEachRun } from '../../src/plugins/scheduled-tasks/main/sessionHooks'
 import {
   closeRoomsOfEndedTabs,
   type EndedTabParts
@@ -31,8 +31,9 @@ function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: st
     butler: () => ({ onPtyExit: say('butler.onPtyExit') }),
     digest: () => ({ forget: say('digest.forget') })
   })
-  closeOutEachEndedRun(moments, () => ({
-    onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot)
+  followEachRun(moments, () => ({
+    onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot),
+    onBound: () => {}
   }))
   closeRoomsOfEndedTabs(moments, {
     typing: () => ({ forget: say('typing.forget') }),

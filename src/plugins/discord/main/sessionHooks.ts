@@ -1,10 +1,13 @@
 import {
+  SESSION_BOUND,
   SESSION_STARTED,
   TAB_EXITED,
+  TURN_ENDED,
   type MadeLater,
   type Moments,
   type SessionStarted
 } from '@core/moment'
+import type { Turn } from '@core/moment'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { plugin } from '../plugin'
 
@@ -35,6 +38,24 @@ export interface EndedTabParts {
   relay: MadeLater<ForgetsTabs>
   buttons: MadeLater<ForgetsTabs>
   rooms: MadeLater<ForgetsTabs & { stopped(tabId: string): void; closed(tabId: string): unknown }>
+}
+
+export function discordFollowsEachTurn(
+  moments: Moments,
+  d: {
+    relay: MadeLater<{ turnEnded(tabId: string, turn: Turn): void }>
+    typing: MadeLater<{ refresh(tabId: string): void }>
+    rooms: MadeLater<{
+      bound(tabId: string, key: string, newConversation: () => Promise<boolean>): Promise<void>
+    }>
+    noTurnsYet(key: string): Promise<boolean>
+  }
+): void {
+  moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) => d.relay()?.turnEnded(tabId, turn))
+  moments.listen(plugin.id, SESSION_BOUND, ({ tabId, key, idleCompaction }) => {
+    d.typing()?.refresh(tabId)
+    void d.rooms()?.bound(tabId, key, async () => !idleCompaction && (await d.noTurnsYet(key)))
+  })
 }
 
 export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void {
