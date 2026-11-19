@@ -5,7 +5,7 @@ import type { ConductorOpenResult, PaletteRequest, SessionInfo, SessionRow } fro
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { ClaimsWorkspace, LandingAfterClose } from './store'
-import type { HintWords } from './components/Hint'
+import type { HintWords } from './components/hintPic'
 import type { LaunchSeed, WorktreeItem } from './newSession'
 import type { Settings, WorkspaceRows } from '@shared/types'
 

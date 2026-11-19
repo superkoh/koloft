@@ -12,7 +12,6 @@ import {
   sanitizeLoadedSettings,
   DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { HINT_IDS } from '@core/hints'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 describe('buildResetPatch (FR-12)', () => {
@@ -192,7 +191,6 @@ describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
   it('treats a document without onboardingSeen as an upgrade: welcome and tips seen', () => {
     const loaded = sanitizeLoadedSettings({ fontSize: 14 })
     expect(loaded.onboardingSeen).toBe(true)
-    expect(loaded.hintsSeen).toEqual([...HINT_IDS])
     expect(loaded.hintsSeen).toEqual(['workbench', 'approval', 'agent-web', 'worktree', 'github'])
   })
 

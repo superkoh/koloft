@@ -1,4 +1,4 @@
-import { Pic, type HintWords } from '@renderer/components/Hint'
+import { Pic, type HintWords } from '@renderer/components/hintPic'
 
 export const GITHUB_BUTTON_PART = 'github-button'
 
