@@ -13,7 +13,6 @@ import type {
   SessionWorkbenchState,
   WorkspaceAddResult,
   WorkspaceFreshness,
-  WorkspaceGithub,
   WorkspaceGitAccount,
   WorkspaceRemoveResult,
   WorkspaceRows,
@@ -133,7 +132,7 @@ export interface WorkspaceManagerDeps {
   killTab(tabId: string): void
   pushRows(payload: WorkspaceRows[]): void
   freshness?(wsPath: string): WorkspaceFreshness | undefined
-  github?(wsPath: string): WorkspaceGithub | undefined
+  pluginData?(wsPath: string): Readonly<Record<string, unknown>> | undefined
   gitAccount?(wsPath: string): WorkspaceGitAccount | undefined
   gitPickable?(wsPath: string): boolean
   onRescanned?(wsPaths: string[]): void
@@ -1177,7 +1176,7 @@ export class WorkspaceManager {
       workspace: {
         ...e.workspace,
         freshness: this.deps.freshness?.(e.workspace.path),
-        github: this.deps.github?.(e.workspace.path),
+        plugins: this.deps.pluginData?.(e.workspace.path),
         gitAccount: this.deps.gitAccount?.(e.workspace.path),
         ...(this.deps.gitPickable?.(e.workspace.path) && { gitPickable: true })
       },
