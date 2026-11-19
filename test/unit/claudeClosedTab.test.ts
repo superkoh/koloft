@@ -17,7 +17,7 @@ const TAB = 'pty-closed-1'
 const OLD_CLAUDE_LEAVES_AFTER_MS = 300
 
 let home: string
-let ClaudeBackend: typeof import('../../src/main/backends/claude').ClaudeBackend
+let ClaudeBackend: typeof import('../../src/plugins/sessions/main/backends/claude').ClaudeBackend
 let OLD_CLAUDE_GOES_WITHIN_MS: number
 const children: ChildProcess[] = []
 const realHome = process.env.HOME
@@ -25,7 +25,7 @@ const realHome = process.env.HOME
 beforeAll(async () => {
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-closed-tab-home-')))
   process.env.HOME = home
-  ;({ ClaudeBackend } = await import('../../src/main/backends/claude'))
+  ;({ ClaudeBackend } = await import('../../src/plugins/sessions/main/backends/claude'))
   ;({ OLD_CLAUDE_GOES_WITHIN_MS } = await import('../../src/main/claudeSessionRegistry'))
 })
 

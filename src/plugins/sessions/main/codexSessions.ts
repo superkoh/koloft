@@ -22,7 +22,7 @@ import {
   userThread,
   type CodexEvent,
   type CodexThread
-} from '@plugins/sessions/main/codexObservation'
+} from './codexObservation'
 import {
   CodexRpc,
   codexEnvironment,
@@ -30,7 +30,7 @@ import {
   DEFAULT_MAX_FRAME,
   type CodexProcessOptions,
   type CodexTransport
-} from './codexTransport'
+} from '../../../main/codexTransport'
 import {
   codexLaunchLine,
   codexTabScript,
@@ -45,9 +45,9 @@ import {
   type LoginParams,
   type MachineLogin,
   type MachineUpstreamOptions
-} from './remote/codexMachine'
-import type { MachinePackage } from './remote/launch'
-import { problemOf, sshLinkBroke, type RunResult } from './remote/ssh'
+} from '../../../main/remote/codexMachine'
+import type { MachinePackage } from '../../../main/remote/launch'
+import { problemOf, sshLinkBroke, type RunResult } from '../../../main/remote/ssh'
 import {
   CODEX_ASKS_AND_WAITS,
   developerInstructions,
@@ -65,7 +65,7 @@ import {
   STATUS_LINE_CONFIG,
   trustedInPlace,
   type KoloftHook
-} from './codexLaunchConfig'
+} from '../../../main/codexLaunchConfig'
 import {
   CODEX_DISCORD_SAID_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
@@ -79,8 +79,8 @@ import {
   seedHandedOverOwnerWords,
   SHELL_WROTE_FIELD,
   SHELL_WROTE_SUFFIX
-} from '@plugins/sessions/main/hooks'
-import { shellWrittenFiles } from './touchedFiles'
+} from './hooks'
+import { shellWrittenFiles } from '../../../main/touchedFiles'
 import {
   acceptCodexHookTrust,
   codexConfigFile,
@@ -89,29 +89,33 @@ import {
   configTrusts,
   koloftHooksIn,
   type ListedHook
-} from './codexTrust'
-import { CodexSideServers } from './codexSideServers'
+} from '../../../main/codexTrust'
+import { CodexSideServers } from '../../../main/codexSideServers'
 import { mapAtMost } from '@core/mapAtMost'
-import { seedAssistMemory } from './assistMemory'
-import { pipeSecretTo } from './secretOnStdin'
+import { seedAssistMemory } from '../../../main/assistMemory'
+import { pipeSecretTo } from '../../../main/secretOnStdin'
 import {
   CODEX_TMP_DIR,
   CODEX_TMP_FOLDER,
   endCodexAppServersLeftByACrash,
   removeFoldersLeftByEndedRuns
-} from './leftovers'
-import { codexSessionKey } from '@plugins/sessions/main/sessionStore'
-import { resolveCodexRuntime, updateCodex } from './codexRuntime'
-import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
-import { startToolShim } from './toolShim'
-import { bashEnvFileIn, loginShellIsBash, unlessInAKoloftRunsShim } from './openShimScript'
-import { aboveItsTools } from './agentLift'
+} from '../../../main/leftovers'
+import { codexSessionKey } from './sessionStore'
+import { resolveCodexRuntime, updateCodex } from '../../../main/codexRuntime'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
+import { startToolShim } from '../../../main/toolShim'
+import {
+  bashEnvFileIn,
+  loginShellIsBash,
+  unlessInAKoloftRunsShim
+} from '../../../main/openShimScript'
+import { aboveItsTools } from '../../../main/agentLift'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
-import { koloftPrompt } from '@plugins/sessions/api'
+import { koloftPrompt } from '../api'
 import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
-import { browserControlEnv } from './browserControlEnv'
+import { browserControlEnv } from '../../../main/browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
-import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
+import type { CodexApproval, CodexQuestion } from './dialog'
 import {
   StoredSessions,
   hostOfKey,
@@ -121,7 +125,7 @@ import {
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
-import { promptParts, type LaunchIdentity } from './launchPrompt'
+import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 

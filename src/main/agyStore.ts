@@ -7,7 +7,7 @@ import type { SaidLine, Turn } from '@shared/turns'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
 import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'
 import { readAppendedLines, type AppendCursor } from './appendedLines'
-import type { HistoryEntry } from './storedSessions'
+import type { HistoryEntry } from '@plugins/sessions/main/storedSessions'
 
 export const AGY_APP_DIR = 'antigravity-cli'
 

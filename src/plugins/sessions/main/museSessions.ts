@@ -12,24 +12,24 @@ import type {
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import { koloftPrompt } from '@plugins/sessions/api'
+import { koloftPrompt } from '../api'
 import { portOffset } from '@shared/worktreeName'
-import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
-import { jsonRecord, record } from '@plugins/sessions/main/codexObservation'
-import { writeWholeBeforeVisible } from './jsonDrops'
-import { startToolShim } from './toolShim'
-import { mergeMuseSettings, placeKoloftSkills, readJson } from './museAccounts'
+import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
+import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from '../../../main/cliMinimums'
+import { jsonRecord, record } from './codexObservation'
+import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
+import { startToolShim } from '../../../main/toolShim'
+import { mergeMuseSettings, placeKoloftSkills, readJson } from '../../../main/museAccounts'
 import { mapAtMost } from '@core/mapAtMost'
-import { pidAlive } from './leftovers'
-import { inputBoxDraft } from './inputBox'
-import { browserControlEnv } from './browserControlEnv'
+import { pidAlive } from '../../../main/leftovers'
+import { inputBoxDraft } from '../../../main/inputBox'
+import { browserControlEnv } from '../../../main/browserControlEnv'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
   statusEvent,
   type ProgramStatus
-} from './programStatus'
+} from '../../../main/programStatus'
 import {
   HOOK_DROP_PREFIX,
   MUSE_HOOKS_ENV,
@@ -37,7 +37,7 @@ import {
   writeMuseHooks,
   type MuseRelayFiles,
   type MuseHook
-} from './museHooks'
+} from '../../../main/museHooks'
 import {
   LineTail,
   SessionLogTail,
@@ -57,9 +57,15 @@ import {
   saidInLog,
   textOfLogLine,
   type LogRecord
-} from './museSessionLog'
-import { noteRead, noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
-import { UUID, hostOfPath, museSessionKey } from '@plugins/sessions/main/sessionStore'
+} from '../../../main/museSessionLog'
+import {
+  noteRead,
+  noteWrite,
+  shellWrittenFiles,
+  wroteEvent,
+  type FileAcc
+} from '../../../main/touchedFiles'
+import { UUID, hostOfPath, museSessionKey } from './sessionStore'
 import {
   listMuseSessions,
   readMuseAsk,
@@ -67,21 +73,26 @@ import {
   type MuseAsk,
   type MuseHistoryEntry,
   type ServeOptions
-} from './museServe'
+} from '../../../main/museServe'
 import { isRemoteKey, resolveOnHost } from '@shared/remoteKey'
 import {
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   TAB_TMUX_NAME_SH,
   tmuxSessionName
-} from './remote/launch'
-import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
-import { MIRROR_SUFFIX, MUSE_HELD_SH, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
+} from '../../../main/remote/launch'
+import type { MuseMachineLaunch, MuseMachinePlan } from '../../../main/host/sshHost'
+import {
+  MIRROR_SUFFIX,
+  MUSE_HELD_SH,
+  MUSE_LOG_GREP,
+  RUN_POINTER_SUFFIX
+} from '../../../main/museRemote'
 import { sleep } from '@core/sleep'
-import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
-import { museToolDid } from './rowActivity'
-import { pathWithDirFirst } from './toolInstall'
-import { realpathSafe } from './projectInfo'
-import { SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
+import type { CodexApproval, CodexQuestion } from './dialog'
+import { museToolDid } from '../../../main/rowActivity'
+import { pathWithDirFirst } from '../../../main/toolInstall'
+import { realpathSafe } from '../../../main/projectInfo'
+import { SHELL_WROTE_FIELD } from './hooks'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -92,7 +103,7 @@ import {
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
-import { promptParts, type LaunchIdentity } from './launchPrompt'
+import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 
 const exec = promisify(execFile)
 

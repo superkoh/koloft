@@ -263,7 +263,7 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `compact` (it can fire mid-turn, with no prompt after it).
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
-in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
+in `src/plugins/sessions/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
 the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
 then moves the root to the worktree the last `worktree-state` names); the start line in
 the status log (`HOOK_SCRIPT` in `src/plugins/sessions/main/hooks.ts`), which `ClaudeBackend` applies in
@@ -4397,7 +4397,7 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
 - **Every run named the clash in its reply** and said which one it followed.
 
 Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
-`--append-system-prompt` (`src/main/backends/claude.ts`), and the Session defaults dialog
+`--append-system-prompt` (`src/plugins/sessions/main/backends/claude.ts`), and the Session defaults dialog
 says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).
 
 ## §27 Who started a turn: a person's typing and a program's look the same
