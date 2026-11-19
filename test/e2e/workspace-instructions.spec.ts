@@ -175,7 +175,7 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       const field = dlg.getByRole('textbox', { name: 'Instructions' })
       const hints = field.locator('xpath=../..').locator('.field-hint')
       await expect(hints.first()).toHaveText(
-        `${left('', '')}. Placed last in the prompt of every session started from now on in this workspace, or in another copy of the same repository, on all four agents. A resumed conversation keeps the text it started with; Muse 1.4.23 and later take the new one. Alfred does not get it.`
+        `${left('', '')}. Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with. Alfred does not get it.`
       )
       await expect(hints.nth(1)).toHaveText(
         "Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead."
