@@ -225,6 +225,7 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     // CODEX§16
     ssh: ON_A_MACHINE
   },
+  // MUSE§9
   muse: {
     local: OUTSIDE_LOCAL_CLAUDE,
     ssh: ON_A_MACHINE
