@@ -10,6 +10,7 @@ export const BUTLER_STRIP = 'butler-strip'
 export const BUTLER_INSTRUCTIONS = 'butler-instructions'
 export const BUTLER_FRESH = 'butler-fresh'
 export const BUTLER_PAGE = 'butler'
+export const OWNER_ASLEEP_SWITCH = 'owner-asleep'
 
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -32,6 +33,7 @@ export const plugin: PluginManifest = {
     { place: 'below-terminal', id: BUTLER_STRIP },
     { place: 'dialog', id: BUTLER_INSTRUCTIONS },
     { place: 'dialog', id: BUTLER_FRESH },
-    { place: 'settings-page', id: BUTLER_PAGE }
+    { place: 'settings-page', id: BUTLER_PAGE },
+    { place: 'sidebar-foot', id: OWNER_ASLEEP_SWITCH }
   ]
 }
