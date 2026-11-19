@@ -105,12 +105,8 @@ export type UseWorkbenchPart = (ctx: WorkbenchPartContext) => WorkbenchPartView
 
 export interface WorktreeItemsView {
   items: readonly WorktreeItem[]
-  placeholder: string
-  box: (draw: {
-    loaded: boolean
-    first: number
-    row: (index: number, item: WorktreeItem) => ReactNode
-  }) => ReactNode
+  pickWhat: string
+  box: (draw: { loaded: boolean; row: (item: WorktreeItem) => ReactNode }) => ReactNode
 }
 
 export type UseWorktreeItems = (wsPath: string, isGit: boolean) => WorktreeItemsView

@@ -20,11 +20,10 @@ export interface WorktreeItem {
   key: string
   label: string
   filterText: string
-  note: string
+  note: (now: number) => string
   ref: string
   worktreeName: string
   branch?: string
-  fromRepoRoot: boolean
   launch: LaunchSeed
   makeWorktree?: () => Promise<string>
   hint: (name: string, dir: string | null) => ReactNode
@@ -156,7 +155,7 @@ function existingWorktreeAim(w: WorktreeInfo): WtAim {
 }
 
 export function worktreeBaseMode(aim: WtAim): 'existing' | 'create' {
-  if (aim.kind === 'item') return aim.dir === null && aim.item.fromRepoRoot ? 'create' : 'existing'
+  if (aim.kind === 'item') return aim.dir === null && !aim.item.makeWorktree ? 'create' : 'existing'
   return aim.kind === 'open' || aim.kind === 'recover' ? 'existing' : 'create'
 }
 

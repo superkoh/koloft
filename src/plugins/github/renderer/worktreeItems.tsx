@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type JSX, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from 'react'
 import { ageLabel } from '@shared/freshnessOps'
 import type { GithubItem, GithubOpenItems } from '@shared/types'
 import { issueWorktreeName, type LaunchSeed, type WorktreeItem } from '@renderer/newSession'
 import type { IssueLaunch, WorktreeItemsView } from '@renderer/slots'
 
-const ITEMS_PLACEHOLDER = 'name a new worktree, or pick a worktree, issue or PR below…'
-
-export function itemLabel(item: GithubItem): string {
+function itemLabel(item: GithubItem): string {
   return `#${item.number} ${item.title}`
 }
 
@@ -19,15 +17,17 @@ export function itemLaunchExtras(item: GithubItem): LaunchSeed {
 
 function ItemHint({
   item,
+  worktreeName,
   name,
   dir
 }: {
   item: GithubItem
+  worktreeName: string
   name: string
   dir: string | null
 }): JSX.Element {
   const n = `#${item.number}`
-  const onBranch = item.branch && name !== `pr-${item.number}`
+  const onBranch = item.branch && name !== worktreeName
   return (
     <>
       {dir ? (
@@ -47,8 +47,8 @@ function ItemHint({
         </>
       ) : (
         <>
-          Create a worktree named <code>{name}</code> on {n}'s branch{' '}
-          <code>{item.branch}</code>, fetched from GitHub if it is not here yet, and
+          Create a worktree named <code>{name}</code> on {n}'s branch <code>{item.branch}</code>,
+          fetched from GitHub if it is not here yet, and
         </>
       )}{' '}
       send {n}'s title and link as the first message.
@@ -56,17 +56,18 @@ function ItemHint({
   )
 }
 
-export function worktreeItem(wsPath: string, item: GithubItem, now: number): WorktreeItem {
+export function worktreeItem(wsPath: string, item: GithubItem): WorktreeItem {
   const label = itemLabel(item)
+  const branch = item.branch
+  const worktreeName = item.kind === 'issue' ? issueWorktreeName(item.number) : `pr-${item.number}`
   return {
     key: `${item.kind}-${item.number}`,
     label,
-    filterText: item.branch ? `${label} ${item.branch}` : label,
-    note: item.branch ? `branch ${item.branch}` : ageLabel(Date.parse(item.updatedAt), now),
+    filterText: branch ? `${label} ${branch}` : label,
+    note: (now) => (branch ? `branch ${branch}` : ageLabel(Date.parse(item.updatedAt), now)),
     ref: `#${item.number}`,
-    worktreeName: item.kind === 'issue' ? issueWorktreeName(item.number) : `pr-${item.number}`,
-    ...(item.branch !== undefined && { branch: item.branch }),
-    fromRepoRoot: item.kind === 'issue',
+    worktreeName,
+    ...(branch !== undefined && { branch }),
     launch: itemLaunchExtras(item),
     ...(item.kind === 'pr' && {
       makeWorktree: async () => {
@@ -75,7 +76,7 @@ export function worktreeItem(wsPath: string, item: GithubItem, now: number): Wor
         return made.dir
       }
     }),
-    hint: (name, dir) => <ItemHint item={item} name={name} dir={dir} />
+    hint: (name, dir) => <ItemHint item={item} worktreeName={worktreeName} name={name} dir={dir} />
   }
 }
 
@@ -100,66 +101,57 @@ export function useWorktreeItems(wsPath: string, isGit: boolean): WorktreeItemsV
 
   const listed = useMemo(() => {
     if (items?.state !== 'items') return []
-    const now = Date.now()
-    return [...items.issues, ...items.prs].map((item) => worktreeItem(wsPath, item, now))
+    return [...items.issues, ...items.prs].map((item) => worktreeItem(wsPath, item))
   }, [items, wsPath])
 
-  const box = useCallback(
-    ({
-      loaded,
-      first,
-      row
-    }: {
-      loaded: boolean
-      first: number
-      row: (index: number, item: WorktreeItem) => ReactNode
-    }): ReactNode => {
-      if (!isGit || items?.state === 'no-repo') return null
-      if (!items || !loaded) return <p className="field-hint">Loading issues and pull requests…</p>
-      if (items.state !== 'items')
-        return (
-          <p className="field-hint">
-            {items.state === 'no-gh' ? (
-              <>
-                No issue or PR list — <code>gh</code> is not installed on this Mac.
-              </>
-            ) : items.state === 'signed-out' ? (
-              <>
-                No issue or PR list — run <code>gh auth login</code> on this Mac.
-              </>
-            ) : (
-              'Could not load issues and pull requests from GitHub.'
-            )}
-          </p>
-        )
-      if (listed.length === 0)
-        return <p className="field-hint">No open issues or pull requests in {items.repo}.</p>
-      const issues = listed.slice(0, items.issues.length)
-      const prs = listed.slice(items.issues.length)
+  const box = ({
+    loaded,
+    row
+  }: {
+    loaded: boolean
+    row: (item: WorktreeItem) => ReactNode
+  }): ReactNode => {
+    if (!isGit || items?.state === 'no-repo') return null
+    if (!items || !loaded) return <p className="field-hint">Loading issues and pull requests…</p>
+    if (items.state !== 'items')
       return (
-        <div className="wt-list gh-items">
-          {issues.length > 0 && <div className="cb-hd">Open issues · {items.repo}</div>}
-          {issues.map((item, j) => row(first + j, item))}
-          {prs.length > 0 && (
-            <div className="cb-hd">
-              Open pull requests{issues.length > 0 ? '' : ` · ${items.repo}`}
-            </div>
+        <p className="field-hint">
+          {items.state === 'no-gh' ? (
+            <>
+              No issue or PR list — <code>gh</code> is not installed on this Mac.
+            </>
+          ) : items.state === 'signed-out' ? (
+            <>
+              No issue or PR list — run <code>gh auth login</code> on this Mac.
+            </>
+          ) : (
+            'Could not load issues and pull requests from GitHub.'
           )}
-          {prs.map((item, j) => row(first + issues.length + j, item))}
-        </div>
+        </p>
       )
-    },
-    [isGit, items, listed]
-  )
+    if (listed.length === 0)
+      return <p className="field-hint">No open issues or pull requests in {items.repo}.</p>
+    const issues = listed.slice(0, items.issues.length)
+    const prs = listed.slice(items.issues.length)
+    return (
+      <div className="wt-list gh-items">
+        {issues.length > 0 && <div className="cb-hd">Open issues · {items.repo}</div>}
+        {issues.map(row)}
+        {prs.length > 0 && (
+          <div className="cb-hd">
+            Open pull requests{issues.length > 0 ? '' : ` · ${items.repo}`}
+          </div>
+        )}
+        {prs.map(row)}
+      </div>
+    )
+  }
 
-  return { items: listed, placeholder: ITEMS_PLACEHOLDER, box }
+  return { items: listed, pickWhat: 'issue or PR', box }
 }
 
 export const issueLaunch: IssueLaunch = async (wsPath, issue) => {
   const items = await window.api.github.openItems(wsPath).catch(() => null)
-  const item =
-    items?.state === 'items'
-      ? items.issues.find((i) => i.kind === 'issue' && i.number === issue)
-      : undefined
+  const item = items?.state === 'items' ? items.issues.find((i) => i.number === issue) : undefined
   return item ? itemLaunchExtras(item) : null
 }

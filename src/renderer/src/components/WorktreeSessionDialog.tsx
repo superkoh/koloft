@@ -125,11 +125,15 @@ export function WorktreeSessionDialog({
   const itemViews = fillsOf(WORKTREE_ITEMS).map((useItems) => useItems(wsPath, isGit))
 
   const listed = useMemo(() => sortWorktrees(worktrees, rowsAtOpen.current), [worktrees])
-  const ghItems = loaded ? itemViews.flatMap((v) => v.items) : []
-  const names = [...listed.map((w) => w.name), ...ghItems.map((item) => item.filterText)]
+  const viewItems = itemViews.map((v) => v.items)
+  const pickItems = useMemo(() => (loaded ? viewItems.flat() : []), [loaded, ...viewItems])
+  const names = useMemo(
+    () => [...listed.map((w) => w.name), ...pickItems.map((item) => item.filterText)],
+    [listed, pickItems]
+  )
 
   const aimAt = (i: number): WtAim => {
-    const item = ghItems[i - listed.length]
+    const item = pickItems[i - listed.length]
     return item ? itemAim(item, listed) : worktreeAim(listed, '', { where: 'list', index: i })
   }
   const aim = hot.where === 'list' ? aimAt(hot.index) : worktreeAim(listed, query, hot)
@@ -212,8 +216,7 @@ export function WorktreeSessionDialog({
       })
       const makeWorktree = item.makeWorktree
       if (dir) void sessionLaunch.launch(withItem({ kind: 'existing', name, dir }), method)
-      else if (item.fromRepoRoot || !makeWorktree)
-        void sessionLaunch.launch(withItem({ kind: 'create', name }), method)
+      else if (!makeWorktree) void sessionLaunch.launch(withItem({ kind: 'create', name }), method)
       else
         void sessionLaunch.launch(
           async () => withItem({ kind: 'existing', name, dir: await makeWorktree() }),
@@ -345,17 +348,8 @@ export function WorktreeSessionDialog({
     </div>
   )
 
-  const itemRow = (i: number, item: WorktreeItem): JSX.Element =>
-    row(i, item.key, item.label, item.note)
-
-  const itemBoxes = (): JSX.Element[] => {
-    let first = listed.length
-    return itemViews.map((view, k) => {
-      const box = view.box({ loaded, first, row: itemRow })
-      first += loaded ? view.items.length : 0
-      return <Fragment key={k}>{box}</Fragment>
-    })
-  }
+  const itemRow = (item: WorktreeItem): JSX.Element =>
+    row(listed.length + pickItems.indexOf(item), item.key, item.label, item.note(now))
 
   const title = 'New Worktree Session · ' + basename(wsPath)
 
@@ -383,8 +377,8 @@ export function WorktreeSessionDialog({
                 spellCheck={false}
                 autoComplete="off"
                 placeholder={
-                  ghItems.length > 0
-                    ? (itemViews.find((v) => v.items.length > 0)?.placeholder ?? '')
+                  pickItems.length > 0
+                    ? `name a new worktree, or pick a worktree, ${itemViews.find((v) => v.items.length > 0)?.pickWhat} below…`
                     : listed.length > 0
                       ? 'name a new worktree, or pick below…'
                       : 'name a new worktree'
@@ -431,7 +425,9 @@ export function WorktreeSessionDialog({
                 )}
               </div>
             )}
-            {itemBoxes()}
+            {itemViews.map((view, k) => (
+              <Fragment key={k}>{view.box({ loaded, row: itemRow })}</Fragment>
+            ))}
           </div>
           <div className="modal-foot">
             <button
