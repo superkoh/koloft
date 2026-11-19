@@ -21,7 +21,7 @@ export interface PlacedRow {
   live?: SessionInfo
 }
 
-const THE_BUTLERS_FOLDER = "the butler's own folder"
+const CLAIMED_FOLDER_SHOWN_AS = "the butler's own folder"
 
 export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
   return sidebar.flatMap((w) =>
@@ -31,7 +31,9 @@ export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): P
         const live = sessions.find((s) => s.alive && s.sessionId === row.id)
         return {
           workspace: w.workspace.path,
-          shownAs: w.workspace.butler ? THE_BUTLERS_FOLDER : workspaceLabel(w.workspace.path),
+          shownAs: w.workspace.claimedBy
+            ? CLAIMED_FOLDER_SHOWN_AS
+            : workspaceLabel(w.workspace.path),
           row,
           title: live?.title ?? row.title,
           live

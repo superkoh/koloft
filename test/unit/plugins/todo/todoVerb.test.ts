@@ -102,7 +102,7 @@ function harness(world: World) {
     sidebar: () => world.sidebar,
     pinnedWorkspaces: () =>
       world.sidebar
-        .filter((w) => !w.workspace.butler)
+        .filter((w) => !w.workspace.claimedBy)
         .map((w) => ({ path: w.workspace.path, missing: w.workspace.missing })),
     sessions: () => world.sessions,
     asking: (tabId) => world.asking?.includes(tabId) ?? false,
@@ -168,7 +168,7 @@ function sidebarOf(
         missing: false,
         isGit: false,
         hasHistory: true,
-        butler: true
+        claimedBy: 'butler'
       },
       rows: butlerRows
     }

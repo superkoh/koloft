@@ -6,7 +6,13 @@ import { everyWorkspaceRows } from '../../../../src/renderer/src/sessionRows'
 import { placePluginUi } from '../../../../src/renderer/src/pluginUi'
 
 const ws = (path: string, butler?: true): WorkspaceRows => ({
-  workspace: { path, missing: false, isGit: false, hasHistory: false, ...(butler && { butler }) },
+  workspace: {
+    path,
+    missing: false,
+    isGit: false,
+    hasHistory: false,
+    ...(butler && { claimedBy: 'butler' })
+  },
   rows: []
 })
 

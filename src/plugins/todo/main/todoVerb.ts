@@ -312,7 +312,7 @@ function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): stri
 
 async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
   const now = d.now()
-  const sidebar = d.sidebar().filter((w) => !w.workspace.butler)
+  const sidebar = d.sidebar().filter((w) => !w.workspace.claimedBy)
   const all = placedRows(sidebar, d.sessions())
   const notes = d.notes()
   const [workspaces, trees, servers] = await Promise.all([

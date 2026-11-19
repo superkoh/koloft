@@ -1541,7 +1541,7 @@ describe('the butler’s view of sessions: every workspace', () => {
         missing: false,
         isGit: false,
         hasHistory: false,
-        butler: true
+        claimedBy: 'butler'
       },
       rows: [helper]
     }

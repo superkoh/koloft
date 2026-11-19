@@ -75,7 +75,9 @@ function handedToTheButler(env: E2EEnv): string[] {
 }
 
 async function butlerTab(page: Page): Promise<string> {
-  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.tabId ?? ''
+  return (
+    (await page.evaluate(() => window.api.sessions.list())).find((s) => s.overseer)?.tabId ?? ''
+  )
 }
 
 async function butlerShownWorkingOnItsOpeningTurn(fake: FakeDiscord): Promise<void> {

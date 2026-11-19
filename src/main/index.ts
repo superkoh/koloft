@@ -474,7 +474,13 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { projectRulesForTheButler } from '@shared/agentGuide'
-import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
+import {
+  butlersFolderClaim,
+  conductorFolder,
+  helperRoleOf,
+  OwnerAsleep,
+  THIS_MAC
+} from '@plugins/butler/api'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
@@ -785,7 +791,7 @@ const sessionBackends = new SessionBackends({
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
 })
-sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
+sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
@@ -1812,7 +1818,7 @@ function remoteHostOfTab(tabId: string): string | undefined {
 }
 
 function projectRows(): WorkspaceRows[] {
-  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.claimedBy)
 }
 
 function butlerSide(tabId: string): boolean {
@@ -2021,7 +2027,7 @@ const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
 
 function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   return all.flatMap((s) =>
-    s.alive && !s.butler && s.sessionId
+    s.alive && !s.overseer && s.sessionId
       ? [
           {
             tabId: s.tabId,
@@ -2126,7 +2132,7 @@ const sessionDeps: SessionVerbDeps = {
     ...(listsModels(backend) && { listed: await listedModels(backend) })
   }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-  allSessions: () => allSessions().filter((s) => !s.butler),
+  allSessions: () => allSessions().filter((s) => !s.overseer),
   tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
@@ -2412,7 +2418,7 @@ registerTodoCommand(commands, {
   allowed: butlerSide,
   sidebar: () => workspaceMgr?.rows() ?? [],
   pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-  sessions: () => allSessions().filter((s) => !s.butler),
+  sessions: () => allSessions().filter((s) => !s.overseer),
   asking: asksTheOwner,
   asleep: (sessionId) => !!sleepers.tabOf(sessionId),
   workLeft: async (row, merged) => {
@@ -4029,7 +4035,7 @@ app.whenReady().then(() => {
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
-    butlerFolder: conductorFolder(userData),
+    claimedFolder: butlersFolderClaim(userData),
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
         (key) =>
@@ -6562,7 +6568,7 @@ function registerIpc(): void {
     },
     backendSnippets: async (term, signal) =>
       (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-    hidden: (id) => sessionBackends.isButlerSession(id),
+    hidden: (id) => sessionBackends.isOverseerSession(id),
     scan: (files, term, found) => {
       // PLATFORM§4
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })

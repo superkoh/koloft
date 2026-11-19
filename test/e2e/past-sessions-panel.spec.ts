@@ -79,7 +79,7 @@ async function boundSession(page: Page, backend: BackendId, remote: boolean): Pr
           (x) =>
             x.backendId === backend &&
             x.alive &&
-            !x.butler &&
+            !x.overseer &&
             (x.remote?.host === REMOTE_HOST || identityOf(x.sessionId).sourceId === REMOTE_HOST) ===
               remote &&
             identityOf(x.sessionId).nativeSessionId
