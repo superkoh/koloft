@@ -80,7 +80,7 @@ async function sessionOf(page: Page, backend: BackendId): Promise<SessionInfo> {
     .poll(
       async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
-        found = all.find((s) => s.alive && !s.butler && s.backendId === backend && s.sessionId)
+        found = all.find((s) => s.alive && !s.overseer && s.backendId === backend && s.sessionId)
         return !!found
       },
       { timeout: STARTS_AND_ANSWERS_MS }
@@ -105,7 +105,7 @@ async function talkedToInItsRoom(
   await expect
     .poll(() => fake.threadMembers)
     .toContainEqual({ threadId: room.id, userId: OWNER.id })
-  const butler = (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)!
+  const butler = (await page.evaluate(() => window.api.sessions.list())).find((s) => s.overseer)!
   await expect
     .poll(() => terminalText(page, butler.tabId), { timeout: STARTS_AND_ANSWERS_MS })
     .toContain(`<#${room.id}>`)
@@ -295,7 +295,9 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
       const session = await sessionOf(page, 'claude')
       fake.say(OWNER, `/koloft discord thread open ${session.sessionId}`)
       const room = await theRoom(fake)
-      const butler = (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)!
+      const butler = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.overseer
+      )!
       await expect
         .poll(() => terminalText(page, butler.tabId), { timeout: STARTS_AND_ANSWERS_MS })
         .toContain(`<#${room.id}>`)
