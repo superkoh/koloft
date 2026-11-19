@@ -8,7 +8,7 @@ import {
   type RunnerDeps
 } from '../../src/main/cronRunner'
 import { sanitizeCron } from '../../src/main/cronStore'
-import type { TidyResult } from '../../src/main/sessionClose'
+import type { TidyResult } from '../../src/plugins/sessions/main/sessionClose'
 import { lastRunOf } from '../../src/shared/cronHistory'
 import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'

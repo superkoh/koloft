@@ -3627,7 +3627,7 @@ cli/cli --limit 1 --json number,closingIssuesReferences`:
   "closingIssuesReferences"`, then the list of fields it knows.
 - **gh 2.72.0** takes the field and goes to GitHub (here `HTTP 401: Bad credentials`).
 
-Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
+Koloft dependents: `listTodoPulls` in `src/plugins/todo/main/pulls.ts`, which lists again without the
 field and says so; a remote workspace's pull requests are listed by that machine's gh.
 
 ## §62 Node `fs.rmSync` on a symbolic link to a folder
