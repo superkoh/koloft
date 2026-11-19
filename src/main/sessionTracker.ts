@@ -10,7 +10,7 @@ import { projectInfoFor, realpathSafe } from './projectInfo'
 import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { sharedProcessTable } from './processTable'
-import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
+import { SessionRuntime, envMs, turnOf, type Turn } from '@plugins/sessions/main/sessionRuntime'
 import { readAppendedLines, type AppendCursor } from './appendedLines'
 import { capTouched, shellWrittenFiles, touchedItem } from './touchedFiles'
 import {

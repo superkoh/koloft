@@ -19,7 +19,12 @@ import type { SearchCandidate } from './sessionSearch'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
-import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
+import {
+  SessionStore,
+  hostOfPath,
+  type KeyOf,
+  type WorktreeResource
+} from '@plugins/sessions/main/sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import {
@@ -41,7 +46,7 @@ import { forgetAgentsInLoginShell } from './loginShell'
 import type { LaunchedSession } from './accountPicker'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
-import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
+import { turnOf, type SessionRuntime, type StatusEdge } from '@plugins/sessions/main/sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500

@@ -100,7 +100,7 @@ import {
   endCodexAppServersLeftByACrash,
   removeFoldersLeftByEndedRuns
 } from './leftovers'
-import { codexSessionKey } from './sessionStore'
+import { codexSessionKey } from '@plugins/sessions/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'

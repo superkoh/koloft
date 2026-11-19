@@ -1,7 +1,7 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
 import { codexEditTarget, codexItemDid } from './rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
-import type { Turn } from './sessionRuntime'
+import type { Turn } from '@plugins/sessions/main/sessionRuntime'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
 import {

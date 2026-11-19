@@ -1,6 +1,6 @@
 import { hasUsableAccount } from '@shared/accountUsage'
 import { listAccounts } from '../accounts'
-import type { SessionBackend } from '../sessionBackends'
+import type { SessionBackend } from '@plugins/sessions/main/sessionBackends'
 import type { MuseSessions } from '../museSessions'
 import type { ResumeProbes } from '../resumePlan'
 import { storedBackend } from './stored'

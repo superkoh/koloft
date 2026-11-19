@@ -8,7 +8,7 @@ import {
   type Moment,
   type TabEnded
 } from '@core/moment'
-import type { AttentionTracker } from './attention'
+import type { AttentionTracker } from '@plugins/sessions/main/attention'
 import type { ClaudeBackend } from './backends/claude'
 import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
