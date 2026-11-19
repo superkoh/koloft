@@ -1,11 +1,15 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
   INSTRUCTIONS_CHANGED,
+  QUESTION_ASKED,
+  SESSION_BOUND,
   SESSION_STARTED,
   SESSION_STARTING,
   TAB_EXITED,
   TAB_FORGOTTEN,
-  TAB_TORN_DOWN
+  TAB_TORN_DOWN,
+  TURN_ENDED,
+  TURN_STARTED
 } from '@core/moment'
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
@@ -35,8 +39,18 @@ export const plugin: PluginManifest = {
       SESSION_STARTED.name,
       TAB_EXITED.name,
       TAB_TORN_DOWN.name,
-      TAB_FORGOTTEN.name
+      TAB_FORGOTTEN.name,
+      TURN_STARTED.name,
+      TURN_ENDED.name,
+      QUESTION_ASKED.name,
+      SESSION_BOUND.name
     ],
-    listens: [TAB_EXITED.name]
+    listens: [
+      TAB_EXITED.name,
+      TURN_STARTED.name,
+      TURN_ENDED.name,
+      QUESTION_ASKED.name,
+      SESSION_BOUND.name
+    ]
   }
 }
