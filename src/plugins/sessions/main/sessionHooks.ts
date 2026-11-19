@@ -1,4 +1,5 @@
 import {
+  DIALOG_CLOSED,
   QUESTION_ASKED,
   SESSION_BOUND,
   STATE_CHANGED,
@@ -76,4 +77,5 @@ export function followEachState(
     asks?.toolDone(tabId, call)
   })
   moments.listen(plugin.id, TURN_OVER, ({ tabId, over }) => d.slash.turnOver(tabId, over))
+  moments.listen(plugin.id, DIALOG_CLOSED, (tabId) => d.asks()?.dialogGone(tabId, true))
 }

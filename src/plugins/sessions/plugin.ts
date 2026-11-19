@@ -1,6 +1,7 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
   ATTENTION_CHANGED,
+  DIALOG_CLOSED,
   QUESTION_ASKED,
   SESSION_BOUND,
   SESSION_STARTED,
@@ -45,7 +46,8 @@ export const plugin: PluginManifest = {
       TOOL_DONE.name,
       TURN_OVER.name,
       ATTENTION_CHANGED.name,
-      TAB_STOPPING.name
+      TAB_STOPPING.name,
+      DIALOG_CLOSED.name
     ],
     listens: [
       TAB_EXITED.name,
@@ -55,7 +57,8 @@ export const plugin: PluginManifest = {
       SESSION_BOUND.name,
       STATE_CHANGED.name,
       TOOL_DONE.name,
-      TURN_OVER.name
+      TURN_OVER.name,
+      DIALOG_CLOSED.name
     ]
   }
 }

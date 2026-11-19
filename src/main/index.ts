@@ -559,6 +559,7 @@ import {
   TURN_ENDED,
   TURN_OVER,
   ATTENTION_CHANGED,
+  DIALOG_CLOSED,
   TURN_STARTED,
   type LeftTab,
   type Moment,
@@ -2320,8 +2321,8 @@ const claudeDialogs = new ClaudeDialogWatch({
   reply: (tabId, text) => ptyMgr.write(tabId, text),
   dialogShown: (tabId, onScreen) => tracker.showDialog(tabId, onScreen),
   closed: (tabId, stateAfter) => {
-    askEnded(tabId, true)
-    void askButtons?.check(tabId)
+    claudeAskEnded(tabId)
+    announceNow(DIALOG_CLOSED, tabId)
     if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
@@ -2330,11 +2331,6 @@ tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 function claudeAskEnded(tabId: string): void {
   claudeAsks.delete(tabId)
   questionSeen.delete(tabId)
-}
-
-function askEnded(tabId: string, dialogClosed = false): void {
-  claudeAskEnded(tabId)
-  sessionAsks?.dialogGone(tabId, dialogClosed)
 }
 
 async function answerSession(tabId: string, reply: string): Promise<string | undefined> {

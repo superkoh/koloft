@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ATTENTION_CHANGED,
+  DIALOG_CLOSED,
   Moments,
   STATE_CHANGED,
   TOOL_DONE,
@@ -115,6 +116,12 @@ describe('what each plugin does when a session changes state, finishes a tool, e
         'buttons.check t1'
       ])
     }
+  })
+
+  it('a Claude Code dialog closed on its screen ends the session’s ask as closed, then the ask buttons look again', () => {
+    const { moments, calls } = wired()
+    void moments.announce(DIALOG_CLOSED, 't1')
+    expect(calls).toEqual(['asks.dialogGone t1 true', 'buttons.check t1'])
   })
 
   it('a turn over for good reaches slash commands; changed marks reach the away digest before the Inbox', () => {

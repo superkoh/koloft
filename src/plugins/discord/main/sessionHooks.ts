@@ -1,4 +1,5 @@
 import {
+  DIALOG_CLOSED,
   SESSION_BOUND,
   SESSION_STARTED,
   STATE_CHANGED,
@@ -78,6 +79,7 @@ export function discordFollowsEachTurn<Ask>(
     d.typing()?.refresh(tabId)
   })
   moments.listen(plugin.id, TOOL_DONE, ({ tabId }) => void d.buttons()?.check(tabId))
+  moments.listen(plugin.id, DIALOG_CLOSED, (tabId) => void d.buttons()?.check(tabId))
 }
 
 export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void {
