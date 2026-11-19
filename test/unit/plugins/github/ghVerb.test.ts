@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
-import type { SessionInfo } from '../../src/shared/types'
+import type { SessionInfo } from '../../../../src/shared/types'
 import {
   githubVerb,
   GH_JQ_READS_ENV,
@@ -11,7 +11,7 @@ import {
   GH_USAGE,
   GH_WRITE_IT_IN_ENGLISH,
   repoFlagOf
-} from '../../src/main/agentGithub'
+} from '../../../../src/plugins/github/main/ghVerb'
 
 function verb(opts: { out?: string; ok?: boolean; butler?: boolean; cwd?: string } = {}) {
   const ran: { args: string[]; tabId: string; cwd: string }[] = []

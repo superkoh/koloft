@@ -8,14 +8,14 @@ import { killSessionCmd, machineToolProgram, renameSessionCmd } from '../../src/
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
-import { GithubLookup } from '../../src/main/github'
+import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/shim'
 import { answerOf, type BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
-import { removeTree } from '../../src/main/sessionClose'
+import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
 import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 
 const MACHINE = 'devbox'
@@ -195,7 +195,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.writeFileSync(path.join(repo, 'staged.txt'), 'one\ntwo\n')
       git('add', 'staged.txt')
       fs.writeFileSync(path.join(repo, 'loose.txt'), 'x\n')
-      const local = localHost(new GithubLookup({}), {} as never)
+      const local = localHost(new GithubRepos({}), {} as never)
       const bareKeys = <V>(m: Record<string, V>): Record<string, V> =>
         Object.fromEntries(Object.entries(m).map(([k, v]) => [barePath(k), v]))
       for (const choice of ['merge-base', 'head'] as const) {

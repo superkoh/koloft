@@ -1,0 +1,19 @@
+Changes not committed:
+?? new.txt
+---
+Commits on no other branch and no remote branch:
+<sha> local.txt
+===
+Changes not committed:
+?? new.txt
+---
+Commits on no other branch and no remote branch:
+<sha> local.txt
+Koloft could not ask GitHub whether a merged pull request holds them. If one does, nothing is lost, and pushing would only bring back the branch GitHub deleted.
+===
+Changes not committed:
+?? new.txt
+---
+git could not list the commits in <dir>/repo/.claude/worktrees/run-1.
+===
+git could not read <dir>/repo/.claude/worktrees/run-1: its .git file is gone.
