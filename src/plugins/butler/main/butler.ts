@@ -247,7 +247,7 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined) this.tellTheNews(key)
+    if (resumedOld && key !== undefined && this.d.news.on()) this.tellTheNews(key)
     this.resident = tabId
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))

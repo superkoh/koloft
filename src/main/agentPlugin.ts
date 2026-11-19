@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION } from '@shared/agentGuide'
+import { agentGuide, agentSkillDescription } from '@shared/agentGuide'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { writePrivateAtomically } from './privateFile'
 import DOCS_SKILL_MD from './docsSkill/SKILL.md?raw'
@@ -89,7 +89,7 @@ export function keepSkillsIn(skillsDir: string, koloftOn: boolean): void {
 
 function koloftSkillFiles(): Files {
   return {
-    'SKILL.md': `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
+    'SKILL.md': `---\nname: koloft\ndescription: ${JSON.stringify(agentSkillDescription())}\n---\n\n${agentGuide()}\n`
   }
 }
 

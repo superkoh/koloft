@@ -5,7 +5,9 @@ import path from 'path'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
+
+const AGENT_GUIDE = agentGuide()
 import {
   AGENT_TOOLS_OFF,
   AgentRequests,

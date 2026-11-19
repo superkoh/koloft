@@ -2,6 +2,7 @@
 import type { PluginManifest } from './plugin'
 import { EXIT_USAGE, refused, type AgentCaller, type AgentReply, type AgentVerb } from './command'
 import { errorText } from './errorText'
+import { turnedOffLine } from './switches'
 
 export type CommandHandlers = Readonly<Record<string, AgentVerb>>
 
@@ -26,6 +27,9 @@ export class Commands {
         `koloft: there is no "${verb}" command. Run "koloft help" to see the commands.`,
         EXIT_USAGE
       )
+    const plugin = this.plugins.find((p) => p.commands?.some((c) => c.verb === verb))
+    const off = plugin && turnedOffLine(plugin)
+    if (off) return refused(`koloft: ${off}`)
     try {
       return await run(args, caller)
     } catch (error) {

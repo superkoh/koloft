@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
 import { koloftPrompt, WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/api'
 import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -46,7 +46,7 @@ describe("a project's own rules for picking a session's model and effort", () =>
     expect(help.slice(at)).toContain(
       "they leave out.\n        Docs: sonnet, low.\n        Never start a Codex session for work in src/renderer.\n    Koloft's own way: Sort the task first."
     )
-    expect(AGENT_GUIDE).not.toContain("Koloft's own way")
+    expect(agentGuide()).not.toContain("Koloft's own way")
   })
 })
 

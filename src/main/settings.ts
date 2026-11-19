@@ -5,6 +5,7 @@ import type { Settings } from '@shared/types'
 import { DEFAULT_SETTINGS, sanitizeLoadedSettings } from '@shared/settingsOps'
 import { assistOnMethodsThatAreOn, sanitizeAssist } from '@shared/assistPicks'
 import { normalizeSessionMethods } from '@shared/sessionBackend'
+import { knowSwitchesIn } from '@shared/pluginSwitches'
 import { BackgroundFile } from './backgroundFile'
 
 function settingsFile(): string {
@@ -29,7 +30,10 @@ function readSettingsFile(): Settings {
 }
 
 export function loadSettings(): Settings {
-  cached ??= readSettingsFile()
+  if (!cached) {
+    cached = readSettingsFile()
+    knowSwitchesIn(cached)
+  }
   return structuredClone(cached)
 }
 
@@ -44,5 +48,6 @@ export function saveSettings(patch: Partial<Settings>): Settings {
   const text = JSON.stringify(merged, null, 2)
   settingsOnDisk.write(text)
   cached = sanitizeLoadedSettings(JSON.parse(text))
+  knowSwitchesIn(cached)
   return merged
 }
