@@ -25,11 +25,9 @@ import {
   IconFile,
   IconFolder,
   IconFolderOpen,
-  IconIssue,
   IconNewWorktree,
   IconPin,
-  IconPlus,
-  IconPullRequest
+  IconPlus
 } from '../icons'
 import type { BackendId, HostId, MachineState, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
@@ -64,15 +62,20 @@ import { releaseSettledResumes } from '../resumeFlow'
 import { offerForceCloseUnlessMainHasBoundIt, openSessionRow } from '../sessionClick'
 import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
-import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
-import { fitGithubCounts } from '../wsHeadFit'
+import { behindBadge } from '../freshnessView'
 import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
-import { fillsOf, PartsAt } from '../pluginUi'
-import { ROW_MARK, WORKSPACE_LINE, WORKSPACE_MENU, type RowMark } from '../slots'
+import { fillsOf, gitPartsOf, PartsAt } from '../pluginUi'
+import {
+  ROW_MARK,
+  WORKSPACE_GIT_PART,
+  WORKSPACE_LINE,
+  WORKSPACE_MENU,
+  type RowMark
+} from '../slots'
 import { SessionRowsOfContext } from './sidebarRows'
 import { MENU_PAD_H, menuPosFor, useDismissOnOutside } from './menuPlace'
 import {
@@ -222,7 +225,7 @@ interface SidebarActions {
   gitEnter: (e: MouseEvent, path: string) => void
   gitLeave: (e: MouseEvent, path: string) => void
   behindClick: (e: MouseEvent, path: string) => void
-  openList: (e: MouseEvent, path: string, what: 'issues' | 'pulls') => void
+  closeCards: () => void
   openDoor: (path: string, isGit: boolean) => void
 }
 
@@ -378,8 +381,6 @@ const WorkspaceHead = memo(function WorkspaceHead({
   remoteConnected,
   remoteDot,
   gitPanel,
-  issues,
-  prs,
   open,
   active,
   callingInside,
@@ -397,8 +398,6 @@ const WorkspaceHead = memo(function WorkspaceHead({
   remoteConnected: boolean
   remoteDot: string | undefined
   gitPanel: boolean
-  issues: number
-  prs: number
   open: boolean
   active: boolean
   callingInside: number
@@ -467,30 +466,9 @@ const WorkspaceHead = memo(function WorkspaceHead({
               {behindLabel}
             </button>
           )}
-          {(issues > 0 || prs > 0) && (
-            <span className="ws-gh">
-              {issues > 0 && (
-                <button
-                  aria-label={openIssuesLabel(issues)}
-                  disabled={!listsReachable}
-                  onClick={(e) => actions.openList(e, path, 'issues')}
-                >
-                  <IconIssue size={12} />
-                  {countLabel(issues)}
-                </button>
-              )}
-              {prs > 0 && (
-                <button
-                  aria-label={openPullsLabel(prs)}
-                  disabled={!listsReachable}
-                  onClick={(e) => actions.openList(e, path, 'pulls')}
-                >
-                  <IconPullRequest size={12} />
-                  {countLabel(prs)}
-                </button>
-              )}
-            </span>
-          )}
+          {fillsOf(WORKSPACE_GIT_PART).map(({ Mark }, i) => (
+            <Mark key={i} path={path} reachable={listsReachable} closeCards={actions.closeCards} />
+          ))}
         </span>
       )}
       {callingInside > 0 && (
@@ -970,14 +948,12 @@ function SidebarFloating({
     const w = rows.find((r) => r.workspace.path === fresh.path)
     if (!w) return null
     const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
-    if (!f && !w.workspace.github && !w.workspace.gitPickable) return null
+    if (!f && gitPartsOf(w.workspace).length === 0 && !w.workspace.gitPickable) return null
     return (
       <FreshnessPopover
         key={fresh.path}
-        wsPath={fresh.path}
         f={f}
-        github={w.workspace.github}
-        remote={w.workspace.remote}
+        ws={w.workspace}
         left={fresh.left}
         top={fresh.top}
         onClose={() => setFresh(null)}
@@ -1058,7 +1034,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const listRef = useRef<HTMLDivElement>(null)
   const fitHeads = useCallback((): void => {
     const list = listRef.current
-    if (list) fitGithubCounts(list.querySelectorAll<HTMLElement>('.ws-head'))
+    if (list)
+      for (const { fit } of fillsOf(WORKSPACE_GIT_PART))
+        fit(list.querySelectorAll<HTMLElement>('.ws-head'))
   }, [])
   useLayoutEffect(fitHeads, [rows, fitHeads])
   useEffect(() => {
@@ -1162,11 +1140,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         e.stopPropagation()
         floating.current?.openCard((e.currentTarget as HTMLElement).parentElement!, path)
       },
-      openList: (e, path, what) => {
-        e.stopPropagation()
-        floating.current?.closeAll()
-        useStore.getState().openWorkspaceList(path, what)
-      },
+      closeCards: () => floating.current?.closeAll(),
       openDoor: (path, isGit) => {
         floating.current?.dismissMenu()
         if (isGit) live.current.onNewWorktreeSession(path)
@@ -1373,9 +1347,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   remoteTitle={ws.remote && remoteCopyText(ws.remote.host, ws.remote.path)}
                   remoteConnected={!!ws.remote?.connected}
                   remoteDot={ws.remote && remoteDotTitle(ws.remote)}
-                  gitPanel={freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable}
-                  issues={ws.github?.issues ?? 0}
-                  prs={ws.github?.prs ?? 0}
+                  gitPanel={
+                    freshnessShown(ws.freshness) || gitPartsOf(ws).length > 0 || !!ws.gitPickable
+                  }
                   open={open}
                   active={selectedWs === ws.path && activeTabId === null}
                   callingInside={callingInside}
