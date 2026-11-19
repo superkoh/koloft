@@ -169,6 +169,25 @@ describe('closing a session that runs in its own worktree', () => {
     })
   })
 
+  it('the full text of what is left, pinned so that moving it changes no character', async () => {
+    commit(tree, 'local.txt', 'never pushed')
+    fs.writeFileSync(path.join(tree, 'new.txt'), 'untracked')
+    const masked = (left: string[]) =>
+      left
+        .join('\n---\n')
+        .replaceAll(directory, '<dir>')
+        .replace(/^[0-9a-f]{7,} /gm, '<sha> ')
+    const noLog: GitOut = (dir, args, ...rest) =>
+      args[0] === 'log' ? Promise.resolve(null) : localGitOut(dir, args, ...rest)
+    const lines = [
+      masked(await whatIsLeft(localGitOut, await treeOf(tree))),
+      masked(await whatIsLeft(localGitOut, await treeOf(tree), async () => null)),
+      masked(await whatIsLeft(noLog, await treeOf(tree))),
+      masked(await whatIsLeft(localGitOut, { ...(await treeOf(tree)), gitFileGone: true }))
+    ]
+    await expect(lines.join('\n===\n') + '\n').toMatchFileSnapshot('./session-close-text/left.txt')
+  })
+
   it('a session in the repository itself has no worktree to remove', async () => {
     expect(await closingTree(localGitOut, projectInfoFor(repo))).toBeNull()
   })

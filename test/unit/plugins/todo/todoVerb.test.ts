@@ -6,6 +6,8 @@ import {
 } from '../../../../src/plugins/todo/main/todoVerb'
 import type { TodoPull, TodoPulls } from '../../../../src/plugins/github/api'
 import { GITHUB_NOT_ASKED } from '../../../../src/plugins/sessions/api'
+import { listTodoPulls } from '../../../../src/main/github'
+import type { GhResult } from '../../../../src/main/prChecks'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
 import type {
   BackendId,
@@ -577,6 +579,55 @@ describe('koloft todo note', () => {
     })
     await run(['note', 'notes', '--'])
     expect(notes).toEqual({ 'octo/shop': 'Issues assigned to alice.' })
+  })
+})
+
+describe('the text of koloft todo about work left and pull requests it could not list, pinned so that moving it changes no character', () => {
+  it('sums up each kind of work a closed worktree holds', async () => {
+    const at = (name: string) => `${SHOP}/.claude/worktrees/${name}`
+    const rows = ['changes', 'commits', 'unasked', 'unlisted', 'gone'].map((id) =>
+      row(id, { cwd: at(id) })
+    )
+    const { run } = harness({
+      sidebar: sidebarOf([[SHOP, rows]]),
+      sessions: [],
+      worktrees: { [SHOP]: rows.map((r) => ({ dir: r.cwd, branch: r.id })) },
+      left: {
+        changes: ['Changes not committed:\n M a.ts\n?? b.ts'],
+        commits: ['Commits on no other branch and no remote branch:\nabc1 fix\nabc2 more'],
+        unasked: [
+          `Commits on no other branch and no remote branch:\nddd4 work\n${GITHUB_NOT_ASKED}`
+        ],
+        unlisted: [`git could not list the commits in ${at('unlisted')}.`],
+        gone: [`git could not read ${at('gone')}: its .git file is gone.`]
+      }
+    })
+    await expect(section((await run([])).text, 'SESSIONS') + '\n').toMatchFileSnapshot(
+      './text/work-left.txt'
+    )
+  })
+
+  it('says why it could not list the pull requests of a repository', async () => {
+    const said = async (gh: Parameters<typeof listTodoPulls>[0]) =>
+      JSON.stringify(await listTodoPulls(gh, { owner: 'octo', repo: 'shop' }))
+    const result = (over: Partial<GhResult>): GhResult => ({
+      code: 1,
+      stdout: '',
+      stderr: '',
+      missing: false,
+      ...over
+    })
+    const lines = [
+      await said(async () => result({ missing: true, code: null })),
+      await said(async () => result({ code: 4 })),
+      await said(async (args) =>
+        args[0] === 'api'
+          ? result({ code: 0, stdout: 'alice\n' })
+          : result({ stderr: 'HTTP 502\n' })
+      ),
+      await said(async () => result({}))
+    ]
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./text/pulls-failed.txt')
   })
 })
 
