@@ -16,6 +16,7 @@ import {
   ROW_EXTRAS,
   ROW_SET_UP,
   PLUGIN_SET_UP,
+  PART_HINT,
   type PaletteRun,
   type PluginSetUp,
   type RowExtrasFill,
@@ -152,5 +153,14 @@ describe('UI parts a plugin registers', () => {
         .map((r) => r.kind)
         .sort()
     ).toEqual([...PLUGIN_ROUTE_KINDS].sort())
+  })
+
+  it('each first-run tip a plugin fills is one its manifest lists in hints, and each listed tip has exactly one fill with words', () => {
+    for (const plugin of PLUGINS) {
+      const filled = (PLUGIN_UIS[plugin.id]?.fills ?? [])
+        .filter((f) => f.slot === PART_HINT)
+        .map((f) => (f.value as { id: string }).id)
+      expect(filled.sort()).toEqual([...(plugin.hints ?? [])].sort())
+    }
   })
 })
