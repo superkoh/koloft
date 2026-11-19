@@ -352,6 +352,15 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     expect(itemLaunchExtras(pr).firstPrompt).toMatch(/gh pr view 329 --comments/)
   })
 
+  it('the full first message an agent gets for an issue, a pull request and an issue picked from ⌘P, pinned so that moving it changes no character', async () => {
+    const text = [
+      `== issue\n${itemLaunchExtras(issue).firstPrompt}`,
+      `== pull request\n${itemLaunchExtras(pr).firstPrompt}`,
+      `== issue from ⌘P\n${seededItemExtras(issue, '  and add a test  ', 'Login test').firstPrompt}`
+    ].join('\n')
+    await expect(text + '\n').toMatchFileSnapshot('./newSession-text/first-prompts.txt')
+  })
+
   it('from ⌘P, puts the issue first, then a blank line, then what was typed, and takes the typed title over the issue', () => {
     const extras = seededItemExtras(issue, '  and add a test  ', 'Login test')
     expect(extras.firstPrompt).toBe(`${itemLaunchExtras(issue).firstPrompt}\n\nand add a test`)
