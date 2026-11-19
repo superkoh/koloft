@@ -37,12 +37,23 @@ import {
   WORKSPACE_TEXT_MAX_BYTES,
   workspaceTextBytes
 } from '../../src/plugins/sessions/shared/workspaceInstructions'
+import { instructionsBytes } from '../../src/core/ownerInstructions'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
-const TEXT = 'Run npm test before you say a change is done.\n合并前先问我。 "$HOME" {{nope}}'
-const OWNER_PART = `Written by the owner for this workspace\n${TEXT}`
-const LAST = `\n\n${OWNER_PART}`
+const SHORT = 'Run npm test before you say a change is done.\n合并前先问我。 "$HOME" {{nope}}'
+const A_LINE_OF_EVERY_KIND = '中 "$HOME" `whoami` \\ {{x}}\n'
+
+function atTheLimit(start: string): string {
+  let text = start
+  while (instructionsBytes(`${text}\n${A_LINE_OF_EVERY_KIND}end`) <= WORKSPACE_TEXT_MAX_BYTES)
+    text = `${text}\n${A_LINE_OF_EVERY_KIND}`
+  return `${text}end`
+}
+
+const TEXT = atTheLimit(SHORT)
+const partOf = (text: string): string => `Written by the owner for this workspace\n${text}`
+const LAST = `\n\n${partOf(TEXT)}`
 const HEADING = 'Written by the owner for this workspace'
 
 type LogLine = Record<string, unknown>
@@ -79,8 +90,8 @@ async function claudeIn(env: E2EEnv, page: Page, wsName: string): Promise<Claude
   return readAllCalls(env)[before]
 }
 
-function expectInlineAfterThePromptFile(argv: string[]): void {
-  expect(flagAfter(argv, '--append-system-prompt')).toBe(OWNER_PART)
+function expectInlineAfterThePromptFile(argv: string[], text = TEXT): void {
+  expect(flagAfter(argv, '--append-system-prompt')).toBe(partOf(text))
   expect(argv.indexOf('--append-system-prompt-file')).toBeGreaterThanOrEqual(0)
   expect(argv.indexOf('--append-system-prompt')).toBeGreaterThan(
     argv.indexOf('--append-system-prompt-file')
@@ -171,21 +182,21 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       )
       const rules = 'Docs: sonnet, low.'
       await dlg.getByRole('textbox', { name: 'How agents pick' }).fill(rules)
-      await field.fill(TEXT)
-      await expect(hints.first()).toContainText(left(rules, TEXT))
+      await field.fill(SHORT)
+      await expect(hints.first()).toContainText(left(rules, SHORT))
       const tooMuch = 'a'.repeat(WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules, '') + 12)
       await field.fill(tooMuch)
       await expect(hints.first()).toHaveClass(/\bbad\b/)
       await expect(hints.first()).toContainText('12 over the limit.')
       await expect(dlg.locator('.btn-primary', { hasText: 'Save' })).toBeDisabled()
-      await field.fill(TEXT)
+      await field.fill(SHORT)
       await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg).toHaveCount(0)
 
       await writeInstructions(page, 'ws-a', 'Be brief.')
-      await writeInstructions(page, 'ws-a')
+      await writeInstructions(page, 'ws-a', SHORT)
       const again = await openDefaults(page, 'ws-a')
-      await expect(again.getByRole('textbox', { name: 'Instructions' })).toHaveValue(TEXT)
+      await expect(again.getByRole('textbox', { name: 'Instructions' })).toHaveValue(SHORT)
       await again.getByRole('button', { name: 'Cancel' }).click()
       const saved = Object.values(
         settingsOnDisk(env).sessionDefaults as Record<
@@ -196,12 +207,12 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       expect(saved).toHaveLength(1)
       expect(saved[0].rules).toBe(rules)
       expect(saved[0].instructions?.map((v) => [v.text, v.by])).toEqual([
-        [TEXT, 'owner'],
+        [SHORT, 'owner'],
         ['Be brief.', 'owner'],
-        [TEXT, 'owner']
+        [SHORT, 'owner']
       ])
 
-      expectInlineAfterThePromptFile((await claudeIn(env, page, 'ws-a')).argv)
+      expectInlineAfterThePromptFile((await claudeIn(env, page, 'ws-a')).argv, SHORT)
       expect((await claudeIn(env, page, 'ws-b')).argv).not.toContain('--append-system-prompt')
     } finally {
       await quitAndClose(app)
