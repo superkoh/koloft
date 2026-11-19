@@ -74,7 +74,6 @@ import {
 import type { WorkbenchCommandSignal } from './workbenchCommands'
 import { FileTabBar, FullWidthButton } from './WorkbenchBars'
 import { WorkbenchFind } from './WorkbenchFind'
-import { commentBlocked } from './changesModel'
 import { fillsOf } from '../pluginUi'
 import { WORKBENCH_PART } from '../slots'
 import { NewTabMenu, PageMoreMenu } from './WorkbenchMenus'
@@ -767,7 +766,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     [activeWebId, guestIdOf]
   )
   const pickBlocked =
-    commentBlocked(session) ??
+    commentTo.blocked ??
     (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
   const pick = useElementPick(
     session?.tabId ?? null,
