@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { nonEmptyString, record } from '../../../main/codexObservation'
+import { nonEmptyString, record } from './codexObservation'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,

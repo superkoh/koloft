@@ -1,5 +1,5 @@
 import { shq } from '@shared/shellQuote'
-import { record } from '../codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '@plugins/sessions/main/agyHooks'

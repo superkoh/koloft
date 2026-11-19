@@ -13,7 +13,7 @@ import {
   REMIND_REPLY_LANGUAGE_FN,
   seedHandedOverOwnerWords
 } from '@plugins/sessions/main/hooks'
-import { record } from './codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 
 // MUSE§9
 export const MUSE_HOOKS_ENV = 'TBH_MANAGED_HOOKS_PATH'

@@ -4,7 +4,7 @@ import type { BackendId, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { AskPayload } from '@shared/sessionEvent'
 import { watchJsonDrops, writeWholeBeforeVisible } from '../../../main/jsonDrops'
-import type { ToolCall } from '../../../main/sessionTracker'
+import type { ToolCall } from './sessionTracker'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN,
