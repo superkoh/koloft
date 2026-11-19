@@ -155,6 +155,18 @@
             empty, they use Koloft's own pick. Every agent gets this, on your Mac and in a
             <a href="../remote/">remote folder</a>.
           </li>
+          <li id="instructions">
+            Last in the <code>Session defaults…</code> box is <code>Instructions</code>: write what
+            every session in this folder should follow. After you save, each new session that starts
+            there, or in another copy of the same repository, gets it, at the end of the text Koloft
+            gives its agent, under "Written by the owner for this workspace". The instructions count
+            for every agent, on your Mac and in a remote folder, for sessions an agent starts too,
+            but not for your butler, which has
+            <a href="../accounts/#butler-instructions">its own</a>. A session you resume may keep
+            the text it started with. Where the project's own <code>AGENTS.md</code> or
+            <code>CLAUDE.md</code> says otherwise, an agent may follow that file instead. The rules
+            and the instructions share one limit of 10,000 bytes; the box shows how much is left.
+          </li>
           <li>Click an old row to resume that session.</li>
           <li id="sleep">
             About half an hour after a session goes quiet (its light turns dim green), it goes to
@@ -219,6 +231,15 @@
                 </td>
               </tr>
               <tr>
+                <td>any light with <code>⏸ N</code></td>
+                <td>
+                  N things it started sit in the background, not working right now: a server, a
+                  watcher or a timer, a helper or a command with nothing to do yet, or a program it
+                  left running. The mark can come twice, as in <code>⏸ 1 ⏸ 2</code>: first the
+                  helpers and commands, then the rest. Hover the mark to see them.
+                </td>
+              </tr>
+              <tr>
                 <td>dim green</td>
                 <td>done a while ago, nothing new; a sleeping session looks the same</td>
               </tr>
@@ -254,8 +275,9 @@
         <ul class="dash">
           <li>
             A small <mark class="hl">red dot</mark> after a session's name means it is calling you:
-            its turn is done, it waits for your OK, or it quit on its own. Hover the dot to see
-            which. It sits beside the light; it does not replace it.
+            its turn is done, it waits for your OK (or for a password, a code or a sign-in that has
+            no card on Discord), or it quit on its own. Hover the dot to see which. It sits beside
+            the light; it does not replace it.
           </li>
           <li>
             Looking at the session does not clear the dot. It goes when the session works again: you
@@ -352,7 +374,8 @@
         </div>
         <ul class="dash">
           <li>
-            When Koloft cannot read what a session asks, its card says
+            When Koloft cannot read what a session asks, or the session asks for a password, a code
+            or a sign-in that has no card on Discord, its card says
             <code>“…” is waiting for you in its tab</code>, and <code>Open session</code> takes you
             there. Every card Koloft puts there has that link.
           </li>
@@ -821,7 +844,10 @@
           </li>
           <li>
             <a href="#session-defaults">Session defaults…</a>
-            <span class="why">— the model and thinking its new sessions start on</span>
+            <span class="why"
+              >— the model and thinking its new sessions start on, and
+              <a href="#instructions">instructions</a> for them</span
+            >
           </li>
           <li>
             <a href="../scheduled/">Scheduled jobs…</a>

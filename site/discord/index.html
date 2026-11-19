@@ -139,8 +139,9 @@ your Mac
 
         <h2 id="set-up">Set it up</h2>
         <p>
-          Open Settings ▸ Discord and click <code>Set up with Alfred</code> (the button carries your
-          butler's name), or type "set up Discord" in <kbd>⌘P</kbd> (this needs
+          Open Settings ▸ Plugins ▸ Discord and click <code>Set up with Alfred</code> (the button
+          carries your butler's name). While Discord has never been set up, its row in Settings ▸
+          Plugins has the same button. Or type "set up Discord" in <kbd>⌘P</kbd> (this needs
           <a href="../accounts/#assist">Assist</a> to read your words in time; that link says what
           happens when it does not). Koloft starts a helper of your butler. It runs on your butler's
           agent. If that agent is switched off in Settings ▸ Sessions, it runs on your default agent
@@ -175,34 +176,36 @@ your Mac
         <p>
           Koloft also needs to know who you are. If the bot's app is yours alone, Koloft already
           knows: it is the app's owner. If a team owns the app, send any message in your server,
-          like "hi". It shows up in Settings ▸ Discord with the sender's name. Click This is me (or
-          Not me). After that, Settings ▸ Discord shows your Discord account ("Only messages from
+          like "hi". It shows up in Settings ▸ Plugins ▸ Discord with the sender's name. Click This
+          is me (or Not me). After that, the page shows your Discord account ("Only messages from
           this user reach Alfred."), the status ("The bot reads only the bound channel."), the
           server, and the channel. Click Set up with Alfred again any time to fix a problem: the
-          steps that are done are skipped.
+          steps that are done are skipped. The <code>Turn on Discord</code> switch on this page does
+          not stop the bot yet: today only Todo's switch acts (see
+          <a href="../agents/#plugins">Settings ▸ Plugins</a>).
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 781; --ar-phone: 788 / 1180">
+        <figure class="shot" style="--ar: 1322 / 886; --ar-phone: 790 / 1236">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/r-discord-settings-phone3.webp"
-                width="788"
-                height="1180"
+                srcset="../img/r-discord-settings-phone4.webp"
+                width="790"
+                height="1236"
               />
               <img
-                src="../img/r-discord-settings4.webp"
+                src="../img/r-discord-settings5.webp"
                 width="1322"
-                height="781"
+                height="886"
                 loading="lazy"
-                alt="Koloft's Settings, Discord page: a Set up with Alfred button, under Let Alfred set up Discord; your Discord account, You are sam; status, Connected as koloft-bot; server, The bot is in Tidewatch; and the channel, Alfred · Butler on #global, with Unbind and Change channel…"
+                alt="Koloft's Settings, the Discord page inside Plugins: a ‹ Plugins button to go back; Turn on Discord, switched on; a Set up with Alfred button, under Let Alfred set up Discord; your Discord account, You are sam; status, Connected as koloft-bot; server, The bot is in Tidewatch; and the channel, Alfred · Butler on #global, with Unbind."
               />
             </picture>
           </div>
           <figcaption>
-            Settings ▸ Discord, all set up: your account, the bot connected, and your butler's
-            channel
+            Settings ▸ Plugins ▸ Discord, all set up: your account, the bot connected, and its
+            server
           </figcaption>
         </figure>
 
@@ -210,7 +213,7 @@ your Mac
         <p>
           Your butler has one channel. Under its name in the sessions list is that channel, or
           <code>not on Discord</code>. To pick one, right-click the butler's row ▸
-          <code>Bind Discord channel…</code>, or click Settings ▸ Discord ▸
+          <code>Bind Discord channel…</code>, or click Settings ▸ Plugins ▸ Discord ▸
           <code>Bind a channel…</code>. The dialog lists your server's channels, with a new one on
           top that Koloft makes for you (<code>#global</code>, or <code>#global-2</code> when that
           name is taken). Once it has one, the same menu has
@@ -379,7 +382,9 @@ your Mac
           Some things only you know, and they should not sit in a chat. When a session needs one, it
           asks in its own tab in Koloft (see <a href="../agents/#secrets">how the agent asks</a>).
           While you are away, or talking to that session from Discord, a 🔑 card comes too: to the
-          session's <a href="#rooms">room</a> if it has one, or else to your butler's channel. It is
+          session's <a href="#rooms">room</a> if it has one, or else to your butler's channel. If
+          Discord does not take the card within a minute, Koloft also marks the session as waiting
+          for you at the Mac (see <a href="../agents/#secrets">how the agent asks</a>). The card is
           headed with the session's name and its folder:
         </p>
         <ul class="dash">
@@ -587,8 +592,8 @@ your Mac
         <p>A long reply is split into several messages.</p>
         <ul class="dash">
           <li>
-            Only your account, the one Settings ▸ Discord shows, is heard. Other people and bots are
-            ignored, and their commands and button presses refused.
+            Only your account, the one Settings ▸ Plugins ▸ Discord shows, is heard. Other people
+            and bots are ignored, and their commands and button presses refused.
           </li>
           <li>
             Discord still sends every message in the server to your Mac. Koloft drops the rest
@@ -596,8 +601,8 @@ your Mac
           </li>
           <li>
             If a Discord team owns the bot's app, then until you pick yourself, the last message
-            anyone wrote in the server shows up in Settings ▸ Discord, so you can say whether it is
-            you.
+            anyone wrote in the server shows up in Settings ▸ Plugins ▸ Discord, so you can say
+            whether it is you.
           </li>
           <li>
             The token signs the bot in before you bind a channel. Until you bind one, it ignores
