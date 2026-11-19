@@ -22,12 +22,12 @@ import {
   markOwnerAsleep,
   noticeFile,
   noticeLine,
-  OWNER_ASLEEP_PUSH,
   quotedPrompt,
   saidFile,
   seedHandedOverOwnerWords,
   seedOwnerWords
 } from '../../src/main/hooks'
+import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
@@ -387,6 +387,12 @@ esac
   })
 
   describe('while the owner is asleep', () => {
+    it('the hook tells the agent, word for word, to go on without the owner and leave only what cannot be undone', () => {
+      expect(OWNER_ASLEEP_PUSH).toBe(
+        '(From Koloft:) The owner is asleep: until they write to you themself, they cannot answer, approve or check anything. Do not stop to wait for them. If there is more you can do toward your task, do it now: where you would ask the owner, choose what you would recommend and note the choice in your report. Leave for the owner only what cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords) and go on with the rest. If the task is done, or you truly cannot go on, end your turn and say plainly what is left and what the owner must do.'
+      )
+    })
+
     const pushed = { decision: 'block', reason: `${OWNER_ASLEEP_PUSH}\n\n` }
     const agyScript = path.join(os.tmpdir(), `koloft-agy-hook-${process.pid}.sh`)
     beforeAll(() => fs.writeFileSync(agyScript, AGY_HOOK_SCRIPT))
