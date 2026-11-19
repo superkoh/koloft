@@ -18,7 +18,7 @@ import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
-import { scheduleLabel } from './scheduleLabel'
+import { BACKGROUND_LABEL_CHARS, scheduleLabel } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -324,7 +324,6 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content', 'write_file', 'edit_file'])
-const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = [
   '"schedule"',
@@ -524,7 +523,7 @@ function subagentSpecs(args: Record<string, unknown>, stepIdx: unknown): { label
   if (!list.length) {
     const summary = argOf(args, 'toolSummary')?.replace(/\s+/g, ' ').trim()
     return [
-      { label: summary?.slice(0, COMMAND_LABEL_CHARS) || `Subagent (${String(stepIdx ?? '')})` }
+      { label: summary?.slice(0, BACKGROUND_LABEL_CHARS) || `Subagent (${String(stepIdx ?? '')})` }
     ]
   }
   return list.map((raw) => {
@@ -537,7 +536,7 @@ function subagentSpecs(args: Record<string, unknown>, stepIdx: unknown): { label
         ? `${typeName}: ${role}`
         : role
       : (typeName && typeName !== 'self' ? typeName : undefined) || prompt || 'Subagent'
-    return { label: label.slice(0, COMMAND_LABEL_CHARS) }
+    return { label: label.slice(0, BACKGROUND_LABEL_CHARS) }
   })
 }
 
@@ -557,7 +556,7 @@ function titleSubagentLabel(sub: { name?: string; role?: string }): string {
       : undefined
   const cleanName = sub.name && sub.name !== 'self' ? sub.name.trim() : undefined
   const fallbackRole = sub.role?.replace(/\s+/g, ' ').trim()
-  return (shortRole || cleanName || fallbackRole || 'Subagent').slice(0, COMMAND_LABEL_CHARS)
+  return (shortRole || cleanName || fallbackRole || 'Subagent').slice(0, BACKGROUND_LABEL_CHARS)
 }
 
 function swarmMentions(text: string): { all: boolean; names: Set<string> } {
@@ -1280,7 +1279,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   ): void {
     const live = new Set(tasks.map((t) => t.taskId))
     for (const task of tasks) {
-      const richLabel = (task.description || task.toolSummary || '').slice(0, COMMAND_LABEL_CHARS)
+      const richLabel = (task.description || task.toolSummary || '').slice(
+        0,
+        BACKGROUND_LABEL_CHARS
+      )
       if (task.toolName === 'schedule') {
         const existing = run.schedules?.get(task.taskId)
         if (existing) {
@@ -2348,7 +2350,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (name === 'run_command') {
       if (event === 'PreToolUse' && belongs) {
         const label =
-          argOf(args, 'CommandLine')?.slice(0, COMMAND_LABEL_CHARS) ?? 'Background command'
+          argOf(args, 'CommandLine')?.slice(0, BACKGROUND_LABEL_CHARS) ?? 'Background command'
         const existing = run.commands?.get(taskId)
         if (existing) {
           existing.item.label = label
@@ -2393,7 +2395,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             id: `${conversationId}/swarm-${stepIdx}-${i}`,
             parentId: conversationId,
             stepIdx,
-            label: member.slice(0, COMMAND_LABEL_CHARS),
+            label: member.slice(0, BACKGROUND_LABEL_CHARS),
             isSwarm: true,
             swarmGroup: teammate
           })

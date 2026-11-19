@@ -560,11 +560,15 @@ esac
     }
     const recurring = { id: 'a1b2c3d4', schedule: '*/5 * * * *', recurring: true, prompt: 'ping' }
     fire('tabWK1', 'stop', {
+      last_assistant_message: 'the hook gets ,"session_crons":[{"id":"x"}] and ,"session_crons":[]',
       background_tasks: [],
-      session_crons: [tricky, recurring],
-      last_assistant_message: 'set "session_crons":[] up'
+      session_crons: [tricky, recurring]
     })
-    fire('tabWK2', 'stop', { background_tasks: [], session_crons: [] })
+    fire('tabWK2', 'stop', {
+      last_assistant_message: 'see ,"session_crons":[{"id":"x"}]',
+      background_tasks: [],
+      session_crons: []
+    })
     fire('tabWK3', 'stop', { background_tasks: [] })
     const crons = (tab: string): unknown =>
       (readStatusLog(tab)[0] as unknown as { crons?: unknown }).crons

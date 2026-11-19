@@ -1456,7 +1456,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(badge).toHaveText('⏸ 1', { timeout: 60_000 })
       await badge.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText(
-        'monitor · Cron (4 15 * * *): /loop check the build'
+        'monitor · Once (4 15 * * *): /loop check the build'
       )
       await page.keyboard.press('Escape')
       await runIn(page, centerTerm(page), '/loop-stop')

@@ -1228,10 +1228,10 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   })
 
-  it('a wakeup claude scheduled for itself (a /loop or CronCreate) is parked as its schedule and prompt, and goes once a turn-end lists none', async () => {
+  it('a wakeup claude scheduled for itself (a /loop or CronCreate) is parked as its schedule and prompt, one-shot or recurring, and goes once a turn-end lists none or a new conversation starts in the tab', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabL9', cwd, initialLines(cwd))
+    const file = await bindCaughtUp(tracker, 'tabL9', cwd, initialLines(cwd))
     tracker.setStatus('tabL9', 'working')
     tracker.setSessionCrons('tabL9', [
       {
@@ -1239,7 +1239,8 @@ describe('run-state from the typed task list: each task judged by what it is, an
         schedule: '4 15 * * *',
         recurring: false,
         prompt: '/loop check\n the build'
-      }
+      },
+      { id: 'a1b2c3d4', schedule: '*/5 * * * *', recurring: true, prompt: 'ping' }
     ])
     await tracker.reportTurnEnd('tabL9', [])
     expect(status(tracker, 'tabL9')).toBe('waiting')
@@ -1247,13 +1248,16 @@ describe('run-state from the typed task list: each task judged by what it is, an
       {
         id: 'cron-8044b6e3',
         kind: 'monitor',
-        label: 'Cron (4 15 * * *): /loop check the build',
+        label: 'Once (4 15 * * *): /loop check the build',
         state: 'waiting'
-      }
+      },
+      { id: 'cron-a1b2c3d4', kind: 'monitor', label: 'Cron (*/5 * * * *): ping', state: 'waiting' }
     ])
-    tracker.setStatus('tabL9', 'working')
     tracker.setSessionCrons('tabL9', [])
-    await tracker.reportTurnEnd('tabL9', [])
+    expect(parked(tracker, 'tabL9')).toBeUndefined()
+    tracker.setSessionCrons('tabL9', [{ id: 'a1b2c3d4', schedule: '*/5 * * * *', recurring: true }])
+    expect(parked(tracker, 'tabL9')).toHaveLength(1)
+    tracker.bindSession('tabL9', file, SID, cwd, '', 'clear')
     expect(parked(tracker, 'tabL9')).toBeUndefined()
   })
 

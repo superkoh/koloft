@@ -16,7 +16,7 @@ import { koloftPrompt } from '@plugins/sessions/api'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
-import { jsonRecord, record } from './codexObservation'
+import { jsonRecord, nonEmptyString, record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
 import { mergeMuseSettings, placeKoloftSkills, readJson } from './museAccounts'
@@ -24,7 +24,7 @@ import { mapAtMost } from '@core/mapAtMost'
 import { pidAlive } from './leftovers'
 import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
-import { scheduleLabel } from './scheduleLabel'
+import { wakeupItem } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -993,18 +993,15 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     } else if (tool === 'cron_create') {
       const job = SCHEDULED_JOB.exec(String(input.tool_response))?.[1]
       const what = record(input.tool_input)
+      const recurring = what.recurring === true
       if (job)
         run.jobs.set(job, {
-          recurring: what.recurring === true,
-          item: {
-            id: job,
-            kind: 'monitor',
-            label: scheduleLabel({
-              cron: typeof what.cron === 'string' ? what.cron : undefined,
-              prompt: typeof what.prompt === 'string' ? what.prompt : undefined
-            }),
-            state: 'waiting'
-          }
+          recurring,
+          item: wakeupItem(job, {
+            cron: nonEmptyString(what.cron),
+            once: !recurring,
+            prompt: nonEmptyString(what.prompt)
+          })
         })
       this.holdForJobs(run)
     } else if (tool === 'cron_delete') {
@@ -1255,7 +1252,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.background.clear()
     run.commands.clear()
     run.jobs.clear()
-    this.holdForJobs(run)
+    this.deps.runtime.setWakeupPending(run.tabId, false)
     run.endedTurns.clear()
     run.touched.clear()
     run.liveWrites = 0

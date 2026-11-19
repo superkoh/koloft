@@ -741,7 +741,7 @@ describe('MuseSessions turns from hooks', () => {
     hook(id, 'Stop', { session_id: A, last_assistant_message: 'scheduled', turn_id: 't1' })
     await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
     expect(sessions.list()[0].background).toEqual([
-      { id: '73ded10e', kind: 'monitor', label: 'Cron (* * * * *): check', state: 'waiting' }
+      { id: 'cron-73ded10e', kind: 'monitor', label: 'Once (* * * * *): check', state: 'waiting' }
     ])
     logRecord(A, {
       payload_type: 'runtime.session',
@@ -755,7 +755,7 @@ describe('MuseSessions turns from hooks', () => {
     create('*/5 * * * *', true, '7a328cdd')
     await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
     expect(sessions.list()[0].background).toEqual([
-      expect.objectContaining({ id: '7a328cdd', label: 'Cron (*/5 * * * *): check' })
+      expect.objectContaining({ id: 'cron-7a328cdd', label: 'Cron (*/5 * * * *): check' })
     ])
     hook(id, 'PostToolUse', {
       session_id: A,

@@ -23,7 +23,8 @@ import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
-import { scheduleLabel } from './scheduleLabel'
+import { wakeupItem } from './scheduleLabel'
+import { nonEmptyString, record } from './codexObservation'
 import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
@@ -91,19 +92,17 @@ export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
 // CC§8
 function wakeupItems(crons: unknown[]): BackgroundItem[] {
   return crons.flatMap((cron) => {
-    const c = (cron ?? {}) as { id?: unknown; schedule?: unknown; prompt?: unknown }
-    if (typeof c.id !== 'string') return []
-    return [
-      {
-        id: `cron-${c.id}`,
-        kind: 'monitor' as const,
-        label: scheduleLabel({
-          cron: typeof c.schedule === 'string' ? c.schedule : undefined,
-          prompt: typeof c.prompt === 'string' ? c.prompt : undefined
-        }),
-        state: 'waiting' as const
-      }
-    ]
+    const c = record(cron)
+    const id = nonEmptyString(c.id)
+    return id
+      ? [
+          wakeupItem(id, {
+            cron: nonEmptyString(c.schedule),
+            once: c.recurring === false,
+            prompt: nonEmptyString(c.prompt)
+          })
+        ]
+      : []
   })
 }
 
@@ -669,9 +668,14 @@ export class SessionTracker extends SessionRuntime {
 
   // CC§8
   setSessionCrons(tabId: string, crons: unknown[]): void {
-    this.setWakeupPending(tabId, crons.length > 0)
+    const wakeups = wakeupItems(crons)
+    this.setWakeupPending(tabId, wakeups.length > 0)
     const t = this.tracked.get(tabId)
-    if (t) t.wakeups = wakeupItems(crons)
+    if (!t) return
+    const before = new Set(t.wakeups.map((w) => w.id))
+    t.wakeups = wakeups
+    const others = (t.info.background ?? []).filter((item) => !before.has(item.id))
+    this.setBackgroundItems(t, [...others, ...wakeups])
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
@@ -943,7 +947,9 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = []
-      this.setBackgroundItems(t, t.wakeups)
+      t.wakeups = []
+      this.setWakeupPending(tabId, false)
+      this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
   }

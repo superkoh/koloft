@@ -216,10 +216,13 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await expect(badge).toHaveText('⏸ 1', { timeout: 15_000 })
     await badge.click()
     const card = page.locator('.tbu-pop.parked')
-    await expect(card).toContainText('monitor · Cron (4 15 * * *): /loop check the build')
+    await expect(card).toContainText('monitor · Once (4 15 * * *): /loop check the build')
     await page.keyboard.press('Escape')
     await expect(card).toHaveCount(0)
     await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible()
+    await expect
+      .poll(() => pendingAttention(page), { timeout: 10_000 })
+      .toMatchObject([{ kind: 'turn-done', fyi: true }])
 
     await runIn(page, centerTerm(page), '/loop-stop')
     await expect(badge).toHaveCount(0, { timeout: 15_000 })
