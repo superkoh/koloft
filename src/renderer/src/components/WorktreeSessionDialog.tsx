@@ -1,5 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -10,25 +11,15 @@ import {
   type ReactNode
 } from 'react'
 import { IconCheck, IconClose, IconWarning } from '../icons'
-import type {
-  BackendId,
-  GithubItem,
-  GithubOpenItems,
-  WorkspaceFreshness,
-  WorkspaceRows,
-  WorktreeInfo
-} from '@shared/types'
+import type { BackendId, WorkspaceFreshness, WorkspaceRows, WorktreeInfo } from '@shared/types'
 import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
-import { ageLabel, freshLineState } from '@shared/freshnessOps'
+import { freshLineState } from '@shared/freshnessOps'
 import {
   escPeel,
   freshLineCopy,
   isDimmed,
   itemAim,
-  itemFilterText,
-  itemLabel,
-  itemLaunchExtras,
   moveHot,
   primaryKind,
   primaryLabel,
@@ -42,8 +33,11 @@ import {
   type RunChoice,
   type WtAction,
   type WtAim,
-  type WtHot
+  type WtHot,
+  type WorktreeItem
 } from '../newSession'
+import { fillsOf } from '../pluginUi'
+import { WORKTREE_ITEMS } from '../slots'
 import { ipcErrorText } from '../agentUi'
 import { shortenHome } from '../browseModel'
 import { busyInCheckout, pullToast } from '@shared/freshnessOps'
@@ -84,7 +78,6 @@ export function WorktreeSessionDialog({
   const [pullingAs, setPullingAs] = useState<BackendId | null>(null)
   const [failReason, setFailReason] = useState('')
   const [confirm, setConfirm] = useState<number | null>(null)
-  const [items, setItems] = useState<GithubOpenItems | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const rowsAtOpen = useRef(ws.rows)
   const showToast = useStore((s) => s.showToast)
@@ -129,31 +122,11 @@ export function WorktreeSessionDialog({
     }
   }, [wsPath, isGit, gitAutoFetch])
 
-  useEffect(() => {
-    if (!isGit) return
-    let live = true
-    void window.api.github.openItems(wsPath).then(
-      (r) => {
-        if (live) setItems(r)
-      },
-      () => {
-        if (live) setItems({ state: 'failed' })
-      }
-    )
-    return () => {
-      live = false
-    }
-  }, [wsPath, isGit])
+  const itemViews = fillsOf(WORKTREE_ITEMS).map((useItems) => useItems(wsPath, isGit))
 
   const listed = useMemo(() => sortWorktrees(worktrees, rowsAtOpen.current), [worktrees])
-  const ghItems = useMemo(
-    () => (loaded && items?.state === 'items' ? [...items.issues, ...items.prs] : []),
-    [items, loaded]
-  )
-  const names = useMemo(
-    () => [...listed.map((w) => w.name), ...ghItems.map(itemFilterText)],
-    [listed, ghItems]
-  )
+  const ghItems = loaded ? itemViews.flatMap((v) => v.items) : []
+  const names = [...listed.map((w) => w.name), ...ghItems.map((item) => item.filterText)]
 
   const aimAt = (i: number): WtAim => {
     const item = ghItems[i - listed.length]
@@ -176,7 +149,7 @@ export function WorktreeSessionDialog({
           : 'Create',
     name: 'name' in aim ? aim.name : null,
     ref: freshness?.defRef,
-    item: aim.kind === 'item' ? aim.item.number : undefined
+    itemRef: aim.kind === 'item' ? aim.item.ref : undefined
   }
   const locked = phase === 'pulling' || sessionLaunch.starting
   useLaunchLock(launchLock, locked)
@@ -235,17 +208,17 @@ export function WorktreeSessionDialog({
       const { item, name, dir } = target
       const withItem = (c: RunChoice): SessionLaunchOptions => ({
         ...resolveLaunch(c, wsPath),
-        ...itemLaunchExtras(item)
+        ...item.launch
       })
+      const makeWorktree = item.makeWorktree
       if (dir) void sessionLaunch.launch(withItem({ kind: 'existing', name, dir }), method)
-      else if (item.kind === 'issue')
+      else if (item.fromRepoRoot || !makeWorktree)
         void sessionLaunch.launch(withItem({ kind: 'create', name }), method)
       else
-        void sessionLaunch.launch(async () => {
-          const made = await window.api.github.prWorktree(wsPath, item.number, item.branch ?? '')
-          if (!made.ok) throw new Error(made.reason)
-          return withItem({ kind: 'existing', name, dir: made.dir })
-        }, method)
+        void sessionLaunch.launch(
+          async () => withItem({ kind: 'existing', name, dir: await makeWorktree() }),
+          method
+        )
     }
   }
 
@@ -315,36 +288,7 @@ export function WorktreeSessionDialog({
         </p>
       )
     }
-    if (aim.kind === 'item') {
-      const n = `#${aim.item.number}`
-      const onBranch = aim.item.branch && aim.name !== `pr-${aim.item.number}`
-      return (
-        <p className="field-hint">
-          {aim.dir ? (
-            <>
-              Open the worktree <code>{aim.name}</code>
-              {onBranch && (
-                <>
-                  {' '}
-                  — it is already on {n}'s branch <code>{aim.item.branch}</code> —
-                </>
-              )}{' '}
-              and
-            </>
-          ) : aim.item.kind === 'issue' ? (
-            <>
-              Create a worktree named <code>{aim.name}</code> from the repo root, and
-            </>
-          ) : (
-            <>
-              Create a worktree named <code>{aim.name}</code> on {n}'s branch{' '}
-              <code>{aim.item.branch}</code>, fetched from GitHub if it is not here yet, and
-            </>
-          )}{' '}
-          send {n}'s title and link as the first message.
-        </p>
-      )
-    }
+    if (aim.kind === 'item') return <p className="field-hint">{aim.item.hint(aim.name, aim.dir)}</p>
     return (
       <p className="field-hint">
         Start a session at <code>{shortenHome(aim.dir, window.api.home)}</code>.
@@ -401,48 +345,16 @@ export function WorktreeSessionDialog({
     </div>
   )
 
-  const itemRow = (item: GithubItem, i: number): JSX.Element =>
-    row(
-      i,
-      `${item.kind}-${item.number}`,
-      itemLabel(item),
-      item.branch ? `branch ${item.branch}` : ageLabel(Date.parse(item.updatedAt), now)
-    )
+  const itemRow = (i: number, item: WorktreeItem): JSX.Element =>
+    row(i, item.key, item.label, item.note)
 
-  const githubBox = (): JSX.Element | null => {
-    if (!isGit || items?.state === 'no-repo') return null
-    if (!items || !loaded) return <p className="field-hint">Loading issues and pull requests…</p>
-    if (items.state !== 'items')
-      return (
-        <p className="field-hint">
-          {items.state === 'no-gh' ? (
-            <>
-              No issue or PR list — <code>gh</code> is not installed on this Mac.
-            </>
-          ) : items.state === 'signed-out' ? (
-            <>
-              No issue or PR list — run <code>gh auth login</code> on this Mac.
-            </>
-          ) : (
-            'Could not load issues and pull requests from GitHub.'
-          )}
-        </p>
-      )
-    if (ghItems.length === 0)
-      return <p className="field-hint">No open issues or pull requests in {items.repo}.</p>
-    const firstPr = listed.length + items.issues.length
-    return (
-      <div className="wt-list gh-items">
-        {items.issues.length > 0 && <div className="cb-hd">Open issues · {items.repo}</div>}
-        {items.issues.map((item, j) => itemRow(item, listed.length + j))}
-        {items.prs.length > 0 && (
-          <div className="cb-hd">
-            Open pull requests{items.issues.length > 0 ? '' : ` · ${items.repo}`}
-          </div>
-        )}
-        {items.prs.map((item, j) => itemRow(item, firstPr + j))}
-      </div>
-    )
+  const itemBoxes = (): JSX.Element[] => {
+    let first = listed.length
+    return itemViews.map((view, k) => {
+      const box = view.box({ loaded, first, row: itemRow })
+      first += loaded ? view.items.length : 0
+      return <Fragment key={k}>{box}</Fragment>
+    })
   }
 
   const title = 'New Worktree Session · ' + basename(wsPath)
@@ -472,7 +384,7 @@ export function WorktreeSessionDialog({
                 autoComplete="off"
                 placeholder={
                   ghItems.length > 0
-                    ? 'name a new worktree, or pick a worktree, issue or PR below…'
+                    ? (itemViews.find((v) => v.items.length > 0)?.placeholder ?? '')
                     : listed.length > 0
                       ? 'name a new worktree, or pick below…'
                       : 'name a new worktree'
@@ -519,7 +431,7 @@ export function WorktreeSessionDialog({
                 )}
               </div>
             )}
-            {githubBox()}
+            {itemBoxes()}
           </div>
           <div className="modal-foot">
             <button

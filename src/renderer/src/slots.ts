@@ -6,6 +6,7 @@ import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { ClaimsWorkspace, LandingAfterClose } from './store'
 import type { Icon } from './icons'
+import type { LaunchSeed, WorktreeItem } from './newSession'
 import type { Settings, WorkspaceRows } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
@@ -101,6 +102,24 @@ export interface WorkbenchPartView {
 }
 
 export type UseWorkbenchPart = (ctx: WorkbenchPartContext) => WorkbenchPartView
+
+export interface WorktreeItemsView {
+  items: readonly WorktreeItem[]
+  placeholder: string
+  box: (draw: {
+    loaded: boolean
+    first: number
+    row: (index: number, item: WorktreeItem) => ReactNode
+  }) => ReactNode
+}
+
+export type UseWorktreeItems = (wsPath: string, isGit: boolean) => WorktreeItemsView
+
+export const WORKTREE_ITEMS = slot<UseWorktreeItems>('worktree-items')
+
+export type IssueLaunch = (wsPath: string, issue: number) => Promise<LaunchSeed | null>
+
+export const ISSUE_LAUNCH = slot<IssueLaunch>('issue-launch')
 
 export const WORKBENCH_PART = slot<UseWorkbenchPart>('workbench-part')
 

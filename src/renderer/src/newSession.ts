@@ -2,7 +2,6 @@ import { ageLabel, type FreshLineState } from '@shared/freshnessOps'
 import type {
   BackendId,
   CreateTabOptions,
-  GithubItem,
   SessionRow,
   WorkspaceFreshness,
   WorktreeInfo
@@ -13,6 +12,25 @@ import { distinctName, type RouteWorktree } from '@shared/sessionRoute'
 import { worktreeBase } from '@shared/cronNames'
 import { withPictures, type PastedPicture } from '@shared/pastedPictures'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
+import type { ReactNode } from 'react'
+
+export type LaunchSeed = Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'>
+
+export interface WorktreeItem {
+  key: string
+  label: string
+  filterText: string
+  note: string
+  ref: string
+  worktreeName: string
+  branch?: string
+  fromRepoRoot: boolean
+  launch: LaunchSeed
+  makeWorktree?: () => Promise<string>
+  hint: (name: string, dir: string | null) => ReactNode
+}
+
+export const issueWorktreeName = (issue: number): string => `issue-${issue}`
 
 export type RunChoice =
   | ({ kind: 'existing' } & WorktreeInfo)
@@ -84,36 +102,24 @@ export function pendingLaunch(
   wt: RouteWorktree | null,
   pending: TypedStart,
   worktrees: WorktreeInfo[],
-  issues: GithubItem[]
+  issueSeed: LaunchSeed | null
 ): SessionLaunchOptions {
   if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
-  const item =
-    wt.kind === 'issue'
-      ? issues.find((i) => i.kind === 'issue' && i.number === wt.number)
-      : undefined
-  const wished = wt.kind === 'issue' ? itemWorktreeName('issue', wt.number) : wt.name
+  const seed = wt.kind === 'issue' ? issueSeed : null
+  const wished = wt.kind === 'issue' ? issueWorktreeName(wt.number) : wt.name
   return {
     cwd: wsPath,
     worktree: distinctName(
       wished,
       worktrees.map((w) => w.name)
     ),
-    ...(item
-      ? seededItemExtras(item, promptWithPictures(pending), pending.title)
+    ...(seed
+      ? seededItemExtras(seed, promptWithPictures(pending), pending.title)
       : typedLaunch(pending))
   }
 }
 
-function itemWorktreeName(kind: GithubItem['kind'], number: number): string {
-  return `${kind}-${number}`
-}
-
-export function seededItemExtras(
-  item: GithubItem,
-  prompt: string,
-  title: string
-): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
-  const base = itemLaunchExtras(item)
+export function seededItemExtras(base: LaunchSeed, prompt: string, title: string): LaunchSeed {
   const typed = prompt.trim()
   return {
     ...base,
@@ -135,7 +141,7 @@ export type WtAim =
     }
   | { kind: 'reserved'; name: string }
   | { kind: 'invalid'; name: string }
-  | { kind: 'item'; item: GithubItem; name: string; dir: string | null }
+  | { kind: 'item'; item: WorktreeItem; name: string; dir: string | null }
 
 function existingWorktreeAim(w: WorktreeInfo): WtAim {
   return w.recoveryResourceId && w.recoveryBackend
@@ -150,36 +156,18 @@ function existingWorktreeAim(w: WorktreeInfo): WtAim {
 }
 
 export function worktreeBaseMode(aim: WtAim): 'existing' | 'create' {
-  if (aim.kind === 'item')
-    return aim.dir === null && aim.item.kind === 'issue' ? 'create' : 'existing'
+  if (aim.kind === 'item') return aim.dir === null && aim.item.fromRepoRoot ? 'create' : 'existing'
   return aim.kind === 'open' || aim.kind === 'recover' ? 'existing' : 'create'
 }
 
-export function itemLabel(item: GithubItem): string {
-  return `#${item.number} ${item.title}`
-}
-
-export function itemFilterText(item: GithubItem): string {
-  return item.branch ? `${itemLabel(item)} ${item.branch}` : itemLabel(item)
-}
-
-export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): WtAim {
-  const name = itemWorktreeName(item.kind, item.number)
+export function itemAim(item: WorktreeItem, worktrees: WorktreeInfo[]): WtAim {
+  const name = item.worktreeName
   const hit =
     (item.branch && worktrees.find((w) => w.branch === item.branch)) ||
     worktrees.find((w) => w.name === name)
   return hit
     ? { kind: 'item', item, name: hit.name, dir: hit.dir }
     : { kind: 'item', item, name, dir: null }
-}
-
-export function itemLaunchExtras(
-  item: GithubItem
-): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
-  const [what, view] =
-    item.kind === 'pr' ? ['pull request', 'gh pr view'] : ['issue', 'gh issue view']
-  const firstPrompt = `${itemLabel(item)}\n${item.url}\n\nRead this ${what} and its comments yourself (${view} ${item.number} --comments), then work on it.`
-  return { firstPrompt, name: itemLabel(item), trustFolder: true }
 }
 
 export function worktreeAim(worktrees: WorktreeInfo[], query: string, hot: WtHot): WtAim {
@@ -246,12 +234,12 @@ export interface WtAction {
   verb: 'Create' | 'Open' | 'Recover'
   name: string | null
   ref?: string
-  item?: number
+  itemRef?: string
 }
 
 export function actionText(wt: WtAction, withName: boolean): string {
-  if (wt.item !== undefined) {
-    return wt.verb === 'Open' ? `Open ${wt.name} for #${wt.item}` : `Create from #${wt.item}`
+  if (wt.itemRef !== undefined) {
+    return wt.verb === 'Open' ? `Open ${wt.name} for ${wt.itemRef}` : `Create from ${wt.itemRef}`
   }
   if (!withName) return wt.verb
   return wt.name === null ? `${wt.verb} worktree` : `${wt.verb} worktree “${wt.name}”`

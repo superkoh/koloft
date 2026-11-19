@@ -4,8 +4,6 @@ import {
   freshLineCopy,
   isDimmed,
   itemAim,
-  itemFilterText,
-  itemLaunchExtras,
   moveHot,
   pendingLaunch,
   pendingWorktree,
@@ -20,6 +18,7 @@ import {
   worktreeInUse,
   type WtHot
 } from '../../src/renderer/src/newSession'
+import { itemLaunchExtras, worktreeItem } from '../../src/plugins/github/renderer/worktreeItems'
 import { freshLineState, type FreshLineState } from '@shared/freshnessOps'
 import type { RouteWorktree } from '@shared/sessionRoute'
 import type { GithubItem, SessionRow, WorkspaceFreshness } from '@shared/types'
@@ -297,14 +296,14 @@ describe('worktreeAim (D5 — what the primary acts on)', () => {
 })
 
 describe('itemAim (#218 — where an issue or pull request session starts)', () => {
-  const issue: GithubItem = {
+  const issueOnGithub: GithubItem = {
     kind: 'issue',
     number: 218,
     title: 'Start a session from an issue',
     url: 'https://github.com/acme/app/issues/218',
     updatedAt: '2026-10-09T00:00:00Z'
   }
-  const pr: GithubItem = {
+  const prOnGithub: GithubItem = {
     kind: 'pr',
     number: 329,
     title: 'Fix the restart',
@@ -312,6 +311,8 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     updatedAt: '2026-10-09T00:00:00Z',
     branch: 'fix/190-restart'
   }
+  const issue = worktreeItem('/repo', issueOnGithub, NOW)
+  const pr = worktreeItem('/repo', prOnGithub, NOW)
   const onPrBranch = { name: 'fix-190', dir: '/repo/.claude/worktrees/fix-190', branch: pr.branch }
 
   it('makes issue-<n> from the repo root the first time, and opens it when it is already there', () => {
@@ -340,7 +341,7 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
   })
 
   it('names the session after the issue and sends only its title and link, asking the agent to read the rest itself', () => {
-    const extras = itemLaunchExtras(issue)
+    const extras = itemLaunchExtras(issueOnGithub)
     expect(extras.name).toBe('#218 Start a session from an issue')
     expect(extras.trustFolder).toBe(true)
     const lines = extras.firstPrompt!.split('\n')
@@ -349,55 +350,59 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
       'https://github.com/acme/app/issues/218'
     ])
     expect(extras.firstPrompt).toMatch(/gh issue view 218 --comments/)
-    expect(itemLaunchExtras(pr).firstPrompt).toMatch(/gh pr view 329 --comments/)
+    expect(itemLaunchExtras(prOnGithub).firstPrompt).toMatch(/gh pr view 329 --comments/)
   })
 
   it('the full first message an agent gets for an issue, a pull request and an issue picked from ⌘P, pinned so that moving it changes no character', async () => {
     const text = [
-      `== issue\n${itemLaunchExtras(issue).firstPrompt}`,
-      `== pull request\n${itemLaunchExtras(pr).firstPrompt}`,
-      `== issue from ⌘P\n${seededItemExtras(issue, '  and add a test  ', 'Login test').firstPrompt}`
+      `== issue\n${itemLaunchExtras(issueOnGithub).firstPrompt}`,
+      `== pull request\n${itemLaunchExtras(prOnGithub).firstPrompt}`,
+      `== issue from ⌘P\n${seededItemExtras(issue.launch, '  and add a test  ', 'Login test').firstPrompt}`
     ].join('\n')
     await expect(text + '\n').toMatchFileSnapshot('./newSession-text/first-prompts.txt')
   })
 
   it('from ⌘P, puts the issue first, then a blank line, then what was typed, and takes the typed title over the issue', () => {
-    const extras = seededItemExtras(issue, '  and add a test  ', 'Login test')
-    expect(extras.firstPrompt).toBe(`${itemLaunchExtras(issue).firstPrompt}\n\nand add a test`)
+    const extras = seededItemExtras(issue.launch, '  and add a test  ', 'Login test')
+    expect(extras.firstPrompt).toBe(
+      `${itemLaunchExtras(issueOnGithub).firstPrompt}\n\nand add a test`
+    )
     expect(extras.name).toBe('Login test')
     expect(extras.trustFolder).toBe(true)
-    expect(seededItemExtras(issue, ' ', '')).toEqual(itemLaunchExtras(issue))
+    expect(seededItemExtras(issue.launch, ' ', '')).toEqual(itemLaunchExtras(issueOnGithub))
   })
 
   it('⌘P starts where Assist pointed: the main checkout of a folder that is not git, a new worktree, or a new worktree for the issue with its lines first; a worktree that already exists is never reused, its name gets the next free -N', () => {
     const said = { prompt: ' fix login ', title: 'Login fix' }
     const typed = { firstPrompt: 'fix login', name: 'Login fix' }
     const listed = [wt('auth'), wt('issue-218')]
-    expect(pendingLaunch('/repo', { kind: 'main' }, said, listed, [])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'main' }, said, listed, null)).toEqual({
       cwd: '/repo',
       ...typed
     })
-    expect(pendingLaunch('/repo', { kind: 'new', name: 'login' }, said, listed, [])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'new', name: 'login' }, said, listed, null)).toEqual({
       cwd: '/repo',
       worktree: 'login',
       ...typed
     })
-    expect(pendingLaunch('/repo', { kind: 'new', name: 'auth' }, said, listed, [])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'new', name: 'auth' }, said, listed, null)).toEqual({
       cwd: '/repo',
       worktree: 'auth-2',
       ...typed
     })
-    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], issue.launch)).toEqual({
       cwd: '/repo',
       worktree: 'issue-218',
-      ...seededItemExtras(issue, ' fix login ', 'Login fix')
+      ...seededItemExtras(issue.launch, ' fix login ', 'Login fix')
     })
-    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, listed, [issue])).toEqual({
+    expect(
+      pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, listed, issue.launch)
+    ).toEqual({
       cwd: '/repo',
       worktree: 'issue-218-2',
-      ...seededItemExtras(issue, ' fix login ', 'Login fix')
+      ...seededItemExtras(issue.launch, ' fix login ', 'Login fix')
     })
-    expect(pendingLaunch('/repo', { kind: 'issue', number: 9 }, said, [], [issue])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 9 }, said, [], null)).toEqual({
       cwd: '/repo',
       worktree: 'issue-9',
       ...typed
@@ -411,12 +416,12 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     ]
     const said = { prompt: ' fix login ', title: '', pictures }
     const sent = 'fix login\n\nPicture: /pics/a.png\nPicture: /pics/b.jpg'
-    expect(pendingLaunch('/repo', { kind: 'main' }, said, [], []).firstPrompt).toBe(sent)
+    expect(pendingLaunch('/repo', { kind: 'main' }, said, [], null).firstPrompt).toBe(sent)
     expect(
-      pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue]).firstPrompt
-    ).toBe(`${itemLaunchExtras(issue).firstPrompt}\n\n${sent}`)
+      pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], issue.launch).firstPrompt
+    ).toBe(`${itemLaunchExtras(issueOnGithub).firstPrompt}\n\n${sent}`)
     expect(
-      pendingLaunch('/repo', { kind: 'main' }, { ...said, pictures: [] }, [], []).firstPrompt
+      pendingLaunch('/repo', { kind: 'main' }, { ...said, pictures: [] }, [], null).firstPrompt
     ).toBe('fix login')
   })
 
@@ -432,21 +437,21 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
   })
 
   it('labels the primary with the number it acts on', () => {
-    expect(primaryLabel('start', { verb: 'Create', name: 'issue-218', item: 218 }, 'Claude')).toBe(
-      'Create from #218 · Claude'
-    )
-    expect(primaryLabel('pull', { verb: 'Create', name: 'issue-218', item: 218 })).toBe(
+    expect(
+      primaryLabel('start', { verb: 'Create', name: 'issue-218', itemRef: '#218' }, 'Claude')
+    ).toBe('Create from #218 · Claude')
+    expect(primaryLabel('pull', { verb: 'Create', name: 'issue-218', itemRef: '#218' })).toBe(
       'Pull & Create from #218'
     )
-    expect(primaryLabel('start', { verb: 'Open', name: 'fix-190', item: 329 }, 'Codex')).toBe(
+    expect(primaryLabel('start', { verb: 'Open', name: 'fix-190', itemRef: '#329' }, 'Codex')).toBe(
       'Open fix-190 for #329 · Codex'
     )
   })
 
   it('lets a typed word find a pull request by its branch as well as by number and title', () => {
-    expect(isDimmed(itemFilterText(pr), '190')).toBe(false)
-    expect(isDimmed(itemFilterText(pr), '#329')).toBe(false)
-    expect(isDimmed(itemFilterText(issue), '190')).toBe(true)
+    expect(isDimmed(pr.filterText, '190')).toBe(false)
+    expect(isDimmed(pr.filterText, '#329')).toBe(false)
+    expect(isDimmed(issue.filterText, '190')).toBe(true)
   })
 })
 
