@@ -268,7 +268,6 @@ interface AppState {
   followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
-  openWorkspaceList: (path: string, what: 'issues' | 'pulls') => void
 
   focusPanelTerm: (ptyId: string) => void
 
@@ -298,7 +297,6 @@ const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
 const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
-const GITHUB_LIST_UNREACHABLE_NOTICE = 'Could not find this workspace’s GitHub page — try again.'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -1296,16 +1294,6 @@ export const useStore = create<AppState>((set, get) => ({
       resumeLaunch: null,
       workbenchFull: false
     }),
-  openWorkspaceList: (path, what) => {
-    get().selectWorkspace(path)
-    void window.api.github
-      .target(path, what)
-      .then((url) => {
-        if (!url) return get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE)
-        get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
-      })
-      .catch(() => get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE))
-  },
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
   // PLATFORM§25

@@ -6,10 +6,8 @@ import {
   IconClose,
   IconCopy,
   IconDownload,
-  IconIssue,
   IconOpenOutside,
   IconPlus,
-  IconPullRequest,
   IconReload,
   IconSignIn
 } from '../icons'
@@ -18,7 +16,6 @@ import type {
   GitAccountView,
   WorkspaceFreshness,
   WorkspaceGitAccount,
-  WorkspaceGithub,
   WorkspaceRows
 } from '@shared/types'
 import { busyInCheckout, canPull, pullToast } from '@shared/freshnessOps'
@@ -29,13 +26,12 @@ import {
   authorLine,
   headAge,
   orgBlockedText,
-  openIssuesLabel,
-  openPullsLabel,
   pullNote,
   suggestionText,
   type PullNote
 } from '../freshnessView'
 import { PullConfirm } from './PullConfirm'
+import { gitPartsOf } from '../pluginUi'
 import '../accounts.css'
 
 const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
@@ -357,10 +353,8 @@ function useGitAccountView(
 }
 
 export function FreshnessPopover({
-  wsPath,
   f,
-  github,
-  remote,
+  ws,
   left,
   top,
   onClose,
@@ -368,10 +362,8 @@ export function FreshnessPopover({
   onMouseEnter,
   onMouseLeave
 }: {
-  wsPath: string
   f?: WorkspaceFreshness
-  github?: WorkspaceGithub
-  remote?: WorkspaceRows['workspace']['remote']
+  ws: WorkspaceRows['workspace']
   left: number
   top: number
   onClose: () => void
@@ -379,6 +371,7 @@ export function FreshnessPopover({
   onMouseEnter: () => void
   onMouseLeave: () => void
 }): JSX.Element {
+  const wsPath = ws.path
   const showToast = useStore((s) => s.showToast)
   const [fetching, setFetching] = useState(false)
   const [pulling, setPulling] = useState(false)
@@ -448,12 +441,11 @@ export function FreshnessPopover({
   })
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
-  const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
+  const remote = ws.remote
+  const parts = gitPartsOf(ws)
+  const hasPart = parts.length > 0
+  const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, hasPart, onClose)
   const offline = !!remote && !remote.connected
-  const openList = (what: 'issues' | 'pulls'): void => {
-    onClose()
-    useStore.getState().openWorkspaceList(wsPath, what)
-  }
   const eligible = !!f && canPull(f)
   const note: PullNote | null = failed
     ? { text: failed, tone: 'alarm' }
@@ -525,34 +517,20 @@ export function FreshnessPopover({
               </button>
             </>
           )}
-          {f && github && <div className="tbu-sep" />}
-          {github && (
-            <>
-              <div className="tbu-pop-head">
-                <span>GitHub · {github.repo}</span>
-                {acct && <span className="age">as {acct.login}</span>}
-              </div>
-              <button className="tbu-act" disabled={offline} onClick={() => openList('issues')}>
-                <IconIssue size={14} />
-                {openIssuesLabel(github.issues)}
-              </button>
-              <button className="tbu-act" disabled={offline} onClick={() => openList('pulls')}>
-                <IconPullRequest size={14} />
-                {openPullsLabel(github.prs)}
-              </button>
-              {gitNotes.length > 0 && (
-                <div className="tbu-row">
-                  {gitNotes.map((n) => (
-                    <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
-                      {n.text}
-                    </div>
-                  ))}
+          {f && hasPart && <div className="tbu-sep" />}
+          {parts.map(({ Section }, i) => (
+            <Section key={i} ws={ws} offline={offline} account={acct?.login} onClose={onClose} />
+          ))}
+          {gitNotes.length > 0 && (
+            <div className="tbu-row">
+              {gitNotes.map((n) => (
+                <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
+                  {n.text}
                 </div>
-              )}
-              {gitBlock}
-            </>
+              ))}
+            </div>
           )}
-          {!github && gitBlock}
+          {gitBlock}
         </div>
       )}
       {confirm !== null && (

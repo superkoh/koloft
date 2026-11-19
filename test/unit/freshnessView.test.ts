@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { GitClueReason, WorkspaceFreshness } from '../../src/shared/types'
-import {
-  behindBadge,
-  clueText,
-  countLabel,
-  headAge,
-  pullNote
-} from '../../src/renderer/src/freshnessView'
+import { behindBadge, clueText, headAge, pullNote } from '../../src/renderer/src/freshnessView'
 import { pullToast } from '../../src/shared/freshnessOps'
 
 const NOW = 1_700_000_000_000
@@ -159,15 +153,6 @@ describe('pullNote', () => {
       text: 'Up to date with origin/main.',
       tone: 'plain'
     })
-  })
-})
-
-describe('countLabel', () => {
-  it('keeps the exact count below a thousand and shortens from there down to one decimal', () => {
-    expect(countLabel(999)).toBe('999')
-    expect(countLabel(1000)).toBe('1k')
-    expect(countLabel(2749)).toBe('2.7k')
-    expect(countLabel(12399)).toBe('12.3k')
   })
 })
 

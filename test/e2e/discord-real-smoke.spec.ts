@@ -243,7 +243,7 @@ async function butlerRunsOn(page: Page, backend: BackendId, koloftLogged: string
     .poll(
       async () => {
         butler = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.butler && s.alive
+          (s) => s.overseer && s.alive
         )
         return !!butler || offItsAgent()
       },
@@ -306,7 +306,9 @@ function answerableMarker(env: E2EEnv, tabId: string): string {
 
 async function liveClaudeTab(page: Page): Promise<{ tabId: string; sessionId: string }> {
   await startSessionIn(page, 'ws-a')
-  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && !s.butler)!
+  return (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.alive && !s.overseer
+  )!
 }
 
 const CLAUDE_INPUT_READY = /^❯/m
@@ -420,7 +422,7 @@ async function startedSession(page: Page): Promise<{ tabId: string; sessionId: s
     .poll(
       async () => {
         found = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler && s.sessionId
+          (s) => s.alive && !s.overseer && s.sessionId
         )
         return !!found
       },
@@ -496,7 +498,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
         .toContain('SAVED')
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.butler
+        (s) => s.alive && s.overseer
       )!
       const projects = path.join(env.home, '.claude', 'projects')
       const memory = fs
@@ -558,7 +560,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => terminalText(page, target.tabId), { timeout: 2 * A_REAL_MODEL_TURN_MS })
         .toMatch(/1\. Red[\s\S]*2\. Green[\s\S]*3\. Blue/)
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.butler
+        (s) => s.alive && s.overseer
       )!
       expect(saidBy(env, target.sessionId, 'user').filter(Boolean)).toHaveLength(1)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
@@ -608,7 +610,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       await closesTheEndedSessionItIsAskedTo(env, fake, page, endedId)
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.butler
+        (s) => s.alive && s.overseer
       )!
       expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session close')
     })
@@ -623,7 +625,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       await startSessionIn(page, 'ws-a')
       const target = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && !s.butler
+        (s) => s.alive && !s.overseer
       )!
 
       fake.say(
@@ -775,7 +777,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page, butlerRunsOnItsBackend) => {
       await answersWholeInTheChannel(fake)
       const conductor = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
-        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.butler)
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.overseer)
       const first = (await conductor())!
       const started = lastCodexTurnPermissions(env, first.sessionId)
       expect(started).toEqual({ approval: 'never', sandbox: 'danger-full-access' })
@@ -846,7 +848,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.butler
+        (s) => s.alive && s.overseer
       )!
       await typeLine(page, conductor.tabId, '/plan')
       await expect
@@ -893,8 +895,9 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         if (needs.includes('claude')) addClaudeAccountToKeychain(env)
         await withConductor(env, fake, async (_app, page, butlerRunsOnItsBackend) => {
           const conductorTab = async (): Promise<string | undefined> =>
-            (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler && s.alive)
-              ?.tabId
+            (await page.evaluate(() => window.api.sessions.list())).find(
+              (s) => s.overseer && s.alive
+            )?.tabId
           fake.say(
             OWNER,
             `Start one new ${BACKEND_LABEL[child]} session (koloft session new ${picksFor(child)} --backend ${child} --workspace ws-a) in the ws-a workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
