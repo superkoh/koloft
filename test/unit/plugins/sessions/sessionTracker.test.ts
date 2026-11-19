@@ -5,12 +5,12 @@ import os from 'os'
 import type { EventEmitter } from 'events'
 import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
 
-let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
-let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
-let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
-let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
-let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
-let lastTurnsOfLines: typeof import('../../src/main/sessionTracker').lastTurnsOfLines
+let SessionTracker: typeof import('../../../../src/plugins/sessions/main/sessionTracker').SessionTracker
+let encodeCwd: typeof import('../../../../src/plugins/sessions/main/sessionTracker').encodeCwd
+let scratchpadDirFor: typeof import('../../../../src/plugins/sessions/main/sessionTracker').scratchpadDirFor
+let classifyUserPrompt: typeof import('../../../../src/plugins/sessions/main/sessionTracker').classifyUserPrompt
+let transcriptTurns: typeof import('../../../../src/plugins/sessions/main/sessionTracker').transcriptTurns
+let lastTurnsOfLines: typeof import('../../../../src/plugins/sessions/main/sessionTracker').lastTurnsOfLines
 let TRANSCRIPT_TAIL_FIRST_READ_BYTES: number
 let home: string
 let projectsRoot: string
@@ -33,7 +33,7 @@ beforeAll(async () => {
     transcriptTurns,
     lastTurnsOfLines,
     TRANSCRIPT_TAIL_FIRST_READ_BYTES
-  } = await import('../../src/main/sessionTracker'))
+  } = await import('../../../../src/plugins/sessions/main/sessionTracker'))
 })
 
 afterAll(() => {

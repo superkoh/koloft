@@ -106,7 +106,7 @@ import {
   type SentAnswer
 } from '@plugins/sessions/main/dialog'
 import { pathWithDirFirst } from './toolInstall'
-import { record } from './codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import { agyToolDid } from './rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,

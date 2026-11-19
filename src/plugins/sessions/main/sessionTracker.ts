@@ -6,37 +6,37 @@ import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
 import { encodeCwd } from '@shared/cwdKey'
-import { projectInfoFor, realpathSafe } from './projectInfo'
-import { worktreeHomeRoot } from './resumePlan'
-import { inspectTaskProcs, type TaskProcs } from './taskProcs'
-import { sharedProcessTable } from './processTable'
-import { SessionRuntime, envMs, turnOf, type Turn } from '@plugins/sessions/main/sessionRuntime'
-import { readAppendedLines, type AppendCursor } from './appendedLines'
-import { capTouched, shellWrittenFiles, touchedItem } from './touchedFiles'
+import { projectInfoFor, realpathSafe } from '../../../main/projectInfo'
+import { worktreeHomeRoot } from '../../../main/resumePlan'
+import { inspectTaskProcs, type TaskProcs } from '../../../main/taskProcs'
+import { sharedProcessTable } from '../../../main/processTable'
+import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
+import { readAppendedLines, type AppendCursor } from '../../../main/appendedLines'
+import { capTouched, shellWrittenFiles, touchedItem } from '../../../main/touchedFiles'
 import {
   MACHINE_ASKS_AT_MOST_EVERY_MS,
   RealFiles,
   realFilesHere,
   type RealFilesOnMachine
-} from './realFiles'
-import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
-import { claudeToolDid } from './rowActivity'
-import { TitleSources } from './titleSources'
-import { UsageMeter } from './usageMeter'
-import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
-import type { LaunchedSession } from './accountPicker'
-import type { MachineTmp } from './remote/install'
-import { REMOTE_CLAUDE_PROJECTS } from './remote/paths'
+} from '../../../main/realFiles'
+import { ClaudeTouchedFiles, toolFilePath } from '../../../main/claudeTouchedFiles'
+import { claudeToolDid } from '../../../main/rowActivity'
+import { TitleSources } from '../../../main/titleSources'
+import { UsageMeter } from '../../../main/usageMeter'
+import { BackgroundLedger, isBackgroundSpawnAck } from '../../../main/backgroundLedger'
+import type { LaunchedSession } from '../../../main/accountPicker'
+import type { MachineTmp } from '../../../main/remote/install'
+import { REMOTE_CLAUDE_PROJECTS } from '../../../main/remote/paths'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
-import { withoutHandover } from '@plugins/sessions/main/handoverPreamble'
-import { messageText } from '@plugins/sessions/main/messageText'
+import { claudeWroteIt, commandOutputOf } from '../../../main/claudeCommandOutput'
+import { withoutHandover } from './handoverPreamble'
+import { messageText } from './messageText'
 import {
   parseRecord,
   type TextBlock,
   type ToolResultBlock,
   type TranscriptRecord
-} from './transcriptRecord'
+} from '../../../main/transcriptRecord'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {

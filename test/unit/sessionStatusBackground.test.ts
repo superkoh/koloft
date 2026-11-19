@@ -16,9 +16,9 @@ const IDLE_MS = 2000
 const IDLE_CLOSE_MS = 400
 const ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS = SILENCE_MS - 400
 
-let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
-let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
-let sessionEventFromHook: typeof import('../../src/main/sessionTracker').sessionEventFromHook
+let SessionTracker: typeof import('../../src/plugins/sessions/main/sessionTracker').SessionTracker
+let encodeCwd: typeof import('../../src/plugins/sessions/main/sessionTracker').encodeCwd
+let sessionEventFromHook: typeof import('../../src/plugins/sessions/main/sessionTracker').sessionEventFromHook
 let home: string
 let projectsRoot: string
 
@@ -36,7 +36,7 @@ beforeAll(async () => {
   process.env.KOLOFT_IDLE_CLOSE_MS = String(IDLE_CLOSE_MS)
   projectsRoot = path.join(home, '.claude', 'projects')
   ;({ SessionTracker, encodeCwd, sessionEventFromHook } =
-    await import('../../src/main/sessionTracker'))
+    await import('../../src/plugins/sessions/main/sessionTracker'))
 })
 
 afterAll(() => {
@@ -1202,7 +1202,7 @@ function parked(tracker: InstanceType<typeof SessionTracker>, tabId: string): un
 // CC§8
 describe('run-state from the typed task list: each task judged by what it is, and what is parked shows as a badge, not the dot', () => {
   it('parses the hook list; an empty string is an empty list, no string is no list', async () => {
-    const { parseReportedTasks } = await import('../../src/main/sessionTracker')
+    const { parseReportedTasks } = await import('../../src/plugins/sessions/main/sessionTracker')
     expect(parseReportedTasks('b0167powo:shell,t6fdjbjat:teammate')).toEqual([
       { id: 'b0167powo', type: 'shell' },
       { id: 't6fdjbjat', type: 'teammate' }

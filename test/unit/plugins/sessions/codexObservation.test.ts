@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
+import {
+  CodexObservation,
+  userThread,
+  type CodexEvent
+} from '../../../../src/plugins/sessions/main/codexObservation'
 import {
   SessionRuntime,
   turnOf,
   type StatusEdge
-} from '../../src/plugins/sessions/main/sessionRuntime'
-import { AttentionTracker } from '../../src/plugins/sessions/main/attention'
-import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../src/shared/types'
+} from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { AttentionTracker } from '../../../../src/plugins/sessions/main/attention'
+import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../../../src/shared/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'

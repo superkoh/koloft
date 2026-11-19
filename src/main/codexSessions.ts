@@ -22,7 +22,7 @@ import {
   userThread,
   type CodexEvent,
   type CodexThread
-} from './codexObservation'
+} from '@plugins/sessions/main/codexObservation'
 import {
   CodexRpc,
   codexEnvironment,

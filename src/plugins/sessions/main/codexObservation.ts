@@ -1,7 +1,7 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
-import { codexEditTarget, codexItemDid } from './rowActivity'
+import { codexEditTarget, codexItemDid } from '../../../main/rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
-import type { Turn } from '@plugins/sessions/main/sessionRuntime'
+import type { Turn } from './sessionRuntime'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
 import {
@@ -10,16 +10,17 @@ import {
   resolvePricing,
   type TokenCounts
 } from '@shared/pricing'
-import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
-import { CODEX_OPEN_SENT } from './openShimScript'
-import type { CodexFrameHead } from './codexTransport'
-import { TurnLog, type SaidLine } from '@shared/turns'
 import {
-  codexQuestionOf,
-  type Asked,
-  type CodexApproval,
-  type CodexQuestion
-} from '@plugins/sessions/main/dialog'
+  capTouched,
+  noteRead,
+  noteWrite,
+  touchedItem,
+  type FileAcc
+} from '../../../main/touchedFiles'
+import { CODEX_OPEN_SENT } from '../../../main/openShimScript'
+import type { CodexFrameHead } from '../../../main/codexTransport'
+import { TurnLog, type SaidLine } from '@shared/turns'
+import { codexQuestionOf, type Asked, type CodexApproval, type CodexQuestion } from './dialog'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

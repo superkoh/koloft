@@ -20,7 +20,7 @@ import { isValidWorktreeName } from '@shared/worktreeName'
 import type { SessionBackend } from '@plugins/sessions/main/sessionBackends'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { PtyManager } from '../ptyManager'
-import type { SessionTracker } from '../sessionTracker'
+import type { SessionTracker } from '@plugins/sessions/main/sessionTracker'
 import type { WorkspaceManager } from '../workspaces'
 import type { Hosts } from '../host/hosts'
 import { publicClaudeSession } from '../host/hosts'
@@ -73,7 +73,7 @@ import {
   PROJECTS_ROOT,
   sessionEventFromHook,
   transcriptTurns
-} from '../sessionTracker'
+} from '@plugins/sessions/main/sessionTracker'
 import { readAppendedLines, type AppendCursor } from '../appendedLines'
 import {
   continuedInOf,
