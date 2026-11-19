@@ -1707,6 +1707,13 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+  Read from the 2.1.328 binary (`strings`, darwin-arm64, 2026-11-19): the hook schema
+  describes `session_crons` as "Session-scoped cron tasks (CronCreate, ScheduleWakeup,
+  /loop) that will wake this session later. Empty array when none are scheduled", each
+  entry built as `{id, schedule: <cron expression>, recurring (false for a one-shot
+  wakeup whose cron encodes its single fire time), prompt}`, the prompt capped at 1000
+  characters with a `… [+N chars]` marker. No duration or next-fire time is in it. A
+  recurring `CronCreate` was not run live.
 - **A subagent's own background shell is in its `SubagentStop` list, not in the main
   session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
   both hooks saving their input): a subagent that started `sleep 120` with

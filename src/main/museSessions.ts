@@ -24,6 +24,7 @@ import { mapAtMost } from '@core/mapAtMost'
 import { pidAlive } from './leftovers'
 import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
+import { scheduleLabel } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -157,7 +158,7 @@ interface MuseRun extends StoredRun {
   children: Set<string>
   background: Map<string, BackgroundItem>
   commands: Map<string, string>
-  jobs: Map<string, boolean>
+  jobs: Map<string, { recurring: boolean; item: BackgroundItem }>
   touched: Map<string, FileAcc>
   liveWrites: number
   log?: { sessionId: string; tail: SessionLogTail }
@@ -991,7 +992,20 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         }, response.timeout_ms).unref?.()
     } else if (tool === 'cron_create') {
       const job = SCHEDULED_JOB.exec(String(input.tool_response))?.[1]
-      if (job) run.jobs.set(job, record(input.tool_input).recurring === true)
+      const what = record(input.tool_input)
+      if (job)
+        run.jobs.set(job, {
+          recurring: what.recurring === true,
+          item: {
+            id: job,
+            kind: 'monitor',
+            label: scheduleLabel({
+              cron: typeof what.cron === 'string' ? what.cron : undefined,
+              prompt: typeof what.prompt === 'string' ? what.prompt : undefined
+            }),
+            state: 'waiting'
+          }
+        })
       this.holdForJobs(run)
     } else if (tool === 'cron_delete') {
       run.jobs.delete(String(record(input.tool_input).id))
@@ -1002,10 +1016,15 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   // MUSE§9
   private holdForJobs(run: MuseRun): void {
     this.deps.runtime.setWakeupPending(run.tabId, run.jobs.size > 0)
+    this.publishBackground(run)
   }
 
   private publishBackground(run: MuseRun): void {
-    this.deps.events(run.tabId, { type: 'background-changed', items: [...run.background.values()] })
+    const jobs = [...run.jobs.values()].map((job) => job.item)
+    this.deps.events(run.tabId, {
+      type: 'background-changed',
+      items: [...run.background.values(), ...jobs]
+    })
   }
 
   // MUSE§2
@@ -1046,7 +1065,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (prompt?.reply && turnEndedIn(r) === prompt.turnId)
       this.endTurn(run, prompt.turnId, prompt.reply)
     const job = firedJob(r)
-    if (job && run.jobs.get(job) === false) {
+    if (job && run.jobs.get(job)?.recurring === false) {
       run.jobs.delete(job)
       this.holdForJobs(run)
     }

@@ -518,10 +518,27 @@ case "$event" in
         ;;
     esac
     # CC§8
-    wake=""
+    crons=""
     case "$input" in
-      *'"session_crons":[]'*) wake=',"wake":0' ;;
-      *'"session_crons":['*) wake=',"wake":1' ;;
+      *'"session_crons":['*)
+        crons="$(printf '%s' "$input" | LC_ALL=C awk '
+          {
+            key = "\\"session_crons\\":"
+            k = index($0, key "[")
+            if (k == 0) exit
+            s = substr($0, k + length(key))
+            depth = 0; instr = 0; esc = 0
+            for (i = 1; i <= length(s); i++) {
+              c = substr(s, i, 1)
+              if (esc) { esc = 0; continue }
+              if (c == "\\\\") { esc = 1; continue }
+              if (c == "\\"") { instr = 1 - instr; continue }
+              if (instr) continue
+              if (c == "[") depth++
+              else if (c == "]") { depth--; if (depth == 0) { print ",\\"crons\\":" substr(s, 1, i); exit } }
+            }
+          }')"
+        ;;
     esac
     # CC§13
     from=""
@@ -532,7 +549,7 @@ case "$event" in
         [ -n "$from" ] && from=',"${FROM_SESSION_FIELD}":"'"$from"'"'
         ;;
     esac
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" "$from" >> "$log"
+    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$crons" "$from" >> "$log"
     if [ "$event" = "prompt" ]; then
       # CC§13 CC§19 ADR-0028
       flag=""

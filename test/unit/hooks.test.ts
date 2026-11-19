@@ -551,18 +551,26 @@ esac
   })
 
   // CC§8
-  it('a turn-end says whether claude has a wakeup scheduled, so a /loop between ticks is not idle', () => {
+  it('a turn-end carries the wakeups claude has scheduled, prompts whole, so a /loop between ticks is not idle and its row can say what it will do', () => {
+    const tricky = {
+      id: '8044b6e3',
+      schedule: '4 15 * * *',
+      recurring: false,
+      prompt: '/loop say "]}" then \\ and 你好 [x]'
+    }
+    const recurring = { id: 'a1b2c3d4', schedule: '*/5 * * * *', recurring: true, prompt: 'ping' }
     fire('tabWK1', 'stop', {
       background_tasks: [],
-      session_crons: [{ id: '8044b6e3', schedule: '4 15 * * *', recurring: false }]
+      session_crons: [tricky, recurring],
+      last_assistant_message: 'set "session_crons":[] up'
     })
     fire('tabWK2', 'stop', { background_tasks: [], session_crons: [] })
     fire('tabWK3', 'stop', { background_tasks: [] })
-    const wake = (tab: string): unknown =>
-      (readStatusLog(tab)[0] as unknown as { wake?: number }).wake
-    expect(wake('tabWK1')).toBe(1)
-    expect(wake('tabWK2')).toBe(0)
-    expect(wake('tabWK3')).toBeUndefined()
+    const crons = (tab: string): unknown =>
+      (readStatusLog(tab)[0] as unknown as { crons?: unknown }).crons
+    expect(crons('tabWK1')).toEqual([tricky, recurring])
+    expect(crons('tabWK2')).toEqual([])
+    expect(crons('tabWK3')).toBeUndefined()
   })
 
   it('a task command carrying JSON punctuation cannot truncate the scan', () => {

@@ -18,6 +18,7 @@ import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
+import { scheduleLabel } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -501,33 +502,15 @@ function schedulesOf(run: AgyRun, conversationId: string): [string, AgySchedule]
   return [...(run.schedules ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
 }
 
-function formatSeconds(seconds: number): string {
-  if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s`
-  if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60)
-    const rem = Math.round(seconds % 60)
-    return rem ? `${mins}m${rem}s` : `${mins}m`
-  }
-  const hrs = Math.floor(seconds / 3600)
-  const mins = Math.round((seconds % 3600) / 60)
-  return mins ? `${hrs}h${mins}m` : `${hrs}h`
-}
-
-function scheduleLabel(args: Record<string, unknown>): string {
-  const prompt = argOf(args, 'Prompt')?.replace(/\s+/g, ' ').trim()
-  const cron = argOf(args, 'CronExpression')?.trim()
-  const secs =
-    typeof args.DurationSeconds === 'number' && Number.isFinite(args.DurationSeconds)
-      ? args.DurationSeconds
-      : undefined
-  const prefix =
-    secs !== undefined
-      ? `Timer (${formatSeconds(secs)})`
-      : cron
-        ? `Cron (${cron})`
-        : 'Scheduled task'
-  const text = prompt ? `${prefix}: ${prompt}` : prefix
-  return text.slice(0, COMMAND_LABEL_CHARS)
+function agyScheduleLabel(args: Record<string, unknown>): string {
+  return scheduleLabel({
+    seconds:
+      typeof args.DurationSeconds === 'number' && Number.isFinite(args.DurationSeconds)
+        ? args.DurationSeconds
+        : undefined,
+    cron: argOf(args, 'CronExpression'),
+    prompt: argOf(args, 'Prompt')
+  })
 }
 
 // AGY§13
@@ -2426,7 +2409,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (name === 'schedule') {
       if (event === 'PreToolUse' && belongs) {
         const isDaemon = args.IsDaemon === true
-        const label = scheduleLabel(args)
+        const label = agyScheduleLabel(args)
         const existing = schedules.get(taskId)
         if (existing) {
           existing.item.label = label

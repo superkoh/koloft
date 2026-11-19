@@ -1892,6 +1892,32 @@ function handleLine(line) {
     process.stdout.write(`[fake-claude] wrote ${lines} lines\r\n> `)
     return
   }
+  // CC§8
+  if (text.startsWith('/loop ') || text === '/loop-stop') {
+    const prompt = text === '/loop-stop' ? '' : text
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: prompt ? 'Wakeup scheduled' : 'Loop stopped' }]
+        },
+        cwd
+      }
+    ])
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [],
+      session_crons: prompt
+        ? [{ id: '8044b6e3', schedule: '4 15 * * *', recurring: false, prompt }]
+        : []
+    })
+    process.stdout.write(`[fake-claude] ${prompt ? 'loop scheduled' : 'loop stopped'}\r\n> `)
+    return
+  }
   // CC§14
   const ask = async (name, input, allowed, keyed, dialogKeys = (key) => key) => {
     const toolUseId = `toolu_ask_${Date.now()}`

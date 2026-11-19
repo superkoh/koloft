@@ -203,6 +203,29 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
   })
 
   // CC§8
+  test('a wakeup Claude scheduled for itself (a /loop) is parked as its schedule and prompt, and the badge goes once a turn-end lists none', async ({
+    page
+  }) => {
+    test.setTimeout(120_000)
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+
+    await runIn(page, centerTerm(page), '/loop check the build')
+    const badge = page.locator('.ws .ws-tab .ws-tab-parked')
+    await expect(badge).toHaveText('⏸ 1', { timeout: 15_000 })
+    await badge.click()
+    const card = page.locator('.tbu-pop.parked')
+    await expect(card).toContainText('monitor · Cron (4 15 * * *): /loop check the build')
+    await page.keyboard.press('Escape')
+    await expect(card).toHaveCount(0)
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible()
+
+    await runIn(page, centerTerm(page), '/loop-stop')
+    await expect(badge).toHaveCount(0, { timeout: 15_000 })
+  })
+
+  // CC§8
   test('a Monitor a plugin started, known only by its event notices, is parked too, so the turn it wakes ends as only news with no Assist asked', async ({
     page
   }) => {

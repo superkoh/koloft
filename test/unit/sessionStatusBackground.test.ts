@@ -1228,6 +1228,35 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   })
 
+  it('a wakeup claude scheduled for itself (a /loop or CronCreate) is parked as its schedule and prompt, and goes once a turn-end lists none', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabL9', cwd, initialLines(cwd))
+    tracker.setStatus('tabL9', 'working')
+    tracker.setSessionCrons('tabL9', [
+      {
+        id: '8044b6e3',
+        schedule: '4 15 * * *',
+        recurring: false,
+        prompt: '/loop check\n the build'
+      }
+    ])
+    await tracker.reportTurnEnd('tabL9', [])
+    expect(status(tracker, 'tabL9')).toBe('waiting')
+    expect(parked(tracker, 'tabL9')).toEqual([
+      {
+        id: 'cron-8044b6e3',
+        kind: 'monitor',
+        label: 'Cron (4 15 * * *): /loop check the build',
+        state: 'waiting'
+      }
+    ])
+    tracker.setStatus('tabL9', 'working')
+    tracker.setSessionCrons('tabL9', [])
+    await tracker.reportTurnEnd('tabL9', [])
+    expect(parked(tracker, 'tabL9')).toBeUndefined()
+  })
+
   it('a reported shell holds working and is listed as running while a tool shell holds its output file, and both clear once it is gone', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
@@ -1726,10 +1755,12 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     stageAllClear(tracker)
     const closes = recordAutoCloses(tracker)
     await bindCaughtUp(tracker, 'tabA9', cwd, initialLines(cwd))
-    tracker.setWakeupPending('tabA9', true)
+    tracker.setSessionCrons('tabA9', [
+      { id: '8044b6e3', schedule: '4 15 * * *', recurring: false, prompt: '/loop' }
+    ])
     await waitFor(tracker, (s) => s.tabId === 'tabA9' && s.status === 'idle', 5000)
     await expectStays(closes)
-    tracker.setWakeupPending('tabA9', false)
+    tracker.setSessionCrons('tabA9', [])
     await waitForClose(closes, 'tabA9')
   }, 20_000)
 
