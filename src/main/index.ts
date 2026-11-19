@@ -655,6 +655,7 @@ import {
   writeLineInTurn
 } from '@plugins/sessions/main/crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -1578,6 +1579,7 @@ const PLAIN_KOLOFT_SHIM = {
 }
 let claudeAgentPlugin: string | undefined
 let claudeDocsPlugin: string | undefined
+const docsPluginWhileOn = (): string | undefined => (docsWritingOn() ? claudeDocsPlugin : undefined)
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -3926,7 +3928,10 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
-      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
+      docsSkillsFolder: () => {
+        const docs = docsPluginWhileOn()
+        return docs && pluginSkills(docs)
+      },
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
@@ -6118,7 +6123,7 @@ const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
-    docsPlugin: () => claudeDocsPlugin,
+    docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig()),
