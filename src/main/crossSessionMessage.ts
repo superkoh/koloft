@@ -1,6 +1,5 @@
 import net from 'net'
 import { setTimeout as sleep } from 'timers/promises'
-import { TODO_NOTICE } from '@plugins/todo/api'
 
 export type ModeClass = 'bypass' | 'prompting'
 
@@ -9,7 +8,6 @@ export const FROM_A_SESSION = '(From the session '
 export const FROM_KOLOFT = '(From Koloft:) '
 export const A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS = '(From Koloft: the owner asked for something'
 export const A_HELPER_HAS_IT = `${FROM_KOLOFT}The owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.`
-export const TODO_NOTICE_FROM_KOLOFT = `${FROM_KOLOFT}${TODO_NOTICE}`
 const SOCKET_WRITE_TIMEOUT_MS = 3000
 export const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000
 // CC§13

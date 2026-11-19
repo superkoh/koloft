@@ -72,7 +72,7 @@ import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
 import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
 import { GitRepoKeys } from './gitRepoKey'
 import { GitMachineAccounts, throughTempStore, type MachineRun } from './gitMachineAccounts'
-import type { GhResult } from './prChecks'
+import type { GhResult } from '@core/gh'
 import type { GitRunResult } from './gitSteps'
 import { pushAccess } from './githubApi'
 import {

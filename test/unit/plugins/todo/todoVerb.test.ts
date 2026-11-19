@@ -4,8 +4,10 @@ import {
   TODO_ONLY_FOR_THE_BUTLER,
   type TodoVerbDeps
 } from '../../../../src/plugins/todo/main/todoVerb'
-import type { TodoPull, TodoPulls } from '../../../../src/plugins/github/api'
-import { GITHUB_NOT_ASKED } from '../../../../src/plugins/sessions/api'
+import type { TodoPull, TodoPulls } from '../../../../src/plugins/todo/main/pulls'
+import { GITHUB_NOT_ASKED, type WorkLeft } from '../../../../src/plugins/sessions/api'
+import { listTodoPulls } from '../../../../src/plugins/todo/main/pulls'
+import type { GhResult } from '../../../../src/core/gh'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
 import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type {
@@ -25,6 +27,14 @@ const REMOTE = formatRemoteKey('box', '/srv/app')
 const USER_DATA = '/data'
 const BUTLER_FOLDER = butlersFolderClaim(USER_DATA).path
 const BUTLER_TAB = 'tab-butler'
+
+const changes = (...lines: string[]): WorkLeft => ({ head: 'Changes not committed', lines })
+const commits = (...lines: string[]): WorkLeft => ({
+  head: 'Commits on no other branch and no remote branch',
+  lines
+})
+const notAsked = (...lines: string[]): WorkLeft => ({ ...commits(...lines), githubNotAsked: true })
+const problem = (head: string): WorkLeft => ({ head, lines: [] })
 
 function row(id: string, over: Partial<SessionRow> = {}): SessionRow {
   return {
@@ -77,7 +87,7 @@ interface World {
   sessions: SessionInfo[]
   asking?: string[]
   asleep?: string[]
-  left?: Record<string, string[] | null>
+  left?: Record<string, WorkLeft[] | null>
   checkFails?: string[]
   deleting?: string[]
   startsDeletingDuringCheck?: string[]
@@ -244,11 +254,8 @@ describe('koloft todo', () => {
       },
       left: {
         done: null,
-        asleep: ['Changes not committed:\n M c.ts'],
-        dirty: [
-          'Changes not committed:\n M a.ts\n?? b.ts',
-          'Commits on no other branch and no remote branch:\nabc1 fix'
-        ]
+        asleep: [changes(' M c.ts')],
+        dirty: [changes(' M a.ts', '?? b.ts'), commits('abc1 fix')]
       }
     })
     const { text } = await run([])
@@ -315,8 +322,8 @@ describe('koloft todo', () => {
         ]
       },
       left: {
-        before: ['Changes not committed:\n D src/a.ts'],
-        during: ['Changes not committed:\n D src/b.ts']
+        before: [changes(' D src/a.ts')],
+        during: [changes(' D src/b.ts')]
       },
       checkFails: ['broke'],
       deleting: ['before', 'unlisted'],
@@ -371,7 +378,7 @@ describe('koloft todo', () => {
       asksMerged: ['stray'],
       merged: null,
       left: {
-        stray: [`Commits on no other branch and no remote branch:\nddd4 work\n${GITHUB_NOT_ASKED}`]
+        stray: [notAsked('ddd4 work')]
       }
     })
     const sessions = section((await run([])).text, 'SESSIONS')
@@ -579,6 +586,53 @@ describe('koloft todo note', () => {
     })
     await run(['note', 'notes', '--'])
     expect(notes).toEqual({ 'octo/shop': 'Issues assigned to alice.' })
+  })
+})
+
+describe('the text of koloft todo about work left and pull requests it could not list, pinned so that moving it changes no character', () => {
+  it('sums up each kind of work a closed worktree holds', async () => {
+    const at = (name: string) => `${SHOP}/.claude/worktrees/${name}`
+    const rows = ['changes', 'commits', 'unasked', 'unlisted', 'gone'].map((id) =>
+      row(id, { cwd: at(id) })
+    )
+    const { run } = harness({
+      sidebar: sidebarOf([[SHOP, rows]]),
+      sessions: [],
+      worktrees: { [SHOP]: rows.map((r) => ({ dir: r.cwd, branch: r.id })) },
+      left: {
+        changes: [changes(' M a.ts', '?? b.ts')],
+        commits: [commits('abc1 fix', 'abc2 more')],
+        unasked: [notAsked('ddd4 work')],
+        unlisted: [problem(`git could not list the commits in ${at('unlisted')}.`)],
+        gone: [problem(`git could not read ${at('gone')}: its .git file is gone.`)]
+      }
+    })
+    await expect(section((await run([])).text, 'SESSIONS') + '\n').toMatchFileSnapshot(
+      './text/work-left.txt'
+    )
+  })
+
+  it('says why it could not list the pull requests of a repository', async () => {
+    const said = async (gh: Parameters<typeof listTodoPulls>[0]) =>
+      JSON.stringify(await listTodoPulls(gh, { owner: 'octo', repo: 'shop' }))
+    const result = (over: Partial<GhResult>): GhResult => ({
+      code: 1,
+      stdout: '',
+      stderr: '',
+      missing: false,
+      ...over
+    })
+    const lines = [
+      await said(async () => result({ missing: true, code: null })),
+      await said(async () => result({ code: 4 })),
+      await said(async (args) =>
+        args[0] === 'api'
+          ? result({ code: 0, stdout: 'alice\n' })
+          : result({ stderr: 'HTTP 502\n' })
+      ),
+      await said(async () => result({}))
+    ]
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./text/pulls-failed.txt')
   })
 })
 

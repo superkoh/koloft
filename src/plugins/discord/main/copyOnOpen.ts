@@ -1,11 +1,12 @@
 import { errorText } from '@core/errorText'
-import type { FileOpened, Moment } from '@core/moment'
+import { FILE_OPENED, type FileOpened, type Moments } from '@core/moment'
+import { plugin } from '../plugin'
 
 export function copyEachOpenedFile(
-  fileOpened: Moment<FileOpened>,
+  moments: Moments,
   copyToPhone: (opened: FileOpened) => Promise<string | undefined>
 ): void {
-  fileOpened.listen((opened) =>
+  moments.listen(plugin.id, FILE_OPENED, (opened) =>
     copyToPhone(opened).catch(
       (error: unknown) => `Koloft could not also send it to Discord: ${errorText(error)}`
     )
