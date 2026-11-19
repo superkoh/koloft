@@ -1820,7 +1820,7 @@ function remoteHostOfTab(tabId: string): string | undefined {
 }
 
 function projectRows(): WorkspaceRows[] {
-  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.claimedBy)
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.claim)
 }
 
 function butlerSide(tabId: string): boolean {
@@ -4033,7 +4033,7 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!butler?.isButlerSession(id),
+    hiddenRow: (id) => sessionBackends.isOverseerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),

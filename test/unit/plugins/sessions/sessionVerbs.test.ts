@@ -17,6 +17,7 @@ import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
 import { A_HELPER_HAS_IT, crossSessionLine } from '../../../../src/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../../../src/main/inbox'
+import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type { SendResult } from '../../../../src/plugins/sessions/api'
 import { moment, type SessionStarted, type SessionStarting } from '../../../../src/core/moment'
 import {
@@ -48,7 +49,8 @@ import type {
 import type { Turn } from '../../../../src/shared/turns'
 
 const WS = '/work/app'
-const BUTLER_FOLDER = '/data/conductors/global'
+const USER_DATA = '/data'
+const BUTLER_FOLDER = butlersFolderClaim(USER_DATA).path
 const BUTLER_HELPER_ROLE = 'You help Alfred.'
 const OTHER_WS = '/work/site'
 const PINNED: PinnedWorkspace[] = [
@@ -1541,7 +1543,7 @@ describe('the butler’s view of sessions: every workspace', () => {
         missing: false,
         isGit: false,
         hasHistory: false,
-        claimedBy: 'butler'
+        claim: butlersFolderClaim(USER_DATA)
       },
       rows: [helper]
     }

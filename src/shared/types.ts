@@ -795,9 +795,13 @@ export interface DocVerdict {
   at: number
 }
 
-export interface FolderClaim {
-  path: string
+export interface WorkspaceClaim {
   by: string
+  shownAs: string
+}
+
+export interface FolderClaim extends WorkspaceClaim {
+  path: string
 }
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
@@ -1570,7 +1574,7 @@ export interface WorkspaceRows {
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
-    claimedBy?: string
+    claim?: WorkspaceClaim
   }
   rows: SessionRow[]
 }

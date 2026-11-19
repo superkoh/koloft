@@ -41,4 +41,4 @@ export function isButlerTab(
   return !!sessions.find((s) => s.tabId === tabId)?.overseer || opened === tabId
 }
 
-export const isButlersWorkspace = (w: WorkspaceRows): boolean => w.workspace.claimedBy === plugin.id
+export const isButlersWorkspace = (w: WorkspaceRows): boolean => w.workspace.claim?.by === plugin.id

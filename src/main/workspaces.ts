@@ -1016,7 +1016,9 @@ export class WorkspaceManager {
           missing,
           isGit,
           hasHistory: hasHistory(visible, owned, wsRunningIds),
-          ...(ws.path === claimed?.path && { claimedBy: claimed.by }),
+          ...(ws.path === claimed?.path && {
+            claim: { by: claimed.by, shownAs: claimed.shownAs }
+          }),
           ...(key
             ? {
                 remote: {

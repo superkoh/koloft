@@ -9,5 +9,6 @@ export function conductorFolder(userData: string): string {
 
 export const butlersFolderClaim = (userData: string): FolderClaim => ({
   path: conductorFolder(userData),
-  by: plugin.id
+  by: plugin.id,
+  shownAs: "the butler's own folder"
 })

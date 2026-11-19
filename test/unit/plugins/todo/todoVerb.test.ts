@@ -7,6 +7,7 @@ import {
 import type { TodoPull, TodoPulls } from '../../../../src/plugins/github/api'
 import { GITHUB_NOT_ASKED } from '../../../../src/plugins/sessions/api'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
+import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type {
   BackendId,
   McpServer,
@@ -21,7 +22,8 @@ const SHOP = '/work/shop'
 const SHOP_COPY = '/work/shop-2'
 const NOTES_WS = '/work/notes'
 const REMOTE = formatRemoteKey('box', '/srv/app')
-const BUTLER_FOLDER = '/data/conductors/global'
+const USER_DATA = '/data'
+const BUTLER_FOLDER = butlersFolderClaim(USER_DATA).path
 const BUTLER_TAB = 'tab-butler'
 
 function row(id: string, over: Partial<SessionRow> = {}): SessionRow {
@@ -102,7 +104,7 @@ function harness(world: World) {
     sidebar: () => world.sidebar,
     pinnedWorkspaces: () =>
       world.sidebar
-        .filter((w) => !w.workspace.claimedBy)
+        .filter((w) => !w.workspace.claim)
         .map((w) => ({ path: w.workspace.path, missing: w.workspace.missing })),
     sessions: () => world.sessions,
     asking: (tabId) => world.asking?.includes(tabId) ?? false,
@@ -168,7 +170,7 @@ function sidebarOf(
         missing: false,
         isGit: false,
         hasHistory: true,
-        claimedBy: 'butler'
+        claim: butlersFolderClaim(USER_DATA)
       },
       rows: butlerRows
     }
