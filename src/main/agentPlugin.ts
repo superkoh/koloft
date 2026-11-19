@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { agentGuide, agentSkillDescription } from '@shared/agentGuide'
 import { koloftPrompt } from '@plugins/sessions/api'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 import { writePrivateAtomically } from './privateFile'
 import DOCS_SKILL_MD from './docsSkill/SKILL.md?raw'
 import CORE_MD from './docsSkill/references/core.md?raw'
@@ -83,12 +84,15 @@ function keepSkill(dir: string, files: () => Files): void {
   skillsCheckedThisRun.add(dir)
 }
 
+function keepSkillWhile(on: boolean, dir: string, files: () => Files): void {
+  if (on) return keepSkill(dir, files)
+  fs.rmSync(dir, { recursive: true, force: true })
+  skillsCheckedThisRun.delete(dir)
+}
+
 export function keepSkillsIn(skillsDir: string, koloftOn: boolean): void {
-  keepSkill(path.join(skillsDir, KOLOFT_DOCS_SKILL), () => DOCS_SKILL_FILES)
-  const koloft = path.join(skillsDir, KOLOFT_SKILL)
-  if (koloftOn) return keepSkill(koloft, koloftSkillFiles)
-  fs.rmSync(koloft, { recursive: true, force: true })
-  skillsCheckedThisRun.delete(koloft)
+  keepSkillWhile(docsWritingOn(), path.join(skillsDir, KOLOFT_DOCS_SKILL), () => DOCS_SKILL_FILES)
+  keepSkillWhile(koloftOn, path.join(skillsDir, KOLOFT_SKILL), koloftSkillFiles)
 }
 
 function koloftSkillFiles(): Files {

@@ -652,6 +652,7 @@ import {
   writeLineInTurn
 } from './crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -3899,7 +3900,8 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
-      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
+      docsSkillsFolder: () =>
+        docsWritingOn() && claudeDocsPlugin ? pluginSkills(claudeDocsPlugin) : undefined,
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
@@ -6087,7 +6089,7 @@ const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
-    docsPlugin: () => claudeDocsPlugin,
+    docsPlugin: () => (docsWritingOn() ? claudeDocsPlugin : undefined),
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig()),
