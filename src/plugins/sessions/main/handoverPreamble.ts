@@ -1,5 +1,5 @@
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
-import type { Assist } from './assist'
+import type { Assist } from '@core/assistModels'
 
 export interface SessionCaller {
   name?: string

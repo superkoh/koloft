@@ -29,8 +29,8 @@ import type { MachineTmp } from './remote/install'
 import { REMOTE_CLAUDE_PROJECTS } from './remote/paths'
 import type { TranscriptPlaces } from './sessionBackends'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
-import { withoutHandover } from './handover'
-import { messageText } from './messageText'
+import { withoutHandover } from '@plugins/sessions/main/handoverPreamble'
+import { messageText } from '@plugins/sessions/main/messageText'
 import {
   parseRecord,
   type TextBlock,

@@ -18,12 +18,10 @@ import type { Turn } from '@shared/turns'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
-import type { ModeClass } from './crossSessionMessage'
+import type { ModeClass } from '@plugins/sessions/main/crossSessionMessage'
+import type { TranscriptPlaces } from '@plugins/sessions/api'
 
-export interface TranscriptPlaces {
-  onThisMac?: string
-  onMachine?: string
-}
+export type { TranscriptPlaces }
 
 export interface SessionBackend {
   id: BackendId

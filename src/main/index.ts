@@ -502,7 +502,7 @@ import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@p
 import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
-import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
+import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   claudeDialog,
@@ -650,9 +650,9 @@ import {
   FROM_KOLOFT,
   crossSessionLine,
   writeLineInTurn
-} from './crossSessionMessage'
+} from '@plugins/sessions/main/crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
-import { StartedSessions } from './startedSessions'
+import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'

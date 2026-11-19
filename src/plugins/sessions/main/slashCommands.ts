@@ -5,7 +5,7 @@ import type { CommandOutput } from '../../../main/claudeCommandOutput'
 import { sleep } from '../../../main/codexTransport'
 import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
 import { errorText } from '../../../main/agentRequests'
-import { withoutBlankEdges } from '../../../main/messageText'
+import { withoutBlankEdges } from './messageText'
 import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../../../main/inputBox'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000

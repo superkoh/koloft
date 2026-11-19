@@ -1,5 +1,5 @@
 import type { AttentionEvent, AttentionKind } from '@shared/types'
-import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
+import { FROM_KOLOFT } from '@plugins/sessions/main/crossSessionMessage'
 
 export const DIGEST_GATHERS_MS = 30_000
 export const VERDICT_WAITED_AT_MOST_MS = 60_000

@@ -1,6 +1,6 @@
 import fs from 'fs'
 import type { OwnerPresence } from '@core/presence'
-import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
+import { FROM_KOLOFT } from '@plugins/sessions/main/crossSessionMessage'
 import { digestLine, quoteOf, type DigestItem } from './awayDigest'
 import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { ANSWER_NOT_TAKEN } from '@plugins/sessions/api'

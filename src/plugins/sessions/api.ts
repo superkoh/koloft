@@ -8,6 +8,11 @@ import {
 } from './prompts/text'
 
 export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
+
+export interface TranscriptPlaces {
+  onThisMac?: string
+  onMachine?: string
+}
 export {
   SlashCommands,
   toCaller,

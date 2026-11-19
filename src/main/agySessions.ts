@@ -71,7 +71,7 @@ import {
 } from './agyAccounts'
 import { readJson } from './museAccounts'
 import { LineTail } from './museSessionLog'
-import { bracketedPaste } from './typeKeys'
+import { bracketedPaste } from '@core/typeKeys'
 import { TAB_TMUX_NAME_SH, tmuxSessionName } from './remote/launch'
 import { AgyApi, agentStateUpdate, type AgyBackgroundTask, type PendingInteraction } from './agyApi'
 import {

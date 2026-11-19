@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bracketedPaste, clicksTheMouse, pasteFor, pressesAKey } from '../../src/main/typeKeys'
+import { bracketedPaste, clicksTheMouse, pasteFor, pressesAKey } from '../../src/core/typeKeys'
 
 describe('what the owner sends a terminal', () => {
   it('counts as a key press for arrows, Shift+Tab, Esc and text, and not for mouse, focus or the terminal’s own replies', () => {

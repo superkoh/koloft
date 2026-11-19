@@ -1,6 +1,6 @@
 import type { TabKind } from '@shared/types'
 import { backendIdOf, pasteKeepsItsLastLineFeeds } from '@shared/sessionBackend'
-import { sleep } from './codexTransport'
+import { sleep } from './sleep'
 
 // CC§12 CC§18 MUSE§17
 const SUBMIT_AFTER_TEXT_MS = 300

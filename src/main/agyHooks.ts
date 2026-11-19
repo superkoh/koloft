@@ -6,7 +6,7 @@ import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
   FROM_KOLOFT
-} from './crossSessionMessage'
+} from '@plugins/sessions/main/crossSessionMessage'
 import {
   hookField,
   JSON_STRING_BODY,

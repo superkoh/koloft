@@ -33,7 +33,7 @@ import {
   namedAtLaunch
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { withoutBlankEdges } from '../../../main/messageText'
+import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { scopeName } from '@shared/conductors'
@@ -54,7 +54,7 @@ import {
 import { errorText } from '@core/errorText'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
-import { AGENT_SHIM_WAITS_MS } from '../../../main/agentShim'
+import { AGENT_SHIM_WAITS_MS } from '@core/command'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
@@ -62,18 +62,18 @@ import {
   crossSessionLine,
   fitsACrossSessionMessage,
   type ModeClass
-} from '../../../main/crossSessionMessage'
+} from './crossSessionMessage'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
   withHandover,
   type SessionCaller
-} from '../../../main/handover'
-import { distinctTitle, titleForTask } from '../../../main/sessionTitle'
-import type { Assist } from '../../../main/assist'
-import { keysFor } from '../../../main/typeKeys'
-import type { StartedSessions } from '../../../main/startedSessions'
-import type { TranscriptPlaces } from '../../../main/sessionBackends'
+} from './handoverPreamble'
+import { distinctTitle, titleForTask } from './sessionTitle'
+import type { Assist } from '@core/assistModels'
+import { keysFor } from '@core/typeKeys'
+import type { StartedSessions } from './startedSessions'
+import type { TranscriptPlaces } from '../api'
 
 export const helpVerb =
   (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>

@@ -1,20 +1,18 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import type { AssistRowId, BackendId } from '@shared/types'
+import type { BackendId } from '@shared/types'
 import { assistBackendsFor, assistLaunchOn } from '@shared/assistPicks'
-import { EVERY_ACCOUNT_TAKES, type ModelAndEffort } from '@core/assistModels'
+import {
+  EVERY_ACCOUNT_TAKES,
+  type Assist,
+  type AssistJob,
+  type ModelAndEffort
+} from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { lastCompletedText } from './museSessionLog'
 import { envMs } from './sessionRuntime'
 
-export interface AssistJob {
-  row: AssistRowId
-  system: string
-  prompt: string
-  signal?: AbortSignal
-}
-
-export type Assist = (job: AssistJob) => Promise<string | null>
+export type { Assist, AssistJob }
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS

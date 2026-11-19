@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { randomUUID } from 'crypto'
 import fs from 'fs/promises'
+import { sleep } from '@core/sleep'
 import http from 'http'
 import os from 'os'
 import path from 'path'
@@ -58,8 +59,7 @@ const ROOM_FOR_THE_PLUGIN_LIST_TO_GROW = 5
 export const DEFAULT_MAX_FRAME =
   ROOM_FOR_THE_PLUGIN_LIST_TO_GROW * LARGEST_CODEX_REPLY_MEASURED_BYTES
 export const TUI_STALLED_AFTER_MS = 30_000
-export const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms))
+export { sleep }
 
 // CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
