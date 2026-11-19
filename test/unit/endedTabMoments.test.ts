@@ -33,7 +33,8 @@ function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: st
   })
   followEachRun(moments, () => ({
     onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot),
-    onBound: () => {}
+    onBound: () => {},
+    onStatus: () => {}
   }))
   closeRoomsOfEndedTabs(moments, {
     typing: () => ({ forget: say('typing.forget') }),

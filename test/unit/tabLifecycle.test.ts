@@ -19,7 +19,6 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
       clear: say('attention.clear'),
       tabStopping: say('attention.tabStopping')
     },
-    cdpTabClosed: say('cdpTabClosed'),
     claude: { onPtyExit: say('claude.onPtyExit') },
     tracker: { setAlive: say('tracker.setAlive') },
     storedOwnerOf: () => ({
@@ -49,11 +48,11 @@ const exitOf = (over: Partial<TabEnded> = {}): TabEnded => ({
 })
 
 describe('TabLifecycle', () => {
-  it('a tab whose process is being stopped, to close, restart or sleep, tells attention whether it restarts, and its CDP endpoint goes', () => {
+  it('a tab whose process is being stopped, to close, restart or sleep, tells attention whether it restarts, and then the plugins', () => {
     for (const restarting of [false, true]) {
       const { lifecycle, calls } = wired()
       lifecycle.emit('stopping', 't1', restarting)
-      expect(calls).toEqual([`attention.tabStopping t1 ${restarting}`, 'cdpTabClosed t1'])
+      expect(calls).toEqual([`attention.tabStopping t1 ${restarting}`, 'announce tab-stopping t1'])
     }
   })
 
