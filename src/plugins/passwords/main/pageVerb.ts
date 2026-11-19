@@ -1,12 +1,6 @@
 import { urlOrNull } from '@shared/browserRoute'
 import type { Commands } from '@core/commands'
-import {
-  answered,
-  EXIT_USAGE,
-  refused,
-  type AgentReply,
-  type AgentVerb
-} from '../../../main/agentRequests'
+import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from '@core/command'
 import type { Box, PartOnPage, Point } from '@plugins/workbench/api'
 import type { SecretAnswer, SecretAsk } from './secretAsks'
 import { boxAround, clipTo, gridOver, readSquares, type Grid } from './tapGrid'
