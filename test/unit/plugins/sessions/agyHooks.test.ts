@@ -9,19 +9,22 @@ import {
   runWithSh,
   writeAgyScripts,
   type AgyScripts
-} from '../../src/main/agyHooks'
-import { handoverPreamble, withHandover } from '../../src/plugins/sessions/main/handoverPreamble'
-import { LineTail } from '../../src/main/museSessionLog'
+} from '../../../../src/plugins/sessions/main/agyHooks'
+import {
+  handoverPreamble,
+  withHandover
+} from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { LineTail } from '../../../../src/main/museSessionLog'
 import {
   A_HELPER_HAS_IT,
   FROM_A_SESSION,
   FROM_KOLOFT
-} from '../../src/plugins/sessions/main/crossSessionMessage'
+} from '../../../../src/plugins/sessions/main/crossSessionMessage'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,
   noticeLine
-} from '../../src/main/hooks'
+} from '../../../../src/plugins/sessions/main/hooks'
 
 const C1 = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'
 const C2 = '7a2d4e6f-1b3c-4d5e-8f9a-0b1c2d3e4f5a'

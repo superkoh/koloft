@@ -17,7 +17,7 @@ import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
+import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '@plugins/sessions/main/hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
 import { TRUST_CWD_JS } from './claudeTrustJs'
 

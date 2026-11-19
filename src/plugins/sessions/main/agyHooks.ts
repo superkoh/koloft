@@ -1,12 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { nonEmptyString, record } from './codexObservation'
+import { nonEmptyString, record } from '../../../main/codexObservation'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
   FROM_KOLOFT
-} from '@plugins/sessions/main/crossSessionMessage'
+} from './crossSessionMessage'
 import {
   hookField,
   JSON_STRING_BODY,
@@ -21,7 +21,7 @@ import {
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
 } from './hooks'
-import { UUID } from '@plugins/sessions/main/sessionStore'
+import { UUID } from './sessionStore'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'

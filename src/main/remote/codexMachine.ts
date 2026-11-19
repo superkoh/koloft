@@ -31,7 +31,7 @@ import {
   NOTICE_ENV,
   remoteNoticeFile,
   SHELL_WROTE_SUFFIX
-} from '../hooks'
+} from '@plugins/sessions/main/hooks'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'

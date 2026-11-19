@@ -12,7 +12,7 @@ import {
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
   REMIND_REPLY_LANGUAGE_FN,
   seedHandedOverOwnerWords
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { record } from './codexObservation'
 
 // MUSE§9
