@@ -10,12 +10,14 @@ import { isButlersWorkspace } from './butlerTabs'
 import {
   BUTLER_FRESH,
   BUTLER_INSTRUCTIONS,
+  BUTLER_PAGE,
   BUTLER_RENAME,
   BUTLER_ROW_PART,
   BUTLER_SET_UP,
   BUTLER_STRIP
 } from '../plugin'
 import { ButlerRow, RenameButlerDialog } from './ButlerRow'
+import { ButlerSettings } from './ButlerSettings'
 import { ButlerSetUpDialog } from './SetUpDialog'
 import { FreshConversationDialog, InstructionsDialog, InstructionsStrip } from './InstructionsStrip'
 import { butlerLanding, useButlerShowsGlobalNote } from './landing'
@@ -28,7 +30,8 @@ export const ui: PluginUi = {
     [BUTLER_SET_UP]: ButlerSetUpDialog,
     [BUTLER_STRIP]: InstructionsStrip,
     [BUTLER_INSTRUCTIONS]: InstructionsDialog,
-    [BUTLER_FRESH]: FreshConversationDialog
+    [BUTLER_FRESH]: FreshConversationDialog,
+    [BUTLER_PAGE]: ButlerSettings
   },
   fills: [
     fill(LANDING_AFTER_CLOSE, butlerLanding),

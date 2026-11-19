@@ -9,6 +9,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'scheduled-tasks',
   name: 'Scheduled tasks',
+  does: 'Starts sessions on a schedule.',
   mandatory: true,
   needs: ['sessions'],
   commands: [{ verb: 'cron' }],

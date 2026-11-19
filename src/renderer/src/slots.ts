@@ -5,7 +5,6 @@ import type { ConductorOpenResult, PaletteRequest, SessionRow } from '@shared/ty
 import type { PluginPaletteAction } from '@shared/paletteFeatures'
 import type { PluginRouteKind } from '@shared/sessionRoute'
 import type { ClaimsWorkspace, LandingAfterClose } from './store'
-import type { Icon } from './icons'
 import type { Settings } from '@shared/types'
 
 export const LANDING_AFTER_CLOSE = slot<LandingAfterClose>('landing-after-close')
@@ -41,12 +40,14 @@ export interface RowSetUpFill {
 
 export const ROW_SET_UP = slot<RowSetUpFill>('row-set-up')
 
-export interface SettingsPageIcon {
-  page: string
-  Icon: Icon
+export interface PluginSetUp {
+  plugin: string
+  label: (butlerName: string) => string
+  run: () => Promise<string | null>
 }
 
-export const SETTINGS_PAGE_ICON = slot<SettingsPageIcon>('settings-page-icon')
+export const PLUGIN_SET_UP = slot<PluginSetUp>('plugin-set-up')
+
 export type MarkOf = (
   wsPath: string,
   row: SessionRow,

@@ -3,15 +3,22 @@ import { PLUGINS } from '@plugins/list'
 import {
   PANES_AFTER_PLUGIN_PAGES,
   PANES_BEFORE_PLUGIN_PAGES,
+  PLUGINS_PANE_NAME,
   type SettingsPane,
   type SettingsPaneId
 } from './settingsPanes'
 
 export type { SettingsPaneId } from './settingsPanes'
 
+export const PLUGIN_SETTINGS_PAGES = settingsPages(PLUGINS)
+
 export const SETTINGS_PANES: readonly SettingsPane[] = [
   ...PANES_BEFORE_PLUGIN_PAGES,
-  ...settingsPages(PLUGINS),
+  ...PLUGIN_SETTINGS_PAGES.map(({ id, label, words }) => ({
+    id,
+    label: `${PLUGINS_PANE_NAME} ▸ ${label}`,
+    words
+  })),
   ...PANES_AFTER_PLUGIN_PAGES
 ]
 

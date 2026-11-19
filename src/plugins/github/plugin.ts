@@ -7,6 +7,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'github',
   name: 'GitHub',
+  does: 'koloft gh, PR and issue counts in the sidebar, PRs in the Workbench, a worktree from a PR, a session from an issue.',
   mandatory: false,
   needs: ['sessions'],
   commands: [{ verb: 'gh' }],

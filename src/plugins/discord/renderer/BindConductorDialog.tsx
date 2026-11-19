@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconLinkOut, IconPlus } from '@renderer/icons'
 import { inviteLink, NEW_CHANNEL_NAME, newChannelGuild, setUpWith } from '../shared/channels'
 import { distinctName } from '@shared/sessionRoute'
+import { pluginPageName } from '@shared/settingsPanes'
+import { plugin } from '../plugin'
 import type { DiscordChannel } from '../shared/types'
 import { useStore } from '@renderer/store'
 import { useDiscordStatus } from './status'
@@ -153,7 +155,7 @@ function BindForm(): JSX.Element {
             ) : channels === null ? (
               'Loading your channels…'
             ) : !guildId && channels.length === 0 ? (
-              `No channels yet. Click Settings ▸ Discord ▸ ${setUpWith(name)} first.`
+              `No channels yet. Click ${pluginPageName(plugin.name)} ▸ ${setUpWith(name)} first.`
             ) : channel === NEW && guildId ? (
               <>
                 Koloft makes the new channel in your server <b>{guildName}</b>, under your bot’s
