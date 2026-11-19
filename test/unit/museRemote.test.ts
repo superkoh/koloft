@@ -13,7 +13,11 @@ import {
   seedHandedOverOwnerWords
 } from '../../src/main/hooks'
 import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
-import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
+import {
+  A_HELPER_HAS_IT,
+  FROM_A_SESSION,
+  FROM_KOLOFT
+} from '../../src/plugins/sessions/main/crossSessionMessage'
 import * as museLog from '../../src/main/museSessionLog'
 
 const SID = '019a0000-0000-7000-8000-000000000001'

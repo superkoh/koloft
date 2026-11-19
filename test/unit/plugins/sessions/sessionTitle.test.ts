@@ -2,9 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { titleForTask } from '../../src/main/sessionTitle'
-import { koloftAssist } from '../../src/main/assist'
-import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
+import { titleForTask } from '../../../../src/plugins/sessions/main/sessionTitle'
+import { koloftAssist } from '../../../../src/main/assist'
+import { DEFAULT_SETTINGS } from '../../../../src/shared/settingsOps'
 
 function fakeClaude(body: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-title-'))

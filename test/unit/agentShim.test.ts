@@ -6,12 +6,8 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import {
-  AGENT_SHIM_WAITS_MS,
-  CLAUDE_AGENT_SHIM,
-  REMOTE_AGENT_SHIM,
-  writeAgentShim
-} from '../../src/main/agentShim'
+import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import { AGENT_SHIM_WAITS_MS } from '../../src/core/command'
 import {
   AgentRequests,
   answered,

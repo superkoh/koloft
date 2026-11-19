@@ -1,6 +1,6 @@
 import type { SessionInfo } from '@shared/types'
 import type { OpenTab } from './openTabs'
-import { pasteFor, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
+import { pasteFor, typedPieces, withoutMouseAndFocusReports } from '@core/typeKeys'
 
 export interface SleepingTabsDeps {
   write(tabId: string, data: string): void

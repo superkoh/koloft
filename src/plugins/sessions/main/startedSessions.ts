@@ -1,4 +1,4 @@
-import { PrivateRecordFile } from './privateFile'
+import { PrivateRecordFile } from '@core/privateFile'
 
 type ParentBySession = Record<string, string>
 

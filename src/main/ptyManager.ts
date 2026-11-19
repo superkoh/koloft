@@ -19,7 +19,7 @@ import {
   typeKeys,
   typedPieces,
   withoutMouseAndFocusReports
-} from './typeKeys'
+} from '@core/typeKeys'
 
 export interface PtyHandle {
   id: string

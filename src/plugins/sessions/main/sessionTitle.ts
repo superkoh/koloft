@@ -1,4 +1,4 @@
-import type { Assist } from './assist'
+import type { Assist } from '@core/assistModels'
 
 const NAME_MAX_CHARS = 40
 const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000

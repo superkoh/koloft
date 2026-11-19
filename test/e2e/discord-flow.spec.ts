@@ -63,7 +63,7 @@ import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
-import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
+import { crossSessionLine, writeLine } from '../../src/plugins/sessions/main/crossSessionMessage'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN

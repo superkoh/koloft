@@ -23,6 +23,7 @@ let asked: GitAuthRequest[]
 
 const ERASE_RETURNS_WITHOUT_WAITING_MS = 2000
 const A_LOST_WATCH_EVENT_IS_SWEPT_UP_MS = 5000
+const A_LOOP_IS_KILLED_AFTER_MS = 3000
 const BOB = 'github.com/bob'
 const CAROL_ON_GHES = 'ghe.example.com:8443/carol'
 
@@ -38,12 +39,15 @@ function run(
   args: string[],
   env: NodeJS.ProcessEnv = {},
   input = '',
-  cwd = root
+  cwd = root,
+  killAfterMs = 0
 ): Promise<Run> {
   const started = Date.now()
   return new Promise((resolve) => {
     const child = spawn(file, args, {
       cwd,
+      timeout: killAfterMs,
+      killSignal: 'SIGKILL',
       env: {
         PATH: `${scripts}:${realGhDir}:/usr/bin:/bin`,
         HOME: root,
@@ -285,6 +289,68 @@ describe('gh wrapper', () => {
     const r = await run(path.join(tabShim, 'gh'), ['pr', 'list'], {
       PATH: `${tabShim}:${scripts}:${realGhDir}:/usr/bin:/bin`
     })
+    expect(r.status).toBe(0)
+    expect(fs.readFileSync(ghLog, 'utf8')).toBe(
+      'argv=pr list token= host= github_token= enterprise=\n'
+    )
+  })
+
+  it("stops with the other gh's path when the next gh on PATH is someone else's wrapper that execs this one again", async () => {
+    const otherWrapperDir = path.join(root, 'other wrapper')
+    fs.mkdirSync(otherWrapperDir)
+    const otherGh = path.join(otherWrapperDir, 'gh')
+    fs.writeFileSync(otherGh, `#!/bin/sh\nexec '${gh()}' "$@"\n`, { mode: 0o755 })
+    const r = await run(
+      gh(),
+      ['auth', 'status'],
+      { PATH: `${scripts}:${otherWrapperDir}:${realGhDir}:/usr/bin:/bin` },
+      '',
+      root,
+      A_LOOP_IS_KILLED_AFTER_MS
+    )
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain(otherGh)
+    expect(fs.existsSync(ghLog)).toBe(false)
+  })
+
+  it('a wrapper that takes itself off PATH and execs gh comes back once and then reaches the real gh', async () => {
+    const politeDir = path.join(root, 'polite wrapper')
+    fs.mkdirSync(politeDir)
+    fs.writeFileSync(
+      path.join(politeDir, 'gh'),
+      `#!/bin/sh\nPATH='${scripts}:${realGhDir}:/usr/bin:/bin' exec gh "$@"\n`,
+      { mode: 0o755 }
+    )
+    const r = await run(
+      gh(),
+      ['pr', 'list'],
+      { PATH: `${scripts}:${politeDir}:${realGhDir}:/usr/bin:/bin` },
+      '',
+      root,
+      A_LOOP_IS_KILLED_AFTER_MS
+    )
+    expect(r.status).toBe(0)
+    expect(fs.readFileSync(ghLog, 'utf8')).toBe(
+      'argv=pr list token= host= github_token= enterprise=\n'
+    )
+  })
+
+  it('a gh the next gh starts as its own process, as an extension or alias does, still runs', async () => {
+    const extDir = path.join(root, 'gh with extension')
+    fs.mkdirSync(extDir)
+    fs.writeFileSync(
+      path.join(extDir, 'gh'),
+      `#!/bin/sh\nif [ "$1" = ext ]; then gh pr list; exit $?; fi\nexec '${path.join(realGhDir, 'gh')}' "$@"\n`,
+      { mode: 0o755 }
+    )
+    const r = await run(
+      gh(),
+      ['ext'],
+      { PATH: `${scripts}:${extDir}:/usr/bin:/bin` },
+      '',
+      root,
+      A_LOOP_IS_KILLED_AFTER_MS
+    )
     expect(r.status).toBe(0)
     expect(fs.readFileSync(ghLog, 'utf8')).toBe(
       'argv=pr list token= host= github_token= enterprise=\n'

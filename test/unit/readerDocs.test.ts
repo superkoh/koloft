@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import type { PreviewItem, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import type { AssistJob } from '../../src/main/assist'
+import type { AssistJob } from '../../src/core/assistModels'
 import { ReaderDocs } from '../../src/main/readerDocs'
 
 const TURN_START = 1_000
