@@ -69,7 +69,7 @@ describe('check-plugin-imports', () => {
     expect(check(dir)).toEqual({ code: 0, reported: [] })
   })
 
-  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, and still exits 0', () => {
+  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, and a windowApi.ts that loads its own main/ or prompts/, and still exits 0', () => {
     const dir = fixtureRepo({
       'src/plugins/c/main/bad.ts': lines(
         "import { inner } from '@plugins/a/main/inner'",
@@ -91,6 +91,11 @@ describe('check-plugin-imports', () => {
       'src/plugins/list.ts':
         "import { plugin as a } from './a/plugin'\nimport { plugin as b } from './b/plugin'\nimport { plugin as c } from './c/plugin'\nimport { start } from './a/main/start'\nexport const PLUGINS = [a, b, c]\n",
       'src/plugins/a/main/start.ts': 'export const start = 1\n',
+      'src/plugins/a/windowApi.ts': lines(
+        "export { title } from './shared/names'",
+        "export { start } from './main/start'",
+        "export { role } from './prompts/role'"
+      ),
       'src/plugins/a/broken.ts': 'import {\n'
     })
     expect(check(dir)).toEqual({
@@ -98,6 +103,8 @@ describe('check-plugin-imports', () => {
       reported: [
         'src/core/bad.ts:1 @plugins/a/api',
         'src/plugins/a/broken.ts: cannot',
+        'src/plugins/a/windowApi.ts:2 ./main/start',
+        'src/plugins/a/windowApi.ts:3 ./prompts/role',
         'src/plugins/bridges.ts:1 ./a/main/start',
         'src/plugins/c/main/bad.ts:1 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:2 @plugins/a/api',

@@ -21,6 +21,7 @@ const ALIASES = {
   '@renderer': 'src/renderer/src'
 }
 const PUBLIC_SURFACES = new Set(['api', 'windowApi'])
+const WINDOW_UNSAFE = /^(main|prompts)\//
 const RULE =
   'A plugin imports only src/core, its own folder and the api.ts or windowApi.ts of a plugin in its needs; ' +
   'outside src/plugins, only the lists import a plugin: src/plugins/list.ts its plugin.ts, ' +
@@ -108,10 +109,12 @@ function breach(fromRel, to, needs) {
       ? `imports plugin ${into.id} past its ${entry}.ts`
       : undefined
   if (!from) return into && `names plugin ${into.id} outside the lists of plugins`
+  if (from.inside === 'windowApi' && into?.id === from.id && WINDOW_UNSAFE.test(into.inside))
+    return `loads ${into.inside}.ts into the window from its windowApi.ts`
   if (into?.id === from.id || inCore(to)) return undefined
   if (into)
     return !PUBLIC_SURFACES.has(into.inside)
-      ? `imports plugin ${into.id} past its api.ts`
+      ? `imports plugin ${into.id} past its api.ts and windowApi.ts`
       : needs.get(from.id)?.has(into.id)
         ? undefined
         : `imports the ${into.inside}.ts of ${into.id}, which its manifest does not list in needs`
