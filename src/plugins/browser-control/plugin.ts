@@ -1,4 +1,5 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
+import { TAB_STOPPING } from '@core/moment'
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
@@ -18,5 +19,6 @@ export const plugin: PluginManifest = {
   },
   text: [...TEXT, ...SKILL_TEXT],
   channels: Object.values(CHANNELS),
+  moments: { listens: [TAB_STOPPING.name] },
   ui: [{ place: 'settings-page', id: BROWSER_CONTROL_PAGE }]
 }

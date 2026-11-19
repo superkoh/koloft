@@ -1,5 +1,14 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
-import { FILE_OPENED, SESSION_BOUND, SESSION_STARTED, TAB_EXITED, TURN_ENDED } from '@core/moment'
+import {
+  DIALOG_CLOSED,
+  FILE_OPENED,
+  SESSION_BOUND,
+  SESSION_STARTED,
+  STATE_CHANGED,
+  TAB_EXITED,
+  TOOL_DONE,
+  TURN_ENDED
+} from '@core/moment'
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
@@ -29,7 +38,10 @@ export const plugin: PluginManifest = {
       SESSION_STARTED.name,
       TAB_EXITED.name,
       TURN_ENDED.name,
-      SESSION_BOUND.name
+      SESSION_BOUND.name,
+      STATE_CHANGED.name,
+      TOOL_DONE.name,
+      DIALOG_CLOSED.name
     ]
   }
 }

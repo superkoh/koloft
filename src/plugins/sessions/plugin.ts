@@ -1,13 +1,19 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
+  ATTENTION_CHANGED,
+  DIALOG_CLOSED,
   QUESTION_ASKED,
   SESSION_BOUND,
   SESSION_STARTED,
   SESSION_STARTING,
+  STATE_CHANGED,
   TAB_EXITED,
   TAB_FORGOTTEN,
+  TAB_STOPPING,
   TAB_TORN_DOWN,
+  TOOL_DONE,
   TURN_ENDED,
+  TURN_OVER,
   TURN_STARTED
 } from '@core/moment'
 import { TEXT } from './prompts/text'
@@ -36,14 +42,24 @@ export const plugin: PluginManifest = {
       TURN_STARTED.name,
       TURN_ENDED.name,
       QUESTION_ASKED.name,
-      SESSION_BOUND.name
+      SESSION_BOUND.name,
+      STATE_CHANGED.name,
+      TOOL_DONE.name,
+      TURN_OVER.name,
+      ATTENTION_CHANGED.name,
+      TAB_STOPPING.name,
+      DIALOG_CLOSED.name
     ],
     listens: [
       TAB_EXITED.name,
       TURN_STARTED.name,
       TURN_ENDED.name,
       QUESTION_ASKED.name,
-      SESSION_BOUND.name
+      SESSION_BOUND.name,
+      STATE_CHANGED.name,
+      TOOL_DONE.name,
+      TURN_OVER.name,
+      DIALOG_CLOSED.name
     ]
   }
 }
