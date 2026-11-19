@@ -16,11 +16,11 @@ export interface InstructionsBlock {
   name: string
   read(): Promise<string>
   check(text: string): Promise<void>
-  write(edit: (current: string) => string, by: string): Promise<boolean>
+  writeIfStill(before: string, after: string, by: string): Promise<boolean>
 }
 
 export interface InstructionsVerbDeps {
-  askTheOwner(ask: InstructionAsk): Promise<OwnersAnswer>
+  askTheOwner(ask: InstructionAsk, stillWaiting?: () => boolean): Promise<OwnersAnswer>
   overseerSide(tabId: string): boolean
   isOverseer(tabId: string): boolean
   overseerBlock(): InstructionsBlock
@@ -49,6 +49,9 @@ const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
   closed:
     'koloft instructions: this session was closed before the owner answered, so nothing was changed.'
 }
+
+const CHANGED_WHILE_ASKING =
+  'koloft instructions: the instructions changed while the owner was asked, so nothing was changed. Read them again before you propose.'
 
 function parsed(
   args: string[]
@@ -107,23 +110,18 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     if (p.edit === ADD_A_LINE && !p.words) return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     if (p.edit === REPLACE_THE_TEXT && !args.includes('--'))
       return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
-    const edit = p.edit
-    const change = (current: string): string => editedText(current, edit, p.words)
     const before = await block.read()
-    const after = change(before)
+    const after = editedText(before, p.edit, p.words)
     if (after === before)
       return answered(`${capitalized(block.name)} already say that; nothing changed.`)
     await block.check(after)
     const by = d.nameOf(caller.session)
-    const given = await d.askTheOwner({
-      tabId: caller.tabId,
-      by,
-      what: block.name,
-      before,
-      after
-    })
+    const given = await d.askTheOwner(
+      { tabId: caller.tabId, by, what: block.name, before, after },
+      caller.stillWaiting
+    )
     if (given !== 'agreed') return refused(NOT_CHANGED[given])
-    await block.write(change, by)
-    return answered(changedLine(edit, block.name))
+    if (!(await block.writeIfStill(before, after, by))) return refused(CHANGED_WHILE_ASKING)
+    return answered(changedLine(p.edit, block.name))
   }
 }

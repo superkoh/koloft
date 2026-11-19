@@ -45,8 +45,10 @@ export const REPLACE_THE_TEXT = 'set'
 export type AgentEdit = typeof ADD_A_LINE | typeof REPLACE_THE_TEXT
 
 export function editedText(current: string, edit: AgentEdit, words: string): string {
-  if (edit === REPLACE_THE_TEXT || !current) return cleanInstructions(words)
-  return cleanInstructions(`${current}\n${words}`)
+  const line = cleanInstructions(words)
+  if (edit === REPLACE_THE_TEXT || !current) return line
+  if (current.split('\n').some((l) => l.trim() === line)) return current
+  return cleanInstructions(`${current}\n${line}`)
 }
 
 export function cleanVersions(raw: unknown): InstructionsVersion[] {

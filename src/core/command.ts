@@ -9,6 +9,7 @@ export interface AgentCaller {
   tabId: string
   cwd: string
   session: SessionInfo
+  stillWaiting?(): boolean
 }
 
 export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Promise<AgentReply>

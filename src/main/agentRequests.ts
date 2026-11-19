@@ -127,20 +127,31 @@ export class AgentRequests {
     fs.rm(full, { force: true }, () =>
       setTimeout(() => this.claimed.delete(full), CLAIM_OUTLIVES_DROP_REREADS_MS)
     )
-    const reply = await this.replyTo(req, tabId)
-    if (req?.pid !== undefined && !this.deps.alive(req.pid)) return
+    const pid = req?.pid
+    const stillWaiting = pid === undefined ? undefined : () => this.deps.alive(pid)
+    const reply = await this.replyTo(req, tabId, stillWaiting)
+    if (stillWaiting && !stillWaiting()) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
     } catch {}
   }
 
-  private async replyTo(req: AgentRequest | null, tabId: string | undefined): Promise<AgentReply> {
+  private async replyTo(
+    req: AgentRequest | null,
+    tabId: string | undefined,
+    stillWaiting?: () => boolean
+  ): Promise<AgentReply> {
     if (!req) return refused(UNREADABLE)
     if (!tabId) return refused(UNKNOWN_TAB)
     if (!this.deps.enabled(tabId)) return refused(AGENT_TOOLS_OFF)
     const session = this.deps.session(tabId)
     if (!session) return refused(UNKNOWN_TAB)
     const [verb = 'help', ...args] = asksForHelp(req.argv) ? ['help'] : req.argv
-    return this.deps.commands.dispatch(verb, args, { tabId, cwd: req.cwd, session })
+    return this.deps.commands.dispatch(verb, args, {
+      tabId,
+      cwd: req.cwd,
+      session,
+      ...(stillWaiting && { stillWaiting })
+    })
   }
 }

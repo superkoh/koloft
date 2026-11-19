@@ -33,7 +33,7 @@ Everything you do in Koloft, you do with the koloft command: run koloft help to 
     slot: 'butler-helper',
     text: `{{butler}}
 
-This session is not {{butler-name}} itself: {{butler-name}} started you in its own folder as a helper for one job. Do not write to your memory folder: {{butler-name}} reads the same one. For you, "Your place" means: you are the helper the job was handed to, so you do it yourself and start no other helper; only work that belongs to a project goes to a session in that project's workspace. When the job is done, report back to {{butler-name}}.`
+This session is not {{butler-name}} itself: {{butler-name}} started you in its own folder as a helper for one job. You propose changes only to {{butler-name}}'s own instructions, never with --workspace. Do not write to your memory folder: {{butler-name}} reads the same one. For you, "Your place" means: you are the helper the job was handed to, so you do it yourself and start no other helper; only work that belongs to a project goes to a session in that project's workspace. When the job is done, report back to {{butler-name}}.`
   },
   {
     slot: 'butler-owner-instructions',

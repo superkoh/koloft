@@ -19,9 +19,8 @@ export function changeSummary(before: string, after: string): string {
   const added = rows.filter((r) => r.kind === 'add').length
   const removed = rows.filter((r) => r.kind === 'del').length
   if (!rows.some((r) => r.kind === 'ctx') && added && removed) return 'The whole text replaced'
-  return [added && lines(added, 'added'), removed && lines(removed, 'removed')]
-    .filter(Boolean)
-    .join(', ')
+  const counted = [added && lines(added, 'added'), removed && lines(removed, 'removed')]
+  return counted.filter(Boolean).join(', ') || 'a small change'
 }
 
 export function InstructionsChangeLines({
@@ -46,9 +45,9 @@ export function InstructionsAskDialog({
   ask: InstructionAskView
   shown: boolean
 }): JSX.Element {
-  const agree = useRef<HTMLButtonElement>(null)
+  const keep = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => {
-    if (shown) agree.current?.focus()
+    if (shown) keep.current?.focus()
   }, [shown, ask.id])
   const answer = (agreed: boolean): void => window.api.instructionAsks.answer(ask.id, agreed)
   return (
@@ -80,16 +79,11 @@ export function InstructionsAskDialog({
           </p>
         </div>
         <div className="modal-foot">
-          <button className="mini" onClick={() => answer(false)}>
+          <button ref={keep} className="mini" onClick={() => answer(false)}>
             Don&apos;t change
           </button>
-          <button
-            ref={agree}
-            className="btn-primary"
-            data-default="true"
-            onClick={() => answer(true)}
-          >
-            Change them<span className="k">⏎</span>
+          <button className="btn-primary" onClick={() => answer(true)}>
+            Change them
           </button>
         </div>
       </div>

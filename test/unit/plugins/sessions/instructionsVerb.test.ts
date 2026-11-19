@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SessionDefaults, SessionInfo } from '../../../../src/shared/types'
 import { OWNER } from '../../../../src/core/ownerInstructions'
 import {
@@ -44,9 +44,11 @@ function world(answer: OwnersAnswer = 'agreed') {
       else defaults.delete(dir)
     }
   }
+  const w = { onAsk: (): void => undefined }
   const verb = instructionsVerb({
     askTheOwner: async (ask) => {
       asked.push(ask)
+      w.onAsk()
       return answer
     },
     overseerSide: (tabId) => tabId === BUTLER_TAB || tabId === HELPER_TAB,
@@ -72,7 +74,7 @@ function world(answer: OwnersAnswer = 'agreed') {
       cwd: '/',
       session: { tabId, title: TITLES[tabId] ?? 'Fix login' } as SessionInfo
     })
-  return { defaults, butler, asked, run }
+  return Object.assign(w, { defaults, butler, asked, run })
 }
 
 describe('koloft instructions asks the owner before anything changes', () => {
@@ -108,9 +110,25 @@ describe('koloft instructions asks the owner before anything changes', () => {
     expect(w.defaults.get(WS_A)?.instructions).toHaveLength(1)
   })
 
-  it('does not ask when the text would not change, nor when it would go past the limit', async () => {
+  it('writes nothing when the text changed while the owner was being asked', async () => {
+    const w = world()
+    w.onAsk = () =>
+      w.defaults.set(WS_A, {
+        picks: {},
+        instructions: [{ text: 'Owner changed it meanwhile.', at: 2, by: OWNER }]
+      })
+    const r = await w.run('tab-a', ['add', '--', 'x'])
+    expect(r.exit).toBe(1)
+    expect(r.text).toMatch(/changed while the owner was asked/)
+    expect(w.defaults.get(WS_A)?.instructions?.at(-1)?.text).toBe('Owner changed it meanwhile.')
+  })
+
+  it('does not ask when the text would not change (a line it already has, or the same whole text), nor when it would go past the limit', async () => {
     const w = world()
     expect((await w.run('tab-a', ['set', '--', 'Answer in Chinese.'])).text).toMatch(
+      /already say that/
+    )
+    expect((await w.run('tab-a', ['add', '--', 'Answer in Chinese.'])).text).toMatch(
       /already say that/
     )
     await expect(
@@ -191,5 +209,28 @@ describe("the owner's answer, kept until it comes", () => {
     expect(await second).toBe('closed')
     expect(shown).toEqual([1, 2, 1, 0])
     expect(marks).toEqual(['waits t1', 'waits t2', 'answered t1', 'answered t2'])
+  })
+
+  it('ends an ask whose command stopped waiting (the agent gave up or was interrupted), and follows its session to a new tab', async () => {
+    vi.useFakeTimers()
+    try {
+      let waiting = true
+      const asks = new InstructionAsks({
+        show: () => undefined,
+        owner: { waitsOnTheOwner: () => undefined, ownerAnswered: () => undefined }
+      })
+      const given = asks.ask(
+        { tabId: 't1', by: 'x', what: 'y', before: '', after: 'z' },
+        60_000,
+        () => waiting
+      )
+      asks.rehome('t1', 't9')
+      expect(asks.views().map((v) => v.tabId)).toEqual(['t9'])
+      waiting = false
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(await given).toBe('closed')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

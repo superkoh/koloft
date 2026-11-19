@@ -69,13 +69,13 @@ export const workspaceBlock = (
   name: `the instructions of workspace ${basename(workspace)}`,
   read: async () => textInUse((await defaults.read(workspace)).instructions),
   check: async (text) => checkTheLimit((await defaults.read(workspace)).rules ?? '', text),
-  write: async (edit, by) => {
-    let changed = false
+  writeIfStill: async (before, after, by) => {
+    let written = false
     await defaults.write(workspace, (saved) => {
-      const next = savedByAnAgent(saved, edit(textInUse(saved?.instructions)), by, now())
-      changed = next !== saved
-      return next
+      if (textInUse(saved?.instructions) !== before) return saved
+      written = true
+      return savedByAnAgent(saved, after, by, now())
     })
-    return changed
+    return written
   }
 })

@@ -2371,9 +2371,9 @@ registerSessionCommands(commands, {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
-    askTheOwner: (ask) =>
+    askTheOwner: (ask, stillWaiting) =>
       instructionAsks
-        ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS)
+        ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS, stillWaiting)
         : Promise.resolve('timeout'),
     overseerSide: butlerSide,
     isOverseer: isButlerNow,
@@ -4218,7 +4218,9 @@ app.whenReady().then(() => {
   const ownerWaits = {
     waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
     ownerAnswered: (tabId: string) => {
-      if (tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
+      const stillAsked =
+        !!instructionAsks?.asking(tabId) || !!secretAsks?.views().some((a) => a.tabId === tabId)
+      if (!stillAsked && tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
     }
   }
   const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
@@ -6292,6 +6294,7 @@ function registerIpc(): void {
     cronRunner?.tabMoved(oldTabId, newTabId)
     webPages.tabMoved(oldTabId, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
+    instructionAsks?.rehome(oldTabId, newTabId)
     if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
       carryTabIds(newTabId, tabIdsOf(oldTabId))
       earlierTabIds.delete(oldTabId)

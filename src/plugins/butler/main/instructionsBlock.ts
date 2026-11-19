@@ -13,11 +13,11 @@ export const butlersBlock = (
     const saved = savedInstructions(butler(), text, '', now())
     if (!saved.ok) throw new Error(saved.error)
   },
-  write: async (edit, by) => {
+  writeIfStill: async (before, after, by) => {
     const was = butler()
-    const saved = savedInstructions(was, edit(instructionsOf(was)), by, now())
+    if (instructionsOf(was) !== before) return false
+    const saved = savedInstructions(was, after, by, now())
     if (!saved.ok) throw new Error(saved.error)
-    if (saved.butler === was) return false
     save(saved.butler)
     return true
   }

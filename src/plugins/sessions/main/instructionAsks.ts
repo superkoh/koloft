@@ -11,6 +11,8 @@ export interface InstructionAskDeps {
   owner: OwnerWaits
 }
 
+const A_CALLER_THAT_STOPPED_WAITING_IS_SEEN_WITHIN_MS = 2000
+
 interface Pending {
   ask: InstructionAsk
   settle(answer: OwnersAnswer): void
@@ -21,7 +23,11 @@ export class InstructionAsks {
 
   constructor(private d: InstructionAskDeps) {}
 
-  async ask(ask: InstructionAsk, waitMs: number): Promise<OwnersAnswer> {
+  async ask(
+    ask: InstructionAsk,
+    waitMs: number,
+    stillWaiting: () => boolean = () => true
+  ): Promise<OwnersAnswer> {
     const id = randomUUID()
     let settle!: (answer: OwnersAnswer) => void
     const answer = new Promise<OwnersAnswer>((resolve) => (settle = resolve))
@@ -29,8 +35,12 @@ export class InstructionAsks {
     this.d.show(this.views())
     this.d.owner.waitsOnTheOwner(ask.tabId)
     const timer = setTimeout(() => this.end(id, 'timeout'), waitMs)
+    const watch = setInterval(() => {
+      if (!stillWaiting()) this.end(id, 'closed')
+    }, A_CALLER_THAT_STOPPED_WAITING_IS_SEEN_WITHIN_MS)
     const given = await answer
     clearTimeout(timer)
+    clearInterval(watch)
     return given
   }
 
@@ -38,8 +48,22 @@ export class InstructionAsks {
     return [...this.pending].map(([id, p]) => ({ ...p.ask, id }))
   }
 
+  asking(tabId: string): boolean {
+    return [...this.pending.values()].some((p) => p.ask.tabId === tabId)
+  }
+
   answer(id: string, agreed: boolean): void {
     this.end(id, agreed ? 'agreed' : 'declined')
+  }
+
+  rehome(fromTabId: string, toTabId: string): void {
+    let moved = false
+    for (const p of this.pending.values())
+      if (p.ask.tabId === fromTabId) {
+        p.ask = { ...p.ask, tabId: toTabId }
+        moved = true
+      }
+    if (moved) this.d.show(this.views())
   }
 
   forget(tabId: string): void {
@@ -52,8 +76,6 @@ export class InstructionAsks {
     this.pending.delete(id)
     p.settle(how)
     this.d.show(this.views())
-    const { tabId } = p.ask
-    if (![...this.pending.values()].some((q) => q.ask.tabId === tabId))
-      this.d.owner.ownerAnswered(tabId)
+    if (!this.asking(p.ask.tabId)) this.d.owner.ownerAnswered(p.ask.tabId)
   }
 }
