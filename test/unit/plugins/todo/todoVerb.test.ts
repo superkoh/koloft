@@ -9,6 +9,7 @@ import { GITHUB_NOT_ASKED, type WorkLeft } from '../../../../src/plugins/session
 import { listTodoPulls } from '../../../../src/plugins/todo/main/pulls'
 import type { GhResult } from '../../../../src/core/gh'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
+import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type {
   BackendId,
   McpServer,
@@ -23,7 +24,8 @@ const SHOP = '/work/shop'
 const SHOP_COPY = '/work/shop-2'
 const NOTES_WS = '/work/notes'
 const REMOTE = formatRemoteKey('box', '/srv/app')
-const BUTLER_FOLDER = '/data/conductors/global'
+const USER_DATA = '/data'
+const BUTLER_FOLDER = butlersFolderClaim(USER_DATA).path
 const BUTLER_TAB = 'tab-butler'
 
 const changes = (...lines: string[]): WorkLeft => ({ head: 'Changes not committed', lines })
@@ -112,7 +114,7 @@ function harness(world: World) {
     sidebar: () => world.sidebar,
     pinnedWorkspaces: () =>
       world.sidebar
-        .filter((w) => !w.workspace.butler)
+        .filter((w) => !w.workspace.claim)
         .map((w) => ({ path: w.workspace.path, missing: w.workspace.missing })),
     sessions: () => world.sessions,
     asking: (tabId) => world.asking?.includes(tabId) ?? false,
@@ -178,7 +180,7 @@ function sidebarOf(
         missing: false,
         isGit: false,
         hasHistory: true,
-        butler: true
+        claim: butlersFolderClaim(USER_DATA)
       },
       rows: butlerRows
     }
