@@ -15,7 +15,7 @@ import type {
 } from '@shared/types'
 import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
-import type { GithubLookup } from '../github'
+import type { GithubRepos } from '../githubRepos'
 import type { GitRunResult } from '../gitSteps'
 import type { GitOut } from '../resumePlan'
 import type { RemoteTab } from '../sessionTracker'
@@ -136,6 +136,6 @@ export interface Host {
   gitRun(root: string, args: string[], network?: boolean): Promise<GitRunResult>
   reveal(p: string): void
   osOpen(p: string): void
-  github: GithubLookup
+  github: GithubRepos
   freshness: FreshnessRunner
 }
