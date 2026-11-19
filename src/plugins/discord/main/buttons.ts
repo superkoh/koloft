@@ -3,7 +3,7 @@ import type { Card } from './cards'
 import type { Choice, DialogView } from '@plugins/sessions/main/dialog'
 import { privately, type DiscordInteraction } from './link'
 import { ANSWER_ON_ITS_WAY } from '@plugins/sessions/main/sessionAsks'
-import { errorText } from '../../../main/agentRequests'
+import { errorText } from '@core/errorText'
 
 export const NO_LONGER_OPEN = 'This question is no longer open.'
 export const ONLY_THE_OWNER_ANSWERS = 'Only the owner Koloft is paired with can answer here.'
