@@ -54,7 +54,7 @@ export function InstructionsStrip(): JSX.Element | null {
       <span className="wb-title">
         <span className="nm">{name}</span>
         <span className="dir">&nbsp;· Butler</span>
-        {undone && <span className="dir">{` · ${CHANGE_UNDONE}`}</span>}
+        {undone && <span className="dir">&nbsp;· {CHANGE_UNDONE}</span>}
       </span>
       {change && (
         <>

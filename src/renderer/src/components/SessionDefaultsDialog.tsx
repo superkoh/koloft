@@ -103,7 +103,8 @@ export function SessionDefaultsDialog({
   const savedText = useRef('')
   const takeInstructions = (versions: InstructionsVersion[] | undefined): void => {
     const text = textInUse(versions)
-    setInstructions((draft) => (draft === savedText.current ? text : draft))
+    const was = savedText.current
+    setInstructions((draft) => (draft === was ? text : draft))
     savedText.current = text
     setSaved((s) => ({ ...s, instructions: text }))
     const unseen = unseenChange(versions)

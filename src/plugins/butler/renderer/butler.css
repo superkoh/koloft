@@ -2,6 +2,9 @@
   border-bottom: 0;
   border-top: 1px solid var(--line);
 }
+.butler-strip .wb-title {
+  flex: 1 0 auto;
+}
 .butler-strip .changed {
   min-width: 0;
   overflow: hidden;
