@@ -9,7 +9,7 @@ import {
 } from '../../../../src/plugins/butler/main/butler'
 import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
-import type { InstructionsVersion } from '../../../../src/plugins/butler/shared/types'
+import type { InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
 import { TODO_NEWS } from '../../../../src/plugins/todo/api'
@@ -181,7 +181,7 @@ describe('the butler', () => {
     )
   })
 
-  it('started on Claude Code, the owner’s instructions go beside its role; on Codex, Muse and Antigravity they close its role; with none written, nothing is added', async () => {
+  it('the owner’s instructions go beside its role, both when it starts and when Codex, Muse or Antigravity resume it; with none written, nothing is added', async () => {
     instructions = [
       { text: 'Old words.', at: 1, by: 'owner' },
       { text: 'Answer in Chinese.', at: 2, by: 'owner' }
@@ -194,13 +194,14 @@ describe('the butler', () => {
     expect(started[0].role).not.toContain('Answer in Chinese.')
     expect(started[0].ownerText).toBe('Written by the owner\nAnswer in Chinese.')
     for (const key of others)
-      expect(c.identityOfLaunch(conductorFolder(userData), key)?.role).toMatch(
-        /\n\nWritten by the owner\nAnswer in Chinese\.$/
-      )
+      expect(c.identityOfLaunch(conductorFolder(userData), key)).toEqual({
+        role: started[0].role,
+        ownerText: 'Written by the owner\nAnswer in Chinese.'
+      })
     instructions = [...instructions, { text: '', at: 3, by: 'owner' }]
-    expect(c.identityOfLaunch(conductorFolder(userData), 'codex:local:t1')?.role).not.toContain(
-      'Written by the owner'
-    )
+    expect(c.identityOfLaunch(conductorFolder(userData), 'codex:local:t1')).toEqual({
+      role: started[0].role
+    })
   })
 
   // ADR-0029

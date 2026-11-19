@@ -2,7 +2,7 @@ import { GLOBAL_SCOPE } from '@shared/conductors'
 import { cleanOwnPick } from '@shared/sessionPicks'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
-import { cleanVersions } from './instructions'
+import { cleanVersions } from '@core/ownerInstructions'
 import { setting, type SettingKeys } from '@core/settings'
 import {
   DEFAULT_BUTLER_NAME,
