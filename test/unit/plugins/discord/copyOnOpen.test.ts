@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { moment, type FileOpened } from '../../src/core/moment'
-import { copyEachOpenedFile } from '../../src/plugins/discord/main/copyOnOpen'
+import { moment, type FileOpened } from '../../../../src/core/moment'
+import { copyEachOpenedFile } from '../../../../src/plugins/discord/main/copyOnOpen'
 
 const opened = { tabId: 't1', target: '/w/plan.md' }
 
