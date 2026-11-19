@@ -22,6 +22,7 @@ import {
   type PlacedRow
 } from './placedRows'
 import { RepliesOwed, type ReplyListener } from './repliesOwed'
+import { instructionsVerb, type InstructionsVerbDeps } from './instructionsVerb'
 import type { SendResult, StartResult, StartSpec } from './sendAndStart'
 import {
   BACKEND_LABEL,
@@ -1539,13 +1540,15 @@ export interface SessionCommandsDeps {
   rulesOfTab(tabId: string): Promise<string | undefined>
   session: AgentVerb
   workspace: WorkspaceVerbDeps
+  instructions: InstructionsVerbDeps
 }
 
 export function registerSessionCommands(commands: Commands, d: SessionCommandsDeps): void {
   commands.register({
     help: helpVerb(d.rulesOfTab),
     session: d.session,
-    workspace: workspaceVerb(d.workspace)
+    workspace: workspaceVerb(d.workspace),
+    instructions: instructionsVerb(d.instructions)
   })
 }
 

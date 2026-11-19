@@ -2,6 +2,7 @@ export interface InstructionsVersion {
   text: string
   at: number
   by: string
+  unseen?: true
 }
 
 export const OWNER = 'owner'
@@ -33,19 +34,31 @@ export const overTheLimit = (over: number): string =>
 export function withNewVersion(
   versions: readonly InstructionsVersion[] | undefined,
   text: string,
-  by: string,
-  at: number
+  at: number,
+  agent?: string
 ): InstructionsVersion[] | undefined {
   if (text === textInUse(versions)) return undefined
-  return [...(versions ?? []), { text, at, by }].slice(-VERSIONS_KEPT)
+  const version: InstructionsVersion = agent
+    ? { text, at, by: agent, unseen: true }
+    : { text, at, by: OWNER }
+  return [...(versions ?? []), version].slice(-VERSIONS_KEPT)
+}
+
+export const ADD_A_LINE = 'add'
+export const REPLACE_THE_TEXT = 'set'
+export type AgentEdit = typeof ADD_A_LINE | typeof REPLACE_THE_TEXT
+
+export function editedText(current: string, edit: AgentEdit, words: string): string {
+  if (edit === REPLACE_THE_TEXT || !current) return cleanInstructions(words)
+  return cleanInstructions(`${current}\n${words}`)
 }
 
 export function cleanVersions(raw: unknown): InstructionsVersion[] {
   if (!Array.isArray(raw)) return []
   return raw.flatMap((v: unknown) => {
     if (!v || typeof v !== 'object') return []
-    const { text, at, by } = v as Record<string, unknown>
+    const { text, at, by, unseen } = v as Record<string, unknown>
     if (typeof text !== 'string' || typeof at !== 'number' || typeof by !== 'string') return []
-    return [{ text: cleanInstructions(text), at, by }]
+    return [{ text: cleanInstructions(text), at, by, ...(unseen === true && { unseen }) }]
   })
 }

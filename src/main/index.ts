@@ -449,6 +449,7 @@ import {
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
+  butlersBlock,
   butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
@@ -623,6 +624,7 @@ import {
   resolveWorkspace,
   instructionsPartOf,
   savedFromTheDialog,
+  workspaceBlock,
   type PlacedRow,
   type Recipient
 } from '@plugins/sessions/api'
@@ -2343,7 +2345,15 @@ registerSessionCommands(commands, {
     return workspace && rulesOf(workspace)
   },
   session: sessionCommand.verb,
-  workspace: { sidebar: projectRows }
+  workspace: { sidebar: projectRows },
+  instructions: {
+    overseerSide: butlerSide,
+    overseerBlock: () =>
+      butlersBlock(loadSettings().butler, (butler) => commitSettings({ butler }), Date.now),
+    workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
+    pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+    workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now)
+  }
 })
 
 registerCronCommand(commands, {

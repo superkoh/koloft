@@ -48,6 +48,13 @@ koloft session read <id or name> [--last <number>]
 koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
+koloft instructions [--workspace <workspace>]
+koloft instructions add [--workspace <workspace>] -- "<one sentence>"
+koloft instructions set [--workspace <workspace>] -- "<the whole new text>"
+    Read, add a sentence to, or replace the owner's instructions for this workspace: text the owner writes that every session started in it, or in another copy of the same repository, gets last in its prompt. Change them only when the owner plainly asks you to remember something; the owner is shown each change and can undo it. Sessions started afterwards follow the new text; a running session keeps what it started with. A session reads and changes only its own workspace's.
+    The butler: without --workspace these are its own instructions, which it and its helpers follow; with --workspace, that workspace's.
+    Example: koloft instructions add -- "Run npm test before you say a change is done."
+
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
     Pick the model and effort that fit the task, every time. {{koloft-help-pick-model}} A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, Koloft starts the next best one and says so.
     Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft{{koloft-help-session-title}}: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
@@ -106,7 +113,7 @@ RULES
 ${SESSIONS}{{koloft-help-inbox}}{{koloft-help-todo}}{{koloft-help-passwords}}{{koloft-help-discord}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
 
 const KOLOFT_SKILL =
-  'Use the koloft command to ask Koloft, the app this session runs in, to {{koloft-skill-workbench}}{{koloft-skill-cron}}list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good{{koloft-skill-todo}}{{koloft-skill-passwords}}.{{koloft-skill-web-pages}} Read this before running any koloft{{koloft-skill-web-pages-command}} command.'
+  "Use the koloft command to ask Koloft, the app this session runs in, to {{koloft-skill-workbench}}{{koloft-skill-cron}}list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, read or change the owner's instructions for this workspace{{koloft-skill-todo}}{{koloft-skill-passwords}}.{{koloft-skill-web-pages}} Read this before running any koloft{{koloft-skill-web-pages-command}} command."
 
 export const TEXT: readonly TextBlock[] = [
   { slot: 'koloft-help', text: KOLOFT_HELP },

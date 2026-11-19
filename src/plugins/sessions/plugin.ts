@@ -17,7 +17,12 @@ export const plugin: PluginManifest = {
   name: 'Sessions core',
   mandatory: true,
   needs: [],
-  commands: [{ verb: 'help' }, { verb: 'session' }, { verb: 'workspace' }],
+  commands: [
+    { verb: 'help' },
+    { verb: 'session' },
+    { verb: 'workspace' },
+    { verb: 'instructions' }
+  ],
   text: [...TEXT, ...SKILL_TEXT],
   assistJobs: ASSIST_JOBS,
   channels: Object.values(CHANNELS),
