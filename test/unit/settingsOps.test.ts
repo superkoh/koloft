@@ -12,7 +12,7 @@ import {
   sanitizeLoadedSettings,
   DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { HINT_IDS } from '@shared/types'
+import { HINT_IDS } from '@core/hints'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 describe('buildResetPatch (FR-12)', () => {

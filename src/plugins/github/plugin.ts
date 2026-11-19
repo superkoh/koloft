@@ -11,6 +11,7 @@ export const plugin: PluginManifest = {
   mandatory: false,
   needs: ['sessions'],
   commands: [{ verb: 'gh' }],
+  hints: ['github'],
   text: [...TEXT, ...SKILL_TEXT],
   channels: Object.values(CHANNELS)
 }

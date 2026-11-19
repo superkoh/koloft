@@ -1,5 +1,12 @@
 import { fill, type PluginUi } from '@core/ui'
-import { ISSUE_LAUNCH, WORKBENCH_PART, WORKSPACE_GIT_PART, WORKTREE_ITEMS } from '@renderer/slots'
+import { GITHUB_BUTTON_PART, GITHUB_HINT } from './hint'
+import {
+  ISSUE_LAUNCH,
+  PART_HINT,
+  WORKBENCH_PART,
+  WORKSPACE_GIT_PART,
+  WORKTREE_ITEMS
+} from '@renderer/slots'
 import { CountsMark, GithubSection, hasGithub } from './counts'
 import { fitGithubCounts } from './headFit'
 import { useWorkbenchPart } from './workbench'
@@ -14,6 +21,12 @@ export const ui: PluginUi = {
       Section: GithubSection
     }),
     fill(WORKBENCH_PART, useWorkbenchPart),
+    fill(PART_HINT, {
+      id: 'github',
+      part: GITHUB_BUTTON_PART,
+      selector: '.wb-gh',
+      words: GITHUB_HINT
+    }),
     fill(WORKTREE_ITEMS, useWorktreeItems),
     fill(ISSUE_LAUNCH, issueLaunch)
   ]

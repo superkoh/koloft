@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { popoverX } from '@shared/accountUsage'
-import { HINT_IDS, type HintId } from '@shared/types'
+import type { HintId } from '@shared/types'
+import { HINT_IDS } from '@core/hints'
 import { pointsAtASidebarRow, type ActiveHint } from '../hints'
+import { fillsOf } from '../pluginUi'
+import { PART_HINT } from '../slots'
 import { useStore } from '../store'
 import { isSessionKind } from '../agentUi'
 import { BACKEND_LABEL, capabilitiesFor } from '@shared/sessionBackend'
@@ -16,7 +19,7 @@ const GAP = 10
 const STILL_FRAMES = 10
 const HINT_THAT_NEVER_DIMS_THE_WINDOW: HintId = 'workbench'
 
-function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Element {
+export function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Element {
   return (
     <svg className="pic" viewBox={`0 0 244 ${p.h}`} role="img" aria-label={p.label}>
       <rect
@@ -33,7 +36,7 @@ function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Elemen
   )
 }
 
-interface HintWords {
+export interface HintWords {
   title: string
   body: JSX.Element
   pic: JSX.Element
@@ -159,31 +162,6 @@ const CONTENT: Record<HintId, HintWords | ((agent: AgentWords) => HintWords)> = 
         </g>
       </Pic>
     )
-  },
-  github: {
-    title: 'This project is on GitHub',
-    body: (
-      <>
-        The number is this branch&apos;s <b>pull request</b>. Click to read it here;
-        <b> right-click</b> for the repository and the pull-request list.
-      </>
-    ),
-    pic: (
-      <Pic h={44} label="the tab strip's GitHub button">
-        <g>
-          <rect x="11.5" y="12.5" width="60" height="19" rx="6" fill="none" stroke="var(--line)" />
-          <text x="28" y="25" className="pt" fill="var(--fg-dim)">
-            Files
-          </text>
-          <rect x="78" y="12.5" width="52" height="19" rx="6" fill="var(--bg-3)" />
-          <circle cx="90" cy="22" r="6" fill="var(--fg-dim)" />
-          <text x="101" y="25" className="pt-mono" fill="var(--fg)">
-            #265
-          </text>
-          <path d="M140 13 v18" stroke="var(--line-2)" strokeWidth="1" />
-        </g>
-      </Pic>
-    )
   }
 }
 
@@ -277,7 +255,7 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
   }, [onDone])
 
   const session = useStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
-  const content = CONTENT[id]
+  const content = CONTENT[id as HintId] ?? fillsOf(PART_HINT).find((hint) => hint.id === id)?.words
   const { title, body, pic } =
     typeof content === 'function'
       ? content(
