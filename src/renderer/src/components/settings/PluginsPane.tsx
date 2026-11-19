@@ -68,7 +68,15 @@ function SetUpButton({
   const setUp = fillsOf(PLUGIN_SET_UP).find((f) => f.plugin === plugin.id)
   if (!setUp || !neverSetUp) return null
   return (
-    <button className="mini" onClick={() => void setUp.run().then((e) => onError(e ?? ''))}>
+    <button
+      className="mini"
+      onClick={() =>
+        void setUp.run().then(
+          (e) => onError(e ?? ''),
+          (e: unknown) => onError(String(e))
+        )
+      }
+    >
       {setUp.label(name)}
     </button>
   )

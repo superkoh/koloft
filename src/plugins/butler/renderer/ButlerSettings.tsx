@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { AssistRow } from '@renderer/components/settings/AssistSection'
+import { AssistRow, BUTLER_DOES } from '@renderer/components/settings/AssistSection'
 import { useSettingsUpdate } from '@renderer/components/settings/useSettingsUpdate'
 import { useStore } from '@renderer/store'
 import { useAssistSetup } from '@renderer/useAssistSetup'
@@ -22,12 +22,7 @@ export function ButlerSettings(): JSX.Element {
   return (
     <>
       <div className="set-grp">Butler</div>
-      <AssistRow
-        row="butler"
-        title={name}
-        does="Your butler, whom you talk to from the top of the sidebar or from Discord."
-        setup={setup}
-      />
+      <AssistRow row="butler" title={name} does={BUTLER_DOES} setup={setup} />
       <div className="set-row stack">
         <div className="set-lab">
           <b>Name</b>

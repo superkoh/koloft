@@ -31,5 +31,5 @@ const BUTLER_NAME = /\{\{butler-name\}\}/g
 
 export function useDoes(plugin: PluginManifest): string {
   const name = useStore((s) => s.settings.butler.name)
-  return plugin.does.replace(BUTLER_NAME, name)
+  return plugin.does.replace(BUTLER_NAME, () => name)
 }

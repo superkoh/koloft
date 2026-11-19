@@ -95,7 +95,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
     }
   })
 
-  test('a saved token connects; a team app pairs on the first message only after This is me; a listed channel binds', async ({
+  test('a saved token connects and turns Discord on before anyone is paired; a team app pairs on the first message only after This is me; a listed channel binds', async ({
     env
   }) => {
     const { page, fake, close } = await launched(env)
@@ -104,6 +104,8 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
         `✓ Connected as ${FAKE_BOT}`
       )
+      await expect(pane.getByRole('switch', { name: 'Turn on Discord' })).toBeChecked()
+      await expect.poll(() => settingsOnDisk(env).pluginsOn).toEqual({ discord: true })
       expect(fake.identifies).toBe(1)
       await expect(
         pane.locator('.set-row', { has: page.locator('b', { hasText: /^Server$/ }) })

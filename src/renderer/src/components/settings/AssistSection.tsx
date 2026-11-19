@@ -2,6 +2,7 @@ import { useState, type JSX } from 'react'
 import { assistJobDefaults } from '@core/assistJobs'
 import type { PluginAssistJob, PluginManifest } from '@core/plugin'
 import { PLUGINS } from '@plugins/list'
+import { plugin as butler } from '@plugins/butler/plugin'
 import { assistEfforts, assistModels, assistRunsOn, withAssistPick } from '@shared/assistPicks'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
@@ -193,7 +194,7 @@ export function AssistRow({
   )
 }
 
-function JobOverviewRow({ job, plugin }: { job: PluginAssistJob; plugin: PluginManifest }) {
+function JobOverviewRow({ job, plugin }: { job: AssistJobRow; plugin: PluginManifest }) {
   const summary = useAssistSummary(job.id)
   const go = useSettingsGo()
   return (
@@ -218,9 +219,14 @@ function JobOverviewRow({ job, plugin }: { job: PluginAssistJob; plugin: PluginM
   )
 }
 
+type AssistJobRow = Pick<PluginAssistJob, 'id' | 'name' | 'does'>
+
 const JOBS_BY_PLUGIN = PLUGINS.flatMap((plugin) =>
   (plugin.assistJobs ?? []).map((job) => ({ job, plugin }))
 )
+
+export const BUTLER_DOES =
+  'Your butler, whom you talk to from the top of the sidebar or from Discord.'
 
 export function AssistSection(): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
@@ -258,6 +264,8 @@ export function AssistSection(): JSX.Element {
       {JOBS_BY_PLUGIN.map(({ job, plugin }) => (
         <JobOverviewRow key={job.id} job={job} plugin={plugin} />
       ))}
+      <div className="set-grp">Butler</div>
+      <JobOverviewRow job={{ id: 'butler', name, does: BUTLER_DOES }} plugin={butler} />
     </>
   )
 }
