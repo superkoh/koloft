@@ -1,12 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, ConductorOpenResult, CronEffort } from '@shared/types'
-import {
-  BACKEND_LABEL,
-  conversationAtFirstPrompt,
-  identityOf,
-  ownerTextBesideTheRole
-} from '@shared/sessionBackend'
+import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '../shared/names'
 import {
   isKnownBy,
@@ -19,11 +14,14 @@ import { errorText } from '@core/errorText'
 import { butlerRole, ownerInstructionsPart } from '../prompts/role'
 import { conductorFolder } from './folder'
 
-export interface ButlerLaunch {
-  backend: BackendId
-  cwd: string
+interface ButlerPrompt {
   role: string
   ownerText?: string
+}
+
+export interface ButlerLaunch extends ButlerPrompt {
+  backend: BackendId
+  cwd: string
   title: string
   firstPrompt?: string
   model?: string
@@ -126,19 +124,17 @@ export class Butler {
   }
 
   // ADR-0029 CC§23
-  identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
+  identityOfLaunch(cwd: string, resumeKey?: string): ButlerPrompt | undefined {
     const launched = this.d.realpath(path.resolve(cwd))
     if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
       return undefined
     if (!this.recorded(resumeKey)) return undefined
-    return { role: this.prompt(identityOf(resumeKey).backendId).role }
+    return this.prompt()
   }
 
-  private prompt(backend: BackendId): { role: string; ownerText?: string } {
+  private prompt(): ButlerPrompt {
     const butler = this.d.butler()
     const instructions = instructionsOf(butler)
-    if (!ownerTextBesideTheRole(backend))
-      return { role: butlerRole(butler.name, this.d.roleFacts(), instructions) }
     // CC§13 CC§23
     return {
       role: butlerRole(butler.name, this.d.roleFacts()),
@@ -180,7 +176,7 @@ export class Butler {
   private launchFor(backend: BackendId): ButlerLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    return { backend, cwd, ...this.prompt(backend), title: this.d.butler().name }
+    return { backend, cwd, ...this.prompt(), title: this.d.butler().name }
   }
 
   private async openNow(firstPrompt?: string): Promise<ConductorOpenResult> {

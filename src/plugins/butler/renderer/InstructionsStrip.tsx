@@ -3,12 +3,8 @@ import { createPortal } from 'react-dom'
 import { IconAiStart, IconClose } from '@renderer/icons'
 import { useStore } from '@renderer/store'
 import { isComposing } from '@renderer/keys'
-import {
-  cleanInstructions,
-  INSTRUCTIONS_MAX_BYTES,
-  instructionsBytes,
-  instructionsOf
-} from '../shared/instructions'
+import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
+import { INSTRUCTIONS_MAX_BYTES, instructionsOf } from '../shared/instructions'
 import { isButlerTab } from './butlerTabs'
 import { openButler, useButler } from './state'
 import '@renderer/commandPalette.css'
@@ -16,8 +12,6 @@ import './butler.css'
 
 const whenItTakesEffect = (name: string): string =>
   `${name} uses it from the next fresh conversation (on Muse, from the next start).`
-
-const count = (n: number): string => n.toLocaleString('en-US')
 
 const COULD_NOT_SAVE = 'Koloft could not save the instructions.'
 
@@ -128,9 +122,9 @@ function InstructionsEditor(): JSX.Element {
             {error ? (
               <span className="field-hint bad">{error}</span>
             ) : left >= 0 ? (
-              `${count(left)} left`
+              bytesLeft(left)
             ) : (
-              <span className="field-hint bad">{`${count(-left)} over the limit`}</span>
+              <span className="field-hint bad">{bytesLeft(left)}</span>
             )}
           </span>
           <button className="pal-pill" onClick={close}>

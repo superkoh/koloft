@@ -5,7 +5,7 @@ import {
   projectRulesForTheButler,
   TODO_METHOD
 } from '../../src/shared/agentGuide'
-import { koloftPrompt } from '../../src/plugins/sessions/api'
+import { koloftPrompt, workspaceInstructionsPart } from '../../src/plugins/sessions/api'
 import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
 import { ownerInstructionsPart } from '../../src/plugins/butler/prompts/role'
 import { DISCORD_BOUND } from '../../src/plugins/discord/api'
@@ -36,6 +36,9 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   it('the prompt file a Claude session reads in a project with its own rules for picking a model', () =>
     pin(claudeProjectPrompt(RULES), 'session/claude-project-prompt-file'))
 
+  it('the part every session in a workspace gets last when the owner wrote instructions for it', () =>
+    pin(workspaceInstructionsPart(OWNER_INSTRUCTIONS), 'session/workspace-owner-instructions'))
+
   it('the butler, with Discord bound and without, and the helper it starts in its own folder', async () => {
     await pin(butlerRole(BUTLER, [DISCORD_BOUND]), 'butler/butler-discord-bound')
     await pin(butlerRole(BUTLER), 'butler/butler-discord-not-bound')
@@ -46,7 +49,10 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   })
 
   it('the butler and its helper when the owner wrote instructions, and the part a Claude Code butler gets beside its role', async () => {
-    await pin(butlerRole(BUTLER, [], OWNER_INSTRUCTIONS), 'butler/butler-owner-instructions')
+    await pin(
+      `${butlerRole(BUTLER)}\n\n${ownerInstructionsPart(OWNER_INSTRUCTIONS)}`,
+      'butler/butler-owner-instructions'
+    )
     await pin(butlerHelperRole(BUTLER, OWNER_INSTRUCTIONS), 'butler/helper-owner-instructions')
     await pin(ownerInstructionsPart(OWNER_INSTRUCTIONS), 'butler/owner-instructions-part')
   })
