@@ -1,10 +1,13 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
+  DIALOG_CLOSED,
   FILE_OPENED,
   INSTRUCTIONS_CHANGED,
   SESSION_BOUND,
   SESSION_STARTED,
+  STATE_CHANGED,
   TAB_EXITED,
+  TOOL_DONE,
   TURN_ENDED
 } from '@core/moment'
 import { TEXT } from './prompts/text'
@@ -37,6 +40,9 @@ export const plugin: PluginManifest = {
       TAB_EXITED.name,
       TURN_ENDED.name,
       SESSION_BOUND.name,
+      STATE_CHANGED.name,
+      TOOL_DONE.name,
+      DIALOG_CLOSED.name,
       INSTRUCTIONS_CHANGED.name
     ]
   }

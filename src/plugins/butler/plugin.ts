@@ -1,6 +1,8 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import {
+  ATTENTION_CHANGED,
   SESSION_BOUND,
+  STATE_CHANGED,
   SESSION_STARTING,
   TAB_EXITED,
   TAB_FORGOTTEN,
@@ -43,7 +45,9 @@ export const plugin: PluginManifest = {
       TAB_FORGOTTEN.name,
       TURN_STARTED.name,
       TURN_ENDED.name,
-      SESSION_BOUND.name
+      SESSION_BOUND.name,
+      STATE_CHANGED.name,
+      ATTENTION_CHANGED.name
     ]
   },
   ui: [

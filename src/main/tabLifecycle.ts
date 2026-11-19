@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import {
   TAB_EXITED,
   TAB_FORGOTTEN,
+  TAB_STOPPING,
   TAB_TORN_DOWN,
   type MadeLater,
   type Moment,
@@ -24,7 +25,6 @@ export class TabLifecycle extends EventEmitter<{
 
 export interface TabSubsystems {
   attention: Pick<AttentionTracker, 'clear' | 'tabStopping'>
-  cdpTabClosed: (tabId: string) => void
   claude: Pick<ClaudeBackend, 'onPtyExit'>
   tracker: Pick<SessionTracker, 'setAlive'>
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
@@ -35,7 +35,7 @@ export interface TabSubsystems {
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
   lifecycle.on('stopping', (tabId, restarting) => s.attention.tabStopping(tabId, restarting))
-  lifecycle.on('stopping', (tabId) => s.cdpTabClosed(tabId))
+  lifecycle.on('stopping', (tabId, restarting) => s.announce(TAB_STOPPING, { tabId, restarting }))
 
   lifecycle.on('exit', (exit) => s.announce(TAB_EXITED, exit))
 
