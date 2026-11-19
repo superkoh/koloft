@@ -1,32 +1,36 @@
 import { useMemo } from 'react'
-import { fillsOf } from './pluginUi'
+import { useFillsOf } from './pluginUi'
 import { useStore } from './store'
 import { OWNER_ASKS, type OverTerminal, type OwnerAsks, type PageAsk } from './slots'
 
-const askers = (): readonly OwnerAsks[] => fillsOf(OWNER_ASKS)
+const useEachAsker = <R>(use: (asker: OwnerAsks) => R): (R | undefined)[] =>
+  useFillsOf(OWNER_ASKS, use)
+
+const NOTHING: readonly never[] = []
 
 export function useWatchOwnerAsks(): void {
-  for (const asker of askers()) asker.useWatch()
+  useEachAsker((asker) => asker.useWatch())
 }
 
 export function useAskedTabs(): readonly { tabId: string }[] {
-  const lists = askers().map((asker) => asker.useAsked())
+  const lists = useEachAsker((asker) => asker.useAsked())
   const instructionAsks = useStore((s) => s.instructionAsks)
-  return useMemo(() => [...lists.flat(), ...instructionAsks], [...lists, instructionAsks])
+  return useMemo(
+    () => [...lists.flatMap((list) => list ?? NOTHING), ...instructionAsks],
+    [...lists, instructionAsks]
+  )
 }
 
 export function useOverTerminal(): (tabId: string) => OverTerminal | undefined {
-  const lookups = askers().map((asker) => asker.useOverTerminal())
-  return (tabId) => lookups.map((overOf) => overOf(tabId)).find(Boolean)
+  const lookups = useEachAsker((asker) => asker.useOverTerminal())
+  return (tabId) => lookups.map((overOf) => overOf?.(tabId)).find(Boolean)
 }
 
 export function usePageAsk(ownerTab: string | null): PageAsk | undefined {
-  return askers()
-    .map((asker) => asker.usePageAsk(ownerTab))
-    .find(Boolean)
+  return useEachAsker((asker) => asker.usePageAsk(ownerTab)).find(Boolean)
 }
 
 export function useHeldGuests(): readonly number[] {
-  const lists = askers().map((asker) => asker.useHeldGuests())
-  return useMemo(() => lists.flat(), lists)
+  const lists = useEachAsker((asker) => asker.useHeldGuests())
+  return useMemo(() => lists.flatMap((list) => list ?? NOTHING), lists)
 }
