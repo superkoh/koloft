@@ -14,6 +14,7 @@ import type {
   SessionSearchHits
 } from '@shared/types'
 import { CHANNELS } from '../shared/ipc'
+import type { InstructionAskView } from '../shared/instructionAsks'
 
 export interface SessionsBridge {
   sessions: {
@@ -52,6 +53,11 @@ export interface SessionsBridge {
       defaults: SessionDefaultsDraft
     ): Promise<{ ok: boolean; error?: string }>
   }
+  instructionAsks: {
+    list(): Promise<InstructionAskView[]>
+    onAsks(cb: (asks: InstructionAskView[]) => void): () => void
+    answer(id: string, agreed: boolean): void
+  }
 }
 
 export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
@@ -86,5 +92,10 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
   sessionDefaults: {
     read: (workspacePath) => ipc.invoke(CHANNELS.defaultsRead, workspacePath),
     write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults)
+  },
+  instructionAsks: {
+    list: () => ipc.invoke(CHANNELS.instructionAsksList),
+    onAsks: (cb) => ipc.listen(CHANNELS.instructionAsks, cb),
+    answer: (id, agreed) => ipc.send(CHANNELS.instructionAnswer, id, agreed)
   }
 })
