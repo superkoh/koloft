@@ -1,11 +1,5 @@
 import { slug, type Gh, type GithubFixture, type GithubFixtureEntry } from '@core/gh'
-import type {
-  GithubInfo,
-  GithubOpenItems,
-  GithubTarget,
-  PrChecks,
-  WorkspaceGithub
-} from '@shared/types'
+import type { GithubInfo, GithubOpenItems, GithubTarget, PrChecks } from '@shared/types'
 import {
   compareUrlOf,
   loginUrlFor,
@@ -15,6 +9,7 @@ import {
   type GithubRepo
 } from '@shared/githubUrl'
 import { failingChecksText, prChecks } from './prChecks'
+import type { WorkspaceGithub } from '../shared/counts'
 import { listOpenItems } from './openItems'
 
 const TTL_MS = 5 * 60_000
