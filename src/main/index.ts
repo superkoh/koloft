@@ -2436,12 +2436,7 @@ registerTodoCommand(commands, {
   },
   mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
   mergedHeads: (dir, branch) => mergedHeads(dir, branch),
-  notes: () => loadSettings().todoNotes,
-  saveNote: (key, text) => {
-    const todoNotes = { ...loadSettings().todoNotes, [key]: text }
-    if (!text) delete todoNotes[key]
-    commitSettings({ todoNotes })
-  },
+  settings: { load: loadSettings, commit: commitSettings },
   projectFiles: async (wsPath) => (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
   readText: (file) => hosts.of(file).readText(file),
   servers: mcpServersNow,
