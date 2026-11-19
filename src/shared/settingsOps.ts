@@ -1,6 +1,5 @@
 import {
   APP_DEFAULT_SETTINGS,
-  HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
   type AppSettings,
@@ -10,8 +9,10 @@ import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gi
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
-import { stringsIn } from './workbenchState'
+import { stringsIn, textsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
+import { cleanSwitches } from '@core/switches'
+import { HINT_IDS } from '@core/hints'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
 
@@ -34,7 +35,6 @@ const APP_KEPT_ON_RESET: readonly (keyof AppSettings)[] = [
   'gitPicks',
   'gitSuggestionsDismissed',
   'gitMachines',
-  'todoNotes',
   'sessionDefaults'
 ]
 
@@ -44,7 +44,6 @@ const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
   'gitPicks',
   'gitSuggestionsDismissed',
   'gitMachines',
-  'todoNotes',
   'sessionDefaults'
 ]
 
@@ -73,11 +72,11 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
   merged.gitSuggestionsDismissed = stringsIn(merged.gitSuggestionsDismissed)
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
+  merged.pluginsOn = cleanSwitches(PLUGINS, merged.pluginsOn)
   Object.assign(merged, PLUGIN_KEYS.clean(doc))
   const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
-  merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
-  merged.todoNotes = sanitizeTextMap(merged.todoNotes)
+  merged.newProjectFolders = textsIn(merged.newProjectFolders)
   merged.sessionDefaults = sanitizeSessionDefaults(merged.sessionDefaults)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
@@ -102,15 +101,6 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
       ? merged.hintsSeen
       : []
   return merged
-}
-
-function sanitizeTextMap(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== 'object') return {}
-  return Object.fromEntries(
-    Object.entries(raw).filter(
-      (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
-    )
-  )
 }
 
 function isZoneId(z: unknown): z is string {

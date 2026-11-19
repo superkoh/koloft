@@ -19,7 +19,7 @@ import {
   STARTED_IN_THE_TERMINAL,
   type SessionAskDeps
 } from '../../../../src/plugins/sessions/main/sessionAsks'
-import { typeKeys } from '../../../../src/main/typeKeys'
+import { typeKeys } from '../../../../src/core/typeKeys'
 
 const TAB = 'pty-x-1'
 

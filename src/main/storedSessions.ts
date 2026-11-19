@@ -16,7 +16,7 @@ import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
-import type { TranscriptPlaces } from './sessionBackends'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
@@ -36,6 +36,7 @@ import {
   ResumeRefused
 } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
+import { ownerTextOver, type LaunchIdentity } from './launchPrompt'
 import { forgetAgentsInLoginShell } from './loginShell'
 import type { LaunchedSession } from './accountPicker'
 import { isNewer } from './releaseNotes'
@@ -102,6 +103,7 @@ export interface StoredSessionDeps {
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
   projectRules?(workspace: string): Promise<string | undefined>
+  workspaceInstructions?(workspace: string): Promise<string | undefined>
   changed(): void
   replaced?(oldKey: string, newKey: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
@@ -125,7 +127,15 @@ export interface StartContext {
   resource?: WorktreeResource
   freshWorktree: boolean
   rules?: string
+  workspaceText?: string
 }
+
+export const ownerTextFor = (
+  ctx: StartContext,
+  conductor: boolean,
+  assist?: LaunchIdentity
+): string | undefined =>
+  ownerTextOver(ctx.opts.ownerText ?? assist?.ownerText, conductor, ctx.workspaceText)
 
 export interface SessionsWithStore {
   readonly id: BackendId
@@ -797,8 +807,12 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
       }
       const rules = await this.deps.projectRules?.(workspace)
+      const workspaceText = await this.deps.workspaceInstructions?.(workspace)
       this.assertStarting()
-      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree, rules }, prepared)
+      run = await this.startRun(
+        { opts, cwd, workspace, resource, freshWorktree, rules, workspaceText },
+        prepared
+      )
       this.runs.set(run.tabId, run)
     } finally {
       this.starting.delete(starting)
@@ -822,6 +836,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const turn = turnOf(event)
     if (turn) return runtime.recordTurn(run.tabId, turn)
     switch (event.type) {
+      case 'compacting':
+      case 'compacted':
+        return runtime.recordCompaction(run.tabId, event)
       case 'background-changed':
         if (!runtime.setBackground(run.tabId, event.items)) return
         info.background = event.items.length ? event.items : undefined

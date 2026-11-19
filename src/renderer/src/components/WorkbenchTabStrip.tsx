@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { memo, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react'
 import {
   IconClose,
   IconFile,
@@ -9,12 +9,10 @@ import {
   IconTerminal,
   IconWebPage
 } from '../icons'
-import type { BrowserAudioState, GithubInfo, GithubTarget } from '@shared/types'
+import type { BrowserAudioState } from '@shared/types'
 import { CHANGES_MSG, type ChangeTotals } from './changesModel'
 import { keepCaretInSessionTerminal } from '../keys'
 import { FilesTabLabel } from './FilesTabLabel'
-import type { ChecksDot } from './prChecksView'
-import { GithubButton } from './workbenchGithub'
 import { tabLabel, type WorkbenchTab, type WorkbenchTabSet } from './workbenchTabs'
 
 export type TabAudio = Record<string, Pick<BrowserAudioState, 'audible' | 'muted'>>
@@ -45,11 +43,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
   audio,
   totals,
   driving,
-  github,
-  githubDot,
-  githubLabel,
-  onGithubOpen,
-  onGithubMenu,
+  pinnedParts,
   onActivate,
   onClose,
   onToggleMute,
@@ -64,11 +58,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
   audio: TabAudio
   totals: ChangeTotals | null
   driving: boolean
-  github: GithubInfo | null
-  githubDot: ChecksDot | null
-  githubLabel: string
-  onGithubOpen: (what: GithubTarget) => void
-  onGithubMenu: () => void
+  pinnedParts: ReactNode
   onActivate: (id: string) => void
   onClose: (id: string) => void
   onToggleMute: (id: string) => void
@@ -197,15 +187,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
     >
       <div className="wb-pin">
         {set.tabs[0] && renderTab(set.tabs[0], 0)}
-        {github && (
-          <GithubButton
-            info={github}
-            dot={githubDot}
-            label={githubLabel}
-            onOpen={onGithubOpen}
-            onMenu={onGithubMenu}
-          />
-        )}
+        {pinnedParts}
         {set.tabs.length > 1 && <span className="wb-sep" />}
       </div>
       {set.tabs.slice(1).map((t, i) => renderTab(t, i + 1))}

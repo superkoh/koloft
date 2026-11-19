@@ -10,14 +10,21 @@ import {
   writeAgyScripts,
   type AgyScripts
 } from '../../src/main/agyHooks'
-import { handoverPreamble, withHandover } from '../../src/main/handover'
+import { handoverPreamble, withHandover } from '../../src/plugins/sessions/main/handoverPreamble'
 import { LineTail } from '../../src/main/museSessionLog'
-import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
+import {
+  A_HELPER_HAS_IT,
+  FROM_A_SESSION,
+  FROM_KOLOFT
+} from '../../src/plugins/sessions/main/crossSessionMessage'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,
   noticeLine
 } from '../../src/main/hooks'
+
+const C1 = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'
+const C2 = '7a2d4e6f-1b3c-4d5e-8f9a-0b1c2d3e4f5a'
 
 let dir: string
 let log: string
@@ -94,7 +101,7 @@ const transcriptWith = (...prompts: string[]): string =>
   transcriptOf(...prompts.flatMap((p) => [ownerSays(p), modelSays('ok')]))
 
 const toldBeforeModelCall = (transcriptPath: string, command?: string): string | undefined => {
-  const input = JSON.stringify({ conversationId: 'c1', transcriptPath })
+  const input = JSON.stringify({ conversationId: C1, transcriptPath })
   const out = run(command ?? commandFor('PreInvocation'), input, { KOLOFT_AGY_LOG: log })
   return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
 }
@@ -118,12 +125,12 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   it('appends every event with what agy sent, one line each in the order they ran, even when agy pretty-prints its input', () => {
-    const input = { conversationId: 'c1', workspacePaths: ['/w'], toolCall: { name: 'view_file' } }
+    const input = { conversationId: C1, workspacePaths: ['/w'], toolCall: { name: 'view_file' } }
     const events = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop']
     for (const event of events)
       run(commandFor(event), JSON.stringify(input, null, 2), { KOLOFT_AGY_LOG: log })
     expect(logged()).toEqual(
-      events.map((event) => ({ hook: { event, conversationId: 'c1', input } }))
+      events.map((event) => ({ hook: { event, conversationId: C1, input } }))
     )
   })
 
@@ -131,11 +138,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, '{"injectSteps":[]}')
     expect(
-      hook(
-        'SessionStart',
-        { conversationId: 'c1' },
-        { KOLOFT_AGY_LOG: '', KOLOFT_AGY_START: start }
-      )
+      hook('SessionStart', { conversationId: C1 }, { KOLOFT_AGY_LOG: '', KOLOFT_AGY_START: start })
     ).toBe('{"injectSteps":[]}')
     expect(fs.existsSync(log)).toBe(false)
   })
@@ -143,10 +146,8 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   it('prints the session-start words at SessionStart from the file the tab names, and nothing at Stop', () => {
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, 'START')
-    expect(hook('SessionStart', { conversationId: 'c1' }, { KOLOFT_AGY_START: start })).toBe(
-      'START'
-    )
-    expect(hook('Stop', { conversationId: 'c1' })).toBe('')
+    expect(hook('SessionStart', { conversationId: C1 }, { KOLOFT_AGY_START: start })).toBe('START')
+    expect(hook('Stop', { conversationId: C1 })).toBe('')
   })
 
   // ADR-0031
@@ -214,7 +215,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, 'START')
     const underDash = (event: string): string =>
-      run(`/bin/dash ${scripts.hook} ${event}`, JSON.stringify({ conversationId: 'c1' }), {
+      run(`/bin/dash ${scripts.hook} ${event}`, JSON.stringify({ conversationId: C1 }), {
         KOLOFT_AGY_LOG: log,
         KOLOFT_AGY_START: start
       })
@@ -246,7 +247,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     const notice = path.join(dir, 'tab.notice')
     const env = { KOLOFT_NOTICE: notice }
     const ephemeral = (transcriptPath: string): string | undefined => {
-      const out = hook('PreInvocation', { conversationId: 'c1', transcriptPath }, env)
+      const out = hook('PreInvocation', { conversationId: C1, transcriptPath }, env)
       return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
     }
     const moved = '(From Koloft:) origin/main moved: "fix: \\"x\\"".'
@@ -255,14 +256,14 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(ephemeral(transcriptWith('look around'))).toBe(told)
     expect(fs.existsSync(notice)).toBe(false)
     expect(ephemeral(transcriptWith('look around'))).toBe(told)
-    hook('Stop', { conversationId: 'c1' }, env)
+    hook('Stop', { conversationId: C1 }, env)
     expect(ephemeral(transcriptWith('look around'))).toMatch(/^The user's latest/)
 
     fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
     expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
     const nextTurn = hook(
       'PreInvocation',
-      { conversationId: 'c1', invocationNum: 0, transcriptPath: transcriptWith('next') },
+      { conversationId: C1, invocationNum: 0, transcriptPath: transcriptWith('next') },
       env
     )
     expect(JSON.parse(nextTurn).injectSteps[0].ephemeralMessage).toMatch(/^The user's latest/)
@@ -273,14 +274,14 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     const notice = path.join(dir, 'tab.notice')
     const env = { KOLOFT_NOTICE: notice }
     fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
-    expect(JSON.parse(hook('Stop', { conversationId: 'c1' }, env))).toEqual({
+    expect(JSON.parse(hook('Stop', { conversationId: C1 }, env))).toEqual({
       decision: 'block',
       reason: '(From Koloft:) main moved.\n\n'
     })
     expect(fs.existsSync(log)).toBe(false)
-    expect(hook('Stop', { conversationId: 'c1' }, env)).toBe('')
+    expect(hook('Stop', { conversationId: C1 }, env)).toBe('')
     expect(logged()).toEqual([
-      { hook: { event: 'Stop', conversationId: 'c1', input: { conversationId: 'c1' } } }
+      { hook: { event: 'Stop', conversationId: C1, input: { conversationId: C1 } } }
     ])
   })
 
@@ -314,7 +315,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
 
   it('prints nothing at all for a tool call, since agy reads even {} as a deny', () => {
     expect(
-      hook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command', args: {} } })
+      hook('PreToolUse', { conversationId: C1, toolCall: { name: 'run_command', args: {} } })
     ).toBe('')
   })
 
@@ -323,7 +324,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     fs.mkdirSync(repo)
     spawnSync('git', ['init', '-q'], { cwd: repo })
     const call = {
-      conversationId: 'conv-1',
+      conversationId: C1,
       workspacePaths: [repo],
       stepIdx: 4,
       toolCall: { args: { CommandLine: 'printf x > made.txt', Cwd: repo }, name: 'run_command' }
@@ -357,7 +358,7 @@ describe('after a gh pr command the status line asks GitHub again', () => {
 
   const ran = (commandLine: string, lastUserInput: string, sh = runWithSh(scripts.hook)): void => {
     const input = JSON.stringify({
-      conversationId: 'c1',
+      conversationId: C1,
       error: '',
       lastUserInput,
       stepIdx: 3,
@@ -390,23 +391,60 @@ describe('the title script agy runs on every state change (AGY§9 AGY§11)', () 
   const titleCommand = (): string => runWithSh(scripts.title)
 
   it('appends what agy sent to the same log as one line per run, even when agy pretty-prints it', () => {
-    const first = { conversation_id: 'c1', agent_state: 'idle' }
-    const second = { conversation_id: 'c2', agent_state: 'working' }
+    const first = { conversation_id: C1, agent_state: 'idle' }
+    const second = { conversation_id: C2, agent_state: 'working' }
     run(titleCommand(), JSON.stringify(first, null, 2), { KOLOFT_AGY_LOG: log })
     run(titleCommand(), JSON.stringify(second), { KOLOFT_AGY_LOG: log })
     expect(logged()).toEqual([
-      { title: { conversationId: 'c1', agentState: 'idle', confirmationPending: false } },
-      { title: { conversationId: 'c2', agentState: 'working', confirmationPending: false } }
+      { title: { conversationId: C1, agentState: 'idle', confirmationPending: false } },
+      { title: { conversationId: C2, agentState: 'working', confirmationPending: false } }
     ])
   })
 
   it("runs the owner's own title command with the same input and shows its output, and shows nothing without one", () => {
-    const input = JSON.stringify({ conversation_id: 'c1', conversation_title: 'Docs' })
+    const input = JSON.stringify({ conversation_id: C1, conversation_title: 'Docs' })
     const owner = `/usr/bin/sed -e 's/^/owner saw: /'`
     expect(run(titleCommand(), input, { KOLOFT_AGY_OWNER_TITLE: owner }).trimEnd()).toBe(
       `owner saw: ${input}`
     )
     expect(run(titleCommand(), input)).toBe('')
+  })
+
+  it('strips multi-kilobyte subagent role prompts from oversized title payloads while preserving short roles, spaced JSON and the raw owner title stdin', () => {
+    const hugePrompt = 'You are Challenger 1 with "quoted" rules.\n'.repeat(150)
+    const input = JSON.stringify(
+      {
+        conversation_id: C1,
+        agent_state: 'working',
+        subagents: [
+          { name: 'self', role: 'Reviewer', model: 'm1', status: 'running' },
+          { name: 'teamwork_challenger', role: hugePrompt, model: 'm1', status: 'running' },
+          { name: 'teamwork_auditor', role: hugePrompt, model: 'm1', status: 'completed' }
+        ]
+      },
+      null,
+      2
+    )
+    expect(input.length).toBeGreaterThan(8000)
+    const owner = `/usr/bin/wc -c`
+    const ownerBytes = Number(
+      run(titleCommand(), input, { KOLOFT_AGY_LOG: log, KOLOFT_AGY_OWNER_TITLE: owner }).trim()
+    )
+    expect(ownerBytes).toBe(Buffer.byteLength(input))
+    const written = fs.readFileSync(log, 'utf8').trim()
+    expect(written.length).toBeLessThan(600)
+    expect(agyLogLine(written)).toEqual({
+      title: {
+        conversationId: C1,
+        agentState: 'working',
+        confirmationPending: false,
+        subagents: [
+          { name: 'self', role: 'Reviewer', state: 'running', model: 'm1' },
+          { name: 'teamwork_challenger', state: 'running', model: 'm1' },
+          { name: 'teamwork_auditor', state: 'completed', model: 'm1' }
+        ]
+      }
+    })
   })
 })
 
@@ -415,7 +453,7 @@ describe('reading the log the scripts leave', () => {
     expect(
       agyLogLine(
         JSON.stringify({
-          conversation_id: 'c1',
+          conversation_id: C1,
           agent_state: 'tool_use',
           tool_confirmation_pending: true,
           conversation_title: 'Docs',
@@ -425,7 +463,7 @@ describe('reading the log the scripts leave', () => {
       )
     ).toEqual({
       title: {
-        conversationId: 'c1',
+        conversationId: C1,
         agentState: 'tool_use',
         confirmationPending: true,
         title: 'Docs',
@@ -435,7 +473,7 @@ describe('reading the log the scripts leave', () => {
     })
   })
 
-  it('reads the empty id and null model and title agy sends before the first prompt, and nothing from a broken line', () => {
+  it('reads the empty id and null model and title agy sends before the first prompt, and nothing from a broken line or from one that names an id agy never makes', () => {
     expect(
       agyLogLine(
         JSON.stringify({
@@ -450,21 +488,101 @@ describe('reading the log the scripts leave', () => {
     })
     expect(agyLogLine('{"agent_state":"idle"}')).toBeUndefined()
     expect(agyLogLine('not json')).toBeUndefined()
+    expect(agyLogLine('{"conversation_id":"abc-123","agent_state":"idle"}')).toBeUndefined()
   })
 
-  it('takes a hook line only for an event it knows and with a conversation id', () => {
+  it('takes a hook line only for an event it knows and with a conversation id agy makes', () => {
     const line = (v: unknown): string => JSON.stringify(v)
-    expect(agyLogLine(line({ event: 'PostInvocation', input: { conversationId: 'c1' } }))).toBe(
+    for (const conversationId of ['abc-123', ''])
+      expect(agyLogLine(line({ event: 'Stop', input: { conversationId } }))).toBeUndefined()
+    expect(agyLogLine(line({ event: 'PermissionRequest', input: { conversationId: C1 } }))).toBe(
       undefined
     )
     expect(agyLogLine(line({ event: 'Stop', input: {} }))).toBeUndefined()
     expect(
-      agyLogLine(line({ event: 'Stop', input: { conversationId: 'c1', fullyIdle: true } }))
+      agyLogLine(
+        line({
+          event: 'PreInvocation',
+          input: {
+            conversationId: C2,
+            parentConversationId: C1,
+            rootConversationId: 'c0',
+            agentName: 'research',
+            hookEventName: 'PreInvocation'
+          }
+        })
+      )
+    ).toEqual({
+      hook: {
+        event: 'PreInvocation',
+        conversationId: C2,
+        parentConversationId: C1,
+        rootConversationId: 'c0',
+        agentName: 'research',
+        hookEventName: 'PreInvocation',
+        input: {
+          conversationId: C2,
+          parentConversationId: C1,
+          rootConversationId: 'c0',
+          agentName: 'research',
+          hookEventName: 'PreInvocation'
+        }
+      }
+    })
+    expect(
+      agyLogLine(line({ event: 'Stop', input: { conversationId: C1, fullyIdle: true } }))
     ).toEqual({
       hook: {
         event: 'Stop',
-        conversationId: 'c1',
-        input: { conversationId: 'c1', fullyIdle: true }
+        conversationId: C1,
+        input: { conversationId: C1, fullyIdle: true }
+      }
+    })
+  })
+
+  it('reads subagents from a title line when present, handling objects, strings and empty lists', () => {
+    expect(
+      agyLogLine(
+        JSON.stringify({
+          conversation_id: C1,
+          agent_state: 'idle',
+          subagents: [
+            {
+              conversation_id: 'child-1',
+              name: 'research',
+              role: 'Explore auth',
+              state: 'running',
+              model: 'gemini-3.8-flash-low'
+            },
+            'helper-2'
+          ]
+        })
+      )
+    ).toEqual({
+      title: {
+        conversationId: C1,
+        agentState: 'idle',
+        confirmationPending: false,
+        subagents: [
+          {
+            id: 'child-1',
+            name: 'research',
+            role: 'Explore auth',
+            state: 'running',
+            model: 'gemini-3.8-flash-low'
+          },
+          { name: 'helper-2' }
+        ]
+      }
+    })
+    expect(
+      agyLogLine(JSON.stringify({ conversation_id: C1, agent_state: 'idle', subagents: [] }))
+    ).toEqual({
+      title: {
+        conversationId: C1,
+        agentState: 'idle',
+        confirmationPending: false,
+        subagents: []
       }
     })
   })

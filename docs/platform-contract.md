@@ -295,16 +295,36 @@ method. A recheck adds its date, version and command to the bullet.
   a fake `open` on PATH cannot catch them. `openPath` does not reject on failure: it
   resolves with an error string (empty on success). `openExternal` and
   `showItemInFolder` report nothing like that.
-- **An unhandled promise rejection in main**, with no `unhandledRejection` handler
-  installed, becomes Electron's native "A JavaScript error occurred in the main
-  process" dialog.
+- **An error nobody caught in main holds the whole app until someone clicks.** A throw
+  in a timer (or any callback with no caller of ours above it), with no
+  `uncaughtException` listener of the app's own, makes Electron call
+  `dialog.showErrorBox('A JavaScript error occurred in the main process', …)`, a modal
+  box. The process lives on, but main's JavaScript takes no new work until the box is
+  dismissed. With a listener of the app's own on `uncaughtException`, Electron calls
+  the listener and opens no box. A promise rejection nobody handled opens no box either:
+  it prints `UnhandledPromiseRejectionWarning` to stderr and never reaches
+  `uncaughtException`. Measured 2026-11-18 on Electron 43.8.7 (macOS 27.2) in a
+  throwaway hidden app with `dialog.showErrorBox` swapped for a recorder. That the real
+  box holds main was read off the installed app (the same Electron) that night: the
+  unified log shows six boxes come up in the main process, and for the two that came up
+  alone while a window had focus, the `main-stalls.log` line spans from the box coming
+  up to within 100 ms of the click that closed it (2.2 s, and 6 h 52 min while nobody
+  was at the Mac); all 38 `koloft` calls from sessions that got no answer that night
+  fell between a box coming up and its click. A `sample` of that app taken while a
+  seventh box was up shows its main thread in `-[NSAlert runModal]`, called from
+  JavaScript run by `node::Environment::RunTimers`.
+
+Koloft dependents: once its window is made, `index.ts` listens for `uncaughtException`
+itself, writes the stack to `main-errors.log` in `userData` and shows a toast; before
+that, with no window to show a toast in, Electron's box stays. It writes a rejected
+promise nobody handled to the same log, with no toast.
 
 ## §5 Electron: windows, renderers and quitting
 
 - **A destroyed window or WebContents throws "Object has been destroyed"** on use:
   `BrowserWindow.webContents` is a getter that throws, `webContents.send` throws, and
   every getter (such as `getURL`) throws inside a `destroyed` handler (measured for
-  `getURL`). A throw inside a timer callback in main crashes main. The BrowserWindow
+  `getURL`). A throw inside a timer callback in main is an error nobody caught (§4). The BrowserWindow
   object outlives its webContents, so a null check on the window is not enough.
 - **`maximize()` shows a window that was created hidden** (macOS).
 - **`setBounds` throws** if any value is NaN.
@@ -3607,7 +3627,7 @@ cli/cli --limit 1 --json number,closingIssuesReferences`:
   "closingIssuesReferences"`, then the list of fields it knows.
 - **gh 2.72.0** takes the field and goes to GitHub (here `HTTP 401: Bad credentials`).
 
-Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
+Koloft dependents: `listTodoPulls` in `src/plugins/todo/main/pulls.ts`, which lists again without the
 field and says so; a remote workspace's pull requests are listed by that machine's gh.
 
 ## §62 Node `fs.rmSync` on a symbolic link to a folder
@@ -3662,7 +3682,7 @@ no longer runs a zsh function or `hash` entry named `claude`.
   picked over an `ansi` block and a coloured square at the start of each line.
 
 Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
-`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+`diffCopy` (a diff copy goes as pictures) in `src/plugins/discord/main/phoneCopy.ts`.
 
 ## §65 The `electron` npm package loaded by plain Node
 
@@ -3893,11 +3913,42 @@ registry folders stat them through `fs.promises`.
   `NSApplicationActivationPolicyAccessory` and the window never shown, one or two runs
   each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
   app with a Dock icon whose window stays covered for long.
+- **A worker thread can tell that the main thread is stuck, and `/usr/bin/sample` can
+  say what it is in.** A timer on the main thread cannot report a stall until the stall
+  is over. In a hidden Electron 43.8.7 app, the main thread bumped a number in a
+  `SharedArrayBuffer` every 250 ms and woke a `worker_threads` worker that sat in
+  `Atomics.wait` on it with a 1.5 s limit: 4 s of idling timed out no wait; a 9 s
+  `Atomics.wait` and a 6 s busy loop on the main thread each timed the worker's wait
+  out at 1.5 s. From the worker, `execFileSync('/usr/bin/sample', [pid, '1', '-file',
+  f])` then took 1.4–2.3 s and wrote a 270–284 KB text file with every thread's native
+  call stack while the main thread was still stuck. System frames in it are named
+  (`-[NSApplication run]`, `__CFRunLoopRun`); Electron's own frames are not, as its
+  framework ships stripped, and `sample` prints the nearest exported name instead. The
+  app quit as usual with the worker still waiting. The same on a copy of that
+  `Electron.app` signed ad hoc with the hardened runtime and the three entitlements the
+  shipped app carries (`allow-jit`, `allow-unsigned-executable-memory`,
+  `disable-library-validation`). Measured 2026-11-18 on macOS 27.2 (Darwin 27.2.0),
+  Apple silicon, once each. Left alone for 5 minutes in that hidden app (accessory
+  policy, no window), a 1 s timer on the main thread was never more than 5 ms late and
+  a 5 s wait in the worker never timed out. A worker that never returns to its own
+  event loop still gets `parentPort.postMessage` through to the main thread at once
+  (Koloft's e2e, the same day). Run from a shell, `sample` also reads the installed,
+  Developer ID signed and notarized Koloft 0.73.0 (the same day, once). Not probed: an
+  app with a Dock icon whose window stays covered for hours, where App Nap might hold
+  back the main thread's timers; what the watch sees when the Mac sleeps and wakes.
 
 Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
 and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
-of that it spent on the CPU.
+of that it spent on the CPU. Focus or not, `mainThreadStuckWorker.ts` asks the main
+thread for a beat once a second with a message, so no timer on the main thread is
+involved (inferred, not checked: App Nap holds back timers, not messages). When an ask
+has had no answer for 5 s, it saves a `sample` of the process under `main-stuck/` in
+`userData` while the main thread is still stuck (the newest ten are kept; if `sample`
+fails or takes over 10 s, the file holds the reason). When the main thread takes work
+again, a line in `main-stalls.log` says how long that ask waited and names the file,
+and the next ask comes a minute later, so a main thread that sticks again and again is
+sampled at most about once a minute.
 
 ## §71 1Password for Mac: which browsers its app lets the extension in
 

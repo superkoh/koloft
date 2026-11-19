@@ -18,12 +18,8 @@ import type { Turn } from '@shared/turns'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
-import type { ModeClass } from './crossSessionMessage'
-
-export interface TranscriptPlaces {
-  onThisMac?: string
-  onMachine?: string
-}
+import type { ModeClass } from '@plugins/sessions/main/crossSessionMessage'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 
 export interface SessionBackend {
   id: BackendId
@@ -68,7 +64,7 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
-  isButlerSession: (tabOrSessionId: string) => boolean = () => false
+  isOverseerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
@@ -162,7 +158,7 @@ export class SessionBackends {
         backendId: backend.id,
         host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        butler: this.isButlerSession(s.tabId) || this.isButlerSession(s.sessionId),
+        overseer: this.isOverseerSession(s.tabId) || this.isOverseerSession(s.sessionId),
         turnOver: this.turnOver(s.tabId),
         asking: this.askingOf(s.tabId),
         docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
@@ -214,7 +210,7 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.filter((r) => !this.isButlerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.isOverseerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   adopt(rows: readonly Pick<SessionRow, 'id' | 'backendId'>[]): void {

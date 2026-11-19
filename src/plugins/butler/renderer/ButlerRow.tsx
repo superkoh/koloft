@@ -5,7 +5,7 @@ import { butlerName, butlerTitle, renamedButler } from '../shared/names'
 import { attentionReason } from '@shared/types'
 import { assistBackendsFor, assistRowBackend } from '@shared/assistPicks'
 import { butlerStart } from '@shared/butlerStart'
-import { settingsPaneName } from '@shared/paletteFeatures'
+import { settingsPaneName } from '@shared/settingsPanes'
 import { useInstalledBackends } from '@renderer/useInstalledBackends'
 import { useStore } from '@renderer/store'
 import { rowStateClass, shownRows, statusWithSecrets } from '@renderer/sessionRows'
@@ -17,19 +17,22 @@ import { SessionRowsOfContext } from '@renderer/components/sidebarRows'
 import { fillsOf } from '@renderer/pluginUi'
 import { ROW_EXTRAS } from '@renderer/slots'
 import { BUTLER_ROW_PART } from '../plugin'
-import { butlerSetUp, butlerTabOf } from './butlerTabs'
+import { butlerSetUp, butlerTabOf, isButlersWorkspace } from './butlerTabs'
 import { openButler, renameButler, useButler } from './state'
 
 function useButlerFolderRows(): JSX.Element[] | null {
   const rowsOf = useContext(SessionRowsOfContext)
   const workspaceRows = useStore((s) => s.workspaceRows)
-  const butlerWorkspace = useStore((s) => s.butlerWorkspace)
+  const claimedWorkspaces = useStore((s) => s.claimedWorkspaces)
   const tabs = useStore((s) => s.tabs)
   const shown = useMemo(
-    () => shownRows({ workspaceRows, butlerWorkspace, tabs }).butlerWorkspace,
-    [workspaceRows, butlerWorkspace, tabs]
+    () =>
+      shownRows({ workspaceRows, claimedWorkspaces, tabs }).claimedWorkspaces.find(
+        isButlersWorkspace
+      ),
+    [workspaceRows, claimedWorkspaces, tabs]
   )
-  return shown && rowsOf(shown)
+  return shown ? rowsOf(shown) : null
 }
 
 export function ButlerRow(): JSX.Element {

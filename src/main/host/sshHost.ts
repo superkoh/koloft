@@ -27,15 +27,9 @@ import {
   isFingerprint,
   looksBinary
 } from '../fileEdit'
-import {
-  GIT_TIMEOUT_MS,
-  coalesce,
-  gitOps,
-  numstatFrom,
-  statusFrom,
-  type GitOps
-} from '../gitStatus'
-import { GithubLookup, type GithubOptions } from '../github'
+import { coalesce } from '@core/coalesce'
+import { GIT_TIMEOUT_MS, gitOps, numstatFrom, statusFrom, type GitOps } from '../gitStatus'
+import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
@@ -53,6 +47,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { ownerTextOver } from '../launchPrompt'
 import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
@@ -100,7 +95,8 @@ import {
   type RemoteAgyConfig
 } from '../remote/agyTab'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
-import { worktreeNameAround, type GitOut } from '../resumePlan'
+import { worktreeNameAround } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -156,7 +152,7 @@ export interface SshHostDeps {
     reportsWhatChangedWhileUnwatched?: boolean
   ): void
   unwatch(path: string): void
-  github: GithubOptions
+  github: GithubReposOptions
   claude: MachineClaudeDeps
 }
 
@@ -603,7 +599,7 @@ const REMOTE_FILE_LIST_FRESH_MS = 30_000
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
 export class SshHost implements Host {
-  readonly github: GithubLookup
+  readonly github: GithubRepos
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
@@ -647,7 +643,7 @@ export class SshHost implements Host {
         return r.stdout.toString('utf8').trim() || null
       }
     })
-    this.github = new GithubLookup({
+    this.github = new GithubRepos({
       ...deps.github,
       git: (root, args, network) =>
         network
@@ -1294,6 +1290,7 @@ export class SshHost implements Host {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
               projectPrompt,
+              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
               claudeArgs,
               trustFolder: spec.trustFolder
             }

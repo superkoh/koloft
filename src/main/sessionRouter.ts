@@ -7,7 +7,7 @@ import {
   type RouteWorkspace,
   type SessionRoute
 } from '@shared/sessionRoute'
-import type { Assist } from './assist'
+import type { Assist } from '@core/assistModels'
 
 export interface SessionRouterDeps {
   rows(): WorkspaceRows[]

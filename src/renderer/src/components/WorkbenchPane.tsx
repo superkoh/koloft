@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -15,8 +16,7 @@ import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
-import type { ArtifactView, BrowserCdpOp, EditFingerprint, GithubTarget } from '@shared/types'
-import { CommitDialog } from './CommitDialog'
+import type { ArtifactView, BrowserCdpOp, EditFingerprint } from '@shared/types'
 import { useChangeTotals } from './FilesTabLabel'
 import { BrowserActions } from './BrowserActions'
 import { BrowserAddressBar } from './BrowserAddressBar'
@@ -74,7 +74,8 @@ import {
 import type { WorkbenchCommandSignal } from './workbenchCommands'
 import { FileTabBar, FullWidthButton } from './WorkbenchBars'
 import { WorkbenchFind } from './WorkbenchFind'
-import { GithubMenu, useWorkbenchGithub } from './workbenchGithub'
+import { fillsOf } from '../pluginUi'
+import { WORKBENCH_PART } from '../slots'
 import { NewTabMenu, PageMoreMenu } from './WorkbenchMenus'
 import { WorkbenchTabStrip, type TabAudio } from './WorkbenchTabStrip'
 import { FileTabHost, TerminalHost } from './WorkbenchTabHosts'
@@ -180,8 +181,6 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const [dlOpen, setDlOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
-  const [ghMenu, setGhMenu] = useState(false)
-  const [commitOpen, setCommitOpen] = useState(false)
   const perms = useBrowserPermissions()
   const [audio, setAudio] = useState<TabAudio>({})
   const [pageFullscreen, setPageFullscreen] = useState(false)
@@ -203,7 +202,33 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     files.baseChoice,
     files.refreshNonce
   )
-  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread)
+  const openWebHere = useRef<(url: string) => void>(() => {})
+  const openWeb = useCallback((url: string): void => openWebHere.current(url), [])
+  const closeNewTabMenu = useCallback((): void => setNewMenuOpen(false), [])
+  const closeDownloads = useCallback((): void => setDlOpen(false), [])
+  const parts = fillsOf(WORKBENCH_PART).map((usePart) =>
+    usePart({
+      visible,
+      treeRoot,
+      session,
+      onReturnFocus,
+      reread,
+      openWeb,
+      closeNewTabMenu,
+      closeDownloads
+    })
+  )
+  const partMenuOpen = parts.some((p) => p.menuOpen)
+  const partClosers = parts.map((p) => p.closeMenu)
+  const closePartMenus = useCallback(
+    (): void => partClosers.forEach((close) => close()),
+    partClosers
+  )
+  const partButtons = parts.map((p) => p.button)
+  const pinnedParts = useMemo(
+    () => partButtons.map((button, i) => <Fragment key={i}>{button}</Fragment>),
+    partButtons
+  )
   const commentTo = useCommentTarget(session, onReturnFocus)
 
   const addressRef = useRef<HTMLInputElement>(null)
@@ -741,7 +766,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     [activeWebId, guestIdOf]
   )
   const pickBlocked =
-    gh.sendBlocked ?? (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
+    commentTo.blocked ??
+    (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
   const pick = useElementPick(
     session?.tabId ?? null,
     activeGuestId,
@@ -851,7 +877,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       menuOpen ||
       dlOpen ||
       newMenuOpen ||
-      ghMenu ||
+      partMenuOpen ||
       !!files.menu ||
       files.outlineOpen ||
       (!!activeTab && !!outlineOpen[activeTab.id])
@@ -859,7 +885,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       setMenuOpen(false)
       setDlOpen(false)
       setNewMenuOpen(false)
-      setGhMenu(false)
+      closePartMenus()
       files.setMenu(null)
       files.setOutlineOpen(false)
       if (activeTab) setOutlineOpen((prev) => ({ ...prev, [activeTab.id]: false }))
@@ -880,7 +906,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     menuOpen,
     dlOpen,
     newMenuOpen,
-    ghMenu,
+    partMenuOpen,
+    closePartMenus,
     files,
     activeTab,
     outlineOpen,
@@ -996,8 +1023,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     setDlOpen(false)
     setMenuOpen(false)
     setNewMenuOpen(false)
-    setGhMenu(false)
-  }, [cancelPermissions])
+    closePartMenus()
+  }, [cancelPermissions, closePartMenus])
 
   const resetOwner = useRef(ownerTab)
   useEffect(() => {
@@ -1326,42 +1353,18 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     [ownerTab, editTick]
   )
 
-  const openGithub = useCallback(
-    (what: GithubTarget): void => {
-      if (!treeRoot) return
-      void window.api.github.target(treeRoot, what).then((url) => {
-        if (!url) return
-        openHere({ kind: 'web', url, source: 'user' }, (r) => {
-          if (r.created || !els.current.has(r.tabId)) applyLive(r.tabId, url)
-        })
-      })
-    },
-    [treeRoot, openHere, applyLive]
-  )
-  const openGithubFromButton = useCallback(
-    (what: GithubTarget): void => {
-      setNewMenuOpen(false)
-      setGhMenu(false)
-      openGithub(what)
-    },
-    [openGithub]
-  )
-  const refreshChecks = gh.refreshChecks
-  const openGithubMenu = useCallback((): void => {
-    setNewMenuOpen(false)
-    setDlOpen(false)
-    setGhMenu(true)
-    refreshChecks()
-  }, [refreshChecks])
+  openWebHere.current = (url: string): void =>
+    openHere({ kind: 'web', url, source: 'user' }, (r) => {
+      if (r.created || !els.current.has(r.tabId)) applyLive(r.tabId, url)
+    })
   const toggleNewMenu = useCallback((): void => {
     setMenuOpen(false)
     setDlOpen(false)
-    setGhMenu(false)
+    closePartMenus()
     setNewMenuOpen((v) => !v)
-  }, [])
+  }, [closePartMenus])
 
   const fullBtn = <FullWidthButton full={full} onToggle={onToggleFull} />
-  const ghInfo = gh.info
 
   return (
     <div
@@ -1382,11 +1385,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         audio={audio}
         totals={totals}
         driving={!!session?.sessionId && (pinned[session.sessionId]?.length ?? 0) > 0}
-        github={ghInfo}
-        githubDot={gh.dot}
-        githubLabel={gh.label}
-        onGithubOpen={openGithubFromButton}
-        onGithubMenu={openGithubMenu}
+        pinnedParts={pinnedParts}
         onActivate={activate}
         onClose={close}
         onToggleMute={toggleMute}
@@ -1394,28 +1393,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         onNewMenu={toggleNewMenu}
       />
 
-      {ghMenu && ghInfo && (
-        <GithubMenu
-          gh={gh}
-          info={ghInfo}
-          treeRoot={treeRoot}
-          onClose={() => setGhMenu(false)}
-          onOpen={openGithub}
-          onCommit={() => setCommitOpen(true)}
-        />
-      )}
-
-      {commitOpen && treeRoot && (
-        <CommitDialog
-          branch={ghInfo?.branch ?? null}
-          onCancel={() => setCommitOpen(false)}
-          onCommit={async (message) => {
-            const ok = await gh.gitStep(window.api.git.commit(treeRoot, message), 'Committed.')
-            if (ok) setCommitOpen(false)
-            return ok
-          }}
-        />
-      )}
+      {parts.map((p, i) => (
+        <Fragment key={i}>{p.layer}</Fragment>
+      ))}
 
       {newMenuOpen && (
         <NewTabMenu
@@ -1543,7 +1523,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       {dlOpen && (
         <BrowserDownloads
           list={downloads}
-          onReveal={(path) => window.api.fs.reveal(path)}
+          onReveal={(path) => window.api.os.reveal(path)}
           onCancel={(id) => window.api.browser.cancelDownload(id)}
           onRetry={(id) => window.api.browser.retryDownload(id)}
           onClear={clearFinished}

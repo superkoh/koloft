@@ -1546,9 +1546,9 @@ async function subagentScenario(turn, prompt) {
   const task = prompt || 'Help with the task'
   let child
   const args = {
-    Subagents: [{ TypeName: 'self', Role: 'helper', Prompt: task }],
-    toolAction: 'Starting a subagent',
-    toolSummary: task
+    TypeName: 'self',
+    Role: task,
+    Prompt: task
   }
   const result = await useTool(turn, {
     name: 'invoke_subagent',

@@ -2,10 +2,10 @@ import type { BackendId } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../../../main/claudeCommandOutput'
-import { sleep } from '../../../main/codexTransport'
+import { sleep } from '@core/sleep'
 import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
 import { errorText } from '../../../main/agentRequests'
-import { withoutBlankEdges } from '../../../main/messageText'
+import { withoutBlankEdges } from './messageText'
 import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../../../main/inputBox'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
@@ -55,7 +55,7 @@ export const AN_ENTER_LANDS_WITHIN_MS = 2000
 export interface SlashTarget {
   name: string
   tabId: string
-  butler: boolean
+  overseer: boolean
 }
 
 export interface SlashDeps {
@@ -134,7 +134,7 @@ function resultOf(p: Pending, screen: string[] | undefined): SlashResult | undef
   const said = details.length && !p.worked ? details : printed
   const body: string[] = []
   if (p.newKey) body.push(`It is a new conversation now, with the id ${p.newKey}.`)
-  if (p.reply && !p.target.butler) body.push(p.reply)
+  if (p.reply && !p.target.overseer) body.push(p.reply)
   else if (said.length) body.push(said.join('\n\n'))
   if (!body.length && p.reply) return undefined
   if (!body.length && p.worked) body.push('Done.')

@@ -28,12 +28,25 @@ export interface PluginMoments {
   listens?: readonly string[]
 }
 
+export interface SettingsPage {
+  label: string
+  words: readonly string[]
+}
+
 export interface PluginSettings {
-  page?: string
+  page?: SettingsPage
   keys: readonly string[]
 }
 
-export type UiPlace = 'sidebar-head' | 'sidebar-row' | 'centre-page' | 'dialog' | 'palette-item'
+export type UiPlace =
+  | 'sidebar-head'
+  | 'sidebar-row'
+  | 'sidebar-foot'
+  | 'centre-page'
+  | 'below-terminal'
+  | 'dialog'
+  | 'palette-item'
+  | 'settings-page'
 
 export interface UiEntry {
   place: UiPlace
@@ -57,8 +70,10 @@ export interface PluginManifest {
   formatVersion: typeof PLUGIN_FORMAT_VERSION
   id: string
   name: string
+  does: string
   mandatory: boolean
   needs: readonly string[]
+  offUntilSetUp?: string
   text?: readonly TextBlock[]
   skills?: readonly string[]
   commands?: readonly PluginCommand[]
@@ -66,6 +81,7 @@ export interface PluginManifest {
   moments?: PluginMoments
   settings?: PluginSettings
   ui?: readonly UiEntry[]
+  hints?: readonly string[]
   assistJobs?: readonly PluginAssistJob[]
   mcpServers?: readonly PluginMcpServer[]
 }

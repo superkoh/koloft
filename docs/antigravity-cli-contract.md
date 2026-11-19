@@ -518,6 +518,15 @@ only downloaded the public release.
   | `--conversation=<id>` or `-c` launch | that id, at once |
   | During and after a subagent | the parent's id |
 
+- **A conversation id is a lower-case UUID** (8-4-4-4-12 hex). Counted 2026-11-18 on
+  agy 1.5.11 in one account folder used since 1.4.0: all 215 folder names under
+  `brain/` and every `<id>.db` and `<id>.pb` under `conversations/` have that shape.
+
+Koloft dependents: `agyLogLine` drops a title or hook line that names any other id (a
+title line may name `""`): such a line was not written for agy. On 2026-11-18 a unit
+test run inside an agy tab ran Koloft's title script with the tab's own env, and so
+wrote `{"conversation_id":"abc-123"}` into the live tab's log.
+
 ## §10 Status: OSC 7501
 
 - agy speaks the terminal "program status" protocol, OSC 7501, as Claude Code and Muse
@@ -575,7 +584,16 @@ only downloaded the public release.
   (1.4.7, while background tasks run, §13).
   - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
     conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
-    is open), `reviewing` (an artifact is waiting for review, §19).
+    is open), `reviewing` (once any artifact exists in `brain/<id>/`, even with
+    `RequestFeedback: false`, `agent_state` stays `reviewing` instead of `idle` between
+    turns, §19; measured 2026-11-18, agy 1.5.11 macOS).
+  - `subagents` (measured 2026-11-18, agy 1.5.11 macOS, a `/teamwork` run of 45
+    descendants across depths 1–3): lists every descendant in the tree as
+    `{name, role, model, status}` (no `conversation_id`). `status` is `"running"` while
+    a descendant is in a turn or waiting on its own children, and `"completed"` once its
+    turn ends; completed entries stay in the list for the rest of the session, and when
+    an internal orchestrator passes no short `Role`, `role` holds the full multi-kilobyte
+    `Prompt` (reaching ~184 KB per title input at 45 descendants).
   - `conversation_title` is `null` until `/rename` or a resume pick, even after the
     summaries row has its made-up title.
   - `transcript_path` points to `<geminiDir>/antigravity/brain/…`, beside
@@ -610,7 +628,10 @@ only downloaded the public release.
   `ANTIGRAVITY_CSRF_TOKEN`.
 - stdin is camelCase JSON: `conversationId`, `workspacePaths`, `transcriptPath` (→
   `transcript_full.jsonl`), `artifactDirectoryPath`, `modelName`
-  (`gemini-3.1-pro-low`), plus per event:
+  (`gemini-3.1-pro-low`), plus `cwd`, `hookEventName`, `lastUserInput` (1.5.11 macOS,
+  2026-11-18; child and grandchild hooks carry that child's own `conversationId` and
+  omit `parentConversationId`, `rootConversationId` and `agentName` at runtime), plus
+  per event:
 
   | Event | Fires | Extra fields |
   |---|---|---|
@@ -749,10 +770,28 @@ only downloaded the public release.
   was not probed.
 - A command that outlives `WaitMsBeforeAsync` returns "running as a background task
   with task id: <conv>/task-N … logs at file://…/brain/<id>/.system_generated/tasks/task-N.log".
-  `manage_task` handles these background tasks; it is not a to-do list.
-- A subagent is a child conversation: a summaries row with `parent_conversation_id`,
-  `nesting_depth:1`, `agent_name:"self"`. Its result makes the parent run another
-  turn.
+  `manage_task` handles these background tasks (`Action: "list" | "kill" | "status" | "send_input"`,
+  `TaskId?`, `Input?`); it is not a to-do list.
+- **Subagents, `/teamwork` and `swarm` (measured 2026-11-18, agy 1.5.11 on macOS, a real
+  `/teamwork` TUI run and a `-p --input-format stream-json` `swarm` run against a fake
+  Gemini server):**
+  - `invoke_subagent` takes flat `{TypeName, Role, Prompt, Model?, Workspace?}`;
+    `manage_subagents` takes `{Action: "list" | "kill" | "kill_all", ConversationIds?}`;
+    `send_message` takes `{Recipient, Message}`.
+  - Each subagent is a child conversation in `conversation_summaries.db` with
+    `parent_conversation_id` set to its caller's `conversation_id`, `nesting_depth` 1, 2,
+    …, and `agent_name` set to `TypeName` (`"self"`, `"teamwork"`,
+    `"teamwork_interviewer"`, `"teamwork_orchestrator"`, …); a killed child sets
+    `killed: 1`. When a parked child is woken later by `send_message`, it runs
+    `PreInvocation` … `Stop` with no second `SessionStart`.
+  - `swarm {action: "add", name, brief, n?, tasks?}` spawns child conversation(s)
+    (`<name>`, or `<name>-1`..`<name>-<k>`) whose `SessionStart` fires at once, with
+    `parent_conversation_id` = the coordinator's `conversation_id` and `agent_name` =
+    the member name in `conversation_summaries.db`, and writes
+    `brain/<coordinatorId>/.system_generated/swarm/{swarm.json, members.json, board.jsonl}`.
+    A worker parks by calling `swarm_wait`, which returns at once and ends its turn with
+    `Stop {fullyIdle: true}`; `@<name>` or `@all` in `post_message` wakes it on a new
+    `PreInvocation`; `swarm {action: "kill", name}` ends it.
 - **`schedule` and what the hooks see of it.** 1.4.7 Linux arm64 in Docker with no
   network, fake Gemini server, the TUI in tmux, every hook logged, 2026-10-26. The
   tool is `schedule {Prompt, DurationSeconds | CronExpression, IsDaemon?,
@@ -1131,10 +1170,23 @@ only downloaded the public release.
   sent to an idle agy for a conversation another process or nobody holds. A running
   agy in another process keeps the old `conversation_title` for its own scripts.
   `-p "/rename x"` is refused (exit 2, "print mode has no conversation manager").
-- `StreamAgentStateUpdates {"conversationId"}` (stream): a full snapshot, then an
-  update per step: `status`/`executorLoopStatus` (`CASCADE_RUN_STATUS_IDLE`,
-  `RUNNING`, `CANCELING`), `mainTrajectoryUpdate.stepsUpdate` (new steps whole,
-  waiting asks included), `fullyIdle`, `turnsUpdate`, `activeHook`.
+- `StreamAgentStateUpdates {"conversationId"}` (stream, measured 2026-11-18, agy 1.5.11
+  macOS against a fake Gemini server with live `run_command` and `schedule` tasks and
+  with a waiting permission prompt):
+  each message wraps `{"update": {…}}`: a full snapshot, then an update per step with
+  `status`/`executorLoopStatus` (`CASCADE_RUN_STATUS_IDLE`, `RUNNING`, `CANCELING` —
+  while a permission prompt waits on the user, `status` and `executorLoopStatus` stay
+  `CASCADE_RUN_STATUS_RUNNING` and `executableStatus` is `CASCADE_RUN_STATUS_IDLE`),
+  `mainTrajectoryUpdate.stepsUpdate` (new steps whole, waiting asks included),
+  `backgroundTasksUpdate` (`{indices, backgroundTasks: [{taskSnapshot, step, taskDetails}],
+  totalLength}` — carries both `run_command` and `schedule` tasks, with `isDaemon: true`
+  when `IsDaemon: true` and omitted when `false`; when the last background task ends,
+  agy sends `"backgroundTasksUpdate": {}` with `totalLength` and `backgroundTasks`
+  omitted), `turnsUpdate`, `activeHook`;
+  protojson omits `fullyIdle` when `false` and sends `"fullyIdle": true` when `true`.
+  `ListBackgroundTasks {"cascadeId"}` returns `{tasks: [{conversationId, task}]}` with
+  the same `taskSnapshot` fields for both `run_command` and `schedule`, or `{}` when
+  none are running.
 - `CancelCascadeInvocation {cascadeId}` stops the turn: screen "⎿ Interrupted · What
   should Antigravity CLI do instead?", 7501 `done` "Task complete" then `idle`, only
   the `USER_INPUT` line in the transcript.
@@ -1946,7 +1998,9 @@ repository, like the butler's.
   Google sign-in route, and the owner's own `~/.gemini/GEMINI.md` beside it.
 
 Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
-starts, as a Codex one does (`src/main/assistMemory.ts`).
+starts, as a Codex one does (`src/main/assistMemory.ts`); the Session defaults dialog says
+the project's own file may win over a workspace's Instructions
+(`src/renderer/src/components/SessionDefaultsDialog.tsx`).
 
 ## §33 What agy asks the terminal
 

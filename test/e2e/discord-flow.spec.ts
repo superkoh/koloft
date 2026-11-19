@@ -59,11 +59,11 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { codexAnswers, type CodexWireLine } from './helpers/codex'
-import { openSettings } from './helpers/extensions'
+import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
-import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
+import { crossSessionLine, writeLine } from '../../src/plugins/sessions/main/crossSessionMessage'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN
@@ -452,7 +452,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         else await newSessionInWith(page, workspace, AGENT_NAME[reported])
         const reportedSession = async (): Promise<SessionInfo | undefined> =>
           (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => !s.butler && s.alive && s.sessionId
+            (s) => !s.overseer && s.alive && s.sessionId
           )
         await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
         if (reported === 'agy') await agyReady(page)
@@ -508,7 +508,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         await expect
           .poll(
             async () =>
-              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.status,
+              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.overseer)
+                ?.status,
             { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
           )
           .toBe('waiting')
@@ -1046,7 +1047,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Discord', async ({
+  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Plugins ▸ Discord', async ({
     env
   }) => {
     seedSettings(env, {
@@ -1058,7 +1059,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       }
     })
     const fake = await startFakeDiscord(env)
-    fake.refusePostsIn.push('333')
+    fake.failPostsIn['333'] = 'forbidden'
     const { app, page } = await connected(env, fake)
     try {
       fake.say(OWNER, 'hello', { channelId: '333' })
@@ -1066,8 +1067,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect(page.locator('.toast')).toHaveText(report, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
       })
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await openPluginPage(page, 'Discord')
       await expect(page.locator('.set-main .acct-login-state.bad')).toHaveText(
         /^Cannot post here: Discord answered 403/
       )
@@ -1603,7 +1603,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           ).at(-1)?.pid
         const closedPid = conductorPid()!
         const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.butler
+          (s) => s.overseer
         )!.tabId
         await page.evaluate((tab) => window.api.terminal.kill(tab), conductorTab)
         await expect
@@ -1611,13 +1611,16 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           .toBe(false)
         await expect
           .poll(async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some((s) => s.butler && s.alive)
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.overseer && s.alive
+            )
           )
           .toBe(false)
 
         const liveChildTab = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && !s.butler)
-            ?.tabId
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && !s.overseer
+          )?.tabId
         await expect.poll(liveChildTab).toBeTruthy()
         const childTab = (await liveChildTab())!
         await expect.poll(() => terminalText(page, childTab)).not.toBe('')

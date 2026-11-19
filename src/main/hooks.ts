@@ -4,9 +4,14 @@ import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import type { KoloftHook } from './codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
-import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
-import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
+import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from '@plugins/sessions/main/handoverPreamble'
+import {
+  FROM_A_SESSION,
+  FROM_KOLOFT,
+  type ModeClass
+} from '@plugins/sessions/main/crossSessionMessage'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
+import { OWNER_ASLEEP_PUSH } from '@plugins/butler/api'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { writeWholeBeforeVisible } from './jsonDrops'
 
@@ -102,7 +107,6 @@ export const TAKE_NOTICE_FN = `take_notice() {
 
 export const OWNER_ASLEEP_FILE = 'owner-asleep'
 const ASLEEP_PUSHED_SUFFIX = '.asleep'
-export const OWNER_ASLEEP_PUSH = `${FROM_KOLOFT}The owner is asleep: until they write to you themself, they cannot answer, approve or check anything. Do not stop to wait for them. If there is more you can do toward your task, do it now: where you would ask the owner, choose what you would recommend and note the choice in your report. Leave for the owner only what cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords) and go on with the rest. If the task is done, or you truly cannot go on, end your turn and say plainly what is left and what the owner must do.`
 
 // CC§21 CODEX§27 MUSE§9 AGY§12
 export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {

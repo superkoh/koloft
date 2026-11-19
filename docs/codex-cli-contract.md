@@ -2265,6 +2265,16 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   The line lands at the top of the thread's developer message. That it replaces a
   `developer_instructions` in the user's `config.toml` rather than adding to it is
   inferred, not checked.
+- **A `-c developer_instructions=` of 20 KB reaches the model whole.** 2026-11-18, Codex
+  CLI 0.169.0 (Homebrew, macOS), `codex exec --skip-git-repo-check` with a scratch
+  `CODEX_HOME`, a `model_providers` entry pointing at a local stand-in Responses server
+  that saved each request body, and the instructions made of newlines, tabs, `'`, `"`,
+  backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji. At 1,006 and
+  20,014 characters (22,438 bytes) the second `developer` item of the request held the
+  text as one exact string (3 runs at 20 KB). At 30,000 and 45,000 characters it did
+  too, once each; at 60,000 the end marker arrived but the exact-string match failed in 3
+  of 4 runs, not looked into. `exec`, not the app-server Koloft runs; that the same `-c`
+  parses the same way there is inferred, not checked.
 - **The developer instructions are saved with the thread and outlive a resume without
   them**, and **Codex names a thread from its first message, instructions left out.**
   Checked on 2026-10-07 with Codex CLI 0.159.3 and a real model: an app-server started

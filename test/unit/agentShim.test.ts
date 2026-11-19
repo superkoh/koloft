@@ -6,12 +6,8 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import {
-  AGENT_SHIM_WAITS_MS,
-  CLAUDE_AGENT_SHIM,
-  REMOTE_AGENT_SHIM,
-  writeAgentShim
-} from '../../src/main/agentShim'
+import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import { AGENT_SHIM_WAITS_MS } from '../../src/core/command'
 import {
   AgentRequests,
   answered,
@@ -22,7 +18,7 @@ import {
 import { testCommands } from './helpers/testCommands'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
-import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
@@ -266,7 +262,7 @@ describe('koloft command in a Codex session', () => {
     for (const args of [['help'], [], ['--help']]) {
       const guide = await run(path.join(shimDir, 'koloft'), args, {})
       expect(guide.status).toBe(0)
-      expect(guide.stdout).toBe(AGENT_GUIDE + '\n')
+      expect(guide.stdout).toBe(agentGuide() + '\n')
     }
   })
 

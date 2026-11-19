@@ -141,7 +141,7 @@ interface AppState {
   sidebarWidth: number
   notesHeight: number
   workspaceRows: WorkspaceRows[]
-  butlerWorkspace: WorkspaceRows | null
+  claimedWorkspaces: WorkspaceRows[]
   toast: string | null
   toastReveal: string | null
   workbenchOpen: Record<string, boolean>
@@ -157,7 +157,7 @@ interface AppState {
   followsAgentBrowser: Record<string, true>
   overlayDialog: BrowserJsDialog | null
   termFocus: { ptyId: string; n: number }
-  githubBtn: boolean
+  partsShown: Readonly<Record<string, boolean>>
   lastWsPath: string | null
   selectedWs: string | null
   update: UpdateState
@@ -268,11 +268,10 @@ interface AppState {
   followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
-  openWorkspaceList: (path: string, what: 'issues' | 'pulls') => void
 
   focusPanelTerm: (ptyId: string) => void
 
-  setGithubBtn: (on: boolean) => void
+  setPartShown: (part: string, on: boolean) => void
   openTerminalTab: (tabId: string) => void
   closeTerminalTab: (ptyId: string) => void
   terminalExited: (ptyId: string) => boolean
@@ -298,7 +297,6 @@ const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
 const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
-const GITHUB_LIST_UNREACHABLE_NOTICE = 'Could not find this workspace’s GitHub page — try again.'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -328,7 +326,7 @@ function killTerminalsOf(tabId: string): string[] {
 }
 
 function rowOfTab(
-  s: Pick<AppState, 'workspaceRows' | 'butlerWorkspace'>,
+  s: Pick<AppState, 'workspaceRows' | 'claimedWorkspaces'>,
   tab: Tab
 ): { row: SessionRow; wsPath: string } | undefined {
   const cwd = tab.launch?.cwd ?? tab.cwd
@@ -370,6 +368,14 @@ let landingAfterClose: LandingAfterClose | null = null
 
 export function landAfterClosingAWatchedSession(landing: LandingAfterClose): void {
   landingAfterClose = landing
+}
+
+export type ClaimsWorkspace = (w: WorkspaceRows) => boolean
+
+let claimsWorkspace: ClaimsWorkspace = () => false
+
+export function keepWorkspacesOutOfTheList(claims: ClaimsWorkspace): void {
+  claimsWorkspace = claims
 }
 
 function watchedSessionLeaves(s: AppState, tabId: string): boolean {
@@ -715,7 +721,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,
   notesHeight: DEFAULT_SETTINGS.notesHeight,
   workspaceRows: [],
-  butlerWorkspace: null,
+  claimedWorkspaces: [],
   toast: null,
   toastReveal: null,
   workbenchOpen: {},
@@ -731,7 +737,7 @@ export const useStore = create<AppState>((set, get) => ({
   cdpAttached: {},
   followsAgentBrowser: {},
   termFocus: { ptyId: '', n: 0 },
-  githubBtn: false,
+  partsShown: {},
   lastWsPath: null,
   selectedWs: null,
   update: { open: false, phase: 'checking' },
@@ -1134,26 +1140,26 @@ export const useStore = create<AppState>((set, get) => ({
       workbenchParked.delete(k)
     }
     set((s) => {
+      const claimed = new Set(all.filter(claimsWorkspace))
       const workspaceRows = keepUnchangedWorkspaces(
         s.workspaceRows,
-        all.filter((w) => !w.workspace.butler)
+        all.filter((w) => !claimed.has(w))
       )
-      const butler = all.find((w) => w.workspace.butler)
-      const butlerWorkspace = butler ? keepIfSame(s.butlerWorkspace ?? undefined, butler) : null
+      const claimedWorkspaces = keepUnchangedWorkspaces(s.claimedWorkspaces, [...claimed])
       const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
         ? s.selectedWs
         : null
       if (
         gone.length === 0 &&
         workspaceRows === s.workspaceRows &&
-        butlerWorkspace === s.butlerWorkspace &&
+        claimedWorkspaces === s.claimedWorkspaces &&
         selectedWs === s.selectedWs
       )
         return s
       return {
         ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
-        butlerWorkspace,
+        claimedWorkspaces,
         selectedWs
       }
     })
@@ -1288,21 +1294,12 @@ export const useStore = create<AppState>((set, get) => ({
       resumeLaunch: null,
       workbenchFull: false
     }),
-  openWorkspaceList: (path, what) => {
-    get().selectWorkspace(path)
-    void window.api.github
-      .target(path, what)
-      .then((url) => {
-        if (!url) return get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE)
-        get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
-      })
-      .catch(() => get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE))
-  },
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
   // PLATFORM§25
-  setGithubBtn: (on) => {
-    if (get().githubBtn !== on) set({ githubBtn: on })
+  setPartShown: (part, on) => {
+    if ((get().partsShown[part] ?? false) !== on)
+      set({ partsShown: { ...get().partsShown, [part]: on } })
   },
 
   openTerminalTab: (tabId) =>
@@ -1529,7 +1526,7 @@ export function openInterceptedFile(
     return
   }
   if (!activeTabId) {
-    window.api.preview.osOpen(src)
+    window.api.os.open(src)
     return
   }
   setOpenFile(file)

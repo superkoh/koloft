@@ -25,11 +25,9 @@ import {
   IconFile,
   IconFolder,
   IconFolderOpen,
-  IconIssue,
   IconNewWorktree,
   IconPin,
-  IconPlus,
-  IconPullRequest
+  IconPlus
 } from '../icons'
 import type { BackendId, HostId, MachineState, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
@@ -64,22 +62,20 @@ import { releaseSettledResumes } from '../resumeFlow'
 import { offerForceCloseUnlessMainHasBoundIt, openSessionRow } from '../sessionClick'
 import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
-import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
-import { fitGithubCounts } from '../wsHeadFit'
+import { behindBadge } from '../freshnessView'
 import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
-import { StartedByButler, useStartedByButler } from '@plugins/butler/renderer/startedBy'
+import { fillsOf, gitPartsOf, PartsAt } from '../pluginUi'
 import {
-  CronMark,
-  NextJobLine,
-  nextJobIn,
-  startedByAJob,
-  useNextJobClock
-} from '@plugins/scheduled-tasks/renderer/sidebarMarks'
-import { PartsAt } from '../pluginUi'
+  ROW_MARK,
+  WORKSPACE_GIT_PART,
+  WORKSPACE_LINE,
+  WORKSPACE_MENU,
+  type RowMark
+} from '../slots'
 import { SessionRowsOfContext } from './sidebarRows'
 import { MENU_PAD_H, menuPosFor, useDismissOnOutside } from './menuPlace'
 import {
@@ -229,8 +225,21 @@ interface SidebarActions {
   gitEnter: (e: MouseEvent, path: string) => void
   gitLeave: (e: MouseEvent, path: string) => void
   behindClick: (e: MouseEvent, path: string) => void
-  openList: (e: MouseEvent, path: string, what: 'issues' | 'pulls') => void
+  closeCards: () => void
   openDoor: (path: string, isGit: boolean) => void
+}
+
+const MARK_GAP = '\u0000'
+
+function MarksAt({ at, marks }: { at: RowMark['at']; marks: string }): JSX.Element {
+  const labels = marks.split(MARK_GAP)
+  return (
+    <>
+      {fillsOf(ROW_MARK).map(({ at: place, Mark }, i) =>
+        place === at && labels[i] ? <Mark key={i} label={labels[i]} /> : null
+      )}
+    </>
+  )
 }
 
 const SessionRowView = memo(function SessionRowView({
@@ -238,7 +247,7 @@ const SessionRowView = memo(function SessionRowView({
   className,
   tabId,
   tooltip,
-  cron,
+  marks,
   resident,
   title,
   callingReason,
@@ -252,7 +261,6 @@ const SessionRowView = memo(function SessionRowView({
   parent,
   folded,
   backend,
-  startedBy,
   worktree,
   memory,
   activity,
@@ -262,7 +270,7 @@ const SessionRowView = memo(function SessionRowView({
   className: string
   tabId: string | undefined
   tooltip: string | undefined
-  cron: boolean
+  marks: string
   resident: boolean
   title: string
   callingReason: string | undefined
@@ -276,7 +284,6 @@ const SessionRowView = memo(function SessionRowView({
   parent: boolean
   folded: boolean
   backend: BackendId | undefined
-  startedBy: string | undefined
   worktree: string
   memory: string | undefined
   activity: string | undefined
@@ -300,7 +307,7 @@ const SessionRowView = memo(function SessionRowView({
       }}
     >
       <div className="ws-tab-main">
-        {cron && <CronMark />}
+        <MarksAt at="title" marks={marks} />
         {resident && (
           <span
             className="ws-tab-resident"
@@ -354,7 +361,7 @@ const SessionRowView = memo(function SessionRowView({
         )}
       </div>
       <div className="ws-tab-sub">
-        {startedBy && <StartedByButler name={startedBy} />}
+        <MarksAt at="sub" marks={marks} />
         {backend && <SessionBackendIcon backend={backend} />}
         <span>{worktree}</span>
         {memory !== undefined && <span>{memory}</span>}
@@ -374,8 +381,6 @@ const WorkspaceHead = memo(function WorkspaceHead({
   remoteConnected,
   remoteDot,
   gitPanel,
-  issues,
-  prs,
   open,
   active,
   callingInside,
@@ -393,8 +398,6 @@ const WorkspaceHead = memo(function WorkspaceHead({
   remoteConnected: boolean
   remoteDot: string | undefined
   gitPanel: boolean
-  issues: number
-  prs: number
   open: boolean
   active: boolean
   callingInside: number
@@ -463,30 +466,9 @@ const WorkspaceHead = memo(function WorkspaceHead({
               {behindLabel}
             </button>
           )}
-          {(issues > 0 || prs > 0) && (
-            <span className="ws-gh">
-              {issues > 0 && (
-                <button
-                  aria-label={openIssuesLabel(issues)}
-                  disabled={!listsReachable}
-                  onClick={(e) => actions.openList(e, path, 'issues')}
-                >
-                  <IconIssue size={12} />
-                  {countLabel(issues)}
-                </button>
-              )}
-              {prs > 0 && (
-                <button
-                  aria-label={openPullsLabel(prs)}
-                  disabled={!listsReachable}
-                  onClick={(e) => actions.openList(e, path, 'pulls')}
-                >
-                  <IconPullRequest size={12} />
-                  {countLabel(prs)}
-                </button>
-              )}
-            </span>
-          )}
+          {fillsOf(WORKSPACE_GIT_PART).map(({ Mark }, i) => (
+            <Mark key={i} path={path} reachable={listsReachable} closeCards={actions.closeCards} />
+          ))}
         </span>
       )}
       {callingInside > 0 && (
@@ -530,7 +512,6 @@ function SidebarFloating({
   onNewWorktreeSession,
   onRestoreSession,
   onSessionDefaults,
-  onScheduledJobs,
   onRemoveWorkspace
 }: {
   ctl: RefObject<FloatingCtl | null>
@@ -539,7 +520,6 @@ function SidebarFloating({
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onSessionDefaults: (wsPath: string) => void
-  onScheduledJobs: (wsPath: string, jobId?: string) => void
   onRemoveWorkspace: (wsPath: string) => void
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
@@ -594,7 +574,7 @@ function SidebarFloating({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit }, fillsOf(WORKSPACE_MENU).length)
       : endedTabOf(t.row, storeTabs, sessions)
         ? 2
         : t.row.pending
@@ -699,7 +679,7 @@ function SidebarFloating({
         onClick={() => {
           setMenu(null)
           if (remoteHost) copy(remoteCopyText(remoteHost, dir))
-          else window.api.fs.reveal(dir)
+          else window.api.os.reveal(dir)
         }}
       >
         {label}
@@ -793,15 +773,18 @@ function SidebarFloating({
               >
                 Session defaults…
               </div>
-              <div
-                className="mi"
-                onClick={() => {
-                  setMenu(null)
-                  onScheduledJobs(target.wsPath)
-                }}
-              >
-                Scheduled jobs…
-              </div>
+              {fillsOf(WORKSPACE_MENU).map((entry) => (
+                <div
+                  key={entry.label}
+                  className="mi"
+                  onClick={() => {
+                    setMenu(null)
+                    entry.run(target.wsPath)
+                  }}
+                >
+                  {entry.label}
+                </div>
+              ))}
               <div className="sep" />
             </>
           )}
@@ -965,14 +948,12 @@ function SidebarFloating({
     const w = rows.find((r) => r.workspace.path === fresh.path)
     if (!w) return null
     const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
-    if (!f && !w.workspace.github && !w.workspace.gitPickable) return null
+    if (!f && gitPartsOf(w.workspace).length === 0 && !w.workspace.gitPickable) return null
     return (
       <FreshnessPopover
         key={fresh.path}
-        wsPath={fresh.path}
         f={f}
-        github={w.workspace.github}
-        remote={w.workspace.remote}
+        ws={w.workspace}
         left={fresh.left}
         top={fresh.top}
         onClose={() => setFresh(null)}
@@ -997,28 +978,26 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   launchable,
   onNewWorktreeSession,
   onRestoreSession,
-  onSessionDefaults,
-  onScheduledJobs
+  onSessionDefaults
 }: {
   onNewSession: (wsPath: string, backend?: BackendId) => void
   launchable: Record<HostId, LaunchMenu>
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onSessionDefaults: (wsPath: string) => void
-  onScheduledJobs: (wsPath: string, jobId?: string) => void
 }): JSX.Element {
   const listedRows = useStore((s) => s.workspaceRows)
   const welcomeActive = useStore((s) => s.welcomeActive)
-  const listedButler = useStore((s) => s.butlerWorkspace)
-  const startedByButler = useStartedByButler()
-  const cron = useStore((s) => s.cron)
+  const listedClaimed = useStore((s) => s.claimedWorkspaces)
+  const markOfs = fillsOf(ROW_MARK).map((m) => m.useMarkOf())
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
   const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
   const { workspaceRows: rows } = useMemo(
-    () => shownRows({ workspaceRows: listedRows, butlerWorkspace: listedButler, tabs: storeTabs }),
-    [listedRows, listedButler, storeTabs]
+    () =>
+      shownRows({ workspaceRows: listedRows, claimedWorkspaces: listedClaimed, tabs: storeTabs }),
+    [listedRows, listedClaimed, storeTabs]
   )
   const activeTabId = useStore((s) => s.activeTabId)
   const secretAsks = useStore((s) => s.secretAsks)
@@ -1040,7 +1019,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const confirmOrphan = useStore((s) => s.orphanConfirm)
   const setConfirmOrphan = useStore((s) => s.setOrphanConfirm)
   const floating = useRef<FloatingCtl | null>(null)
-  useNextJobClock(cron)
+  for (const line of fillsOf(WORKSPACE_LINE)) line.useWatch()
 
   useEffect(() => {
     if (confirmRemove && confirmRemove.dirty.length > 0) removeCancelRef.current?.focus()
@@ -1055,7 +1034,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const listRef = useRef<HTMLDivElement>(null)
   const fitHeads = useCallback((): void => {
     const list = listRef.current
-    if (list) fitGithubCounts(list.querySelectorAll<HTMLElement>('.ws-head'))
+    if (list)
+      for (const { fit } of fillsOf(WORKSPACE_GIT_PART))
+        fit(list.querySelectorAll<HTMLElement>('.ws-head'))
   }, [])
   useLayoutEffect(fitHeads, [rows, fitHeads])
   useEffect(() => {
@@ -1103,7 +1084,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const look = rowLookups(sessions, storeTabs, attention)
   const callingAmong = (list: SessionRow[]): number =>
     list.filter((r) => look.attentionOn(r.id, look.tabOf(r))).length
-  const startedByJob = startedByAJob(cron)
   const live = useRef({ onNewSession, onNewWorktreeSession })
   live.current = { onNewSession, onNewWorktreeSession }
 
@@ -1160,11 +1140,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         e.stopPropagation()
         floating.current?.openCard((e.currentTarget as HTMLElement).parentElement!, path)
       },
-      openList: (e, path, what) => {
-        e.stopPropagation()
-        floating.current?.closeAll()
-        useStore.getState().openWorkspaceList(path, what)
-      },
+      closeCards: () => floating.current?.closeAll(),
       openDoor: (path, isGit) => {
         floating.current?.dismissMenu()
         if (isGit) live.current.onNewWorktreeSession(path)
@@ -1293,7 +1269,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       ? ' — worktree deleted; click to rebuild and resume'
                       : ' — click to resume')
             }
-            cron={startedByJob(wsPath, row, tabId)}
+            marks={markOfs.map((markOf) => markOf(wsPath, row, tabId) ?? '').join(MARK_GAP)}
             resident={!!row.resident}
             title={shownTitle(row.title, sess?.title)}
             callingReason={calling && attentionReason(calling)}
@@ -1307,7 +1283,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             parent={node.children.length > 0}
             folded={folded}
             backend={showBackend ? row.backendId : undefined}
-            startedBy={startedByButler(row.parentId)}
             worktree={ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
             memory={memoryShown(machine, tabId)}
             activity={rowActivityLine(shownCls, sess)}
@@ -1351,7 +1326,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             const behind = behindBadge(ws.freshness, now.getTime())
             const door = doorFor(ws.isGit)
             const callingInside = open ? 0 : callingAmong(sessionRows)
-            const soon = ws.missing || !open ? null : nextJobIn(cron, ws.path, now)
             const sessionRow = rowRenderer(ws.path, sessionRows)
             return (
               <div
@@ -1373,9 +1347,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   remoteTitle={ws.remote && remoteCopyText(ws.remote.host, ws.remote.path)}
                   remoteConnected={!!ws.remote?.connected}
                   remoteDot={ws.remote && remoteDotTitle(ws.remote)}
-                  gitPanel={freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable}
-                  issues={ws.github?.issues ?? 0}
-                  prs={ws.github?.prs ?? 0}
+                  gitPanel={
+                    freshnessShown(ws.freshness) || gitPartsOf(ws).length > 0 || !!ws.gitPickable
+                  }
                   open={open}
                   active={selectedWs === ws.path && activeTabId === null}
                   callingInside={callingInside}
@@ -1385,18 +1359,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   actions={actions}
                 />
 
-                {open && (soon || sessionRows.length > 0 || !ws.missing) && (
+                {open && (sessionRows.length > 0 || !ws.missing) && (
                   <div className="ws-tabs">
-                    {soon && (
-                      <NextJobLine
-                        soon={soon}
-                        now={now}
-                        onOpen={() => {
-                          floating.current?.dismissMenu()
-                          onScheduledJobs(ws.path, soon.id)
-                        }}
-                      />
-                    )}
+                    {!ws.missing &&
+                      fillsOf(WORKSPACE_LINE).map(({ Line }, i) => (
+                        <Line
+                          key={i}
+                          wsPath={ws.path}
+                          now={now}
+                          dismissMenu={() => floating.current?.dismissMenu()}
+                        />
+                      ))}
                     {sessionTree(sessionRows).map(sessionRow)}
                     {sessionRows.length === 0 && !ws.missing && (
                       <div
@@ -1426,7 +1399,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             onNewWorktreeSession={onNewWorktreeSession}
             onRestoreSession={onRestoreSession}
             onSessionDefaults={onSessionDefaults}
-            onScheduledJobs={onScheduledJobs}
             onRemoveWorkspace={(path) => void removeWorkspace(path)}
           />
 

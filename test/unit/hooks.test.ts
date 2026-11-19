@@ -22,19 +22,23 @@ import {
   markOwnerAsleep,
   noticeFile,
   noticeLine,
-  OWNER_ASLEEP_PUSH,
   quotedPrompt,
   saidFile,
   seedHandedOverOwnerWords,
   seedOwnerWords
 } from '../../src/main/hooks'
+import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
   handoverPreamble,
   withHandover
-} from '../../src/main/handover'
-import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
+} from '../../src/plugins/sessions/main/handoverPreamble'
+import {
+  A_HELPER_HAS_IT,
+  FROM_KOLOFT,
+  crossSessionLine
+} from '../../src/plugins/sessions/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../src/main/agyHooks'
@@ -260,6 +264,8 @@ esac
           ...inTmuxOnTheMachine,
           HOME: home,
           KOLOFT_TAB_ID: 'tabN3',
+          KOLOFT_AGY_LOG: '',
+          KOLOFT_AGY_OWNER_TITLE: '',
           PATH: `${stubBin}:${process.env.PATH}`
         }
       })
@@ -385,6 +391,12 @@ esac
   })
 
   describe('while the owner is asleep', () => {
+    it('the hook tells the agent, word for word, to go on without the owner and leave only what cannot be undone', () => {
+      expect(OWNER_ASLEEP_PUSH).toBe(
+        '(From Koloft:) The owner is asleep: until they write to you themself, they cannot answer, approve or check anything. Do not stop to wait for them. If there is more you can do toward your task, do it now: where you would ask the owner, choose what you would recommend and note the choice in your report. Leave for the owner only what cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords) and go on with the rest. If the task is done, or you truly cannot go on, end your turn and say plainly what is left and what the owner must do.'
+      )
+    })
+
     const pushed = { decision: 'block', reason: `${OWNER_ASLEEP_PUSH}\n\n` }
     const agyScript = path.join(os.tmpdir(), `koloft-agy-hook-${process.pid}.sh`)
     beforeAll(() => fs.writeFileSync(agyScript, AGY_HOOK_SCRIPT))

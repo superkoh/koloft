@@ -15,9 +15,10 @@ import type { SessionEvent } from '@shared/sessionEvent'
 import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
-import type { ModeClass } from '../crossSessionMessage'
+import type { ModeClass } from '@plugins/sessions/main/crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { SessionBackend, TranscriptPlaces } from '../sessionBackends'
+import type { SessionBackend } from '../sessionBackends'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { PtyManager } from '../ptyManager'
 import type { SessionTracker } from '../sessionTracker'
 import type { WorkspaceManager } from '../workspaces'
@@ -94,9 +95,9 @@ import {
   planResume,
   rebuildsTheWorktree,
   worktreeHomeRoot,
-  type GitOut,
   type ResumeProbes
 } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 
 export interface ClaudeBackendDeps {
   pty: PtyManager
@@ -121,6 +122,7 @@ export interface ClaudeBackendDeps {
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
+  workspaceInstructions?(workspace: string): Promise<string | undefined>
 }
 
 // PLATFORM§28
@@ -960,6 +962,7 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
+      ownerText: opts.ownerText,
       conductor: opts.conductor,
       trustFolder: opts.trustFolder || (!!opts.worktree && !opts.scheduled && !opts.resumeSessionId)
     })
@@ -1105,7 +1108,8 @@ export class ClaudeBackend implements SessionBackend {
     const plan = await host.launch({
       ...spec,
       fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
-      projectRules: await this.d.projectRules?.(spec.root)
+      projectRules: await this.d.projectRules?.(spec.root),
+      workspaceText: await this.d.workspaceInstructions?.(spec.root)
     })
     if (!plan.ok) return plan
     const machine = plan.machine

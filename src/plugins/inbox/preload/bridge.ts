@@ -1,6 +1,6 @@
 import type { PreloadIpc } from '@core/ipc'
 import type { InboxAnswers, InboxLevel, InboxSnapshot } from '@shared/inbox'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface InboxBridge {
   inbox: {

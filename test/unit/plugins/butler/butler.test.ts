@@ -9,9 +9,11 @@ import {
 } from '../../../../src/plugins/butler/main/butler'
 import { conductorFolder } from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
+import type { InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
-import { TODO_NOTICE_FROM_KOLOFT } from '../../../../src/main/crossSessionMessage'
+import { TODO_NEWS } from '../../../../src/plugins/todo/api'
+import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/crossSessionMessage'
 
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
@@ -20,12 +22,14 @@ const CODEX_KEY = 'codex:019a-thread'
 let userData: string
 let name: string
 let formerNames: string[]
+let instructions: InstructionsVersion[] | undefined
 let facts: string[]
 let session: ButlerSession
 let rescans: number
 let started: {
   cwd: string
   role: string
+  ownerText?: string
   title: string
   backend: BackendId
   firstPrompt?: string
@@ -42,6 +46,7 @@ let promptShown: Set<string>
 let elsewhere: boolean
 let resumeGives: string | null | undefined
 let testRun = 0
+let todoOn: boolean
 
 function make(): Butler {
   const run = testRun
@@ -53,7 +58,7 @@ function make(): Butler {
   const deps: ButlerDeps = {
     userData,
     realpath: realpathSafe,
-    butler: () => ({ name, formerNames }),
+    butler: () => ({ name, formerNames, instructions }),
     roleFacts: () => facts,
     loadSession: () => session,
     saveSession: (s) => void (session = s),
@@ -66,6 +71,7 @@ function make(): Butler {
       started.push({
         cwd: l.cwd,
         role: l.role,
+        ownerText: l.ownerText,
         title: l.title,
         backend: l.backend,
         firstPrompt: l.firstPrompt
@@ -84,7 +90,7 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
-    todoNotice: TODO_NOTICE_FROM_KOLOFT,
+    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}`, on: () => todoOn },
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
@@ -103,9 +109,11 @@ async function opened(c: Butler): Promise<string> {
 
 beforeEach(() => {
   testRun++
+  todoOn = true
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
+  instructions = undefined
   facts = []
   session = { sessionIds: [] }
   rescans = 0
@@ -173,6 +181,29 @@ describe('the butler', () => {
     expect(c.identityOfLaunch(conductorFolder(userData), 's1')?.role).toContain(
       'start with [Discord]'
     )
+  })
+
+  it('the owner’s instructions go beside its role, both when it starts and when Codex, Muse or Antigravity resume it; with none written, nothing is added', async () => {
+    instructions = [
+      { text: 'Old words.', at: 1, by: 'owner' },
+      { text: 'Answer in Chinese.', at: 2, by: 'owner' }
+    ]
+    const others = ['codex:local:t1', 'muse:local:t2', 'agy:local:t3']
+    session = { sessionIds: others }
+    const c = make()
+    await opened(c)
+    expect(started[0].role).toMatch(/^Who you are/)
+    expect(started[0].role).not.toContain('Answer in Chinese.')
+    expect(started[0].ownerText).toBe('Written by the owner\nAnswer in Chinese.')
+    for (const key of others)
+      expect(c.identityOfLaunch(conductorFolder(userData), key)).toEqual({
+        role: started[0].role,
+        ownerText: 'Written by the owner\nAnswer in Chinese.'
+      })
+    instructions = [...instructions, { text: '', at: 3, by: 'owner' }]
+    expect(c.identityOfLaunch(conductorFolder(userData), 'codex:local:t1')).toEqual({
+      role: started[0].role
+    })
   })
 
   // ADR-0029
@@ -268,6 +299,33 @@ describe('the butler', () => {
     transcripts.add(NEW_CODEX)
     await fresh.open()
     expect(notices).toHaveLength(3)
+  })
+
+  it('while Todo is off, a resumed conversation is told nothing of koloft todo and one started then is not counted as knowing it, so it is told once Todo is on again', async () => {
+    const OLD_CODEX = 'codex:local:old-thread'
+    const NEW_CODEX = 'codex:local:new-thread'
+    todoOn = false
+    session = { sessionIds: [OLD_CODEX], lastSessionKey: OLD_CODEX }
+    transcripts.add(OLD_CODEX)
+    choice = { backend: 'codex' }
+    const c = make()
+    const tab = `tab-resumed-${OLD_CODEX}`
+    expect(await c.open()).toEqual({ ok: true, tabId: tab })
+    expect(notices).toEqual([])
+    expect(session.knowsTodo).toBeUndefined()
+    c.onPtyExit(tab)
+
+    session = { sessionIds: [] }
+    const fresh = make()
+    const freshTab = await opened(fresh)
+    fresh.onBound(freshTab, NEW_CODEX)
+    expect(session.knowsTodo).toBeUndefined()
+    fresh.onPtyExit(freshTab)
+
+    todoOn = true
+    transcripts.add(NEW_CODEX)
+    await fresh.open()
+    expect(notices).toHaveLength(1)
   })
 
   // AGY§8

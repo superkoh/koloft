@@ -2,33 +2,50 @@ import { GLOBAL_SCOPE } from '@shared/conductors'
 import { cleanOwnPick } from '@shared/sessionPicks'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
+import { cleanVersions } from '@core/ownerInstructions'
 import { setting, type SettingKeys } from '@core/settings'
-import { DEFAULT_BUTLER_NAME, type ButlerSession, type ButlerSetting } from './types'
+import {
+  DEFAULT_BUTLER_NAME,
+  isKnownBy,
+  type ButlerSession,
+  type ButlerSetting,
+  type KnownBy
+} from './types'
 
 function sanitizeButler(raw: unknown): ButlerSetting {
   const doc = isRecord(raw) ? raw : {}
-  return butlerSetting(butlerName(doc.name), stringsIn(doc.formerNames).map(butlerName))
+  const instructions = cleanVersions(doc.instructions)
+  return {
+    ...butlerSetting(butlerName(doc.name), stringsIn(doc.formerNames).map(butlerName)),
+    ...(instructions.length > 0 && { instructions })
+  }
+}
+
+function knownLists(records: readonly object[]): Record<KnownBy, string[]> {
+  const lists: Record<KnownBy, string[]> = {}
+  for (const record of records)
+    for (const [key, value] of Object.entries(record))
+      if (isKnownBy(key)) lists[key] = [...new Set([...(lists[key] ?? []), ...stringsIn(value)])]
+  return Object.fromEntries(Object.entries(lists).filter(([, keys]) => keys.length))
 }
 
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
-  const knowsTodo = stringsIn(raw.knowsTodo)
   const carried = cleanOwnPick(raw.carried)
   return {
     sessionIds: stringsIn(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
-    ...(knowsTodo.length ? { knowsTodo } : {}),
+    ...knownLists([raw]),
     ...(carried ? { carried } : {})
   }
 }
 
 function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   const last = sessions.find((s) => s.lastSessionKey)
-  const knowsTodo = [...new Set(sessions.flatMap((s) => s.knowsTodo ?? []))]
   return {
     sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
     ...(last?.lastSessionKey ? { lastSessionKey: last.lastSessionKey } : {}),
-    ...(knowsTodo.length ? { knowsTodo } : {}),
+    ...knownLists(sessions),
     ...(last?.carried ? { carried: last.carried } : {})
   }
 }
@@ -55,5 +72,9 @@ export const SETTINGS = {
     keptOnReset: true,
     writtenByMainOnly: true,
     retires: { assistSessions: (raw) => (Array.isArray(raw) ? raw : []) }
+  }),
+  ownerAsleepSince: setting<number | null>({
+    default: null,
+    clean: (raw) => raw as number | null
   })
 } satisfies SettingKeys

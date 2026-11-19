@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentType, type JSX } from 'react'
 import {
   IconAccounts,
   IconAiStart,
@@ -8,6 +8,7 @@ import {
   IconExtensions,
   IconInfo,
   IconNotifications,
+  IconPlugins,
   IconShortcuts,
   IconTerminal,
   IconUsage,
@@ -25,10 +26,11 @@ import { NotificationsPane } from './NotificationsPane'
 import { ExtensionsPane } from './ExtensionsPane'
 import { AboutPane } from './AboutPane'
 import { WelcomePane } from './WelcomePane'
-import { DiscordPane } from '@plugins/discord/renderer/DiscordPane'
 import { AssistPane } from './AssistPane'
-import { BsDiscord } from 'react-icons/bs'
-import { SETTINGS_PANES, type SettingsPaneId } from '@shared/paletteFeatures'
+import { PluginPage, PluginsPane } from './PluginsPane'
+import { pluginOfPane, pluginPane, SettingsGo } from './settingsNav'
+import { PLUGIN_SETTINGS_PAGES } from '@shared/paletteFeatures'
+import { APP_PANES, type AppPaneId } from '@shared/settingsPanes'
 import '../../settings.css'
 
 function ClearBrowsingData(): JSX.Element {
@@ -71,21 +73,31 @@ function ClearBrowsingData(): JSX.Element {
   )
 }
 
-const PANE_ICONS: Record<SettingsPaneId, Icon> = {
-  welcome: IconAiStart,
-  sessions: IconTerminal,
-  accounts: IconAccounts,
-  usage: IconUsage,
-  appearance: IconAppearance,
-  shortcuts: IconShortcuts,
-  assist: IconAssist,
-  discord: BsDiscord,
-  notifications: IconNotifications,
-  extensions: IconExtensions,
-  about: IconInfo
+interface PaneParts {
+  Icon: Icon
+  Pane: ComponentType
 }
 
-const PANES = SETTINGS_PANES.map(({ id, label }) => ({ id, label, Icon: PANE_ICONS[id] }))
+const PANE_PARTS: Record<AppPaneId, PaneParts> = {
+  welcome: { Icon: IconAiStart, Pane: WelcomePane },
+  sessions: { Icon: IconTerminal, Pane: SessionsPane },
+  accounts: { Icon: IconAccounts, Pane: AccountsPane },
+  usage: { Icon: IconUsage, Pane: UsagePane },
+  appearance: { Icon: IconAppearance, Pane: AppearancePane },
+  shortcuts: { Icon: IconShortcuts, Pane: ShortcutsPane },
+  assist: { Icon: IconAssist, Pane: AssistPane },
+  plugins: { Icon: IconPlugins, Pane: PluginsPane },
+  notifications: { Icon: IconNotifications, Pane: NotificationsPane },
+  extensions: { Icon: IconExtensions, Pane: ExtensionsPane },
+  about: { Icon: IconInfo, Pane: AboutPane }
+}
+
+const PANES = APP_PANES.map(({ id, label }) => ({ id, label, ...PANE_PARTS[id] }))
+
+function paneToOpen(asked: string | null): string {
+  const page = PLUGIN_SETTINGS_PAGES.find((p) => p.id === asked)
+  return page ? pluginPane(page.plugin) : (asked ?? 'accounts')
+}
 
 export function SettingsModal(): JSX.Element | null {
   const open = useStore((s) => s.settingsOpen)
@@ -94,7 +106,7 @@ export function SettingsModal(): JSX.Element | null {
     const phase = s.accountLogin?.progress?.phase
     return phase === 'starting' || phase === 'browser'
   })
-  const [pane, setPane] = useState<SettingsPaneId>('accounts')
+  const [pane, setPane] = useState('accounts')
   const modalRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
   const escConsumers = useRef(new Set<() => boolean>())
@@ -106,7 +118,7 @@ export function SettingsModal(): JSX.Element | null {
 
   useEffect(() => {
     if (!open) return
-    setPane(useStore.getState().settingsPane ?? 'accounts')
+    setPane(paneToOpen(useStore.getState().settingsPane))
     void window.api.accounts.probe()
   }, [open])
 
@@ -149,6 +161,10 @@ export function SettingsModal(): JSX.Element | null {
     }
   }
 
+  const plugin = pluginOfPane(pane)
+  const navOn = plugin ? 'plugins' : pane
+  const OpenPane = PANES.find((p) => p.id === pane)?.Pane
+
   const navKey = (e: React.KeyboardEvent, i: number): void => {
     const move = (next: number): void => {
       const target = PANES[(next + PANES.length) % PANES.length]
@@ -186,9 +202,9 @@ export function SettingsModal(): JSX.Element | null {
             <div
               key={p.id}
               role="tab"
-              aria-selected={pane === p.id}
-              tabIndex={pane === p.id ? 0 : -1}
-              className={'set-ni' + (pane === p.id ? ' on' : '')}
+              aria-selected={navOn === p.id}
+              tabIndex={navOn === p.id ? 0 : -1}
+              className={'set-ni' + (navOn === p.id ? ' on' : '')}
               onClick={() => setPane(p.id)}
               onKeyDown={(e) => navKey(e, i)}
             >
@@ -201,17 +217,9 @@ export function SettingsModal(): JSX.Element | null {
         </nav>
         <div className="set-main">
           <EscScope.Provider value={registerEsc}>
-            {pane === 'welcome' && <WelcomePane />}
-            {pane === 'sessions' && <SessionsPane />}
-            {pane === 'accounts' && <AccountsPane />}
-            {pane === 'usage' && <UsagePane />}
-            {pane === 'appearance' && <AppearancePane />}
-            {pane === 'shortcuts' && <ShortcutsPane />}
-            {pane === 'notifications' && <NotificationsPane />}
-            {pane === 'assist' && <AssistPane />}
-            {pane === 'discord' && <DiscordPane />}
-            {pane === 'extensions' && <ExtensionsPane />}
-            {pane === 'about' && <AboutPane />}
+            <SettingsGo.Provider value={setPane}>
+              {plugin ? <PluginPage key={plugin} id={plugin} /> : OpenPane && <OpenPane />}
+            </SettingsGo.Provider>
           </EscScope.Provider>
         </div>
         <button

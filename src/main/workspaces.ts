@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import type {
   BackendId,
   DiscoveredFolder,
+  FolderClaim,
   FolderUse,
   LayoutV6,
   ProjectInfo,
@@ -12,7 +13,6 @@ import type {
   SessionWorkbenchState,
   WorkspaceAddResult,
   WorkspaceFreshness,
-  WorkspaceGithub,
   WorkspaceGitAccount,
   WorkspaceRemoveResult,
   WorkspaceRows,
@@ -132,7 +132,7 @@ export interface WorkspaceManagerDeps {
   killTab(tabId: string): void
   pushRows(payload: WorkspaceRows[]): void
   freshness?(wsPath: string): WorkspaceFreshness | undefined
-  github?(wsPath: string): WorkspaceGithub | undefined
+  pluginData?(wsPath: string): Readonly<Record<string, unknown>> | undefined
   gitAccount?(wsPath: string): WorkspaceGitAccount | undefined
   gitPickable?(wsPath: string): boolean
   onRescanned?(wsPaths: string[]): void
@@ -147,7 +147,7 @@ export interface WorkspaceManagerDeps {
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
   scratchRoots?: readonly string[]
-  butlerFolder?: string
+  claimedFolder?: FolderClaim
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
 }
@@ -928,8 +928,8 @@ export class WorkspaceManager {
     const listed = new Set<string>()
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
-    const butler = this.deps.butlerFolder
-    for (const ws of [...this.layout.workspaces, ...(butler ? [{ path: butler }] : [])]) {
+    const claimed = this.deps.claimedFolder
+    for (const ws of [...this.layout.workspaces, ...(claimed ? [{ path: claimed.path }] : [])]) {
       const { key, root, scanPath } = this.scope(ws.path)
       const missing = await this.missing(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
@@ -1015,7 +1015,9 @@ export class WorkspaceManager {
           missing,
           isGit,
           hasHistory: hasHistory(visible, owned, wsRunningIds),
-          ...(ws.path === butler && { butler: true as const }),
+          ...(ws.path === claimed?.path && {
+            claim: { by: claimed.by, shownAs: claimed.shownAs }
+          }),
           ...(key
             ? {
                 remote: {
@@ -1174,7 +1176,7 @@ export class WorkspaceManager {
       workspace: {
         ...e.workspace,
         freshness: this.deps.freshness?.(e.workspace.path),
-        github: this.deps.github?.(e.workspace.path),
+        plugins: this.deps.pluginData?.(e.workspace.path),
         gitAccount: this.deps.gitAccount?.(e.workspace.path),
         ...(this.deps.gitPickable?.(e.workspace.path) && { gitPickable: true })
       },

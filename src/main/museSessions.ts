@@ -11,7 +11,7 @@ import type {
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import type { TranscriptPlaces } from './sessionBackends'
+import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
@@ -76,7 +76,7 @@ import {
 } from './remote/launch'
 import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
 import { MIRROR_SUFFIX, MUSE_HELD_SH, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
-import { sleep } from './codexTransport'
+import { sleep } from '@core/sleep'
 import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
 import { museToolDid } from './rowActivity'
 import { pathWithDirFirst } from './toolInstall'
@@ -86,11 +86,13 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   hostOfKey,
+  ownerTextFor,
   type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
+import { promptParts, type LaunchIdentity } from './launchPrompt'
 
 const exec = promisify(execFile)
 
@@ -106,7 +108,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): MuseHomePick | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
-  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   skipPermissions(): boolean
   serversAmong(pid: number, commands: Map<string, string>): Promise<Set<string>>
   agent: {
@@ -663,7 +665,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
-      context: agentTools ? koloftPrompt('muse', rules) : undefined,
+      context:
+        promptParts(agentTools && koloftPrompt('muse', rules), ownerTextFor(ctx, false)).join(
+          '\n\n'
+        ) || undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords
@@ -748,10 +753,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
-    const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
-      ...(role ? [role] : [])
-    ]
+    const instructions = promptParts(
+      !!agent && !conductor && koloftPrompt('muse', rules),
+      role,
+      ownerTextFor(ctx, conductor, assist)
+    )
     let bound: MuseRun | undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),

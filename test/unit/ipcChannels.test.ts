@@ -28,7 +28,7 @@ const PLUGIN_PARTS = await Promise.all(
     const dir = path.join(SRC, 'plugins', p.id)
     const table = p.channels
       ? (
-          (await import(path.join(dir, 'shared', 'channels.ts'))) as {
+          (await import(path.join(dir, 'shared', 'ipc.ts'))) as {
             CHANNELS: Record<string, string>
           }
         ).CHANNELS
@@ -42,12 +42,17 @@ const PLUGIN_PARTS = await Promise.all(
     }
   })
 )
-const PLUGIN_CALL = String.raw`ipc\.(handle|on|push|invoke|send|listen)\(\s*([^,)\s]+)`
+const PLUGIN_CALL = String.raw`\b(?:ipc\.(handle|onEvent|on|push|invoke|sendSync|send|listen)\(\s*([^,)\s]+)|d\.(push)\(\s*(CHANNELS\.\w+))`
+const CALL_KIND: Record<string, string> = { onEvent: 'on', sendSync: 'send' }
 const pluginCalls = (p: (typeof PLUGIN_PARTS)[number]): { call: string; channel: string }[] =>
-  [...`${p.main}\n${p.preload}`.matchAll(new RegExp(PLUGIN_CALL, 'g'))].map((m) => ({
-    call: m[1],
-    channel: p.table[m[2].replace(/^CHANNELS\./, '')] ?? m[2]
-  }))
+  [...`${p.main}\n${p.preload}`.matchAll(new RegExp(PLUGIN_CALL, 'g'))].map((m) => {
+    const call = m[1] ?? m[3]
+    const named = m[2] ?? m[4]
+    return {
+      call: CALL_KIND[call] ?? call,
+      channel: p.table[named.replace(/^CHANNELS\./, '')] ?? named
+    }
+  })
 const fromPlugins = (call: string): string[] =>
   PLUGIN_PARTS.flatMap((p) =>
     pluginCalls(p)
@@ -89,8 +94,10 @@ const mainHandles = new Set([
 const mainOns = new Set([...channels(MAIN, String.raw`ipcMain\.on`), ...fromPlugins('on')])
 const menuMapStart = MAIN.indexOf('const MENU_SHORTCUT_CHANNEL')
 const menuMap = MAIN.slice(menuMapStart, MAIN.indexOf('\n}\n', menuMapStart))
+const PLUGIN_MAINS = PLUGIN_PARTS.map((p) => p.main).join('\n')
 const mainSends = new Set([
   ...channels(MAIN, 'sendToRenderer'),
+  ...channels(PLUGIN_MAINS, String.raw`\bd\.(?:send|push)`),
   ...(MAIN.includes('sendToRenderer(MENU_SHORTCUT_CHANNEL[') ? tokens(menuMap) : []),
   ...fromPlugins('push')
 ])
@@ -111,10 +118,16 @@ describe('IPC channels', () => {
     expect(without(mainSends, rendererListens)).toEqual([])
   })
 
-  it('every channel in the table is used, and every channel used is in the table', () => {
+  it('every channel in the table is used, and every channel main and the app preload use is in the table', () => {
     const used = new Set([...tokens(MAIN), ...tokens(RENDERER_SIDE)])
     expect(without(TABLE, used)).toEqual([])
-    expect(without(used, TABLE)).toEqual([])
+    expect(without(new Set([...tokens(MAIN), ...tokens(PRELOAD)]), TABLE)).toEqual([])
+  })
+
+  // PLATFORM§6
+  it('every channel a sandboxed preload spells out is in the table or a plugin’s', () => {
+    const spelled = new Set(SANDBOXED.flatMap(tokens))
+    expect(without(spelled, new Set([...TABLE, ...PLUGIN_TABLE]))).toEqual([])
   })
 
   it('a plugin’s manifest lists exactly the channels its code uses, each through its CHANNELS table', () => {
@@ -130,13 +143,23 @@ describe('IPC channels', () => {
     const BRIDGES = read('plugins', 'bridges.ts')
     expect(PRELOAD).toMatch(/\.\.\.pluginBridges\(pluginIpc\)/)
     for (const p of PLUGIN_PARTS.filter((part) => part.manifest.length > 0)) {
-      const imported = MAIN.match(
-        new RegExp(String.raw`import \{([^}]*)\} from '@plugins/${p.id}/main/channels'`)
-      )?.[1]
-      const register = imported?.match(/registerChannels(?: as (\w+))?/)
-      expect({
-        [p.id]: register && MAIN.includes(`${register[1] ?? register[0]}(pluginIpc`)
-      }).toEqual({ [p.id]: true })
+      const imported = [
+        ...MAIN.matchAll(
+          new RegExp(String.raw`import \{([^}]*)\} from '@plugins/${p.id}/main/`, 'g')
+        )
+      ]
+        .map((m) => m[1])
+        .join(',')
+      const registers = [...p.main.matchAll(/export function (register\w*)\(ipc: MainIpc/g)].map(
+        (m) => m[1]
+      )
+      expect({ [p.id]: registers.length > 0 }).toEqual({ [p.id]: true })
+      for (const name of registers) {
+        const as = imported.match(new RegExp(String.raw`\b${name}(?: as (\w+))?\b`))
+        expect({ [name]: !!as && MAIN.includes(`${as[1] ?? name}(pluginIpc`) }).toEqual({
+          [name]: true
+        })
+      }
       if (p.preload) expect(BRIDGES).toContain(`from './${p.id}/preload/bridge'`)
     }
   })

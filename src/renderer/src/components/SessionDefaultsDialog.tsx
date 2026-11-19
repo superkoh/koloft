@@ -1,13 +1,18 @@
 import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
-import type { BackendId, CronEffort, OwnPick, SessionDefaults } from '@shared/types'
+import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
 import { BACKEND_LABEL, SESSION_BACKENDS, byBackend, kindsOf } from '@shared/sessionBackend'
 import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { ownPickOf, tiersOf } from '@shared/sessionPicks'
 import { ownPickModels } from '@shared/sessionDefaults'
-import { modelValue } from '../cronForm'
+import { bytesLeft, cleanInstructions, textInUse } from '@core/ownerInstructions'
+import {
+  WORKSPACE_TEXT_MAX_BYTES,
+  workspaceTextBytes
+} from '@plugins/sessions/shared/workspaceInstructions'
+import { modelValue } from '../modelPick'
 import { useStore } from '../store'
 import { ModelAndThinking, OTHER_MODEL, effortLabel, useFieldFocus } from './ModelAndThinking'
 import '../cronJobs.css'
@@ -26,6 +31,13 @@ const RULES_HINT =
   "How an agent in this workspace picks the model and thinking for a session it starts with koloft session new. Left empty, agents sort the task as very simple, normal or very hard and use Koloft's own pick for each."
 const RULES_PLACEHOLDER = `Left empty, an agent sorts the task and uses Koloft's own pick:\n${SESSION_BACKENDS.map(tiersOf).join('\n')}`
 const BAD_MODEL = 'A model name is letters, digits, dots, colons, dashes or underscores.'
+// CC§26 CODEX§17 AGY§32
+const PROJECT_FILE_MAY_WIN =
+  "Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead."
+
+// CC§23 CODEX§17 AGY§12
+const whenItCounts = (butler: string): string =>
+  `Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with. ${butler} does not get it.`
 
 const modelHint = (label: string): string => `Default = the model ${label} itself starts on.`
 const effortHint = (label: string): string =>
@@ -56,6 +68,9 @@ export function SessionDefaultsDialog({
   const [error, setError] = useState('')
   const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
   const [rules, setRules] = useState('')
+  const [instructions, setInstructions] = useState('')
+  const [saved, setSaved] = useState({ rules: '', instructions: '' })
+  const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
 
@@ -66,7 +81,10 @@ export function SessionDefaultsDialog({
         if (!live) return
         if (!r.ok) return setError(r.error)
         setPicks(byBackend((b) => fieldsOf(b, r.defaults.picks[b])))
+        const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
+        setInstructions(text)
+        setSaved({ rules: r.defaults.rules ?? '', instructions: text })
         setFamilyEfforts(r.familyEfforts)
       },
       (e: unknown) => live && setError(String(e))
@@ -107,6 +125,12 @@ export function SessionDefaultsDialog({
     return f.model === OTHER_MODEL && !isValidModelName(f.modelOther.trim())
   })
 
+  const left =
+    WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules.trim(), cleanInstructions(instructions))
+  const tooLong =
+    left < 0 &&
+    (rules.trim() !== saved.rules || cleanInstructions(instructions) !== saved.instructions)
+
   const summary = (): string => {
     const set = picked.flatMap(({ b, pick }) => {
       if (!pick) return []
@@ -127,14 +151,15 @@ export function SessionDefaultsDialog({
   }
 
   const save = async (): Promise<void> => {
-    const out: SessionDefaults = {
+    const out: SessionDefaultsDraft = {
       picks: Object.fromEntries(
         SESSION_BACKENDS.flatMap((b) => {
           const pick = pickOf(b)
           return pick ? [[b, pick]] : []
         })
       ),
-      ...(rules.trim() && { rules: rules.trim() })
+      ...(rules.trim() && { rules: rules.trim() }),
+      instructions
     }
     const r = await window.api.sessionDefaults.write(wsPath, out)
     if (r.ok) onClose()
@@ -212,6 +237,26 @@ export function SessionDefaultsDialog({
                 </div>
                 <p className="field-hint">{RULES_HINT}</p>
               </div>
+
+              <span className="flabel">Instructions</span>
+              <div className="fcol">
+                <div className={inputCls('instructions')}>
+                  <textarea
+                    className="cb-field task"
+                    aria-label="Instructions"
+                    rows={6}
+                    spellCheck={false}
+                    autoComplete="off"
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    {...focusProps('instructions')}
+                  />
+                </div>
+                <p className={'field-hint' + (left < 0 ? ' bad' : '')}>
+                  {`${bytesLeft(left)}. ${whenItCounts(butler)}`}
+                </p>
+                <p className="field-hint">{PROJECT_FILE_MAY_WIN}</p>
+              </div>
             </div>
           )}
         </div>
@@ -222,7 +267,7 @@ export function SessionDefaultsDialog({
           </button>
           <button
             className="btn-primary"
-            disabled={!familyEfforts || !!badModel}
+            disabled={!familyEfforts || !!badModel || tooLong}
             onClick={() => void save()}
           >
             Save

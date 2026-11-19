@@ -114,7 +114,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     digit picks that option and `1` runs the command; a command starting `slow ` runs on
     only once `<home>/go-run` exists; a lone Esc on it ends the turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
     tool use]`, no Stop, CC§2), `/plan <text>` (asks to approve `<text>` as a plan, the
-    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s), `/hold` (a turn held
+    way `/bash` asks; its dialog waits for Shift+Tab, which approves, CC§14), `/busy` (a turn held open ~30 s, or as many ms as `<home>/fake-claude-busy-ms` holds), `/hold` (a turn held
     open until a lone Esc, which ends it with `[Request interrupted by user]` and no
     Stop), `/need-approval`,
     `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
@@ -330,7 +330,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;
   without it a test run counts the owner as away, so Discord posts as before),
   `KOLOFT_AWAY_DIGEST_MS` (how long the away digest gathers before it goes to the
-  butler), the session timing knobs
+  butler), `KOLOFT_MAIN_STUCK_MS` (how long the main thread takes no new work before
+  the stuck watch writes it down), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_TEST_MACHINE_FILE` and
   `KOLOFT_TEST_PRESENCE_FILE` are read on every use, so a spec may rewrite them after launch.

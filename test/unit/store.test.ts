@@ -73,7 +73,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
     const s = useStore.getState()
     const row = { id: 'sid-end1', title: 'My run', worktree: 'main', cwd: '/w', running: true }
     useStore.setState({
-      butlerWorkspace: null,
+      claimedWorkspaces: [],
       workspaceRows: [
         {
           workspace: { path: '/w', missing: false, isGit: true, hasHistory: true },
@@ -99,7 +99,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
   for (const kind of ['claude', 'codex', 'muse', 'agy'] as const)
     it(`a ${kind} tab whose session left the list before its terminal exited is still that agent on the exit path, and an unexpected exit keeps it as that agent`, () => {
       useStore.setState({
-        butlerWorkspace: null,
+        claimedWorkspaces: [],
         workspaceRows: [
           { workspace: { path: '/w', missing: false, isGit: true, hasHistory: true }, rows: [] }
         ]
@@ -125,7 +125,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
 
   it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace holding its folder', () => {
     useStore.setState({
-      butlerWorkspace: null,
+      claimedWorkspaces: [],
       workspaceRows: [
         { workspace: { path: '/w', missing: false, isGit: true, hasHistory: false }, rows: [] }
       ]
@@ -163,7 +163,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
   })
 
   it('does not keep a dead tab it cannot place in any workspace, so it never stays open without a row', () => {
-    useStore.setState({ butlerWorkspace: null, workspaceRows: [] })
+    useStore.setState({ claimedWorkspaces: [], workspaceRows: [] })
     const s = useStore.getState()
     s.addTab({ id: 'end4', kind: 'codex', title: 'Codex', cwd: '/elsewhere', alive: true })
     expect(s.keepEndedTab('end4', 'exited (code 1)')).toBe(false)
@@ -302,7 +302,7 @@ describe('store: intercepted file open routing — the open always surfaces, tag
   it('falls back to OS open when there is no tab to attach the preview to (never swallowed)', () => {
     const calls: string[] = []
     ;(globalThis as { window?: unknown }).window = {
-      api: { preview: { osOpen: (p: string) => calls.push(p) } }
+      api: { os: { open: (p: string) => calls.push(p) } }
     }
     openInterceptedFile('gone', '/w/orphan.md')
     expect(calls).toEqual(['/w/orphan.md'])

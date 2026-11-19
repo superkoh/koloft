@@ -56,7 +56,7 @@ import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/c
 import { trustCodexFolder } from '../../src/main/backends/codex'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
-import { GithubLookup } from '../../src/main/github'
+import { GithubRepos } from '../../src/main/githubRepos'
 import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
@@ -120,7 +120,7 @@ async function claudeTab(
     },
     tracker: { track: () => {}, movePick: () => {}, list: () => [] },
     hosts: new Hosts(
-      localHost(new GithubLookup(), {
+      localHost(new GithubRepos(), {
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         docsPlugin: () => '/koloft/docs-plugin',
@@ -262,7 +262,7 @@ type Landing = { handed: string[]; dropped?: string[] } | { takesNothing: string
 
 type LaunchFeature = Exclude<
   keyof ClaudeLaunch,
-  'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId' | 'projectRules'
+  'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId' | 'projectRules' | 'workspaceText'
 >
 
 const CONDUCTORS_RUN_ON_THIS_MAC: Landing = {
@@ -361,6 +361,16 @@ const FEATURES: Record<
       'Claude Code over SSH': CONDUCTORS_RUN_ON_THIS_MAC,
       'Codex on this Mac': { handed: ['ROLE-TEXT'] },
       'Codex over SSH': { handed: ['ROLE-TEXT'] }
+    }
+  },
+  ownerText: {
+    spec: { ownerText: 'OWNER-TEXT' },
+    marker: 'OWNER-TEXT',
+    on: {
+      'Claude Code on this Mac': { handed: ['"KOLOFT_OWNER_TEXT":"OWNER-TEXT"'] },
+      'Claude Code over SSH': { handed: ['.owner.md', 'OWNER-TEXT'] },
+      'Codex on this Mac': { handed: ['OWNER-TEXT'] },
+      'Codex over SSH': { handed: ['OWNER-TEXT'] }
     }
   },
   conductor: {

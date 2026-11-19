@@ -3,15 +3,25 @@ import path from 'path'
 import type { BackendId, ConductorOpenResult, CronEffort } from '@shared/types'
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '../shared/names'
-import type { ButlerSession, ButlerSetting } from '../shared/types'
+import {
+  isKnownBy,
+  type ButlerSession,
+  type ButlerSetting,
+  type OldConversationNews
+} from '../shared/types'
+import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
-import { butlerRole } from '../prompts/role'
+import { butlerRole, ownerInstructionsPart } from '../prompts/role'
 import { conductorFolder } from './folder'
 
-export interface ButlerLaunch {
+interface ButlerPrompt {
+  role: string
+  ownerText?: string
+}
+
+export interface ButlerLaunch extends ButlerPrompt {
   backend: BackendId
   cwd: string
-  role: string
   title: string
   firstPrompt?: string
   model?: string
@@ -44,9 +54,20 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
-  todoNotice: string
+  news: OldConversationNews
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
+}
+
+function knownListsOnDisk(
+  s: ButlerSession,
+  stillOnDisk: (key: string) => boolean
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    Object.entries(s).flatMap(([knownBy, keys]) =>
+      isKnownBy(knownBy) && Array.isArray(keys) ? [[knownBy, keys.filter(stillOnDisk)]] : []
+    )
+  )
 }
 
 function refusal(error: string): ConductorOpenResult {
@@ -102,17 +123,23 @@ export class Butler {
     return tabId === this.resident
   }
 
-  // ADR-0029
-  identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
+  // ADR-0029 CC§23
+  identityOfLaunch(cwd: string, resumeKey?: string): ButlerPrompt | undefined {
     const launched = this.d.realpath(path.resolve(cwd))
     if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
       return undefined
     if (!this.recorded(resumeKey)) return undefined
-    return { role: this.role() }
+    return this.prompt()
   }
 
-  private role(): string {
-    return butlerRole(this.d.butler().name, this.d.roleFacts())
+  private prompt(): ButlerPrompt {
+    const butler = this.d.butler()
+    const instructions = instructionsOf(butler)
+    // CC§13 CC§23
+    return {
+      role: butlerRole(butler.name, this.d.roleFacts()),
+      ...(instructions && { ownerText: ownerInstructionsPart(instructions) })
+    }
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {
@@ -123,7 +150,7 @@ export class Butler {
     this.changeSession(() => ({
       sessionIds,
       ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
-      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {}),
+      ...knownListsOnDisk(s, stillOnDisk),
       ...(keepLast && s.carried ? { carried: s.carried } : {})
     }))
   }
@@ -149,7 +176,7 @@ export class Butler {
   private launchFor(backend: BackendId): ButlerLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    return { backend, cwd, role: this.role(), title: this.d.butler().name }
+    return { backend, cwd, ...this.prompt(), title: this.d.butler().name }
   }
 
   private async openNow(firstPrompt?: string): Promise<ConductorOpenResult> {
@@ -200,7 +227,7 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      resumedOld = hasTranscript && !this.session.knowsTodo?.includes(key)
+      resumedOld = hasTranscript && !this.session[this.d.news.knownBy]?.includes(key)
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
@@ -220,7 +247,7 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined) this.tellOfTodo(key)
+    if (resumedOld && key !== undefined && this.d.news.on()) this.tellTheNews(key)
     this.resident = tabId
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
@@ -237,10 +264,11 @@ export class Butler {
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  private tellOfTodo(key: string): void {
-    void this.d.notice(this.d.todoNotice).then((told) => {
-      if (told && !this.session.knowsTodo?.includes(key))
-        this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
+  private tellTheNews(key: string): void {
+    const { knownBy, text } = this.d.news
+    void this.d.notice(text).then((told) => {
+      if (told && !this.session[knownBy]?.includes(key))
+        this.changeSession((s) => ({ ...s, [knownBy]: [...(s[knownBy] ?? []), key] }))
     })
   }
 
@@ -288,7 +316,9 @@ export class Butler {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
-            knowsTodo: [...(s.knowsTodo ?? []), key]
+            ...(this.d.news.on() && {
+              [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
+            })
           }
     )
   }
