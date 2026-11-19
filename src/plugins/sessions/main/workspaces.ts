@@ -32,7 +32,7 @@ import {
   type PendingLaunch,
   type RescanState,
   type SessionMeta
-} from './sessionAggregate'
+} from '../../../main/sessionAggregate'
 import {
   carrySessionWorkbench,
   decideWorkspaceAdd,
@@ -41,12 +41,12 @@ import {
   resolveWorkbenchState,
   withWorkbenchState,
   type WorktreeEntry
-} from './workspaceOps'
-import { encodeCwd } from '@plugins/sessions/main/sessionTracker'
-import { dirExists } from './fileTree'
-import { dirExistsSync } from './resumePlan'
-import { isGitCheckoutAsync } from './projectInfo'
-import { replacesTheConversation } from './hookRouting'
+} from '../../../main/workspaceOps'
+import { encodeCwd } from './sessionTracker'
+import { dirExists } from '../../../main/fileTree'
+import { dirExistsSync } from '../../../main/resumePlan'
+import { isGitCheckoutAsync } from '../../../main/projectInfo'
+import { replacesTheConversation } from '../../../main/hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import {
@@ -54,13 +54,13 @@ import {
   workspaceOfWorkbenchKey,
   WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
 } from '@shared/workbenchState'
-import type { RemoteGitInfo } from './remote/install'
-import type { SearchCandidate } from './sessionSearch'
-import type { SessionPlace } from './usageCache'
+import type { RemoteGitInfo } from '../../../main/remote/install'
+import type { SearchCandidate } from '../../../main/sessionSearch'
+import type { SessionPlace } from '../../../main/usageCache'
 import { mapAtMost } from '@core/mapAtMost'
-import { isUnderAnyRoot } from './browserSecurity'
+import { isUnderAnyRoot } from '../../../main/browserSecurity'
 import { mergeUse } from '@shared/firstRun'
-import { BackgroundFile } from './backgroundFile'
+import { BackgroundFile } from '../../../main/backgroundFile'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600

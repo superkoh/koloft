@@ -87,7 +87,7 @@ export function WorktreeSessionDialog({
 
   useEffect(() => {
     let live = true
-    void window.api.workspace.worktrees(wsPath).then(
+    void window.api.sessions.worktrees(wsPath).then(
       (w) => {
         if (live) {
           setWorktrees(w)
