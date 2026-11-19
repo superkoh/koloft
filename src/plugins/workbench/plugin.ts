@@ -8,6 +8,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'workbench',
   name: 'Workbench',
+  does: 'Files, web pages and diffs beside each session; the file browser; the note.',
   mandatory: true,
   needs: [],
   commands: [{ verb: 'open' }, { verb: 'diff' }, { verb: 'note' }],

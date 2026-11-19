@@ -517,6 +517,7 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
+import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
@@ -4207,6 +4208,8 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
+      const pluginsOn = switchedOnOnceItHasABot(status.phase, loadSettings().pluginsOn)
+      if (pluginsOn) commitSettings({ pluginsOn })
       pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()

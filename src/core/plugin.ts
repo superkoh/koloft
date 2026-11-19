@@ -70,8 +70,10 @@ export interface PluginManifest {
   formatVersion: typeof PLUGIN_FORMAT_VERSION
   id: string
   name: string
+  does: string
   mandatory: boolean
   needs: readonly string[]
+  offUntilSetUp?: string
   text?: readonly TextBlock[]
   skills?: readonly string[]
   commands?: readonly PluginCommand[]

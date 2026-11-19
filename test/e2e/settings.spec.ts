@@ -4,13 +4,14 @@ import { openSettings } from './helpers/extensions'
 import { agentRow, waitBooted } from './helpers/p1'
 
 test.describe('Settings ▸ Assist: Koloft Assist', () => {
-  test('Assist has a page of its own with no switch, runs only on a tool that has a Koloft account, says what a job costs, and each job’s row opens to its own tool, model and thinking, saved as picked and gone again once set back to Default; a small job is not offered Max, the butler is', async ({
+  test('Assist has a page of its own with no switch, runs only on a tool that has a Koloft account, says what a job costs, and lists each job with its pick and its plugin; the job’s row on its plugin’s page opens to its own tool, model and thinking, saved as picked and gone again once set back to Default; a small job is not offered Max, the butler is', async ({
     page
   }) => {
     await waitBooted(page)
     await openSettings(page)
     await page.locator('.set-ni', { hasText: 'Assist' }).click()
     await expect(page.getByRole('switch')).toHaveCount(0)
+    await expect(page.getByLabel('Butler name')).toHaveCount(0)
     const runsOn = page.getByRole('button', { name: 'Koloft Assist runs on' })
     await expect(runsOn).toHaveText('Claude')
     await runsOn.click()
@@ -25,6 +26,12 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
       page.evaluate(() => window.api.settings.get().then((s) => s.assist))
     const turn = page.getByRole('button', { name: /^After each turn: / })
     await expect(turn).toHaveText('Default')
+    await expect(page.locator('.set-row', { has: turn })).toContainText(
+      'Set on Plugins ▸ Sessions core.'
+    )
+    await turn.click()
+    await expect(page.locator('.set-main .set-ph h3')).toHaveText('Sessions core')
+    await expect(page.locator('.set-ni.on')).toHaveText('Plugins')
     await expect(turn).toHaveAttribute('aria-expanded', 'false')
     await turn.click()
     await expect(turn).toHaveAttribute('aria-expanded', 'true')
@@ -38,6 +45,10 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
       backend: 'claude',
       rows: { turn: { backend: 'claude', model: 'opus', effort: 'high' } }
     })
+    await page.locator('.set-ni', { hasText: 'Assist' }).click()
+    await expect(turn).toHaveText('Claude · Opus · High')
+    await turn.click()
+    await turn.click()
 
     await pick.getByRole('button', { name: 'Default', exact: true }).first().click()
     await pick.getByRole('button', { name: 'Default', exact: true }).last().click()
@@ -46,6 +57,9 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
     await turn.click()
     await expect(pick).toHaveCount(0)
 
+    await page.getByRole('button', { name: 'Plugins', exact: true }).click()
+    await page.getByRole('button', { name: 'Open Butler', exact: true }).click()
+    await expect(page.getByLabel('Butler name')).toHaveValue('Alfred')
     await page.getByRole('button', { name: /^Alfred: / }).click()
     await expect(pick.getByRole('button', { name: 'Max', exact: true })).toBeVisible()
   })

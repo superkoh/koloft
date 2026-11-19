@@ -1,7 +1,8 @@
-import { BsDiscord } from 'react-icons/bs'
 import { fill, type PluginUi } from '@core/ui'
-import { PALETTE_ROUTE, ROW_EXTRAS, ROW_SET_UP, SETTINGS_PAGE_ICON } from '@renderer/slots'
-import { DISCORD_BIND, DISCORD_PAGE } from '../plugin'
+import { PALETTE_ROUTE, PLUGIN_SET_UP, ROW_EXTRAS, ROW_SET_UP } from '@renderer/slots'
+import { DISCORD_BIND, DISCORD_PAGE, plugin } from '../plugin'
+import { useStore } from '@renderer/store'
+import { setUpWith } from '../shared/channels'
 import { BindConductorDialog } from './BindConductorDialog'
 import { DiscordPane } from './DiscordPane'
 import { useDiscordOnButlerRow } from './onButlerRow'
@@ -15,7 +16,11 @@ export const ui: PluginUi = {
   fills: [
     fill(ROW_EXTRAS, { row: THE_BUTLERS_ROW, useExtras: useDiscordOnButlerRow }),
     fill(ROW_SET_UP, { row: THE_BUTLERS_ROW, setUp: (settings) => !!settings.discord.channel }),
-    fill(SETTINGS_PAGE_ICON, { page: DISCORD_PAGE, Icon: BsDiscord }),
+    fill(PLUGIN_SET_UP, {
+      plugin: plugin.id,
+      useLabel: () => setUpWith(useStore((s) => s.settings.butler.name)),
+      run: () => setUpDiscordWithButler()
+    }),
     fill(PALETTE_ROUTE, { kind: SET_UP_DISCORD_ROUTE, run: setUpDiscordWithButler })
   ]
 }

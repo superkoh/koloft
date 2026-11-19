@@ -158,6 +158,9 @@
   color: var(--fg-faint);
   line-height: 1.55;
 }
+.set-back {
+  margin-bottom: 10px;
+}
 .set-grp {
   font-size: 11px;
   letter-spacing: 0.08em;

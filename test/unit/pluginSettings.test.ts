@@ -12,6 +12,7 @@ const manifest = (id: string, keys: string[], needs: string[] = []): PluginManif
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
+  does: id,
   mandatory: true,
   needs,
   settings: { keys }
@@ -121,7 +122,7 @@ describe('a settings page a plugin registers', () => {
 
   it('takes its id from the ui entry and its label and words from settings.page, in the order of the list of plugins', () => {
     expect(settingsPages([withPage('a', ['a-page'], PAGE), withPage('b', [])])).toEqual([
-      { id: 'a-page', label: 'Bot', words: ['机器人'] }
+      { id: 'a-page', plugin: 'a', label: 'Bot', words: ['机器人'] }
     ])
   })
 

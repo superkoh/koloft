@@ -12,6 +12,7 @@ import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
 import { stringsIn, textsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
+import { cleanSwitches } from '@core/switches'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
 
@@ -71,6 +72,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
   merged.gitSuggestionsDismissed = stringsIn(merged.gitSuggestionsDismissed)
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
+  merged.pluginsOn = cleanSwitches(PLUGINS, merged.pluginsOn)
   Object.assign(merged, PLUGIN_KEYS.clean(doc))
   const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
