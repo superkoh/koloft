@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import type { SessionInfo } from '@shared/types'
-import { errorText } from '@core/errorText'
 import { refused, splitAtDashes, type AgentReply } from '@core/command'
 import type { Commands } from '@core/commands'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
@@ -13,20 +12,6 @@ export interface AgentRequest {
   cwd: string
   pid?: number
 }
-
-export {
-  answered,
-  EXIT_USAGE,
-  fail,
-  refused,
-  splitAtDashes,
-  type AgentCaller,
-  type AgentReply,
-  type AgentVerb,
-  type Parsed
-} from '@core/command'
-
-export { errorText }
 
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."

@@ -15,7 +15,7 @@ import {
 } from '../../../../src/plugins/passwords/main/secretVerb'
 import type { SecretAnswer, SecretAsk } from '../../../../src/plugins/passwords/main/secretAsks'
 import type { WebPage } from '../../../../src/core/webPage'
-import type { AgentCaller } from '../../../../src/main/agentRequests'
+import type { AgentCaller } from '../../../../src/core/command'
 import type { SessionInfo } from '../../../../src/shared/types'
 
 const session = { tabId: 'tab-1', title: 'Fix login' } as SessionInfo

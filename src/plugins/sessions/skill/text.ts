@@ -39,7 +39,7 @@ A session's name often has spaces: put it in quotes, like "Fix docs links". If y
 
 koloft session list [--workspace <workspace>]
     List every session the workspace shows in Koloft's sidebar: first the open ones, with name and state (working, asking the owner a question, finished its turn, or idle), the id of each one you reach with "koloft session send", and the path of its transcript, the file that holds its whole conversation, every turn and tool call, from its first turn on: a file you can read where you run, or machine:path for one only on a machine you reach with ssh; then the rest, closed or asleep, with the machine each runs on, when it was last active and its id. A session started with "koloft session new" says who started it: "started by: you", or the name of the session that did.
-    The butler (Koloft's own AI, which the owner talks to in Koloft{{koloft-help-butler-reached}}) takes no options here and gets every session in every workspace, open or closed: name, ${EVERY_KIND}, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, its id, its workspace, and who started it.
+    The butler (Koloft's own AI, which the owner talks to in Koloft{{koloft-help-other-ways-to-talk}}) takes no options here and gets every session in every workspace, open or closed: name, ${EVERY_KIND}, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, its id, its workspace, and who started it.
 
 koloft session read <id or name> [--last <number>]
     Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for ${ALL_KINDS} sessions, open or closed.
@@ -110,7 +110,7 @@ RULES
 
 1. Once you start a session, keep it under your control: remember its name, and give it work and collect its results by messaging it. When you no longer need it, tell the owner.{{koloft-help-rule-open}}{{koloft-help-rule-cron}}{{koloft-help-rule-note}}{{koloft-help-workbench}}{{koloft-help-cron}}
 
-${SESSIONS}{{koloft-help-inbox}}{{koloft-help-todo}}{{koloft-help-passwords}}{{koloft-help-discord}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
+${SESSIONS}{{koloft-help-inbox}}{{koloft-help-todo}}{{koloft-help-passwords}}{{koloft-help-chat}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
 
 const KOLOFT_SKILL =
   "Use the koloft command to ask Koloft, the app this session runs in, to {{koloft-skill-workbench}}{{koloft-skill-cron}}list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, read or change the owner's instructions for this workspace{{koloft-skill-or-list}}.{{koloft-skill-web-pages}} Read this before running any koloft{{koloft-skill-web-pages-command}} command."
