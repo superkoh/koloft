@@ -17,7 +17,7 @@ import {
   type ClaudeBackendDeps
 } from '../../src/main/backends/claude'
 import { GIT_CALL_TIMEOUT_MS, localHost } from '../../src/main/host/localHost'
-import { GithubLookup } from '../../src/main/github'
+import { GithubRepos } from '../../src/main/githubRepos'
 import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
 import { answered, replyJson } from '../../src/main/agentRequests'
 import { mirrorHookDir } from '../../src/main/remote/paths'
@@ -433,7 +433,7 @@ describe('ClaudeBackend: rebuilding a missing worktree on resume', () => {
       try {
         const rebuilt = await rebuildWorktree(
           { worktreePath, branch: 'worktree-wt', baseRef: 'main' },
-          localHost(new GithubLookup({}), {} as never),
+          localHost(new GithubRepos({}), {} as never),
           undefined
         )
         expect(rebuilt).toBe(true)

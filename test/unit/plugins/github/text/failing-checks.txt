@@ -1,0 +1,6 @@
+CI check "test" (workflow CI) failed on pull request #7 of acme/widgets.
+Full log: https://github.com/acme/widgets/actions/runs/1/job/22
+
+--- log excerpt (around the first error) ---
+##[error]boom
+

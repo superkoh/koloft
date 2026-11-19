@@ -22,9 +22,10 @@ import {
   workspaceLabel,
   type MergedHeads,
   type PinnedWorkspace,
-  type PlacedRow
+  type PlacedRow,
+  type WorkLeft
 } from '@plugins/sessions/api'
-import type { TodoPull, TodoPulls } from '@plugins/github/api'
+import type { TodoPull, TodoPulls } from './pulls'
 import { TODO_METHOD } from './method'
 
 export const TODO_ONLY_FOR_THE_BUTLER =
@@ -52,7 +53,7 @@ export interface TodoVerbDeps {
   sessions(): SessionInfo[]
   asking(tabId: string): boolean
   asleep(sessionId: string): boolean
-  workLeft(row: SessionRow, merged: MergedHeads): Promise<string[] | null>
+  workLeft(row: SessionRow, merged: MergedHeads): Promise<WorkLeft[] | null>
   deleting(row: SessionRow): boolean
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
@@ -88,7 +89,7 @@ type WorktreeCheck =
   | { state: 'failed' }
   | { state: 'noWorktree' }
   | { state: 'deleting' }
-  | { state: 'checked'; left: string[] }
+  | { state: 'checked'; left: WorkLeft[] }
 
 interface PullsOfRepo {
   repo: string
@@ -139,7 +140,7 @@ function worktreeFacts(check: WorktreeCheck, group: SessionGroup): string[] {
 }
 
 async function checkWorktree(
-  workLeft: () => Promise<string[] | null>,
+  workLeft: () => Promise<WorkLeft[] | null>,
   deleting: () => boolean
 ): Promise<WorktreeCheck> {
   if (deleting()) return { state: 'deleting' }
@@ -152,13 +153,11 @@ async function checkWorktree(
   }
 }
 
-function leftSummary(left: string[]): string {
+function leftSummary(left: WorkLeft[]): string {
   return left
-    .map((block) => {
-      const [head, ...lines] = block.split('\n')
-      const items = lines.filter((l) => l !== GITHUB_NOT_ASKED)
-      const notAsked = items.length < lines.length ? ` (${GITHUB_NOT_ASKED})` : ''
-      return items.length ? `${head.replace(/:$/, '')}: ${items.length}${notAsked}` : head
+    .map(({ head, lines, githubNotAsked }) => {
+      const notAsked = githubNotAsked ? ` (${GITHUB_NOT_ASKED})` : ''
+      return lines.length ? `${head}: ${lines.length}${notAsked}` : head
     })
     .join('; ')
 }

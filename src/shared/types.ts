@@ -1118,59 +1118,8 @@ export interface CoreApi {
     onKilledByMain(cb: (tabId: string) => void): () => void
     onSlept(cb: (tabId: string) => void): () => void
   }
-  browserGuestLimit: number
   sessionScreenAtLoad: ScreenSize | null
   browserTabCap: number
-  browser: {
-    onOpenRequest(cb: (r: BrowserOpenRequest) => void): () => void
-    onDownload(cb: (d: BrowserDownload) => void): () => void
-    onDownloadEvent(cb: (e: BrowserDownloadEvent) => void): () => void
-    cancelDownload(id: string): void
-    retryDownload(id: string): void
-    onPermissionAsk(cb: (a: BrowserPermissionAsk) => void): () => void
-    onPermissionRefused(cb: (r: BrowserPermissionRefusal) => void): () => void
-    onPermissionDrop(cb: (id: string) => void): () => void
-    answerPermission(id: string, granted: boolean): void
-    cancelPermission(id: string): void
-    onAudioState(cb: (s: BrowserAudioState) => void): () => void
-    setMuted(guestId: number, muted: boolean): void
-    copyText(text: string): void
-    onFullscreen(cb: (on: boolean) => void): () => void
-    onBlockedScheme(cb: (url: string) => void): () => void
-    onAuthChallenge(cb: (c: BrowserAuthChallenge) => void): () => void
-    answerAuthChallenge(id: string, answer: BrowserDialogAnswer): void
-    onJsDialog(cb: (d: BrowserJsDialog) => void): () => void
-    answerJsDialog(id: string, answer: BrowserDialogAnswer): void
-    onOverlayOpen(cb: (o: BrowserOverlayOpen) => void): () => void
-    overlayReady(): void
-    setOverlayGuest(guestId: number, on: boolean): void
-    setGuestOwner(guestId: number, ownerTabId: string): void
-    reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
-    reportComposing(on: boolean): void
-    onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
-    answerCdpOp(res: BrowserCdpOpResult): void
-    onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void
-    onMemoryCritical(cb: (inUse: BrowserPagesInUse) => void): () => void
-    certProceed(url: string): Promise<void>
-    clearData(): Promise<void>
-    openExternal(url: string): void
-    toggleDevTools(guestId: number): void
-    pickElement(guestId: number, sessionTabId: string): Promise<string | null>
-    stopPick(guestId: number): void
-  }
-  extensions: {
-    list(): Promise<ExtensionInfo[]>
-    setEnabled(id: string, enabled: boolean): Promise<void>
-    uninstall(id: string): Promise<void>
-    onChanged(cb: () => void): () => void
-    activeGuest(webContentsId: number, url: string): void
-    openDropped(url: string): void
-    // PLATFORM§15
-    anchorPopup(rect: ExtensionPopupAnchor): Promise<void>
-    dismissPopup(): void
-    onPermissionRequest(cb: (r: ExtensionPermissionRequest) => void): () => void
-    answerPermissionRequest(id: string, granted: boolean): void
-  }
   git: {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>

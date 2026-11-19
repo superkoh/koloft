@@ -1,4 +1,5 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
+import { TAB_TORN_DOWN } from '@core/moment'
 import { TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
 
@@ -14,6 +15,7 @@ export const plugin: PluginManifest = {
   commands: [{ verb: 'cron' }],
   text: TEXT,
   channels: Object.values(CHANNELS),
+  moments: { listens: [TAB_TORN_DOWN.name] },
   ui: [
     { place: 'dialog', id: SCHEDULED_JOBS_DIALOG },
     { place: 'palette-item', id: SCHEDULED_JOBS }
