@@ -256,7 +256,11 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import {
+  WorkspaceManager,
+  scratchRootsAround,
+  type LiveSession
+} from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -510,7 +514,7 @@ import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { toChannel } from '@plugins/discord/main/slash'
-import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
+import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
@@ -6597,31 +6601,6 @@ function registerIpc(): void {
     return workspaceMgr?.rows() ?? []
   })
   ipcMain.handle(CH.workspace.discover, () => workspaceMgr?.discover() ?? [])
-  ipcMain.handle(CH.workspace.worktrees, async (_e, p: string) => {
-    const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    for (const stored of storedSessions()) {
-      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
-      const there = await Promise.all(
-        mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
-      )
-      for (const [i, resource] of mine.entries()) {
-        if (there[i]) continue
-        const existing = trees.find((t) => t.dir === resource.worktreePath)
-        if (existing) {
-          existing.recoveryResourceId = resource.id
-          existing.recoveryBackend = stored.id
-        } else
-          trees.push({
-            name: resource.worktreeName,
-            dir: resource.worktreePath,
-            branch: resource.worktreeBranch ?? undefined,
-            recoveryResourceId: resource.id,
-            recoveryBackend: stored.id
-          })
-      }
-    }
-    return trees
-  })
   ipcMain.handle(CH.workspace.fetchFreshness, (_e, p: string) => freshness?.fetchNow(p) ?? null)
   ipcMain.handle(
     CH.workspace.pull,
@@ -6735,7 +6714,10 @@ function registerIpc(): void {
       defaultsOfProjects.write(workspacePath, (saved) =>
         savedFromTheDialog(saved, raw, Date.now())
       ),
-    instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined }
+    instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined },
+    worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
+    storedSessions,
+    dirExists: (dir) => hosts.of(dir).dirExists(dir)
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

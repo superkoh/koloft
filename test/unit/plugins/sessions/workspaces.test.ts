@@ -3,9 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { execFileSync } from 'child_process'
-import { WorkspaceManager, scratchRootsAround, type LiveSession } from '../../src/main/workspaces'
-import { projectInfoFor } from '../../src/main/projectInfo'
-import { encodeCwd } from '../../src/plugins/sessions/main/sessionTracker'
+import {
+  WorkspaceManager,
+  scratchRootsAround,
+  type LiveSession
+} from '../../../../src/plugins/sessions/main/workspaces'
+import { projectInfoFor } from '../../../../src/main/projectInfo'
+import { encodeCwd } from '../../../../src/plugins/sessions/main/sessionTracker'
 import {
   PENDING_SESSION_TITLE,
   type LayoutV6,

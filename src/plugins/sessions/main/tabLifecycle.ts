@@ -8,10 +8,10 @@ import {
   type Moment,
   type TabEnded
 } from '@core/moment'
-import type { AttentionTracker } from '@plugins/sessions/main/attention'
-import type { ClaudeBackend } from '@plugins/sessions/main/backends/claude'
-import type { SessionTracker } from '@plugins/sessions/main/sessionTracker'
-import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
+import type { AttentionTracker } from './attention'
+import type { ClaudeBackend } from './backends/claude'
+import type { SessionTracker } from './sessionTracker'
+import type { SessionsWithStore } from './storedSessions'
 import type { WorkspaceManager } from './workspaces'
 
 export class TabLifecycle extends EventEmitter<{
