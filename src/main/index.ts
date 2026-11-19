@@ -6065,10 +6065,8 @@ function holdMacAwake(keepAwake: boolean): void {
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
-const githubFixture = parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE)
-
 const githubOptions: GithubReposOptions = {
-  fixture: githubFixture,
+  fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   gh: async (args, root) => {
     await loginEnvReady()
     return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
@@ -6076,7 +6074,6 @@ const githubOptions: GithubReposOptions = {
 }
 
 const githubLookup = githubLookups({
-  fixture: githubFixture,
   // PLATFORM§1
   countedAs: (root) => gitAccounts?.pickedAccount(root),
   signedIn: async () => {

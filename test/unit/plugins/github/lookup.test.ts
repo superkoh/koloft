@@ -100,10 +100,10 @@ afterEach(() => {
 function make(
   opts: Omit<GithubReposOptions, 'gh'> & LookupOptions & { gh?: Gh } = {}
 ): GithubLookup {
-  const { gh, ...rest } = opts
+  const { gh, signedIn, countedAs, ...rest } = opts
   return new GithubLookup(
     new GithubRepos({ gitBin: fakeGit, ...rest, ...(gh && { gh: (args) => gh(args) }) }),
-    rest
+    { signedIn, countedAs, now: rest.now }
   )
 }
 

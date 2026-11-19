@@ -1,6 +1,6 @@
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
-import { ghJsonArray, slug, type Gh, type GhResult } from '@core/gh'
+import { ghJsonArray, slug, type Gh, type GhResult, type GithubFixture } from '@core/gh'
 import { parseGithubRemote, pickRemoteUrl, type GithubRepo } from '@shared/githubUrl'
 import { credentialGuardEnv, FETCH_TIMEOUT_MS, LOCAL_TIMEOUT_MS } from './gitFreshness'
 
@@ -8,17 +8,6 @@ const execFile = promisify(execFileCb)
 const TTL_MS = 5 * 60_000
 const MAX_BUFFER = 16 * 1024 * 1024
 const MERGED_PULLS_IN_ONE_PAGE = 100
-
-export interface GithubFixture {
-  [root: string]: {
-    owner: string
-    repo: string
-    branch?: string | null
-    pr?: number | null
-    issues?: number
-    prs?: number
-  } | null
-}
 
 export function parseGithubFixture(raw: string | undefined): GithubFixture | null {
   if (!raw) return null
@@ -41,7 +30,7 @@ export interface GithubReposOptions {
 // PLATFORM§1
 export class GithubRepos {
   private repos = new Map<string, { at: number; repo: GithubRepo | null }>()
-  private fixture: GithubFixture | null
+  readonly fixture: GithubFixture | null
   private gitBin: string
 
   constructor(private opts: GithubReposOptions = {}) {
@@ -55,7 +44,7 @@ export class GithubRepos {
 
   async ownerSlashName(root: string, fresh = false): Promise<string | null> {
     const repo = this.fixture ? this.fixture[root] : await this.repoOf(root, fresh)
-    return repo ? `${repo.owner}/${repo.repo}` : null
+    return repo ? slug(repo) : null
   }
 
   async repoOf(root: string, force: boolean): Promise<GithubRepo | null> {

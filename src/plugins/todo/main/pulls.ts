@@ -1,4 +1,5 @@
 import { GH_SIGNED_OUT, ghJsonArray, slug, type Gh, type GhResult } from '@core/gh'
+import type { GithubRepo } from '@shared/githubUrl'
 import { checkedOutBranch } from '@plugins/github/api'
 
 export type CheckSummary = 'passing' | 'failing' | 'running' | 'none'
@@ -74,10 +75,7 @@ function parseTodoPulls(stdout: string): TodoPull[] | null {
 }
 
 // PLATFORM§61
-export async function listTodoPulls(
-  gh: Gh,
-  repo: { owner: string; repo: string }
-): Promise<TodoPulls> {
+export async function listTodoPulls(gh: Gh, repo: GithubRepo): Promise<TodoPulls> {
   const list = (fields: string): Promise<GhResult> =>
     gh([
       'pr',

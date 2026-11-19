@@ -1,4 +1,4 @@
-import type { Gh } from '@core/gh'
+import { slug, type Gh, type GithubFixture, type GithubFixtureEntry } from '@core/gh'
 import type {
   GithubInfo,
   GithubOpenItems,
@@ -21,7 +21,7 @@ const TTL_MS = 5 * 60_000
 const OPEN_COUNTS_QUERY =
   'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(states:OPEN){totalCount} pullRequests(states:OPEN){totalCount}}}'
 
-export type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs'>
+type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs'>
 
 export function parseOpenCounts(stdout: string): OpenCounts | null {
   try {
@@ -34,7 +34,7 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
   }
 }
 
-export function openCountsArgs(repo: GithubRepo): string[] {
+function openCountsArgs(repo: GithubRepo): string[] {
   return [
     'api',
     'graphql',
@@ -48,24 +48,15 @@ export function openCountsArgs(repo: GithubRepo): string[] {
 }
 
 export interface RepoSource {
+  readonly fixture: GithubFixture | null
   repoOf(root: string, force: boolean): Promise<GithubRepo | null>
-  repoFor(root: string): Promise<GithubRepo | null>
   ghFor(root: string): Gh | null
+  ghOfRepo(root: string): Promise<{ repo: GithubRepo; gh: Gh } | null>
   git(root: string, args: string[], network?: boolean): Promise<string | null>
-}
-
-export interface FixtureEntry {
-  owner: string
-  repo: string
-  branch?: string | null
-  pr?: number | null
-  issues?: number
-  prs?: number
 }
 
 export interface LookupOptions {
   signedIn?: () => Promise<boolean>
-  fixture?: Readonly<Record<string, FixtureEntry | null>> | null
   countedAs?: (root: string) => string | undefined
   now?: () => number
 }
@@ -81,7 +72,7 @@ interface Local {
   branch: string | null
 }
 
-export interface GithubAnswer {
+interface GithubAnswer {
   now: GithubInfo | null
   settled: Promise<GithubInfo> | null
 }
@@ -92,14 +83,12 @@ export class GithubLookup {
   private newest = new Map<string, number>()
   private counted = new Map<string, { at: number; counts: OpenCounts | null }>()
   private signedIn: () => Promise<boolean>
-  private fixture: LookupOptions['fixture']
 
   constructor(
     private repos: RepoSource,
     private opts: LookupOptions = {}
   ) {
     this.signedIn = opts.signedIn ?? (async () => true)
-    this.fixture = opts.fixture ?? null
   }
 
   private now(): number {
@@ -107,13 +96,13 @@ export class GithubLookup {
   }
 
   async info(root: string, opts: { force?: boolean } = {}): Promise<GithubAnswer> {
-    if (this.fixture) return { now: fixtureInfo(this.fixture[root]), settled: null }
+    if (this.repos.fixture) return { now: fixtureInfo(this.repos.fixture[root]), settled: null }
     const local = await this.local(root, opts.force === true)
     if (!local) return { now: null, settled: null }
     const { repo, branch } = local
     const base = { repoUrl: repoUrlOf(repo), pullsUrl: pullsUrlOf(repo), branch }
     if (!branch) return { now: { ...base, pr: null, pending: false, failed: false }, settled: null }
-    const key = `${repo.owner}/${repo.repo}`
+    const key = slug(repo)
     const cached = this.cache.get(key)
     if (!opts.force && cached && this.now() - cached.at < TTL_MS) {
       return { now: { ...base, ...prOf(cached, branch) }, settled: null }
@@ -126,18 +115,17 @@ export class GithubLookup {
   }
 
   async openCounts(root: string): Promise<WorkspaceGithub | null> {
-    if (this.fixture) return fixtureCounts(this.fixture[root])
+    if (this.repos.fixture) return fixtureCounts(this.repos.fixture[root])
     const repo = await this.repos.repoOf(root, false)
     const gh = this.repos.ghFor(root)
     if (!repo || !gh) return null
-    const slug = `${repo.owner}/${repo.repo}`
-    const key = `${this.opts.countedAs?.(root) ?? ''} ${slug}`
+    const key = `${this.opts.countedAs?.(root) ?? ''} ${slug(repo)}`
     let known = this.counted.get(key)
     if (!known || this.now() - known.at >= TTL_MS) {
       known = { at: this.now(), counts: await countsOf(gh, repo) }
       this.counted.set(key, known)
     }
-    return known.counts && { repo: slug, ...known.counts }
+    return known.counts && { repo: slug(repo), ...known.counts }
   }
 
   private async local(root: string, force: boolean): Promise<Local | null> {
@@ -162,29 +150,23 @@ export class GithubLookup {
               : what === 'pr' && now.pr
                 ? `${now.repoUrl}/pull/${now.pr}`
                 : now.repoUrl
-    if (this.fixture) return url
+    if (this.repos.fixture) return url
     return (await this.signedIn()) ? url : loginUrlFor(url)
   }
 
   async checks(root: string, pr: number): Promise<PrChecks> {
-    const repo = await this.repos.repoFor(root)
-    const gh = this.repos.ghFor(root)
-    if (!repo || !gh) return { state: 'failed' }
-    return prChecks(gh, repo, pr)
+    const at = await this.repos.ghOfRepo(root)
+    return at ? prChecks(at.gh, at.repo, pr) : { state: 'failed' }
   }
 
   async openItems(root: string): Promise<GithubOpenItems> {
-    const repo = await this.repos.repoFor(root)
-    const gh = this.repos.ghFor(root)
-    if (!repo || !gh) return { state: 'no-repo' }
-    return listOpenItems(gh, repo)
+    const at = await this.repos.ghOfRepo(root)
+    return at ? listOpenItems(at.gh, at.repo) : { state: 'no-repo' }
   }
 
   async failingChecksText(root: string, pr: number): Promise<string | null> {
-    const repo = await this.repos.repoFor(root)
-    const gh = this.repos.ghFor(root)
-    if (!repo || !gh) return null
-    return failingChecksText(gh, repo, pr)
+    const at = await this.repos.ghOfRepo(root)
+    return at && failingChecksText(at.gh, at.repo, pr)
   }
 
   private lookup(key: string, root: string, force = false): Promise<Entry> {
@@ -235,12 +217,12 @@ function prOf(
   return { pr: (e && branch && e.prs.get(branch)) || null, pending: false, failed: !!e?.failed }
 }
 
-function fixtureCounts(f: FixtureEntry | null | undefined): WorkspaceGithub | null {
+function fixtureCounts(f: GithubFixtureEntry | null | undefined): WorkspaceGithub | null {
   if (!f || f.issues === undefined || f.prs === undefined) return null
-  return { repo: `${f.owner}/${f.repo}`, issues: f.issues, prs: f.prs }
+  return { repo: slug(f), issues: f.issues, prs: f.prs }
 }
 
-function fixtureInfo(f: FixtureEntry | null | undefined): GithubInfo | null {
+function fixtureInfo(f: GithubFixtureEntry | null | undefined): GithubInfo | null {
   if (!f) return null
   const repo = { owner: f.owner, repo: f.repo }
   return {

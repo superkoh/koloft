@@ -3,6 +3,7 @@ import { promisify } from 'util'
 import type { GhResult } from '@core/gh'
 import { FETCH_TIMEOUT_MS } from './gitFreshness'
 
+const execFileP = promisify(execFile)
 const GH_MAX_BUFFER = 64 * 1024 * 1024
 const GH_READ_MAX_BUFFER = 16 * 1024 * 1024
 
@@ -31,7 +32,7 @@ export async function ghRead(
   cwd?: string
 ): Promise<{ ok: boolean; out: string }> {
   try {
-    const { stdout } = await promisify(execFile)('gh', args, {
+    const { stdout } = await execFileP('gh', args, {
       timeout: FETCH_TIMEOUT_MS,
       maxBuffer: GH_READ_MAX_BUFFER,
       ...(env && { env }),
