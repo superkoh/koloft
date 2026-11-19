@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
+import type { AgentExit, LeftTab } from '@core/moment'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
@@ -38,8 +39,7 @@ import {
   type LaunchPermission,
   type LiveRun,
   type Schedule,
-  type SessionStatus,
-  type TerminalExit
+  type SessionStatus
 } from '@shared/types'
 import {
   MISS_WINDOW_MS,
@@ -88,13 +88,6 @@ export async function worktreeNameFor(
 }
 
 export type LaunchResult = { ok: true; tabId: string } | { ok: false }
-
-export interface LeftTab {
-  treeRoot?: string
-  sessionId?: string
-}
-
-export type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
 
 interface KeptTab {
   jobId: string

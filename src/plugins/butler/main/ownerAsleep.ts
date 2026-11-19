@@ -1,12 +1,13 @@
 import fs from 'fs'
 import type { OwnerPresence } from '@core/presence'
 import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
-import { digestLine, quoteOf, type DigestItem } from '../../../main/awayDigest'
+import { digestLine, quoteOf, type DigestItem } from './awayDigest'
 import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { ANSWER_NOT_TAKEN } from '@plugins/sessions/api'
 
 export const OWNER_ASLEEP_ANSWER =
   'The owner is asleep and cannot answer. Choose the option you recommend, note the choice in your report, and go on. If that choice cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords), do not make it: leave it for the owner and go on with the rest.'
+export const OWNER_ASLEEP_PUSH = `${FROM_KOLOFT}The owner is asleep: until they write to you themself, they cannot answer, approve or check anything. Do not stop to wait for them. If there is more you can do toward your task, do it now: where you would ask the owner, choose what you would recommend and note the choice in your report. Leave for the owner only what cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords) and go on with the rest. If the task is done, or you truly cannot go on, end your turn and say plainly what is left and what the owner must do.`
 const FIRST_OPTION = '1'
 const APPROVE = 'yes'
 const ASKED_CHARS_QUOTED = 200

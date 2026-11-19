@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { moment, type FileOpened } from '../../../../src/core/moment'
+import { FILE_OPENED, Moments, type FileOpened } from '../../../../src/core/moment'
+import { PLUGINS } from '../../../../src/plugins/list'
 import { copyEachOpenedFile } from '../../../../src/plugins/discord/main/copyOnOpen'
 
 const opened = { tabId: 't1', target: '/w/plan.md' }
 
 function saidWhenOpened(copyToPhone: (o: FileOpened) => Promise<string | undefined>) {
-  const fileOpened = moment<FileOpened>()
-  copyEachOpenedFile(fileOpened, copyToPhone)
-  return fileOpened.announce(opened)
+  const moments = new Moments(PLUGINS)
+  copyEachOpenedFile(moments, copyToPhone)
+  return moments.announce(FILE_OPENED, opened)
 }
 
 describe('Discord copies each file a session opens', () => {
