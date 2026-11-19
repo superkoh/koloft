@@ -97,6 +97,8 @@ export interface OpenFile {
   openedAt?: number
 }
 
+export type ToastClick = string | (() => void)
+
 export type UpdatePhase =
   'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error'
 
@@ -143,7 +145,7 @@ interface AppState {
   workspaceRows: WorkspaceRows[]
   claimedWorkspaces: WorkspaceRows[]
   toast: string | null
-  toastReveal: string | null
+  toastReveal: ToastClick | null
   workbenchOpen: Record<string, boolean>
   workbench: Record<string, WorkbenchTabSet>
   workbenchFetched: Record<string, true>
@@ -232,7 +234,7 @@ interface AppState {
   setSidebarWidth: (w: number) => void
   setNotesHeight: (h: number) => void
   setWorkspaceRows: (rows: WorkspaceRows[]) => void
-  showToast: (msg: string, reveal?: string) => void
+  showToast: (msg: string, reveal?: ToastClick) => void
   dismissToast: () => void
   setResumeDialog: (d: ResumeDialogState | null) => void
   setResumeLaunch: (l: AppState['resumeLaunch']) => void

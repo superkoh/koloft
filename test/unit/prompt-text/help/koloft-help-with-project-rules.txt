@@ -94,6 +94,13 @@ koloft session read <id or name> [--last <number>]
 koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
+koloft instructions [--workspace <workspace>]
+koloft instructions add [--workspace <workspace>] -- "<one sentence>"
+koloft instructions set [--workspace <workspace>] -- "<the whole new text>"
+    Read, add a sentence to, or replace the owner's instructions for this workspace: text the owner writes that every session started in it, or in another copy of the same repository, gets last in its prompt. Change them only when the owner plainly asks you to remember something; the owner is shown each change and can undo it. Sessions started afterwards follow the new text; a running session keeps what it started with. A session reads and changes only its own workspace's.
+    The butler: without --workspace these are its own instructions, which it and its helpers follow; with --workspace, that workspace's.
+    Example: koloft instructions add -- "Run npm test before you say a change is done."
+
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend claude|codex|muse|agy] --model <model> --effort <effort> -- "<first message>"
     Pick the model and effort that fit the task, every time. The owner wrote this project's own rules for the model and effort of a session started in it. They come first; Koloft's own way, after them, covers only what they leave out.
         Docs: sonnet, low.

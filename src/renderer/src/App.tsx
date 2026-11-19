@@ -325,6 +325,17 @@ export default function App(): JSX.Element {
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
   const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
+  useEffect(
+    () =>
+      window.api.sessionDefaults.onInstructionsChanged(({ workspace, by }) =>
+        useStore
+          .getState()
+          .showToast(`"${by}" changed this workspace's instructions · View`, () =>
+            setDefaultsWs(workspace)
+          )
+      ),
+    []
+  )
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -1552,7 +1563,8 @@ export default function App(): JSX.Element {
           className={'toast' + (toastReveal ? ' link' : '')}
           onClick={() => {
             if (!toastReveal) return
-            window.api.os.reveal(toastReveal)
+            if (typeof toastReveal === 'function') toastReveal()
+            else window.api.os.reveal(toastReveal)
             dismissToast()
           }}
         >

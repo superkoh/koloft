@@ -2,3 +2,7 @@
   border-bottom: 0;
   border-top: 1px solid var(--line);
 }
+.butler-strip .changed {
+  color: var(--good);
+  font-size: 12px;
+}
