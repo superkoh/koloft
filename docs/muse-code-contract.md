@@ -1333,7 +1333,7 @@ and `/tmp` compared before and after.
   choosing `add_memory` when told to remember.
 
 Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
-or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+or Antigravity one (`src/plugins/sessions/main/museSessions.ts`). The butler folder is the same for every
 agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
 butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.
 

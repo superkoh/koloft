@@ -6,19 +6,23 @@ import { execFileSync, spawnSync } from 'child_process'
 import { pathToFileURL } from 'url'
 import { EventEmitter } from 'events'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AgySessions, type AgyHomePick, type AgySessionDeps } from '../../src/main/agySessions'
-import { BackgroundFile } from '../../src/main/backgroundFile'
-import { agySessionKey } from '../../src/plugins/sessions/main/sessionStore'
-import { agyTranscript, type SummaryRow } from '../../src/main/agyStore'
-import type { AgyMachineLaunch, RemoteAgyConfig } from '../../src/main/remote/agyTab'
-import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
-import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
-import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
-import type { SessionEvent } from '../../src/shared/sessionEvent'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
-import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
+import {
+  AgySessions,
+  type AgyHomePick,
+  type AgySessionDeps
+} from '../../../../src/plugins/sessions/main/agySessions'
+import { BackgroundFile } from '../../../../src/main/backgroundFile'
+import { agySessionKey } from '../../../../src/plugins/sessions/main/sessionStore'
+import { agyTranscript, type SummaryRow } from '../../../../src/main/agyStore'
+import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/main/remote/agyTab'
+import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
+import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
+import type { SessionEvent } from '../../../../src/shared/sessionEvent'
+import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'
+import { appendConversation, ownerTyped, writeSummaries } from '../../helpers/agyStore'
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
-vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
+vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 
 const A = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'
 const B = '7a2d4e6f-1b3c-4d5e-8f9a-0b1c2d3e4f5a'

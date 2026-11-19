@@ -24,20 +24,20 @@ import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
 import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
-import { CodexSessions } from './codexSessions'
+import { CodexSessions } from '@plugins/sessions/main/codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
   museShowsItsInputBox,
   type MuseHomePick,
   type MuseRemoteDeps
-} from './museSessions'
+} from '@plugins/sessions/main/museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions, type AgyHomePick } from './agySessions'
+import { AgySessions, type AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -60,7 +60,7 @@ import {
   AGY_TITLE_FILE,
   agyStatuslineScript
 } from './remote/agyTab'
-import { agyBackend } from './backends/agy'
+import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { museConfigHome, museHome } from './museSessionLog'
@@ -68,7 +68,7 @@ import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
 import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
 import { readMuseQuota } from './museQuota'
-import type { SessionsWithStore } from './storedSessions'
+import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
@@ -271,9 +271,13 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
-import { codexBackend, trustCodexFolder } from './backends/codex'
-import { museBackend } from './backends/muse'
+import {
+  ClaudeBackend,
+  machineHookSettings,
+  pickMachineAccount
+} from '@plugins/sessions/main/backends/claude'
+import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
+import { museBackend } from '@plugins/sessions/main/backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
   HomeAccountPicker,

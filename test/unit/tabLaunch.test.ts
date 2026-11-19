@@ -52,10 +52,13 @@ import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
-import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
-import { trustCodexFolder } from '../../src/main/backends/codex'
+import {
+  ClaudeBackend,
+  type ClaudeBackendDeps
+} from '../../src/plugins/sessions/main/backends/claude'
+import { trustCodexFolder } from '../../src/plugins/sessions/main/backends/codex'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
+import { CodexSessions, type CodexSessionDeps } from '../../src/plugins/sessions/main/codexSessions'
 import { GithubRepos } from '../../src/main/githubRepos'
 import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'

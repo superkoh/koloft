@@ -3,7 +3,7 @@ import os from 'os'
 import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
 import { jsonRecord, record } from '@plugins/sessions/main/codexObservation'
-import type { HistoryEntry } from './storedSessions'
+import type { HistoryEntry } from '@plugins/sessions/main/storedSessions'
 import { labelsOf, type Question } from '@plugins/sessions/main/dialog'
 import { pipeSecretTo } from './secretOnStdin'
 

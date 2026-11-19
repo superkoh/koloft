@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
 
 import { PtyManager, foregroundName, tabInstancePid } from '../../src/main/ptyManager'
-import { CODEX_TAB_ENV } from '../../src/main/codexSessions'
+import { CODEX_TAB_ENV } from '../../src/plugins/sessions/main/codexSessions'
 
 const SHIM = { hookSettings: (): undefined => undefined }
 const SHIM_WITH_HOOKS = { hookSettings: (id: string) => `/koloft/hooks/${id}.json` }
