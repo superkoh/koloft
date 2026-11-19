@@ -554,7 +554,7 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { asPeerName } from '@plugins/butler/shared/names'
 import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
 import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'

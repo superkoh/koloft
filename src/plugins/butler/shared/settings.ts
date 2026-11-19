@@ -1,4 +1,4 @@
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 import { cleanOwnPick } from '@shared/sessionPicks'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
