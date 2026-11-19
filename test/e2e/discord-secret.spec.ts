@@ -30,7 +30,7 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import { guestByUrl } from './helpers/browser'
-import { closeSettings, openSettings } from './helpers/extensions'
+import { openSettings } from './helpers/extensions'
 import { DISCORD_TURNED_OFF } from '../../src/plugins/discord/main/switchOn'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { FILLED_AND_EMPTIED } from '../../src/plugins/passwords/main/secretVerb'
@@ -70,6 +70,7 @@ function type(page: Page, tab: string, line: string): Promise<void> {
 }
 
 const SUDO_BOX = '.term-wrap .secret-modal'
+const SETTINGS = '.settings-modal'
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
 
 function askSudo(page: Page, tab: string): Promise<void> {
@@ -187,7 +188,8 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       await openSettings(page)
       await page.locator('.set-ni', { hasText: 'Plugins' }).click()
       await page.getByRole('switch', { name: 'Discord', exact: true }).setChecked(on)
-      await closeSettings(page)
+      await page.keyboard.press('Escape')
+      await expect(page.locator(SETTINGS)).toHaveCount(0)
     }
     try {
       const page = await app.firstWindow()

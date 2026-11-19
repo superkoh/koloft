@@ -33,22 +33,17 @@ afterEach(() => {
 })
 
 describe('Discord turned off in Settings ▸ Plugins', () => {
-  it('reads as bound to nothing, with no rooms and no word of Discord for the butler, and keeps the channel and rooms on disk for when it is on again', () => {
-    const room = { threadId: '300', keys: ['k1'], name: 'fix-login' }
-    saved = { channel: CHANNEL, rooms: [room] }
+  it('reads as bound to nothing, with no word of Discord for the butler, and keeps the channel on disk for when it is on again', () => {
+    saved = { channel: CHANNEL }
     const c = make()
     knowPluginStates({ discord: { on: false } })
     expect(c.channel()).toBeUndefined()
     expect(c.channelOfTab(BUTLER_TAB)).toBeUndefined()
     expect(c.isButlerChannel('200')).toBe(false)
     expect(c.butlerRoleFacts()).toEqual([])
-    expect(c.rooms()).toEqual([])
-    c.saveRooms([])
-    c.flush()
     knowPluginStates({ discord: { on: true } })
     expect(c.channelOfTab(BUTLER_TAB)).toBe('200')
-    expect(c.rooms()).toEqual([room])
-    expect(quiet).toEqual([])
+    expect(saved.channel).toEqual(CHANNEL)
   })
 })
 

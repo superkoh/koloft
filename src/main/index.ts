@@ -468,7 +468,7 @@ import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import { DiscordBinding } from '@plugins/discord/main/binding'
-import { discordApiUrl, DiscordLink } from '@plugins/discord/main/link'
+import { discordApiUrl, DiscordLink, privately } from '@plugins/discord/main/link'
 import {
   reloadDiscordPage,
   saveTokenFromPage,
@@ -525,6 +525,7 @@ import {
   discordOn,
   DISCORD_TURNED_OFF,
   switchedOnOnceItHasABot,
+  withDiscordAsBefore,
   withDiscordOn
 } from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
@@ -1566,7 +1567,7 @@ const discordChannels = tabChannels({
   butlerSide,
   lobby: () => discordBinding?.channel()?.channelId,
   boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
-  roomCarrying: (tabId) => rooms?.carried(tabId),
+  roomCarrying: (tabId) => (discordOn() ? rooms?.carried(tabId) : undefined),
   reaches: (tabId) => !!discordRelay?.reaches(tabId)
 })
 const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
@@ -1597,6 +1598,7 @@ let discordConnected = false
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const CARDS_IN_FLIGHT_LAND_WITHIN_MS = 10_000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
 const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
@@ -2238,7 +2240,7 @@ const sessionDeps: SessionVerbDeps = {
       : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
   rowNote: (key) => {
-    const room = rooms?.ofKey(key)
+    const room = discordOn() ? rooms?.ofKey(key) : undefined
     return room && roomNote(room)
   },
   announceStarting: (starting) => moments.announce(SESSION_STARTING, starting),
@@ -4272,7 +4274,10 @@ app.whenReady().then(() => {
       else void oldThreads.onMessage(m)
     },
     onInteraction: (i) => {
-      if (!discordRunning) return
+      if (!discordRunning) {
+        void link.respond(i, privately(DISCORD_TURNED_OFF)).catch(() => undefined)
+        return
+      }
       void (bindingNow.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
         ? interactions.handle(i)
         : oldThreads.onInteraction(i))
@@ -5730,21 +5735,23 @@ function followDiscordSwitch(): void {
     })
     return
   }
-  for (const tabId of ptyTabIds()) {
-    discordRelay?.forget(tabId)
-    discordTyping?.forget(tabId)
+  for (const { id } of ptyMgr.list()) {
+    discordRelay?.forget(id)
+    discordTyping?.forget(id)
   }
   discordEnding = Promise.all([
     askButtons?.endAll(DISCORD_TURNED_OFF),
     secretCards?.endAll(DISCORD_TURNED_OFF)
-  ]).finally(() => {
-    if (!discordRunning) link.stop()
-  })
+  ])
+    .then(() => link.quiet(CARDS_IN_FLIGHT_LAND_WITHIN_MS))
+    .finally(() => {
+      if (!discordRunning) link.stop()
+    })
 }
 
 async function saveDiscordToken(token: string): Promise<boolean> {
   const saved = await discordTokenWrite(token)
-  if (saved) void discordLink?.connect()
+  if (saved && discordRunning) void discordLink?.connect()
   return saved
 }
 
@@ -5761,7 +5768,8 @@ async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpe
     ownerWords: words,
     backend: discordHelperBackend(butler.backendId)
   }))
-  if (!started.ok && turnsItOn) commitSettings({ pluginsOn: before })
+  if (!started.ok && turnsItOn)
+    commitSettings({ pluginsOn: withDiscordAsBefore(loadSettings().pluginsOn, before) })
   return started
 }
 

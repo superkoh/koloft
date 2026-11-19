@@ -78,11 +78,10 @@ export class DiscordBinding {
   }
 
   rooms(): SessionRoom[] {
-    return (discordOn() && this.discord.rooms) || []
+    return this.discord.rooms ?? []
   }
 
   saveRooms(rooms: SessionRoom[]): void {
-    if (!discordOn()) return
     this.discord = { ...this.discord, rooms }
     this.saveSoon()
   }

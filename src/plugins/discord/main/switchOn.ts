@@ -12,6 +12,11 @@ export const withDiscordOn = (pluginsOn: Switches): Record<string, boolean> => (
   [plugin.id]: true
 })
 
+export function withDiscordAsBefore(now: Switches, before: Switches): Record<string, boolean> {
+  const { [plugin.id]: _, ...others } = now
+  return Object.hasOwn(before, plugin.id) ? { ...others, [plugin.id]: before[plugin.id] } : others
+}
+
 export async function switchedOnOnceItHasABot(
   pluginsOn: Switches,
   hasABot: () => Promise<boolean>

@@ -2,6 +2,7 @@ import { sleep } from '@core/sleep'
 
 const USER_AGENT = 'DiscordBot (https://github.com/superkoh/koloft, 1)'
 const NO_CONTENT = 204
+const QUIET_CHECKED_EVERY_MS = 50
 
 export class DiscordHttpError extends Error {
   constructor(
@@ -22,6 +23,7 @@ function bucketOf(route: string, method = 'POST'): string {
 // ADR-0027 PLATFORM§39
 export class DiscordRest {
   private queues = new Map<string, Promise<unknown>>()
+  private sending = 0
 
   constructor(
     private apiUrl: string,
@@ -33,11 +35,17 @@ export class DiscordRest {
     const sent = (this.queues.get(bucket) ?? Promise.resolve()).then(() =>
       this.send<T>(method, route, body)
     )
-    this.queues.set(
-      bucket,
-      sent.catch(() => undefined)
-    )
+    const done = sent.catch(() => undefined)
+    this.queues.set(bucket, done)
+    this.sending++
+    void done.then(() => this.sending--)
     return sent
+  }
+
+  async quiet(withinMs: number): Promise<void> {
+    const until = Date.now() + withinMs
+    do await sleep(QUIET_CHECKED_EVERY_MS)
+    while (this.sending > 0 && Date.now() < until)
   }
 
   private async send<T>(method: string, route: string, body?: unknown): Promise<T> {
