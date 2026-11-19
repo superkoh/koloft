@@ -1,4 +1,5 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
+import { FILE_OPENED, SESSION_STARTED, TAB_EXITED } from '@core/moment'
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
@@ -19,5 +20,6 @@ export const plugin: PluginManifest = {
     { place: 'dialog', id: DISCORD_BIND },
     { place: 'settings-page', id: DISCORD_PAGE }
   ],
-  channels: Object.values(CHANNELS)
+  channels: Object.values(CHANNELS),
+  moments: { listens: [FILE_OPENED, SESSION_STARTED, TAB_EXITED].map((m) => m.name) }
 }

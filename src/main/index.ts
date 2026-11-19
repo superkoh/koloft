@@ -567,10 +567,27 @@ import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
 import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
-import { moment, type FileOpened, type SessionStarted, type SessionStarting } from '@core/moment'
-import { butlersWords, tellEachHelperItsRole } from '@plugins/butler/main/sessionHooks'
+import {
+  FILE_OPENED,
+  Moments,
+  SESSION_STARTED,
+  SESSION_STARTING,
+  type SessionStarted
+} from '@core/moment'
+import {
+  butlersWords,
+  letGoOfEachEndedTab as butlerLetsGoOfEndedTabs,
+  tellEachHelperItsRole
+} from '@plugins/butler/main/sessionHooks'
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
-import { giveEachStartedSessionARoom, withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
+import {
+  giveEachStartedSessionARoom,
+  letGoOfEachEndedTab as discordLetsGoOfEndedTabs,
+  withoutTheRelayTag
+} from '@plugins/discord/main/sessionHooks'
+import { letGoOfEachEndedTab as sessionsLetGoOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
+import { letGoOfEachEndedTab as passwordsLetGoOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
+import { closeOutEachEndedRun } from '@plugins/scheduled-tasks/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
 import {
   registerChannels as registerCronChannels,
@@ -683,11 +700,13 @@ if (OFF_SCREEN_TEST && process.platform === 'darwin') {
 const AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS = 60_000
 const MAIN_ERRORS_LOG = 'main-errors.log'
 
+let errorNobodyCaught = (error: unknown): void => console.error(error)
+
 // PLATFORM§4
 function takeErrorsNobodyCaught(): void {
   const log = signalLog(path.join(app.getPath('userData'), MAIN_ERRORS_LOG))
   let shownAt = -Infinity
-  process.on('uncaughtException', (error) => {
+  errorNobodyCaught = (error) => {
     console.error(error)
     const message = error instanceof Error ? error.message : String(error)
     const [firstLine] = message.split('\n')
@@ -698,7 +717,8 @@ function takeErrorsNobodyCaught(): void {
       `Koloft hit an error it did not expect and kept going (details in ${MAIN_ERRORS_LOG}, in its data folder): ${firstLine}`
     )
     if (shown) shownAt = Date.now()
-  })
+  }
+  process.on('uncaughtException', (error) => errorNobodyCaught(error))
   process.on('unhandledRejection', (reason) => {
     console.error(reason)
     log(
@@ -706,6 +726,8 @@ function takeErrorsNobodyCaught(): void {
     )
   })
 }
+
+const moments = new Moments(PLUGINS, (error) => errorNobodyCaught(error))
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -1878,8 +1900,7 @@ function notesFileOfScope(scope: string): string | undefined {
     : undefined
 }
 
-const fileOpened = moment<FileOpened>()
-copyEachOpenedFile(fileOpened, (o) => copyToPhone(o.tabId, o.target, o.view))
+copyEachOpenedFile(moments, (o) => copyToPhone(o.tabId, o.target, o.view))
 
 const commands = new Commands(PLUGINS)
 
@@ -1894,7 +1915,7 @@ registerWorkbenchCommands(commands, {
         : routed
     return openInWorkbench(tabId, decision, 'agent', target, view)
   },
-  announceOpened: fileOpened.announce,
+  announceOpened: (opened) => moments.announce(FILE_OPENED, opened),
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
@@ -2105,12 +2126,10 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
   return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
 }
 
-const sessionStarting = moment<SessionStarting>()
-const sessionStarted = moment<SessionStarted>()
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
 const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
-tellEachHelperItsRole(sessionStarting, () => helperRoleOf(loadSettings().butler))
-giveEachStartedSessionARoom(sessionStarted, {
+tellEachHelperItsRole(moments, () => helperRoleOf(loadSettings().butler))
+giveEachStartedSessionARoom(moments, {
   isButler: isButlerNow,
   butlerFolder: butlerFolderNow,
   roomFor: roomForNew
@@ -2200,8 +2219,8 @@ const sessionDeps: SessionVerbDeps = {
     if (!room) return undefined
     return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
   },
-  announceStarting: sessionStarting.announce,
-  announceStarted: sessionStarted.announce,
+  announceStarting: (starting) => moments.announce(SESSION_STARTING, starting),
+  announceStarted: (started) => moments.announce(SESSION_STARTED, started),
   ownersWords: withoutTheRelayTag
 }
 const sessionCommand = sessionVerb(sessionDeps)
@@ -3649,22 +3668,25 @@ app.whenReady().then(() => {
     sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems(tabLifecycle, {
-    slash,
     attention,
     cdpTabClosed: relayTabClosed,
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
+    workspaces: () => workspaceMgr,
+    moments
+  })
+  sessionsLetGoOfEndedTabs(moments, { slash, asks: () => sessionAsks })
+  butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
+  closeOutEachEndedRun(moments, () => cronRunner)
+  discordLetsGoOfEndedTabs(moments, {
     typing: () => discordTyping,
-    asks: () => sessionAsks,
     relay: () => discordRelay,
     buttons: () => askButtons,
-    secrets: () => secretAsks,
-    workspaces: () => workspaceMgr,
-    cron: () => cronRunner,
-    butler: () => butler
+    rooms: () => rooms
   })
+  passwordsLetGoOfEndedTabs(moments, () => secretAsks)
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
     if (!exited?.alive) claudeDialogs.forget(e.id)
@@ -3679,18 +3701,19 @@ app.whenReady().then(() => {
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     const restarting = closedTabs.get(e.id) === null
     closedTabs.delete(e.id)
+    const asleep = sleepers.has(e.id)
     const exit: TabExit = {
       tabId: e.id,
       exitCode: e.exitCode,
       signal: e.signal,
-      asleep: sleepers.has(e.id),
+      asleep,
       crashed: !quitCommitted && exitedAbnormally(e),
+      sessionGoesOn: quitCommitted || asleep || restarting,
       left: left ?? undefined,
       ...(unexpected ? { unexpected } : {})
     }
     for (const id of sleepers.exited(e.id, ptyMgr.get(e.id)?.resumeSessionId)) forgetSleeper(id)
     tabLifecycle.emit('exit', exit)
-    roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
@@ -3698,7 +3721,6 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
-    awayDigest?.forget(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     const signInNobodyOpened = loginPtys.delete(e.id) && !terminalOutput.isAttached(e.id)
     if (toolInstallPtys.delete(e.id)) {
@@ -5772,12 +5794,6 @@ function touchedBefore(left: number): string[] {
       ? [title]
       : []
   })
-}
-
-function roomOfEndedTab(tabId: string, sessionGoesOn: boolean, unexpected: boolean): void {
-  if (sessionGoesOn) rooms?.forget(tabId)
-  else if (unexpected) rooms?.stopped(tabId)
-  else void rooms?.closed(tabId)
 }
 
 function rowOfKey(key: string | undefined): SessionRow | undefined {

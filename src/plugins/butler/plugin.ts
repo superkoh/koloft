@@ -1,4 +1,5 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
+import { SESSION_STARTING, TAB_EXITED, TAB_FORGOTTEN, TAB_TORN_DOWN } from '@core/moment'
 import { TEXT } from './prompts/text'
 import { ASSIST_JOBS } from './shared/assistJobs'
 import { CHANNELS } from './shared/ipc'
@@ -20,6 +21,9 @@ export const plugin: PluginManifest = {
   text: TEXT,
   channels: Object.values(CHANNELS),
   assistJobs: ASSIST_JOBS,
+  moments: {
+    listens: [SESSION_STARTING, TAB_EXITED, TAB_TORN_DOWN, TAB_FORGOTTEN].map((m) => m.name)
+  },
   ui: [
     { place: 'sidebar-row', id: BUTLER_ROW_PART },
     { place: 'dialog', id: BUTLER_RENAME },
