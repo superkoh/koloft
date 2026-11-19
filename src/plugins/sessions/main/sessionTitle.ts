@@ -51,7 +51,7 @@ const firstLineName = (text: string): string => lineAsName(nonEmptyLines(text)[0
 const HTML_TAG = /<\/?(?:br|p|div|span|b|i|u|em|strong|hr|code|h[1-6])\b[^<>]*>/gi
 
 function nameFromReply(reply: string): string {
-  const lines = nonEmptyLines(reply.replace(HTML_TAG, ''))
+  const lines = nonEmptyLines(reply.split(HTML_TAG).join(''))
   return lineAsName(lines.find(looksLikeATitle) ?? lines[0])
     .replace(/^["'“‘「『]+|["'”’」』。.!！]+$/g, '')
     .trim()
