@@ -95,9 +95,9 @@ import {
   planResume,
   rebuildsTheWorktree,
   worktreeHomeRoot,
-  type GitOut,
   type ResumeProbes
 } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 
 export interface ClaudeBackendDeps {
   pty: PtyManager

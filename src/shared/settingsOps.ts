@@ -1,6 +1,5 @@
 import {
   APP_DEFAULT_SETTINGS,
-  HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
   type AppSettings,
@@ -13,6 +12,7 @@ import { sanitizeSessionDefaults } from './sessionDefaults'
 import { stringsIn, textsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
 import { cleanSwitches } from '@core/switches'
+import { HINT_IDS } from '@core/hints'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
 

@@ -426,8 +426,8 @@ export interface PaletteRequest {
   at?: string
 }
 
-export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
-export type HintId = (typeof HINT_IDS)[number]
+export const CORE_HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree'] as const
+export type HintId = (typeof CORE_HINT_IDS)[number]
 
 export const WORLD_CLOCK_MAX = 3
 

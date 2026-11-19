@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION } from '@shared/agentGuide'
+import { agentGuide, agentSkillDescription } from '@shared/agentGuide'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { writePrivateAtomically } from '@core/privateFile'
 import DOCS_SKILL_MD from './docsSkill/SKILL.md?raw'
@@ -73,23 +73,27 @@ function keepFolder(dir: string, files: Files): void {
 
 const skillsCheckedThisRun = new Set<string>()
 
-function keepSkill(dir: string, files: Files): void {
+export function checkSkillsAgain(): void {
+  skillsCheckedThisRun.clear()
+}
+
+function keepSkill(dir: string, files: () => Files): void {
   if (skillsCheckedThisRun.has(dir) && fs.existsSync(path.join(dir, 'SKILL.md'))) return
-  keepFolder(dir, files)
+  keepFolder(dir, files())
   skillsCheckedThisRun.add(dir)
 }
 
 export function keepSkillsIn(skillsDir: string, koloftOn: boolean): void {
-  keepSkill(path.join(skillsDir, KOLOFT_DOCS_SKILL), DOCS_SKILL_FILES)
+  keepSkill(path.join(skillsDir, KOLOFT_DOCS_SKILL), () => DOCS_SKILL_FILES)
   const koloft = path.join(skillsDir, KOLOFT_SKILL)
-  if (koloftOn) return keepSkill(koloft, koloftSkillFiles())
+  if (koloftOn) return keepSkill(koloft, koloftSkillFiles)
   fs.rmSync(koloft, { recursive: true, force: true })
   skillsCheckedThisRun.delete(koloft)
 }
 
 function koloftSkillFiles(): Files {
   return {
-    'SKILL.md': `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
+    'SKILL.md': `---\nname: koloft\ndescription: ${JSON.stringify(agentSkillDescription())}\n---\n\n${agentGuide()}\n`
   }
 }
 

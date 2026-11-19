@@ -1,4 +1,4 @@
-import { stripTerminalCodes } from './terminalCodes'
+import { stripTerminalCodes } from '@core/terminalCodes'
 
 export type CommandOutputKind = 'printed' | 'notice' | 'details'
 

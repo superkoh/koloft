@@ -46,6 +46,7 @@ let promptShown: Set<string>
 let elsewhere: boolean
 let resumeGives: string | null | undefined
 let testRun = 0
+let todoOn: boolean
 
 function make(): Butler {
   const run = testRun
@@ -89,7 +90,7 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
-    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
+    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}`, on: () => todoOn },
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
@@ -108,6 +109,7 @@ async function opened(c: Butler): Promise<string> {
 
 beforeEach(() => {
   testRun++
+  todoOn = true
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
@@ -297,6 +299,33 @@ describe('the butler', () => {
     transcripts.add(NEW_CODEX)
     await fresh.open()
     expect(notices).toHaveLength(3)
+  })
+
+  it('while Todo is off, a resumed conversation is told nothing of koloft todo and one started then is not counted as knowing it, so it is told once Todo is on again', async () => {
+    const OLD_CODEX = 'codex:local:old-thread'
+    const NEW_CODEX = 'codex:local:new-thread'
+    todoOn = false
+    session = { sessionIds: [OLD_CODEX], lastSessionKey: OLD_CODEX }
+    transcripts.add(OLD_CODEX)
+    choice = { backend: 'codex' }
+    const c = make()
+    const tab = `tab-resumed-${OLD_CODEX}`
+    expect(await c.open()).toEqual({ ok: true, tabId: tab })
+    expect(notices).toEqual([])
+    expect(session.knowsTodo).toBeUndefined()
+    c.onPtyExit(tab)
+
+    session = { sessionIds: [] }
+    const fresh = make()
+    const freshTab = await opened(fresh)
+    fresh.onBound(freshTab, NEW_CODEX)
+    expect(session.knowsTodo).toBeUndefined()
+    fresh.onPtyExit(freshTab)
+
+    todoOn = true
+    transcripts.add(NEW_CODEX)
+    await fresh.open()
+    expect(notices).toHaveLength(1)
   })
 
   // AGY§8
