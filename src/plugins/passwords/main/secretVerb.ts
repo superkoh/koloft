@@ -3,13 +3,7 @@ import type { SecretAskShape } from '@shared/types'
 import type { WebPage } from '@core/webPage'
 import type { Commands } from '@core/commands'
 import { SECRET_VERB } from './sudoShim'
-import {
-  answered,
-  EXIT_USAGE,
-  refused,
-  type AgentReply,
-  type AgentVerb
-} from '../../../main/agentRequests'
+import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from '@core/command'
 import type { SecretAnswer, SecretAsk } from './secretAsks'
 
 export const SECRET_USAGE =

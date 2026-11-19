@@ -116,7 +116,7 @@ export const TEXT: readonly TextBlock[] = [
   eachAgent('session', sessionPrompt),
   eachAgent('question-tool', (backend) => WAITING_QUESTION_TOOL[backend]),
   {
-    slot: 'butler-koloft',
+    slot: 'owners-ai-koloft',
     text: ` Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's). ${PICK_FOR_THE_TASK} ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}`
   },
   {

@@ -449,15 +449,9 @@ import type {
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import {
-  AgentRequests,
-  answered,
-  errorText,
-  refused,
-  tabSpokenFor,
-  type AgentReply,
-  type AgentVerb
-} from './agentRequests'
+import { AgentRequests, tabSpokenFor } from './agentRequests'
+import { answered, refused, type AgentReply, type AgentVerb } from '@core/command'
+import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
@@ -554,7 +548,7 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { asPeerName } from '@plugins/butler/shared/names'
 import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
 import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'

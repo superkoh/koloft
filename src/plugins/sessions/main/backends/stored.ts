@@ -5,7 +5,7 @@ import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
 import type { AgySessions } from '../agySessions'
 import { planResume, ResumeRefused, type ResumeProbes } from '../../../../main/resumePlan'
-import { errorText } from '../../../../main/agentRequests'
+import { errorText } from '@core/errorText'
 
 export function storedBackend(
   sessions: CodexSessions | MuseSessions | AgySessions,
