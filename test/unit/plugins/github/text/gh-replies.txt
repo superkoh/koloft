@@ -1,0 +1,17 @@
+$ koloft gh 
+  exit 2: koloft: usage: koloft gh <one of gh's own commands but auth, alias, extension, config or copilot>, like: koloft gh pr view 389
+$ koloft gh --help
+  exit 2: koloft: usage: koloft gh <one of gh's own commands but auth, alias, extension, config or copilot>, like: koloft gh pr view 389
+$ koloft gh auth token
+  exit 1: koloft: koloft gh runs gh's own commands, but not auth, alias, extension, config or copilot, nor an alias or an extension: each could print the GitHub sign-in or run another program with it.
+$ koloft gh api user --jq env.GH_TOKEN
+  exit 1: koloft: a --jq filter may not read the environment, which holds the GitHub sign-in.
+$ koloft gh pr checkout 1 -- --depth=1
+  exit 1: koloft: koloft gh takes no --: gh hands what follows it to git, ssh or scp, which run with the GitHub sign-in.
+$ koloft gh issue create --title 修好登录  (butler)
+  exit 1: koloft: the butler opens a GitHub issue or pull request in English: write its title and body in English and run it again.
+$ koloft gh pr view 389
+  exit 1: koloft: gh pr view: no pull requests found
+$ koloft gh pr view 389
+  exit 0: title:	Fix login
+

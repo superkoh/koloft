@@ -56,7 +56,7 @@ import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/c
 import { trustCodexFolder } from '../../src/main/backends/codex'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
-import { GithubLookup } from '../../src/main/github'
+import { GithubRepos } from '../../src/main/githubRepos'
 import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
@@ -120,7 +120,7 @@ async function claudeTab(
     },
     tracker: { track: () => {}, movePick: () => {}, list: () => [] },
     hosts: new Hosts(
-      localHost(new GithubLookup(), {
+      localHost(new GithubRepos(), {
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         docsPlugin: () => '/koloft/docs-plugin',

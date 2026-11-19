@@ -2,7 +2,6 @@ import crypto from 'crypto'
 import { session, type IpcMainEvent, type WebContents } from 'electron'
 import { BROWSER_PARTITION } from '@shared/types'
 import { canOpenExternally } from '@shared/browserRoute'
-import { CH, type Channel } from '@shared/ipcChannels'
 import {
   permissionAsk,
   permissionKeysFor,
@@ -10,9 +9,10 @@ import {
   type PermissionDetails,
   type PermissionName
 } from './browserPermission'
+import { CHANNELS } from '../shared/ipc'
 
 export interface SitePermissionsDeps {
-  send(channel: Channel, ...args: unknown[]): boolean
+  push(channel: string, ...args: unknown[]): boolean
   isOverlay(page: WebContents): boolean
   takeGesture(page: WebContents): boolean
   openExternally(url: string): void
@@ -56,7 +56,7 @@ export class SitePermissions {
     }
     const id = crypto.randomUUID()
     this.pending.set(id, { guestId, origin, permission, answer: callback })
-    this.d.send(CH.browser.permissionAsk, { id, origin, permission })
+    this.d.push(CHANNELS.permissionAsk, { id, origin, permission })
   }
 
   answer(id: unknown, granted: unknown): void {
@@ -81,7 +81,7 @@ export class SitePermissions {
       if (!match(pending)) continue
       this.pending.delete(id)
       pending.answer(false)
-      this.d.send(CH.browser.permissionDrop, id)
+      this.d.push(CHANNELS.permissionDrop, id)
     }
   }
 
@@ -130,7 +130,7 @@ export class SitePermissions {
     if (decision.kind === 'refuse') {
       callback(false)
       if (decision.tell) {
-        this.d.send(CH.browser.permissionRefused, {
+        this.d.push(CHANNELS.permissionRefused, {
           origin: decision.origin,
           permission: decision.permission
         })
@@ -162,7 +162,7 @@ export class SitePermissions {
     if (permission !== 'openExternal') return
     const target = (details as { externalURL?: string }).externalURL ?? ''
     if (canOpenExternally(target) && this.d.takeGesture(page)) this.d.openExternally(target)
-    else if (target) this.d.send(CH.browser.blockedScheme, target)
+    else if (target) this.d.push(CHANNELS.blockedScheme, target)
   }
 
   // PLATFORM§11

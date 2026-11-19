@@ -4,10 +4,10 @@ import crypto from 'crypto'
 import { app, session, type DownloadItem, type WebContents } from 'electron'
 import { BROWSER_PARTITION, type BrowserDownload } from '@shared/types'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
-import { CH, type Channel } from '@shared/ipcChannels'
+import { CHANNELS } from '../shared/ipc'
 
 export interface PageDownloadsDeps {
-  send(channel: Channel, ...args: unknown[]): boolean
+  push(channel: string, ...args: unknown[]): boolean
 }
 
 export class PageDownloads {
@@ -43,7 +43,7 @@ export class PageDownloads {
     if (retryId) this.sources.delete(retryId)
     this.live.set(id, item)
     if (contents) this.pages.set(id, contents.id)
-    this.d.send(CH.browser.downloadEvent, {
+    this.d.push(CHANNELS.downloadEvent, {
       id,
       kind: 'started',
       name,
@@ -51,7 +51,7 @@ export class PageDownloads {
     })
     item.on('updated', (_ev, state) => {
       if (state !== 'progressing') return
-      this.d.send(CH.browser.downloadEvent, {
+      this.d.push(CHANNELS.downloadEvent, {
         id,
         kind: 'progress',
         received: item.getReceivedBytes()
@@ -61,7 +61,7 @@ export class PageDownloads {
       this.live.delete(id)
       this.pages.delete(id)
       if (state === 'completed') this.sources.set(id, url)
-      this.d.send(CH.browser.downloadEvent, {
+      this.d.push(CHANNELS.downloadEvent, {
         id,
         kind: 'done',
         state,
@@ -72,7 +72,7 @@ export class PageDownloads {
         return
       }
       const payload: BrowserDownload = { name, path: savePath }
-      this.d.send(CH.browser.download, payload)
+      this.d.push(CHANNELS.download, payload)
     })
   }
 
@@ -86,7 +86,7 @@ export class PageDownloads {
     const url = this.sources.get(id)
     if (!url) return
     this.retryTargets.set(url, id)
-    this.d.send(CH.browser.downloadEvent, { id, kind: 'retrying' })
+    this.d.push(CHANNELS.downloadEvent, { id, kind: 'retrying' })
     session.fromPartition(BROWSER_PARTITION).downloadURL(url)
   }
 }

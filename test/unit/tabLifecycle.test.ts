@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
+import type { Moment, TabEnded } from '../../src/core/moment'
 import {
   TabLifecycle,
   subscribeTabSubsystems,
-  type TabExit,
   type TabSubsystems
 } from '../../src/main/tabLifecycle'
 
@@ -15,7 +15,6 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     }
   const lifecycle = new TabLifecycle()
   subscribeTabSubsystems(lifecycle, {
-    slash: { closed: say('slash.closed') },
     attention: {
       clear: say('attention.clear'),
       tabStopping: say('attention.tabStopping')
@@ -27,27 +26,25 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
       stop: async (tabId, code) => say('owner.stop')(tabId, code)
     }),
     toast: say('toast'),
-    typing: () => ({ forget: say('typing.forget') }),
-    asks: () => ({ forget: say('asks.forget') }),
-    relay: () => ({ forget: say('relay.forget') }),
-    buttons: () => ({ forget: say('buttons.forget') }),
-    secrets: () => ({ forget: say('secrets.forget') }),
     workspaces: () => ({
       launchEnded: say('workspaces.launchEnded'),
       onTrackerUpdate: say('workspaces.onTrackerUpdate')
     }),
-    cron: () => ({ onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot) }),
-    butler: () => ({ onPtyExit: say('butler.onPtyExit') }),
+    announce: <T>(moment: Moment<T>, m: T) => {
+      const tabId = typeof m === 'string' ? m : (m as TabEnded).tabId
+      calls.push(`announce ${moment.name} ${tabId}`)
+    },
     ...over
   })
   return { lifecycle, calls }
 }
 
-const exitOf = (over: Partial<TabExit> = {}): TabExit => ({
+const exitOf = (over: Partial<TabEnded> = {}): TabEnded => ({
   tabId: 't1',
   exitCode: 0,
   asleep: false,
   crashed: false,
+  sessionGoesOn: false,
   ...over
 })
 
@@ -60,22 +57,7 @@ describe('TabLifecycle', () => {
     }
   })
 
-  it('an exit, asleep or not, makes what the session was asking and each Discord part forget the tab', () => {
-    for (const asleep of [false, true]) {
-      const { lifecycle, calls } = wired()
-      lifecycle.emit('exit', exitOf({ asleep }))
-      expect(calls).toEqual([
-        'slash.closed t1',
-        'typing.forget t1',
-        'asks.forget t1',
-        'relay.forget t1',
-        'buttons.forget t1',
-        'secrets.forget t1'
-      ])
-    }
-  })
-
-  it('teardown clears attention before Claude Code can mark a crash, and tells the butler last', () => {
+  it('teardown clears attention before Claude Code can mark a crash, and the plugins hear it only after core has marked the tab dead and stopped its session', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
     expect(calls).toEqual([
@@ -84,8 +66,7 @@ describe('TabLifecycle', () => {
       'tracker.setAlive t1 false',
       'owner.stop t1 1',
       'workspaces.launchEnded t1',
-      'cron.onPtyExit t1 /repo',
-      'butler.onPtyExit t1'
+      'announce tab-torn-down t1'
     ])
   })
 
@@ -104,15 +85,6 @@ describe('TabLifecycle', () => {
     expect(calls).toContain('toast Error: stop failed')
   })
 
-  it('a Discord part made after the subscription still hears exits', () => {
-    let relay: { forget: (tabId: string) => void } | null = null
-    const { lifecycle, calls } = wired({ relay: () => relay })
-    lifecycle.emit('exit', exitOf({ tabId: 'early' }))
-    relay = { forget: (tabId) => calls.push(`late relay.forget ${tabId}`) }
-    lifecycle.emit('exit', exitOf({ tabId: 'late' }))
-    expect(calls).toContain('late relay.forget late')
-  })
-
   it('a tab put to sleep or woken refreshes the workspaces list', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('slept')
@@ -120,9 +92,9 @@ describe('TabLifecycle', () => {
     expect(calls).toEqual(['workspaces.onTrackerUpdate', 'workspaces.onTrackerUpdate'])
   })
 
-  it('a sleeping tab closed for good is told to the butler and refreshes the workspaces list', () => {
+  it('a sleeping tab closed for good is announced to the plugins before the workspaces list refreshes', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('forgotten', 't1')
-    expect(calls).toEqual(['butler.onPtyExit t1', 'workspaces.onTrackerUpdate'])
+    expect(calls).toEqual(['announce tab-forgotten t1', 'workspaces.onTrackerUpdate'])
   })
 })

@@ -13,7 +13,7 @@ import {
   gitFileDiff,
   gitFileDiffFull
 } from '../gitStatus'
-import type { GithubLookup } from '../github'
+import type { GithubRepos } from '../githubRepos'
 import { LocalRunner, networkGit } from '../gitFreshness'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
@@ -190,7 +190,7 @@ async function readText(p: string): Promise<string> {
   return buf.toString('utf8')
 }
 
-export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
+export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {
   return {
     listDir,
     dirExists,

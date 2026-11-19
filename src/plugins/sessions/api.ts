@@ -26,7 +26,7 @@ export {
   type PinnedWorkspace,
   type PlacedRow
 } from './main/placedRows'
-export { GITHUB_NOT_ASKED, type MergedHeads } from '../../main/sessionClose'
+export { GITHUB_NOT_ASKED, type MergedHeads, type WorkLeft } from './main/sessionClose'
 export {
   instructionsPartOf,
   savedFromTheDialog,

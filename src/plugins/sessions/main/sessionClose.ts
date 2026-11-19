@@ -2,7 +2,7 @@ import path from 'path'
 import { barePath, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import type { ProjectInfo } from '@shared/types'
-import { gitProbes, type GitOut } from './resumePlan'
+import { gitProbes, type GitOut } from '../../../main/resumePlan'
 
 export type ClosingTree = ProjectInfo & { branches: string[]; gitFileGone?: true }
 
@@ -63,11 +63,32 @@ function commitsOnlyOn(
 export const GITHUB_NOT_ASKED =
   'Koloft could not ask GitHub whether a merged pull request holds them. If one does, nothing is lost, and pushing would only bring back the branch GitHub deleted.'
 
-function commitsLeft(dir: string, onlyHere: string | null, githubNotAsked = false): string[] {
-  if (onlyHere === null) return [`git could not list the commits in ${dir}.`]
+export interface WorkLeft {
+  head: string
+  lines: string[]
+  githubNotAsked?: true
+}
+
+const headOnly = (head: string): WorkLeft => ({ head, lines: [] })
+
+export function leftText(left: readonly WorkLeft[]): string[] {
+  return left.map(({ head, lines, githubNotAsked }) =>
+    lines.length
+      ? `${head}:\n${lines.join('\n')}${githubNotAsked ? `\n${GITHUB_NOT_ASKED}` : ''}`
+      : head
+  )
+}
+
+function commitsLeft(dir: string, onlyHere: string | null, githubNotAsked = false): WorkLeft[] {
+  if (onlyHere === null) return [headOnly(`git could not list the commits in ${dir}.`)]
   if (!onlyHere.trim()) return []
-  const commits = `Commits on no other branch and no remote branch:\n${onlyHere.trimEnd()}`
-  return [githubNotAsked ? `${commits}\n${GITHUB_NOT_ASKED}` : commits]
+  return [
+    {
+      head: 'Commits on no other branch and no remote branch',
+      lines: onlyHere.trimEnd().split('\n'),
+      ...(githubNotAsked && { githubNotAsked: true as const })
+    }
+  ]
 }
 
 // PLATFORM§30 PLATFORM§32
@@ -77,7 +98,7 @@ async function commitsNotHeld(
   tips: string[],
   branches: string[],
   merged?: MergedHeads
-): Promise<string[]> {
+): Promise<WorkLeft[]> {
   const onlyHere = await commitsOnlyOn(git, dir, tips, branches)
   if (!onlyHere?.trim() || !merged || !branches.length) return commitsLeft(dir, onlyHere)
   const heads = await Promise.all(branches.map((b) => merged(dir, b)))
@@ -93,10 +114,10 @@ async function whatIsLeftIn(
   tree: ClosingTree,
   merged: MergedHeads | undefined,
   deletedFilesLoseNothing: boolean
-): Promise<{ left: string[]; onlyDeletedFiles: boolean }> {
+): Promise<{ left: WorkLeft[]; onlyDeletedFiles: boolean }> {
   if (tree.gitFileGone)
     return {
-      left: [`git could not read ${tree.treeRoot}: its .git file is gone.`],
+      left: [headOnly(`git could not read ${tree.treeRoot}: its .git file is gone.`)],
       onlyDeletedFiles: false
     }
   const [status, commits] = await Promise.all([
@@ -104,13 +125,16 @@ async function whatIsLeftIn(
     commitsNotHeld(git, tree.treeRoot, ['HEAD', ...tree.branches], tree.branches, merged)
   ])
   if (status === null)
-    return { left: [`git could not read ${tree.treeRoot}.`], onlyDeletedFiles: false }
+    return { left: [headOnly(`git could not read ${tree.treeRoot}.`)], onlyDeletedFiles: false }
   const changes = status.split('\n').filter(Boolean)
   const onlyDeletedFiles =
     changes.length > 0 && changes.every((l) => l.startsWith(DELETED_FROM_THE_FOLDER_ONLY))
   const lost = changes.length > 0 && !(deletedFilesLoseNothing && onlyDeletedFiles)
   return {
-    left: [...(lost ? [`Changes not committed:\n${status.trimEnd()}`] : []), ...commits],
+    left: [
+      ...(lost ? [{ head: 'Changes not committed', lines: status.trimEnd().split('\n') }] : []),
+      ...commits
+    ],
     onlyDeletedFiles
   }
 }
@@ -119,7 +143,7 @@ export async function whatIsLeft(
   git: GitOut,
   tree: ClosingTree,
   merged?: MergedHeads
-): Promise<string[]> {
+): Promise<WorkLeft[]> {
   return (await whatIsLeftIn(git, tree, merged, false)).left
 }
 
@@ -195,7 +219,9 @@ export async function tidyTree(
   if (!tree) return NOTHING_THERE
   if (!there) {
     if (!tree.branches.length) return NOTHING_THERE
-    const kept = await commitsNotHeld(git, tree.root, tree.branches, tree.branches, merged)
+    const kept = leftText(
+      await commitsNotHeld(git, tree.root, tree.branches, tree.branches, merged)
+    )
     if (kept.length) return { removed: false, kept }
     return (await deleteBranches(git, tree.root, tree.branches))
       ? REMOVED
@@ -203,7 +229,7 @@ export async function tidyTree(
   }
   const { left, onlyDeletedFiles } = await whatIsLeftIn(git, tree, merged, true)
   const problem = left.length ? null : await removeTree(git, tree, onlyDeletedFiles)
-  const kept = problem ? [problem] : left
+  const kept = problem ? [problem] : leftText(left)
   if (!kept.length) return REMOVED
   const anotherRemoverWon =
     kept.some((k) => k.startsWith('git could not')) &&
