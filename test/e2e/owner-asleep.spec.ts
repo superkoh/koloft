@@ -112,7 +112,11 @@ const ASKS: Record<BackendId, Omit<TabKind, 'backend' | 'remote'>> = {
   codex: {
     question: 'please ask me',
     command: 'please approve',
-    saidAfterTheQuestion: `user_note: ${asJson(OWNER_ASLEEP_ANSWER)}`,
+    saidAfterTheQuestion: JSON.stringify({
+      answers: {
+        colour: { answers: ['None of the above', `user_note: ${OWNER_ASLEEP_ANSWER}`] }
+      }
+    }),
     ranTheCommand: '"decision":"accept"'
   },
   muse: {
@@ -168,27 +172,72 @@ function agentHome(env: E2EEnv, kind: TabKind): string {
   return kind.remote ? machineHome(env) : env.home
 }
 
-async function whatItSaid(env: E2EEnv, page: Page, tab: string, kind: TabKind): Promise<string> {
+const STOP_SAID = 'Stop said: '
+
+interface CodexItemFrame {
+  direction: string
+  frame: { method?: string; params?: { item?: { type?: string; text?: string } } }
+}
+
+function codexReplies(home: string): string[] {
+  return fileText(path.join(home, 'fake-codex-wire.jsonl'))
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as CodexItemFrame)
+    .filter((w) => w.direction === 'server' && w.frame.method === 'item/completed')
+    .flatMap((w) =>
+      w.frame.params?.item?.type === 'agentMessage' ? [w.frame.params.item.text!] : []
+    )
+}
+
+function linesFrom(file: string): string[] {
+  return fileText(file).split('\n').filter(Boolean)
+}
+
+async function whatItSaid(
+  env: E2EEnv,
+  page: Page,
+  tab: string,
+  kind: TabKind
+): Promise<{ text: string; pushes: number }> {
   const home = agentHome(env, kind)
   switch (kind.backend) {
     case 'claude': {
       const call = (await waitForCalls(env, 1))[0]
-      return fileText(transcriptFile(home, remoteDir(env), call.sessionId))
+      const text = fileText(transcriptFile(home, remoteDir(env), call.sessionId))
+      return { text, pushes: text.split(`${STOP_SAID}${asJson(OWNER_ASLEEP_PUSH)}`).length - 1 }
     }
-    case 'codex':
-      return fileText(path.join(home, 'fake-codex-wire.jsonl'))
+    case 'codex': {
+      const replies = codexReplies(home)
+      return {
+        text: [fileText(path.join(home, 'fake-codex-wire.jsonl')), ...replies].join('\n'),
+        pushes: replies.filter((r) => r.startsWith(`${STOP_SAID}${OWNER_ASLEEP_PUSH}`)).length
+      }
+    }
     case 'muse': {
       const calls = kind.remote ? machineMuseCalls(env) : museCalls(env)
-      return museSaid(env, calls[0].sessionId, home)
-        .map((said) => JSON.stringify(said))
-        .join('\n')
+      const said = museSaid(env, calls[0].sessionId, home)
+      return {
+        text: said.map((s) => JSON.stringify(s)).join('\n'),
+        pushes: said.filter((s) => s.startsWith(`${STOP_SAID}${OWNER_ASLEEP_PUSH}`)).length
+      }
     }
-    case 'agy':
-      return [
-        fileText(path.join(home, 'fake-agy-api.jsonl')),
-        fileText(path.join(home, 'fake-agy-injected.jsonl')),
-        await terminalText(page, tab)
-      ].join('\n')
+    case 'agy': {
+      const stops = linesFrom(path.join(home, 'fake-agy-injected.jsonl'))
+        .map((line) => JSON.parse(line) as { event: string; reason?: string })
+        .filter((e) => e.event === 'stop-blocked')
+      const ownLines = (await terminalText(page, tab))
+        .split('\n')
+        .filter((line) => /^(Picked|Ran): /.test(line))
+      return {
+        text: [
+          fileText(path.join(home, 'fake-agy-api.jsonl')),
+          ...stops.map((e) => JSON.stringify(e)),
+          ...ownLines
+        ].join('\n'),
+        pushes: stops.filter((e) => e.reason?.includes(OWNER_ASLEEP_PUSH)).length
+      }
+    }
   }
 }
 
@@ -284,15 +333,15 @@ test.describe('owner asleep', () => {
             .toEqual([expect.objectContaining({ gave: OWNER_ASLEEP_ANSWER })])
           expect(answeredForTheOwner(env)[0].failed).toBeUndefined()
           await expect
-            .poll(() => whatItSaid(env, page, tab, kind), {
+            .poll(async () => (await whatItSaid(env, page, tab, kind)).text, {
               timeout: A_REMOTE_ANSWER_AND_ITS_TURN_END_MS
             })
             .toContain(kind.saidAfterTheQuestion)
           await expect
-            .poll(() => whatItSaid(env, page, tab, kind), {
+            .poll(async () => (await whatItSaid(env, page, tab, kind)).pushes, {
               timeout: A_REMOTE_ANSWER_AND_ITS_TURN_END_MS
             })
-            .toContain(asJson(OWNER_ASLEEP_PUSH))
+            .toBe(1)
         } finally {
           await quitAndClose(app)
         }
@@ -319,8 +368,9 @@ test.describe('owner asleep', () => {
           await expect
             .poll(() => answeredForTheOwner(env), { timeout: A_REMOTE_ANSWER_AND_ITS_TURN_END_MS })
             .toEqual([expect.objectContaining({ gave: 'yes' })])
+          expect(answeredForTheOwner(env)[0].failed).toBeUndefined()
           await expect
-            .poll(() => whatItSaid(env, page, tab, kind), {
+            .poll(async () => (await whatItSaid(env, page, tab, kind)).text, {
               timeout: A_REMOTE_ANSWER_AND_ITS_TURN_END_MS
             })
             .toContain(kind.ranTheCommand)

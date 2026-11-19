@@ -4891,7 +4891,7 @@ function ptyTabIds(): string[] {
 }
 
 function agentTabIds(): string[] {
-  return ptyMgr.list().flatMap((p) => (p.util || p.kind === 'shell' ? [] : [p.id]))
+  return ptyMgr.list().flatMap((p) => (p.alive && !p.util && p.kind !== 'shell' ? [p.id] : []))
 }
 
 const cdpOps = new CdpOps({
