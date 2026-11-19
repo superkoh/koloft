@@ -46,9 +46,10 @@ function ItemHint({
           Create a worktree named <code>{name}</code> from the repo root, and
         </>
       ) : (
+        // prettier-ignore
         <>
-          Create a worktree named <code>{name}</code> on {n}'s branch <code>{item.branch}</code>,
-          fetched from GitHub if it is not here yet, and
+          Create a worktree named <code>{name}</code> on {n}'s branch{' '}
+          <code>{item.branch}</code>, fetched from GitHub if it is not here yet, and
         </>
       )}{' '}
       send {n}'s title and link as the first message.
