@@ -493,6 +493,23 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `"execution_state":"background_running"` and a `work_id`. A real subagent has a UUID
   `subagent_id`; muse's own reminder helpers say `skill-reminder`, `goal-reminder`,
   `verify-reminder`.
+- **A subagent's name comes only from the `subagent_spawn` call, never from
+  `SubagentStart`.** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)`
+  (`koloft-probe-muse-agy`, `--network none`, `MUSE_NO_AUTO_UPDATE=1`), Docker, fake model
+  server, `muse exec --approval-mode never --disable-sandbox --trust-workspace`, hooks
+  through `TBH_MANAGED_HOOKS_PATH`, 2 runs. 1.4.23 offers the tools inside one `muse`
+  namespace; `subagent_spawn` takes `{command_id, role, objective}` (required),
+  `task_name` (optional, "omit/null=`role`"), `subagent_type`, `output_schema`,
+  `context_policy_ref`, `worktree_isolation`. The fake model called it with `role: "Lint
+  checker"`, `task_name: "lint_pass"`. In order: `PreToolUse` (the parent's
+  `session_id`, `tool_input` as sent); `SubagentStart {subagent_id: <UUID>,
+  child_session_id}` with no name in it; `PostToolUse` on the parent, the same
+  `tool_input` and `tool_response` the JSON string `{status: "accepted", subagent_id: <that
+  UUID>, work_id, agent_path: "main/lint_pass/1", task_ref}`; then `SubagentStop`. Koloft's
+  hook script forwards no `PreToolUse` (it only answers it), so the badge takes `role` from
+  `PostToolUse` by `subagent_id`. A `subagent_type` that names no Agent Definition
+  (`explorer`) is refused in `tool_response` (`status: "rejected"`, `cause:
+  "agent_definition_not_found"`) and no subagent starts.
 - More tool shapes in 1.4.9 (fake model, Docker, 2026-10): `read_file {path}`, its
   `tool_response` a plain string. `monitor {command, description, …}` →
   `tool_response` a JSON string `{work_id: "work.v2.monitor.…", timeout_ms,

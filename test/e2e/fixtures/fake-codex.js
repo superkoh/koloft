@@ -481,6 +481,30 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
           Number(read('fake-codex-child-ms', '4000'))
         )
+      } else if (text.startsWith('spawn task ')) {
+        // CODEX§4
+        const childId = crypto.randomUUID()
+        const activity = (kind) => ({
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'subAgentActivity',
+            id: `${kind}-${turn.id}`,
+            kind,
+            agentThreadId: childId,
+            agentPath: `/root/${text.slice('spawn task '.length).trim()}`
+          }
+        })
+        event('item/started', activity('started'))
+        event('item/completed', activity('started'))
+        setTimeout(() => complete(thread, turn), 120)
+        setTimeout(
+          () => {
+            event('item/started', activity('completed'))
+            event('item/completed', activity('completed'))
+          },
+          Number(read('fake-codex-child-ms', '4000'))
+        )
       } else if (text === '/busy')
         setTimeout(() => complete(thread, turn), Number(read('fake-codex-busy-ms', '15000')))
       else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)

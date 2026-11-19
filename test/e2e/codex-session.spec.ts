@@ -1216,7 +1216,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done — its mark and its OS notification — waits for the child', async ({
+  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done — its mark and its OS notification — waits for the child; a child Codex gave a task name is named by it', async ({
     env
   }) => {
     installCodex(env)
@@ -1250,6 +1250,12 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect((await osOutlets(app)).notifications.slice(notifiedBefore)).toEqual([
         { title: mark.title, body: 'turn done — your move · ws-a' }
       ])
+
+      await runIn(page, centerTerm(page), 'spawn task lint_checker')
+      await running.click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('agent · lint_checker · working')
+      await page.keyboard.press('Escape')
+      await expect(running).toHaveCount(0, { timeout: 15_000 })
     } finally {
       await quitAndClose(app)
     }

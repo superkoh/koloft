@@ -651,6 +651,30 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
+  // MUSE§9
+  it('names a subagent by the role its subagent_spawn call gave it, whether that call or its start reaches Koloft first', async () => {
+    const id = await boundTab()
+    const first = '6f1c5a2e-1d2b-4c3d-9e8f-0a1b2c3d4e5f'
+    const second = '7a2d6b3f-2e3c-4d4e-8f9a-1b2c3d4e5f6a'
+    const spawned = (sub: string, role: string): string =>
+      hook(id, 'PostToolUse', {
+        session_id: A,
+        tool_name: 'subagent_spawn',
+        tool_input: { command_id: sub, role, objective: 'look', task_name: 'ignored_here' },
+        tool_response: JSON.stringify({ status: 'accepted', subagent_id: sub })
+      })
+    hook(id, 'SubagentStart', { session_id: CHILD, child_session_id: CHILD, subagent_id: first })
+    spawned(first, 'Lint checker')
+    spawned(second, 'Test runner')
+    hook(id, 'SubagentStart', { session_id: CHILD, child_session_id: CHILD, subagent_id: second })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background?.map((b) => b.label)).toEqual([
+        'Lint checker',
+        'Test runner'
+      ])
+    )
+  })
+
   it('shows a command left running in the background until the session log says it finished', async () => {
     const id = await boundTab()
     const work = 'work.v2.managed_bash.sha256.abc'

@@ -155,6 +155,7 @@ interface MuseRun extends StoredRun {
   sinceClear: ProgramStatus[]
   prompt?: { turnId: string; text: string; at: number; reply?: string }
   children: Set<string>
+  subagentRoles: Map<string, string>
   background: Map<string, BackgroundItem>
   commands: Map<string, string>
   jobs: Map<string, boolean>
@@ -631,6 +632,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       boundAt: handle.startedAt,
       sinceClear: [],
       children: new Set(),
+      subagentRoles: new Map(),
       background: new Map(),
       commands: new Map(),
       jobs: new Map(),
@@ -869,12 +871,17 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         run.background.set(`agent:${id}`, {
           id: `agent:${id}`,
           kind: 'agent',
-          label: `Agent ${id.slice(0, 8)}`,
+          label: run.subagentRoles.get(id) ?? `Agent ${id.slice(0, 8)}`,
           state: 'working'
         })
-      else run.background.delete(`agent:${id}`)
+      else {
+        run.background.delete(`agent:${id}`)
+        run.subagentRoles.delete(id)
+      }
       return this.publishBackground(run)
     }
+    if (hook.event === 'PostToolUse' && input.tool_name === 'subagent_spawn')
+      this.nameSubagent(run, input)
     if (run.children.has(hook.sessionId)) return
     if (hook.event === 'SessionStart' || hook.event === 'UserPromptSubmit')
       this.bindTo(run, hook.sessionId, input.source === 'fork')
@@ -901,6 +908,19 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       case 'PostToolUseFailure':
         return this.noteShellWrote(run, input)
     }
+  }
+
+  // MUSE§9
+  private nameSubagent(run: MuseRun, input: Record<string, unknown>): void {
+    const id = jsonRecord(input.tool_response).subagent_id
+    const role = record(input.tool_input).role
+    if (typeof id !== 'string' || typeof role !== 'string' || !role.trim()) return
+    const label = role.trim().slice(0, 160)
+    run.subagentRoles.set(id, label)
+    const item = run.background.get(`agent:${id}`)
+    if (!item) return
+    run.background.set(item.id, { ...item, label })
+    this.publishBackground(run)
   }
 
   // MUSE§9

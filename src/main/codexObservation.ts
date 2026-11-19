@@ -130,6 +130,12 @@ export function codexTurns(turns: unknown): TurnLog {
   return log
 }
 
+// CODEX§4
+function childAgentLabel(id: string, agentPath?: unknown): string {
+  const taskName = typeof agentPath === 'string' ? agentPath.split('/').pop() : undefined
+  return taskName || `Agent ${id.slice(0, 8)}`
+}
+
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
 const OPEN_RAN = ['completed', 'failed']
 
@@ -705,7 +711,7 @@ export class CodexObservation {
           this.activities.set(key, {
             id: key,
             kind: 'agent',
-            label: `Agent ${id.slice(0, 8)}`,
+            label: childAgentLabel(id),
             state,
             owner: id,
             root,
@@ -728,7 +734,7 @@ export class CodexObservation {
         this.activities.set(key, {
           id: key,
           kind: 'agent',
-          label: `Agent ${id.slice(0, 8)}`,
+          label: childAgentLabel(id, item.agentPath),
           state: 'working',
           owner: id,
           root,

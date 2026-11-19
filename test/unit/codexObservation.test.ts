@@ -512,6 +512,23 @@ describe('CodexObservation', () => {
     expect(f.bound()).toHaveLength(1)
   })
 
+  // CODEX§4
+  it('names a child announced as sub-agent activity by the last part of its agent path', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('item/started', {
+      item: {
+        type: 'subAgentActivity',
+        id: 'call',
+        kind: 'started',
+        agentThreadId: B,
+        agentPath: '/root/plan/lint_checker'
+      }
+    })
+    expect(f.background()).toEqual([expect.objectContaining({ label: 'lint_checker' })])
+  })
+
   it('shows a surviving command as unclassified background while the turn itself lands waiting', () => {
     const f = fixture()
     f.bind()
