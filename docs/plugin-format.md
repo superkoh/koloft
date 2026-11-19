@@ -16,9 +16,7 @@ it is done.
   UI entries with core ([How a plugin plugs in](#how-a-plugin-plugs-in)). Each registration
   is checked against the manifest: by the code that takes it, which throws an error, or by a
   unit test.
-- Koloft reads six manifest fields when it runs: `text`, `commands`, `settings`, `ui`,
-  `assistJobs` and `moments`. A unit test reads `channels`. Nothing reads `skills` or
-  `mcpServers` yet.
+- A unit test reads `channels`. Nothing reads `skills` or `mcpServers` yet.
 - A plugin imports only core, its own folder, and the `api.ts` of plugins it says it needs.
   Much code does not follow this rule yet; a check lists each case
   ([The import rule](#the-import-rule)).
@@ -220,7 +218,7 @@ export const plugin: PluginManifest = {
 | `formatVersion` | the number `1` | the format version this manifest is written for |
 | `id` | string | the plugin's id; equal to its folder name |
 | `name` | string | the name a person sees, such as `Passwords and sign-in` |
-| `mandatory` | boolean | `true`: the plugin will have no switch and is always on |
+| `mandatory` | boolean | `true`: the plugin has no switch and is always on |
 | `needs` | list of plugin ids | the plugins this plugin needs; turning one of them off turns this one off too |
 
 The unit test `test/unit/pluginList.test.ts` holds these rules:
@@ -412,7 +410,8 @@ files. Scheduled tasks is the example.
 3. `main/channels.ts` exports `registerChannels(ipc: MainIpc, deps)`. It calls
    `ipc.handle(CHANNELS.x, (...args) => …)` for each request the window makes and waits on,
    and `ipc.on(CHANNELS.x, (...args) => …)` for each one-way message from the window. A
-   handler gets the window's arguments, not Electron's event. For each message the main
+   handler gets the window's arguments; one registered with `ipc.onEvent` gets Electron's
+   event before them. For each message the main
    process sends to the window, it exports a function that calls `ipc.push(CHANNELS.y, …)`;
    a plugin with many of these may export one `pushes(ipc)` that returns a function per
    channel, as Sessions core does. `deps` is what the plugin needs from the app while that
@@ -600,7 +599,7 @@ These are the jobs today:
 
 A moment is something that happens to a session, which one plugin announces and others
 listen to. The moments are in `src/core/moment.ts`. A listener may hand back a sentence;
-`announce` returns every sentence in the order of the list of plugins.
+`announce` returns them all.
 
 ### Main-process parts
 
@@ -678,9 +677,10 @@ built, and no design for them exists:
 
 These are planned in #1964 but not built yet:
 
-- **Switches.** When an optional plugin is off, its listeners and code are not started,
+- **Switches.** When an optional plugin is off, sessions started afterwards get none of its
+  text, its commands are refused with one sentence, its listeners and code are not started,
   and its UI entries are not shown, except a "Set up" action and its ⌘P item. Its settings
-  and data stay on disk (#1991).
+  and data stay on disk (#1991). Today only Todo's switch takes its text and commands away.
 - **A stable way to register.** Commands, IPC channels, settings, UI entries and Assist jobs
   register as this page says, but the shapes are not kept stable until #1989.
 
