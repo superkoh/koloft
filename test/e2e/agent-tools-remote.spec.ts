@@ -5,7 +5,13 @@ import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
 import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
-import { docsSkillHandedOut, filesNamedUnder, koloftSkillsUnder } from './helpers/koloftSkills'
+import {
+  claudePromptFilesUnder,
+  docsSkillHandedOut,
+  filesNamedUnder,
+  koloftSkillsUnder
+} from './helpers/koloftSkills'
+import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
@@ -32,6 +38,8 @@ import {
   remoteDir,
   remoteKey
 } from './helpers/remote'
+
+const BOUND_CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
 
 async function sessionOf(page: Page, tabId: string): Promise<SessionInfo | undefined> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
@@ -138,6 +146,36 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toContain('get a password, code or sign-in')
         expect(filesNamedUnder(machineHome(env), 'koloft-askpass')).toEqual([])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help, a koloft skill and Claude Code's prompt file that say nothing of Discord, and koloft discord is refused`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installOnTheMachine(env, backend)
+      seedSettings(env, { pluginsOn: { discord: false }, discord: { channel: BOUND_CHANNEL } })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        const tab = await startRemoteTab(page, env, backend)
+
+        expect(await koloftInSession(page, tab, 'discord status')).not.toBe('0')
+        expect(await terminalText(page, tab)).toContain(
+          'koloft: Discord is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, tab, 'help')).toBe('0')
+        const help = await terminalText(page, tab)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft discord send')
+        const skills = koloftSkillsUnder(machineHome(env))
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) expect(skill).not.toMatch(/discord/i)
+        const prompts = claudePromptFilesUnder(machineHome(env))
+        if (backend === 'claude') expect(prompts.length).toBeGreaterThan(0)
+        for (const prompt of prompts) expect(prompt).not.toContain(DISCORD_PREFIX)
       } finally {
         await quitAndClose(app)
       }

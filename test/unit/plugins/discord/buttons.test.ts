@@ -11,6 +11,7 @@ import {
 import { privately, type DiscordInteraction } from '../../../../src/plugins/discord/main/link'
 import { ANSWER_NOT_TAKEN, YES_OR_NO } from '../../../../src/plugins/sessions/main/dialog'
 import { ANSWER_ON_ITS_WAY } from '../../../../src/plugins/sessions/main/sessionAsks'
+import { DISCORD_TURNED_OFF } from '../../../../src/plugins/discord/main/switchOn'
 
 const OWNER = '555'
 const PLACED = { channelId: '333', messageId: '900' }
@@ -220,6 +221,20 @@ describe('a question answered some other way loses its buttons too', () => {
     answeredFirst.buttons.answered('tab-1', 'yes')
     answeredFirst.buttons.attach('tab-1', { text: 'next?', choices: YES_OR_NO }, answeredFirst.card)
     expect(footers(answeredFirst)).toEqual([`-# ${answeredWith('yes')}`])
+  })
+
+  it('Discord turned off: every open card says so and loses its buttons, one already settled is left alone, and a press afterwards answers nothing', async () => {
+    const s = setup()
+    s.buttons.placed(s.card, PLACED)
+    const settled = setup()
+    settled.buttons.placed(settled.card, PLACED)
+    settled.buttons.forget('tab-1')
+    await Promise.all([s, settled].map((x) => x.buttons.endAll(DISCORD_TURNED_OFF)))
+    expect(footers(s)).toEqual([`-# ${DISCORD_TURNED_OFF}`])
+    expect(footers(settled)).toEqual([`-# ${SESSION_CLOSED}`])
+    await s.buttons.press(s.press(0))
+    expect(s.answers).toEqual([])
+    expect(s.responses).toEqual([privately(NO_LONGER_OPEN)])
   })
 
   it('a card Discord never took is forgotten, so nothing is kept for it', async () => {

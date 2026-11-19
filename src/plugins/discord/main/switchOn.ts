@@ -1,11 +1,20 @@
+import { pluginStateOf } from '@core/switches'
 import { plugin } from '../plugin'
-import type { DiscordPhase } from '../shared/types'
+
+export const discordOn = (): boolean => pluginStateOf(plugin.id).on
+
+export const DISCORD_TURNED_OFF = '⏹ Discord was turned off in Koloft.'
+
+type Switches = Readonly<Record<string, boolean>>
+
+export const withDiscordOn = (pluginsOn: Switches): Record<string, boolean> => ({
+  ...pluginsOn,
+  [plugin.id]: true
+})
 
 export function switchedOnOnceItHasABot(
-  phase: DiscordPhase,
-  pluginsOn: Readonly<Record<string, boolean>>
+  hasABot: boolean,
+  pluginsOn: Switches
 ): Record<string, boolean> | null {
-  return phase === 'off' || Object.hasOwn(pluginsOn, plugin.id)
-    ? null
-    : { ...pluginsOn, [plugin.id]: true }
+  return !hasABot || Object.hasOwn(pluginsOn, plugin.id) ? null : withDiscordOn(pluginsOn)
 }

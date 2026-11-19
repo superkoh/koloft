@@ -74,7 +74,7 @@ koloft session send <id or name> "<message>"
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
 koloft session command <id or name | me> /<command> [arguments]
-    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft{{koloft-help-command-output}}, the command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
+    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft{{koloft-help-command-output}} command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
     Example: koloft session command fix-login /compact keep the test plan
 
 koloft session screen <id or name | me>
@@ -124,5 +124,6 @@ export const TEXT: readonly TextBlock[] = [
 
 `
   },
+  { slot: 'koloft-help-command-output', whenOff: 'discord', text: '. The' },
   { slot: 'koloft-skill', text: KOLOFT_SKILL }
 ]

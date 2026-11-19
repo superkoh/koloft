@@ -22,7 +22,13 @@ import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/gitSpawnLog'
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
-import { docsSkillHandedOut, filesNamedUnder, koloftSkillsUnder } from './helpers/koloftSkills'
+import {
+  claudePromptFilesUnder,
+  docsSkillHandedOut,
+  filesNamedUnder,
+  koloftSkillsUnder
+} from './helpers/koloftSkills'
+import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import { closeSettings, openSettings } from './helpers/extensions'
 import { WORKBENCH } from './helpers/workbench'
 import { guestByUrl, guestContents, newWebTab, typeInAddressBar } from './helpers/browser'
@@ -55,6 +61,7 @@ import {
 
 const CENTER = '.term-island .term-wrap'
 const PANEL = '.wb-panel .wb-term'
+const BOUND_CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
 const ASSIST_TITLES_PAST_THE_SHIMS_TEN_SECONDS_MS = 15_000
@@ -1296,6 +1303,38 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toContain('get a password, code or sign-in')
         expect(filesNamedUnder(env.home, 'koloft-askpass')).toEqual([])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session's koloft help, koloft skill and Claude Code's prompt file say nothing of Discord, and koloft discord is refused`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { discord: false }, discord: { channel: BOUND_CHANNEL } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'discord status')).not.toBe('0')
+        expect(await shownTermText(page, CENTER)).toContain(
+          'koloft: Discord is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        const help = await shownTermText(page, CENTER)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft discord send')
+        const skills = koloftSkillsUnder(env.home)
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) expect(skill).not.toMatch(/discord/i)
+        const prompts = claudePromptFilesUnder(env.home)
+        expect(prompts.length).toBeGreaterThan(0)
+        for (const prompt of prompts) expect(prompt).not.toContain(DISCORD_PREFIX)
       } finally {
         await quitAndClose(app)
       }

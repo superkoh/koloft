@@ -12,7 +12,9 @@ import {
   WORKSPACE_GIT_PART,
   type WorkspaceGitPart
 } from './slots'
-import type { WorkspaceRows } from '@shared/types'
+import type { Settings, WorkspaceRows } from '@shared/types'
+import type { PluginState } from '@core/switches'
+import { actingStatesIn } from '@shared/pluginSwitches'
 
 let placedOnce: PlacedUi | undefined
 
@@ -30,9 +32,37 @@ export function placePluginUi(): void {
   placed()
 }
 
-export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+let statesFor: { settings: Settings; states: Record<string, PluginState> } | undefined
 
-export const partsAt = (place: UiPlace): readonly PlacedPart[] => placed().parts[place] ?? []
+function actingStatesOf(settings: Settings): Record<string, PluginState> {
+  if (statesFor?.settings !== settings) statesFor = { settings, states: actingStatesIn(settings) }
+  return statesFor.states
+}
+
+const onIn =
+  (settings: Settings) =>
+  (plugin: string): boolean =>
+    actingStatesOf(settings)[plugin]?.on ?? true
+
+const onNow = (plugin: string): boolean => onIn(useStore.getState().settings)(plugin)
+
+export const fillsOf = <T,>(into: Slot<T>, settings?: Settings): readonly T[] =>
+  placed().fillsOf(into, settings ? onIn(settings) : onNow)
+
+export const fillsOfOnOrOff = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+
+const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])
+
+export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
+  (placed().parts[place] ?? []).filter((p) => KEPT_WHILE_OFF.has(place) || onNow(p.plugin))
+
+const usePluginsOnKey = (): string =>
+  useStore((s) =>
+    Object.entries(actingStatesOf(s.settings))
+      .filter(([, state]) => state.on)
+      .map(([id]) => id)
+      .join(' ')
+  )
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>
   fillsOf(WORKSPACE_GIT_PART).filter((part) => part.shows(ws))
@@ -44,10 +74,11 @@ export function useShowsGlobalNote(tabId: string | null, rowId: string | null): 
 }
 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
+  const onKey = usePluginsOnKey()
   return (
     <>
       {partsAt(place).map(({ id, Part }) => (
-        <Part key={id} />
+        <Part key={`${id} ${onKey}`} />
       ))}
     </>
   )

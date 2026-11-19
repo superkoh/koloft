@@ -37,6 +37,12 @@ export function filesNamedUnder(dir: string, name: string): string[] {
   return pathsUnderWhileTheAppWrites(dir).filter((rel) => path.basename(rel) === name)
 }
 
+export function claudePromptFilesUnder(dir: string): string[] {
+  return filesNamedUnder(dir, 'koloft-prompt.md')
+    .map((rel) => readIfStillThere(path.join(dir, rel)))
+    .filter(Boolean)
+}
+
 export function koloftSkillsUnder(dir: string): string[] {
   return pathsUnderWhileTheAppWrites(dir)
     .filter((rel) => rel.endsWith(path.join('koloft', 'SKILL.md')))

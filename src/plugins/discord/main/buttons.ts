@@ -124,6 +124,18 @@ export class AskButtons {
         this.settle(id, ask.reply ? answeredWith(ask.reply) : footer)
   }
 
+  async endAll(footer: string): Promise<void> {
+    const open = [...this.asks.values()]
+    this.asks.clear()
+    await Promise.all(
+      open.map((ask) =>
+        ask.placed && !ask.footer
+          ? this.d.edit(ask.placed, this.settledCard(ask, footer)).catch(() => undefined)
+          : undefined
+      )
+    )
+  }
+
   private settle(id: string, footer: string): void {
     const ask = this.asks.get(id)
     if (!ask) return

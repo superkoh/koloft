@@ -521,7 +521,12 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
-import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
+import {
+  discordOn,
+  DISCORD_TURNED_OFF,
+  switchedOnOnceItHasABot,
+  withDiscordOn
+} from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
@@ -1566,6 +1571,7 @@ const discordChannels = tabChannels({
 })
 const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
 let askButtons: AskButtons | null = null
+let secretCards: SecretCards | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
 let instructionAsks: InstructionAsks | null = null
@@ -3620,6 +3626,7 @@ app.whenReady().then(() => {
     checkSkillsAgain()
     machinePkg = null
     if (!passwordsOn()) secretAsks?.declineAll()
+    followDiscordSwitch()
     try {
       writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
       if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -4254,8 +4261,6 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
-      const pluginsOn = switchedOnOnceItHasABot(status.phase, loadSettings().pluginsOn)
-      if (pluginsOn) commitSettings({ pluginsOn })
       pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
@@ -4332,10 +4337,10 @@ app.whenReady().then(() => {
     },
     answered: (tabId, reply) => buttons.answered(tabId, reply)
   })
-  const secretCards = new SecretCards({
+  const cards = new SecretCards({
     asks: secrets,
     owner: () => bindingNow.owner(),
-    cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
+    cardWanted: (tabId) => discordOn() && !!discordRelay?.reaches(tabId),
     place: async (tabId, card, files) => {
       const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
       if (!channelId) return undefined
@@ -4349,7 +4354,8 @@ app.whenReady().then(() => {
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
     respond: (i, body) => link.respond(i, body)
   })
-  secrets.listen(secretCards)
+  secrets.listen(cards)
+  secretCards = cards
   secretAsks = secrets
   const interactions = new Interactions({
     owner: () => bindingNow.owner(),
@@ -4359,9 +4365,8 @@ app.whenReady().then(() => {
         bindingNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
         text
       ),
-    press: (i) =>
-      i.customId?.startsWith(SECRET_ID_PREFIX) ? secretCards.press(i) : buttons.press(i),
-    submit: (i) => secretCards.submit(i),
+    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? cards.press(i) : buttons.press(i)),
+    submit: (i) => cards.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
@@ -4474,7 +4479,7 @@ app.whenReady().then(() => {
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
-  void link.connect()
+  void startDiscord()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
@@ -5700,9 +5705,44 @@ function tapPagesOf(tabId: string): TapPage[] {
   }))
 }
 
+function switchDiscordOnOnceItHasABot(hasABot: boolean): void {
+  const pluginsOn = switchedOnOnceItHasABot(hasABot, loadSettings().pluginsOn)
+  if (pluginsOn) commitSettings({ pluginsOn })
+}
+
+async function startDiscord(): Promise<void> {
+  switchDiscordOnOnceItHasABot(!!(await discordTokenRead()))
+  followDiscordSwitch()
+}
+
+let discordRunning = false
+
+function followDiscordSwitch(): void {
+  const link = discordLink
+  if (!link || discordOn() === discordRunning) return
+  discordRunning = !discordRunning
+  workspaceMgr?.refresh()
+  syncAnswerable()
+  if (discordRunning) return void link.connect()
+  for (const tabId of ptyTabIds()) {
+    discordRelay?.forget(tabId)
+    discordTyping?.forget(tabId)
+  }
+  void Promise.all([
+    askButtons?.endAll(DISCORD_TURNED_OFF),
+    secretCards?.endAll(DISCORD_TURNED_OFF)
+  ]).finally(() => {
+    if (!discordRunning) link.stop()
+  })
+}
+
 async function saveDiscordToken(token: string): Promise<boolean> {
   const saved = await discordTokenWrite(token)
-  if (saved) void discordLink?.connect()
+  if (!saved) return saved
+  const wasRunning = discordRunning
+  switchDiscordOnOnceItHasABot(true)
+  if (wasRunning) void discordLink?.connect()
+  else followDiscordSwitch()
   return saved
 }
 
@@ -5710,6 +5750,7 @@ const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
   '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
 function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+  if (!discordOn()) commitSettings({ pluginsOn: withDiscordOn(loadSettings().pluginsOn) })
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
   return startHelper((butler) => ({
     prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,

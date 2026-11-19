@@ -113,6 +113,23 @@ export class SecretCards {
     if (shown.placed) this.editCard(shown)
   }
 
+  async endAll(footer: string): Promise<void> {
+    const shown = [...this.shown]
+    this.shown.clear()
+    await Promise.all(
+      shown.map(([id, s]) => {
+        this.d.asks.notShownElsewhere(id)
+        if (s.footer) return undefined
+        s.footer = footer
+        return s.placed
+          ? this.d
+              .edit(s.placed, cardOf(s.ask, s.placed.name, `-# ${footer}`))
+              .catch(() => undefined)
+          : undefined
+      })
+    )
+  }
+
   private waiting(id: string): boolean {
     return this.d.asks.pendingAsk(id) !== undefined
   }

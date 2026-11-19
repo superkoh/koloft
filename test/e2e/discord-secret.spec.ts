@@ -30,6 +30,8 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import { guestByUrl } from './helpers/browser'
+import { closeSettings, openSettings } from './helpers/extensions'
+import { DISCORD_TURNED_OFF } from '../../src/plugins/discord/main/switchOn'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { FILLED_AND_EMPTIED } from '../../src/plugins/passwords/main/secretVerb'
 import {
@@ -168,6 +170,47 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
         .poll(() => fake.callbacks.map((c) => c.data.content))
         .toContain(NO_LONGER_WAITING)
       expect(fake.callbacks.some((c) => c.type === OPEN_A_FORM)).toBe(false)
+      nowhereInDiscord(fake, typed)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('turning Discord off in Settings ▸ Plugins while a sudo card waits ends the card, which says so and loses its button, disconnects the bot, and the ask is still answered in the Koloft box; turning it on connects the bot again', async ({
+    env
+  }) => {
+    seedBinding(env)
+    const fake = await startFakeDiscord(env)
+    const app = await launchApp(env)
+    const switchDiscord = async (page: Page, on: boolean): Promise<void> => {
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+      await page.getByRole('switch', { name: 'Discord', exact: true }).setChecked(on)
+      await closeSettings(page)
+    }
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => fake.identifies).toBe(1)
+      await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+      const tab = await sessionTab(page, env)
+      await askSudo(page, tab)
+      const card = await secretCard(fake, /asks for your sudo password/)
+      expect(fake.closeCodes).toEqual([])
+
+      await switchDiscord(page, false)
+      const edited = (): FakePost | undefined => fake.edits.filter((e) => e.id === card.id).at(-1)
+      await expect.poll(() => edited()?.content).toContain(DISCORD_TURNED_OFF)
+      expect(edited()?.buttons ?? []).toEqual([])
+      await expect.poll(() => fake.closeCodes.length).toBe(1)
+      const typed = 'hunter2-after-discord-off'
+      await page.locator(`${SUDO_BOX} input`).fill(typed)
+      await page.locator(`${SUDO_BOX} .btn-primary`).click()
+      await expect.poll(() => terminalText(page, tab)).toContain(`${typed}\ngot-it`)
+
+      await switchDiscord(page, true)
+      await expect.poll(() => fake.identifies).toBe(2)
       nowhereInDiscord(fake, typed)
     } finally {
       await quitAndClose(app)

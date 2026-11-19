@@ -3,7 +3,7 @@ import {
   agentGuide,
   ownerSays,
   projectRulesForTheButler,
-  TODO_METHOD
+  todoMethod
 } from '../../src/shared/agentGuide'
 import { koloftPrompt, workspaceInstructionsPart } from '../../src/plugins/sessions/api'
 import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
@@ -63,7 +63,7 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   })
 
   it('the method koloft todo prints first, and the steps koloft discord setup prints', async () => {
-    await pin(TODO_METHOD, 'help/todo-method')
+    await pin(todoMethod(), 'help/todo-method')
     await pin(DISCORD_SETUP_STEPS, 'help/discord-setup-steps')
   })
 

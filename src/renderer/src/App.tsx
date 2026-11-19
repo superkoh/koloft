@@ -112,7 +112,7 @@ import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits 
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
 import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
-import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import { fillsOf, fillsOfOnOrOff, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
 import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
@@ -1190,7 +1190,7 @@ export default function App(): JSX.Element {
       })
       return
     }
-    const pluginRoute = route && fillsOf(PALETTE_ROUTE).find((r) => r.kind === route.kind)
+    const pluginRoute = route && fillsOfOnOrOff(PALETTE_ROUTE).find((r) => r.kind === route.kind)
     if (pluginRoute) {
       void pluginRoute.run(prompt).then((error) => {
         if (error) showToast(error)

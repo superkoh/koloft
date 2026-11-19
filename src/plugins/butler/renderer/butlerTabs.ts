@@ -3,18 +3,16 @@ import { fillsOf } from '@renderer/pluginUi'
 import { ROW_SET_UP, type RowSetUpFill } from '@renderer/slots'
 import { BUTLER_ROW_PART, plugin } from '../plugin'
 
-let setUpFills: readonly RowSetUpFill['setUp'][] | undefined
-
-const setUpElsewhere = (): readonly RowSetUpFill['setUp'][] =>
-  (setUpFills ??= fillsOf(ROW_SET_UP)
+const setUpElsewhere = (settings: Settings): readonly RowSetUpFill['setUp'][] =>
+  fillsOf(ROW_SET_UP, settings)
     .filter((f) => f.row === BUTLER_ROW_PART)
-    .map((f) => f.setUp))
+    .map((f) => f.setUp)
 
 export function butlerSetUp(s: {
   accounts: readonly AccountMeta[] | null
   settings: Settings
 }): boolean {
-  if (setUpElsewhere().some((setUp) => setUp(s.settings))) return true
+  if (setUpElsewhere(s.settings).some((setUp) => setUp(s.settings))) return true
   const hasAnAccount = (s.accounts ?? s.settings.accounts).length > 0
   const answeredSkippingPermissions =
     !s.settings.skipPermissions || s.settings.skipPermissionsAgreed
