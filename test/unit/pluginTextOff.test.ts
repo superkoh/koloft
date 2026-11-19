@@ -76,4 +76,22 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     )
     await expect(butlerHelperRole(BUTLER)).toMatchFileSnapshot('./prompt-text/todo-off/helper.txt')
   })
+
+  it('with Passwords and sign-in off, koloft help and the koloft skill lose passwords, codes, sign-ins and robot checks, pinned, and the rest stays as it was', async () => {
+    const before = {
+      sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)),
+      butler: butlerRole(BUTLER, [DISCORD_BOUND]),
+      helper: butlerHelperRole(BUTLER)
+    }
+    turnOff(['passwords'])
+    expect({
+      sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)),
+      butler: butlerRole(BUTLER, [DISCORD_BOUND]),
+      helper: butlerHelperRole(BUTLER)
+    }).toEqual(before)
+    await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/passwords-off/koloft-help.txt')
+    await expect(agentPluginFiles()['skills/koloft/SKILL.md']).toMatchFileSnapshot(
+      './prompt-text/passwords-off/koloft-skill.md'
+    )
+  })
 })

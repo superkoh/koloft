@@ -5,7 +5,7 @@ import { PLUGINS } from '@plugins/list'
 import { DEFAULT_SETTINGS } from './settingsOps'
 import type { Settings } from './types'
 
-const SWITCHES_THAT_ACT: ReadonlySet<string> = new Set(['todo', 'docs-writing'])
+const SWITCHES_THAT_ACT: ReadonlySet<string> = new Set(['todo', 'docs-writing', 'passwords'])
 
 const saved = (settings: Settings): SavedSettings => settings as unknown as SavedSettings
 

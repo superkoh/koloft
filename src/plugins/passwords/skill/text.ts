@@ -2,8 +2,8 @@ import type { TextBlock } from '@core/plugin'
 
 export const TEXT: readonly TextBlock[] = [
   {
-    slot: 'koloft-skill-passwords',
-    text: ', or get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost)'
+    slot: 'koloft-skill-or-list',
+    text: 'get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost)'
   },
   {
     slot: 'koloft-help-passwords',
