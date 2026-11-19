@@ -9,14 +9,15 @@ import {
   sendPhoneCopy,
   shownOf,
   stillSending,
+  whereTheCopyGoes,
   type FileDiff,
   type PhoneCopyDeps
-} from '../../src/main/discord/phoneCopy'
-import { BYTES_PER_FILE, type DiscordFile } from '../../src/main/discord/link'
-import { DISCORD_MESSAGE_LIMIT } from '../../src/main/discord/split'
-import type { PageLook, PagePictures } from '../../src/main/discord/pageShot'
-import { formatRemoteKey } from '../../src/shared/remoteKey'
-import { machinePageUrl } from '../../src/shared/browserRoute'
+} from '../../../../src/plugins/discord/main/phoneCopy'
+import { BYTES_PER_FILE, type DiscordFile } from '../../../../src/main/discord/link'
+import { DISCORD_MESSAGE_LIMIT } from '../../../../src/main/discord/split'
+import type { PageLook, PagePictures } from '../../../../src/main/discord/pageShot'
+import { formatRemoteKey } from '../../../../src/shared/remoteKey'
+import { machinePageUrl } from '../../../../src/shared/browserRoute'
 
 const WHERE = 'the room'
 const page = { width: 1280, height: 900 }
@@ -282,5 +283,14 @@ describe('sendPhoneCopy', () => {
       /no lines to draw.*say what changed/
     )
     expect([...d.sent, ...binary.sent]).toEqual([])
+  })
+
+  it('the reply names where the copy went: the bound channel, the butler’s channel for a helper in his folder, or the session’s own room', () => {
+    const name = (): string => 'Alfred'
+    expect(whereTheCopyGoes(true, true, name)).toBe('the Discord channel the owner talks to you in')
+    expect(whereTheCopyGoes(false, true, name)).toBe(
+      "Alfred's Discord channel, where the owner sees your question cards"
+    )
+    expect(whereTheCopyGoes(false, false, name)).toBe("this session's room on the owner's Discord")
   })
 })
