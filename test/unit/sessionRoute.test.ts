@@ -39,6 +39,11 @@ const LIST: RouteWorkspace[] = [
 const reply = (o: object): string => `Sure:\n${JSON.stringify(o)}\n`
 
 describe('routeJob: what Koloft Assist is told', () => {
+  it('the full text Assist is given, pinned so that moving a part of it changes no character', async () => {
+    const { system, prompt } = routeJob(LIST, 'fix the login bug')
+    await expect(`${system}\n---\n${prompt}\n`).toMatchFileSnapshot('./sessionRoute-text/route.txt')
+  })
+
   it('names each workspace by its folder alone, never its full path, and names the machines', () => {
     const { prompt } = routeJob(LIST, 'fix the login bug')
     expect(prompt).not.toContain('/Users/me')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { WorkspaceGithub } from '../../../../src/shared/types'
+import type { WorkspaceGithub } from '../../../../src/plugins/github/shared/counts'
 import { GithubCountsSweep } from '../../../../src/plugins/github/main/countsSweep'
 
 function sweepOver(
