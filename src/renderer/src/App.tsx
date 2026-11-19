@@ -110,7 +110,7 @@ import {
 import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
-import { sudoAskOf, SudoDialog } from './components/SecretAsk'
+import { useOverTerminal, useWatchOwnerAsks } from './ownerAsks'
 import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
 import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
 import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
@@ -297,7 +297,7 @@ export default function App(): JSX.Element {
   const keepAwake = useStore((s) => s.settings.keepAwake)
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
-  const secretAsks = useStore((s) => s.secretAsks)
+  const overTerminalOf = useOverTerminal()
   const instructionAsks = useStore((s) => s.instructionAsks)
   const centrePage = useStore((s) => s.centrePage)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
@@ -1013,12 +1013,7 @@ export default function App(): JSX.Element {
     return off
   }, [])
 
-  useEffect(() => {
-    const set = useStore.getState().setSecretAsks
-    const off = window.api.secret.onAsks(set)
-    void window.api.secret.list().then(set)
-    return off
-  }, [])
+  useWatchOwnerAsks()
 
   useEffect(() => {
     const set = useStore.getState().setInstructionAsks
@@ -1734,9 +1729,9 @@ export default function App(): JSX.Element {
               )}
               <div className="terminals">
                 {tabs.flatMap((t) => {
-                  const sudo = sudoAskOf(secretAsks, t.id)
+                  const overTerminal = overTerminalOf(t.id)
                   const instructionAsk = instructionAskOf(instructionAsks, t.id)
-                  const asked = !!sudo || !!instructionAsk
+                  const asked = !!overTerminal || !!instructionAsk
                   return [
                     t.ghost && (
                       <div
@@ -1795,8 +1790,8 @@ export default function App(): JSX.Element {
                       {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
                         <ResumingMask title={t.title} />
                       )}
-                      {sudo && <SudoDialog key={sudo.id} ask={sudo} shown={t.id === shown.id} />}
-                      {!sudo && instructionAsk && (
+                      {overTerminal?.(t.id === shown.id)}
+                      {!overTerminal && instructionAsk && (
                         <InstructionsAskDialog
                           key={instructionAsk.id}
                           ask={instructionAsk}

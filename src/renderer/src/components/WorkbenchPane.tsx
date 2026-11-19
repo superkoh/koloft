@@ -26,7 +26,7 @@ import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
 import { BrowserDownloads, useBrowserDownloads } from './BrowserDownloads'
 import { BrowserPermissionBar } from './BrowserPermissionBar'
-import { SecretPageBar, webAskOf } from './SecretAsk'
+import { useHeldGuests, usePageAsk } from '../ownerAsks'
 import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
@@ -50,7 +50,6 @@ import {
 import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
 import { workspaceOfTab } from '../sessionRows'
 import { useStore } from '../store'
-import { useShallow } from 'zustand/react/shallow'
 import {
   FILES_TAB_ID,
   activateTab,
@@ -724,14 +723,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     id ? els.current.get(id) : undefined
 
   const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
-  const secretAsk = useStore((s) => webAskOf(s.secretAsks, ownerTab))
+  const pageAsk = usePageAsk(ownerTab)
   const secretBarAsk =
-    secretAsk &&
+    pageAsk &&
     activeWebId &&
-    (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
-      ? secretAsk
+    (pageAsk.guestId === undefined || guestIdOf(activeWebId) === pageAsk.guestId)
+      ? pageAsk
       : undefined
-  const askedGuest = secretAsk && secretAsk.kind !== 'url' ? secretAsk.guestId : undefined
+  const askedGuest = pageAsk?.guestId
   const webTabOfGuest = (tabs: WorkbenchTabSet[], guestId: number): string | undefined =>
     tabs.flatMap((s) => s.tabs).find((t) => t.kind === 'web' && guestIdOf(t.id) === guestId)?.id
   useEffect(() => {
@@ -742,9 +741,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
     activate(hit)
   }, [askedGuest, ownerTab])
-  const tappedGuests = useStore(
-    useShallow((s) => s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [a.guestId] : [])))
-  )
+  const tappedGuests = useHeldGuests()
   const heldForTaps = useRef<string[]>([])
   useEffect(() => {
     const all = Object.values(states)
@@ -1544,7 +1541,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         }}
       />
 
-      {secretBarAsk && <SecretPageBar ask={secretBarAsk} />}
+      {secretBarAsk?.bar}
 
       <div className="wb-body">
         {/* PLATFORM§9 */}

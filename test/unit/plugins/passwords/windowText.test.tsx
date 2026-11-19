@@ -8,7 +8,7 @@ import type { SecretAskView } from '../../../../src/shared/types'
 
 const { render, cleanup } = await import('@testing-library/react')
 const { SudoDialog, SecretPageBar } =
-  await import('../../../../src/renderer/src/components/SecretAsk')
+  await import('../../../../src/plugins/passwords/renderer/SecretAsk')
 
 afterEach(cleanup)
 
