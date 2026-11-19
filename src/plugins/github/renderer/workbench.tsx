@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { BsGithub } from 'react-icons/bs'
 import {
   IconCommit,
@@ -7,10 +7,12 @@ import {
   IconPush,
   IconReload,
   IconSend
-} from '../icons'
+} from '@renderer/icons'
 import type { GitStepResult, GithubInfo, GithubTarget, PrChecks, SessionInfo } from '@shared/types'
-import { useStore } from '../store'
-import { commentBlocked } from './changesModel'
+import { useStore } from '@renderer/store'
+import { commentBlocked } from '@renderer/components/changesModel'
+import { CommitDialog } from '@renderer/components/CommitDialog'
+import type { WorkbenchPartContext, WorkbenchPartView } from '@renderer/slots'
 import { checksDot, checksLine, failingChecks, type ChecksDot } from './prChecksView'
 
 const DOT_WORD: Record<ChecksDot, string> = {
@@ -170,6 +172,88 @@ export function useWorkbenchGithub(
     sendFailingChecks,
     gitStep
   }
+}
+
+export function useWorkbenchPart({
+  visible,
+  treeRoot,
+  session,
+  onReturnFocus,
+  reread,
+  openWeb,
+  closeNewTabMenu,
+  closeDownloads
+}: WorkbenchPartContext): WorkbenchPartView {
+  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [commitOpen, setCommitOpen] = useState(false)
+
+  const openGithub = useCallback(
+    (what: GithubTarget): void => {
+      if (!treeRoot) return
+      void window.api.github.target(treeRoot, what).then((url) => {
+        if (url) openWeb(url)
+      })
+    },
+    [treeRoot, openWeb]
+  )
+  const openFromButton = useCallback(
+    (what: GithubTarget): void => {
+      closeNewTabMenu()
+      setMenuOpen(false)
+      openGithub(what)
+    },
+    [closeNewTabMenu, openGithub]
+  )
+  const refreshChecks = gh.refreshChecks
+  const openMenu = useCallback((): void => {
+    closeNewTabMenu()
+    closeDownloads()
+    setMenuOpen(true)
+    refreshChecks()
+  }, [closeNewTabMenu, closeDownloads, refreshChecks])
+  const closeMenu = useCallback((): void => setMenuOpen(false), [])
+
+  const info = gh.info
+  const button = useMemo(
+    () =>
+      info && (
+        <GithubButton
+          info={info}
+          dot={gh.dot}
+          label={gh.label}
+          onOpen={openFromButton}
+          onMenu={openMenu}
+        />
+      ),
+    [info, gh.dot, gh.label, openFromButton, openMenu]
+  )
+  const layer = (
+    <>
+      {menuOpen && info && (
+        <GithubMenu
+          gh={gh}
+          info={info}
+          treeRoot={treeRoot}
+          onClose={closeMenu}
+          onOpen={openGithub}
+          onCommit={() => setCommitOpen(true)}
+        />
+      )}
+      {commitOpen && treeRoot && (
+        <CommitDialog
+          branch={info?.branch ?? null}
+          onCancel={() => setCommitOpen(false)}
+          onCommit={async (message) => {
+            const ok = await gh.gitStep(window.api.git.commit(treeRoot, message), 'Committed.')
+            if (ok) setCommitOpen(false)
+            return ok
+          }}
+        />
+      )}
+    </>
+  )
+  return { button, layer, menuOpen, closeMenu }
 }
 
 export const GithubButton = memo(function GithubButton({
