@@ -4,7 +4,7 @@ import {
   TAB_FORGOTTEN,
   TAB_TORN_DOWN,
   type MadeLater,
-  type Moments,
+  type Moment,
   type TabEnded
 } from '@core/moment'
 import type { AttentionTracker } from './attention'
@@ -30,15 +30,14 @@ export interface TabSubsystems {
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
   toast: (message: string) => void
   workspaces: MadeLater<Pick<WorkspaceManager, 'launchEnded' | 'onTrackerUpdate'>>
-  moments: Pick<Moments, 'announce'>
-  failed: (error: unknown) => void
+  announce: <T>(moment: Moment<T>, m: T) => void
 }
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
   lifecycle.on('stopping', (tabId, restarting) => s.attention.tabStopping(tabId, restarting))
   lifecycle.on('stopping', (tabId) => s.cdpTabClosed(tabId))
 
-  lifecycle.on('exit', (exit) => void s.moments.announce(TAB_EXITED, exit).catch(s.failed))
+  lifecycle.on('exit', (exit) => s.announce(TAB_EXITED, exit))
 
   lifecycle.on('teardown', ({ tabId }) => s.attention.clear(tabId))
   lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))
@@ -50,13 +49,10 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
       .catch((error) => s.toast(String(error)))
   })
   lifecycle.on('teardown', ({ tabId }) => s.workspaces()?.launchEnded(tabId))
-  lifecycle.on('teardown', (exit) => void s.moments.announce(TAB_TORN_DOWN, exit).catch(s.failed))
+  lifecycle.on('teardown', (exit) => s.announce(TAB_TORN_DOWN, exit))
 
   lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())
   lifecycle.on('woken', () => s.workspaces()?.onTrackerUpdate())
-  lifecycle.on(
-    'forgotten',
-    (tabId) => void s.moments.announce(TAB_FORGOTTEN, tabId).catch(s.failed)
-  )
+  lifecycle.on('forgotten', (tabId) => s.announce(TAB_FORGOTTEN, tabId))
   lifecycle.on('forgotten', () => s.workspaces()?.onTrackerUpdate())
 }

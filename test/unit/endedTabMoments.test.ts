@@ -59,7 +59,7 @@ const exitOf = (over: Partial<TabEnded> = {}): TabEnded => ({
 })
 
 describe('what each plugin lets go of when a tab ends', () => {
-  it('an exit makes what the session was asking, the butler digest, each Discord part and a password ask forget the tab, and a closed tab closes its room', () => {
+  it('an exit makes what the session was asking, the butler digest, each Discord part and a password ask forget the tab, and a closed tab closes its room only after its password ask cards have ended', () => {
     const { moments, calls } = wired()
     void moments.announce(TAB_EXITED, exitOf())
     expect(calls).toEqual([
@@ -69,8 +69,8 @@ describe('what each plugin lets go of when a tab ends', () => {
       'typing.forget t1',
       'relay.forget t1',
       'buttons.forget t1',
-      'rooms.closed t1',
-      'secrets.forget t1'
+      'secrets.forget t1',
+      'rooms.closed t1'
     ])
   })
 

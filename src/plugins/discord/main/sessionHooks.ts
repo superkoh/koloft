@@ -40,13 +40,20 @@ export interface EndedTabParts {
 export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void {
   for (const part of [d.typing, d.relay, d.buttons])
     moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => part()?.forget(tabId))
-  moments.listen(plugin.id, TAB_EXITED, ({ tabId, sessionGoesOn, unexpected }) => {
-    const rooms = d.rooms()
-    if (sessionGoesOn) rooms?.forget(tabId)
-    else if (unexpected) rooms?.stopped(tabId)
-    else void rooms?.closed(tabId)
-  })
+  moments.listen(
+    plugin.id,
+    TAB_EXITED,
+    ({ tabId, sessionGoesOn, unexpected }) => {
+      const rooms = d.rooms()
+      if (sessionGoesOn) rooms?.forget(tabId)
+      else if (unexpected) rooms?.stopped(tabId)
+      else void rooms?.closed(tabId)
+    },
+    SECRET_ASK_CARDS_END_BEFORE_THE_ROOM_CLOSES
+  )
 }
+
+const SECRET_ASK_CARDS_END_BEFORE_THE_ROOM_CLOSES = ['passwords']
 
 const RELAYED = `${DISCORD_PREFIX} `
 

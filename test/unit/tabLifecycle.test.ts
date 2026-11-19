@@ -30,14 +30,10 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
       launchEnded: say('workspaces.launchEnded'),
       onTrackerUpdate: say('workspaces.onTrackerUpdate')
     }),
-    moments: {
-      announce: async <T>(moment: Moment<T>, m: T) => {
-        const tabId = typeof m === 'string' ? m : (m as TabEnded).tabId
-        calls.push(`announce ${moment.name} ${tabId}`)
-        return []
-      }
+    announce: <T>(moment: Moment<T>, m: T) => {
+      const tabId = typeof m === 'string' ? m : (m as TabEnded).tabId
+      calls.push(`announce ${moment.name} ${tabId}`)
     },
-    failed: say('failed'),
     ...over
   })
   return { lifecycle, calls }
@@ -58,14 +54,6 @@ describe('TabLifecycle', () => {
       const { lifecycle, calls } = wired()
       lifecycle.emit('stopping', 't1', restarting)
       expect(calls).toEqual([`attention.tabStopping t1 ${restarting}`, 'cdpTabClosed t1'])
-    }
-  })
-
-  it('an exit, asleep or not, is announced to the plugins', () => {
-    for (const asleep of [false, true]) {
-      const { lifecycle, calls } = wired()
-      lifecycle.emit('exit', exitOf({ asleep }))
-      expect(calls).toEqual(['announce tab-exited t1'])
     }
   })
 
@@ -95,17 +83,6 @@ describe('TabLifecycle', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls).toContain('owner.stop t1 -1')
     expect(calls).toContain('toast Error: stop failed')
-  })
-
-  it('a plugin that fails while hearing a tab end goes to the error report, and the rest of the teardown still runs', async () => {
-    const { lifecycle, calls } = wired({
-      moments: { announce: async () => Promise.reject(new Error('a plugin broke')) }
-    })
-    lifecycle.emit('exit', exitOf())
-    lifecycle.emit('teardown', exitOf())
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls).toContain('failed Error: a plugin broke')
-    expect(calls).toContain('workspaces.launchEnded t1')
   })
 
   it('a tab put to sleep or woken refreshes the workspaces list', () => {

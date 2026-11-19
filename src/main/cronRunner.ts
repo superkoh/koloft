@@ -39,8 +39,7 @@ import {
   type LaunchPermission,
   type LiveRun,
   type Schedule,
-  type SessionStatus,
-  type TerminalExit
+  type SessionStatus
 } from '@shared/types'
 import {
   MISS_WINDOW_MS,
@@ -89,8 +88,6 @@ export async function worktreeNameFor(
 }
 
 export type LaunchResult = { ok: true; tabId: string } | { ok: false }
-
-export type { AgentExit, LeftTab }
 
 interface KeptTab {
   jobId: string

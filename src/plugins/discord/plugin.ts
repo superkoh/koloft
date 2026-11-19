@@ -21,5 +21,5 @@ export const plugin: PluginManifest = {
     { place: 'settings-page', id: DISCORD_PAGE }
   ],
   channels: Object.values(CHANNELS),
-  moments: { listens: [FILE_OPENED, SESSION_STARTED, TAB_EXITED].map((m) => m.name) }
+  moments: { listens: [FILE_OPENED.name, SESSION_STARTED.name, TAB_EXITED.name] }
 }

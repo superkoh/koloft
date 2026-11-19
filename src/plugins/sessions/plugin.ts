@@ -22,9 +22,13 @@ export const plugin: PluginManifest = {
   assistJobs: ASSIST_JOBS,
   channels: Object.values(CHANNELS),
   moments: {
-    announces: [SESSION_STARTING, SESSION_STARTED, TAB_EXITED, TAB_TORN_DOWN, TAB_FORGOTTEN].map(
-      (m) => m.name
-    ),
+    announces: [
+      SESSION_STARTING.name,
+      SESSION_STARTED.name,
+      TAB_EXITED.name,
+      TAB_TORN_DOWN.name,
+      TAB_FORGOTTEN.name
+    ],
     listens: [TAB_EXITED.name]
   }
 }

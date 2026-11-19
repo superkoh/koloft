@@ -49,6 +49,16 @@ describe('session moments', () => {
     expect(heard).toEqual(['first 1', 'first 2', 'second'])
   })
 
+  it('a listener may ask to hear a moment after a later plugin has heard it', async () => {
+    const heard: string[] = []
+    const { moments } = registry(['first', 'second', 'third'])
+    moments.listen('first', OPENED, () => void heard.push('first, after second'), ['second'])
+    moments.listen('second', OPENED, () => void heard.push('second'))
+    moments.listen('third', OPENED, () => void heard.push('third'))
+    await moments.announce(OPENED, 'plan.md')
+    expect(heard).toEqual(['second', 'first, after second', 'third'])
+  })
+
   it('every listener has heard the moment by the time announce returns, before anything is awaited', () => {
     const heard: string[] = []
     const { moments } = registry(['a', 'b'])
@@ -67,7 +77,7 @@ describe('session moments', () => {
     expect(await moments.announce(OPENED, 'plan.md')).toEqual(['first', 'last'])
   })
 
-  it('a listener that throws or fails does not keep the others from hearing the moment, and the announce then fails with the first failure', async () => {
+  it('a listener that throws or fails does not keep the others from hearing the moment, and the announce then fails naming every failure', async () => {
     const heard: string[] = []
     const { moments } = registry(['a', 'b', 'c'])
     moments.listen('a', OPENED, () => {
@@ -77,7 +87,9 @@ describe('session moments', () => {
       throw new Error('b broke')
     })
     moments.listen('c', OPENED, () => void heard.push('c'))
-    await expect(moments.announce(OPENED, 'plan.md')).rejects.toThrow('a broke')
+    await expect(moments.announce(OPENED, 'plan.md')).rejects.toThrow(
+      '2 listeners to "opened" failed: a broke; b broke'
+    )
     expect(heard).toEqual(['c'])
   })
 

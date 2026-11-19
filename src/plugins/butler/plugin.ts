@@ -22,7 +22,7 @@ export const plugin: PluginManifest = {
   channels: Object.values(CHANNELS),
   assistJobs: ASSIST_JOBS,
   moments: {
-    listens: [SESSION_STARTING, TAB_EXITED, TAB_TORN_DOWN, TAB_FORGOTTEN].map((m) => m.name)
+    listens: [SESSION_STARTING.name, TAB_EXITED.name, TAB_TORN_DOWN.name, TAB_FORGOTTEN.name]
   },
   ui: [
     { place: 'sidebar-row', id: BUTLER_ROW_PART },

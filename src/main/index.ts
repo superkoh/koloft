@@ -278,13 +278,7 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import {
-  CronRunner,
-  type LaunchRequest,
-  type LaunchResult,
-  type LeftTab,
-  type RunLeftovers
-} from './cronRunner'
+import { CronRunner, type LaunchRequest, type LaunchResult, type RunLeftovers } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
@@ -572,6 +566,7 @@ import {
   Moments,
   SESSION_STARTED,
   SESSION_STARTING,
+  type LeftTab,
   type SessionStarted,
   type TabEnded
 } from '@core/moment'
@@ -701,13 +696,11 @@ if (OFF_SCREEN_TEST && process.platform === 'darwin') {
 const AN_ERROR_NOBODY_CAUGHT_IS_SHOWN_AT_MOST_EVERY_MS = 60_000
 const MAIN_ERRORS_LOG = 'main-errors.log'
 
-let errorNobodyCaught = (error: unknown): void => console.error(error)
-
 // PLATFORM§4
 function takeErrorsNobodyCaught(): void {
   const log = signalLog(path.join(app.getPath('userData'), MAIN_ERRORS_LOG))
   let shownAt = -Infinity
-  errorNobodyCaught = (error) => {
+  process.on('uncaughtException', (error) => {
     console.error(error)
     const message = error instanceof Error ? error.message : String(error)
     const [firstLine] = message.split('\n')
@@ -718,8 +711,7 @@ function takeErrorsNobodyCaught(): void {
       `Koloft hit an error it did not expect and kept going (details in ${MAIN_ERRORS_LOG}, in its data folder): ${firstLine}`
     )
     if (shown) shownAt = Date.now()
-  }
-  process.on('uncaughtException', (error) => errorNobodyCaught(error))
+  })
   process.on('unhandledRejection', (reason) => {
     console.error(reason)
     log(
@@ -729,6 +721,10 @@ function takeErrorsNobodyCaught(): void {
 }
 
 const moments = new Moments(PLUGINS)
+const throwAsIfNobodyCaughtIt = (error: unknown): void =>
+  queueMicrotask(() => {
+    throw error
+  })
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -3676,8 +3672,7 @@ app.whenReady().then(() => {
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
-    moments,
-    failed: (error) => errorNobodyCaught(error)
+    announce: (moment, m) => void moments.announce(moment, m).catch(throwAsIfNobodyCaughtIt)
   })
   forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
   butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
