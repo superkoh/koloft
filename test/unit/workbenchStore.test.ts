@@ -784,7 +784,11 @@ describe('a workspace row’s own Workbench', () => {
     githubTarget.mockResolvedValueOnce(null as unknown as string)
     useStore.getState().openWorkspaceList(WS, 'issues')
 
-    await vi.waitFor(() => expect(useStore.getState().toast).toMatch(/GitHub page/))
+    await vi.waitFor(() =>
+      expect(useStore.getState().toast).toBe(
+        'Could not find this workspace’s GitHub page — try again.'
+      )
+    )
     expect(strip(WS_KEY)).toBeUndefined()
   })
 
