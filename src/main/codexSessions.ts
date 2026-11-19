@@ -115,7 +115,9 @@ import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog
 import {
   StoredSessions,
   hostOfKey,
+  ownerTextFor,
   type HistoryListing,
+  type LaunchIdentity,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -283,7 +285,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   homeOf(sessionId: string): string | undefined
-  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   replyLanguageScript: string
   builtInStatusLine(): boolean
   browserEndpoint(tabId: string): string
@@ -846,9 +848,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   protected async startRun(
-    { opts, cwd, resource, freshWorktree, workspace, rules }: StartContext,
+    ctx: StartContext,
     { picked, binary, processEnv }: CodexLaunch
   ): Promise<CodexRun> {
+    const { opts, cwd, resource, freshWorktree, workspace, rules } = ctx
     const home = picked.home
     const machine = parseRemoteKey(cwd)?.host
     const trustedOnMachine: string[] = []
@@ -933,9 +936,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           })
         : undefined
     )
+    const ownerText = ownerTextFor(ctx, conductor, assist)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex', rules)] : []),
-      ...(role ? [role] : [])
+      ...(role ? [role] : []),
+      ...(ownerText ? [ownerText] : [])
     ]
     const permission = this.permissionOf(opts)
     const permissions = PERMISSIONS[permission]

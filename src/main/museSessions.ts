@@ -86,7 +86,9 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   hostOfKey,
+  ownerTextFor,
   type HistoryListing,
+  type LaunchIdentity,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -106,7 +108,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): MuseHomePick | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
-  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   skipPermissions(): boolean
   serversAmong(pid: number, commands: Map<string, string>): Promise<Set<string>>
   agent: {
@@ -663,7 +665,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
-      context: agentTools ? koloftPrompt('muse', rules) : undefined,
+      context:
+        [agentTools ? koloftPrompt('muse', rules) : '', ownerTextFor(ctx, false) ?? '']
+          .filter(Boolean)
+          .join('\n\n') || undefined,
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords
@@ -748,9 +753,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
+    const ownerText = ownerTextFor(ctx, conductor, assist)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse', rules)] : []),
-      ...(role ? [role] : [])
+      ...(role ? [role] : []),
+      ...(ownerText ? [ownerText] : [])
     ]
     let bound: MuseRun | undefined
     const tools = this.startTools(

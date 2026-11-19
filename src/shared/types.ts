@@ -380,6 +380,7 @@ export type SessionDefaultsRead =
       ok: true
       defaults: SessionDefaults
       familyEfforts: Record<string, CronEffort[]>
+      instructions: string
     }
   | { ok: false; error: string }
 

@@ -13,5 +13,6 @@ export const plugin: PluginManifest = {
   commands: [{ verb: 'help' }, { verb: 'session' }, { verb: 'workspace' }],
   text: [...TEXT, ...SKILL_TEXT],
   assistJobs: ASSIST_JOBS,
+  settings: { keys: ['workspaceInstructions'] },
   channels: Object.values(CHANNELS)
 }

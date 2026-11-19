@@ -49,7 +49,7 @@ export interface SessionsBridge {
     read(workspacePath: string): Promise<SessionDefaultsRead>
     write(
       workspacePath: string,
-      defaults: SessionDefaults
+      defaults: SessionDefaults & { instructions: string }
     ): Promise<{ ok: boolean; error?: string }>
   }
 }

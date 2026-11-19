@@ -477,7 +477,7 @@ import { projectRulesForTheButler } from '@shared/agentGuide'
 import { conductorFolder, helperRoleOf, OwnerAsleep, THIS_MAC } from '@plugins/butler/api'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
-import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
+import { cronPickFor, sanitizeDefaults, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import { DiscordBinding } from './discord/binding'
@@ -617,7 +617,13 @@ import {
   type SessionVerbDeps,
   type Target
 } from '@plugins/sessions/main/sessionVerbs'
-import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
+import {
+  HandOver,
+  resolveWorkspace,
+  workspaceInstructions,
+  type PlacedRow,
+  type Recipient
+} from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
   TODO_NOTICE_FROM_KOLOFT,
@@ -2089,6 +2095,23 @@ const defaultsOfProjects = projectDefaults({
 
 async function rulesOf(workspace: string): Promise<string | undefined> {
   return (await defaultsOfProjects.of(workspace))?.rules
+}
+
+const instructionsOfWorkspaces = workspaceInstructions({
+  rootOf: (dir) => projectInfoOnHost(dir).root,
+  saved: () => loadSettings().workspaceInstructions,
+  save: (workspaceInstructions) => commitSettings({ workspaceInstructions }),
+  now: Date.now
+})
+
+async function writeDefaultsAndInstructions(workspacePath: string, raw: unknown): Promise<void> {
+  const draft = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const text = instructionsOfWorkspaces.checked(
+    draft.instructions,
+    sanitizeDefaults(draft)?.rules ?? ''
+  )
+  await defaultsOfProjects.write(workspacePath, raw)
+  instructionsOfWorkspaces.write(workspacePath, text)
 }
 
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
@@ -3799,6 +3822,7 @@ app.whenReady().then(() => {
     runtime: tracker,
     projectInfo: projectInfoOnHost,
     projectRules: rulesOf,
+    workspaceInstructions: (workspace: string) => instructionsOfWorkspaces.partOf(workspace),
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
@@ -6157,6 +6181,7 @@ const claudeBackend = new ClaudeBackend({
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
   projectRules: rulesOf,
+  workspaceInstructions: (workspace) => instructionsOfWorkspaces.partOf(workspace),
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
@@ -6686,9 +6711,13 @@ function registerIpc(): void {
             ])
           : undefined
       ])
-      return { defaults, familyEfforts: familyEfforts('agy', listed) }
+      return {
+        defaults,
+        familyEfforts: familyEfforts('agy', listed),
+        instructions: instructionsOfWorkspaces.textOf(workspacePath)
+      }
     },
-    writeDefaults: (workspacePath, raw) => defaultsOfProjects.write(workspacePath, raw)
+    writeDefaults: writeDefaultsAndInstructions
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
