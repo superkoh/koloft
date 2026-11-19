@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toDiscordMarkdown } from '../../src/main/discord/markdown'
+import { toDiscordMarkdown } from '../../../../src/plugins/discord/main/markdown'
 
 describe('markdown Discord shows as plain text is rewritten into what it does show', () => {
   it('a table of any width, since no code block lines up on a phone, becomes one block per row: the first cell in bold, then each other cell on its own quoted line under its header, blocks a blank line apart, empty cells left out', () => {

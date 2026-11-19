@@ -1,7 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { AddressInfo } from 'net'
-import { DiscordGateway, INTENTS, type GatewayState } from '../../src/main/discord/gateway'
+import {
+  DiscordGateway,
+  INTENTS,
+  type GatewayState
+} from '../../../../src/plugins/discord/main/gateway'
 
 interface Sent {
   op: number
