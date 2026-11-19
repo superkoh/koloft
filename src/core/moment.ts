@@ -1,5 +1,5 @@
 // ADR-0051
-import type { ArtifactView, TerminalExit } from '@shared/types'
+import type { ArtifactView, AttentionEvent, SessionStatus, TerminalExit } from '@shared/types'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { PluginManifest } from './plugin'
@@ -55,6 +55,28 @@ export interface SessionBound {
   idleCompaction: boolean
 }
 
+export interface StateChanged {
+  tabId: string
+  prev: SessionStatus | undefined
+  next: SessionStatus
+}
+
+export interface ToolDone {
+  tabId: string
+  call: { name: string; input: Record<string, unknown> }
+  endsTheAsk: boolean
+}
+
+export interface TurnOver {
+  tabId: string
+  over: boolean
+}
+
+export interface TabStopping {
+  tabId: string
+  restarting: boolean
+}
+
 export interface Moment<T> {
   readonly name: string
   readonly carries?: T
@@ -72,6 +94,11 @@ export const TURN_STARTED = named<string>('turn-started')
 export const TURN_ENDED = named<TurnEnded>('turn-ended')
 export const QUESTION_ASKED = named<QuestionAsked>('question-asked')
 export const SESSION_BOUND = named<SessionBound>('session-bound')
+export const STATE_CHANGED = named<StateChanged>('state-changed')
+export const TOOL_DONE = named<ToolDone>('tool-done')
+export const TURN_OVER = named<TurnOver>('turn-over')
+export const ATTENTION_CHANGED = named<readonly AttentionEvent[]>('attention-changed')
+export const TAB_STOPPING = named<TabStopping>('tab-stopping')
 
 export type Hears<T> = (moment: T) => unknown
 

@@ -1,6 +1,8 @@
 import {
+  ATTENTION_CHANGED,
   SESSION_BOUND,
   SESSION_STARTING,
+  STATE_CHANGED,
   TAB_EXITED,
   TAB_FORGOTTEN,
   TAB_TORN_DOWN,
@@ -40,9 +42,10 @@ export function butlerFollowsEachTurn(
     digest: MadeLater<{
       turnEnded(tabId: string, reply: string, handedOff: boolean): void
       prompted(tabId: string): void
+      marked(): void
     }>
     tookTheTurn(tabId: string): boolean
-    asleep: { awakeTabsChanged(): void }
+    asleep: { awakeTabsChanged(): void; asks(tabId: string): Promise<void> }
     butlerTabChanged(): void
   }
 ): void {
@@ -60,6 +63,10 @@ export function butlerFollowsEachTurn(
     d.asleep.awakeTabsChanged()
     d.butlerTabChanged()
   })
+  moments.listen(plugin.id, STATE_CHANGED, ({ tabId, next }) => {
+    if (next === 'approval') void d.asleep.asks(tabId)
+  })
+  moments.listen(plugin.id, ATTENTION_CHANGED, () => d.digest()?.marked())
 }
 
 export const butlersWords = {

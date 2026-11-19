@@ -1,7 +1,9 @@
 import {
   SESSION_BOUND,
   SESSION_STARTED,
+  STATE_CHANGED,
   TAB_EXITED,
+  TOOL_DONE,
   TURN_ENDED,
   type MadeLater,
   type Moments,
@@ -40,15 +42,23 @@ export interface EndedTabParts {
   rooms: MadeLater<ForgetsTabs & { stopped(tabId: string): void; closed(tabId: string): unknown }>
 }
 
-export function discordFollowsEachTurn(
+export function discordFollowsEachTurn<Ask>(
   moments: Moments,
   d: {
-    relay: MadeLater<{ turnEnded(tabId: string, turn: Turn): void }>
+    relay: MadeLater<{
+      turnEnded(tabId: string, turn: Turn): void
+      stoppedAsking(tabId: string): void
+      codexAsked(tabId: string, ask: Ask): void
+    }>
     typing: MadeLater<{ refresh(tabId: string): void }>
     rooms: MadeLater<{
       bound(tabId: string, key: string, newConversation: () => Promise<boolean>): Promise<void>
     }>
+    buttons: MadeLater<{ check(tabId: string): Promise<void> }>
     noTurnsYet(key: string): Promise<boolean>
+    askChannelOf(tabId: string): string | undefined
+    pendingAskOf(tabId: string): Promise<Ask | undefined>
+    askUnreadablySoon(tabId: string): void
   }
 ): void {
   moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) => d.relay()?.turnEnded(tabId, turn))
@@ -56,6 +66,18 @@ export function discordFollowsEachTurn(
     d.typing()?.refresh(tabId)
     void d.rooms()?.bound(tabId, key, async () => !idleCompaction && (await d.noTurnsYet(key)))
   })
+  moments.listen(plugin.id, STATE_CHANGED, ({ tabId, next }) => {
+    const asksOnDiscord = !!d.askChannelOf(tabId)
+    if (next !== 'approval') d.relay()?.stoppedAsking(tabId)
+    if (asksOnDiscord && (next === 'approval' || next === 'waiting'))
+      void d.pendingAskOf(tabId).then((ask) => {
+        if (ask) return d.relay()?.codexAsked(tabId, ask)
+        if (next === 'approval') d.askUnreadablySoon(tabId)
+      })
+    if (asksOnDiscord) void d.buttons()?.check(tabId)
+    d.typing()?.refresh(tabId)
+  })
+  moments.listen(plugin.id, TOOL_DONE, ({ tabId }) => void d.buttons()?.check(tabId))
 }
 
 export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void {
