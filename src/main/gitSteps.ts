@@ -64,10 +64,11 @@ export async function readHead(run: GitRun): Promise<GitHead | null> {
 }
 
 export async function readReadiness(run: GitRun): Promise<GitReadiness | null> {
-  const [status, origin] = await Promise.all([
+  const [head, status, origin] = await Promise.all([
+    readHead(run),
     run(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=normal']),
     run(['config', '--get', `remote.${PUSH_REMOTE}.url`])
   ])
-  if (status.code !== 0) return null
-  return { commitable: status.stdout.trim() !== '', hasPushRemote: origin.code === 0 }
+  if (!head || status.code !== 0) return null
+  return { head, commitable: status.stdout.trim() !== '', hasPushRemote: origin.code === 0 }
 }

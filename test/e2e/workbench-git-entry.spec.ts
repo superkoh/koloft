@@ -158,7 +158,7 @@ test.describe('Workbench · Commit… and Push for any git repository: a branch 
       await expect(gitMenuItem(page, 'Commit…')).toHaveClass(/\bdisabled\b/, { timeout: 30_000 })
       await expect(gitMenuItem(page, 'Commit…')).toHaveAttribute('title', /nothing to commit/i)
       await expect(gitMenuItem(page, 'Push')).toHaveClass(/\bdisabled\b/)
-      await expect(gitMenuItem(page, 'Push')).toHaveAttribute('title', /origin/)
+      await expect(gitMenuItem(page, 'Push')).toHaveAttribute('title', /^No remote/)
       await snap(page, 'GE2-nothing-no-origin')
       await page.keyboard.press('Escape')
 
@@ -187,7 +187,7 @@ test.describe('Workbench · Commit… and Push for any git repository: a branch 
       await expect(gitButton(page)).toHaveText('detached HEAD', { timeout: 30_000 })
       await gitButton(page).click()
       await expect(gitMenuItem(page, 'Push')).toHaveClass(/\bdisabled\b/)
-      await expect(gitMenuItem(page, 'Push')).toHaveAttribute('title', /branch/)
+      await expect(gitMenuItem(page, 'Push')).toHaveAttribute('title', /^Not on a branch/)
       await page.keyboard.press('Escape')
 
       gitOut(dir, 'switch', '-q', '-c', 'fix/typo')

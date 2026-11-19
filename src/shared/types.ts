@@ -902,6 +902,7 @@ export type PrChecks =
 export type GitStepResult = { ok: true } | { ok: false; reason: string }
 
 export interface GitReadiness {
+  head: GitHead
   commitable: boolean
   hasPushRemote: boolean
 }

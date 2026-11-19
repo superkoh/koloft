@@ -235,7 +235,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     (): void => partClosers.forEach((close) => close()),
     partClosers
   )
-  closePartMenusHere.current = closePartMenus
+  useLayoutEffect(() => {
+    closePartMenusHere.current = closePartMenus
+  }, [closePartMenus])
   const partButtons = parts.map((p) => p.button)
   const pinnedParts = useMemo(
     () => partButtons.map((button, i) => <Fragment key={i}>{button}</Fragment>),

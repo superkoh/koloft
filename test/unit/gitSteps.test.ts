@@ -120,8 +120,14 @@ describe('Push', () => {
 })
 
 describe('what the Workbench git menu asks git when it opens', () => {
-  it('says whether there is anything to commit and whether origin is there to push to', async () => {
-    expect(await readReadiness(run)).toEqual({ commitable: false, hasPushRemote: true })
+  it('says the branch as it is now, whether there is anything to commit and whether origin is there to push to', async () => {
+    expect(await readReadiness(run)).toEqual({
+      head: { branch: 'feature/login' },
+      commitable: false,
+      hasPushRemote: true
+    })
+    git(repo, 'checkout', '-q', '--detach')
+    expect(await readReadiness(run)).toMatchObject({ head: { detached: true } })
   })
 
   it('counts a new file as something to commit, as git add -A does, even where git status is set to hide new files', async () => {
