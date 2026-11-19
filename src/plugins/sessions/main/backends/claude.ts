@@ -30,11 +30,11 @@ import type { RemoteSync } from '../../../../main/remote/sync'
 import {
   AGENT_DROP_NAME,
   REQUEST_NAME,
-  errorText,
   replyJson,
-  tabSpokenFor,
-  type AgentReply
+  tabSpokenFor
 } from '../../../../main/agentRequests'
+import type { AgentReply } from '@core/command'
+import { errorText } from '@core/errorText'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../../main/remote/launch'
 import {
   dq,

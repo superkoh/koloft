@@ -449,15 +449,9 @@ import type {
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import {
-  AgentRequests,
-  answered,
-  errorText,
-  refused,
-  tabSpokenFor,
-  type AgentReply,
-  type AgentVerb
-} from './agentRequests'
+import { AgentRequests, tabSpokenFor } from './agentRequests'
+import { answered, refused, type AgentReply, type AgentVerb } from '@core/command'
+import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
