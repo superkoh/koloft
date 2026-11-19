@@ -313,6 +313,28 @@ describe('gh wrapper', () => {
     expect(fs.existsSync(ghLog)).toBe(false)
   })
 
+  it('a wrapper that takes itself off PATH and execs gh comes back once and then reaches the real gh', async () => {
+    const politeDir = path.join(root, 'polite wrapper')
+    fs.mkdirSync(politeDir)
+    fs.writeFileSync(
+      path.join(politeDir, 'gh'),
+      `#!/bin/sh\nPATH='${scripts}:${realGhDir}:/usr/bin:/bin' exec gh "$@"\n`,
+      { mode: 0o755 }
+    )
+    const r = await run(
+      gh(),
+      ['pr', 'list'],
+      { PATH: `${scripts}:${politeDir}:${realGhDir}:/usr/bin:/bin` },
+      '',
+      root,
+      A_LOOP_IS_KILLED_AFTER_MS
+    )
+    expect(r.status).toBe(0)
+    expect(fs.readFileSync(ghLog, 'utf8')).toBe(
+      'argv=pr list token= host= github_token= enterprise=\n'
+    )
+  })
+
   it('a gh the next gh starts as its own process, as an extension or alias does, still runs', async () => {
     const extDir = path.join(root, 'gh with extension')
     fs.mkdirSync(extDir)

@@ -131,8 +131,8 @@ if [ -z "$real" ]; then
   echo "gh: not found" >&2
   exit 127
 fi
-if [ "$KOLOFT_GH_HANDED_OFF_PID" = "$$" ]; then
-  echo "koloft: the gh wrapper came back to itself through $KOLOFT_GH_HANDED_OFF_TO; that gh runs this one again, so take it off PATH or let it run the real gh." >&2
+if [ "$KOLOFT_GH_HANDED_OFF_PID" = "$$" ] && [ "$KOLOFT_GH_HANDED_OFF_TO" = "$real" ]; then
+  echo "koloft: the gh wrapper came back to itself through $real; that gh runs this one again, so take it off PATH or let it run the real gh." >&2
   exit 1
 fi
 export KOLOFT_GH_HANDED_OFF_PID="$$" KOLOFT_GH_HANDED_OFF_TO="$real"
