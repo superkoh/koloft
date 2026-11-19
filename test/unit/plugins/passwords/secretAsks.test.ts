@@ -35,6 +35,17 @@ function setup() {
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 describe('asking the owner for a secret in Koloft', () => {
+  it('declining them all, as when Passwords and sign-in is turned off, ends every waiting ask and takes it off the screen', async () => {
+    const { asks, lastShown } = setup()
+    const first = asks.ask(ask, LONG)
+    const second = asks.ask({ ...ask, tabId: 'tab-2', from: 'tab-2' }, LONG)
+    expect(lastShown()).toHaveLength(2)
+    asks.declineAll()
+    expect(await first).toEqual({ ended: 'declined' })
+    expect(await second).toEqual({ ended: 'declined' })
+    expect(lastShown()).toEqual([])
+  })
+
   it('with nothing else listening, as when Discord was never set up, the ask shows in Koloft, marks the session as waiting on the owner, and what is typed there reaches the asker', async () => {
     const { asks, waits, answeredTabs, lastShown } = setup()
     const answer = asks.ask(ask, LONG)

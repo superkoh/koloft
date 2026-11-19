@@ -33,6 +33,10 @@ export function docsSkillHandedOut(home: string, claudeArgs: readonly string[]):
   return [...copies, ...claudeArgs.filter((a) => a.includes(DOCS_PLUGIN)), ...codexRoots]
 }
 
+export function filesNamedUnder(dir: string, name: string): string[] {
+  return pathsUnderWhileTheAppWrites(dir).filter((rel) => path.basename(rel) === name)
+}
+
 export function koloftSkillsUnder(dir: string): string[] {
   return pathsUnderWhileTheAppWrites(dir)
     .filter((rel) => rel.endsWith(path.join('koloft', 'SKILL.md')))

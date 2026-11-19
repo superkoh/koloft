@@ -4,6 +4,7 @@ import type { AskPayload } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { PluginManifest } from './plugin'
 import { errorText } from './errorText'
+import { pluginStateOf } from './switches'
 
 export interface FileOpened {
   tabId: string
@@ -80,16 +81,19 @@ export interface TabStopping {
 export interface Moment<T> {
   readonly name: string
   readonly carries?: T
+  readonly heardWhileOff?: true
 }
 
 const named = <T>(name: string): Moment<T> => ({ name })
 
+const aTabsEnd = <T>(name: string): Moment<T> => ({ name, heardWhileOff: true })
+
 export const FILE_OPENED = named<FileOpened>('file-opened')
 export const SESSION_STARTING = named<SessionStarting>('session-starting')
 export const SESSION_STARTED = named<SessionStarted>('session-started')
-export const TAB_EXITED = named<TabEnded>('tab-exited')
-export const TAB_TORN_DOWN = named<TabEnded>('tab-torn-down')
-export const TAB_FORGOTTEN = named<string>('tab-forgotten')
+export const TAB_EXITED = aTabsEnd<TabEnded>('tab-exited')
+export const TAB_TORN_DOWN = aTabsEnd<TabEnded>('tab-torn-down')
+export const TAB_FORGOTTEN = aTabsEnd<string>('tab-forgotten')
 export const TURN_STARTED = named<string>('turn-started')
 export const TURN_ENDED = named<TurnEnded>('turn-ended')
 export const QUESTION_ASKED = named<QuestionAsked>('question-asked')
@@ -107,6 +111,7 @@ export type MadeLater<T> = () => T | null
 
 interface Listener {
   at: number
+  plugin: string
   hear: Hears<never>
 }
 
@@ -140,7 +145,7 @@ export class Moments {
         return before + 0.5
       })
     )
-    const listener: Listener = { at, hear }
+    const listener: Listener = { at, plugin: pluginId, hear }
     const all = [...(this.listeners.get(moment.name) ?? []), listener]
     this.listeners.set(
       moment.name,
@@ -156,7 +161,10 @@ export class Moments {
   announce<T>(moment: Moment<T>, m: T): Promise<string[]> {
     if (!this.announcedNames.has(moment.name)) return Promise.reject(this.unannounced(moment))
     const failures: unknown[] = []
-    const said = (this.listeners.get(moment.name) ?? []).map(({ hear }) => {
+    const on = (this.listeners.get(moment.name) ?? []).filter(
+      (l) => moment.heardWhileOff || pluginStateOf(l.plugin).on
+    )
+    const said = on.map(({ hear }) => {
       try {
         return Promise.resolve((hear as Hears<T>)(m)).catch((error) => void failures.push(error))
       } catch (error) {
