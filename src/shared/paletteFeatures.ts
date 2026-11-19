@@ -40,6 +40,12 @@ export type PluginPaletteAction = (typeof PLUGIN_PALETTE_ACTIONS)[number]
 
 export type PaletteActionKey = CorePaletteAction | PluginPaletteAction
 
+function pluginPaletteKey(id: string): PluginPaletteAction {
+  const key = PLUGIN_PALETTE_ACTIONS.find((k) => k === id)
+  if (!key) throw new Error(`"${id}" is not a ⌘P item the palette leaves to plugins`)
+  return key
+}
+
 export interface PaletteFeature {
   key: PaletteActionKey | `settings-${SettingsPaneId}`
   label: string
@@ -84,12 +90,18 @@ export const PALETTE_FEATURES: PaletteFeature[] = [
     words: ['恢复会话', '找回会话', '旧会话'],
     actsOnCurrent: true
   },
-  {
-    key: 'scheduled-jobs',
-    label: 'Scheduled jobs…',
-    words: ['定时任务', '计划任务', 'cron'],
-    actsOnCurrent: true
-  },
+  ...PLUGINS.flatMap((plugin) => plugin.ui ?? []).flatMap((entry): PaletteFeature[] =>
+    entry.place === 'palette-item'
+      ? [
+          {
+            key: pluginPaletteKey(entry.id),
+            label: entry.label,
+            words: [...entry.words],
+            ...(entry.actsOnCurrent && { actsOnCurrent: entry.actsOnCurrent })
+          }
+        ]
+      : []
+  ),
   { key: 'open-settings', label: 'Settings…', keys: '⌘,', words: ['设置', '偏好', 'preferences'] },
   {
     key: 'check-update',
