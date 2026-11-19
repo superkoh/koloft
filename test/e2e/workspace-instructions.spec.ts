@@ -175,7 +175,7 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       const field = dlg.getByRole('textbox', { name: 'Instructions' })
       const hints = field.locator('xpath=../..').locator('.field-hint')
       await expect(hints.first()).toHaveText(
-        `${left('', '')}. Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with. Alfred does not get it.`
+        `${left('', '')}. Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with; in Claude Code, only until it next compacts. Alfred does not get it.`
       )
       await expect(hints.nth(1)).toHaveText(
         "Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead."

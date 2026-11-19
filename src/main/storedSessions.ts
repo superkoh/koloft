@@ -134,8 +134,7 @@ export const ownerTextFor = (
   ctx: StartContext,
   conductor: boolean,
   assist?: LaunchIdentity
-): string | undefined =>
-  ownerTextOver(ctx.opts.ownerText ?? assist?.ownerText, conductor, ctx.workspaceText)
+): string | undefined => ownerTextOver(ctx.opts.ownerText, assist, conductor, ctx.workspaceText)
 
 export interface SessionsWithStore {
   readonly id: BackendId

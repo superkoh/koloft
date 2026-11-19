@@ -37,7 +37,7 @@ const PROJECT_FILE_MAY_WIN =
 
 // CC§23 CODEX§17 AGY§12
 const whenItCounts = (butler: string): string =>
-  `Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with. ${butler} does not get it.`
+  `Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with; in Claude Code, only until it next compacts. ${butler} does not get it.`
 
 const modelHint = (label: string): string => `Default = the model ${label} itself starts on.`
 const effortHint = (label: string): string =>

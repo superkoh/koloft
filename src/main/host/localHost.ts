@@ -123,11 +123,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
   // CC§23
-  const ownerText = ownerTextOver(
-    spec.ownerText ?? assist?.ownerText,
-    conductor,
-    spec.workspaceText
-  )
+  const ownerText = ownerTextOver(spec.ownerText, assist, conductor, spec.workspaceText)
   const agentPlugin = d.agentPlugin()
   const prompt =
     agentPlugin && !conductor

@@ -1290,7 +1290,12 @@ export class SshHost implements Host {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
               projectPrompt,
-              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
+              ownerText: ownerTextOver(
+                spec.ownerText,
+                undefined,
+                !!spec.conductor,
+                spec.workspaceText
+              ),
               claudeArgs,
               trustFolder: spec.trustFolder
             }
