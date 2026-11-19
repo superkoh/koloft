@@ -64,6 +64,24 @@ export interface RowMark {
 
 export const ROW_MARK = slot<RowMark>('row-mark')
 
+export type OverTerminal = (shown: boolean) => ReactNode
+
+export interface PageAsk {
+  id: string
+  guestId: number | undefined
+  bar: ReactNode
+}
+
+export interface OwnerAsks {
+  useWatch: () => void
+  useAsked: () => readonly { tabId: string }[]
+  useOverTerminal: () => (tabId: string) => OverTerminal | undefined
+  usePageAsk: (ownerTab: string | null) => PageAsk | undefined
+  useHeldGuests: () => readonly number[]
+}
+
+export const OWNER_ASKS = slot<OwnerAsks>('owner-asks')
+
 export interface WorkspaceLine {
   useWatch: () => void
   Line: ComponentType<{ wsPath: string; now: Date; dismissMenu: () => void }>

@@ -69,6 +69,7 @@ import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { fillsOf, gitPartsOf, PartsAt } from '../pluginUi'
+import { useAskedTabs } from '../ownerAsks'
 import {
   ROW_MARK,
   WORKSPACE_GIT_PART,
@@ -1001,12 +1002,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     [listedRows, listedClaimed, storeTabs]
   )
   const activeTabId = useStore((s) => s.activeTabId)
-  const secretAsks = useStore((s) => s.secretAsks)
-  const instructionAsks = useStore((s) => s.instructionAsks)
-  const ownerAsks = useMemo(
-    () => [...secretAsks, ...instructionAsks],
-    [secretAsks, instructionAsks]
-  )
+  const ownerAsks = useAskedTabs()
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const selectedWs = useStore((s) => s.selectedWs)
   const showToast = useStore((s) => s.showToast)

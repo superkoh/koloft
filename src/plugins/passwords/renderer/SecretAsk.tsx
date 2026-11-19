@@ -1,21 +1,43 @@
 import { useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import type { SecretAskView } from '@shared/types'
-import { IconClose, IconLock, IconSignIn, IconWebPage } from '../icons'
-import { isComposing } from '../keys'
+import { IconClose, IconLock, IconSignIn, IconWebPage } from '@renderer/icons'
+import { isComposing } from '@renderer/keys'
+import type { OverTerminal, PageAsk } from '@renderer/slots'
+import { useAsked, useSecretAsks } from './state'
 
-export type SudoAsk = Extract<SecretAskView, { kind: 'sudo' }>
-export type WebAsk = Exclude<SecretAskView, { kind: 'sudo' }>
+type SudoAsk = Extract<SecretAskView, { kind: 'sudo' }>
+type WebAsk = Exclude<SecretAskView, { kind: 'sudo' }>
 
-export function sudoAskOf(asks: readonly SecretAskView[], tabId: string): SudoAsk | undefined {
+function sudoAskOf(asks: readonly SecretAskView[], tabId: string): SudoAsk | undefined {
   return asks.find((a): a is SudoAsk => a.tabId === tabId && a.kind === 'sudo')
 }
 
-export function webAskOf(
-  asks: readonly SecretAskView[],
-  tabId: string | null | undefined
-): WebAsk | undefined {
+function webAskOf(asks: readonly SecretAskView[], tabId: string | null): WebAsk | undefined {
   return asks.find((a): a is WebAsk => a.tabId === tabId && a.kind !== 'sudo')
 }
+
+export function useSudoOverTerminal(): (tabId: string) => OverTerminal | undefined {
+  const asks = useAsked()
+  return (tabId) => {
+    const ask = sudoAskOf(asks, tabId)
+    return ask && ((shown) => <SudoDialog key={ask.id} ask={ask} shown={shown} />)
+  }
+}
+
+export function usePageAsk(ownerTab: string | null): PageAsk | undefined {
+  const ask = useSecretAsks((s) => webAskOf(s.asks, ownerTab))
+  return (
+    ask && {
+      id: ask.id,
+      guestId: ask.kind === 'url' ? undefined : ask.guestId,
+      bar: <SecretPageBar ask={ask} />
+    }
+  )
+}
+
+export const useTappedGuests = (): readonly number[] =>
+  useSecretAsks(useShallow((s) => s.asks.flatMap((a) => (a.kind === 'tap' ? [a.guestId] : []))))
 
 export function SudoDialog({ ask, shown }: { ask: SudoAsk; shown: boolean }): JSX.Element {
   const [value, setValue] = useState('')
