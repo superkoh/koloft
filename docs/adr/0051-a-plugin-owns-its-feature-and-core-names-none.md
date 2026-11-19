@@ -18,7 +18,9 @@ window places where the manifest's `ui` entries say; and `settings.ts`, each plu
 setting keys with their defaults and clean-up, which the app loads and saves under the
 names the manifest's `settings` lists. So a text block names no reader: it
 names the slot it fills, and core keeps no list of readers. A plugin
-imports core, the `api.ts` of the plugins it says it needs, and itself. Until a test holds
+imports core, the `api.ts` or `windowApi.ts` of the plugins it says it needs, and itself;
+`windowApi.ts` is the part the window can load, with no main-process code and no text for
+agents. Until a test holds
 the manifest's shape, that shape may still change at version 1; once one does, the
 version goes up whenever a manifest written for the old version would no longer mean the
 same thing.
