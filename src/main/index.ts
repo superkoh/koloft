@@ -448,6 +448,7 @@ import {
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
+  butlersBlock,
   butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
@@ -642,6 +643,8 @@ import {
   resolveWorkspace,
   instructionsPartOf,
   savedFromTheDialog,
+  InstructionAsks,
+  workspaceBlock,
   type PlacedRow,
   type Recipient
 } from '@plugins/sessions/api'
@@ -1558,6 +1561,7 @@ const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = dis
 let askButtons: AskButtons | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
+let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
@@ -2365,7 +2369,26 @@ registerSessionCommands(commands, {
     return workspace && rulesOf(workspace)
   },
   session: sessionCommand.verb,
-  workspace: { sidebar: projectRows }
+  workspace: { sidebar: projectRows },
+  instructions: {
+    askTheOwner: (ask, stillWaiting) =>
+      instructionAsks
+        ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS, stillWaiting)
+        : Promise.reject(new Error(STILL_STARTING)),
+    overseerSide: butlerSide,
+    isOverseer: isButlerNow,
+    overseerBlock: () =>
+      butlersBlock(
+        () => loadSettings().butler,
+        (butler) => commitSettings({ butler }),
+        Date.now
+      ),
+    workspaceOf: pinnedWorkspaceOfTab,
+    pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+    workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now),
+    nameOf: (s) =>
+      isButlerNow(s.tabId) ? butlerNameNow() : (sidebarTitle(s) ?? BACKEND_LABEL[s.backendId])
+  }
 })
 
 registerCronCommand(commands, {
@@ -3705,7 +3728,11 @@ app.whenReady().then(() => {
     workspaces: () => workspaceMgr,
     announce: announceNow
   })
-  forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
+  forgetAsksOfEndedTabs(moments, {
+    slash,
+    asks: () => sessionAsks,
+    instructionAsks: () => instructionAsks
+  })
   followEachState(moments, {
     asks: () => sessionAsks,
     slash,
@@ -4188,14 +4215,18 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
-  const secrets = new SecretAsks<OwnerAsk>({
-    show: pushSecretAsks(pluginIpc),
-    owner: {
-      waitsOnTheOwner: (tabId) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
-      ownerAnswered: (tabId) => {
-        if (tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
-      }
+  const ownerWaits = {
+    waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
+    ownerAnswered: (tabId: string) => {
+      const stillAsked =
+        !!instructionAsks?.asking(tabId) || !!secretAsks?.views().some((a) => a.tabId === tabId)
+      if (!stillAsked && tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
     }
+  }
+  const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
+  instructionAsks = new InstructionAsks({
+    show: (asks) => pushToSessions.instructionAsks(asks),
+    owner: ownerWaits
   })
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
@@ -6263,6 +6294,7 @@ function registerIpc(): void {
     cronRunner?.tabMoved(oldTabId, newTabId)
     webPages.tabMoved(oldTabId, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
+    instructionAsks?.rehome(oldTabId, newTabId)
     if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
       carryTabIds(newTabId, tabIdsOf(oldTabId))
       earlierTabIds.delete(oldTabId)
@@ -6679,7 +6711,10 @@ function registerIpc(): void {
       return { defaults, familyEfforts: familyEfforts('agy', listed) }
     },
     writeDefaults: (workspacePath, raw) =>
-      defaultsOfProjects.write(workspacePath, (saved) => savedFromTheDialog(saved, raw, Date.now()))
+      defaultsOfProjects.write(workspacePath, (saved) =>
+        savedFromTheDialog(saved, raw, Date.now())
+      ),
+    instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined }
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
