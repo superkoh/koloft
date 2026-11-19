@@ -25,6 +25,7 @@ async function toastsOfAPick(machine: string | undefined): Promise<unknown[]> {
       toasts.push(text)
       return true
     },
+    push: () => true,
     pages: {} as never,
     machineOfTab: () => machine,
     savePickOn: async () => {

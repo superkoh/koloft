@@ -44,7 +44,7 @@ export function useStripReport(
       const json = JSON.stringify(targets)
       if (lastReport.current.get(sid) === json) continue
       lastReport.current.set(sid, json)
-      window.api.browser.reportStrip(sid, targets)
+      window.api.browserControl.reportStrip(sid, targets)
     }
   }, [states, live, attached, guestIdOf, bindings])
 }
@@ -170,7 +170,7 @@ export function useCdpOps({
       if (doneOps.current.has(op.opId)) continue
       doneOps.current.add(op.opId)
       const finish = (res: Omit<BrowserCdpOpResult, 'opId'>): void => {
-        window.api.browser.answerCdpOp({ opId: op.opId, ...res })
+        window.api.browserControl.answerCdpOp({ opId: op.opId, ...res })
         onCdpDone(op.opId)
       }
       const fail = (e: unknown): void =>

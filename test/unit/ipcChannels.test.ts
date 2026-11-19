@@ -42,12 +42,16 @@ const PLUGIN_PARTS = await Promise.all(
     }
   })
 )
-const PLUGIN_CALL = String.raw`ipc\.(handle|on|push|invoke|send|listen)\(\s*([^,)\s]+)`
+const PLUGIN_CALL = String.raw`\b(?:ipc\.(handle|onEvent|on|push|invoke|sendSync|send|listen)|d\.(push))\(\s*([^,)\s]+)`
+const CALL_KIND: Record<string, string> = { onEvent: 'on', sendSync: 'send' }
 const pluginCalls = (p: (typeof PLUGIN_PARTS)[number]): { call: string; channel: string }[] =>
-  [...`${p.main}\n${p.preload}`.matchAll(new RegExp(PLUGIN_CALL, 'g'))].map((m) => ({
-    call: m[1],
-    channel: p.table[m[2].replace(/^CHANNELS\./, '')] ?? m[2]
-  }))
+  [...`${p.main}\n${p.preload}`.matchAll(new RegExp(PLUGIN_CALL, 'g'))].map((m) => {
+    const call = m[1] ?? m[2]
+    return {
+      call: CALL_KIND[call] ?? call,
+      channel: p.table[m[3].replace(/^CHANNELS\./, '')] ?? m[3]
+    }
+  })
 const fromPlugins = (call: string): string[] =>
   PLUGIN_PARTS.flatMap((p) =>
     pluginCalls(p)
@@ -113,10 +117,10 @@ describe('IPC channels', () => {
     expect(without(mainSends, rendererListens)).toEqual([])
   })
 
-  it('every channel in the table is used, and every channel used is in the table', () => {
+  it('every channel in the table is used, and every channel used is in the table or a plugin’s', () => {
     const used = new Set([...tokens(MAIN), ...tokens(RENDERER_SIDE)])
     expect(without(TABLE, used)).toEqual([])
-    expect(without(used, TABLE)).toEqual([])
+    expect(without(used, new Set([...TABLE, ...PLUGIN_TABLE]))).toEqual([])
   })
 
   it('a plugin’s manifest lists exactly the channels its code uses, each through its CHANNELS table', () => {

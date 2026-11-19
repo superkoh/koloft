@@ -9,8 +9,11 @@ import { isWorkbenchPage, type WebPages } from './webPages'
 
 const DEFAULT_BROWSER_GUEST_LIMIT = 12
 
+import { CHANNELS } from '../shared/ipc'
+
 export interface PageToolsDeps {
   send(channel: Channel, ...args: unknown[]): boolean
+  push(channel: string, ...args: unknown[]): boolean
   pages: WebPages
   machineOfTab(tabId: string): string | undefined
   savePickOn(machine: string, name: string, png: Buffer): Promise<string>
@@ -35,7 +38,7 @@ export class PageTools {
 
   windowShown(): void {
     for (const page of this.mutedWhileHidden.show())
-      this.d.send(CH.browser.audioState, {
+      this.d.push(CHANNELS.audioState, {
         guestId: page.id,
         audible: page.isCurrentlyAudible(),
         muted: false
@@ -79,12 +82,12 @@ export class PageTools {
       contents.on('enter-html-full-screen', () => {
         if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
         pageFullscreen = true
-        this.d.send(CH.browser.fullscreen, true)
+        this.d.push(CHANNELS.fullscreen, true)
       })
       contents.on('leave-html-full-screen', () => {
         if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
         pageFullscreen = false
-        this.d.send(CH.browser.fullscreen, false)
+        this.d.push(CHANNELS.fullscreen, false)
       })
     })
   }
@@ -94,7 +97,7 @@ export class PageTools {
       if (!isWorkbenchPage(contents)) return
       contents.on('audio-state-changed', (event) => {
         if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-        this.d.send(CH.browser.audioState, {
+        this.d.push(CHANNELS.audioState, {
           guestId: contents.id,
           audible: event.audible,
           muted: contents.isAudioMuted()

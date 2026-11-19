@@ -784,14 +784,14 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    return window.api.browser.onCdpOp((op) => {
+    return window.api.browserControl.onCdpOp((op) => {
       setPanelMounted(true)
       setCdpOps((q) => [...q, op])
     })
   }, [])
 
   useEffect(() => {
-    return window.api.browser.onCdpAttached((a) =>
+    return window.api.browserControl.onCdpAttached((a) =>
       useStore.getState().setCdpAttached(a.sessionId, a.targetIds)
     )
   }, [])
