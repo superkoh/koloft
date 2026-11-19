@@ -35,7 +35,7 @@ import {
   statusFrom,
   type GitOps
 } from '../gitStatus'
-import { GithubLookup, type GithubOptions } from '../github'
+import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
@@ -53,6 +53,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { ownerTextOver } from '../launchPrompt'
 import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
@@ -156,7 +157,7 @@ export interface SshHostDeps {
     reportsWhatChangedWhileUnwatched?: boolean
   ): void
   unwatch(path: string): void
-  github: GithubOptions
+  github: GithubReposOptions
   claude: MachineClaudeDeps
 }
 
@@ -603,7 +604,7 @@ const REMOTE_FILE_LIST_FRESH_MS = 30_000
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
 export class SshHost implements Host {
-  readonly github: GithubLookup
+  readonly github: GithubRepos
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
@@ -647,7 +648,7 @@ export class SshHost implements Host {
         return r.stdout.toString('utf8').trim() || null
       }
     })
-    this.github = new GithubLookup({
+    this.github = new GithubRepos({
       ...deps.github,
       git: (root, args, network) =>
         network
@@ -1294,6 +1295,7 @@ export class SshHost implements Host {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
               projectPrompt,
+              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
               claudeArgs,
               trustFolder: spec.trustFolder
             }

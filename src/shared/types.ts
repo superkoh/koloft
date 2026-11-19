@@ -1,6 +1,7 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
+import type { InstructionsVersion } from '@core/ownerInstructions'
 
 export interface ProjectInfo {
   root: string
@@ -374,7 +375,10 @@ export interface OwnPick {
 export interface SessionDefaults {
   picks: Partial<Record<BackendId, OwnPick>>
   rules?: string
+  instructions?: InstructionsVersion[]
 }
+
+export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & { instructions: string }
 
 export type SessionDefaultsRead =
   | {
@@ -797,8 +801,17 @@ export interface DocVerdict {
   at: number
 }
 
+export interface WorkspaceClaim {
+  by: string
+  shownAs: string
+}
+
+export interface FolderClaim extends WorkspaceClaim {
+  path: string
+}
+
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
-  butler?: boolean
+  overseer?: boolean
   turnOver?: boolean
   asking?: string
   docVerdicts?: Record<string, DocVerdict>
@@ -1516,7 +1529,7 @@ export interface WorkspaceRows {
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
-    butler?: true
+    claim?: WorkspaceClaim
   }
   rows: SessionRow[]
 }

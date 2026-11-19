@@ -4,9 +4,16 @@ import type { WorkspaceRows } from '@shared/types'
 import { useStore } from '../../../../src/renderer/src/store'
 import { everyWorkspaceRows } from '../../../../src/renderer/src/sessionRows'
 import { placePluginUi } from '../../../../src/renderer/src/pluginUi'
+import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 
 const ws = (path: string, butler?: true): WorkspaceRows => ({
-  workspace: { path, missing: false, isGit: false, hasHistory: false, ...(butler && { butler }) },
+  workspace: {
+    path,
+    missing: false,
+    isGit: false,
+    hasHistory: false,
+    ...(butler && { claim: butlersFolderClaim(path) })
+  },
   rows: []
 })
 

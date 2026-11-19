@@ -452,7 +452,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         else await newSessionInWith(page, workspace, AGENT_NAME[reported])
         const reportedSession = async (): Promise<SessionInfo | undefined> =>
           (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => !s.butler && s.alive && s.sessionId
+            (s) => !s.overseer && s.alive && s.sessionId
           )
         await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
         if (reported === 'agy') await agyReady(page)
@@ -508,7 +508,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         await expect
           .poll(
             async () =>
-              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.status,
+              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.overseer)
+                ?.status,
             { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
           )
           .toBe('waiting')
@@ -1602,7 +1603,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           ).at(-1)?.pid
         const closedPid = conductorPid()!
         const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.butler
+          (s) => s.overseer
         )!.tabId
         await page.evaluate((tab) => window.api.terminal.kill(tab), conductorTab)
         await expect
@@ -1610,13 +1611,16 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           .toBe(false)
         await expect
           .poll(async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some((s) => s.butler && s.alive)
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.overseer && s.alive
+            )
           )
           .toBe(false)
 
         const liveChildTab = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && !s.butler)
-            ?.tabId
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && !s.overseer
+          )?.tabId
         await expect.poll(liveChildTab).toBeTruthy()
         const childTab = (await liveChildTab())!
         await expect.poll(() => terminalText(page, childTab)).not.toBe('')

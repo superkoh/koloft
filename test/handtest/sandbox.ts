@@ -37,7 +37,7 @@ import { acceptCodexTrust, codexConfigFile } from '../../src/main/codexTrust'
 import { codexHomes } from '../../src/main/codexAccounts'
 import { AGY_INSTALLER_URL } from '../../src/main/toolInstall'
 import { keychainService } from '../../src/shared/types'
-import { DISCORD_API_URL } from '../../src/main/discord/link'
+import { DISCORD_API_URL } from '../../src/plugins/discord/main/link'
 
 const DEV_BOT_KEYCHAIN = 'koloft-dev-discord-bot'
 

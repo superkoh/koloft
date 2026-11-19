@@ -290,17 +290,10 @@ import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
-import {
-  GithubLookup,
-  ghOpenCounts,
-  ghRead,
-  openCountsArgs,
-  parseOpenCounts,
-  parseGithubFixture,
-  type GithubOptions
-} from './github'
-import { GithubCountsSweep } from './githubCounts'
-import { runGh } from './prChecks'
+import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
+import { GithubCountsSweep } from '@plugins/github/main/countsSweep'
+import { githubLookups } from '@plugins/github/main/lookup'
+import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
@@ -456,6 +449,7 @@ import {
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
+  butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
   helperRoleOf,
@@ -468,15 +462,19 @@ import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
-import { DiscordBinding } from './discord/binding'
-import { discordApiUrl, DiscordLink } from './discord/link'
-import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
-import { setupStatusText } from './discord/setupSteps'
-import { releaseLock, takeLock } from './discord/instanceLock'
-import { DiscordRelay, type Destination } from './discord/relay'
+import { DiscordBinding } from '@plugins/discord/main/binding'
+import { discordApiUrl, DiscordLink } from '@plugins/discord/main/link'
+import {
+  reloadDiscordPage,
+  saveTokenFromPage,
+  type GuestPage
+} from '@plugins/discord/main/tokenFromPage'
+import { setupStatusText } from '@plugins/discord/main/setupSteps'
+import { releaseLock, takeLock } from '@plugins/discord/main/instanceLock'
+import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
-import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from './discord/secretCards'
+import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
 import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
 import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
@@ -489,22 +487,22 @@ import {
 } from '@plugins/workbench/main/guestTap'
 import { within } from './within'
 import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
-import { ButlerTyping } from './discord/butlerTyping'
+import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
   machineOfShotPage,
   onShotPageGone,
   shootHtml,
   shootPage,
   shotSession
-} from './discord/pageShot'
-import { OldThreads } from './discord/oldThreads'
-import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
-import { accentOf } from './discord/cards'
-import { AskButtons } from './discord/buttons'
+} from '@plugins/discord/main/pageShot'
+import { OldThreads } from '@plugins/discord/main/oldThreads'
+import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
+import { accentOf } from '@plugins/discord/main/cards'
+import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { toChannel } from './discord/slash'
+import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
-import { Interactions, SLASH_COMMANDS } from './discord/interactions'
+import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
@@ -519,8 +517,9 @@ import {
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
 import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
-import { registerGithubCommand, repoFlagOf } from './agentGithub'
+import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
+import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
@@ -620,13 +619,21 @@ import {
   type SessionVerbDeps,
   type Target
 } from '@plugins/sessions/main/sessionVerbs'
-import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
+import {
+  HandOver,
+  resolveWorkspace,
+  instructionsPartOf,
+  savedFromTheDialog,
+  type PlacedRow,
+  type Recipient
+} from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
-  TODO_NOTICE_FROM_KOLOFT,
+  FROM_KOLOFT,
   crossSessionLine,
   writeLineInTurn
 } from './crossSessionMessage'
+import { TODO_NEWS } from '@plugins/todo/api'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -636,13 +643,14 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import {
   closingTree,
+  leftText,
   machineUnreachable,
   removeTree,
   tidyTree,
   whatIsLeft,
   type MergedHeads,
   type TidyResult
-} from './sessionClose'
+} from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -802,7 +810,7 @@ const sessionBackends = new SessionBackends({
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
 })
-sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
+sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
@@ -1829,7 +1837,7 @@ function remoteHostOfTab(tabId: string): string | undefined {
 }
 
 function projectRows(): WorkspaceRows[] {
-  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.claim)
 }
 
 function butlerSide(tabId: string): boolean {
@@ -2037,7 +2045,7 @@ const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
 
 function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   return all.flatMap((s) =>
-    s.alive && !s.butler && s.sessionId
+    s.alive && !s.overseer && s.sessionId
       ? [
           {
             tabId: s.tabId,
@@ -2110,6 +2118,10 @@ async function rulesOf(workspace: string): Promise<string | undefined> {
   return (await defaultsOfProjects.of(workspace))?.rules
 }
 
+async function instructionsOf(workspace: string): Promise<string | undefined> {
+  return instructionsPartOf(await defaultsOfProjects.of(workspace))
+}
+
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
   const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
   const resolved = resolveOwnPick(backend, asked, listed)
@@ -2140,7 +2152,7 @@ const sessionDeps: SessionVerbDeps = {
     ...(listsModels(backend) && { listed: await listedModels(backend) })
   }),
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-  allSessions: () => allSessions().filter((s) => !s.butler),
+  allSessions: () => allSessions().filter((s) => !s.overseer),
   tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
@@ -2426,7 +2438,7 @@ registerTodoCommand(commands, {
   allowed: butlerSide,
   sidebar: () => workspaceMgr?.rows() ?? [],
   pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-  sessions: () => allSessions().filter((s) => !s.butler),
+  sessions: () => allSessions().filter((s) => !s.overseer),
   asking: asksTheOwner,
   asleep: (sessionId) => !!sleepers.tabOf(sessionId),
   workLeft: async (row, merged) => {
@@ -2436,15 +2448,13 @@ registerTodoCommand(commands, {
   deleting: (row) => treeRemovals.has(row.cwd),
   worktrees: sessionDeps.worktrees,
   repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
-  pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+  pulls: async (wsPath) => {
+    const at = await hosts.of(wsPath).github.ghOfRepo(wsPath)
+    return at && listTodoPulls(at.gh, at.repo)
+  },
   mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
   mergedHeads: (dir, branch) => mergedHeads(dir, branch),
-  notes: () => loadSettings().todoNotes,
-  saveNote: (key, text) => {
-    const todoNotes = { ...loadSettings().todoNotes, [key]: text }
-    if (!text) delete todoNotes[key]
-    commitSettings({ todoNotes })
-  },
+  settings: { load: loadSettings, commit: commitSettings },
   projectFiles: async (wsPath) => (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
   readText: (file) => hosts.of(file).readText(file),
   servers: mcpServersNow,
@@ -3814,6 +3824,7 @@ app.whenReady().then(() => {
     runtime: tracker,
     projectInfo: projectInfoOnHost,
     projectRules: rulesOf,
+    workspaceInstructions: instructionsOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
@@ -4038,11 +4049,11 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!butler?.isButlerSession(id),
+    hiddenRow: (id) => sessionBackends.isOverseerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
-    butlerFolder: conductorFolder(userData),
+    claimedFolder: butlersFolderClaim(userData),
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
         (key) =>
@@ -4121,7 +4132,7 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    todoNotice: TODO_NOTICE_FROM_KOLOFT,
+    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -4498,7 +4509,7 @@ app.whenReady().then(() => {
   })
   githubCounts = new GithubCountsSweep({
     workspaces: pinnedPathsChecked,
-    openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
+    openCounts: (wsPath) => githubLookup(hosts.of(wsPath).github).openCounts(wsPath),
     onChange: () => workspaceMgr?.restampLive()
   })
   workspaceMgr.start()
@@ -5226,7 +5237,7 @@ async function leftOnceRemovalsEnd(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
+    ...leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
 
@@ -5263,7 +5274,9 @@ async function endAndRemove(
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const leftSinceTheCheck =
-    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+    tabId && tree && !alreadyRemoved
+      ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
+      : []
   if (leftSinceTheCheck.length) {
     tell(
       `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
@@ -6022,20 +6035,17 @@ function holdMacAwake(keepAwake: boolean): void {
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
-const githubOptions: GithubOptions = {
+const githubOptions: GithubReposOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
-  // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedAccount(root),
-  openCounts: async (repo, root) => {
-    await loginEnvReady()
-    const onMachine = await gitAccounts?.machineGh(root, openCountsArgs(repo))
-    if (onMachine) return onMachine.code === 0 ? parseOpenCounts(onMachine.stdout) : null
-    return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
-  },
   gh: async (args, root) => {
     await loginEnvReady()
     return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
-  },
+  }
+}
+
+const githubLookup = githubLookups({
+  // PLATFORM§1
+  countedAs: (root) => gitAccounts?.pickedAccount(root),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -6049,10 +6059,10 @@ const githubOptions: GithubOptions = {
       return false
     }
   }
-}
+})
 
 const hosts = new Hosts(
-  localHost(new GithubLookup(githubOptions), {
+  localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
     docsPlugin: () => claudeDocsPlugin,
@@ -6114,6 +6124,7 @@ const claudeBackend = new ClaudeBackend({
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
   projectRules: rulesOf,
+  workspaceInstructions: instructionsOf,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
@@ -6557,7 +6568,7 @@ function registerIpc(): void {
     },
     backendSnippets: async (term, signal) =>
       (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-    hidden: (id) => sessionBackends.isButlerSession(id),
+    hidden: (id) => sessionBackends.isOverseerSession(id),
     scan: (files, term, found) => {
       // PLATFORM§4
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })
@@ -6645,7 +6656,8 @@ function registerIpc(): void {
       ])
       return { defaults, familyEfforts: familyEfforts('agy', listed) }
     },
-    writeDefaults: (workspacePath, raw) => defaultsOfProjects.write(workspacePath, raw)
+    writeDefaults: (workspacePath, raw) =>
+      defaultsOfProjects.write(workspacePath, (saved) => savedFromTheDialog(saved, raw, Date.now()))
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
@@ -6747,7 +6759,7 @@ function registerIpc(): void {
     }
   })
   registerGithubChannels(pluginIpc, {
-    lookup: (root) => hosts.of(root).github,
+    lookup: (root) => githubLookup(hosts.of(root).github),
     prWorktree: async (root, pr, branch) => {
       if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
       const host = hosts.of(root)

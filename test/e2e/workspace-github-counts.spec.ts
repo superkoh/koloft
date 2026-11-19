@@ -17,7 +17,7 @@ import {
   remoteDir,
   remoteKey
 } from './helpers/remote'
-import { NAME_KEEPS_PX } from '../../src/renderer/src/wsHeadFit'
+import { NAME_KEEPS_PX } from '../../src/plugins/github/renderer/headFit'
 import { SIDEBAR_MIN } from '../../src/shared/types'
 
 const COUNTS_TIMEOUT = 30_000

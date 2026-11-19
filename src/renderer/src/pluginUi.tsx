@@ -5,7 +5,14 @@ import { PLUGIN_UIS } from '@plugins/uis'
 import type { UiPlace } from '@core/plugin'
 import { placeUi, type PlacedPart, type PlacedUi, type Slot } from '@core/ui'
 import { keepWorkspacesOutOfTheList, landAfterClosingAWatchedSession, useStore } from './store'
-import { GLOBAL_NOTE, LANDING_AFTER_CLOSE, WORKSPACE_CLAIM } from './slots'
+import {
+  GLOBAL_NOTE,
+  LANDING_AFTER_CLOSE,
+  WORKSPACE_CLAIM,
+  WORKSPACE_GIT_PART,
+  type WorkspaceGitPart
+} from './slots'
+import type { WorkspaceRows } from '@shared/types'
 
 let placedOnce: PlacedUi | undefined
 
@@ -26,6 +33,9 @@ export function placePluginUi(): void {
 export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
 
 export const partsAt = (place: UiPlace): readonly PlacedPart[] => placed().parts[place] ?? []
+
+export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>
+  fillsOf(WORKSPACE_GIT_PART).filter((part) => part.shows(ws))
 
 export function useShowsGlobalNote(tabId: string | null, rowId: string | null): boolean {
   return fillsOf(GLOBAL_NOTE)

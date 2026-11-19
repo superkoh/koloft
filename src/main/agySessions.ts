@@ -113,11 +113,13 @@ import {
   StoredSessions,
   hostOfKey,
   type HistoryEntry,
+  ownerTextFor,
   type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
 } from './storedSessions'
+import { promptParts, type LaunchIdentity } from './launchPrompt'
 
 const exec = promisify(execFile)
 
@@ -138,7 +140,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   browserEndpoint(tabId: string): string
   builtInStatusLine(account: string): string | undefined
   skipPermissions(): boolean
-  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -841,9 +843,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private async startLocalRun(
-    { opts, cwd, workspace, resource, freshWorktree, rules }: StartContext,
+    ctx: StartContext,
     { binary, pick, env }: AgyLaunch
   ): Promise<AgyRun> {
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
     const firstLine = firstLineToType(opts, resumeId)
     const apiKey = await this.deps.apiKeyOf(pick.account)
@@ -857,10 +860,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    const instructions = [
-      ...(agent && !conductor ? [koloftPrompt('agy', rules)] : []),
-      ...(role ? [role] : [])
-    ].join('\n\n')
+    const instructions = promptParts(
+      !!agent && !conductor && koloftPrompt('agy', rules),
+      role,
+      ownerTextFor(ctx, conductor, assist)
+    ).join('\n\n')
     const scripts = writeAgyScripts(this.deps.scriptsDir)
     const gemini = this.gemini
     // AGY§4
@@ -979,10 +983,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private async startRemoteRun(
-    { opts, cwd, workspace, resource, freshWorktree, rules }: StartContext,
+    ctx: StartContext,
     { pick }: AgyLaunch,
     where: RemoteKey
   ): Promise<AgyRun> {
+    const { opts, cwd, workspace, resource, freshWorktree, rules } = ctx
     const { remote } = this.deps
     const machine = remote.machine(where.host)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
@@ -1025,10 +1030,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
     )
-    const instructions = [
-      ...(agentTools ? [koloftPrompt('agy', rules)] : []),
-      ...(opts.role ? [opts.role] : [])
-    ].join('\n\n')
+    const instructions = promptParts(
+      agentTools && koloftPrompt('agy', rules),
+      opts.role,
+      ownerTextFor(ctx, false)
+    ).join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)
     const plan = await machine.launchAgy({
       tabId,

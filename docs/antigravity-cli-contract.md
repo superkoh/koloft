@@ -1998,7 +1998,9 @@ repository, like the butler's.
   Google sign-in route, and the owner's own `~/.gemini/GEMINI.md` beside it.
 
 Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
-starts, as a Codex one does (`src/main/assistMemory.ts`).
+starts, as a Codex one does (`src/main/assistMemory.ts`); the Session defaults dialog says
+the project's own file may win over a workspace's Instructions
+(`src/renderer/src/components/SessionDefaultsDialog.tsx`).
 
 ## §33 What agy asks the terminal
 

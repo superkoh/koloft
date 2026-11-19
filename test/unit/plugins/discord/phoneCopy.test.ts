@@ -13,9 +13,9 @@ import {
   type FileDiff,
   type PhoneCopyDeps
 } from '../../../../src/plugins/discord/main/phoneCopy'
-import { BYTES_PER_FILE, type DiscordFile } from '../../../../src/main/discord/link'
-import { DISCORD_MESSAGE_LIMIT } from '../../../../src/main/discord/split'
-import type { PageLook, PagePictures } from '../../../../src/main/discord/pageShot'
+import { BYTES_PER_FILE, type DiscordFile } from '../../../../src/plugins/discord/main/link'
+import { DISCORD_MESSAGE_LIMIT } from '../../../../src/plugins/discord/main/split'
+import type { PageLook, PagePictures } from '../../../../src/plugins/discord/main/pageShot'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
 import { machinePageUrl } from '../../../../src/shared/browserRoute'
 

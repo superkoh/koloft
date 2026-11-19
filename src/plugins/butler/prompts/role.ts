@@ -10,15 +10,8 @@ export const ownerInstructionsPart = (instructions: string): string =>
 const withOwnerInstructions = (role: string, instructions: string): string =>
   instructions ? role + BETWEEN_PARTS + ownerInstructionsPart(instructions) : role
 
-export const butlerRole = (
-  name: string,
-  facts: readonly string[] = [],
-  instructions = ''
-): string =>
-  withOwnerInstructions(
-    composePrompt('butler', { values: { 'butler-name': name }, facts }),
-    instructions
-  )
+export const butlerRole = (name: string, facts: readonly string[] = []): string =>
+  composePrompt('butler', { values: { 'butler-name': name }, facts })
 
 export const butlerHelperRole = (name: string, instructions = ''): string =>
   withOwnerInstructions(
