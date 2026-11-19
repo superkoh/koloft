@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   INSTRUCTIONS_MAX_BYTES,
-  instructionsBytes,
   instructionsOf,
-  OWNER,
   savedInstructions
 } from '../../../../src/plugins/butler/shared/instructions'
+import { instructionsBytes, OWNER } from '../../../../src/core/ownerInstructions'
+import { promptParts } from '../../../../src/main/launchPrompt'
 import { butlerHelperRole, butlerRole } from '../../../../src/plugins/butler/api'
 import { ownerInstructionsPart } from '../../../../src/plugins/butler/prompts/role'
 import { renamedButler } from '../../../../src/plugins/butler/shared/names'
@@ -17,6 +17,9 @@ import { handoverPreamble } from '../../../../src/main/handover'
 import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 
 const BUTLER: ButlerSetting = { name: 'Alfred', formerNames: [] }
+
+const butlerPrompt = (name: string, facts: readonly string[], text: string): string =>
+  promptParts(butlerRole(name, facts), text && ownerInstructionsPart(text)).join('\n\n')
 const LONGEST_NAME = '𝔄'.repeat(40)
 const EVERY_FACT = [DISCORD_BOUND]
 
@@ -42,7 +45,7 @@ describe('how long the owner’s instructions for the butler may be', () => {
     (_, unit) => {
       const text = textOfBytes(unit, INSTRUCTIONS_MAX_BYTES)
       expect(instructionsBytes(text)).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES)
-      expect(() => sessionStartContext(butlerRole(LONGEST_NAME, EVERY_FACT, text))).not.toThrow()
+      expect(() => sessionStartContext(butlerPrompt(LONGEST_NAME, EVERY_FACT, text))).not.toThrow()
     }
   )
 
@@ -54,7 +57,7 @@ describe('how long the owner’s instructions for the butler may be', () => {
 
   it('a Codex butler’s developer instructions at the limit stay within the length seen reaching the model whole', () => {
     const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
-    expect(Buffer.byteLength(butlerRole(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
+    expect(Buffer.byteLength(butlerPrompt(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
       CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES
     )
   })
@@ -79,7 +82,7 @@ describe('how long the owner’s instructions for the butler may be', () => {
 
   it('an Antigravity butler’s start message at the limit stays within the length seen reaching the model whole', () => {
     const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
-    expect(Buffer.byteLength(butlerRole(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
+    expect(Buffer.byteLength(butlerPrompt(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
       AGY_START_MESSAGE_SEEN_WHOLE_BYTES
     )
   })
@@ -155,11 +158,9 @@ describe('the owner’s instructions in the butler’s prompt', () => {
   it('arrive as written, even when they hold what looks like a slot', () => {
     const text = '{{butler-name}} {{nope}} $& $1'
     expect(ownerInstructionsPart(text)).toBe(`Written by the owner\n${text}`)
-    expect(butlerRole('Alfred', [], text).endsWith(text)).toBe(true)
   })
 
   it('leave the prompt exactly as it was when none are written', () => {
-    expect(butlerRole('Alfred', [], '')).toBe(butlerRole('Alfred'))
     expect(butlerHelperRole('Alfred', '')).toBe(butlerHelperRole('Alfred'))
   })
 })

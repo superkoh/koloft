@@ -17,7 +17,7 @@ import {
   terminalText,
   waitBooted
 } from './helpers/p1'
-import { openSettings } from './helpers/extensions'
+import { openPluginPage } from './helpers/extensions'
 import {
   FAKE_BOT,
   FAKE_GUILD,
@@ -36,10 +36,8 @@ const MANAGE_CHANNELS = 1 << 4
 const CATEGORY = 4
 const INVITE_PERMISSIONS_WITH_MANAGE_CHANNELS = 326417615936 + MANAGE_CHANNELS
 
-async function discordPane(page: Page): Promise<Locator> {
-  await openSettings(page)
-  await page.locator('.set-ni', { hasText: 'Discord' }).click()
-  return page.locator('.set-main')
+function discordPane(page: Page): Promise<Locator> {
+  return openPluginPage(page, 'Discord')
 }
 
 function externalOpens(env: E2EEnv): string {
@@ -78,7 +76,7 @@ async function launched(
 }
 
 test.describe('Discord in Settings: the butler does the setup, and the screen shows who you are, the status and its channel', () => {
-  test('with no bot token saved, Settings ▸ Discord shows only Set up with Alfred: no token field, no Bot rows, no channel', async ({
+  test('with no bot token saved, Settings ▸ Plugins ▸ Discord shows only its switch and Set up with Alfred: no token field, no Bot rows, no channel', async ({
     env
   }) => {
     const { page, close } = await launched(env, { token: '' })
@@ -88,7 +86,8 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
         pane.locator('.set-row', { hasText: 'Let Alfred set up Discord' })
       ).toContainText('Already have a bot?')
       await expect(pane.getByRole('button', { name: 'Set up with Alfred' })).toBeVisible()
-      await expect(pane.locator('input')).toHaveCount(0)
+      await expect(pane.getByRole('switch', { name: 'Turn on Discord' })).not.toBeChecked()
+      await expect(pane.getByRole('textbox')).toHaveCount(0)
       await expect(pane.locator('.set-grp')).toHaveCount(0)
       await expect(pane.getByRole('button', { name: 'Bind a channel…' })).toHaveCount(0)
     } finally {
@@ -96,7 +95,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
     }
   })
 
-  test('a saved token connects; a team app pairs on the first message only after This is me; a listed channel binds', async ({
+  test('a saved token connects and turns Discord on before anyone is paired; a team app pairs on the first message only after This is me; a listed channel binds', async ({
     env
   }) => {
     const { page, fake, close } = await launched(env)
@@ -105,6 +104,8 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
         `✓ Connected as ${FAKE_BOT}`
       )
+      await expect(pane.getByRole('switch', { name: 'Turn on Discord' })).toBeChecked()
+      await expect.poll(() => settingsOnDisk(env).pluginsOn).toEqual({ discord: true })
       expect(fake.identifies).toBe(1)
       await expect(
         pane.locator('.set-row', { has: page.locator('b', { hasText: /^Server$/ }) })

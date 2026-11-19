@@ -53,6 +53,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { ownerTextOver } from '../launchPrompt'
 import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
@@ -1294,6 +1295,7 @@ export class SshHost implements Host {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
               projectPrompt,
+              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
               claudeArgs,
               trustFolder: spec.trustFolder
             }

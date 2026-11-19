@@ -7,6 +7,7 @@ import { useStore } from '../store'
 import { isSessionKind } from '../agentUi'
 import { BACKEND_LABEL, capabilitiesFor } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import { BROWSER_CONTROL_PAGE_NAME } from '@plugins/browser-control/api'
 import '../hint.css'
 
 const CAPTURE_BEFORE_XTERM = true
@@ -93,7 +94,7 @@ const CONTENT: Record<HintId, HintWords | ((agent: AgentWords) => HintWords)> = 
     body: drivesBrowser ? (
       <>
         It is a <b>real browser</b> inside Koloft, and {name}&apos;s Playwright tools can drive it.
-        Turn that off in Settings ▸ Extensions.
+        Turn that off in {BROWSER_CONTROL_PAGE_NAME}.
       </>
     ) : (
       <>

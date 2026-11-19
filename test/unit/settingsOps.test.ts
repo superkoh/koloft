@@ -52,6 +52,7 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyApprovalSound',
         'notifyExited',
         'notifyTurnDone',
+        'pluginsOn',
         'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',

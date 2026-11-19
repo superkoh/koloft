@@ -12,6 +12,7 @@ const manifest = (
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
+  does: id,
   mandatory: true,
   needs: [],
   moments

@@ -516,6 +516,7 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
+import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
@@ -627,7 +628,14 @@ import {
   type SessionVerbDeps,
   type Target
 } from '@plugins/sessions/main/sessionVerbs'
-import { HandOver, resolveWorkspace, type PlacedRow, type Recipient } from '@plugins/sessions/api'
+import {
+  HandOver,
+  resolveWorkspace,
+  instructionsPartOf,
+  savedFromTheDialog,
+  type PlacedRow,
+  type Recipient
+} from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
   FROM_KOLOFT,
@@ -2095,6 +2103,10 @@ const defaultsOfProjects = projectDefaults({
 
 async function rulesOf(workspace: string): Promise<string | undefined> {
   return (await defaultsOfProjects.of(workspace))?.rules
+}
+
+async function instructionsOf(workspace: string): Promise<string | undefined> {
+  return instructionsPartOf(await defaultsOfProjects.of(workspace))
 }
 
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
@@ -3822,6 +3834,7 @@ app.whenReady().then(() => {
     runtime: tracker,
     projectInfo: projectInfoOnHost,
     projectRules: rulesOf,
+    workspaceInstructions: instructionsOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
@@ -4181,6 +4194,8 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
+      const pluginsOn = switchedOnOnceItHasABot(status.phase, loadSettings().pluginsOn)
+      if (pluginsOn) commitSettings({ pluginsOn })
       pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
@@ -6119,6 +6134,7 @@ const claudeBackend = new ClaudeBackend({
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
   projectRules: rulesOf,
+  workspaceInstructions: instructionsOf,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
@@ -6650,7 +6666,8 @@ function registerIpc(): void {
       ])
       return { defaults, familyEfforts: familyEfforts('agy', listed) }
     },
-    writeDefaults: (workspacePath, raw) => defaultsOfProjects.write(workspacePath, raw)
+    writeDefaults: (workspacePath, raw) =>
+      defaultsOfProjects.write(workspacePath, (saved) => savedFromTheDialog(saved, raw, Date.now()))
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

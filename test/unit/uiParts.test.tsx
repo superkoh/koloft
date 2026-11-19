@@ -15,11 +15,11 @@ import {
   PALETTE_RUN,
   ROW_EXTRAS,
   ROW_SET_UP,
-  SETTINGS_PAGE_ICON,
+  PLUGIN_SET_UP,
   type PaletteRun,
+  type PluginSetUp,
   type RowExtrasFill,
-  type RowSetUpFill,
-  type SettingsPageIcon
+  type RowSetUpFill
 } from '../../src/renderer/src/slots'
 
 const listedAt = (place: UiEntry['place']): string[] =>
@@ -29,6 +29,7 @@ const manifest = (id: string, ui: UiEntry[] = []): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
+  does: id,
   mandatory: true,
   needs: [],
   ui
@@ -105,15 +106,18 @@ describe('UI parts a plugin registers', () => {
     for (const row of setUp) expect(rows).toContain(row)
   })
 
-  it('every settings page a plugin lists has exactly one icon, and every icon is for a settings page some plugin lists', () => {
-    const pages = listedAt('settings-page')
-    const iconed = Object.values(PLUGIN_UIS).flatMap((ui) =>
+  it('a "Set up" action in Settings ▸ Plugins is given only by an optional plugin, for itself, and only once', () => {
+    const given = Object.entries(PLUGIN_UIS).flatMap(([owner, ui]) =>
       (ui.fills ?? [])
-        .filter((f) => f.slot === SETTINGS_PAGE_ICON)
-        .map((f) => (f.value as SettingsPageIcon).page)
+        .filter((f) => f.slot === PLUGIN_SET_UP)
+        .map((f) => ({ owner, plugin: (f.value as PluginSetUp).plugin }))
     )
-    expect(pages.length).toBeGreaterThan(0)
-    expect([...iconed].sort()).toEqual([...pages].sort())
+    expect(given.length).toBeGreaterThan(0)
+    for (const { owner, plugin } of given) {
+      expect(plugin).toBe(owner)
+      expect(PLUGINS.find((p) => p.id === plugin)?.mandatory).toBe(false)
+    }
+    expect(new Set(given.map((g) => g.plugin)).size).toBe(given.length)
   })
 
   it('the list of UIs holds the renderer/ui.tsx of every plugin folder that has one, keyed by its id, and each holds the parts its manifest lists', () => {
