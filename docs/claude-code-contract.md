@@ -1070,6 +1070,10 @@ starts a new conversation when it is set back to the tool's own.
   drew no notice of skipped plugin settings (a plugin with hooks, MCP servers or settings
   of its own was not tried), and made its worktree through the first `git` on `PATH` (a
   logging wrapper), in a repo with no remote.
+- On 2.1.328 (2026-11-19, `strings` beside 2.1.327, not run) the texts Koloft's `src/`
+  matches in claude's output — `Resume this session with:`, `Removing worktree`, `Worktree removed`,
+  `<local-command-stdout>`, the two "Request interrupted" lines — appears as often as
+  on 2.1.327, and the resume hint is printed by the same code.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -3229,7 +3233,13 @@ sessions.
     dedupWindowMs:30000, maxSelfHops:10, maxChainLength:28, maxTrackedSenders:256`, the
     same as 2.1.296 (`strings`, 2026-10-14). Still on in 2.1.309, with the same
     pattern, wrap text and limits (`strings`, 2026-10-23). The receiver's limits are the
-    same in 2.1.323 (`strings`, 2026-11-13).
+    same in 2.1.323 (`strings`, 2026-11-13). In 2.1.328 the envelope pattern, `Held peer
+    message`, "permission mode class doesn't match this session's", "Deliver this
+    message to Claude" and the `ListAgents` and `SendMessage` tool names appear as often
+    as in 2.1.327, and `-p`'s init event still lists both tools (`strings` and one `-p`
+    run, 2026-11-19; no message was delivered live). New in 2.1.328: `/list-agents`
+    shows its list to the person only, and `-p` writes `Held a message from … Claude
+    has not seen it.` to stderr.
   - **The sender's side has a cap, raised in 2.1.323.** Its changelog: "Changed how
     many messages each of your sessions on the same machine can send the others without
     a prompt from you, from about 20 to 100,000". The 2.1.323 binary holds
@@ -4226,6 +4236,15 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   <text>\n</system-reminder>"}],"renderedRole":"system"}`.
 - **It fires for every tool, Read and Grep included**, once per call (`hookName`
   `PostToolUse:Read`, `PostToolUse:Grep`, …).
+- **It does not fire for a call a deny rule refused before it ran.** 2026-11-19, CC
+  2.1.327 and 2.1.328, `claude -p` against a stand-in API, a scratch `HOME`, a
+  `--settings` file with a deny rule `Bash(rm:*)` and logging hooks on every event, the
+  model made to call `rm` and then `echo`, 1 run each: the `rm` call fired `PreToolUse`
+  and no `PostToolUse`, `PostToolUseFailure` or `PermissionDenied`; the `echo` call fired
+  `PostToolUse` and its text reached the model, the same on both builds. The 2.1.328
+  changelog's "managed `PostToolUse` hooks … no longer fire for calls refused before they
+  ran" is about managed settings, which Koloft does not use. A call stopped by a
+  `PreToolUse` hook (§15) was not run.
 - **What a hook reads on stdin is one line of compact JSON**: no spaces after `:` or `,`,
   text outside ASCII written as raw UTF-8 (Chinese arrived as its UTF-8 bytes, not
   `\uXXXX`), and only `"`, `\` and control characters escaped (`\"`, `\\`, `\n`). On
@@ -4326,7 +4345,14 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
   and times above were not re-measured, and that `scripts/code-review.mjs`'s own
   `medium` / `claude-opus-5-5` argv answers the same way on 2.1.318 is inferred, not
-  checked).
+  checked). Still so on 2.1.328 (2026-11-19, the same argv plus `--allowedTools
+  'Bash(git:*)' Read Grep Glob`, a scratch `HOME` and repo, 1 run each): a clean one-line
+  diff answered exit 0, `is_error: false`, `result` starting `(none)`; a one-line diff
+  with a plain bug answered the same exit and flag with the finding in `result`, now
+  labelled (`math.js:7 — important — …`), where 2.1.327 gave `math.js:8 — …` with no
+  label. The changelog's "a clean review's list now reads "Code review found no
+  issues."" did not show in either output format; the 2.1.328 strings tie that text to
+  an empty list in another output path (read, not run).
 - **Since 2.1.318 a custom command that cannot run puts its error in `result`, still
   with `is_error: false`.** In a scratch repo, a project command whose `` !`exit 3` ``
   step is refused under `-p` answered `result: ""` on 2.1.317 and `Shell command
@@ -4354,6 +4380,8 @@ folder with a `--settings` file whose `Stop` hook printed
 - **Stop fires again when that answer ends**, with the same `prompt_id`,
   `"stop_hook_active":true` and the new answer as `last_assistant_message`; the first
   Stop had `"stop_hook_active":false`. No `UserPromptSubmit` fired for the second answer.
+- The three bullets above held on 2.1.327 and 2.1.328 alike (2026-11-19, the same hook
+  against a stand-in API, a scratch `HOME`, 1 run each); `prompt_id` was not compared.
 
 Koloft dependents: the Stop branch of `HOOK_SCRIPT` and the Codex reply-language script
 in `src/main/hooks.ts`.
