@@ -52,6 +52,11 @@ const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person
 
 export const ROUTE_WORKTREE_PICKS = 'route-worktree-picks'
 
+function worktreePicks(): string {
+  const picks = composePrompt(ROUTE_WORKTREE_PICKS)
+  return picks ? `${picks}  or ` : '  '
+}
+
 const sessionsSent = (w: RouteWorkspace): RouteSession[] =>
   w.sessions.slice(0, SESSIONS_SENT_PER_WORKSPACE)
 
@@ -109,7 +114,7 @@ ${NEW_PROJECT_RULE}. It wants something new built (a new program, tool or projec
 8. Anything else: a question not about one project, a translation, something to write that no workspace is for, a fact to look up (like whether a pull request is merged), a scheduled job, work across several workspaces, work that could fit more than one workspace ("fix the tests", "tidy the README"), or a Koloft setting not in the features above: {"hand": "koloft"}
 
 "worktree" (rule 6 only): "main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, and never in a worktree that already exists, so for one:
-${composePrompt(ROUTE_WORKTREE_PICKS)}  or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
+${worktreePicks()}{"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
  "title": <a very short title, at most 6 words, or 16 characters in a language written without spaces, in the language of the text the person typed between <<< and >>>, even when the session titles and examples above are in another language>,

@@ -3,7 +3,7 @@ import { IconIssue, IconPullRequest } from '@renderer/icons'
 import { useStore } from '@renderer/store'
 import type { WorkspaceRows } from '@shared/types'
 import { countLabel, openIssuesLabel, openPullsLabel } from './labels'
-import { countsOf } from '../shared/counts'
+import { githubCountsOfRow } from '../shared/counts'
 import { openWorkspaceList } from './lists'
 
 const indexed = new WeakMap<readonly WorkspaceRows[], Map<string, WorkspaceRows['workspace']>>()
@@ -16,10 +16,10 @@ function byPath(rows: readonly WorkspaceRows[]): Map<string, WorkspaceRows['work
 
 const countsAt = (rows: readonly WorkspaceRows[], path: string) => {
   const ws = byPath(rows).get(path)
-  return ws && countsOf(ws)
+  return ws && githubCountsOfRow(ws)
 }
 
-export const hasGithub = (ws: WorkspaceRows['workspace']): boolean => !!countsOf(ws)
+export const hasGithub = (ws: WorkspaceRows['workspace']): boolean => !!githubCountsOfRow(ws)
 
 export function CountsMark({
   path,
@@ -75,7 +75,7 @@ export function GithubSection({
   account: string | undefined
   onClose: () => void
 }): JSX.Element | null {
-  const github = countsOf(ws)
+  const github = githubCountsOfRow(ws)
   if (!github) return null
   const openList = (what: 'issues' | 'pulls'): void => {
     onClose()
