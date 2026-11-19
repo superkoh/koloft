@@ -9,6 +9,8 @@ import {
   type TypedStart
 } from './newSession'
 import { remoteKeyFromForm } from './remoteWorkspace'
+import { fillsOf } from './pluginUi'
+import { ISSUE_LAUNCH } from './slots'
 
 let lastAsk = 0
 
@@ -28,18 +30,13 @@ export async function pendingOptions(
   pending: PendingStart
 ): Promise<SessionLaunchOptions> {
   const named = ws.path === pending.path ? pending.worktree : null
-  const [worktrees, items] = await Promise.all([
+  const [issueLaunch] = fillsOf(ISSUE_LAUNCH)
+  const [worktrees, issueSeed] = await Promise.all([
     ws.isGit ? window.api.workspace.worktrees(ws.path) : [],
-    named?.kind === 'issue' ? window.api.github.openItems(ws.path).catch(() => null) : null
+    named?.kind === 'issue' && issueLaunch ? issueLaunch(ws.path, named.number) : null
   ])
   const wt = pendingWorktree(named, ws.isGit, Date.now())
-  return pendingLaunch(
-    ws.path,
-    wt,
-    pending,
-    worktrees,
-    items?.state === 'items' ? items.issues : []
-  )
+  return pendingLaunch(ws.path, wt, pending, worktrees, issueSeed)
 }
 
 export function projectParentKey(machine: string, where: string): string | null {
