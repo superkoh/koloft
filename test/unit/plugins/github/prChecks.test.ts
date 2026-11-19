@@ -2,14 +2,14 @@ import { describe, it, expect, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import type { GhResult } from '../../../../src/core/gh'
+import { runGh } from '../../../../src/main/ghRun'
 import {
   FAILED_LOG_LIMIT,
   failingChecksText,
   parseChecks,
-  runGh,
-  trimFailedLog,
-  type GhResult
-} from '../../src/main/prChecks'
+  trimFailedLog
+} from '../../../../src/plugins/github/main/prChecks'
 
 const REPO = { owner: 'acme', repo: 'widgets' }
 const ACTIONS_LINK = 'https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912'
