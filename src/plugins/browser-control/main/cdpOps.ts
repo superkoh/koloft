@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import type { BrowserCdpAttached, BrowserCdpOp, BrowserCdpOpResult } from '@shared/types'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
-import { CH, type Channel } from '@shared/ipcChannels'
+import { CHANNELS } from '../shared/ipc'
 import {
   guestDrivenFromAnotherMachine,
   openForMachine,
@@ -13,7 +13,7 @@ export interface CdpOpsDeps extends Pick<
   RelayDeps,
   'sessionForTab' | 'anotherLiveKoloftOwns' | 'cameThroughAForward'
 > {
-  send(channel: Channel, ...args: unknown[]): boolean
+  push(channel: string, ...args: unknown[]): boolean
 }
 
 export class CdpOps {
@@ -45,7 +45,7 @@ export class CdpOps {
       },
       setAttached: (sessionId, targetIds) => {
         const payload: BrowserCdpAttached = { sessionId, targetIds }
-        d.send(CH.browser.cdpAttached, payload)
+        d.push(CHANNELS.cdpAttached, payload)
       },
       cameThroughAForward: d.cameThroughAForward
     }
@@ -67,7 +67,7 @@ export class CdpOps {
         resolve(res)
       })
       const payload: BrowserCdpOp = { opId, kind, sessionId, ...extra }
-      this.d.send(CH.browser.cdpOp, payload)
+      this.d.push(CHANNELS.cdpOp, payload)
     })
   }
 

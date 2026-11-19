@@ -190,5 +190,5 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
 
 export const pushOpenFile =
   (ipc: MainIpc) =>
-  (request: OpenRequest): void =>
+  (request: OpenRequest): boolean =>
     ipc.push(CHANNELS.openFile, request)
