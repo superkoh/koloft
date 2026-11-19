@@ -2757,7 +2757,14 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   of a long resumed transcript, or cut at any byte with 0.3–2.5 s before the rest. Cut
   after `ESC[<0` with a whole `ESC[<35;61;45M` written in the gap, `;79;45M` stayed in
   the box as typed text; cut after `ESC[<` it left `<0;79;45M`, after `ESC[<0;79` it
-  left `;45M`.
+  left `;45M`. Still so on 2.1.327 and 2.1.328 (2026-11-19, the same setup with a
+  stand-in API, 3 runs each, 1 on 2.1.293; the same modes turned on at start): cut after
+  `ESC[<0` or `ESC[<0;79` with a whole report in the gap left `;79;45M` or `;45M`; cut
+  with nothing in the gap, or written whole, left the box empty. An XTVERSION or `7501`
+  reply cut in half 0.3 s apart at start, and mid-session CPR, DA1, XTVERSION, `7501`
+  and OSC 11 replies cut the same way (fullscreen, 1 run per build), left nothing in the
+  box on any build, so the changelog's "a terminal's reply being typed into the prompt
+  when a slow connection cut it in two" did not show on 2.1.327 either.
 - **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
   tables makes wide CJK and emoji drift and clip at the right edge.
 - **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR
@@ -2827,7 +2834,10 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   longer than the 300 ms between Koloft's keys, so both can wait in the pty and be read
   together. That this is what lost the Enter in the nightly failures is inferred from
   their screen (`❯ /context` left in the box under "✻ Waiting for 1 background agent to
-  finish"); none of the 13 logged runs lost it.
+  finish"); none of the 13 logged runs lost it. Still so on 2.1.328 (2026-11-19, the same
+  pty setup with a stand-in API, 3 tries each): ESC and CR in one write and CR 20 ms
+  after ESC lost the Enter 3 of 3, with `/context` left in the box; 60 ms and 300 ms
+  after ran it 3 of 3.
 - **Commands that open a panel or picker write nothing until it closes**: `/cost`,
   `/usage`, `/status`, `/help` and `/config` open a panel and leave no record at all;
   `/model` with no argument and `/resume` open a picker; `/model sonnet` from Haiku asks
@@ -3666,6 +3676,20 @@ below was one run.
   prompts for you`, `4. No` (above it "Tip: auto mode handles these prompts for you"). `3`
   ran the command and switched the session to auto mode. Koloft presses only `1` and Esc
   (`claudeKeysFor`), which mean the same as before.
+- **Since 2.1.328 Esc with another key in the same read declines a dialog, and that key
+  lands in the input box; before, the key answered the dialog.** 2026-11-19, CC 2.1.293,
+  2.1.327 and 2.1.328, a python pty 120×40 drawn through `pyte`, a scratch `HOME`, a
+  stand-in Messages API driving a Bash dialog and a one-question `AskUserQuestion`, 3
+  runs per cell. ESC+`1` in one write picked option 1 on 2.1.293 and 2.1.327 (the Bash
+  call ran, the question was answered "Red") and declined both on 2.1.328, with `1` left
+  in the box. ESC, then `x` 5 ms later, left the Bash dialog open on the older builds
+  (the Esc lost) and declined it on 2.1.328. On all three a lone ESC declined, ESC+CR in
+  one write did nothing, and Koloft's own keys (`1` alone; Down, Up, Ctrl+U, Up, `2`;
+  Down, Up, Ctrl+U, `Purple`, CR, 300 ms apart) answered as before. An arrow key's
+  `ESC` and `[B` 5 ms apart still moved the highlight on every build; 50 ms apart it
+  declined the question on 2.1.293 (1 run) and 2.1.328 (2 of 2) and did either on 2.1.327
+  (1 each). The changelog: "in terminals that send Alt as Esc and a key, an unused Alt
+  or Option key now declines there".
 - **A digit picks only while the highlight is on a numbered option; where the highlight
   goes.** 2026-11-05, CC 2.1.318 (the native binary), a python pty 120×40 drawn through
   `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`, no hook, a local fake Messages API
@@ -4158,6 +4182,13 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
 - **The next CR sends it as one user message.** The transcript's `user` record has a
   string `content` with the paste wrapped in tags:
   `\n\n<pasted_content id="<4 hex>">\n<the pasted text>\n</pasted_content id="<4 hex>">\n`.
+  Still so on 2.1.327 and 2.1.328 with `ANTHROPIC_BASE_URL` set (2026-11-19, a pty against
+  a stand-in API, 1 run each; a paste cut in two halves 0.5 s apart stayed one block,
+  5 runs on 2.1.328, 3 on 2.1.327), and on both builds that request's system prompt held
+  "Text inside <pasted_content> tags was pasted into the message by the user from
+  somewhere else …". Under `claude -p` against the same kind of stand-in, every 2.1.328
+  request held that line and no 2.1.327 request did (1 run each); a request with no
+  paste in the interactive TUI was not checked.
 - **The model may not take words inside a paste as the person's own.** Asked inside the
   paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
   "came from the pasted text and not from you" and did not act on it.
@@ -4168,9 +4199,18 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   `CLAUDE_CODE_OAUTH_TOKEN`): the paste, then the note in the same write, in one write
   0.3 s later, or in pieces; then a CR 4 s later.
 - **One raw write longer than about 800 bytes is taken as a second paste**, wrapped in its
-  own tags and shown as `[Pasted text #2]`: a 900-byte piece did that, and a
-  1,150-byte write was split at 1,024 bytes with the first part wrapped. Pieces of 512
-  bytes 10 ms apart, and of 128 characters 0.3 s apart, stayed typed text.
+  own tags and shown as `[Pasted text #2]`: a 900-byte piece did that. Pieces of 512
+  bytes 10 ms apart, and of 128 characters 0.3 s apart, stayed typed text. All three
+  held on 2.1.327 and 2.1.328 (2026-11-19, a python pty on this Mac, a stand-in API, 3
+  runs each, 5 for the 900-byte write on 2.1.328).
+- **A 1,150-byte raw write on this Mac loses its first 1,022 bytes.** The Mac pty hands
+  it over as 1,022 and then 128 bytes; the first part neither showed nor was sent, and
+  CR sent only the last 128 bytes as plain text, with or without a bracketed paste
+  before it (then the box held `[Pasted text #1 +7 lines]` and the 128 bytes, no
+  `[Pasted text #2]`). The same on 2.1.293, 2.1.327 and 2.1.328 (2026-11-19, the same
+  probe, 3 runs on the two newer builds, 1 on 2.1.293). The 2.1.287 notes saw this write
+  "split at 1,024 bytes with the first part wrapped"; why the two differ is not known.
+  Koloft types in 128-character pieces and wraps every paste in markers.
 - **A raw LF in the typed text adds a line and does not send**, both inside one write of
   nine lines and as a lone LF written 0.3 s after the line before it (2.1.294, same
   probe; the 2.1.288 measurement is in §12).
