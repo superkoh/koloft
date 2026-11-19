@@ -18,7 +18,8 @@ import { A_HELPER_HAS_IT, crossSessionLine } from '../../../../src/main/crossSes
 import type { TranscriptPlaces } from '../../../../src/main/sessionBackends'
 import { INBOX_SENDER } from '../../../../src/main/inbox'
 import type { SendResult } from '../../../../src/plugins/sessions/api'
-import { moment, type SessionStarted, type SessionStarting } from '../../../../src/core/moment'
+import { Moments, SESSION_STARTED, SESSION_STARTING } from '../../../../src/core/moment'
+import { PLUGINS } from '../../../../src/plugins/list'
 import {
   butlersWords,
   tellEachHelperItsRole
@@ -154,10 +155,9 @@ function harness(
   const stopped: string[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
-  const sessionStarting = moment<SessionStarting>()
-  tellEachHelperItsRole(sessionStarting, () => BUTLER_HELPER_ROLE)
-  const sessionStarted = moment<SessionStarted>()
-  giveEachStartedSessionARoom(sessionStarted, {
+  const moments = new Moments(PLUGINS)
+  tellEachHelperItsRole(moments, () => BUTLER_HELPER_ROLE)
+  giveEachStartedSessionARoom(moments, {
     isButler: (tabId) => !!conducting.scopes?.[tabId],
     butlerFolder: () => BUTLER_FOLDER,
     roomFor: async ({ by, tabId }) =>
@@ -253,8 +253,8 @@ function harness(
         ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] }
         : { error: 'no window' },
     rowNote: (key) => conducting.rooms?.[key],
-    announceStarting: sessionStarting.announce,
-    announceStarted: sessionStarted.announce,
+    announceStarting: (starting) => moments.announce(SESSION_STARTING, starting),
+    announceStarted: (started) => moments.announce(SESSION_STARTED, started),
     ownersWords: withoutTheRelayTag
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
