@@ -4,7 +4,7 @@ import type { SecretAskView } from '@shared/types'
 import { IconClose, IconLock, IconSignIn, IconWebPage } from '@renderer/icons'
 import { isComposing } from '@renderer/keys'
 import type { OverTerminal, PageAsk } from '@renderer/slots'
-import { useSecretAsks } from './state'
+import { useAsked, useSecretAsks } from './state'
 
 type SudoAsk = Extract<SecretAskView, { kind: 'sudo' }>
 type WebAsk = Exclude<SecretAskView, { kind: 'sudo' }>
@@ -16,8 +16,6 @@ function sudoAskOf(asks: readonly SecretAskView[], tabId: string): SudoAsk | und
 function webAskOf(asks: readonly SecretAskView[], tabId: string | null): WebAsk | undefined {
   return asks.find((a): a is WebAsk => a.tabId === tabId && a.kind !== 'sudo')
 }
-
-export const useAsked = (): readonly SecretAskView[] => useSecretAsks((s) => s.asks)
 
 export function useSudoOverTerminal(): (tabId: string) => OverTerminal | undefined {
   const asks = useAsked()

@@ -10,9 +10,9 @@ export function useWatchOwnerAsks(): void {
 }
 
 export function useAskedTabs(): readonly { tabId: string }[] {
-  const asked = askers().flatMap((asker) => asker.useAsked())
+  const lists = askers().map((asker) => asker.useAsked())
   const instructionAsks = useStore((s) => s.instructionAsks)
-  return [...asked, ...instructionAsks]
+  return useMemo(() => [...lists.flat(), ...instructionAsks], [...lists, instructionAsks])
 }
 
 export function useOverTerminal(): (tabId: string) => OverTerminal | undefined {

@@ -4,6 +4,8 @@ import type { SecretAskView } from '@shared/types'
 
 export const useSecretAsks = create<{ asks: SecretAskView[] }>(() => ({ asks: [] }))
 
+export const useAsked = (): readonly SecretAskView[] => useSecretAsks((s) => s.asks)
+
 export function useWatchSecretAsks(): void {
   useEffect(() => {
     const set = (asks: SecretAskView[]): void => useSecretAsks.setState({ asks })
