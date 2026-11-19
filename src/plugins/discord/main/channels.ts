@@ -37,5 +37,5 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
 
 export const pushStatus =
   (ipc: MainIpc) =>
-  (status: DiscordStatus): void =>
+  (status: DiscordStatus): boolean =>
     ipc.push(CHANNELS.status, status)

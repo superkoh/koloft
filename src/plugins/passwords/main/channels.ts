@@ -20,5 +20,5 @@ export function registerChannels(ipc: MainIpc, asks: () => Asks | null): void {
 
 export const pushAsks =
   (ipc: MainIpc) =>
-  (views: SecretAskView[]): void =>
+  (views: SecretAskView[]): boolean =>
     ipc.push(CHANNELS.asks, views)
