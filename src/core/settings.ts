@@ -31,6 +31,7 @@ export type AllSettingValues<L extends Readonly<Record<string, SettingKeys>>> =
 
 export interface PluginSettingsPage {
   id: string
+  plugin: string
   label: string
   words: readonly string[]
 }
@@ -44,7 +45,9 @@ export function settingsPages(plugins: readonly PluginManifest[]): PluginSetting
       throw new Error(
         `plugin ${plugin.id} must name its settings page in settings.page and list it in ui, or neither`
       )
-    return page ? [{ id: places[0].id, label: page.label, words: page.words }] : []
+    return page
+      ? [{ id: places[0].id, plugin: plugin.id, label: page.label, words: page.words }]
+      : []
   })
 }
 

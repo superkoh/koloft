@@ -348,6 +348,7 @@ export interface AppSettings {
   gitAutoFetch: boolean
   gitAutoPull: boolean
   agentTools: boolean
+  pluginsOn: Record<string, boolean>
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
@@ -459,6 +460,7 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   gitAutoFetch: true,
   gitAutoPull: false,
   agentTools: true,
+  pluginsOn: {},
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
