@@ -48,8 +48,12 @@ const looksLikeATitle = (line: string): boolean =>
 
 const firstLineName = (text: string): string => lineAsName(nonEmptyLines(text)[0])
 
+const HTML_TAG = /<\/?[a-z][^<>]*>/gi
+
+const isOnlyMarkup = (line: string): boolean => !line.replace(HTML_TAG, '').trim()
+
 function nameFromReply(reply: string): string {
-  const lines = nonEmptyLines(reply)
+  const lines = nonEmptyLines(reply).filter((l) => !isOnlyMarkup(l))
   return lineAsName(lines.find(looksLikeATitle) ?? lines[0])
     .replace(/^["'“‘「『]+|["'”’」』。.!！]+$/g, '')
     .trim()
