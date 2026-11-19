@@ -44,7 +44,7 @@ function check(dir: string): { code: number | null; reported: string[] } {
 const lines = (...l: string[]): string => l.join('\n') + '\n'
 
 describe('check-plugin-imports', () => {
-  it('lets a plugin import core, its own folder and the api.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs and the list of settings', () => {
+  it('lets a plugin import core, its own folder and the api.ts or windowApi.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs and the list of settings', () => {
     const dir = fixtureRepo({
       'src/plugins/settings.ts': "import { SETTINGS } from './a/shared/settings'\n",
       'src/plugins/a/shared/settings.ts': 'export const SETTINGS = {}\n',
@@ -58,6 +58,7 @@ describe('check-plugin-imports', () => {
       'src/plugins/b/main/ok.ts': lines(
         "import { PLUGIN_FORMAT_VERSION } from '@core/plugin'",
         "import { fromA } from '@plugins/a/api'",
+        "import { titleA } from '@plugins/a/windowApi'",
         "import { fromB } from '../api'",
         "export { fromA as again } from '../../a/api.ts'",
         "const later = import('@plugins/a/api')",
@@ -79,7 +80,8 @@ describe('check-plugin-imports', () => {
         "const plugin = import('@plugins/b')",
         "import { sneak } from '@core/../plugins/b/main/inner'",
         "type Inner = typeof import('@plugins/a/main/inner')",
-        "import { pluginBridges } from '../../bridges'"
+        "import { pluginBridges } from '../../bridges'",
+        "import { titleA } from '@plugins/a/windowApi'"
       ),
       'src/plugins/bridges.ts': "import { start } from './a/main/start'\n",
       'src/plugins/uis.ts': "import { bridge } from './a/preload/bridge'\n",
@@ -106,6 +108,7 @@ describe('check-plugin-imports', () => {
         'src/plugins/c/main/bad.ts:7 @core/../plugins/b/main/inner',
         'src/plugins/c/main/bad.ts:8 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:9 ../../bridges',
+        'src/plugins/c/main/bad.ts:10 @plugins/a/windowApi',
         'src/plugins/list.ts:4 ./a/main/start',
         'src/plugins/settings.ts:1 ./a/renderer/ui',
         'src/plugins/uis.ts:1 ./a/preload/bridge',
