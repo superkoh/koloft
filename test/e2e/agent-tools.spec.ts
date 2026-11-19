@@ -1356,4 +1356,40 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await quitAndClose(app)
     }
   })
+
+  test("turning Todo off in Settings ▸ Plugins while Koloft runs takes the to-dos out of the koloft skill in the Muse account's skills folder at the next Muse launch, though an earlier Muse session there already had it written", async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installAgent(env, 'muse')
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const museSkills = (): string[] => koloftSkillsUnder(path.join(env.userData, 'muse-homes'))
+      await startAgentTab(page, env, 'muse')
+      expect(museSkills()).toHaveLength(1)
+      expect(museSkills()[0]).toContain('gather what waits on the owner')
+
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+      await page.getByRole('switch', { name: 'Todo', exact: true }).uncheck()
+      await expect
+        .poll(() =>
+          koloftSkillsUnder(path.join(env.userData, 'agent-plugin')).some((s) =>
+            s.includes('gather what waits on the owner')
+          )
+        )
+        .toBe(false)
+      await closeSettings(page)
+
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect.poll(() => museCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(museSkills()).toHaveLength(1)
+      expect(museSkills()[0]).not.toContain('gather what waits on the owner')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })

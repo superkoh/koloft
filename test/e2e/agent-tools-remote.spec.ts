@@ -9,6 +9,7 @@ import { docsSkillHandedOut, filesNamedUnder, koloftSkillsUnder } from './helper
 import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
+import { closeSettings, openSettings } from './helpers/extensions'
 import {
   encodeCwd,
   notesOnDisk,
@@ -16,9 +17,11 @@ import {
   openMenu,
   processAlive,
   readCalls,
+  startSessionIn,
   terminalText,
   wsGroup,
-  picksFor
+  picksFor,
+  type ClaudeCall
 } from './helpers/p1'
 import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
 import {
@@ -32,6 +35,13 @@ import {
   remoteDir,
   remoteKey
 } from './helpers/remote'
+
+function koloftSkillHandedTo(call: ClaudeCall): string {
+  const dir = call.argv.find(
+    (a, i) => call.argv[i - 1] === '--plugin-dir' && a.includes('agent-plugin')
+  )
+  return dir ? fs.readFileSync(path.join(dir, 'skills', 'koloft', 'SKILL.md'), 'utf8') : ''
+}
 
 async function sessionOf(page: Page, tabId: string): Promise<SessionInfo | undefined> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
@@ -169,6 +179,31 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         await quitAndClose(app)
       }
     })
+
+  test('turning Todo off in Settings ▸ Plugins while Koloft runs hands the next Claude Code session on the machine a koloft skill with no to-dos, though an earlier session there was handed one with them', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installOnTheMachine(env, 'claude')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await startRemoteTab(page, env, 'claude')
+      expect(koloftSkillHandedTo(readCalls(env)[0])).toContain('gather what waits on the owner')
+
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+      await page.getByRole('switch', { name: 'Todo', exact: true }).uncheck()
+      await closeSettings(page)
+
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      expect(readCalls(env)).toHaveLength(2)
+      const handed = koloftSkillHandedTo(readCalls(env)[1])
+      expect(handed).toContain('name: koloft')
+      expect(handed).not.toContain('gather what waits on the owner')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   for (const backend of SESSION_BACKENDS)
     test(`koloft cron add from a ${backend} session on the machine adds a job to its remote workspace, shown in Scheduled jobs and in koloft cron list, and show and off find it by its name`, async ({
