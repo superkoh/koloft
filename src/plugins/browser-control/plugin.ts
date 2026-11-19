@@ -1,6 +1,7 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
+import { CHANNELS } from './shared/ipc'
 
 export const BROWSER_CONTROL_PAGE = 'browser-control'
 
@@ -16,5 +17,6 @@ export const plugin: PluginManifest = {
     keys: ['browserControl']
   },
   text: [...TEXT, ...SKILL_TEXT],
+  channels: Object.values(CHANNELS),
   ui: [{ place: 'settings-page', id: BROWSER_CONTROL_PAGE }]
 }
