@@ -14,7 +14,7 @@ import {
   CHANGE_UNDONE,
   CHANGE_UNDONE_SHOWS_MS,
   InstructionsChangeLines,
-  UNDO_TAKES_BACK_ONLY_THIS,
+  undoTakesBack,
   changeSummary,
   changedBy
 } from '@renderer/components/InstructionsChange'
@@ -121,7 +121,7 @@ function ChangeView({ change }: { change: InstructionsChange }): JSX.Element {
       >
         <div className="pal-count">{`Instructions for ${name} · ${changedBy(change)}`}</div>
         <InstructionsChangeLines change={change} />
-        <div className="pal-status">{UNDO_TAKES_BACK_ONLY_THIS}</div>
+        <div className="pal-status">{undoTakesBack(change)}</div>
         <div className="pal-bar">
           <span className="pal-tips">
             {error ? (

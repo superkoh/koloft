@@ -43,7 +43,12 @@ export function withNewVersion(
     agent === undefined
       ? { text, at, by: OWNER }
       : { text, at, by: agent, agent: true, unseen: true }
-  return [...(versions ?? []), version].slice(-VERSIONS_KEPT)
+  const all = [...(versions ?? []), version]
+  const kept = all.slice(-VERSIONS_KEPT)
+  const lastSeen = all.findLastIndex((v) => !v.unseen)
+  return lastSeen >= 0 && lastSeen < all.length - VERSIONS_KEPT
+    ? [all[lastSeen], ...kept.slice(1)]
+    : kept
 }
 
 export interface InstructionsChange {
@@ -51,6 +56,7 @@ export interface InstructionsChange {
   at: number
   before: string
   after: string
+  changes: number
 }
 
 export function unseenChange(
@@ -61,7 +67,13 @@ export function unseenChange(
   let first = versions.length - 1
   while (first > 0 && versions[first - 1].unseen) first--
   const by = [...new Set(versions.slice(first).map((v) => v.by))].join(', ')
-  return { by, at: last.at, before: versions[first - 1]?.text ?? '', after: last.text }
+  return {
+    by,
+    at: last.at,
+    before: versions[first - 1]?.text ?? '',
+    after: last.text,
+    changes: versions.length - first
+  }
 }
 
 export const allSeen = (versions: readonly InstructionsVersion[]): InstructionsVersion[] =>

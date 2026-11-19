@@ -4,8 +4,10 @@ import { diffLines } from './editDiff'
 import { InlineDiff } from './InlineDiff'
 import '../inlineDiff.css'
 
-export const UNDO_TAKES_BACK_ONLY_THIS =
-  'Undo takes back only this change; an earlier change stays.'
+export const undoTakesBack = ({ changes }: InstructionsChange): string =>
+  changes === 1
+    ? 'Undo takes back only this change; an earlier change stays.'
+    : `Undo takes back these ${changes} changes together; an earlier change stays.`
 export const CHANGE_UNDONE = 'Change undone'
 export const CHANGE_UNDONE_SHOWS_MS = 4000
 

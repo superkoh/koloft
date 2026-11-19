@@ -26,8 +26,9 @@ export interface InstructionsChanged {
 }
 
 export interface InstructionsVerbDeps {
-  changed(c: InstructionsChanged): Promise<string[]>
+  changed(c: InstructionsChanged): void
   overseerSide(tabId: string): boolean
+  isOverseer(tabId: string): boolean
   overseerBlock(): InstructionsBlock
   workspaceOf(tabId: string): string | undefined
   pinnedWorkspaces(): PinnedWorkspace[]
@@ -43,6 +44,8 @@ const WORDS_AFTER_DASHES = (edit: AgentEdit): string =>
     : 'koloft instructions set: put the whole new text after --; an empty text clears them.'
 export const ONLY_ITS_OWN_WORKSPACE =
   "koloft instructions: a session reads and changes only its own workspace's instructions."
+export const ONLY_THE_OVERSEER_CHANGES_THEM =
+  'koloft instructions: nothing was changed. A helper only reads them; when the owner asks you to remember something, tell the session that started you, which changes them.'
 const NO_WORKSPACE =
   'koloft instructions: this session is in no workspace of the sidebar, so it has no instructions to change.'
 
@@ -97,6 +100,8 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
       const text = await block.read()
       return answered(text || `${capitalized(block.name)} are empty.`)
     }
+    if (d.overseerSide(caller.tabId) && !d.isOverseer(caller.tabId))
+      return refused(ONLY_THE_OVERSEER_CHANGES_THEM)
     if (p.edit === ADD_A_LINE && !p.words) return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
     if (p.edit === REPLACE_THE_TEXT && !args.includes('--'))
       return refused(WORDS_AFTER_DASHES(p.edit), EXIT_USAGE)
@@ -104,7 +109,7 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     const by = d.nameOf(caller.session)
     if (!(await block.write((current) => editedText(current, edit, p.words), by)))
       return answered(`${capitalized(block.name)} already say that; nothing changed.`)
-    const notes = await d.changed({ workspace: block.workspace, by, notice: block.changedBy(by) })
-    return answered([changedLine(edit, block.name), ...notes].join('\n'))
+    d.changed({ workspace: block.workspace, by, notice: block.changedBy(by) })
+    return answered(changedLine(edit, block.name))
   }
 }

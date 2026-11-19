@@ -2370,15 +2370,17 @@ registerSessionCommands(commands, {
   instructions: {
     changed: ({ workspace, by, notice }) => {
       if (workspace) pushToSessions.instructionsChanged({ workspace, by })
-      return moments.announce(INSTRUCTIONS_CHANGED, notice)
+      announceNow(INSTRUCTIONS_CHANGED, notice)
     },
     overseerSide: butlerSide,
+    isOverseer: isButlerNow,
     overseerBlock: () =>
       butlersBlock(loadSettings().butler, (butler) => commitSettings({ butler }), Date.now),
     workspaceOf: pinnedWorkspaceOfTab,
     pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
     workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now),
-    nameOf: (s) => sidebarTitle(s) ?? BACKEND_LABEL[s.backendId]
+    nameOf: (s) =>
+      isButlerNow(s.tabId) ? butlerNameNow() : (sidebarTitle(s) ?? BACKEND_LABEL[s.backendId])
   }
 })
 

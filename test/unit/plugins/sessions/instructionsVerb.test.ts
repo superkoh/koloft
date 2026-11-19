@@ -3,6 +3,7 @@ import type { SessionDefaults, SessionInfo } from '../../../../src/shared/types'
 import { OWNER, unseenChange, withNewVersion } from '../../../../src/core/ownerInstructions'
 import {
   ONLY_ITS_OWN_WORKSPACE,
+  ONLY_THE_OVERSEER_CHANGES_THEM,
   instructionsVerb,
   type InstructionsChanged
 } from '../../../../src/plugins/sessions/main/instructionsVerb'
@@ -19,6 +20,7 @@ import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
 const WS_A = '/Users/me/ws-a'
 const WS_B = '/Users/me/ws-b'
 const BUTLER_TAB = 'tab-butler'
+const HELPER_TAB = 'tab-helper'
 const AT = 1_700_000_000_000
 
 function world(): {
@@ -44,11 +46,9 @@ function world(): {
     }
   }
   const verb = instructionsVerb({
-    changed: async (c) => {
-      told.push(c)
-      return []
-    },
-    overseerSide: (tabId) => tabId === BUTLER_TAB,
+    changed: (c) => void told.push(c),
+    overseerSide: (tabId) => tabId === BUTLER_TAB || tabId === HELPER_TAB,
+    isOverseer: (tabId) => tabId === BUTLER_TAB,
     overseerBlock: () =>
       butlersBlock(
         butler.value,
@@ -174,11 +174,33 @@ describe('the owner sees and undoes an agent’s change', () => {
       by: 'Fix login, Codex',
       at: AT,
       before: 'Answer in Chinese.',
-      after: 'Answer in Chinese.\none\ntwo'
+      after: 'Answer in Chinese.\none\ntwo',
+      changes: 2
     })
     expect(undoneDefaults(w.defaults.get(WS_A), change, AT + 5)?.instructions?.at(-1)?.text).toBe(
       'Answer in Chinese.'
     )
+  })
+
+  it('keeps the text the owner last saw when more changes pile up than the history keeps', () => {
+    let versions = withNewVersion([], 'mine', 1)
+    for (let i = 0; i < 30; i++) versions = withNewVersion(versions, `agent ${i}`, i + 2, 'X')
+    expect(versions).toHaveLength(20)
+    expect(unseenChange(versions)).toMatchObject({ before: 'mine', after: 'agent 29', changes: 19 })
+  })
+
+  it('a helper of the butler reads the instructions but cannot change them', async () => {
+    const w = world()
+    expect(await w.run(HELPER_TAB, ['add', '--', 'x'])).toEqual({
+      text: ONLY_THE_OVERSEER_CHANGES_THEM,
+      exit: 1
+    })
+    expect(await w.run(HELPER_TAB, ['add', '--workspace', 'ws-a', '--', 'x'])).toEqual({
+      text: ONLY_THE_OVERSEER_CHANGES_THEM,
+      exit: 1
+    })
+    expect((await w.run(HELPER_TAB, [])).exit).toBe(0)
+    expect(w.told).toEqual([])
   })
 
   it('undoes only that change: once the owner changed the text again, nothing is undone', async () => {

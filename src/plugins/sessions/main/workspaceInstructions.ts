@@ -2,6 +2,7 @@ import { composePrompt } from '@core/prompt'
 import {
   allSeen,
   cleanInstructions,
+  instructionsBytes,
   textInUse,
   withChangeUndone,
   withNewVersion,
@@ -75,7 +76,9 @@ export function undoneDefaults(
   at: number
 ): SessionDefaults | undefined {
   const instructions = withChangeUndone(saved?.instructions, change, at)
-  checkTheLimit(saved?.rules ?? '', textInUse(instructions))
+  const restored = textInUse(instructions)
+  if (instructionsBytes(restored) > instructionsBytes(textInUse(saved?.instructions)))
+    checkTheLimit(saved?.rules ?? '', restored)
   return withVersions(saved, instructions)
 }
 

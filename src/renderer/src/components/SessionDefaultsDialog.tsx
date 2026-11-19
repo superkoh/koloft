@@ -19,7 +19,7 @@ import {
   CHANGE_UNDONE,
   CHANGE_UNDONE_SHOWS_MS,
   InstructionsChangeLines,
-  UNDO_TAKES_BACK_ONLY_THIS,
+  undoTakesBack,
   changeSummary,
   changedBy
 } from './InstructionsChange'
@@ -141,8 +141,8 @@ export function SessionDefaultsDialog({
       },
       (e: unknown) => live && setError(String(e))
     )
-    const stop = window.api.sessionDefaults.onInstructionsChanged(({ workspace }) => {
-      if (live && workspace === wsPath) void readInstructionsAgain()
+    const stop = window.api.sessionDefaults.onInstructionsChanged(() => {
+      if (live) void readInstructionsAgain()
     })
     return () => {
       live = false
@@ -305,7 +305,7 @@ export function SessionDefaultsDialog({
                         Undo this change
                       </button>
                     </div>
-                    <p className="field-hint">{UNDO_TAKES_BACK_ONLY_THIS}</p>
+                    <p className="field-hint">{undoTakesBack(change)}</p>
                   </div>
                 )}
                 {undone && <p className="field-hint">{CHANGE_UNDONE}</p>}
