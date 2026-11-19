@@ -669,7 +669,7 @@ export class SessionTracker extends SessionRuntime {
   // CC§8
   setSessionCrons(tabId: string, crons: unknown[]): void {
     const wakeups = wakeupItems(crons)
-    this.setWakeupPending(tabId, wakeups.length > 0)
+    this.setWakeupPending(tabId, crons.length > 0)
     const t = this.tracked.get(tabId)
     if (!t) return
     const before = new Set(t.wakeups.map((w) => w.id))
@@ -947,9 +947,7 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = []
-      t.wakeups = []
-      this.setWakeupPending(tabId, false)
-      this.setBackgroundItems(t, [])
+      this.setBackgroundItems(t, t.wakeups)
       this.setStatus(tabId, 'waiting')
     }
   }

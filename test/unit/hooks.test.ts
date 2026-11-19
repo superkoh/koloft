@@ -570,11 +570,13 @@ esac
       session_crons: []
     })
     fire('tabWK3', 'stop', { background_tasks: [] })
+    fire('tabWK4', 'stop', { session_crons: [recurring], background_tasks: [] })
     const crons = (tab: string): unknown =>
       (readStatusLog(tab)[0] as unknown as { crons?: unknown }).crons
     expect(crons('tabWK1')).toEqual([tricky, recurring])
     expect(crons('tabWK2')).toEqual([])
     expect(crons('tabWK3')).toBeUndefined()
+    expect(crons('tabWK4')).toEqual([recurring])
   })
 
   it('a task command carrying JSON punctuation cannot truncate the scan', () => {

@@ -24,7 +24,7 @@ import { mapAtMost } from '@core/mapAtMost'
 import { pidAlive } from './leftovers'
 import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
-import { wakeupItem } from './scheduleLabel'
+import { BACKGROUND_LABEL_CHARS, wakeupItem } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -972,7 +972,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       run.background.set(response.work_id, {
         id: response.work_id,
         kind: 'command',
-        label: typeof command === 'string' ? command.slice(0, 160) : 'Background command',
+        label:
+          typeof command === 'string'
+            ? command.slice(0, BACKGROUND_LABEL_CHARS)
+            : 'Background command',
         state: 'working'
       })
       this.publishBackground(run)
@@ -982,7 +985,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       run.background.set(id, {
         id,
         kind: 'monitor',
-        label: String(what.description ?? what.command ?? 'Monitor').slice(0, 160),
+        label: String(what.description ?? what.command ?? 'Monitor').slice(
+          0,
+          BACKGROUND_LABEL_CHARS
+        ),
         state: 'waiting'
       })
       this.publishBackground(run)
@@ -999,7 +1005,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           recurring,
           item: wakeupItem(job, {
             cron: nonEmptyString(what.cron),
-            once: !recurring,
+            once: what.recurring === false,
             prompt: nonEmptyString(what.prompt)
           })
         })

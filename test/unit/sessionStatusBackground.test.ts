@@ -1228,7 +1228,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   })
 
-  it('a wakeup claude scheduled for itself (a /loop or CronCreate) is parked as its schedule and prompt, one-shot or recurring, and goes once a turn-end lists none or a new conversation starts in the tab', async () => {
+  it('a wakeup claude scheduled for itself (a /loop or CronCreate) is parked as its schedule and prompt, one-shot or recurring, is kept through a new conversation in the tab, and goes once a turn-end lists none', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL9', cwd, initialLines(cwd))
@@ -1253,11 +1253,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
       },
       { id: 'cron-a1b2c3d4', kind: 'monitor', label: 'Cron (*/5 * * * *): ping', state: 'waiting' }
     ])
-    tracker.setSessionCrons('tabL9', [])
-    expect(parked(tracker, 'tabL9')).toBeUndefined()
-    tracker.setSessionCrons('tabL9', [{ id: 'a1b2c3d4', schedule: '*/5 * * * *', recurring: true }])
-    expect(parked(tracker, 'tabL9')).toHaveLength(1)
     tracker.bindSession('tabL9', file, SID, cwd, '', 'clear')
+    expect(parked(tracker, 'tabL9')).toHaveLength(2)
+    tracker.setSessionCrons('tabL9', [])
     expect(parked(tracker, 'tabL9')).toBeUndefined()
   })
 

@@ -520,12 +520,13 @@ case "$event" in
     # CC§8
     crons=""
     case "$input" in
-      *',"session_crons":[]'*) crons=',"crons":[]' ;;
-      *',"session_crons":['*)
+      *[,{]'"session_crons":[]'*) crons=',"crons":[]' ;;
+      *[,{]'"session_crons":['*)
         crons="$(printf '%s' "$input" | LC_ALL=C awk '
           {
             key = ",\\"session_crons\\":"
             k = index($0, key "[")
+            if (k == 0) k = index($0, "{\\"session_crons\\":[")
             if (k == 0) exit
             s = substr($0, k + length(key))
             depth = 0; instr = 0; esc = 0; n = length(s)
