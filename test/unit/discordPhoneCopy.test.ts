@@ -9,6 +9,7 @@ import {
   sendPhoneCopy,
   shownOf,
   stillSending,
+  whereTheCopyGoes,
   type FileDiff,
   type PhoneCopyDeps
 } from '../../src/main/discord/phoneCopy'
@@ -282,5 +283,14 @@ describe('sendPhoneCopy', () => {
       /no lines to draw.*say what changed/
     )
     expect([...d.sent, ...binary.sent]).toEqual([])
+  })
+
+  it('the reply names where the copy went: the bound channel, the butler’s channel for a helper in his folder, or the session’s own room', () => {
+    const name = (): string => 'Alfred'
+    expect(whereTheCopyGoes(true, true, name)).toBe('the Discord channel the owner talks to you in')
+    expect(whereTheCopyGoes(false, true, name)).toBe(
+      "Alfred's Discord channel, where the owner sees your question cards"
+    )
+    expect(whereTheCopyGoes(false, false, name)).toBe("this session's room on the owner's Discord")
   })
 })

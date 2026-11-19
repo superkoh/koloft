@@ -207,6 +207,17 @@ async function copy(d: PhoneCopyDeps, shown: Shown, where: string): Promise<stri
   return `Sent the file to ${where}.`
 }
 
+export const whereTheCopyGoes = (
+  boundChannel: boolean,
+  butlerSide: boolean,
+  butlerName: () => string
+): string =>
+  boundChannel
+    ? 'the Discord channel the owner talks to you in'
+    : butlerSide
+      ? `${butlerName()}'s Discord channel, where the owner sees your question cards`
+      : "this session's room on the owner's Discord"
+
 const couldNot = (where: string, error: string): string =>
   `Koloft could not also send it to ${where}: ${error} Say what it shows in your reply.`
 

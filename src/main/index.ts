@@ -487,6 +487,7 @@ import {
   sendWholeCopy,
   shownOf,
   tooLarge,
+  whereTheCopyGoes,
   type PhoneCopyDeps
 } from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
@@ -517,7 +518,7 @@ import {
   shotSession
 } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
-import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
+import { roomLink, roomNote, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
@@ -2197,8 +2198,7 @@ const sessionDeps: SessionVerbDeps = {
   screen: screenOf,
   rowNote: (key) => {
     const room = rooms?.ofKey(key)
-    if (!room) return undefined
-    return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
+    return room && roomNote(room)
   },
   announceStarting: sessionStarting.announce,
   announceStarted: sessionStarted.announce,
@@ -5710,11 +5710,11 @@ async function copyToPhone(
     relay.sendWithNextAsk(tabId, (askedIn) => sendWholeCopy(copyTo(askedIn), shown))
     return undefined
   }
-  const where = discordBinding?.channelOfTab(tabId)
-    ? 'the Discord channel the owner talks to you in'
-    : butlerSide(tabId)
-      ? `${butlerNameNow()}'s Discord channel, where the owner sees your question cards`
-      : "this session's room on the owner's Discord"
+  const where = whereTheCopyGoes(
+    !!discordBinding?.channelOfTab(tabId),
+    butlerSide(tabId),
+    butlerNameNow
+  )
   return sendPhoneCopy(copyTo(channelId), shown, where)
 }
 
