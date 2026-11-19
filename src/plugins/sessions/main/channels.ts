@@ -132,12 +132,12 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
 }
 
 export const pushes = (ipc: MainIpc) => ({
-  sessions: (sessions: SessionInfo[]): void => ipc.push(CHANNELS.update, sessions),
-  toolsChanged: (): void => ipc.push(CHANNELS.toolsChanged),
-  relocated: (e: { tabId: string; dir: string }): void => ipc.push(CHANNELS.relocated, e),
-  leftovers: (leftovers: Record<string, LeftoverProcess[]>): void =>
+  sessions: (sessions: SessionInfo[]): boolean => ipc.push(CHANNELS.update, sessions),
+  toolsChanged: (): boolean => ipc.push(CHANNELS.toolsChanged),
+  relocated: (e: { tabId: string; dir: string }): boolean => ipc.push(CHANNELS.relocated, e),
+  leftovers: (leftovers: Record<string, LeftoverProcess[]>): boolean =>
     ipc.push(CHANNELS.leftovers, leftovers),
-  searchHits: (found: SessionSearchHits): void => ipc.push(CHANNELS.searchHits, found),
-  attention: (pending: AttentionEvent[]): void => ipc.push(CHANNELS.attentionChanged, pending),
-  activateTab: (tabId: string): void => ipc.push(CHANNELS.activateTab, { tabId })
+  searchHits: (found: SessionSearchHits): boolean => ipc.push(CHANNELS.searchHits, found),
+  attention: (pending: AttentionEvent[]): boolean => ipc.push(CHANNELS.attentionChanged, pending),
+  activateTab: (tabId: string): boolean => ipc.push(CHANNELS.activateTab, { tabId })
 })

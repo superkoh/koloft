@@ -41,6 +41,7 @@ export interface PluginSettings {
 export type UiPlace =
   | 'sidebar-head'
   | 'sidebar-row'
+  | 'sidebar-foot'
   | 'centre-page'
   | 'below-terminal'
   | 'dialog'

@@ -11,7 +11,7 @@ const { CdpOps } = await import('../../../../src/plugins/browser-control/main/cd
 
 function ops(answer?: (op: BrowserCdpOp) => object): InstanceType<typeof CdpOps> {
   const made: InstanceType<typeof CdpOps> = new CdpOps({
-    send: (_channel, op) => {
+    push: (_channel, op) => {
       const o = op as BrowserCdpOp
       if (answer) queueMicrotask(() => made.done({ opId: o.opId, ...answer(o) }))
       return true
