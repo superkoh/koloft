@@ -40,6 +40,17 @@ export function withNewVersion(
   return [...(versions ?? []), { text, at, by }].slice(-VERSIONS_KEPT)
 }
 
+export const ADD_A_LINE = 'add'
+export const REPLACE_THE_TEXT = 'set'
+export type AgentEdit = typeof ADD_A_LINE | typeof REPLACE_THE_TEXT
+
+export function editedText(current: string, edit: AgentEdit, words: string): string {
+  const line = cleanInstructions(words)
+  if (edit === REPLACE_THE_TEXT || !current) return line
+  if (current.split('\n').some((l) => l.trim() === line)) return current
+  return cleanInstructions(`${current}\n${line}`)
+}
+
 export function cleanVersions(raw: unknown): InstructionsVersion[] {
   if (!Array.isArray(raw)) return []
   return raw.flatMap((v: unknown) => {

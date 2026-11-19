@@ -1001,6 +1001,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   )
   const activeTabId = useStore((s) => s.activeTabId)
   const secretAsks = useStore((s) => s.secretAsks)
+  const instructionAsks = useStore((s) => s.instructionAsks)
+  const ownerAsks = useMemo(
+    () => [...secretAsks, ...instructionAsks],
+    [secretAsks, instructionAsks]
+  )
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const selectedWs = useStore((s) => s.selectedWs)
   const showToast = useStore((s) => s.showToast)
@@ -1241,7 +1246,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           ? ''
           : rowStateClass(
               running,
-              statusWithSecrets(sess?.status, tabId, secretAsks),
+              statusWithSecrets(sess?.status, tabId, ownerAsks),
               row.pending,
               sess?.turnOver
             )

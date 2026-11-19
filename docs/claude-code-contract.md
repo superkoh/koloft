@@ -4399,3 +4399,22 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
 Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
 `--append-system-prompt` (`src/main/backends/claude.ts`), and the Session defaults dialog
 says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).
+
+## §27 Who started a turn: a person's typing and a program's look the same
+
+2026-11-18, CC 2.1.327, measured: the transcript of a Koloft session started with
+`koloft session new`, then sent messages with `koloft session send`.
+
+- **The first message `koloft session new` hands a session**, which Koloft types into its
+  terminal in the owner's language, was recorded as `origin: {"kind":"human"}`, exactly
+  like the owner's own typing.
+- A message sent over Claude Code's socket was `origin.kind: "peer"` (with a
+  `cross-session-message` envelope); a finished background task was
+  `"task-notification"`.
+
+So the transcript does not tell the owner's typing from text a program wrote into the
+terminal; the other three agents were not probed.
+
+Koloft dependents: `koloft instructions` does not try to tell whose words started the turn;
+it asks the owner to agree to every change in the proposing session's own tab
+(`src/plugins/sessions/main/instructionsVerb.ts`).

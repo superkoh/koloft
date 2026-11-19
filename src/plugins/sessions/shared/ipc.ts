@@ -23,5 +23,8 @@ export const CHANNELS = {
   activateTab: 'attention:activate-tab',
   attentionChanged: 'attention:changed',
   defaultsRead: 'sessionDefaults:read',
-  defaultsWrite: 'sessionDefaults:write'
+  defaultsWrite: 'sessionDefaults:write',
+  instructionAsks: 'instructions:asks',
+  instructionAsksList: 'instructions:list',
+  instructionAnswer: 'instructions:answer'
 } as const

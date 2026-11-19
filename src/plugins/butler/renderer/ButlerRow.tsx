@@ -51,6 +51,7 @@ export function ButlerRow(): JSX.Element {
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
   const secretAsks = useStore((s) => s.secretAsks)
+  const instructionAsks = useStore((s) => s.instructionAsks)
   const opened = useButler((s) => s.openedTab)
   const askToSetUp = (): void => useButler.setState({ setUpAsked: true })
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
@@ -93,7 +94,7 @@ export function ButlerRow(): JSX.Element {
   const stateClass =
     rowStateClass(
       !!tabId,
-      statusWithSecrets(sess?.status, tabId, secretAsks),
+      statusWithSecrets(sess?.status, tabId, [...secretAsks, ...instructionAsks]),
       !!tabId && !sess,
       sess?.turnOver
     ) + (tabId && tabId === activeTabId ? ' active' : '')

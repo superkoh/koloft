@@ -15,6 +15,8 @@ import type {
   SessionSearchHits
 } from '@shared/types'
 import { CHANNELS } from '../shared/ipc'
+import type { InstructionAskView } from '../shared/instructionAsks'
+import type { InstructionAsks } from './instructionAsks'
 
 interface SessionBackend {
   id: BackendId
@@ -49,6 +51,7 @@ export interface ChannelDeps {
     workspacePath: string
   ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
   writeDefaults(workspacePath: string, raw: unknown): Promise<void>
+  instructionAsks(): Pick<InstructionAsks, 'views' | 'answer'>
 }
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
@@ -129,6 +132,11 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
       (error: unknown) => ({ ok: false, error: errorText(error) })
     )
   )
+  ipc.handle(CHANNELS.instructionAsksList, () => deps.instructionAsks().views())
+  ipc.on(CHANNELS.instructionAnswer, (id: unknown, agreed: unknown) => {
+    if (typeof id === 'string' && typeof agreed === 'boolean')
+      deps.instructionAsks().answer(id, agreed)
+  })
 }
 
 export const pushes = (ipc: MainIpc) => ({
@@ -139,5 +147,6 @@ export const pushes = (ipc: MainIpc) => ({
     ipc.push(CHANNELS.leftovers, leftovers),
   searchHits: (found: SessionSearchHits): boolean => ipc.push(CHANNELS.searchHits, found),
   attention: (pending: AttentionEvent[]): boolean => ipc.push(CHANNELS.attentionChanged, pending),
-  activateTab: (tabId: string): boolean => ipc.push(CHANNELS.activateTab, { tabId })
+  activateTab: (tabId: string): boolean => ipc.push(CHANNELS.activateTab, { tabId }),
+  instructionAsks: (asks: InstructionAskView[]): boolean => ipc.push(CHANNELS.instructionAsks, asks)
 })

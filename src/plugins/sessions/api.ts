@@ -31,8 +31,11 @@ export { GITHUB_NOT_ASKED, type MergedHeads, type WorkLeft } from './main/sessio
 export {
   instructionsPartOf,
   savedFromTheDialog,
+  workspaceBlock,
   workspaceInstructionsPart
 } from './main/workspaceInstructions'
+export type { InstructionsBlock } from './main/instructionsVerb'
+export { InstructionAsks } from './main/instructionAsks'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {
