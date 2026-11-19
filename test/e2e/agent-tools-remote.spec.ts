@@ -6,7 +6,8 @@ import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
 import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
 import {
-  claudePromptFilesUnder,
+  MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
+  sessionPromptsHandedOut,
   docsSkillHandedOut,
   filesNamedUnder,
   koloftSkillsUnder
@@ -152,7 +153,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
     })
 
   for (const backend of SESSION_BACKENDS)
-    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help, a koloft skill and Claude Code's prompt file that say nothing of Discord, and koloft discord is refused`, async ({
+    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help, a koloft skill and session prompt that say nothing of Discord, and koloft discord is refused`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -173,9 +174,13 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         const skills = koloftSkillsUnder(machineHome(env))
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toMatch(/discord/i)
-        const prompts = claudePromptFilesUnder(machineHome(env))
-        if (backend === 'claude') expect(prompts.length).toBeGreaterThan(0)
-        for (const prompt of prompts) expect(prompt).not.toContain(DISCORD_PREFIX)
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line + '\r'),
+          [tab, MUSE_IS_TOLD_ON_A_FIRST_MESSAGE]
+        )
+        const prompts = (): string[] => sessionPromptsHandedOut(machineHome(env))[backend]
+        await expect.poll(() => prompts().length).toBeGreaterThan(0)
+        for (const prompt of prompts()) expect(prompt).not.toContain(DISCORD_PREFIX)
       } finally {
         await quitAndClose(app)
       }

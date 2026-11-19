@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import type { BackendId } from '../../../src/shared/types'
 
 const DOCS_PLUGIN = 'docs-plugin'
 
@@ -37,10 +38,44 @@ export function filesNamedUnder(dir: string, name: string): string[] {
   return pathsUnderWhileTheAppWrites(dir).filter((rel) => path.basename(rel) === name)
 }
 
-export function claudePromptFilesUnder(dir: string): string[] {
-  return filesNamedUnder(dir, 'koloft-prompt.md')
-    .map((rel) => readIfStillThere(path.join(dir, rel)))
+type LogLine = Record<string, unknown>
+
+function logUnder(home: string, name: string): LogLine[] {
+  return readIfStillThere(path.join(home, name))
+    .split('\n')
     .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as LogLine]
+      } catch {
+        return []
+      }
+    })
+}
+
+const CODEX_INSTRUCTIONS = 'developer_instructions='
+
+export const MUSE_IS_TOLD_ON_A_FIRST_MESSAGE = 'first words'
+
+export function sessionPromptsHandedOut(home: string): Record<BackendId, string[]> {
+  return {
+    claude: filesNamedUnder(home, 'koloft-prompt.md')
+      .map((rel) => readIfStillThere(path.join(home, rel)))
+      .filter(Boolean),
+    codex: logUnder(home, 'fake-codex-server-calls.jsonl').flatMap((call) =>
+      ((call.argv as string[] | undefined) ?? [])
+        .filter((a) => a.startsWith(CODEX_INSTRUCTIONS))
+        .map((a) => JSON.parse(a.slice(CODEX_INSTRUCTIONS.length)) as string)
+    ),
+    muse: logUnder(home, 'fake-muse-told.jsonl').map(
+      ({ out }) =>
+        (JSON.parse(out as string) as { hookSpecificOutput: { additionalContext: string } })
+          .hookSpecificOutput.additionalContext
+    ),
+    agy: logUnder(home, 'fake-agy-injected.jsonl')
+      .filter((r) => r.event === 'SessionStart')
+      .map((r) => String(r.systemMessage))
+  }
 }
 
 export function koloftSkillsUnder(dir: string): string[] {

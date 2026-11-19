@@ -23,7 +23,8 @@ import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/git
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
-  claudePromptFilesUnder,
+  MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
+  sessionPromptsHandedOut,
   docsSkillHandedOut,
   filesNamedUnder,
   koloftSkillsUnder
@@ -1309,7 +1310,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     })
 
   for (const backend of SESSION_BACKENDS)
-    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session's koloft help, koloft skill and Claude Code's prompt file say nothing of Discord, and koloft discord is refused`, async ({
+    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session's koloft help, koloft skill and session prompt say nothing of Discord, and koloft discord is refused`, async ({
       env
     }) => {
       test.setTimeout(180_000)
@@ -1332,13 +1333,39 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         const skills = koloftSkillsUnder(env.home)
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toMatch(/discord/i)
-        const prompts = claudePromptFilesUnder(env.home)
-        expect(prompts.length).toBeGreaterThan(0)
-        for (const prompt of prompts) expect(prompt).not.toContain(DISCORD_PREFIX)
+        await runIn(page, centerTerm(page), MUSE_IS_TOLD_ON_A_FIRST_MESSAGE)
+        const prompts = (): string[] => sessionPromptsHandedOut(env.home)[backend]
+        await expect.poll(() => prompts().length).toBeGreaterThan(0)
+        for (const prompt of prompts()) expect(prompt).not.toContain(DISCORD_PREFIX)
       } finally {
         await quitAndClose(app)
       }
     })
+
+  test('an owner who never set up Discord has it off: a new session’s koloft help, koloft skill and prompt say nothing of Discord, and koloft discord is refused', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+
+      expect(await koloftInSession(page, 'discord status')).not.toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain(
+        'koloft: Discord is turned off in Settings ▸ Plugins.'
+      )
+      expect(await koloftInSession(page, 'help')).toBe('0')
+      expect(await shownTermText(page, CENTER)).not.toContain('koloft discord send')
+      for (const skill of koloftSkillsUnder(env.home)) expect(skill).not.toMatch(/discord/i)
+      const prompts = sessionPromptsHandedOut(env.home).claude
+      expect(prompts.length).toBeGreaterThan(0)
+      for (const prompt of prompts) expect(prompt).not.toContain(DISCORD_PREFIX)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   for (const backend of SESSION_BACKENDS)
     test(`with Todo turned off in Settings ▸ Plugins, a new ${backend} session's koloft help and koloft skill hold no to-dos, and koloft todo is refused with the reason`, async ({
