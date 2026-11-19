@@ -3,13 +3,20 @@ import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
 
+export const BROWSER_CONTROL_PAGE = 'browser-control'
+
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'browser-control',
   name: 'Browser control',
+  does: 'Agents open and drive the web pages in a session’s Workbench.',
   mandatory: true,
   needs: ['workbench'],
-  settings: { keys: ['browserControl'] },
+  settings: {
+    page: { label: 'Browser control', words: ['网页控制', '浏览器控制'] },
+    keys: ['browserControl']
+  },
   text: [...TEXT, ...SKILL_TEXT],
-  channels: Object.values(CHANNELS)
+  channels: Object.values(CHANNELS),
+  ui: [{ place: 'settings-page', id: BROWSER_CONTROL_PAGE }]
 }

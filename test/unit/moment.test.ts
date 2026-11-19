@@ -12,6 +12,7 @@ const manifest = (
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
+  does: id,
   mandatory: true,
   needs: [],
   moments
@@ -49,9 +50,10 @@ describe('session moments', () => {
     expect(heard).toEqual(['first 1', 'first 2', 'second'])
   })
 
-  it('a listener may ask to hear a moment after a later plugin has heard it', async () => {
+  it('a listener may ask to hear a moment after a later plugin has heard it, which must be on the list', async () => {
     const heard: string[] = []
     const { moments } = registry(['first', 'second', 'third'])
+    expect(() => moments.listen('first', OPENED, () => {}, ['nobody'])).toThrow()
     moments.listen('first', OPENED, () => void heard.push('first, after second'), ['second'])
     moments.listen('second', OPENED, () => void heard.push('second'))
     moments.listen('third', OPENED, () => void heard.push('third'))

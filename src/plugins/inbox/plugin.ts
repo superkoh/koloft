@@ -1,4 +1,5 @@
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
+import { QUESTION_ASKED, SESSION_BOUND, TURN_ENDED } from '@core/moment'
 import { TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
 
@@ -9,11 +10,13 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'inbox',
   name: 'Inbox',
+  does: 'The cards page, and which card a finished turn gets.',
   mandatory: true,
   needs: ['sessions'],
   commands: [{ verb: 'inbox' }],
   text: TEXT,
   channels: Object.values(CHANNELS),
+  moments: { listens: [TURN_ENDED.name, QUESTION_ASKED.name, SESSION_BOUND.name] },
   ui: [
     { place: 'sidebar-head', id: INBOX_ROW },
     { place: 'centre-page', id: INBOX_PAGE }

@@ -4,36 +4,34 @@ import { butlerTitle } from '@plugins/butler/shared/names'
 import { channelLabel, setUpWith } from '../shared/channels'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '@renderer/store'
+import { useNeverSetUp, usePluginStates } from '@renderer/pluginSwitches'
+import { plugin } from '../plugin'
 import { setUpDiscordWithButler } from './setUpWithButler'
 import { openBinding } from './state'
 import { messageContentByHand, statusClass, statusText, useDiscordStatus } from './status'
 import '@renderer/accounts.css'
 
-export function DiscordPane(): JSX.Element {
+export function DiscordPane(): JSX.Element | null {
   const discord = useStore((s) => s.settings.discord)
   const name = useStore((s) => s.settings.butler.name)
   const loaded = useDiscordStatus()
   const [assistError, setAssistError] = useState('')
   const channel = discord.channel
 
+  const neverSetUp = useNeverSetUp(plugin)
+  const on = usePluginStates()[plugin.id].on
+
   const setUpWithButler = async (): Promise<void> => {
     setAssistError((await setUpDiscordWithButler()) ?? '')
   }
 
-  const head = (
-    <div className="set-ph">
-      <h3>Discord</h3>
-      <p>Talk to {name} from Discord, in one channel of your server.</p>
-    </div>
-  )
-  if (!loaded) return head
+  if (!loaded) return null
   const status = loaded
   const candidate = status.candidate
-  const setUp = status.phase !== 'off'
+  const setUp = status.phase !== 'off' || !neverSetUp
 
   return (
     <>
-      {head}
       <div className="set-row">
         <div className="set-lab">
           <b>Let {name} set up Discord</b>
@@ -97,7 +95,11 @@ export function DiscordPane(): JSX.Element {
                   : 'The bot reads only the bound channel. Koloft keeps the bot’s Message Content on, so it can read what you type.'}
               </small>
             </div>
-            <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
+            {on ? (
+              <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
+            ) : (
+              <div className="acct-login-state">Off</div>
+            )}
           </div>
           <div className="set-row">
             <div className="set-lab">

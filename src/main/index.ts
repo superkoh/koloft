@@ -516,6 +516,7 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { sleep } from './codexTransport'
 import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
+import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
 import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
@@ -550,13 +551,19 @@ import { PLUGINS } from '@plugins/list'
 import {
   FILE_OPENED,
   Moments,
+  QUESTION_ASKED,
+  SESSION_BOUND,
   SESSION_STARTED,
   SESSION_STARTING,
+  TURN_ENDED,
+  TURN_STARTED,
   type LeftTab,
+  type Moment,
   type SessionStarted,
   type TabEnded
 } from '@core/moment'
 import {
+  butlerFollowsEachTurn,
   butlerLetsGoOfEndedTabs,
   butlersWords,
   tellEachHelperItsRole
@@ -564,12 +571,15 @@ import {
 import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
 import {
   closeRoomsOfEndedTabs,
+  discordFollowsEachTurn,
   giveEachStartedSessionARoom,
   withoutTheRelayTag
 } from '@plugins/discord/main/sessionHooks'
-import { forgetAsksOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
+import { followEachTurn, forgetAsksOfEndedTabs } from '@plugins/sessions/main/sessionHooks'
+import { pickDocsOfEachTurn } from '@plugins/workbench/main/sessionHooks'
+import { cardEachTurnAndQuestion } from '@plugins/inbox/main/sessionHooks'
 import { forgetSecretAsksOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
-import { closeOutEachEndedRun } from '@plugins/scheduled-tasks/main/sessionHooks'
+import { followEachRun } from '@plugins/scheduled-tasks/main/sessionHooks'
 import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
@@ -725,6 +735,8 @@ const throwAsIfNobodyCaughtIt = (error: unknown): void =>
   queueMicrotask(() => {
     throw error
   })
+const announceNow = <T>(moment: Moment<T>, m: T): void =>
+  void moments.announce(moment, m).catch(throwAsIfNobodyCaughtIt)
 
 const ptyMgr = new PtyManager()
 const terminalOutput = new TerminalOutput({
@@ -760,48 +772,24 @@ const readerDocs = new ReaderDocs({
   changed: () => pushToSessions.sessions(onSessionsChanged())
 })
 const sessionBackends = new SessionBackends({
-  turnEnded: (tabId, turn) => {
-    void readerDocs.turnEnded(tabId, turn)
-    newsJudge.turnEnded(tabId, turn)
-    slash.turnEnded(tabId, turn)
-    discordRelay?.turnEnded(tabId, turn)
-    const handedOff = sessionCommand.turnEnded(tabId, turn)
-    koloftInbox.turnEnded(tabId, turn.reply, handedOff)
-    awayDigest?.turnEnded(tabId, turn.reply, handedOff)
-  },
+  turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
     claudeAsks.delete(tabId)
     consumeOutletDedupe(tabId)
-    newsJudge.prompted(tabId)
-    awayDigest?.prompted(tabId)
+    announceNow(TURN_STARTED, tabId)
   },
   bound: (tabId, key, idleCompaction) => {
     claudeAsks.delete(tabId)
     if (!idleCompaction) attention.bound(tabId, key)
-    cronRunner?.onBound(tabId, key)
-    butler?.onBound(tabId, key)
-    if (butler?.isButlerTab(tabId)) {
-      ownerAsleep.awakeTabsChanged()
-      syncAnswerable()
-    }
-    discordTyping?.refresh(tabId)
-    void rooms?.bound(
-      tabId,
-      key,
-      async () => !idleCompaction && !(await sessionBackends.turns(key, 1).catch(() => [])).length
-    )
+    announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
-    koloftInbox.rebound(tabId, key)
-    slash.bound(tabId, key)
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
-    koloftInbox.asked(tabId)
-    if (sessionAsks) sessionAsks.onAsk(tabId, ask)
-    else showAskOnItsRow(tabId)
+    announceNow(QUESTION_ASKED, { tabId, ask })
   },
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -2303,6 +2291,29 @@ const koloftInbox = new KoloftInbox({
   watching: () => attention.watching()
 })
 
+pickDocsOfEachTurn(moments, readerDocs)
+const turnsTaken = followEachTurn(moments, {
+  judge: newsJudge,
+  slash,
+  replies: sessionCommand,
+  asks: () => sessionAsks,
+  askBeforeAsksAreMade: showAskOnItsRow
+})
+butlerFollowsEachTurn(moments, {
+  butler: () => butler,
+  digest: () => awayDigest,
+  tookTheTurn: turnsTaken.tookTheTurn,
+  asleep: ownerAsleep,
+  butlerTabChanged: syncAnswerable
+})
+cardEachTurnAndQuestion(moments, { inbox: koloftInbox, tookTheTurn: turnsTaken.tookTheTurn })
+discordFollowsEachTurn(moments, {
+  relay: () => discordRelay,
+  typing: () => discordTyping,
+  rooms: () => rooms,
+  noTurnsYet: async (key) => !(await sessionBackends.turns(key, 1).catch(() => [])).length
+})
+
 const claudeDialogs = new ClaudeDialogWatch({
   watchedProcess: (tabId) => {
     const pty = ptyMgr.get(tabId)
@@ -3677,11 +3688,11 @@ app.whenReady().then(() => {
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
-    announce: (moment, m) => void moments.announce(moment, m).catch(throwAsIfNobodyCaughtIt)
+    announce: announceNow
   })
   forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
   butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
-  closeOutEachEndedRun(moments, () => cronRunner)
+  followEachRun(moments, () => cronRunner)
   closeRoomsOfEndedTabs(moments, {
     typing: () => discordTyping,
     relay: () => discordRelay,
@@ -4183,6 +4194,8 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
+      const pluginsOn = switchedOnOnceItHasABot(status.phase, loadSettings().pluginsOn)
+      if (pluginsOn) commitSettings({ pluginsOn })
       pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()

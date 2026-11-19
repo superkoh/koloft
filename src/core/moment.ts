@@ -1,5 +1,7 @@
 // ADR-0051
 import type { ArtifactView, TerminalExit } from '@shared/types'
+import type { AskPayload } from '@shared/sessionEvent'
+import type { Turn } from '@shared/turns'
 import type { PluginManifest } from './plugin'
 import { errorText } from './errorText'
 
@@ -35,6 +37,24 @@ export interface TabEnded extends AgentExit {
   left?: LeftTab
 }
 
+export type { Turn }
+
+export interface TurnEnded {
+  tabId: string
+  turn: Turn
+}
+
+export interface QuestionAsked {
+  tabId: string
+  ask: AskPayload
+}
+
+export interface SessionBound {
+  tabId: string
+  key: string
+  idleCompaction: boolean
+}
+
 export interface Moment<T> {
   readonly name: string
   readonly carries?: T
@@ -48,6 +68,10 @@ export const SESSION_STARTED = named<SessionStarted>('session-started')
 export const TAB_EXITED = named<TabEnded>('tab-exited')
 export const TAB_TORN_DOWN = named<TabEnded>('tab-torn-down')
 export const TAB_FORGOTTEN = named<string>('tab-forgotten')
+export const TURN_STARTED = named<string>('turn-started')
+export const TURN_ENDED = named<TurnEnded>('turn-ended')
+export const QUESTION_ASKED = named<QuestionAsked>('question-asked')
+export const SESSION_BOUND = named<SessionBound>('session-bound')
 
 export type Hears<T> = (moment: T) => unknown
 
@@ -81,7 +105,12 @@ export class Moments {
     if (!this.announcedNames.has(moment.name)) throw this.unannounced(moment)
     const at = Math.max(
       own,
-      ...afterPlugins.map((id) => this.plugins.findIndex((p) => p.id === id) + 0.5)
+      ...afterPlugins.map((id) => {
+        const before = this.plugins.findIndex((p) => p.id === id)
+        if (before < 0)
+          throw new Error(`"${id}", which ${pluginId} hears after, is not on the list of plugins`)
+        return before + 0.5
+      })
     )
     const listener: Listener = { at, hear }
     const all = [...(this.listeners.get(moment.name) ?? []), listener]

@@ -10,6 +10,7 @@ import { isButlersWorkspace } from './butlerTabs'
 import {
   BUTLER_FRESH,
   BUTLER_INSTRUCTIONS,
+  BUTLER_PAGE,
   BUTLER_RENAME,
   BUTLER_ROW_PART,
   BUTLER_SET_UP,
@@ -18,6 +19,7 @@ import {
 } from '../plugin'
 import { OwnerAsleepSwitch } from './OwnerAsleepSwitch'
 import { ButlerRow, RenameButlerDialog } from './ButlerRow'
+import { ButlerSettings } from './ButlerSettings'
 import { ButlerSetUpDialog } from './SetUpDialog'
 import { FreshConversationDialog, InstructionsDialog, InstructionsStrip } from './InstructionsStrip'
 import { butlerLanding, useButlerShowsGlobalNote } from './landing'
@@ -31,6 +33,7 @@ export const ui: PluginUi = {
     [BUTLER_STRIP]: InstructionsStrip,
     [BUTLER_INSTRUCTIONS]: InstructionsDialog,
     [BUTLER_FRESH]: FreshConversationDialog,
+    [BUTLER_PAGE]: ButlerSettings,
     [OWNER_ASLEEP_SWITCH]: OwnerAsleepSwitch
   },
   fills: [

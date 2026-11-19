@@ -6,7 +6,7 @@ import { test, expect } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import { readCalls, startSessionIn, waitBooted, wsRows } from './helpers/p1'
 import { BROWSER, cdpEndpointOf, openBrowser, openTabs } from './helpers/browser'
-import { openSettings } from './helpers/extensions'
+import { openPluginPage } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
 import { BROWSER_TAB_ENV } from '../../src/shared/browserTabEnv'
 
@@ -376,8 +376,7 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
     test.setTimeout(300_000)
     const server = await startEchoServer()
     try {
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Extensions' }).click()
+      await openPluginPage(page, 'Browser control')
       const toggle = page
         .locator('.set-row', { hasText: 'Let agents drive this Browser' })
         .locator('button[role="switch"], input[type="checkbox"], .switch')
