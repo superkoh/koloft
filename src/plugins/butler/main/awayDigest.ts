@@ -1,4 +1,5 @@
 import type { AttentionEvent, AttentionKind } from '@shared/types'
+import { composePrompt } from '@core/prompt'
 import { FROM_KOLOFT } from '../../../main/crossSessionMessage'
 
 export const DIGEST_GATHERS_MS = 30_000
@@ -62,7 +63,7 @@ function touchedLine(titles: string[]): string {
 export function digestText(items: DigestItem[], touched: string[] = []): string {
   const shown = items.slice(0, ITEMS_PER_DIGEST)
   const more = items.length - shown.length
-  const rest = more > 0 ? ` And ${more} more; koloft todo lists them all.` : ''
+  const rest = more > 0 ? ` And ${more} more${composePrompt('away-digest-more')}.` : ''
   return `${FROM_KOLOFT}The owner is away from Koloft, and these sessions changed since they last used it: ${shown.map((item, i) => digestLine(item, i + 1)).join(' ')}${rest}${touchedLine(touched)} What you reply to this goes nowhere. If any of it needs the owner, tell them on Discord with koloft discord send -- "<what to say>"; if none of it does, do nothing.`
 }
 

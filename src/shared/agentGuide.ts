@@ -24,8 +24,6 @@ export const agentGuide = (rules?: string): string =>
     }
   })
 
-export const AGENT_GUIDE = agentGuide()
-
-export const AGENT_SKILL_DESCRIPTION = composePrompt('koloft-skill')
+export const agentSkillDescription = (): string => composePrompt('koloft-skill')
 
 export { TODO_METHOD } from '@plugins/todo/api'
