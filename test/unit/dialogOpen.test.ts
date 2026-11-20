@@ -44,6 +44,42 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).not.toBe(keep)
   })
 
+  it('leaves the keys in a field the owner types in outside any dialog, and takes them once the owner leaves it', async () => {
+    const note = document.createElement('textarea')
+    document.body.append(note)
+    note.focus()
+    const keep = button()
+    focusOnceNoDialogIsOpen(keep)
+    await domSettled()
+    expect(document.activeElement).toBe(note)
+    note.blur()
+    await domSettled()
+    expect(document.activeElement).toBe(keep)
+  })
+
+  it("takes the keys from its own session's terminal", () => {
+    const wrap = document.createElement('div')
+    wrap.className = 'term-wrap'
+    const terminal = document.createElement('textarea')
+    const keep = document.createElement('button')
+    wrap.append(terminal, keep)
+    document.body.append(wrap)
+    terminal.focus()
+    focusOnceNoDialogIsOpen(keep)
+    expect(document.activeElement).toBe(keep)
+  })
+
+  it('takes the keys back when a dialog opened after it closes', async () => {
+    const keep = button()
+    focusOnceNoDialogIsOpen(keep)
+    const { backdrop, field } = dialogWithAField()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+    backdrop.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(keep)
+  })
+
   it('leaves the keys where closing the dialog put them', async () => {
     const keep = button()
     const elsewhere = button()
