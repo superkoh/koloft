@@ -463,9 +463,11 @@ import {
   DIGEST_GATHERS_MS,
   helperRoleOf,
   OwnerAsleep,
+  pluginsChangedNews,
   quoteOf,
   THIS_MAC
 } from '@plugins/butler/api'
+import { switchesThatAct } from '@core/switches'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
@@ -667,7 +669,6 @@ import {
 } from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
-  FROM_KOLOFT,
   crossSessionLine,
   writeLineInTurn
 } from '@plugins/sessions/main/crossSessionMessage'
@@ -1605,6 +1606,7 @@ const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const CARDS_IN_FLIGHT_LAND_WITHIN_MS = 10_000
+const SWITCH_FLIPS_GATHER_MS = 2000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
 const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
@@ -3642,6 +3644,7 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
+  let butlerHearsOfSwitches: ReturnType<typeof setTimeout> | undefined
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
@@ -3653,6 +3656,8 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[koloft] could not rewrite what a plugin switch changed:', err)
     }
+    clearTimeout(butlerHearsOfSwitches)
+    butlerHearsOfSwitches = setTimeout(() => butler?.pluginsSwitched(), SWITCH_FLIPS_GATHER_MS)
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -4225,7 +4230,18 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
+    news: TODO_NEWS,
+    noticeWhileOpen: async (text) =>
+      (await handOver?.tell(
+        butlerWhileOpen(),
+        text,
+        discordOn() ? discordRelay?.quietMarks : undefined
+      )) ?? false,
+    pluginsOn: switchesThatAct,
+    pluginsNews: (changed) =>
+      pluginsChangedNews(
+        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] }))
+      ),
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -6006,6 +6022,17 @@ async function roomForNew({
 }
 
 const BUTLER_RECIPIENT = 'butler'
+
+function butlerWhileOpen(): Recipient {
+  return {
+    ...butlerRecipient(),
+    open: async () => {
+      const tab = butler?.liveTab()
+      if (!tab) throw new Error(`${butlerNameNow()} is closed.`)
+      return tab
+    }
+  }
+}
 
 function butlerRecipient(): Recipient {
   return {
