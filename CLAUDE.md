@@ -80,7 +80,8 @@ Working principles:
   those tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, an
-  after-edit hook, and the before-push hook) rejects every comment except two kinds, each with nothing else in it:
+  after-edit hook, and the before-push hook) rejects every comment except two kinds,
+  each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
   - a marker: `// ADR-0007`, `// AGY§4`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may

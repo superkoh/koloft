@@ -2,16 +2,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 
-const ROOT = path.resolve(import.meta.dirname, '..')
 const CHECK_TIMEOUT_MS = 100_000
 const OUTPUT_TAIL_LINES = 30
-const DEPS_NOT_READY = /Cannot find (module|package)|ERR_MODULE_NOT_FOUND|command not found/
+const NODE_CANNOT_LOAD_A_PACKAGE = /ERR_MODULE_NOT_FOUND|^Error: Cannot find (module|package)/m
 const GIT_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace'])
 
 const CHECKS = [
   {
     script: 'format:check',
-    findsProblemsWith: [1],
+    findsProblemsWith: [1, 2],
     fix: 'run `npm run format`, commit, and try again'
   },
   {
@@ -43,11 +42,11 @@ function isPushOrPr(command) {
   return unquoted.split(/&&|\|\||[;|&()\n]/).some(startsPushOrPr)
 }
 
-function run(script) {
+function run(script, cwd) {
   return new Promise((resolve) => {
     let output = ''
-    const child = spawn('npm', ['run', '--silent', script], { cwd: ROOT })
-    const timer = setTimeout(() => child.kill('SIGKILL'), CHECK_TIMEOUT_MS)
+    const child = spawn('npm', ['run', '--silent', script], { cwd, detached: true })
+    const timer = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), CHECK_TIMEOUT_MS)
     child.stdout.on('data', (d) => (output += d))
     child.stderr.on('data', (d) => (output += d))
     child.on('error', (error) => {
@@ -69,24 +68,25 @@ function pass(reason) {
 const input = JSON.parse(fs.readFileSync(0, 'utf8'))
 if (!isPushOrPr(input.tool_input?.command ?? '')) pass()
 
-const top = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: input.cwd ?? ROOT,
+const checkout = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+  cwd: input.cwd,
   encoding: 'utf8'
 }).stdout?.trim()
-if (!top || fs.realpathSync(top) !== fs.realpathSync(ROOT)) pass()
-if (!fs.existsSync(path.join(ROOT, 'node_modules')))
+if (!checkout || !fs.existsSync(path.join(checkout, 'scripts', 'push-checks.mjs'))) pass()
+if (!fs.existsSync(path.join(checkout, 'node_modules')))
   pass('this checkout has no node_modules yet (it may still be installing).')
 
 function couldNotCheck({ script, findsProblemsWith }, r) {
   const cmd = `\`npm run ${script}\``
   if (r.error) return `${cmd} could not start (${r.error.message}).`
   if (r.signal) return `${cmd} did not finish in ${CHECK_TIMEOUT_MS / 1000} s.`
-  if (DEPS_NOT_READY.test(r.output)) return `${cmd} could not run: node_modules looks incomplete.`
+  if (NODE_CANNOT_LOAD_A_PACKAGE.test(r.output))
+    return `${cmd} could not run: node_modules looks incomplete.`
   if (!findsProblemsWith.includes(r.status)) return `${cmd} broke (exit ${r.status}).`
   return null
 }
 
-const results = await Promise.all(CHECKS.map((c) => run(c.script)))
+const results = await Promise.all(CHECKS.map((c) => run(c.script, checkout)))
 const failures = []
 const skipped = []
 for (const [i, r] of results.entries()) {
@@ -102,7 +102,7 @@ for (const [i, r] of results.entries()) {
 }
 if (failures.length > 0) {
   console.error(
-    `Stopped before it reached GitHub, because CI would fail on this:\n\n${failures.join('\n\n')}`
+    `Stopped before it reached GitHub, because CI would fail on this (the files on disk were checked, uncommitted ones too):\n\n${failures.join('\n\n')}`
   )
   process.exit(2)
 }

@@ -36,7 +36,7 @@ function fakeNpm(results: Record<string, NpmResult> = {}): { bin: string; calls:
     .join('\n')
   fs.writeFileSync(
     path.join(bin, 'npm'),
-    `#!/bin/sh\necho "npm $*" >> "${calls}"\ncase "$3" in\n${cases}\nesac\nexit 0\n`,
+    `#!/bin/sh\necho "npm $*" >> "${calls}"\npwd -P >> "${calls}.cwd"\ncase "$3" in\n${cases}\nesac\nexit 0\n`,
     { mode: 0o755 }
   )
   return { bin, calls }
@@ -69,7 +69,6 @@ describe('push-checks PreToolUse hook', () => {
     'git push',
     'git push -u origin HEAD',
     'git add -A && git commit -m "x" && git push',
-    'git -C /some/where push',
     'GIT_TRACE=1 git push',
     'gh pr create --fill-first',
     'koloft gh pr create --title t'
@@ -105,13 +104,27 @@ describe('push-checks PreToolUse hook', () => {
     expect(r.stderr).toContain('[warn] src/a.ts')
   })
 
-  it('stops the push when check:comments or typecheck finds problems', () => {
+  it('stops the push when check:comments or typecheck finds problems, a missing import included', () => {
     const root = repo()
-    const { bin } = fakeNpm({ 'check:comments': { exit: 1 }, typecheck: { exit: 2 } })
+    const { bin } = fakeNpm({
+      'check:comments': { exit: 1 },
+      typecheck: {
+        exit: 2,
+        says: "src/a.ts(1,1): error TS2307: Cannot find module './gone' or its corresponding type declarations."
+      }
+    })
     const r = runHook(root, 'git push', bin)
     expect(r.status).toBe(2)
     expect(r.stderr).toContain('`npm run check:comments` failed')
     expect(r.stderr).toContain('`npm run typecheck` failed')
+  })
+
+  it('stops the push when Prettier cannot parse a file, as CI would', () => {
+    const root = repo()
+    const { bin } = fakeNpm({
+      'format:check': { exit: 2, says: '[error] a.json: SyntaxError: Unexpected token (1:9)' }
+    })
+    expect(runHook(root, 'git push', bin).status).toBe(2)
   })
 
   it('lets the push through with one line when the checkout has no node_modules yet', () => {
@@ -133,7 +146,10 @@ describe('push-checks PreToolUse hook', () => {
   })
 
   it.each([
-    ['a check that broke instead of checking', { exit: 2, says: '[error] boom' }],
+    [
+      'a check whose tool is not installed yet',
+      { exit: 127, says: 'sh: prettier: command not found' }
+    ],
     ['a half-installed node_modules', { exit: 1, says: "Error: Cannot find module 'prettier'" }]
   ])('lets the push through on %s', (_, result) => {
     const root = repo()
@@ -143,11 +159,23 @@ describe('push-checks PreToolUse hook', () => {
     expect(JSON.parse(r.stdout).systemMessage).toMatch(/format:check/)
   })
 
-  it('does nothing when the push runs in another checkout', () => {
+  it('runs the checks in the checkout the push runs in, even when the hook came from another one', () => {
     const root = repo()
     const other = repo()
+    fs.mkdirSync(path.join(other, 'src'))
     const { bin, calls } = fakeNpm()
-    const r = runHook(root, 'git push', bin, { cwd: other })
+    runHook(root, 'git push', bin, { cwd: path.join(other, 'src') })
+    expect(new Set(fs.readFileSync(`${calls}.cwd`, 'utf8').trim().split('\n'))).toEqual(
+      new Set([other])
+    )
+  })
+
+  it('does nothing when the push runs in a repository without these checks', () => {
+    const root = repo()
+    const elsewhere = tmp('koloft-pushchecks-elsewhere-')
+    execFileSync('git', ['init', '-q', elsewhere])
+    const { bin, calls } = fakeNpm()
+    const r = runHook(root, 'git push', bin, { cwd: elsewhere })
     expect(r.status).toBe(0)
     expect(callsIn(calls)).toEqual([])
   })
