@@ -312,6 +312,28 @@ describe('CronRunner — starting one run', () => {
     expect(h.launches.map((l) => l.worktree)).toEqual(['nightly-report-260902-1000-2'])
   })
 
+  it('a run opens its first message with when the last run that started a session was due and that session, never on a run with none before it or a slash-command task', async () => {
+    const lastStarted = at(10, 0, 0, -1)
+    const history: CronJob['history'] = [
+      { dueAt: at(9, 0), state: 'failed', note: 'no usable account' },
+      { dueAt: lastStarted, state: 'finished', sessionId: 's-last' },
+      { dueAt: at(10, 0, 0, -2), state: 'closed', sessionId: 's-older' }
+    ]
+    const h = makeHarness([
+      makeJob({ task: 'Look at the issues', history }),
+      makeJob({ id: 'j2', task: 'Look at the issues', history: [history[0]] }),
+      makeJob({ id: 'j3', history })
+    ])
+    await h.runner.runNow('j1')
+    await h.runner.runNow('j2')
+    await h.runner.runNow('j3')
+    expect(h.launches[0].firstPrompt).toMatch(
+      /^Last run of this task: 2026-09-01T10:00[+-]\d\d:\d\d, session s-last\.\n\nLook at the issues$/
+    )
+    expect(h.launches[1].firstPrompt).toBe('Look at the issues')
+    expect(h.launches[2].firstPrompt).toBe('/koloft.release-dmg patch')
+  })
+
   it('BB-E22: a folder whose .git is not a directory runs in place, with no worktree', async () => {
     const h = makeHarness([makeJob()])
     h.flags.git = false

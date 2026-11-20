@@ -15,11 +15,12 @@ import {
 import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { effortNotTaken } from '@shared/cronModels'
-import { describeSchedule, describeWhen, DOW } from '@shared/schedule'
+import { describeSchedule, DOW } from '@shared/schedule'
 import {
+  histIso,
   histText,
-  histWhen,
   lastRunOf,
+  localIso,
   liveOf,
   liveWords,
   nextWords,
@@ -272,11 +273,15 @@ export function formatList(jobs: CronJob[], live: LiveRun[], now: Date): string 
     .join('\n')
 }
 
+function runLine(when: string, sessionId: string | undefined, words: string): string {
+  return `    ${when}${sessionId ? ` · session ${sessionId}` : ''} · ${words}`
+}
+
 export function formatShow(job: CronJob, number: number, live: LiveRun[], now: Date): string {
   const run = liveOf(live, job.id)
   const runs = [
-    ...(run ? [`    ${describeWhen(new Date(run.dueAt), now)} · ${liveWords(job, run)}`] : []),
-    ...job.history.map((h) => `    ${histWhen(h, now)} · ${histText(h)}`)
+    ...(run ? [runLine(localIso(run.dueAt), run.sessionId, liveWords(job, run))] : []),
+    ...job.history.map((h) => runLine(histIso(h), h.sessionId, histText(h)))
   ]
   return [
     `${number}. ${job.name}`,

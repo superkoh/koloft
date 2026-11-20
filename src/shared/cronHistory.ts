@@ -61,6 +61,25 @@ export function histWhen(h: HistoryLine, now: Date): string {
   return `${from} → ${describeWhen(new Date(h.until), now)}`
 }
 
+export function localIso(ms: number): string {
+  const d = new Date(ms)
+  const two = (n: number): string => String(n).padStart(2, '0')
+  const east = -d.getTimezoneOffset()
+  const zone = `${east < 0 ? '-' : '+'}${two(Math.floor(Math.abs(east) / 60))}:${two(Math.abs(east) % 60)}`
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}${zone}`
+}
+
+export function histIso(h: HistoryLine): string {
+  const from = localIso(h.dueAt)
+  if (h.until === undefined || h.until <= h.dueAt) return from
+  return `${from} → ${localIso(h.until)}`
+}
+
+export function lastRunLine(history: HistoryLine[]): string | null {
+  const last = history.find((h) => h.sessionId)
+  return last ? `Last run of this task: ${localIso(last.dueAt)}, session ${last.sessionId}.` : null
+}
+
 export function histEnd(h: HistoryLine): number {
   return h.until !== undefined && h.until > h.dueAt ? h.until : h.dueAt
 }

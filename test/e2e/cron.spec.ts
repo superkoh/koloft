@@ -1264,7 +1264,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
   }
-  const agyTabLaunches = (env: E2EEnv): { pid: number }[] =>
+  const agyTabLaunches = (env: E2EEnv): { pid: number; argv: string[] }[] =>
     agyCalls(env).filter((c) => !c.argv.includes('-p') && !c.argv.includes('--version'))
   const STORED_AGENTS: {
     agent: NonNullable<JobSpec['agent']>
@@ -1381,6 +1381,66 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         expect(launches(env)).toBe(launchesWhileOpen)
       } finally {
         await app2.close().catch(() => {})
+      }
+    })
+  }
+
+  const LAUNCH_ARGVS: {
+    agent?: JobSpec['agent']
+    setUp: (env: E2EEnv) => void
+    argvs: (env: E2EEnv) => string[][]
+  }[] = [
+    {
+      setUp: (env) => gitInit(env.workspaces.a),
+      argvs: (env) => readCalls(env).map((c) => c.argv)
+    },
+    ...STORED_AGENTS.map(({ agent, setUp }) => ({
+      agent,
+      setUp,
+      argvs: (env: E2EEnv) =>
+        agent === 'Codex'
+          ? codexCalls(env).map((c) => c.argv)
+          : agent === 'Muse'
+            ? museCalls(env).map((c) => c.argv)
+            : agyTabLaunches(env).map((c) => c.argv)
+    }))
+  ]
+  for (const { agent, setUp, argvs } of LAUNCH_ARGVS) {
+    test(`in ${agent ?? 'Claude'}: a run's first message opens with when the last run was due and its session, then the task`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      setUp(env)
+      const app1 = await launchApp(env)
+      try {
+        const page = await app1.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await createJob(page, dlg, { agent, name: 'Nightly report', task: 'look around' })
+        await storedJobs(env, 1)
+      } finally {
+        await quitAndClose(app1)
+      }
+      const store = readStore(env)!
+      const lastDue = new Date(2026, 10, 18, 5, 0).getTime()
+      store.jobs[0].history = [{ dueAt: lastDue, state: 'closed', sessionId: 's-last-run' }]
+      fs.writeFileSync(storePath(env), JSON.stringify(store))
+
+      const app2 = await launchApp(env)
+      try {
+        const page = await app2.firstWindow()
+        await waitBooted(page)
+        await openCron(page, 'ws-a')
+        await clickRunNow(page, 'Nightly report')
+        await expect
+          .poll(() => argvs(env).flat(), { timeout: 60_000 })
+          .toContainEqual(
+            expect.stringMatching(
+              /^Last run of this task: 2026-11-18T05:00[+-]\d\d:\d\d, session s-last-run\.\n\nlook around$/
+            )
+          )
+      } finally {
+        await quitAndClose(app2)
       }
     })
   }
