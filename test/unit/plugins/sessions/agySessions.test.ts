@@ -1686,6 +1686,59 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
   })
 
+  it('a next turn the stream shows running before the terminal does is still ended by its own stream IDLE', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    pushStream({ update: { conversationId: A, status: 'CASCADE_RUN_STATUS_RUNNING' } })
+    say(id, state('done'))
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'vite dev',
+                isDaemon: true,
+                startTime: Date.now()
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ id: `${A}/task-9` }])
+    )
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    say(id, state('working'))
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream({
+      update: { conversationId: A, status: 'CASCADE_RUN_STATUS_IDLE', fullyIdle: true }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
   it('prunes declined or synchronous invoke_subagent pendingSpawns and unconfirmed non-daemon schedules on Stop(fullyIdle: true)', async () => {
     const id = await boundTab()
     hook(id, 'PreToolUse', {
