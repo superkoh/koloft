@@ -45,8 +45,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   instructions at their 10,000-byte limit in plain letters, in Chinese, and in a mix of
   line breaks, tabs, quotes, `$HOME`, backticks, `\`, `%s`, `!!`, Chinese and an emoji,
   then the handover; 16,820–17,860 bytes), and 65,522 and 122,866 bytes of plain
-  letters, each between marker words. In 15 of 15 runs (3 each) the turn's request held
-  the whole prompt as one exact string. Longer prompts and a macOS muse were not run.
+  letters, each between marker words. In 15 of 15 runs (3 each) the turn's main request
+  (the one with the tools and the longest instructions, as in §12) held the whole prompt
+  as one exact string. Longer prompts and a macOS muse were not run.
 - Options Koloft uses: `--model <id>`, `--reasoning-effort
   none|minimal|low|medium|high|xhigh|max|ultra`, `--trust-workspace` (§10), and the
   approval and sandbox flags of §15. `--model` is refused with `--provider echo`.
