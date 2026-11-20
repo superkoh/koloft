@@ -7,7 +7,11 @@ import {
   type AssistBackendChoice,
   type ButlerDeps
 } from '../../../../src/plugins/butler/main/butler'
-import { conductorFolder } from '../../../../src/plugins/butler/api'
+import {
+  conductorFolder,
+  GUIDE_MOVED_NEWS,
+  pluginsChangedNews
+} from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
 import type { InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
@@ -47,6 +51,10 @@ let elsewhere: boolean
 let resumeGives: string | null | undefined
 let testRun = 0
 let todoOn: boolean
+let passwordsOn: boolean
+let noticeLands: Promise<void>
+let news: ButlerDeps['news']
+const PLUGIN_NAMES: Record<string, string> = { todo: 'Todo', passwords: 'Passwords and sign-in' }
 
 function make(): Butler {
   const run = testRun
@@ -90,11 +98,23 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
-    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}`, on: () => todoOn },
+    noticeWhileOpen: async (t) => {
+      if (!butler.liveTab()) return false
+      if (run === testRun) notices.push(t)
+      await noticeLands
+      return noticeArrives && !!butler.liveTab()
+    },
+    news,
+    pluginsOn: () => ({ todo: todoOn, passwords: passwordsOn }),
+    pluginsNews: (changed) =>
+      pluginsChangedNews(
+        Object.entries(changed).map(([id, on]) => ({ name: PLUGIN_NAMES[id], on }))
+      ),
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
-  return new Butler(deps)
+  const butler = new Butler(deps)
+  return butler
 }
 
 async function opened(c: Butler): Promise<string> {
@@ -110,6 +130,9 @@ async function opened(c: Butler): Promise<string> {
 beforeEach(() => {
   testRun++
   todoOn = true
+  passwordsOn = true
+  noticeLands = Promise.resolve()
+  news = [{ ...TODO_NEWS, on: () => todoOn }]
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
@@ -244,6 +267,7 @@ describe('the butler', () => {
     expect(session).toEqual({
       sessionIds: ['s1', 's2'],
       lastSessionKey: 's2',
+      pluginsSeen: { key: 's2', on: { todo: true, passwords: true } },
       knowsTodo: ['s1', 's2']
     })
     expect([c.isButlerSession('s1'), c.isButlerSession('s2'), c.isButlerSession(tab)]).toEqual([
@@ -301,6 +325,41 @@ describe('the butler', () => {
     expect(notices).toHaveLength(3)
   })
 
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  it.each([
+    ['claude', 'old-claude'],
+    ['codex', 'codex:local:old-thread'],
+    ['muse', 'muse:local:old-thread'],
+    ['agy', 'agy:local:old-conv']
+  ] as const)(
+    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside nothing it already knew; one started since is told nothing',
+    async (backend, oldKey) => {
+      news = [{ ...TODO_NEWS, on: () => todoOn }, GUIDE_MOVED_NEWS]
+      session = { sessionIds: [oldKey], lastSessionKey: oldKey, knowsTodo: [oldKey] }
+      transcripts.add(oldKey)
+      choice = { backend }
+      const c = make()
+      const back = await c.open()
+      if (!back.ok) throw new Error(back.error)
+      expect(notices).toEqual([`${FROM_KOLOFT}${GUIDE_MOVED_NEWS.text()}`])
+      await vi.waitFor(() => expect(session.knowsItsOwnLines).toEqual([oldKey]))
+      c.onBound(back.tabId, oldKey)
+      c.onPtyExit(back.tabId)
+      await c.open()
+      expect(notices).toHaveLength(1)
+
+      session = { sessionIds: [] }
+      const fresh = make()
+      const freshTab = await opened(fresh)
+      fresh.onBound(freshTab, `${oldKey}-new`)
+      expect(session.knowsItsOwnLines).toEqual([`${oldKey}-new`])
+      fresh.onPtyExit(freshTab)
+      transcripts.add(`${oldKey}-new`)
+      await fresh.open()
+      expect(notices).toHaveLength(1)
+    }
+  )
+
   it('while Todo is off, a resumed conversation is told nothing of koloft todo and one started then is not counted as knowing it, so it is told once Todo is on again', async () => {
     const OLD_CODEX = 'codex:local:old-thread'
     const NEW_CODEX = 'codex:local:new-thread'
@@ -325,7 +384,131 @@ describe('the butler', () => {
     todoOn = true
     transcripts.add(NEW_CODEX)
     await fresh.open()
+    expect(notices).toEqual([
+      `${FROM_KOLOFT}${TODO_NEWS.text()} The owner changed Settings ▸ Plugins after this conversation began: Todo is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
+    ])
+  })
+
+  it('what it is told when the owner changed plugins since its conversation began, pinned', () =>
+    expect(
+      pluginsChangedNews([
+        { name: 'Todo', on: false },
+        { name: 'Passwords and sign-in', on: true }
+      ])
+    ).toMatchFileSnapshot('../../prompt-text/butler/plugins-changed.txt'))
+
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  it('running, it is told at once in one message every plugin a switch change turned on or off, and nothing when its conversation already knows; not running, it is not started for it, and is told when its conversation is resumed', async () => {
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    c.pluginsSwitched()
+    todoOn = false
+    passwordsOn = false
+    c.pluginsSwitched()
+    await vi.waitFor(() =>
+      expect(session.pluginsSeen).toEqual({
+        key: CLAUDE_KEY,
+        on: { todo: false, passwords: false }
+      })
+    )
+    expect(notices).toEqual([
+      `${FROM_KOLOFT}The owner changed Settings ▸ Plugins after this conversation began: Todo is now off, Passwords and sign-in is now off. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
+    ])
+    c.pluginsSwitched()
     expect(notices).toHaveLength(1)
+
+    c.onPtyExit(tab)
+    todoOn = true
+    c.pluginsSwitched()
+    expect(notices).toHaveLength(1)
+    expect(started).toHaveLength(1)
+    transcripts.add(CLAUDE_KEY)
+    expect(await c.open()).toEqual({ ok: true, tabId: `tab-resumed-${CLAUDE_KEY}` })
+    expect(notices).toHaveLength(2)
+    expect(notices[1]).toContain('after this conversation began: Todo is now on. ')
+  })
+
+  it('a switch flipped while a new conversation is still starting is told once it binds, measured against what it was started with', async () => {
+    const c = make()
+    const opening = c.open()
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    todoOn = false
+    c.pluginsSwitched()
+    release()
+    const opened = await opening
+    if (!opened.ok) throw new Error(opened.error)
+    c.pluginsSwitched()
+    expect(notices).toEqual([])
+    c.onBound(opened.tabId, CLAUDE_KEY)
+    await vi.waitFor(() => expect(notices).toHaveLength(1))
+    expect(notices[0]).toContain(': Todo is now off. ')
+  })
+
+  it('a message that does not get through, because the butler closed or the hand-over failed, is told again at its next resume', async () => {
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    let land = (): void => {}
+    noticeLands = new Promise((resolve) => (land = resolve))
+    noticeArrives = false
+    todoOn = false
+    c.pluginsSwitched()
+    c.pluginsSwitched()
+    expect(notices).toHaveLength(1)
+    land()
+    await vi.waitFor(() =>
+      expect(session.pluginsSeen).toEqual({ key: CLAUDE_KEY, on: { todo: true, passwords: true } })
+    )
+
+    c.onPtyExit(tab)
+    noticeLands = Promise.resolve()
+    noticeArrives = true
+    transcripts.add(CLAUDE_KEY)
+    await c.open()
+    expect(notices).toHaveLength(2)
+    expect(notices[1]).toContain(': Todo is now off. ')
+  })
+
+  it('two messages on their way at once that both fail leave both changes to tell at the next resume', async () => {
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    let land = (): void => {}
+    noticeLands = new Promise((resolve) => (land = resolve))
+    noticeArrives = false
+    todoOn = false
+    c.pluginsSwitched()
+    passwordsOn = false
+    c.pluginsSwitched()
+    expect(notices).toHaveLength(2)
+    expect(notices[1]).toContain(': Passwords and sign-in is now off. ')
+    land()
+    await vi.waitFor(() =>
+      expect(session.pluginsSeen).toEqual({ key: CLAUDE_KEY, on: { todo: true, passwords: true } })
+    )
+
+    c.onPtyExit(tab)
+    noticeLands = Promise.resolve()
+    noticeArrives = true
+    transcripts.add(CLAUDE_KEY)
+    await c.open()
+    expect(notices[2]).toContain(': Todo is now off, Passwords and sign-in is now off. ')
+  })
+
+  it('a conversation from before Koloft kept what it knows of the plugins is told nothing of a switch at its first resume, only of later ones', async () => {
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY, knowsTodo: [CLAUDE_KEY] }
+    transcripts.add(CLAUDE_KEY)
+    passwordsOn = false
+    const c = make()
+    const tab = `tab-resumed-${CLAUDE_KEY}`
+    expect(await c.open()).toEqual({ ok: true, tabId: tab })
+    expect(notices).toEqual([])
+    c.onBound(tab, CLAUDE_KEY)
+    passwordsOn = true
+    c.pluginsSwitched()
+    await vi.waitFor(() => expect(notices).toHaveLength(1))
+    expect(notices[0]).toContain(': Passwords and sign-in is now on. ')
   })
 
   // AGY§8

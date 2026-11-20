@@ -18,7 +18,7 @@ import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubRepos } from '../githubRepos'
 import type { GitRunResult } from '../gitSteps'
 import type { GitOut } from '@core/worktree'
-import type { RemoteTab } from '../sessionTracker'
+import type { RemoteTab } from '@plugins/sessions/main/sessionTracker'
 
 export interface ShowIgnored {
   showIgnored?: boolean
@@ -49,7 +49,7 @@ export interface ClaudeLaunch {
   conductor?: boolean
   trustFolder?: boolean
   projectRules?: string
-  workspaceText?: string
+  workspaceParts?: string[]
 }
 
 export interface MachineTab {

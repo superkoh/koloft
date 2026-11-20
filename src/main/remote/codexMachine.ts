@@ -21,7 +21,7 @@ import {
   type CodexUpstream,
   type ReadFrame
 } from '../codexTransport'
-import { record } from '../codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import { hookStateHeader } from '../codexTrust'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
@@ -31,7 +31,7 @@ import {
   NOTICE_ENV,
   remoteNoticeFile,
   SHELL_WROTE_SUFFIX
-} from '../hooks'
+} from '@plugins/sessions/main/hooks'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'

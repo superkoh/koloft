@@ -1,7 +1,7 @@
 import type { TextBlock } from '@core/plugin'
 
 export const TEXT: readonly TextBlock[] = [
-  { slot: 'koloft-skill-todo', text: ', gather what waits on the owner (butler only)' },
+  { slot: 'koloft-skill-or-list', text: 'gather what waits on the owner (butler only)' },
   {
     slot: 'koloft-help-todo',
     text: `

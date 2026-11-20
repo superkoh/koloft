@@ -23,10 +23,12 @@ export function forgetAsksOfEndedTabs(
   d: {
     slash: { closed(tabId: string): void }
     asks: MadeLater<{ forget(tabId: string): void }>
+    instructionAsks: MadeLater<{ forget(tabId: string): void }>
   }
 ): void {
   moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => d.slash.closed(tabId))
   moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => d.asks()?.forget(tabId))
+  moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => d.instructionAsks()?.forget(tabId))
 }
 
 export interface TurnParts {

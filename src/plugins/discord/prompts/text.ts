@@ -23,5 +23,9 @@ const ROOMS_ON_DISCORD = `Every message Koloft hands you says whether the owner 
 
 export const TEXT: readonly TextBlock[] = [
   eachAgent('session', fromThePhone),
-  { slot: 'butler-koloft', when: DISCORD_BOUND, text: ` ${RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` }
+  { slot: 'owners-ai-koloft', when: DISCORD_BOUND, text: ` ${RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` },
+  {
+    slot: 'todo-method-phone',
+    text: "the owner may be on a phone, where a session's own question shows only once that session has a room on Discord, but the helper's questions always do, and "
+  }
 ]

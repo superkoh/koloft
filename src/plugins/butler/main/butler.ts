@@ -7,10 +7,12 @@ import {
   isKnownBy,
   type ButlerSession,
   type ButlerSetting,
-  type OldConversationNews
+  type OldConversationNews,
+  type PluginsOn
 } from '../shared/types'
 import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
+import { FROM_KOLOFT } from '@plugins/sessions/api'
 import { butlerRole, ownerInstructionsPart } from '../prompts/role'
 import { conductorFolder } from './folder'
 
@@ -54,7 +56,10 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
-  news: OldConversationNews
+  news: readonly OldConversationNews[]
+  noticeWhileOpen(text: string): Promise<boolean>
+  pluginsOn(): PluginsOn
+  pluginsNews(changed: PluginsOn): string
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
@@ -70,6 +75,24 @@ function knownListsOnDisk(
   )
 }
 
+function knowing(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(news.map(({ knownBy }) => [knownBy, [...(s[knownBy] ?? []), key]]))
+}
+
+function forgetting(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    news.map(({ knownBy }) => [knownBy, (s[knownBy] ?? []).filter((k) => k !== key)])
+  )
+}
+
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
@@ -81,15 +104,20 @@ export class Butler {
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private waitingForWords: string | undefined
+  private launchedWith: PluginsOn | undefined
 
   constructor(private d: ButlerDeps) {
     this.session = d.loadSession()
   }
 
   private changeSession(change: (s: ButlerSession) => ButlerSession): void {
+    this.remember(change)
+    this.d.rowsChanged()
+  }
+
+  private remember(change: (s: ButlerSession) => ButlerSession): void {
     this.session = change(this.session)
     this.d.saveSession(this.session)
-    this.d.rowsChanged()
   }
 
   isButler(ref: string): boolean {
@@ -150,6 +178,7 @@ export class Butler {
     this.changeSession(() => ({
       sessionIds,
       ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
+      ...(s.pluginsSeen && stillOnDisk(s.pluginsSeen.key) ? { pluginsSeen: s.pluginsSeen } : {}),
       ...knownListsOnDisk(s, stillOnDisk),
       ...(keepLast && s.carried ? { carried: s.carried } : {})
     }))
@@ -213,13 +242,14 @@ export class Butler {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
-    let resumedOld = false
     let started = false
+    const launchedWith = this.d.pluginsOn()
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
         if (live) {
           this.resident = live
+          this.launchedWith = undefined
           return { ok: true, tabId: live }
         }
         if (await this.d.runningElsewhere(launch.backend, key))
@@ -227,7 +257,6 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      resumedOld = hasTranscript && !this.session[this.d.news.knownBy]?.includes(key)
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
@@ -247,8 +276,9 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined && this.d.news.on()) this.tellTheNews(key)
     this.resident = tabId
+    this.launchedWith = launchedWith
+    if (!started && key !== undefined) this.tellWhatChanged(key)
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
       this.waitingForWords = tabId
@@ -264,12 +294,54 @@ export class Butler {
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  private tellTheNews(key: string): void {
-    const { knownBy, text } = this.d.news
-    void this.d.notice(text).then((told) => {
-      if (told && !this.session[knownBy]?.includes(key))
-        this.changeSession((s) => ({ ...s, [knownBy]: [...(s[knownBy] ?? []), key] }))
+  private tellWhatChanged(key: string): void {
+    const before = this.session.pluginsSeen
+    const now = this.d.pluginsOn()
+    const changed =
+      before?.key === key
+        ? Object.fromEntries(
+            Object.entries(now).filter(([id, isOn]) => (before.on[id] ?? isOn) !== isOn)
+          )
+        : {}
+    const untoldNews = this.d.news.filter(
+      ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
+    )
+    const parts = [
+      ...untoldNews.map(({ text }) => text()),
+      ...(Object.keys(changed).length > 0 ? [this.d.pluginsNews(changed)] : [])
+    ]
+    if (before?.key === key && parts.length === 0) return
+    this.remember((s) => ({
+      ...s,
+      pluginsSeen: { key, on: now },
+      ...knowing(s, untoldNews, key)
+    }))
+    if (parts.length === 0) return
+    void this.d
+      .noticeWhileOpen(`${FROM_KOLOFT}${parts.join(' ')}`)
+      .catch(() => false)
+      .then((told) => {
+        if (!told) this.untold(key, changed, untoldNews)
+      })
+  }
+
+  private untold(key: string, changed: PluginsOn, news: readonly OldConversationNews[]): void {
+    this.remember((s) => {
+      const seen = s.pluginsSeen
+      const asBefore = Object.fromEntries(Object.entries(changed).map(([id, on]) => [id, !on]))
+      return {
+        ...s,
+        ...(seen?.key === key && { pluginsSeen: { key, on: { ...seen.on, ...asBefore } } }),
+        ...forgetting(s, news, key)
+      }
     })
+  }
+
+  pluginsSwitched(): void {
+    const tab = this.liveTab()
+    const key = this.session.lastSessionKey
+    if (!tab || this.deadlines.has(tab) || tab === this.waitingForWords || key === undefined) return
+    this.tellWhatChanged(key)
   }
 
   private armDeadline(tabId: string, title: string): void {
@@ -307,20 +379,29 @@ export class Butler {
     if (tabId !== this.resident) {
       if (this.session.lastSessionKey !== key || this.liveTab()) return
       this.resident = tabId
+      this.launchedWith = undefined
     }
     this.forgetTab(tabId)
-    this.changeSession((s) =>
-      s.sessionIds.includes(key)
-        ? { ...s, lastSessionKey: key }
+    this.changeSession((s) => {
+      const pluginsSeen =
+        s.pluginsSeen?.key === key
+          ? s.pluginsSeen
+          : { key, on: this.launchedWith ?? this.d.pluginsOn() }
+      return s.sessionIds.includes(key)
+        ? { ...s, lastSessionKey: key, pluginsSeen }
         : {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
-            ...(this.d.news.on() && {
-              [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
-            })
+            pluginsSeen,
+            ...knowing(
+              s,
+              this.d.news.filter(({ on }) => on()),
+              key
+            )
           }
-    )
+    })
+    this.pluginsSwitched()
   }
 
   onPtyExit(tabId: string): void {

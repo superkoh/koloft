@@ -32,7 +32,7 @@ export async function pendingOptions(
   const named = ws.path === pending.path ? pending.worktree : null
   const [issueLaunch] = fillsOf(ISSUE_LAUNCH)
   const [worktrees, issueSeed] = await Promise.all([
-    ws.isGit ? window.api.workspace.worktrees(ws.path) : [],
+    ws.isGit ? window.api.sessions.worktrees(ws.path) : [],
     named?.kind === 'issue' && issueLaunch ? issueLaunch(ws.path, named.number) : null
   ])
   const wt = pendingWorktree(named, ws.isGit, Date.now())

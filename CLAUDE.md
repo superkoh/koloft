@@ -79,8 +79,9 @@ Working principles:
   for a change include the other agents' and remote specs whenever the change reaches
   those tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
-  `#!/` script written as a template string — `npm run check:comments` (CI, plus an
-  after-edit hook) rejects every comment except two kinds, each with nothing else in it:
+  `#!/` script written as a template string — `npm run check:comments` (CI, an
+  after-edit hook, and the before-push hook) rejects every comment except two kinds,
+  each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
   - a marker: `// ADR-0007`, `// AGY§4`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may
@@ -142,12 +143,14 @@ Working principles:
   is unreviewed.
 - Finish the code, then review, then test. While writing code, only the fast checks
   run (`format`, typecheck, `check:comments`, `test:unit:changed`; there is no lint) —
-  CI's first gate is `format:check`, and no hook runs Prettier. Once the
+  CI's first gate is `format:check`. No hook rewrites files: a Claude session's
+  `git push` or `gh pr create` waits for `format:check`, `check:comments` and
+  typecheck (`scripts/push-checks.mjs`) and is stopped if one finds problems. Once the
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
-  in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
+  in the background: two reviews at once, up to about 15 minutes (ADR-0040). While it runs,
   run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
   edits until the reviews are in. Merge the reports, fix what is real (a run that failed
-  is rerun, or the what-ran table says how many of three came back). Once the fixes are
+  is rerun, or the what-ran table says how many of two came back). Once the fixes are
   committed, one second round may run on the new diff and its real findings are fixed
   too; there is never a third round — what is still open after two goes to `Out of
   scope`. Only then run the e2e flows, once — in a Workflow too, whose step agents run only the fast

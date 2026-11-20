@@ -1,4 +1,4 @@
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 import { cleanOwnPick } from '@shared/sessionPicks'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { butlerName, butlerSetting } from './names'
@@ -9,7 +9,9 @@ import {
   isKnownBy,
   type ButlerSession,
   type ButlerSetting,
-  type KnownBy
+  type KnownBy,
+  type PluginsOn,
+  type PluginsSeen
 } from './types'
 
 function sanitizeButler(raw: unknown): ButlerSetting {
@@ -29,12 +31,20 @@ function knownLists(records: readonly object[]): Record<KnownBy, string[]> {
   return Object.fromEntries(Object.entries(lists).filter(([, keys]) => keys.length))
 }
 
+function cleanPluginsSeen(raw: unknown): PluginsSeen | undefined {
+  if (!isRecord(raw) || typeof raw.key !== 'string' || !isRecord(raw.on)) return undefined
+  const on = Object.entries(raw.on).filter(([, value]) => typeof value === 'boolean')
+  return { key: raw.key, on: Object.fromEntries(on) as PluginsOn }
+}
+
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
   const carried = cleanOwnPick(raw.carried)
+  const pluginsSeen = cleanPluginsSeen(raw.pluginsSeen)
   return {
     sessionIds: stringsIn(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
+    ...(pluginsSeen ? { pluginsSeen } : {}),
     ...knownLists([raw]),
     ...(carried ? { carried } : {})
   }
@@ -45,6 +55,7 @@ function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   return {
     sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
     ...(last?.lastSessionKey ? { lastSessionKey: last.lastSessionKey } : {}),
+    ...(last?.pluginsSeen ? { pluginsSeen: last.pluginsSeen } : {}),
     ...knownLists(sessions),
     ...(last?.carried ? { carried: last.carried } : {})
   }

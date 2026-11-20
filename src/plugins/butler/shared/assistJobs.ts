@@ -1,6 +1,6 @@
 import type { PluginAssistJob } from '@core/plugin'
 
-export const ASSIST_JOBS: readonly PluginAssistJob[] = [
+export const ASSIST_JOBS = [
   {
     id: 'route',
     name: 'Route what you type in ⌘P',
@@ -13,4 +13,6 @@ export const ASSIST_JOBS: readonly PluginAssistJob[] = [
       agy: { model: 'gemini-3.8-flash', effort: 'low' }
     }
   }
-]
+] as const satisfies readonly PluginAssistJob[]
+
+export type ButlerAssistJobId = (typeof ASSIST_JOBS)[number]['id']

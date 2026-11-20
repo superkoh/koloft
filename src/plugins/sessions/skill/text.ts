@@ -1,5 +1,4 @@
 import type { TextBlock } from '@core/plugin'
-import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
 import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
@@ -7,9 +6,8 @@ import {
   messagingOf,
   namedAtLaunch
 } from '@shared/sessionBackend'
-import { PICKED_FLAGS } from '../prompts/text'
+import { EVERY_KIND, PICKED_FLAGS } from '../prompts/text'
 
-const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
 const KINDS_BUT_CLAUDE = kindsOf(
   SESSION_BACKENDS.filter((b) => b !== 'claude'),
@@ -39,7 +37,6 @@ A session's name often has spaces: put it in quotes, like "Fix docs links". If y
 
 koloft session list [--workspace <workspace>]
     List every session the workspace shows in Koloft's sidebar: first the open ones, with name and state (working, asking the owner a question, finished its turn, or idle), the id of each one you reach with "koloft session send", and the path of its transcript, the file that holds its whole conversation, every turn and tool call, from its first turn on: a file you can read where you run, or machine:path for one only on a machine you reach with ssh; then the rest, closed or asleep, with the machine each runs on, when it was last active and its id. A session started with "koloft session new" says who started it: "started by: you", or the name of the session that did.
-    The butler (Koloft's own AI, which the owner talks to in Koloft{{koloft-help-butler-reached}}) takes no options here and gets every session in every workspace, open or closed: name, ${EVERY_KIND}, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, its id, its workspace, and who started it.
 
 koloft session read <id or name> [--last <number>]
     Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for ${ALL_KINDS} sessions, open or closed.
@@ -48,26 +45,30 @@ koloft session read <id or name> [--last <number>]
 koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
+koloft instructions [--workspace <workspace> | --every-workspace]
+koloft instructions add [--workspace <workspace> | --every-workspace] -- "<one sentence>"
+koloft instructions set [--workspace <workspace> | --every-workspace] -- "<the whole new text>"
+    Read the owner's instructions for this workspace (text the owner writes that every session started in it, or in another copy of the same repository, gets last in its prompt), or propose a sentence to add or a whole new text. Propose only when the owner plainly asks you to remember something. Koloft shows the change to the owner in this session's tab and changes nothing until the owner agrees; the command waits for the answer (up to 9 minutes, so give your shell its longest timeout for it) and says whether it was changed. Sessions started afterwards follow the new text; a running session keeps what it started with. Of the workspaces' own, a session reads and changes only its own workspace's.
+    With --every-workspace: the instructions the sessions of every workspace get before their own workspace's; any session may read them and propose a change.
+    Example: koloft instructions add -- "Run npm test before you say a change is done."
+
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
-    Pick the model and effort that fit the task, every time. {{koloft-help-pick-model}} A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, Koloft starts the next best one and says so.
+    Pick the model and effort that fit the task, every time. {{koloft-help-pick-model}} A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, or Antigravity's normal one, Koloft starts the next best one and says so.
     Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft{{koloft-help-session-title}}: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" --backend claude --model sonnet --effort low -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft --backend codex --model astra --effort high -- "Find why the latest release is missing files."
-    The butler: without --workspace the session starts in the butler's own folder, shown under the butler in the sidebar, for any task that belongs to no project; it is told the butler's goals and to report back. With --workspace it starts in that project's workspace like any other session; in a git workspace it always gets its own worktree: -w names it, and without -w Koloft picks a name.
 
 How to talk to a session you started:
     Claude to Claude on the same machine: use your SendMessage tool with its name. ListAgents shows the sessions on this machine; SendMessage cannot reach one on another machine, so use "koloft session send" for that.
     Any other pair (a ${KINDS_BUT_CLAUDE} session, or a Claude session talking to one): use "koloft session send".
-    The butler: use "koloft session send" for every session, ${EVERY_KIND}.
 
 koloft session send <id or name> "<message>"
     Send a message to any session in any workspace: ${EVERY_KIND}, except from one open Claude session to another on the same machine, which uses SendMessage. A closed one is resumed first, and a ${KINDS_TYPED_INTO} session, which Koloft types into, only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
-    The butler: your message reaches the session marked as coming from you, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If the session is asking the owner a question, the answer says so: it reads your message only once that is answered. When it ends the turn that follows your message, Koloft hands you its reply, unless it reported to you itself.
-    Any session: report back to the session or the butler that started you, with the id it gave you. If it is not running, Koloft starts it again first.
+    Report back to the session that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
 koloft session command <id or name | me> /<command> [arguments]
-    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft{{koloft-help-command-output}}, the command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
+    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft{{koloft-help-command-output}} command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
     Example: koloft session command fix-login /compact keep the test plan
 
 koloft session screen <id or name | me>
@@ -103,10 +104,10 @@ RULES
 
 1. Once you start a session, keep it under your control: remember its name, and give it work and collect its results by messaging it. When you no longer need it, tell the owner.{{koloft-help-rule-open}}{{koloft-help-rule-cron}}{{koloft-help-rule-note}}{{koloft-help-workbench}}{{koloft-help-cron}}
 
-${SESSIONS}{{koloft-help-inbox}}{{koloft-help-todo}}{{koloft-help-passwords}}{{koloft-help-discord}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
+${SESSIONS}{{koloft-help-inbox}}{{koloft-help-todo}}{{koloft-help-passwords}}{{koloft-help-chat}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
 
 const KOLOFT_SKILL =
-  'Use the koloft command to ask Koloft, the app this session runs in, to {{koloft-skill-workbench}}{{koloft-skill-cron}}list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good{{koloft-skill-todo}}{{koloft-skill-passwords}}.{{koloft-skill-web-pages}} Read this before running any koloft{{koloft-skill-web-pages-command}} command.'
+  "Use the koloft command to ask Koloft, the app this session runs in, to {{koloft-skill-workbench}}{{koloft-skill-cron}}list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, read or change the owner's instructions for this workspace{{koloft-skill-or-list}}.{{koloft-skill-web-pages}} Read this before running any koloft{{koloft-skill-web-pages-command}} command."
 
 export const TEXT: readonly TextBlock[] = [
   { slot: 'koloft-help', text: KOLOFT_HELP },
@@ -117,5 +118,6 @@ export const TEXT: readonly TextBlock[] = [
 
 `
   },
+  { slot: 'koloft-help-command-output', whenOff: 'discord', text: '. The' },
   { slot: 'koloft-skill', text: KOLOFT_SKILL }
 ]

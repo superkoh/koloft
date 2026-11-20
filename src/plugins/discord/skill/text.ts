@@ -11,11 +11,10 @@ export const TEXT: readonly TextBlock[] = [
     slot: 'koloft-help-diff',
     text: ' On Discord, as with koloft open, the changes go as a picture, with the whole diff as a file when it is long.'
   },
-  { slot: 'koloft-help-butler-reached', text: ' or through Discord' },
   { slot: 'koloft-help-session-title', text: ' and Discord' },
   {
     slot: 'koloft-help-command-output',
-    text: "; for the butler on Discord, it posts that in the butler's Discord channel instead. Either way"
+    text: "; for the butler on Discord, it posts that in the butler's Discord channel instead. Either way, the"
   },
   {
     slot: 'koloft-help-passwords-away',
@@ -38,7 +37,7 @@ export const TEXT: readonly TextBlock[] = [
     text: '; away from the Mac, Koloft sends the owner a picture of that part of the page with a grid on it, the owner names squares, and Koloft taps them, for as many rounds as it takes'
   },
   {
-    slot: 'koloft-help-discord',
+    slot: 'koloft-help-chat',
     text: `
 
 DISCORD

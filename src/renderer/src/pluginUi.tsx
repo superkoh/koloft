@@ -12,7 +12,9 @@ import {
   WORKSPACE_GIT_PART,
   type WorkspaceGitPart
 } from './slots'
-import type { WorkspaceRows } from '@shared/types'
+import type { Settings, WorkspaceRows } from '@shared/types'
+import type { PluginState } from '@core/switches'
+import { pluginStatesIn } from '@shared/pluginSwitches'
 
 let placedOnce: PlacedUi | undefined
 
@@ -30,9 +32,53 @@ export function placePluginUi(): void {
   placed()
 }
 
-export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+interface PluginStates {
+  settings: Settings
+  states: Record<string, PluginState>
+  onKey: string
+}
 
-export const partsAt = (place: UiPlace): readonly PlacedPart[] => placed().parts[place] ?? []
+let statesFor: PluginStates | undefined
+
+function pluginStatesOf(settings: Settings): PluginStates {
+  if (statesFor?.settings === settings) return statesFor
+  const states = pluginStatesIn(settings)
+  const onKey = Object.keys(states)
+    .filter((id) => states[id].on)
+    .join(' ')
+  return (statesFor = { settings, states, onKey })
+}
+
+export const onIn =
+  (settings: Settings) =>
+  (plugin: string): boolean =>
+    pluginStatesOf(settings).states[plugin]?.on ?? true
+
+const onNow = (plugin: string): boolean => onIn(useStore.getState().settings)(plugin)
+
+export const fillsOf = <T,>(into: Slot<T>, settings?: Settings): readonly T[] =>
+  placed().fillsOf(into, settings ? onIn(settings) : onNow)
+
+export const fillsOfOnOrOff = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+
+const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])
+
+export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
+  (placed().parts[place] ?? []).filter((p) => KEPT_WHILE_OFF.has(place) || onNow(p.plugin))
+
+const usePluginsOnKey = (): string => useStore((s) => pluginStatesOf(s.settings).onKey)
+
+export function useFillsOf<T, R>(
+  into: Slot<T>,
+  use: (fill: T, on: boolean) => R
+): (R | undefined)[] {
+  usePluginsOnKey()
+  const on = new Set(fillsOf(into))
+  return fillsOfOnOrOff(into).map((fill) => {
+    const result = use(fill, on.has(fill))
+    return on.has(fill) ? result : undefined
+  })
+}
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>
   fillsOf(WORKSPACE_GIT_PART).filter((part) => part.shows(ws))
@@ -44,6 +90,7 @@ export function useShowsGlobalNote(tabId: string | null, rowId: string | null): 
 }
 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
+  usePluginsOnKey()
   return (
     <>
       {partsAt(place).map(({ id, Part }) => (
@@ -54,6 +101,7 @@ export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
 }
 
 export function OpenCentrePage(): JSX.Element | null {
+  usePluginsOnKey()
   const open = useStore((s) => s.centrePage)
   const page = partsAt('centre-page').find((p) => p.id === open)
   return page ? <page.Part /> : null

@@ -11,6 +11,7 @@ import {
   type EditFingerprint,
   type EditWriteResult,
   type GitChanges,
+  type GitHead,
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
@@ -79,7 +80,7 @@ import {
   remoteDiscordSaidFile,
   remoteNoticeFile,
   type NoticeFile
-} from '../hooks'
+} from '@plugins/sessions/main/hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
@@ -98,6 +99,7 @@ import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../ski
 import { worktreeNameAround } from '../resumePlan'
 import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 
 export interface MachineAccount {
   env: Record<string, string>
@@ -129,7 +131,7 @@ export interface MuseMachineLaunch {
   sandboxed: boolean
   trust: string[]
   trustIf?: string
-  context?: string
+  contexts?: string[]
   koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
@@ -407,6 +409,9 @@ exit 0`
 const CHANGES_GONE = 'gone'
 const CHANGES_NOT_A_REPO = 'norepo'
 const CHANGES_REPO = 'repo'
+const HEAD_ON_BRANCH = 'branch '
+const HEAD_DETACHED = 'detached'
+const HEAD_UNREAD = 'unread'
 
 // PLATFORM§37
 const CHANGES = `r=$1
@@ -419,6 +424,8 @@ o=$(mktemp) || exit 1
 trap 'rm -f "$o"' EXIT
 part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o")"; cat "$o"; }
 printf '${CHANGES_REPO}\\n%s\\n%s\\n' "$b" "$top"
+h=$(g symbolic-ref --quiet --short HEAD); hc=$?
+if [ "$hc" = 0 ]; then printf '${HEAD_ON_BRANCH}%s\\n' "$h"; elif [ "$hc" = 1 ]; then echo ${HEAD_DETACHED}; else echo ${HEAD_UNREAD}; fi
 ns=1 nb=1
 if [ -n "$b" ]; then
   part nameStatus g diff --name-status -z "$b" --; ns=$c
@@ -430,17 +437,23 @@ part unmerged g -C "$top" ls-files -u -z --full-name
 [ "$nb" = 0 ] || { part cached g diff --cached --numstat -z --; part unstaged g diff --numstat -z --; }
 exit 0`
 
-const CHANGES_GIT_QUERIES_IN_A_ROW = 9
+const CHANGES_GIT_QUERIES_IN_A_ROW = 10
 
 function parseChanges(stdout: Buffer): GitChanges | null {
   const [state, afterState] = lineAt(stdout, 0)
   if (state === CHANGES_GONE || state === CHANGES_NOT_A_REPO)
-    return { base: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
+    return { base: null, head: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
   if (state !== CHANGES_REPO) return null
   const [base, afterBase] = lineAt(stdout, afterState)
   const [toplevel, afterTop] = lineAt(stdout, afterBase)
+  const [headLine, afterHead] = lineAt(stdout, afterTop)
+  const head: GitHead | null = headLine.startsWith(HEAD_ON_BRANCH)
+    ? { branch: headLine.slice(HEAD_ON_BRANCH.length) }
+    : headLine === HEAD_DETACHED
+      ? { detached: true }
+      : null
   const parts = new Map<string, string | null>()
-  for (let at = afterTop; at < stdout.length;) {
+  for (let at = afterHead; at < stdout.length;) {
     const [header, body] = lineAt(stdout, at)
     const [name, code, bytes] = header.split(/\s+/)
     const end = body + Number(bytes)
@@ -451,6 +464,7 @@ function parseChanges(stdout: Buffer): GitChanges | null {
   const out = (name: string): string | null => parts.get(name) ?? null
   return {
     base: base || null,
+    head,
     status: statusFrom(toplevel, {
       nameStatus: out('nameStatus'),
       others: out('others'),
@@ -1063,11 +1077,16 @@ export class SshHost implements Host {
       tmuxName,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const contextName = (i: number): string => `${tabId}.ctx${i === 0 ? '' : i + 1}.json`
+        const contexts = spec.contexts ?? []
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+          [`${tabId}.hooks.json`]: remoteMuseHooks(
+            hookScript,
+            tabId,
+            contexts.map((_, i) => `$HOME/.koloft/tabs/${contextName(i)}`)
+          )
         }
-        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        contexts.forEach((text, i) => (files[contextName(i)] = sessionStartContext(text)))
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
         writeTabPackage(tabDir, {
           tabId,
@@ -1289,8 +1308,9 @@ export class SshHost implements Host {
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              docsPlugin: docsWritingOn(),
               projectPrompt,
-              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
+              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceParts),
               claudeArgs,
               trustFolder: spec.trustFolder
             }

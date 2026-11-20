@@ -1,9 +1,8 @@
 import { useEffect, useState, type JSX } from 'react'
 import { IconScheduled } from '@renderer/icons'
-import { useStore } from '@renderer/store'
 import type { MarkOf } from '@renderer/slots'
 import { forecastFor, type Forecast } from './cronForm'
-import { openScheduledJobs } from './state'
+import { openScheduledJobs, useCron } from './state'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { capabilitiesFor } from '@shared/sessionBackend'
@@ -13,7 +12,7 @@ const CRON_BADGE_MS = 30_000
 const A_JOB_STARTED_IT = 'job'
 
 export function useNextJobClock(): void {
-  const showsAClock = useStore((s) => s.cron.jobs.length > 0)
+  const showsAClock = useCron((s) => s.jobs.length > 0)
   const [, bumpCronClock] = useState(0)
   useEffect(() => {
     if (!showsAClock) return
@@ -48,7 +47,7 @@ export function startedByAJob(
 }
 
 export function useJobMarkOf(): MarkOf {
-  const started = startedByAJob(useStore((s) => s.cron))
+  const started = startedByAJob(useCron())
   return (wsPath, row, tabId) => (started(wsPath, row, tabId) ? A_JOB_STARTED_IT : undefined)
 }
 
@@ -64,7 +63,7 @@ export function NextJobLine({
   now: Date
   dismissMenu: () => void
 }): JSX.Element | null {
-  const cron = useStore((s) => s.cron)
+  const cron = useCron()
   const soon = nextJobIn(cron, wsPath, now)
   if (!soon) return null
   return (

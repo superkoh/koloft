@@ -3,7 +3,7 @@ import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
 import type { FileOpened } from '@core/moment'
 import type { CommandHandlers, Commands } from '@core/commands'
-import { openDropTarget } from '../../../main/openDrop'
+import { openDropTarget } from '@core/openDrop'
 import {
   answered,
   EXIT_USAGE,

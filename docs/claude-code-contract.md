@@ -216,7 +216,7 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `Math.max(timeout, 1) * 1000`). From 2.1.302 to 2.1.311 the limit was 12 hooks of one
   event (`strings`, 2026-10-17, not run: a limit constant of 12 and a filter on those two
   types, absent from 2.1.301). Every hook Koloft writes is `type: "command"` with a
-  `timeout` of 3600 s or none (`src/main/hooks.ts`, local and SSH tabs alike), so none
+  `timeout` of 3600 s or none (`src/plugins/sessions/main/hooks.ts`, local and SSH tabs alike), so none
   of them queues or is raised to 1 s. The hook event list is the same 33
   names on 2.1.301 and 2.1.302 (`strings`, 2026-10-17), on 2.1.303 (`strings`,
   2026-10-19: the same array, the same limit constant and type filter) and on 2.1.304
@@ -267,10 +267,10 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `compact` (it can fire mid-turn, with no prompt after it).
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
-in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
+in `src/plugins/sessions/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
 the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
 then moves the root to the worktree the last `worktree-state` names); the start line in
-the status log (`HOOK_SCRIPT` in `src/main/hooks.ts`), which `ClaudeBackend` applies in
+the status log (`HOOK_SCRIPT` in `src/plugins/sessions/main/hooks.ts`), which `ClaudeBackend` applies in
 order with the turns and holds back until the tab's shim registration;
 `test/e2e/fixtures/fake-claude.js`
 mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
@@ -1256,7 +1256,7 @@ moment its CC starts removing, and on this Mac finishes the removal if Koloft qu
 Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading; the two
 background-move bullets and the `/fork` copy probe (2026-10-27, CC 2.1.311) as dated
 above. Koloft dependents: the fork gate and session_id
-extraction in `src/main/hooks.ts`'s injected script (marked `CC§5`);
+extraction in `src/plugins/sessions/main/hooks.ts`'s injected script (marked `CC§5`);
 `src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
 never wrote a transcript.
 
@@ -1318,7 +1318,7 @@ Evidence: binary reading, the CLI reference and two local experiments, 2026-08-0
 2.1.224; render latency measured in live testing (date and CC version not recorded).
 Koloft dependents: `src/main/statusline.ts` (its wrapper script is marked `CC§6`; the
 ccstatusline side is platform ledger §36), `writeTabHookSettings` in
-`src/main/hooks.ts`, `test/e2e/statusline.spec.ts`.
+`src/plugins/sessions/main/hooks.ts`, `test/e2e/statusline.spec.ts`.
 
 ## §7 Anthropic API: usage headers, auth env, model fallback
 
@@ -2038,9 +2038,9 @@ Stop records in Koloft's run-state logs cross-checked
 against their transcripts, `lsof`/`ps` on live sessions, and a headless probe
 (`printf <prompt> | claude -p --settings <stop-hook settings> --allowedTools Bash`;
 the prompt must ride stdin or `--allowedTools` swallows it). Koloft dependents: the
-`bgl` list in `src/main/hooks.ts`'s injected script, `src/main/taskProcs.ts`,
+`bgl` list in `src/plugins/sessions/main/hooks.ts`'s injected script, `src/main/taskProcs.ts`,
 `judgeReported` and the server test (`IDLE_SERVER_CPU_MS_PER_MINUTE`,
-`SERVER_QUIET_WINDOW_MS`) in `src/main/sessionTracker.ts`.
+`SERVER_QUIET_WINDOW_MS`) in `src/plugins/sessions/main/sessionTracker.ts`.
 
 ## §9 Launch flags for a run nobody is watching
 
@@ -2775,7 +2775,12 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   write of 63 bytes or more that ended in CR put a newline in the box instead of
   sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
   300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
-  2.1.286); the setup was not re-run here.
+  2.1.286); the setup was not re-run here. Still so on 2.1.329 (2026-11-19, the
+  hand-test sandbox, `window.api.terminal.write` on a Koloft tab, Sonnet 5.5): 352 bytes
+  and CR in one write stayed in the box, the screen noting `Removed 1 invisible character
+  from your prompt`, and a lone CR 0.8 s later sent it; 31- and 34-byte lines ending in
+  CR were sent by their one write, on the tab on screen and on one off screen, local and
+  over ssh into tmux.
 - **A line typed before claude starts lands in the input box unsent.** At zsh's
   `ESC[?2004h`, one write of the launch line (`exec claude …` CR) and `hello` CR — or
   `hello` LF — showed `❯ hello` in the box and sent nothing in 14 s (2.1.319 twice for
@@ -3382,7 +3387,18 @@ sessions.
   settings file (a fake `apiKeyHelper` and `ANTHROPIC_BASE_URL`) and the first prompt
   were written by hand. Both times the request's last `system` block held the file's text and then the
   inline text, each as one exact substring (SHA-256 of the inline text matched), the
-  inline text last in the block. Not tried: an inline text much longer than 7 KB.
+  inline text last in the block. Not tried there: an inline text much longer than 7 KB.
+- **On a remote machine an inline appended prompt of about 20 KB reaches the model whole
+  too.** 2026-11-20, CC 2.1.329 linux-arm64 in the e2e SSH lab image, the same way as the
+  bullet above (Koloft's `claudeTabSpec` + `writeTabPackage` rendered from this repo, run
+  as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`, packages in with
+  `docker cp`), the text handed as Koloft hands it, in the tab's `.owner.md` file that the
+  tab script reads into `--append-system-prompt "$(cat …)"`. It was two blocks of 9,845
+  and 9,844 bytes under their headings, each at the 10,000-byte limit as Koloft counts
+  it, made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
+  `$(id)`, curly quotes and an emoji (19,691 bytes). The request's last `system` block
+  held it as one exact string at its very end, after the prompt file's text, 2 of 2 runs,
+  each on a new tab.
 - **A `SessionStart` hook's `additionalContext` reaches the model whole up to 10,000
   UTF-16 code units; past that only a 2 KB preview does.** 2026-11-18, CC 2.1.327
   darwin-arm64, `claude -p hello --settings <file>` with a scratch `HOME`, an
@@ -3850,7 +3866,7 @@ below was one run.
   only replaces the on-screen dialog — a tab whose hook answers nothing would be refused
   instead of asked: every remote tab (`dialogs: 'record-only'`), and a local tab whose
   `ask` hook turns into the logging-only `asked` (no `.answerable` file, or a `.typed`
-  one, in `src/main/hooks.ts`). From `strings` (darwin-arm64 and linux-arm64,
+  one, in `src/plugins/sessions/main/hooks.ts`). From `strings` (darwin-arm64 and linux-arm64,
   not run: inferred, not checked): it is read from user settings, `--settings` and
   managed settings, not project or local settings; it also stops offering
   `AskUserQuestion` and plan mode's tools to the model; and a run of refusals ends the
@@ -4336,7 +4352,7 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   a foreground Bash kills it with no result, so no PostToolUse fires on 2.1.318 or
   2.1.319; a send-now during a running PostToolUse hook queues and waits for the hook
   (12 s) on 2.1.319. None of Koloft's PostToolUse hooks (`tool`, `shell-after`,
-  `posttool` in `src/main/hooks.ts`) writes a running or done state, so a late one
+  `posttool` in `src/plugins/sessions/main/hooks.ts`) writes a running or done state, so a late one
   cannot mark a tab running or done; a late `shell-after` still appends a `shell-wrote`
   record, which reaches the changed-files list only through `ownsHookReport`.
 
@@ -4379,7 +4395,8 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   8 suggestions and 6 wrong.
 - **Three at once hit no limit at `medium` or `high`.** None of their 208 runs came back
   with a usage-limit result; 3 of 5 `max` runs did.
-- **The findings are the result text.** `(none)` means the review found nothing. On
+- **The findings are the result text.** At `low`, `(none)` means the review found
+  nothing (a `medium` one answers an empty fenced JSON array instead, below). On
   2.1.318 `-p "/code-review low origin/main...HEAD" --model haiku --output-format json`
   on a one-line diff still answered exit 0, `is_error: false` and a `result` starting
   with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
@@ -4402,6 +4419,98 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   by Claude, not directly by users. …`. Both exit 0, `is_error: false`, on both builds
   (2026-11-04, `--model haiku`, text and JSON output). So a `/code-review` that failed
   to expand reads as a review whose text is the error, where 2.1.317 gave an empty one.
+- **A failed API call also reads as a finished review.** Under `-p`, `/code-review` runs
+  as a local command (`local_command: "code_review"` in the JSON result). When its
+  model request fails, the run still exits 0 with `is_error: false` and `num_turns: 0`,
+  and the error is the `result` (`API Error: Connection refused …`, `API Error: 400 …`).
+  Seen on 2.1.302, 2.1.326, 2.1.327, 2.1.328 and 2.1.329 (2026-11-19, `claude -p
+  "/code-review medium origin/main...HEAD" --model claude-opus-5-5 --output-format json
+  --allowedTools 'Bash(git:*)' Read Grep Glob Agent` in a checkout of a past Koloft PR,
+  scratch `HOME` and fake key, `ANTHROPIC_BASE_URL` pointed at a closed port or at a
+  local server that records the request and answers 400; no token spent). A review
+  that did run reports `num_turns: 0` too (2.1.329, the same command with a real
+  account), so the count tells nothing. What every `medium` review that did run held
+  is its findings as a fenced ` ```json ` array, `[]` when it found nothing: all 51 runs
+  on 2.1.329 (2026-11-19) and all 104 on 2.1.302. A failed call holds none, and neither
+  does a refused sign-in, whose text (`Failed to authenticate. API Error: 401 …`, §9)
+  does not start with `API Error`.
+- **2.1.328 changed the recipe Opus 5.5 gets at `medium`.** The request body each build
+  sends (captured by that local server, same command) holds the same recipe, byte for
+  byte, on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10
+  findings` — 3 correctness, 3 cleanup (reuse, simplification, efficiency), 1 altitude
+  and 1 CLAUDE.md conventions angle, up to 6 candidates each, all in the one context, no
+  subagents. That `high effort` is the recipe's own label; the request itself sets
+  effort `medium` and adaptive thinking. From 2.1.328 it reads `high effort → 4 inline
+  angles (bugs + conventions)`: the cleanup and altitude angles are gone, each finding
+  carries a `severity` (`important`, `pre_existing` or `nit`), and its `summary` ends
+  with `Fix:` and the change to make. 2.1.329 also rewrote the step that gathers the
+  diff (`git diff origin/HEAD...HEAD` unless a target is named). No darwin-arm64 build
+  from 2.1.302 to 2.1.327 changes the recipe text. So the catches, costs and times above
+  describe the recipe up to 2.1.327 only (`high` on 2.1.329: below). The binary's text
+  alone misleads here: its model
+  table gives `claude-opus-5` an `o5-bmin` "minimal prompt" at `medium`, yet
+  `claude-opus-5-5` is sent the inline recipe.
+- **On 2.1.329 three `medium` runs caught 1 of the 12, where 2.1.302's caught 2.3–3.0.**
+  Re-measured 2026-11-19 with the command in "How established", through the claude
+  shim, 3 at a time, on the same 8 PRs with later-fixed bugs and 9 that never needed a
+  fix, 3 fresh runs each, every run finished. A Fable 5.2 judge read every finding
+  against the same 12 bugs. All three runs on PR #324 caught its bug (the one pull
+  request #352 later fixed); no run on any PR caught the other eleven. 2.1.302's first
+  three runs had caught that bug and two more (fixed later by pull requests #557, in
+  PR #85, and #610, in PR #441), each once in three. The same judge, given 2.1.302's
+  findings, marks the same three, so the grading did not move. Taking each of those two
+  as caught once in four runs, three new runs missing both by chance has odds of about
+  1 in 6. On 2.1.329 a second and third run added no catch.
+
+  | 2.1.329 `medium` | per run, list price | median / slowest run | findings, 3 runs merged |
+  |---|---|---|---|
+  | PR with bugs | $1.47 (2.1.302: $1.38) | 3.7 / 6.7 min | 16.4 (2.1.302: 19.1) |
+  | clean PR | $0.67 (2.1.302: $0.56) | 2.1 / 2.9 min | 12.1 (2.1.302: 13.8) |
+
+  The 2.1.302 figures are recomputed from the 2026-10 runs on these same 17 PRs (the
+  table above averages all 26). "Merged" counts the issues the judge grouped as one
+  across the three runs. Over all 51 runs, before merging, there were 391 findings: 198
+  marked `important`, 88 of those on the clean PRs, and 34 with no `severity` at all;
+  so `important` does not mean a real bug.
+- **On 2.1.329 `high` catches more than `medium`; `xhigh` runs past 15 minutes.** The
+  request each level sends (captured as above): `high` gets `medium`'s recipe, word for
+  word, with effort `high`; `xhigh` gets `xhigh effort → 6 inline angles (bugs +
+  conventions) → dedup (no verify) → sweep → ≤15 findings` (5 correctness angles and 1
+  conventions angle, up to 8 each, then one more pass for gaps), with effort `xhigh`.
+  Measured 2026-11-19 like the bullet above, on the same 8 PRs and 12 bugs, by the same
+  judge reading `medium`'s, `high`'s and `xhigh`'s findings together (`medium` still
+  caught 1); `high` 3 runs per PR, `xhigh` 1. "×2" is every pair of the three runs.
+
+  | 2.1.329, PRs with bugs | bugs caught, of 12 | per PR, list price | median / slowest run |
+  |---|---|---|---|
+  | `medium` ×3 | 1 | $4.41 | 3.7 / 6.7 min |
+  | `high` ×1 | 2.3 | $2.46 | 6.1 / 13.4 min |
+  | `high` ×2 | 3.3 | $4.91 | 6.7 / 13.4 min |
+  | `high` ×3 | 4 | $7.37 | 6.8 / 13.4 min |
+  | `xhigh` ×1 | 4 | $7.16 | 20.7 / 29.2 min |
+
+  `high` ×3 and `xhigh` caught 4 each but only 2 in common: `high` found two bugs of
+  PR #85 that `xhigh` missed, `xhigh` one of PR #236 and the one of PR #441 that no
+  `high` run found; 6 of the 12 were caught by some run. 7 of the 8
+  `xhigh` runs took over 15 minutes. On 2 clean PRs, one `high` run cost $0.85 and took
+  5.5 minutes.
+- **`/security-review` puts the whole diff into its prompt, and a failed call fails
+  loudly.** On 2.1.329 (same setup, the folder trusted and not) its expanded prompt holds
+  the output of `git status`, `git diff --name-only origin/HEAD...`, `git log
+  --no-decorate origin/HEAD...` and `git diff origin/HEAD...`, so it reviews the branch
+  against `refs/remotes/origin/HEAD` and takes no target. It asks for one sub-task that
+  hunts vulnerabilities, told to "include all of the above" in its prompt, then one
+  parallel sub-task per candidate to filter false positives, keeping those scored 8 or
+  more of 10. Its allowed tools are `git diff`, `status`, `log`, `show` and `remote
+  show`, Read, Glob, Grep, LS and Task. Where `/code-review` reports a failed model call
+  as a success, it ends with exit 1 and `is_error: true`. Run once on each of the same
+  17 PRs (2026-11-19, `--model claude-opus-5-5`, through the claude shim) it cost $0.43
+  to $7.18, $40.68 in all, took 0.8 to 14.7 minutes, and reported one finding, on PR #85;
+  the other 16 answered no HIGH or MEDIUM finding. In 11 of the 17 runs part of the cost,
+  $25.68 in all, was `claude-fable-5-2`: the session started its sub-tasks with `model:
+  "fable"` (seen in its `Agent` calls), as the CLAUDE.md of the Koloft commit under
+  review tells agents to do for review work. Every `/code-review medium` run, which
+  starts no sub-task, used only `claude-opus-5-5`.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
 
@@ -4425,7 +4534,7 @@ folder with a `--settings` file whose `Stop` hook printed
   against a stand-in API, a scratch `HOME`, 1 run each); `prompt_id` was not compared.
 
 Koloft dependents: the Stop branch of `HOOK_SCRIPT` and the Codex reply-language script
-in `src/main/hooks.ts`.
+in `src/plugins/sessions/main/hooks.ts`.
 
 ## §22 Where MCP servers are set up, and which folders reach them
 
@@ -4543,7 +4652,7 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
   above it.
 
 Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
-`writeTabHookSettings` in `src/main/hooks.ts`.
+`writeTabHookSettings` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §25 A Bash call's `description` is its title on screen
 
@@ -4554,7 +4663,7 @@ screen` while the call ran.
   line under it (`⎿  $ <command>`). Without one it is `⏺ Running <command>`.
 - Once done, the one call seen folded into `Ran 1 shell command`.
 
-Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/main/hooks.ts`.
+Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §26 An inline appended prompt against the folder's CLAUDE.md
 
@@ -4572,5 +4681,46 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
 - **Every run named the clash in its reply** and said which one it followed.
 
 Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
-`--append-system-prompt` (`src/main/backends/claude.ts`), and the Session defaults dialog
+`--append-system-prompt` (`src/plugins/sessions/main/backends/claude.ts`), and the Session defaults dialog
 says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).
+
+## §27 Who started a turn: a person's typing and a program's look the same
+
+2026-11-18, CC 2.1.327, measured: the transcript of a Koloft session started with
+`koloft session new`, then sent messages with `koloft session send`.
+
+- **The first message `koloft session new` hands a session**, which Koloft types into its
+  terminal in the owner's language, was recorded as `origin: {"kind":"human"}`, exactly
+  like the owner's own typing.
+- A message sent over Claude Code's socket was `origin.kind: "peer"` (with a
+  `cross-session-message` envelope); a finished background task was
+  `"task-notification"`.
+
+So the transcript does not tell the owner's typing from text a program wrote into the
+terminal; the other three agents were not probed.
+
+Koloft dependents: `koloft instructions` does not try to tell whose words started the turn;
+it asks the owner to agree to every change in the proposing session's own tab
+(`src/plugins/sessions/main/instructionsVerb.ts`).
+
+## §28 A Bash command given no timeout moves to the background at 120 s and runs on
+
+2026-11-19, CC 2.1.328 (`-p --dangerously-skip-permissions`, a throwaway HOME, a fake
+Messages API whose model ran one Bash call with no `timeout`:
+`perl -e "select(undef,undef,undef,150)"; echo done-after-150`), measured:
+
+- At 121 s the model got a tool result, not a kill: "Command did not complete within its
+  120s timeout and was moved to the background (ID: …). Output is being written to: …
+  You will be notified when it completes. If it is still running after 10m in the
+  background, it will be stopped and you will be notified."
+- The command ran on; at 150 s, when it ended, Claude Code sent the model a new request
+  (a `task-notification`, §27) and `claude -p` exited 0 after 150 s.
+
+Not probed: the interactive TUI (only `-p` ran); a `timeout` the model sets above 120 s
+(the tool's description says the most is 600000 ms).
+
+Koloft dependents: the 9 minutes Koloft waits for the owner's answer to `koloft
+instructions add` / `set` (`OWNER_TYPES_A_SECRET_WITHIN_MS`) still reach a Claude Code
+agent that gave its Bash call no timeout, as a background task's result; the owner's
+answer from a Discord card, posted only once the owner is away, can come after 120 s
+(`src/main/index.ts`, `askTheOwner`).

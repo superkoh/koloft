@@ -29,10 +29,29 @@ export {
 } from './main/placedRows'
 export { GITHUB_NOT_ASKED, type MergedHeads, type WorkLeft } from './main/sessionClose'
 export {
-  instructionsPartOf,
   savedFromTheDialog,
+  workspaceBlock,
   workspaceInstructionsPart
 } from './main/workspaceInstructions'
+export {
+  everyWorkspaceBlock,
+  ownerPartsOf,
+  savedByTheOwner as everyWorkspaceSavedByTheOwner
+} from './main/everyWorkspaceInstructions'
+export type { InstructionsBlock } from './main/instructionsVerb'
+export { InstructionAsks } from './main/instructionAsks'
+export type {
+  InstructionAsk,
+  InstructionAskEnd,
+  InstructionAskListener
+} from './main/instructionAsks'
+export {
+  CHANGE_THEM,
+  INSTRUCTIONS_CHANGED_MEANWHILE,
+  KEEP_THEM,
+  nothingChangesUntilYouAgree,
+  changeSummary
+} from './shared/instructionAsks'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

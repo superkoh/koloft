@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
+import { knowPluginStates } from '../../src/core/switches'
 import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
@@ -139,6 +140,7 @@ const spec = ({
   settings = { hooks: {} },
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
+  docsPlugin = true,
   trustFolder,
   program,
   ...over
@@ -153,7 +155,7 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, docsPlugin, trustFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -573,6 +575,23 @@ describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on 
     expect(fs.statSync(path.join(skills, 'koloft-docs')).ino).toBe(docsFolder)
     expect(fs.readdirSync(skills).sort()).toEqual(['koloft-docs'])
   })
+
+  it('with Docs writing off, the koloft-docs skill folder is taken away and the koloft skill is kept as before', () => {
+    const root = mkroot('skill-docs-off')
+    const machineDir = path.join(root, 'm-1')
+    const skills = path.join(root, 'home', 'skills')
+    putSkillsInMachinePackage(machineDir)
+    const run = (line: string): number | null =>
+      spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
+    expect(run(skillsFromMachineLine(skills, machineDir, true))).toBe(0)
+    knowPluginStates({ 'docs-writing': { on: false } })
+    try {
+      expect(run(skillsFromMachineLine(skills, machineDir, true))).toBe(0)
+    } finally {
+      knowPluginStates({})
+    }
+    expect(fs.readdirSync(skills).sort()).toEqual(['koloft'])
+  })
 })
 
 describe('U-TAB-*: the tab script on the machine', () => {
@@ -718,6 +737,14 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
+  it('without the koloft-docs skill, claude on the machine gets no --plugin-dir for it, and still gets Koloft’s own', () => {
+    const b = box(spec({ agentPlugin: true, docsPlugin: false }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    expect(b.argv()).not.toContain(`${m}/docs-plugin/`)
+    expect(b.argv()).toContain(`${m}/agent-plugin/`)
   })
 
   // PLATFORM§33

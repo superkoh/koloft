@@ -92,10 +92,10 @@
         <p>
           Every session Koloft starts gets a <code>koloft</code> command: Claude, Codex, Muse or
           Antigravity, on this Mac and on a <a href="../remote/">remote folder</a>'s machine. It is
-          on by default. The switch is Settings ▸ Extensions ▸ "Let agents use Koloft". Turning it
-          on reaches sessions you start after that. Turning it off stops the command in every
-          session at once. When an agent changes a scheduled job, a small message pops up to tell
-          you.
+          on by default. The switch is "Let agents use Koloft", at the top of Settings ▸ Plugins.
+          Turning it on reaches sessions you start after that. Turning it off stops the command in
+          every session at once. When an agent changes a scheduled job, a small message pops up to
+          tell you.
         </p>
         <p>With it, the agent can:</p>
 
@@ -165,9 +165,12 @@
           While the box or bar waits, the session's row is amber, as when it needs your OK. While
           you are away from the Mac, or talking to that session from Discord, a card comes to
           Discord too (see <a href="../discord/#secrets">passwords and codes on Discord</a>), and
-          the first answer wins. The other one closes. With no Discord set up, the box and the bar
-          still work. Koloft does this the same way for every agent, on this Mac and in a
-          <a href="../remote/">remote folder</a>. While you
+          the first answer wins. The other one closes. With no Discord set up, or when Discord does
+          not take the card within a minute, the box and the bar still work. The session then waits
+          for you at the Mac the way it does when you are there: a
+          <a href="../sessions/#red-dots">red dot</a> on its row and a card in the
+          <a href="../sessions/#inbox">Inbox</a>. Koloft does this the same way for every agent, on
+          this Mac and in a <a href="../remote/">remote folder</a>. While you
           <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), all four are
           refused at once:
           <code
@@ -341,33 +344,62 @@
         </ul>
         <p>
           Your <a href="../accounts/#butler">butler</a>, Koloft's own AI that you talk to from the
-          sidebar or from Discord, uses the same commands. Only it, with a Discord channel bound,
-          can use <code>koloft discord send</code> and <code>shot</code> to send you files or a
-          picture of a page. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+          sidebar or from Discord, uses the same commands. What only it and its helpers do with
+          them, like listing every folder's sessions or passing on your words in « », is told to
+          them in their own prompt, not in the guide every session reads. Only it, with a Discord
+          channel bound, can use <code>koloft discord send</code> and <code>shot</code> to send you
+          files or a picture of a page. See
+          <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 691; --ar-phone: 736 / 744">
+        <h2 id="plugins">Settings ▸ Plugins</h2>
+        <p>
+          Settings ▸ Plugins lists each part of Koloft as a plugin, under the
+          <code>Let agents use Koloft</code> switch. Click a row's › to open that plugin's own page,
+          where its settings are (Discord's, for one).
+        </p>
+        <figure class="shot" style="--ar: 1322 / 687; --ar-phone: 790 / 1000">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/i-settings-extensions-phone3.webp"
-                width="736"
-                height="744"
+                srcset="../img/i-settings-plugins-phone.webp"
+                width="790"
+                height="1000"
               />
               <img
-                src="../img/i-settings-extensions3.webp"
+                src="../img/i-settings-plugins.webp"
                 width="1322"
-                height="691"
+                height="687"
                 loading="lazy"
-                alt="Koloft's Settings, Extensions page: two switches, both on. Let agents drive this Browser, and Let agents use Koloft."
+                alt="Koloft's Settings, Plugins page: the switch Let agents use Koloft, on, at the top. Under it, Always on: Sessions core, Workbench and Browser control, each with a › to open its own page."
               />
             </picture>
           </div>
           <figcaption>
-            Settings ▸ Extensions: the two switches that decide what an agent may use
+            Settings ▸ Plugins: "Let agents use Koloft" on top, then every part of Koloft
           </figcaption>
         </figure>
+        <ul class="dash">
+          <li>
+            <code>Always on</code>: Sessions core, Workbench, Browser control, Butler, Inbox and
+            Scheduled tasks
+          </li>
+          <li>
+            <code>Optional</code>, each with a switch: GitHub, Discord, Todo, Passwords and sign-in,
+            and Docs writing
+          </li>
+          <li>
+            Today the switch that does something is Todo's. Turn Todo off and
+            <code>koloft todo</code> is refused in every session at once, with
+            <code>koloft: Todo is turned off in Settings ▸ Plugins.</code> Sessions you start after
+            that are not told about it
+          </li>
+          <li>
+            Todo needs GitHub, so turning GitHub off turns Todo off too. Then the refusal reads
+            <code>koloft: Todo is off because GitHub is turned off in Settings ▸ Plugins.</code>
+          </li>
+        </ul>
 
         <h2 id="docs">A skill for writing documents</h2>
         <p>
@@ -384,9 +416,9 @@
           cannot see, and it is signed into nothing. Koloft offers its web tabs instead. Every
           session on this Mac gets a secret CDP address (CDP is the Chrome DevTools Protocol, the
           way tools steer a browser). A browser tool that uses it steers
-          <mark class="hl">that session's own web tabs</mark>. This works while Settings ▸
-          Extensions ▸ "Let agents drive this Browser" is on. How the address reaches the tool
-          differs by tool.
+          <mark class="hl">that session's own web tabs</mark>. This works while "Let agents drive
+          this Browser" is on, in Settings ▸ Plugins ▸ Browser control. How the address reaches the
+          tool differs by tool.
         </p>
 
         <h3>playwright-cli, for every agent</h3>
@@ -500,10 +532,10 @@
               <tr>
                 <td>turning it off</td>
                 <td>
-                  Settings ▸ Extensions ▸ "Let agents drive this Browser". Off cuts whatever is
-                  connected right now. A session you start after that goes back to its own browser.
-                  A session already running keeps the old address, and its tool fails until you
-                  restart that session.
+                  Settings ▸ Plugins ▸ Browser control ▸ "Let agents drive this Browser". Off cuts
+                  whatever is connected right now. A session you start after that goes back to its
+                  own browser. A session already running keeps the old address, and its tool fails
+                  until you restart that session.
                 </td>
               </tr>
               <tr>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Moments, type Moment } from '../../src/core/moment'
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '../../src/core/plugin'
 import { PLUGINS } from '../../src/plugins/list'
+import { knowPluginStates } from '../../src/core/switches'
 
 const OPENED: Moment<string> = { name: 'opened' }
 
@@ -103,5 +104,38 @@ describe('session moments', () => {
     stop()
     await moments.announce(OPENED, 'two')
     expect(heard).toEqual(['one'])
+  })
+
+  it('a plugin that is turned off hears no moment until it is on again, while the others still hear it', async () => {
+    const heard: string[] = []
+    const { moments } = registry(['a', 'b'])
+    moments.listen('a', OPENED, (m) => void heard.push(`a ${m}`))
+    moments.listen('b', OPENED, (m) => void heard.push(`b ${m}`))
+    try {
+      knowPluginStates({ a: { on: false } })
+      await moments.announce(OPENED, 'one')
+      knowPluginStates({})
+      await moments.announce(OPENED, 'two')
+    } finally {
+      knowPluginStates({})
+    }
+    expect(heard).toEqual(['b one', 'a two', 'b two'])
+  })
+
+  it('the end of a tab reaches a plugin that is off too, so it can still let go of what it kept for that tab', async () => {
+    const ENDED: Moment<string> = { name: 'ended', heardWhileOff: true }
+    const heard: string[] = []
+    const moments = new Moments([
+      manifest('core', { announces: [ENDED.name] }),
+      manifest('a', { listens: [ENDED.name] })
+    ])
+    moments.listen('a', ENDED, (m) => void heard.push(m))
+    try {
+      knowPluginStates({ a: { on: false } })
+      await moments.announce(ENDED, 'tab-1')
+    } finally {
+      knowPluginStates({})
+    }
+    expect(heard).toEqual(['tab-1'])
   })
 })

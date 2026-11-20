@@ -6,16 +6,12 @@ menu: Open pull requests
 menu: Open pull request #265
 menu: Checks · 1 failing of 2
 menu: Send failing checks
-menu: Commit…
-menu: Push
 menu: Check again
 == no pull request
 button label: Open this repository on GitHub · right-click for more
 button text: 
 menu: Open repository
 menu: Open pull requests
-menu: Commit…
-menu: Push
 menu: Open pull request…
 menu: Check again
 send with nothing failing: No failing checks to send.

@@ -701,6 +701,12 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
     with a text holding `OLDTEXT-A1`, then started again with `--conversation=<its id>`
     and a text holding `NEWTEXT-B2`: the resumed request carried both turns and
     `OLDTEXT-A1`, never `NEWTEXT-B2`, and its hook log had no `SessionStart`.
+  - **A text of about 24 KB arrives whole on a remote tab too.** 2026-11-20, agy 1.5.10,
+    the same lab, rendering and stand-in. The text was `koloftPrompt('agy')`, then two
+    blocks of 9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it,
+    made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
+    `$(id)`, curly quotes and an emoji (23,797 bytes in all). The `gemini-3.1-pro-preview`
+    request held it as one exact string, 2 of 2 runs, each on a new tab.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
   - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux
@@ -772,6 +778,18 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   with task id: <conv>/task-N … logs at file://…/brain/<id>/.system_generated/tasks/task-N.log".
   `manage_task` handles these background tasks (`Action: "list" | "kill" | "status" | "send_input"`,
   `TaskId?`, `Input?`); it is not a to-do list.
+- **A `run_command` waits at most 10 s, then runs on as a background task for at least 11
+  minutes.** 2026-11-19, agy 1.5.10 Linux arm64 in Docker (`--network none`), `agy -p
+  --dangerously-skip-permissions` against a fake Gemini server whose model called
+  `run_command {CommandLine: "sleep 660; echo done-after-660", WaitMsBeforeAsync: 10000}`,
+  `ps` read every 15 s; one run. `WaitMsBeforeAsync` is required (a call without it
+  fails validation: "missing property 'WaitMsBeforeAsync'"), and the tool's description
+  bounds it to "500 to 10000". At 10 s the model got the background-task answer above;
+  the command ran its full 660 s, and at 660 s agy sent the model a new request whose
+  last part was a `<SYSTEM_MESSAGE>` "[Message] … sender=<conv>/task-2 …" (as §13's
+  `schedule` firings do). `-p` stayed up the whole time, printing "root agent idle;
+  waiting for 1 background task(s) to finish". Not probed: the TUI, and a task longer
+  than 11 minutes.
 - **Subagents, `/teamwork` and `swarm` (measured 2026-11-18, agy 1.5.11 on macOS, a real
   `/teamwork` TUI run and a `-p --input-format stream-json` `swarm` run against a fake
   Gemini server):**
@@ -1362,9 +1380,20 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`,
   `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`; no `gemini-3.1-pro`.
   The list is the account's: Carbon was not open to every account that day. Koloft
-  reads it to turn a family name (`flash`, `argon`, `carbon`) into the newest id the
+  reads it to turn a family name (`flash`, `neon`, `argon`, `carbon`) into the newest id the
   account has. `--model gemini-4-carbon --effort high -p "Reply with exactly: OK"` on
   that account exited 0 with `OK` (24 thinking tokens).
+- **Gemini 4 Neon** (2026-11-19, agy 1.5.13 on macOS, the same copied-token route):
+  `agy models` prints 27 rows: `gemini-4-neon-{high,xhigh,medium,low}` first, then
+  Carbon, Argon (still listed), `gemini-4-hydrogen-{high,xhigh,medium,low}`, three
+  `gemini-pro-orchestrator`, `-neon`, `-argon` rows with no effort in the id (so
+  `agyListedModels` skips them), 3.8 Flash, the Claude rows and `gpt-oss-120b-medium`.
+  `--model gemini-4-neon --effort xhigh -p "Reply with exactly: OK"` exited 0 with `OK`
+  in 2.9 s (22 thinking tokens), and with no `--effort` in 5.8 s; `--effort max` exited 1 before any request: `gemini-4-neon
+  has no "max" effort (available: low, medium, high, xhigh)`. Hydrogen's efforts are read
+  off its ids only, not run. That an account without Neon lists Argon, as this one
+  still does, is inferred, not checked: Carbon was not open to every account (above),
+  so Koloft's normal tier runs Argon where Neon is missing.
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
@@ -1385,6 +1414,13 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   conversation a default-model `-p` had started in the same folder: `num_turns` 2, and
   the answer named the earlier turn's word (same day and build). Which model the second
   turn ran on is not in the JSON; it took 3.9 s against the first turn's 9.7 s.
+- **Turn judgement on Neon** (2026-11-19, agy 1.5.13, same bench and route, three runs
+  each, four at a time): `gemini-4-argon` `medium` 83 / 82 / 82 right, 3 asks read as
+  news, mean 8.2 s, 0–2 of 65 calls over 15 s, one-tap replies on 27–28 of 33 asks;
+  `gemini-4-neon` `medium` 81 / 82 / 83, 1–3 asks read as news, mean 14.3 s, 25–27
+  over 15 s (about 1,000 thinking tokens a call); `gemini-4-neon` `low` 81 / 80 / 82,
+  2–3 asks read as news, mean 9.6 s, 2–4 over 15 s, one-tap replies on 22–24. So the
+  turn judgement stays on Argon at `medium` while Neon runs the normal session tier.
 
 ## §22 Errors and retries
 
@@ -1853,7 +1889,7 @@ fake Gemini server with MCP servers that logged their start.
   `/clear`, in `--dangerously-skip-permissions`, and on the macOS build in the tart VM.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`); the
-Workbench browser's address in agy's environment (`src/main/agySessions.ts`); the allow
+Workbench browser's address in agy's environment (`src/plugins/sessions/main/agySessions.ts`); the allow
 rule for the owner's Playwright entries (`src/main/agyAccounts.ts`).
 
 ## §31 Skills

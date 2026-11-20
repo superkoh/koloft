@@ -11,7 +11,7 @@ import {
   type WorktreeInfo
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
-import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
+import { familyModelOf, resolvePick, tiersOf, type PickFacts } from '@shared/sessionPicks'
 import { agentGuide } from '@shared/agentGuide'
 import { PICK_FOR_THE_TASK, withProjectRules } from '../prompts/text'
 import {
@@ -22,6 +22,7 @@ import {
   type PlacedRow
 } from './placedRows'
 import { RepliesOwed, type ReplyListener } from './repliesOwed'
+import { instructionsVerb, type InstructionsVerbDeps } from './instructionsVerb'
 import type { SendResult, StartResult, StartSpec } from './sendAndStart'
 import {
   BACKEND_LABEL,
@@ -36,7 +37,7 @@ import { isValidWorktreeName } from '@shared/worktreeName'
 import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
-import { scopeName } from '@shared/conductors'
+import { scopeName } from '@shared/scope'
 import { ageLabel } from '@shared/freshnessOps'
 import { MAX_READ_TURNS, type Turn } from '@shared/turns'
 import { MYSELF, slashCommandProblem } from '@shared/slashCommands'
@@ -52,6 +53,7 @@ import {
   type Parsed
 } from '@core/command'
 import { errorText } from '@core/errorText'
+import { composePrompt } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
@@ -71,6 +73,7 @@ import {
 } from './handoverPreamble'
 import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 import { keysFor } from '@core/typeKeys'
 import type { StartedSessions } from './startedSessions'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
@@ -358,7 +361,7 @@ export interface SessionVerbDeps {
   pickFacts(backend: BackendId): Promise<PickFacts>
   projectRules(workspace: string): Promise<string | undefined>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
-  assist: Assist
+  assist: Assist<SessionsAssistJobId>
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
@@ -383,7 +386,7 @@ export interface SessionVerbDeps {
   deliver(tabId: string, text: string): Promise<boolean>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
-  answer(tabId: string, reply: string): Promise<string | undefined>
+  answer(tabId: string, reply: string, byTheOverseer: boolean): Promise<string | undefined>
   undelivered(callerTab: string, target: Target, why: string): void
   command(
     callerTab: string,
@@ -445,7 +448,7 @@ function modelAndEffortRefusal(
     return (rules) =>
       `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
   const owner = SESSION_BACKENDS.find(
-    (b) => b !== backend && (namedModel(b, args.model) || tierModelOf(b, args.model))
+    (b) => b !== backend && (namedModel(b, args.model) || familyModelOf(b, args.model))
   )
   return owner
     ? (rules) =>
@@ -827,7 +830,9 @@ async function sessionOnThisComputer(
   const target = d.closable().find((s) => s.sessionId === row.id)
   if (!target) return fail(`koloft session close: ${title} is gone.`)
   if (target.tabId && d.overseer.is(target.tabId))
-    return fail(`koloft session close: ${title} is the butler, which only closes itself.`)
+    return fail(
+      `koloft session close: ${title}${composePrompt('session-close-refused-for-the-owners-ai')}`
+    )
   return { ok: true, value: target }
 }
 
@@ -1249,7 +1254,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const error = await repliesOwed.owing(
         tab,
         { owner: caller.session.sessionId },
-        () => d.answer(tab, text),
+        () => d.answer(tab, text, d.overseer.is(caller.tabId)),
         (e) => e !== undefined
       )
       return error
@@ -1539,13 +1544,15 @@ export interface SessionCommandsDeps {
   rulesOfTab(tabId: string): Promise<string | undefined>
   session: AgentVerb
   workspace: WorkspaceVerbDeps
+  instructions: InstructionsVerbDeps
 }
 
 export function registerSessionCommands(commands: Commands, d: SessionCommandsDeps): void {
   commands.register({
     help: helpVerb(d.rulesOfTab),
     session: d.session,
-    workspace: workspaceVerb(d.workspace)
+    workspace: workspaceVerb(d.workspace),
+    instructions: instructionsVerb(d.instructions)
   })
 }
 

@@ -14,7 +14,7 @@ import {
   worktreeBase,
   worktreeHomeOf
 } from '@shared/cronNames'
-import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf, SKILL_PREFIX } from '@shared/sessionBackend'
 import {
   isStepKind,
   isValidSchedule,
@@ -23,7 +23,7 @@ import {
   parseHHMM,
   sameOnce
 } from '@shared/schedule'
-import { oncePassed } from '@shared/cronHistory'
+import { lastRunLine, oncePassed } from '@shared/cronHistory'
 import {
   endedRowNote,
   isCronEffort,
@@ -59,6 +59,13 @@ const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
   same: 'default',
   acceptEdits: 'acceptEdits',
   skipAll: 'bypass'
+}
+
+function firstPromptOf(job: CronJob): string {
+  const backend = cronBackend(job)
+  const opensWithACommand = ['/', SKILL_PREFIX[backend]].some((p) => job.task.startsWith(p))
+  const last = opensWithACommand ? null : lastRunLine(job.history, backend)
+  return last ? `${last}\n\n${job.task}` : job.task
 }
 
 function withSuffix(base: string, suffix: string): string {
@@ -500,7 +507,7 @@ export class CronRunner {
         model: job.model,
         effort: takenEffort(backend, job.model, job.effort),
         permission: LAUNCH_PERMISSION[job.permission],
-        firstPrompt: job.task,
+        firstPrompt: firstPromptOf(job),
         name: job.name,
         manual
       })
