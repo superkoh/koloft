@@ -254,9 +254,9 @@ Working principles:
   - `vendor/` (the git, gh and Git Credential Manager Koloft ships) is only downloaded
     when the app is packed — run `node scripts/fetch-vendor.cjs` once, or a dev build
     quietly ships none of them and `bundled-git-gh.spec.ts` fails.
-- Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
-  call it cannot prove stays inside this worktree. This block binds you too, its
-  last line aside; long text for `gh` goes in a `--body-file`:
+- Shell in a worktree stays plain. The isolation guard refuses any Bash call it
+  cannot prove stays inside this worktree. This block binds you too, its last
+  line aside; long text for `gh` goes in a `--body-file`:
 
   ```
   Shell rules — a guard refuses the rest; each refusal is a lost turn:
@@ -275,7 +275,7 @@ Working principles:
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - A path no tool printed is a guess: grep -rl 'word' src.
-  - No gh api -o or --comments with --json; strings -o: use > file.
+  - No gh api -o or --comments with --json; strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c, then slice.
   - {0,N} spans: only /usr/bin/grep -o -E, N ≤ 255; grep (ugrep) fails.
   - Findings go in your final message; the harness refuses report files.

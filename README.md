@@ -85,7 +85,8 @@ shell.
 
   Each hunk in Changes has `✎ comment` in its header, which puts that hunk and your note
   into the session's input box. In a GitHub project a GitHub button sits next to Files:
-  the pull request and its checks, and a failing check sent to the session. ⇧⌘B folds
+  the pull request and its checks, and a failing check sent to the session. Commit and
+  push sit on the branch button every git folder gets. ⇧⌘B folds
   the Workbench down to a small card beside the terminal.
 
   ![The Workbench's Browse view: the workspace's file tree with a Markdown file shown rendered beside it](.github/assets/screenshot-browse.png)
