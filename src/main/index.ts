@@ -4252,12 +4252,13 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
+  const waitsBesidesInstructions = (tabId: string): boolean =>
+    tracker.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
   const ownerWaits = {
     waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
     ownerAnswered: (tabId: string) => {
-      const stillAsked =
-        !!instructionAsks?.asking(tabId) || !!secretAsks?.views().some((a) => a.tabId === tabId)
-      if (!stillAsked && tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
+      if (!instructionAsks?.asking(tabId) && !waitsBesidesInstructions(tabId))
+        attention.ownerAnswered(tabId)
     }
   }
   const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
@@ -4497,9 +4498,7 @@ app.whenReady().then(() => {
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
     instructionsCard: (tabId) =>
-      tracker.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
-        ? undefined
-        : instructionCardsNow.onDiscord(tabId),
+      waitsBesidesInstructions(tabId) ? undefined : instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
@@ -4750,6 +4749,7 @@ app.whenReady().then(() => {
     presence.screenLocked()
     awayDigest?.marked()
     discordRelay?.checkHeld()
+    instructionCards?.checkHeld()
   })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3

@@ -139,7 +139,7 @@ export class InstructionCards implements InstructionAskListener {
     return (this.d.asks.pendingAsk(id) ?? shown.ask).tabId
   }
 
-  private checkHeld(): void {
+  checkHeld(): void {
     for (const id of this.shown.keys()) this.post(id)
     if ([...this.shown.values()].some((s) => !s.tried && !s.placing)) return
     clearInterval(this.heldCheck)
