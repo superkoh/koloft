@@ -30,8 +30,10 @@ const INSTALL: Record<BackendId, (env: E2EEnv) => void> = {
 const TOLD_TODO_IS_OFF = 'TheownerchangedSettings▸Pluginsafterthisconversationbegan:Todoisnowoff.'
 const BUTLER_WOULD_HAVE_HEARD_WITHIN_MS = 4000
 const KNOWN_BY_NEWER_KOLOFT = GUIDE_MOVED_NEWS.knownBy
-const TOLD_ITS_OWN_LINES =
-  'Kolofttookthelinesthatareonlyforyououtofkolofthelp,soitnolongersaysthem.Heretheyare:Inagitworkspace,koloftsessionnew--workspace'
+const HEARD_ENOUGH_OF_IT_CHARS = 120
+const TOLD_ITS_OWN_LINES = GUIDE_MOVED_NEWS.text()
+  .replace(/\s+/g, '')
+  .slice(0, HEARD_ENOUGH_OF_IT_CHARS)
 
 function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
   return readAllCalls(env).filter(
