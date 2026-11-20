@@ -130,7 +130,7 @@ export interface MuseMachineLaunch {
   sandboxed: boolean
   trust: string[]
   trustIf?: string
-  context?: string
+  contexts?: string[]
   koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
@@ -1064,11 +1064,16 @@ export class SshHost implements Host {
       tmuxName,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const contextName = (i: number): string => `${tabId}.ctx${i === 0 ? '' : i + 1}.json`
+        const contexts = spec.contexts ?? []
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+          [`${tabId}.hooks.json`]: remoteMuseHooks(
+            hookScript,
+            tabId,
+            contexts.map((_, i) => `$HOME/.koloft/tabs/${contextName(i)}`)
+          )
         }
-        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        contexts.forEach((text, i) => (files[contextName(i)] = sessionStartContext(text)))
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
         writeTabPackage(tabDir, {
           tabId,
@@ -1292,7 +1297,7 @@ export class SshHost implements Host {
               agentPlugin: agentTools,
               docsPlugin: docsWritingOn(),
               projectPrompt,
-              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceText),
+              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceParts),
               claudeArgs,
               trustFolder: spec.trustFolder
             }
