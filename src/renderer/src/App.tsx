@@ -1018,7 +1018,9 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
-      const runStarted = fillsOf(STARTED_BEFORE_EXIT).some((started) => started(e.id))
+      const runStarted = fillsOf(STARTED_BEFORE_EXIT)
+        .map((started) => started(e.id))
+        .some(Boolean)
       if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
       if (useStore.getState().terminalExited(e.id)) return
