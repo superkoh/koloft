@@ -14,7 +14,7 @@ import {
   worktreeBase,
   worktreeHomeOf
 } from '@shared/cronNames'
-import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf, SKILL_PREFIX } from '@shared/sessionBackend'
 import {
   isStepKind,
   isValidSchedule,
@@ -62,8 +62,9 @@ const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
 }
 
 function firstPromptOf(job: CronJob): string {
-  const typedAsSlashCommand = job.task.startsWith('/')
-  const last = typedAsSlashCommand ? null : lastRunLine(job.history, cronBackend(job))
+  const backend = cronBackend(job)
+  const opensWithACommand = ['/', SKILL_PREFIX[backend]].some((p) => job.task.startsWith(p))
+  const last = opensWithACommand ? null : lastRunLine(job.history, backend)
   return last ? `${last}\n\n${job.task}` : job.task
 }
 

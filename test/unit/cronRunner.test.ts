@@ -312,7 +312,7 @@ describe('CronRunner — starting one run', () => {
     expect(h.launches.map((l) => l.worktree)).toEqual(['nightly-report-260902-1000-2'])
   })
 
-  it("a run opens its first message with when its agent's last run that started a session was due and that session's own id, never on a run with none before it or a slash-command task", async () => {
+  it("a run opens its first message with when its agent's last run that started a session was due and that session's own id, never on a run with none before it or a task that opens with a slash command or a Codex $skill", async () => {
     const TASK = 'Look at the issues'
     const lastLine = (id: string): RegExp =>
       new RegExp(
@@ -332,14 +332,21 @@ describe('CronRunner — starting one run', () => {
       makeJob({ id: 'j2', task: TASK, history: [history[0]] }),
       makeJob({ id: 'j3', history }),
       makeJob({ id: 'j4', task: TASK, backend: 'codex', history: switchedToCodex }),
-      makeJob({ id: 'j5', task: TASK, backend: 'codex', history })
+      makeJob({ id: 'j5', task: TASK, backend: 'codex', history }),
+      makeJob({
+        id: 'j6',
+        task: '$release-notes patch',
+        backend: 'codex',
+        history: switchedToCodex
+      })
     ])
-    for (const id of ['j1', 'j2', 'j3', 'j4', 'j5']) await h.runner.runNow(id)
+    for (const id of ['j1', 'j2', 'j3', 'j4', 'j5', 'j6']) await h.runner.runNow(id)
     expect(h.launches[0].firstPrompt).toMatch(lastLine('s-last'))
     expect(h.launches[1].firstPrompt).toBe(TASK)
     expect(h.launches[2].firstPrompt).toBe('/koloft.release-dmg patch')
     expect(h.launches[3].firstPrompt).toMatch(lastLine('019a-thread'))
     expect(h.launches[4].firstPrompt).toBe(TASK)
+    expect(h.launches[5].firstPrompt).toBe('$release-notes patch')
   })
 
   it('BB-E22: a folder whose .git is not a directory runs in place, with no worktree', async () => {
