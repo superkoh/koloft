@@ -8,6 +8,12 @@ function button(): HTMLButtonElement {
   return b
 }
 
+function focused<E extends HTMLElement>(el: E): E {
+  document.body.append(el)
+  el.focus()
+  return el
+}
+
 function dialogWithAField(): { backdrop: HTMLElement; field: HTMLTextAreaElement } {
   const backdrop = document.createElement('div')
   backdrop.className = 'modal-backdrop'
@@ -31,15 +37,29 @@ function terminalUnderAnAskBox(): { terminalInput: HTMLTextAreaElement; field: H
   return { terminalInput, field }
 }
 
-const domSettled = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+const aTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+const domSettled = async (): Promise<void> => {
+  await aTick()
+  await aTick()
+}
 
-afterEach(() => document.body.replaceChildren())
+const givingUp: (() => void)[] = []
+function focusOnce(el: HTMLElement): () => void {
+  const giveUp = focusOnceNoDialogIsOpen(el)
+  givingUp.push(giveUp)
+  return giveUp
+}
+
+afterEach(() => {
+  for (const giveUp of givingUp.splice(0)) giveUp()
+  document.body.replaceChildren()
+})
 
 describe('focusOnceNoDialogIsOpen', () => {
   it('leaves the keys in a dialog open over the element, and moves them to the element once that dialog closes', async () => {
     const keep = button()
     const { backdrop, field } = dialogWithAField()
-    focusOnceNoDialogIsOpen(keep)
+    focusOnce(keep)
     await domSettled()
     expect(document.activeElement).toBe(field)
     backdrop.remove()
@@ -50,17 +70,90 @@ describe('focusOnceNoDialogIsOpen', () => {
   it('once given up, as when its tab is no longer on screen, takes no keys when the dialog closes', async () => {
     const keep = button()
     const { backdrop } = dialogWithAField()
-    const giveUp = focusOnceNoDialogIsOpen(keep)
+    const giveUp = focusOnce(keep)
     giveUp()
     backdrop.remove()
     await domSettled()
     expect(document.activeElement).not.toBe(keep)
   })
 
+  it('leaves the keys in a field the owner types in outside any dialog, and takes them once the owner leaves it', async () => {
+    const note = focused(document.createElement('textarea'))
+    const keep = button()
+    focusOnce(keep)
+    await domSettled()
+    expect(document.activeElement).toBe(note)
+    note.blur()
+    await domSettled()
+    expect(document.activeElement).toBe(keep)
+  })
+
+  it('takes the keys once the field the owner types in is taken off the page', async () => {
+    const page = focused(document.createElement('textarea'))
+    const keep = button()
+    focusOnce(keep)
+    page.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(keep)
+  })
+
+  it('waits on nothing when the field the owner types in is the element itself, so leaving it later does not pull the keys back', async () => {
+    const page = focused(document.createElement('textarea'))
+    focusOnce(page)
+    page.blur()
+    await domSettled()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('takes the keys from a checkbox, which is not a field the owner types in', () => {
+    const box = document.createElement('input')
+    box.type = 'checkbox'
+    focused(box)
+    const keep = button()
+    focusOnce(keep)
+    expect(document.activeElement).toBe(keep)
+  })
+
+  it("takes the keys from a session's terminal, its own or the one just switched away from", () => {
+    for (const sameTab of [true, false]) {
+      const wrap = document.createElement('div')
+      wrap.className = 'term-wrap'
+      const terminal = document.createElement('textarea')
+      wrap.append(terminal)
+      document.body.append(wrap)
+      const keep = sameTab ? wrap.appendChild(document.createElement('button')) : button()
+      terminal.focus()
+      focusOnce(keep)
+      expect(document.activeElement).toBe(keep)
+    }
+  })
+
+  it('takes the keys only once: focus the owner later moves to nowhere stays nowhere', async () => {
+    const keep = button()
+    focusOnce(keep)
+    const elsewhere = button()
+    elsewhere.focus()
+    elsewhere.blur()
+    elsewhere.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('takes the keys back when a dialog opened after it closes', async () => {
+    const keep = button()
+    focusOnce(keep)
+    const { backdrop, field } = dialogWithAField()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+    backdrop.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(keep)
+  })
+
   it('takes the keys when closing the dialog puts them back on a terminal an ask box covers, where the owner cannot see them land', async () => {
     const { terminalInput, field } = terminalUnderAnAskBox()
     const { backdrop } = dialogWithAField()
-    focusOnceNoDialogIsOpen(field)
+    focusOnce(field)
     backdrop.remove()
     terminalInput.focus()
     await domSettled()
@@ -71,8 +164,8 @@ describe('focusOnceNoDialogIsOpen', () => {
     const { field } = terminalUnderAnAskBox()
     const page = button()
     const { backdrop } = dialogWithAField()
-    focusOnceNoDialogIsOpen(field)
-    focusOnceNoDialogIsOpen(page)
+    focusOnce(field)
+    focusOnce(page)
     backdrop.remove()
     await domSettled()
     expect(document.activeElement).toBe(field)
@@ -82,7 +175,7 @@ describe('focusOnceNoDialogIsOpen', () => {
     const keep = button()
     const elsewhere = button()
     const { backdrop } = dialogWithAField()
-    focusOnceNoDialogIsOpen(keep)
+    focusOnce(keep)
     elsewhere.focus()
     backdrop.remove()
     await domSettled()
