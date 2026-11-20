@@ -285,6 +285,83 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
     }
   })
 
+  test('koloft secret page while the owner types in the sudo box of the same session leaves the keys in the sudo box, so the rest of the sudo password goes to sudo; once the sudo box is answered, the page takes the keys', async ({
+    env
+  }) => {
+    ownerAtTheMac(env)
+    const server = await startEchoServer()
+    const app = await launchApp(env)
+    try {
+      const login = servesALoginPage(server)
+      const page = await app.firstWindow()
+      const tab = await sessionTab(page, env)
+      await type(page, tab, `/koloft open ${login}`)
+      const guest = await guestByUrl(app, '/login')
+      await expect(guest.locator('#pw')).toBeVisible()
+      await askSudo(page, tab)
+      await expect(sudoField(page)).toBeFocused()
+      await page.keyboard.type('hunter2-')
+      await type(page, tab, '/koloft secret page "#pw"')
+      await expect(page.locator(SECRET_BAR)).toContainText('needs your Password on this page')
+      await twoFramesPass(page)
+      await page.keyboard.type('rest')
+      await expect(sudoField(page)).toHaveValue('hunter2-rest')
+      await expect(guest.locator('#pw')).toHaveValue('')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => terminalText(page, tab)).toContain('hunter2-rest\ngot-it')
+
+      await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
+      await page.keyboard.type('typed-by-the-owner')
+      await expect(guest.locator('#pw')).toHaveValue('typed-by-the-owner')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => guest.title()).toBe('done')
+      await expect
+        .poll(async () => unwrapped(await terminalText(page, tab)))
+        .toContain(unwrapped(OWNER_FILLED))
+      expect(await terminalText(page, tab)).not.toContain('typed-by-the-owner')
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+
+  test('a page ask and then a sudo ask of the same session, both come while the owner types in Session defaults: once it closes the sudo box takes the keys, and the page takes them once the sudo box is answered', async ({
+    env
+  }) => {
+    ownerAtTheMac(env)
+    seedSettings(env, { hintsOff: true })
+    const server = await startEchoServer()
+    const app = await launchApp(env)
+    try {
+      const login = servesALoginPage(server)
+      const page = await app.firstWindow()
+      const tab = await sessionTab(page, env)
+      await type(page, tab, `/koloft open ${login}`)
+      const guest = await guestByUrl(app, '/login')
+      await expect(guest.locator('#pw')).toBeVisible()
+      const typed = 'Answer in English.'
+      const box = await ownerTypesInSessionDefaults(page, typed)
+      await type(page, tab, '/koloft secret page "#pw"')
+      await expect(page.locator(SECRET_BAR)).toContainText('needs your Password on this page')
+      await twoFramesPass(page)
+      await askSudo(page, tab)
+      await keysStayIn(page, box, typed)
+
+      const dlg = page.getByRole('dialog', { name: 'Session defaults' })
+      await dlg.getByLabel('Close').click()
+      await expect(dlg).toHaveCount(0)
+      await sudoTakesTheKeysOnceItShows(page, tab, typed)
+      await expect(guest.locator('#pw')).toHaveValue('')
+
+      await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
+      await page.keyboard.type('typed-by-the-owner')
+      await expect(guest.locator('#pw')).toHaveValue('typed-by-the-owner')
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+
   for (const callbackHost of ['localhost', '127.0.0.1']) {
     test(`koloft secret url from a session that is not on screen marks its row, opens the sign-in in its own Workbench with a bar above it; once that sign-in, after its redirects, lands on its ${callbackHost} address the session hears it finished, without the address and its code`, async ({
       env

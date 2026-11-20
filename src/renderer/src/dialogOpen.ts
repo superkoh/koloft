@@ -34,9 +34,24 @@ function watchTheDomUntil(done: () => boolean, then: () => void): () => void {
   return () => watch.disconnect()
 }
 
+const anotherAskBoxIsOnScreen = (el: HTMLElement): boolean =>
+  [...document.querySelectorAll<HTMLElement>('.modal-backdrop.in-session')].some(
+    (box) => !box.contains(el) && box.checkVisibility?.({ visibilityProperty: true }) !== false
+  )
+
 export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
+  let anAskBoxWasUp = false
+  const aDialogIsOpenOverEl = (): boolean => {
+    if (!anotherAskBoxIsOnScreen(el)) return aDialogIsOpen()
+    anAskBoxWasUp = true
+    return true
+  }
   const takeTheKeysIfFree = (): void => {
-    if (!aDialogIsOpen() && keysWentNowhere()) el.focus()
+    if (aDialogIsOpenOverEl()) return
+    const at = document.activeElement
+    const theTerminalItCoveredTookThem = anAskBoxWasUp && !!at && keysAreInATerminal(at)
+    anAskBoxWasUp = false
+    if (keysWentNowhere() || theTerminalItCoveredTookThem) el.focus()
   }
   let landing: ReturnType<typeof setTimeout> | undefined
   const onceTheKeysSettle = (then: () => void): void => {
@@ -47,7 +62,7 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
   let stopWaitingOnTheDialog: (() => void) | undefined
   const waitForTheDialogToClose = (): void => {
     stopWaitingOnTheDialog ??= watchTheDomUntil(
-      () => !aDialogIsOpen(),
+      () => !aDialogIsOpenOverEl(),
       () => {
         stopWaitingOnTheDialog = undefined
         onceTheKeysSettle(takeTheKeysIfFree)
@@ -55,7 +70,7 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
     )
   }
   const aDialogTookTheKeys = (): void => {
-    if (aDialogIsOpen()) waitForTheDialogToClose()
+    if (aDialogIsOpenOverEl()) waitForTheDialogToClose()
   }
 
   const field = fieldTheOwnerTypesInOutsideTheTerminals()
@@ -72,7 +87,7 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
     stopWatchingTheField()
   }
 
-  if (aDialogIsOpen()) waitForTheDialogToClose()
+  if (aDialogIsOpenOverEl()) waitForTheDialogToClose()
   else if (field && field !== el) {
     field.addEventListener('focusout', theOwnerLeftTheField)
     // PLATFORM§10

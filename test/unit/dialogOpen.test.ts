@@ -171,6 +171,66 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(field)
   })
 
+  it('of two elements waiting behind one dialog, the ask box field takes the keys whichever began waiting first', async () => {
+    const { field } = terminalUnderAnAskBox()
+    const page = button()
+    const { backdrop } = dialogWithAField()
+    focusOnce(page)
+    focusOnce(field)
+    backdrop.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('leaves the keys in an ask box field the owner types in while the box is on screen, and takes them once the box is gone, even from the terminal it covered', async () => {
+    const { terminalInput, field } = terminalUnderAnAskBox()
+    field.focus()
+    const page = button()
+    focusOnce(page)
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+    field.closest('.modal-backdrop')!.remove()
+    terminalInput.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(page)
+  })
+
+  it('takes the keys back once an ask box that took them from it is gone', async () => {
+    const page = button()
+    focusOnce(page)
+    expect(document.activeElement).toBe(page)
+    const { field } = terminalUnderAnAskBox()
+    field.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+    field.closest('.modal-backdrop')!.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(page)
+  })
+
+  it('leaves the keys in a terminal the owner went to after a dialog closed, when no ask box held it back', async () => {
+    const wrap = document.createElement('div')
+    wrap.className = 'term-wrap'
+    const terminal = wrap.appendChild(document.createElement('textarea'))
+    document.body.append(wrap)
+    const page = button()
+    const { backdrop } = dialogWithAField()
+    focusOnce(page)
+    backdrop.remove()
+    terminal.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(terminal)
+  })
+
+  it('is not held back by an ask box that is not on screen', () => {
+    const { field } = terminalUnderAnAskBox()
+    const box = field.closest<HTMLElement>('.modal-backdrop')!
+    box.checkVisibility = () => false
+    const page = button()
+    focusOnce(page)
+    expect(document.activeElement).toBe(page)
+  })
+
   it('leaves the keys where closing the dialog put them', async () => {
     const keep = button()
     const elsewhere = button()
