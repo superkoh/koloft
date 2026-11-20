@@ -440,7 +440,8 @@ async function drive(home: string, script: string): Promise<void> {
   const steps = (await import(path.resolve(script))) as {
     default: (d: Driver) => Promise<unknown>
   }
-  console.log(JSON.stringify(await steps.default(driver), null, 2))
+  const result = JSON.stringify((await steps.default(driver)) ?? null, null, 2)
+  await new Promise((printed) => process.stdout.write(`${result}\n`, printed))
 }
 
 async function stop(home: string): Promise<void> {
