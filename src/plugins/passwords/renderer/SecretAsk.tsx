@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { SecretAskView } from '@shared/types'
 import { IconClose, IconLock, IconSignIn, IconWebPage } from '@renderer/icons'
+import { focusOnceNoDialogIsOpen } from '@renderer/dialogOpen'
 import { isComposing } from '@renderer/keys'
 import type { OverTerminal, PageAsk } from '@renderer/slots'
 import { useAsked, useSecretAsks } from './state'
@@ -43,7 +44,8 @@ export function SudoDialog({ ask, shown }: { ask: SudoAsk; shown: boolean }): JS
   const [value, setValue] = useState('')
   const input = useRef<HTMLInputElement>(null)
   useLayoutEffect(() => {
-    if (shown) input.current?.focus()
+    if (shown && input.current) return focusOnceNoDialogIsOpen(input.current)
+    return undefined
   }, [shown, ask.id])
   const decline = (): void => window.api.secret.decline(ask.id)
   const passOn = (): void => {
