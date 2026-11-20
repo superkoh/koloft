@@ -330,7 +330,13 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       ] as const)
       await expect(askDialog(page)).toBeAttached({ timeout: AN_ASK_SHOWS_WITHIN_MS })
       expect(await keysOnThePage()).toBe('WEBVIEW')
-      await agreedWhileTheEditorIsOpen(page)
+
+      await askDialog(page).locator('.field-hint').first().click()
+      await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Enter')
+      await expect(askDialog(page)).toHaveCount(0)
+      await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(`${WRITTEN}\n${line}`)
     } finally {
       await quitAndClose(app)
     }
