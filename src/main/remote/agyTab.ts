@@ -182,6 +182,39 @@ export function parseAgyConfig(stdout: string): RemoteAgyConfig {
 }
 
 // AGY§8
+const AGY_TITLE_READ_JS = `import fs from 'fs'
+import { DatabaseSync } from 'node:sqlite'
+const [db, ann, id] = process.argv.slice(1)
+let title = ''
+if (fs.existsSync(db)) {
+  let sqlite
+  try {
+    sqlite = new DatabaseSync(db, { readOnly: true })
+    const row = sqlite.prepare('select title from conversation_summaries where conversation_id = ?').get(id)
+    if (typeof row?.title === 'string') title = row.title
+  } catch {} finally {
+    sqlite?.close()
+  }
+}
+if (title) {
+  process.stdout.write(JSON.stringify({ title }))
+} else {
+  let pbtxt = ''
+  try { pbtxt = fs.readFileSync(ann, 'utf8') } catch {}
+  process.stdout.write(JSON.stringify(pbtxt ? { pbtxt } : {}))
+}
+`
+
+// AGY§8
+export function agyTitleCmd(conversationId: string): string {
+  return remoteAnswerCommand(
+    `[ -x "${REMOTE_NODE}" ] || exit 0
+exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite --input-type=module -e ${shq(AGY_TITLE_READ_JS)} "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "${REMOTE_GEMINI}/${AGY_APP_DIR}/annotations/$1.pbtxt" "$1"`,
+    [conversationId]
+  )
+}
+
+// AGY§8
 export function listAgyCmd(machineName: string): string {
   const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
   return remoteAnswerCommand(

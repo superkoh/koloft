@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   agyTranscript,
   ancestryOfAgyConversation,
+  annotationFile,
   diffCounts,
   lastDiffFor,
   listAgyConversations,
   ownersWords,
+  readAgyConversationTitle,
   readAgyTurns,
   saidInTranscript,
   TranscriptFollower
@@ -113,6 +115,44 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
   it('lists nothing, and makes no db, in a folder agy never used', async () => {
     expect(await listAgyConversations(gemini)).toEqual([])
     expect(fs.existsSync(path.join(gemini, 'antigravity-cli'))).toBe(false)
+  })
+
+  it('reads one conversation title even while step_count is 0, and falls back to its annotations pbtxt (including protobuf text escapes and unreadable db)', async () => {
+    writeSummaries(gemini, [
+      {
+        conversation_id: 'zero-steps',
+        workspace_uris: uris('/w/a'),
+        title: 'Fresh title',
+        step_count: 0
+      },
+      {
+        conversation_id: 'only-ann',
+        workspace_uris: uris('/w/a'),
+        title: '',
+        step_count: 0
+      }
+    ])
+    const ann = annotationFile(gemini, 'only-ann')
+    fs.mkdirSync(path.dirname(ann), { recursive: true })
+    fs.writeFileSync(ann, 'title:"Fix user\\\'s \\"bug\\" \\344\\270\\255\\346\\226\\207"\n')
+    expect(await readAgyConversationTitle(gemini, 'zero-steps')).toBe('Fresh title')
+    expect(await readAgyConversationTitle(gemini, 'only-ann')).toBe('Fix user\'s "bug" 中文')
+    expect(await readAgyConversationTitle(gemini, 'missing')).toBeUndefined()
+
+    const brokenGemini = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-broken-')))
+    try {
+      const brokenDb = path.join(brokenGemini, 'antigravity-cli', 'conversation_summaries.db')
+      fs.mkdirSync(path.dirname(brokenDb), { recursive: true })
+      fs.writeFileSync(brokenDb, 'not a sqlite file')
+      const brokenAnn = annotationFile(brokenGemini, 'fallback-id')
+      fs.mkdirSync(path.dirname(brokenAnn), { recursive: true })
+      fs.writeFileSync(brokenAnn, 'title:"From annotation despite corrupt db"\n')
+      expect(await readAgyConversationTitle(brokenGemini, 'fallback-id')).toBe(
+        'From annotation despite corrupt db'
+      )
+    } finally {
+      fs.rmSync(brokenGemini, { recursive: true, force: true })
+    }
   })
 })
 

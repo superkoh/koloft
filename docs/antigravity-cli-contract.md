@@ -413,8 +413,14 @@ only downloaded the public release.
     `step_count` 0 and "never" times. The row appears at the first message
     (`RUNNING`, steps 0, both times "never") and gets its real values when the turn
     ends.
-  - The row appears 0.4–0.6 s after Enter, with the made-up title. `/rename` updates
-    `title`. A `/new` that is never used stays as a row with `step_count` 0.
+  - The row appears 0.4–0.6 s after Enter, with the made-up title (measured against the
+    fake Gemini server on 1.3.6). Against real Google servers (measured 2026-11-19, agy
+    1.5.13 on macOS, two live sessions checked via `cli-*.log`, `annotations/*.pbtxt`
+    timestamps and `conversation_summaries.db`), the title call can land past 1 s
+    (1.0–1.4 s after the first message), and `annotations/<id>.pbtxt` (UTF-8
+    `title:"…"`) can hold the title while `conversation_summaries.db` still shows
+    `step_count` 0. `/rename` updates `title`. A `/new` that is never used stays as a
+    row with `step_count` 0.
   - `status` (`CASCADE_RUN_STATUS_IDLE` / `RUNNING`) does not tell whether a process
     is live: a finished `-p` leaves `IDLE`, opening the `/resume` picker sets every
     row not live to `""`, an open ask reads `RUNNING` with `not_fully_idle=1`, a
