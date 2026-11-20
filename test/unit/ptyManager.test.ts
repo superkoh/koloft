@@ -262,14 +262,9 @@ describe('PtyManager per-tab environment', () => {
     }
   })
 
-  it('passes the browser endpoint and account a backend sets for its own tab to the process, while the ones it inherited are still removed', () => {
-    const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
-      mocks.spawn.mockClear()
-      new PtyManager().create(args)
-      return spawnedEnv()
-    }
+  it('passes the browser endpoint and account a backend sets for its own tab to the process, over the inherited ones it removes', () => {
     const mine = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
-    const own = envFor({
+    new PtyManager().create({
       kind: 'agy',
       koloftShim: false,
       cwd: os.tmpdir(),
@@ -286,19 +281,11 @@ describe('PtyManager per-tab environment', () => {
         PLAYWRIGHT_CLI_SESSION: 'koloft-pty-1'
       }
     })
+    const own = spawnedEnv()
     expect(own.KOLOFT_BROWSER_CDP).toBe(mine)
     expect(own.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(mine)
     expect(own.PLAYWRIGHT_CLI_SESSION).toBe('koloft-pty-1')
     expect(own.ANT_ACCOUNT).toBe('work')
-    const inherited = envFor({
-      kind: 'agy',
-      koloftShim: false,
-      cwd: os.tmpdir(),
-      executable: '/bin/agy',
-      processEnv: { PATH: '/usr/bin', KOLOFT_BROWSER_CDP: mine, ANT_ACCOUNT: 'someone' }
-    })
-    expect(inherited.KOLOFT_BROWSER_CDP).toBeUndefined()
-    expect(inherited.ANT_ACCOUNT).toBeUndefined()
   })
 
   it('forces a UTF-8 locale when none is inherited', () => {

@@ -227,7 +227,7 @@ async function onlyThisSessionsFiles(page: Page): Promise<void> {
 
 test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
   // AGY§1 AGY§7
-  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch, the Gemini key and the Workbench browser's address, no Apple_Terminal name (so agy frames its redraws and sends links), the account named above agy's screen; the tab binds to agy's conversation, its row takes the title Assist made, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch, the Gemini key, the Workbench browser's address and the account's name for the status line, no Apple_Terminal name (so agy frames its redraws and sends links), the account named above agy's screen; the tab binds to agy's conversation, its row takes the title Assist made, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     const PROMPT = 'Tidy the agy readme'
@@ -260,6 +260,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       expect(call.env.WSL_INTEROP).toBe('koloft')
       expect(call.env.GEMINI_API_KEY).toBe(true)
       expect(call.env.KOLOFT_BROWSER_CDP).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
+      expect(call.env.ANT_ACCOUNT).toBe(E2E_AGY_ACCOUNT)
       expect(call.env).not.toHaveProperty('TERM_PROGRAM')
       expect(readAllCalls(env)).toHaveLength(0)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(

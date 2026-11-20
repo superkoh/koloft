@@ -57,6 +57,7 @@ let created: {
   id: string
   argv: string[]
   env: NodeJS.ProcessEnv
+  setForTab: Record<string, string>
   extraEnv: Record<string, string>
 }[]
 let started: number
@@ -174,7 +175,8 @@ beforeEach(() => {
         created.push({
           id: args.id,
           argv: args.argv,
-          env: { ...args.processEnv, ...args.envSetForThisTab },
+          env: args.processEnv,
+          setForTab: args.envSetForThisTab ?? {},
           extraEnv: args.extraEnv
         })
         return { id: args.id, startedAt: started }
@@ -287,7 +289,7 @@ describe('MuseSessions launch', () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
-    expect(created[0].env).toMatchObject({
+    expect(created[0].setForTab).toMatchObject({
       KOLOFT_BROWSER_CDP: endpoint,
       PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
     })
@@ -312,11 +314,11 @@ describe('MuseSessions launch', () => {
     expect(inAccount('settings.json').mcpServers).toMatchObject({
       pw: { env: { PLAYWRIGHT_MCP_CDP_ENDPOINT: '${PLAYWRIGHT_MCP_CDP_ENDPOINT}' } }
     })
-    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(endpoint)
+    expect(created.at(-1)!.setForTab.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(endpoint)
     expect(JSON.stringify(inAccount('approval-policy.json'))).toContain('mcp__pw__browser_navigate')
     endpoint = ''
     await launch()
-    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
+    expect(created.at(-1)!.setForTab.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
     expect(inAccount('approval-policy.json').rules).toEqual([])
   })
 
@@ -425,7 +427,7 @@ describe('The butler on Muse', () => {
     assist = { role: 'You are the butler.' }
     const { id } = await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
-    expect(created[0].env.KOLOFT_BROWSER_CDP).toBe(endpoint)
+    expect(created[0].setForTab.KOLOFT_BROWSER_CDP).toBe(endpoint)
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart', { session_id: A, source: 'startup' }))
     expect(told.hookSpecificOutput.additionalContext).toBe('You are the butler.')

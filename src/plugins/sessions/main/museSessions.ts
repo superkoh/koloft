@@ -19,7 +19,12 @@ import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from '../../../main/cliMinimums'
 import { jsonRecord, record } from './codexObservation'
 import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { startToolShim } from '../../../main/toolShim'
-import { mergeMuseSettings, placeKoloftSkills, readJson } from '../../../main/museAccounts'
+import {
+  mergeMuseSettings,
+  placeKoloftSkills,
+  readJson,
+  SET_THOUGH_THERE_IS_NO_WORKBENCH_BROWSER
+} from '../../../main/museAccounts'
 import { mapAtMost } from '@core/mapAtMost'
 import { pidAlive } from '../../../main/leftovers'
 import { inputBoxDraft } from '../../../main/inputBox'
@@ -802,7 +807,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           PATH: pathWithDirFirst(env.PATH, tools.dir),
           ...tools.env
         },
-        envSetForThisTab: browserControlEnv(tabId, endpoint),
+        envSetForThisTab: {
+          // MUSE§21
+          ...SET_THOUGH_THERE_IS_NO_WORKBENCH_BROWSER,
+          ...browserControlEnv(tabId, endpoint)
+        },
         resumeSessionId: opts.resumeSessionId,
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
       })

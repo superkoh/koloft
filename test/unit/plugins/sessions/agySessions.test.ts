@@ -61,7 +61,12 @@ let gemini: string
 let sessions: AgySessions
 let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
-let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
+let created: {
+  id: string
+  argv: string[]
+  env: NodeJS.ProcessEnv
+  setForTab: Record<string, string>
+}[]
 let agentTools: boolean
 let projectRules: string | undefined
 let browserEndpoint: string
@@ -236,7 +241,8 @@ beforeEach(() => {
         created.push({
           id: args.id,
           argv: args.argv,
-          env: { ...args.processEnv, ...args.envSetForThisTab }
+          env: args.processEnv,
+          setForTab: args.envSetForThisTab ?? {}
         })
         return { id: args.id, startedAt: Date.now() }
       }
@@ -422,7 +428,7 @@ describe('AgySessions launch', () => {
 
   it("keeps playwright-cli's snapshots and screenshots in a folder of the tab under the temp folder, out of the workspace", async () => {
     await launch()
-    expect(created[0].env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+    expect(created[0].setForTab.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
       path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
     )
   })
@@ -615,7 +621,7 @@ describe('AgySessions launch', () => {
     browserEndpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(allowHere()).toEqual({ allow: ['mcp(pw/*)'] })
-    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
+    expect(created.at(-1)!.setForTab.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
     browserEndpoint = ''
     await launch()
     expect(allowHere()).toBeUndefined()
