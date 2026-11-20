@@ -3274,7 +3274,18 @@ sessions.
   settings file (a fake `apiKeyHelper` and `ANTHROPIC_BASE_URL`) and the first prompt
   were written by hand. Both times the request's last `system` block held the file's text and then the
   inline text, each as one exact substring (SHA-256 of the inline text matched), the
-  inline text last in the block. Not tried: an inline text much longer than 7 KB.
+  inline text last in the block. Not tried there: an inline text much longer than 7 KB.
+- **On a remote machine an inline appended prompt of about 20 KB reaches the model whole
+  too.** 2026-11-20, CC 2.1.329 linux-arm64 in the e2e SSH lab image, the same way as the
+  bullet above (Koloft's `claudeTabSpec` + `writeTabPackage` rendered from this repo, run
+  as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`, packages in with
+  `docker cp`), the text handed as Koloft hands it, in the tab's `.owner.md` file that the
+  tab script reads into `--append-system-prompt "$(cat …)"`. It was two blocks of 9,845
+  and 9,844 bytes under their headings, each at the 10,000-byte limit as Koloft counts
+  it, made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
+  `$(id)`, curly quotes and an emoji (19,691 bytes). The request's last `system` block
+  held it as one exact string at its very end, after the prompt file's text, 2 of 2 runs,
+  each on a new tab.
 - **A `SessionStart` hook's `additionalContext` reaches the model whole up to 10,000
   UTF-16 code units; past that only a 2 KB preview does.** 2026-11-18, CC 2.1.327
   darwin-arm64, `claude -p hello --settings <file>` with a scratch `HOME`, an
@@ -4219,7 +4230,8 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   8 suggestions and 6 wrong.
 - **Three at once hit no limit at `medium` or `high`.** None of their 208 runs came back
   with a usage-limit result; 3 of 5 `max` runs did.
-- **The findings are the result text.** `(none)` means the review found nothing. On
+- **The findings are the result text.** At `low`, `(none)` means the review found
+  nothing (a `medium` one answers an empty fenced JSON array instead, below). On
   2.1.318 `-p "/code-review low origin/main...HEAD" --model haiku --output-format json`
   on a one-line diff still answered exit 0, `is_error: false` and a `result` starting
   with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
@@ -4244,7 +4256,11 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   scratch `HOME` and fake key, `ANTHROPIC_BASE_URL` pointed at a closed port or at a
   local server that records the request and answers 400; no token spent). A review
   that did run reports `num_turns: 0` too (2.1.329, the same command with a real
-  account), so only a `result` that starts `API Error` tells this failure apart.
+  account), so the count tells nothing. What every `medium` review that did run held
+  is its findings as a fenced ` ```json ` array, `[]` when it found nothing: all 51 runs
+  on 2.1.329 (2026-11-19) and all 104 on 2.1.302. A failed call holds none, and neither
+  does a refused sign-in, whose text (`Failed to authenticate. API Error: 401 …`, §9)
+  does not start with `API Error`.
 - **2.1.328 changed the recipe Opus 5.5 gets at `medium`.** The request body each build
   sends (captured by that local server, same command) holds the same recipe, byte for
   byte, on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10
@@ -4261,6 +4277,28 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   on 2.1.328 and later is not checked. The binary's text alone misleads here: its model
   table gives `claude-opus-5` an `o5-bmin` "minimal prompt" at `medium`, yet
   `claude-opus-5-5` is sent the inline recipe.
+- **On 2.1.329 three `medium` runs caught 1 of the 12, where 2.1.302's caught 2.3–3.0.**
+  Re-measured 2026-11-19 with the command in "How established", through the claude
+  shim, 3 at a time, on the same 8 PRs with later-fixed bugs and 9 that never needed a
+  fix, 3 fresh runs each, every run finished. A Fable 5.2 judge read every finding
+  against the same 12 bugs. All three runs on PR #324 caught its bug (the one pull
+  request #352 later fixed); no run on any PR caught the other eleven. 2.1.302's first
+  three runs had caught that bug and two more (fixed later by pull requests #557, in
+  PR #85, and #610, in PR #441), each once in three. The same judge, given 2.1.302's
+  findings, marks the same three, so the grading did not move. Taking each of those two
+  as caught once in four runs, three new runs missing both by chance has odds of about
+  1 in 6. On 2.1.329 a second and third run added no catch.
+
+  | 2.1.329 `medium` | per run, list price | median / slowest run | findings, 3 runs merged |
+  |---|---|---|---|
+  | PR with bugs | $1.47 (2.1.302: $1.38) | 3.7 / 6.7 min | 16.4 (2.1.302: 19.1) |
+  | clean PR | $0.67 (2.1.302: $0.56) | 2.1 / 2.9 min | 12.1 (2.1.302: 13.8) |
+
+  The 2.1.302 figures are recomputed from the 2026-10 runs on these same 17 PRs (the
+  table above averages all 26). "Merged" counts the issues the judge grouped as one
+  across the three runs. Over all 51 runs, before merging, there were 391 findings: 198
+  marked `important`, 88 of those on the clean PRs, and 34 with no `severity` at all;
+  so `important` does not mean a real bug.
 - **`/security-review` puts the whole diff into its prompt, and a failed call fails
   loudly.** On 2.1.329 (same setup, the folder trusted and not) its expanded prompt holds
   the output of `git status`, `git diff --name-only origin/HEAD...`, `git log
@@ -4270,7 +4308,14 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   parallel sub-task per candidate to filter false positives, keeping those scored 8 or
   more of 10. Its allowed tools are `git diff`, `status`, `log`, `show` and `remote
   show`, Read, Glob, Grep, LS and Task. Where `/code-review` reports a failed model call
-  as a success, it ends with exit 1 and `is_error: true`.
+  as a success, it ends with exit 1 and `is_error: true`. Run once on each of the same
+  17 PRs (2026-11-19, `--model claude-opus-5-5`, through the claude shim) it cost $0.43
+  to $7.18, $40.68 in all, took 0.8 to 14.7 minutes, and reported one finding, on PR #85;
+  the other 16 answered no HIGH or MEDIUM finding. In 11 of the 17 runs part of the cost,
+  $25.68 in all, was `claude-fable-5-2`: the session started its sub-tasks with `model:
+  "fable"` (seen in its `Agent` calls), as the CLAUDE.md of the Koloft commit under
+  review tells agents to do for review work. Every `/code-review medium` run, which
+  starts no sub-task, used only `claude-opus-5-5`.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
 

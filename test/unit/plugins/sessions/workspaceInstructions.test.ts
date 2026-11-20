@@ -10,8 +10,8 @@ import {
   workspaceTextBytes
 } from '../../../../src/plugins/sessions/shared/workspaceInstructions'
 import {
-  instructionsPartOf,
   koloftPrompt,
+  ownerPartsOf,
   savedFromTheDialog,
   workspaceInstructionsPart
 } from '../../../../src/plugins/sessions/api'
@@ -91,10 +91,10 @@ describe('a workspace’s instructions, saved from the Session defaults dialog w
         { text: '', at: 3, by: OWNER }
       ]
     })
-    expect(instructionsPartOf(cleared)).toBeUndefined()
-    expect(instructionsPartOf(first)).toBe(
+    expect(ownerPartsOf([], cleared, false)).toEqual([])
+    expect(ownerPartsOf([], first, false)).toEqual([
       'Written by the owner for this workspace\nRun the tests first.'
-    )
+    ])
   })
 
   it('are refused, with by how much, when they and the rules together pass the limit and either of them changed', () => {

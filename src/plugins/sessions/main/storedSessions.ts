@@ -36,7 +36,7 @@ import {
   ResumeRefused
 } from '../../../main/resumePlan'
 import type { CliRuntime } from '../../../main/cliRuntime'
-import { ownerTextOver, type LaunchIdentity } from '../../../main/launchPrompt'
+import { ownerPartsOver, ownerTextOver, type LaunchIdentity } from '../../../main/launchPrompt'
 import { forgetAgentsInLoginShell } from '../../../main/loginShell'
 import type { LaunchedSession } from '../../../main/accountPicker'
 import { isNewer } from '../../../main/releaseNotes'
@@ -103,7 +103,7 @@ export interface StoredSessionDeps {
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
   projectRules?(workspace: string): Promise<string | undefined>
-  workspaceInstructions?(workspace: string): Promise<string | undefined>
+  workspaceInstructions?(workspace: string): Promise<string[]>
   changed(): void
   replaced?(oldKey: string, newKey: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
@@ -127,15 +127,27 @@ export interface StartContext {
   resource?: WorktreeResource
   freshWorktree: boolean
   rules?: string
-  workspaceText?: string
+  workspaceParts?: string[]
 }
+
+const ownTextOf = (ctx: StartContext, assist?: LaunchIdentity): string | undefined =>
+  ctx.opts.ownerText ?? assist?.ownerText
 
 export const ownerTextFor = (
   ctx: StartContext,
   conductor: boolean,
   assist?: LaunchIdentity
-): string | undefined =>
-  ownerTextOver(ctx.opts.ownerText ?? assist?.ownerText, conductor, ctx.workspaceText)
+): string | undefined => ownerTextOver(ownTextOf(ctx, assist), conductor, ctx.workspaceParts)
+
+export const ownerTextApart = (
+  ctx: StartContext,
+  conductor: boolean,
+  assist?: LaunchIdentity
+): { own?: string; workspace: string[] } => {
+  const own = ownTextOf(ctx, assist)
+  if (own !== undefined) return { own: own || undefined, workspace: [] }
+  return { workspace: ownerPartsOver(undefined, conductor, ctx.workspaceParts) }
+}
 
 export interface SessionsWithStore {
   readonly id: BackendId
@@ -807,10 +819,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
       }
       const rules = await this.deps.projectRules?.(workspace)
-      const workspaceText = await this.deps.workspaceInstructions?.(workspace)
+      const workspaceParts = await this.deps.workspaceInstructions?.(workspace)
       this.assertStarting()
       run = await this.startRun(
-        { opts, cwd, workspace, resource, freshWorktree, rules, workspaceText },
+        { opts, cwd, workspace, resource, freshWorktree, rules, workspaceParts },
         prepared
       )
       this.runs.set(run.tabId, run)

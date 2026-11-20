@@ -132,6 +132,11 @@ export const TEXT: readonly TextBlock[] = [
     text: ` What you send a project's session with koloft session send reaches it marked as from the butler, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If it is asking the owner a question, it reads your message once that is answered. When the turn after your message ends, Koloft hands you its reply, unless it reported to you itself.`
   },
   {
+    slot: 'every-workspace-owner-instructions',
+    text: `Written by the owner for every workspace
+{{owner-instructions}}`
+  },
+  {
     slot: 'workspace-owner-instructions',
     text: `Written by the owner for this workspace
 {{owner-instructions}}`
