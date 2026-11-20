@@ -1936,6 +1936,20 @@ real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-us
   `gpt-6-luna` inside the same wait. That a plan without `gpt-6.1-sol` words its
   refusal the same way is **not probed yet** (section 14).
 
+**A ChatGPT login refreshes only within 5 minutes of its access token's expiry, and a
+refresh token works once.** Read 2026-11-20 from the 0.169.0 source
+(`codex-rs/login/src/auth/manager.rs` at tag `rust-v0.169.0`): when the access token is a
+JWT with an `exp`, Codex refreshes it once `exp` is within
+`CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES = 5` of now (`ProactiveExpiry`); only a token
+without `exp` falls back to `last_refresh` older than `TOKEN_REFRESH_INTERVAL = 8` days.
+The same file has the refusal "Your access token could not be refreshed because your
+refresh token was already used. Please log out and sign in again.", so two homes holding
+copies of one login sign each other out when either refreshes. Measured the same day on
+the two logins in the installed Koloft's `codex-homes` (claims decoded, no token
+printed): each access token was issued at `last_refresh` and expires 240 h later; the
+`id_token` lives 1 h. The enabled login had not refreshed 9 days after `last_refresh`,
+past the 8-day mark, as the `exp` rule predicts. Not probed: a refresh forced by a 401.
+
 ## 16. Codex on a remote machine
 
 **Checked on 2026-10-16.** On the Mac: standalone Codex CLI 0.162.0 (`codex-cli 0.162.0`).

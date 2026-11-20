@@ -31,11 +31,11 @@ import {
 } from '../e2e/helpers/docker'
 import { writeExec } from '../e2e/helpers/remote'
 import { attach, type Driver } from './driver'
+import { codexLoan, type InstalledAccount } from './codexLoan'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { readLoginShell } from '../../src/main/loginShell'
 import { acceptClaudeTrust } from '../../src/main/claudeTrust'
 import { acceptCodexTrust, codexConfigFile } from '../../src/main/codexTrust'
-import { codexHomes } from '../../src/main/codexAccounts'
 import { AGY_INSTALLER_URL } from '../../src/main/toolInstall'
 import { keychainService } from '../../src/shared/types'
 import { DISCORD_API_URL } from '../../src/plugins/discord/main/link'
@@ -49,7 +49,9 @@ const USAGE = `Starts a hidden dev build of Koloft with the real claude and code
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
 
-start prints JSON: the debug address (cdp), its home, its workspaces, and the stop line.
+start prints JSON: the debug address (cdp), its home, its workspaces, the stop line, and
+codex: which enabled Codex account of the installed Koloft it lent, or why it lent none
+(a login whose access token runs out within a day is not lent, CODEX§15).
 drive runs a script whose default export takes the Driver of test/handtest/driver.ts
 (start a session, type, wait for a row state, read a terminal, toasts, screenshots) and
 prints what it returns as JSON. menu clicks an app-menu item (an id from
@@ -101,12 +103,6 @@ interface State {
   lab?: SshLab
 }
 
-interface InstalledAccount {
-  name: string
-  kind: string
-  enabled: boolean
-}
-
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 const mainInspectorPort = (port: string): number => Number(port) + 1
@@ -124,13 +120,6 @@ async function onLoginPath(name: string): Promise<string | undefined> {
     probes: [`command -v ${name}`]
   })
   return found ? fs.realpathSync(found) : undefined
-}
-
-function codexAuthOfTheInstalledApp(): string | undefined {
-  return [
-    ...codexHomes(INSTALLED_PROFILE).map((home) => path.join(home, 'auth.json')),
-    path.join(os.homedir(), '.codex', 'auth.json')
-  ].find((f) => fs.existsSync(f))
 }
 
 function portIsFree(port: number): Promise<boolean> {
@@ -169,10 +158,11 @@ async function useRealClaude(env: E2EEnv, account: string): Promise<string> {
 }
 
 // CODEX§15
-async function useRealCodex(env: E2EEnv): Promise<boolean> {
+async function useRealCodex(env: E2EEnv, accounts: readonly InstalledAccount[]): Promise<string> {
   const codex = await onLoginPath('codex')
-  const auth = codexAuthOfTheInstalledApp()
-  if (!codex || !auth) return false
+  if (!codex) return 'not lent: no codex on the login PATH'
+  const loan = codexLoan(INSTALLED_PROFILE, accounts, Date.now())
+  if ('notLent' in loan) return `not lent: ${loan.notLent}`
   const wrapper = path.join(env.fakeBin, 'codex')
   writeExec(
     wrapper,
@@ -181,13 +171,13 @@ async function useRealCodex(env: E2EEnv): Promise<boolean> {
       `  shift\n  exec '${codex}' login --device-auth "$@"\nfi\n` +
       `exec '${codex}' "$@"\n`
   )
-  addCodexAccount(env, fs.readFileSync(auth, 'utf8'))
+  addCodexAccount(env, loan.auth)
   env.launchEnv.KOLOFT_CODEX_CMD = wrapper
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   for (const dir of Object.values(env.workspaces))
     acceptCodexTrust(codexConfigFile(env.launchEnv), dir)
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
-  return true
+  return `lent: ${loan.name}`
 }
 
 async function installIntoTheSandbox(
@@ -328,7 +318,7 @@ async function start(opt: {
       accounts: [seededAccount(account, 'oauth')]
     })
     const claude = await useRealClaude(env, account)
-    const codex = await useRealCodex(env)
+    const codex = await useRealCodex(env, installed.accounts ?? [])
     const muse = opt.muse ? await useRealMuse(env) : undefined
     if (opt.museAuth)
       addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
