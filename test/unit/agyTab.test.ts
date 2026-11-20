@@ -66,9 +66,15 @@ describe('the command Koloft runs on a remote machine to list its Antigravity co
         conversation_id: 'c4',
         workspace_uris: JSON.stringify(['file:///home/me/proj']),
         step_count: 0
+      },
+      {
+        conversation_id: 'c5',
+        workspace_uris: JSON.stringify(['file:///home/me/proj']),
+        step_count: 0
       }
     ])
     const gemini = path.join(home, '.gemini')
+    appendTranscript(agyTranscript(gemini, 'c5'), [])
     const c4 = agyTranscript(gemini, 'c4')
     appendTranscript(c4, [{ type: 'USER_INPUT' }])
     const usedAt = new Date(Date.UTC(2026, 10, 20, 7, 48, 48))

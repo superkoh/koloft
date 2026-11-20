@@ -71,6 +71,20 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
     })
   })
 
+  it('names a conversation from its annotations pbtxt whenever the summaries row has no title, whatever its step count', async () => {
+    writeSummaries(gemini, [
+      { conversation_id: 'counted', workspace_uris: uris('/w'), step_count: 2 },
+      { conversation_id: 'titled', workspace_uris: uris('/w'), title: 'From the row' }
+    ])
+    for (const id of ['counted', 'titled']) {
+      fs.mkdirSync(path.dirname(annotationFile(gemini, id)), { recursive: true })
+      fs.writeFileSync(annotationFile(gemini, id), 'title:"From the pbtxt"\n')
+    }
+    const byId = Object.fromEntries((await listAgyConversations(gemini)).map((e) => [e.id, e]))
+    expect(byId.counted.name).toBe('From the pbtxt')
+    expect(byId.titled.name).toBe('From the row')
+  })
+
   it('leaves out a conversation whose own db was deleted, though agy keeps its row in the summaries db', async () => {
     writeSummaries(gemini, [
       { conversation_id: 'kept', workspace_uris: uris('/w/a') },

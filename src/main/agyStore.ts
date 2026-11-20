@@ -254,11 +254,6 @@ function readStepsWithoutSummary(row: SummaryRow, geminiDir: string, id: string)
   const transcript = fs.statSync(agyTranscript(geminiDir, id), { throwIfNoEntry: false })
   if (!transcript?.size) return false
   row.touched = transcript.mtimeMs
-  try {
-    row.annotation = fs.readFileSync(annotationFile(geminiDir, id), 'utf8')
-  } catch {
-    row.annotation = undefined
-  }
   return true
 }
 
@@ -280,6 +275,7 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
     if (!st) return false
     if (!(Number(row.step_count) > 0) && !readStepsWithoutSummary(row, geminiDir, id)) return false
     row.born = st.birthtimeMs || st.ctimeMs
+    if (!row.title) row.title = readAnnotationTitle(geminiDir, id)
     return true
   })
   return historyEntries(kept)
@@ -326,9 +322,6 @@ const stepsWithoutSummary = (row) => {
   const transcript = fs.statSync(dir + '/brain/' + id + '/${AGY_LOGS_FOLDER}/logs/transcript.jsonl')
   if (transcript.size === 0) return false
   row.touched = transcript.mtimeMs
-  try {
-    row.annotation = fs.readFileSync(dir + '/annotations/' + id + '.pbtxt', 'utf8')
-  } catch {}
   return true
 }
 rows = rows.filter((row) => {
@@ -336,6 +329,11 @@ rows = rows.filter((row) => {
     const st = fs.statSync(dir + '/conversations/' + row.conversation_id + '.db')
     if (!(row.step_count > 0) && !stepsWithoutSummary(row)) return false
     row.born = st.birthtimeMs || st.ctimeMs
+    if (!row.title) {
+      try {
+        row.annotation = fs.readFileSync(dir + '/annotations/' + row.conversation_id + '.pbtxt', 'utf8')
+      } catch {}
+    }
     return true
   } catch {
     return false
