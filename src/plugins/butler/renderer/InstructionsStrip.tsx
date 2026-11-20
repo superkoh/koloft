@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom'
 import { IconAiStart, IconClose } from '@renderer/icons'
 import { useStore } from '@renderer/store'
 import { isComposing } from '@renderer/keys'
+import { InstructionsChangeLines } from '@renderer/components/InstructionsChange'
 import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
 import { INSTRUCTIONS_MAX_BYTES, instructionsOf } from '../shared/instructions'
+import type { InstructionsSaveResult } from '../shared/ipc'
 import { isButlerTab } from './butlerTabs'
 import { openButler, useButler } from './state'
 import '@renderer/commandPalette.css'
@@ -64,17 +66,26 @@ export function InstructionsDialog(): JSX.Element | null {
 function InstructionsEditor(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const showToast = useStore((s) => s.showToast)
-  const [text, setText] = useState(() => instructionsOf(butler))
+  const [opened, setOpened] = useState(() => instructionsOf(butler))
+  const [text, setText] = useState(opened)
   const [error, setError] = useState('')
+  const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
   const left = INSTRUCTIONS_MAX_BYTES - instructionsBytes(cleanInstructions(text))
   const close = (): void => useButler.setState({ editingInstructions: false })
   useEscapeCloses(close)
   const save = async (): Promise<void> => {
     if (left < 0) return
+    setChanged(null)
     const r = await window.api.butler
-      .saveInstructions(text)
-      .catch(() => ({ ok: false as const, error: COULD_NOT_SAVE }))
-    if (!r.ok) return setError(r.error)
+      .saveInstructions(text, opened)
+      .catch((): InstructionsSaveResult => ({ ok: false, error: COULD_NOT_SAVE }))
+    if (!r.ok) {
+      setError(r.error)
+      if (r.inUse === undefined) return
+      setChanged({ before: opened, after: r.inUse })
+      setOpened(r.inUse)
+      return
+    }
     close()
     showToast(`Instructions saved. ${whenItTakesEffect(butler.name)}`)
   }
@@ -109,19 +120,19 @@ function InstructionsEditor(): JSX.Element {
             value={text}
             onChange={(e) => {
               setText(e.target.value)
-              setError('')
+              if (!changed) setError('')
             }}
             onKeyDown={onKeyDown}
           />
         </div>
+        {error && <div className="pal-status field-hint bad">{error}</div>}
+        {changed && <InstructionsChangeLines {...changed} />}
         <div className="pal-status">
           {`${butler.name} and the helpers it starts follow this. ${whenItTakesEffect(butler.name)}`}
         </div>
         <div className="pal-bar">
           <span className="pal-tips">
-            {error ? (
-              <span className="field-hint bad">{error}</span>
-            ) : left >= 0 ? (
+            {left >= 0 ? (
               bytesLeft(left)
             ) : (
               <span className="field-hint bad">{bytesLeft(left)}</span>

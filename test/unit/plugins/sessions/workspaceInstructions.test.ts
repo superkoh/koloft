@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { instructionsBytes, OWNER } from '../../../../src/core/ownerInstructions'
+import {
+  ChangedWhileOpen,
+  instructionsBytes,
+  OWNER,
+  textInUse
+} from '../../../../src/core/ownerInstructions'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
   workspaceTextBytes
@@ -66,11 +71,19 @@ describe('a workspace’s instructions, saved from the Session defaults dialog w
   it('keep each change as a version by the owner, newest last; the same text adds none, and clearing it keeps the history', () => {
     const first = savedFromTheDialog(
       undefined,
-      { picks: {}, instructions: ' Run the tests first.\r\n' },
+      { picks: {}, instructions: ' Run the tests first.\r\n', instructionsOpened: '' },
       1
     )
-    const same = savedFromTheDialog(first, { picks: {}, instructions: 'Run the tests first.' }, 2)
-    const cleared = savedFromTheDialog(same, { picks: {}, instructions: '' }, 3)
+    const same = savedFromTheDialog(
+      first,
+      { picks: {}, instructions: 'Run the tests first.', instructionsOpened: '' },
+      2
+    )
+    const cleared = savedFromTheDialog(
+      same,
+      { picks: {}, instructions: '', instructionsOpened: 'Run the tests first.' },
+      3
+    )
     expect(cleared).toEqual({
       picks: {},
       instructions: [
@@ -105,6 +118,34 @@ describe('a workspace’s instructions, saved from the Session defaults dialog w
         1
       )
     ).toEqual({ picks: { claude: { model: 'opus' } }, rules: longRules })
+  })
+
+  it('changed by an agent while the dialog was open are kept when the owner saves without touching the box, and kept with the owner told when the owner typed; a second Save then puts the owner’s text in', () => {
+    const opened = 'Be brief.'
+    const agreed = 'Be brief.\nRun npm test first.'
+    const saved = { picks: {}, instructions: [{ text: agreed, at: 1, by: 'Claude' }] }
+    expect(
+      savedFromTheDialog(
+        saved,
+        { picks: { claude: { model: 'opus' } }, instructions: opened, instructionsOpened: opened },
+        2
+      )
+    ).toEqual({ ...saved, picks: { claude: { model: 'opus' } } })
+    const typed = 'Answer in Chinese.'
+    let refused: unknown
+    try {
+      savedFromTheDialog(saved, { picks: {}, instructions: typed, instructionsOpened: opened }, 2)
+    } catch (e) {
+      refused = e
+    }
+    expect(refused).toBeInstanceOf(ChangedWhileOpen)
+    expect(refused).toMatchObject({ inUse: agreed, message: expect.stringMatching(/Save again/) })
+    expect(
+      textInUse(
+        savedFromTheDialog(saved, { picks: {}, instructions: typed, instructionsOpened: agreed }, 3)
+          ?.instructions
+      )
+    ).toBe(typed)
   })
 
   it('arrive in the prompt as written, even when they hold what looks like a slot', () => {
