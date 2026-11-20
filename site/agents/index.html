@@ -284,12 +284,13 @@
           </li>
           <li><code>koloft workspace list</code> — list the folders in the sidebar</li>
           <li>
-            <code>koloft instructions</code> — read your
-            <a href="../sessions/#instructions">instructions</a> for its folder, or, with
-            <code class="nowrap">add</code> or <code class="nowrap">set</code>, propose a new line
-            or a whole new text when you plainly ask it to remember something. Nothing changes until
-            you agree (see <a href="../sessions/#instructions-ask">changes it proposes</a>). With
-            <code class="nowrap">--every-workspace</code> it reaches the
+            <code>koloft instructions</code> — a session reads the
+            <a href="../sessions/#instructions">instructions</a> you wrote for its own folder (your
+            butler reads its own). When you plainly ask the session to remember something, it uses
+            <code class="nowrap">add</code> to propose one new line, or
+            <code class="nowrap">set</code> to propose a whole new text. Nothing changes until you
+            agree (see <a href="../sessions/#instructions-ask">changes it proposes</a>). With
+            <code class="nowrap">--every-workspace</code> it reads, or proposes a change to, the
             <a href="../sessions/#every-workspace">instructions for every workspace</a>
           </li>
         </ul>
@@ -404,8 +405,7 @@
             Turn a plugin off and its <code>koloft</code> command, if it has one, is refused in
             every session at once, with a line like
             <code>koloft: Todo is turned off in Settings ▸ Plugins.</code> Sessions you start after
-            that are not told about it; a session that is already running keeps the text it started
-            with
+            that are not told about it
           </li>
           <li>
             GitHub off: the GitHub button leaves the Workbench, the open issue and pull request
@@ -421,8 +421,8 @@
           </li>
           <li>
             Passwords and sign-in off: <code>koloft secret</code> and <code>koloft page</code> are
-            refused, and an agent's <code>sudo</code> no longer opens the
-            <code>Sudo password</code> box (in some tabs only from their next session)
+            refused, a <code>Sudo password</code> box that is open closes, and an agent's
+            <code>sudo</code> no longer opens one
           </li>
           <li>
             Docs writing off: sessions you start after that do not get the
