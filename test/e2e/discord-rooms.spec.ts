@@ -2,13 +2,25 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
+import {
+  centerTerm,
+  newSessionInWith,
+  runIn,
   startSessionIn,
   terminalText,
   waitBooted,
   waitConductorStarted,
-  picksFor
+  picksFor,
+  type AgentName
 } from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import {
@@ -32,6 +44,12 @@ const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const STARTS_AND_ANSWERS_MS = 90_000
 const ONE_DAY_MINUTES = 1440
+const AGENT_NAME: Record<BackendId, AgentName> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  muse: 'Muse',
+  agy: 'Antigravity'
+}
 
 function seedButler(env: E2EEnv): void {
   seedSettings(env, {
@@ -149,13 +167,13 @@ async function withTheButler(
 
 async function withTheButlerAndARemoteWorkspace(
   env: E2EEnv,
-  body: (page: Page, fake: FakeDiscord) => Promise<void>
+  body: (page: Page, fake: FakeDiscord, app: ElectronApplication) => Promise<void>
 ): Promise<void> {
   installFakeRemote(env)
   try {
-    await withTheButler(env, async (page, fake) => {
+    await withTheButler(env, async (page, fake, app) => {
       await addRemoteWorkspace(page, env)
-      await body(page, fake)
+      await body(page, fake, app)
     })
   } finally {
     killFakeRemote(env)
@@ -287,62 +305,99 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     })
   })
 
-  test('a /clear typed at the Mac while Discord is turned off still carries the room, after a turn in the new conversation too: once Discord is on again and the session restarts, what the owner writes in the room reaches the new conversation, not the old one', async ({
-    env
-  }) => {
-    await withTheButler(env, async (page, fake, app) => {
-      await startSessionIn(page, 'ws-a')
-      const first = await sessionOf(page, 'claude')
-      fake.say(OWNER, `/koloft discord thread open ${first.sessionId}`)
-      const room = await theRoom(fake)
-      await expect
-        .poll(() => inRoom(fake, room.id).some((p) => p.includes('where it is')), {
-          timeout: STARTS_AND_ANSWERS_MS
-        })
-        .toBe(true)
+  for (const { backend, install, remote } of [
+    ...LOCAL.map((kind) => ({ ...kind, remote: false })),
+    ...REMOTE.map((kind) => ({ ...kind, remote: true }))
+  ]) {
+    const startsOver = backend === 'codex' ? '/new' : '/clear'
+    const where = remote ? 'on another machine' : 'at the Mac'
+    const title = `a ${startsOver} in a ${backend} tab ${where} while Discord is turned off still carries the room, after a turn in the new conversation too: once Discord is on again and the session restarts, what the owner writes in the room reaches the new conversation, not the old one`
+    const run = backend === 'codex' ? test.fixme : test
+    run(
+      backend === 'codex'
+        ? `${title} (#2280: a Codex /new leaves the room behind even with Discord on)`
+        : title,
+      async ({ env }) => {
+        install(env)
+        if (!remote && backend === 'muse') trustInMuse(env, env.workspaces.a)
+        if (!remote && backend === 'agy') trustInAgy(env, env.workspaces.a)
+        const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+        await (remote ? withTheButlerAndARemoteWorkspace : withTheButler)(
+          env,
+          async (page, fake, app) => {
+            if (backend === 'claude') await startSessionIn(page, ws, { remote })
+            else await newSessionInWith(page, ws, AGENT_NAME[backend])
+            if (backend === 'agy') await runIn(page, centerTerm(page), 'warm up')
+            const first = await sessionOf(page, backend)
+            await expect
+              .poll(async () => (await sessionOf(page, backend)).status, {
+                timeout: STARTS_AND_ANSWERS_MS
+              })
+              .toBe('waiting')
+            fake.say(OWNER, `/koloft discord thread open ${first.sessionId}`)
+            const room = await theRoom(fake)
+            await expect
+              .poll(() => inRoom(fake, room.id).some((p) => p.includes('where it is')), {
+                timeout: STARTS_AND_ANSWERS_MS
+              })
+              .toBe(true)
 
-      await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: false } }))
-      await page.evaluate((id) => window.api.terminal.write(id, '/clear\r'), first.tabId)
-      await expect
-        .poll(async () => (await sessionOf(page, 'claude')).sessionId, {
-          timeout: STARTS_AND_ANSWERS_MS
-        })
-        .not.toBe(first.sessionId)
-      const cleared = await sessionOf(page, 'claude')
-      await page.evaluate((id) => window.api.terminal.write(id, 'while it was off\r'), first.tabId)
-      await expect
-        .poll(
-          async () => (await pendingAttention(page)).some((e) => e.sessionId === cleared.sessionId),
-          { timeout: STARTS_AND_ANSWERS_MS }
+            await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: false } }))
+            await page.evaluate(({ id, line }) => window.api.terminal.write(id, `${line}\r`), {
+              id: first.tabId,
+              line: startsOver
+            })
+            const turnWhileOff = (): Promise<void> =>
+              page.evaluate(
+                (id) => window.api.terminal.write(id, 'while it was off\r'),
+                first.tabId
+              )
+            const idComesWithTheFirstTurn = backend === 'agy'
+            if (idComesWithTheFirstTurn) await turnWhileOff()
+            await expect
+              .poll(async () => (await sessionOf(page, backend)).sessionId, {
+                timeout: STARTS_AND_ANSWERS_MS
+              })
+              .not.toBe(first.sessionId)
+            const cleared = await sessionOf(page, backend)
+            if (!idComesWithTheFirstTurn) await turnWhileOff()
+            await expect
+              .poll(
+                async () =>
+                  (await pendingAttention(page)).some((e) => e.sessionId === cleared.sessionId),
+                { timeout: STARTS_AND_ANSWERS_MS }
+              )
+              .toBe(true)
+
+            await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: true } }))
+            await expect.poll(() => fake.identifies, { timeout: STARTS_AND_ANSWERS_MS }).toBe(2)
+            await app.evaluate(({ Menu }) =>
+              Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
+            )
+            await expect
+              .poll(async () => (await sessionOf(page, backend)).tabId, {
+                timeout: STARTS_AND_ANSWERS_MS
+              })
+              .not.toBe(first.tabId)
+            const restarted = await sessionOf(page, backend)
+            expect(restarted.sessionId).toBe(cleared.sessionId)
+
+            fake.say(OWNER, 'after the switch', { channelId: room.id })
+            await expect
+              .poll(() => inRoom(fake, room.id).some((p) => p.includes('after the switch')), {
+                timeout: STARTS_AND_ANSWERS_MS
+              })
+              .toBe(true)
+            const live = (await page.evaluate(() => window.api.sessions.list())).filter(
+              (s) => s.alive && !s.overseer
+            )
+            expect(live.map((s) => s.sessionId)).toEqual([cleared.sessionId])
+            expect(fake.threads).toHaveLength(1)
+          }
         )
-        .toBe(true)
-
-      await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: true } }))
-      await expect.poll(() => fake.identifies, { timeout: STARTS_AND_ANSWERS_MS }).toBe(2)
-      await app.evaluate(({ Menu }) =>
-        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
-      )
-      await expect
-        .poll(async () => (await sessionOf(page, 'claude')).tabId, {
-          timeout: STARTS_AND_ANSWERS_MS
-        })
-        .not.toBe(first.tabId)
-      const restarted = await sessionOf(page, 'claude')
-      expect(restarted.sessionId).toBe(cleared.sessionId)
-
-      fake.say(OWNER, 'after the switch', { channelId: room.id })
-      await expect
-        .poll(() => inRoom(fake, room.id).some((p) => p.includes('after the switch')), {
-          timeout: STARTS_AND_ANSWERS_MS
-        })
-        .toBe(true)
-      const live = (await page.evaluate(() => window.api.sessions.list())).filter(
-        (s) => s.alive && !s.overseer
-      )
-      expect(live.map((s) => s.sessionId)).toEqual([cleared.sessionId])
-      expect(fake.threads).toHaveLength(1)
-    })
-  })
+      }
+    )
+  }
 
   test('the butler opens the room of a session started at the Mac with koloft discord thread open, and prints its link; a helper in its own folder gets none', async ({
     env
