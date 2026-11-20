@@ -8,6 +8,8 @@ import {
 } from '../../../../src/plugins/sessions/main/instructionsVerb'
 import {
   InstructionAsks,
+  type InstructionAsk,
+  type InstructionAskEnd,
   type OwnersAnswer
 } from '../../../../src/plugins/sessions/main/instructionAsks'
 import { workspaceBlock } from '../../../../src/plugins/sessions/api'
@@ -46,10 +48,11 @@ function world(answer: OwnersAnswer = 'agreed') {
   }
   const w = { onAsk: (): void => undefined }
   const verb = instructionsVerb({
-    askTheOwner: async (ask) => {
+    askTheOwner: async (ask, write) => {
       asked.push(ask)
       w.onAsk()
-      return answer
+      if (answer !== 'agreed') return answer
+      return (await write()) ? 'agreed' : 'changed-meanwhile'
     },
     overseerSide: (tabId) => tabId === BUTLER_TAB || tabId === HELPER_TAB,
     isOverseer: (tabId) => tabId === BUTLER_TAB,
@@ -198,11 +201,11 @@ describe("the owner's answer, kept until it comes", () => {
       owner: {
         waitsOnTheOwner: (tab) => marks.push(`waits ${tab}`),
         ownerAnswered: (tab) => marks.push(`answered ${tab}`)
-      }
+      },
+      told: () => undefined
     })
-    const ask = { tabId: 't1', by: 'x', what: 'y', before: '', after: 'z' }
-    const first = asks.ask(ask, 60_000)
-    const second = asks.ask({ ...ask, tabId: 't2' }, 60_000)
+    const first = asks.ask(ASK, 60_000, WRITES)
+    const second = asks.ask({ ...ASK, tabId: 't2' }, 60_000, WRITES)
     asks.answer(asks.views()[0].id, true)
     asks.forget('t2')
     expect(await first).toBe('agreed')
@@ -215,22 +218,97 @@ describe("the owner's answer, kept until it comes", () => {
     vi.useFakeTimers()
     try {
       let waiting = true
-      const asks = new InstructionAsks({
-        show: () => undefined,
-        owner: { waitsOnTheOwner: () => undefined, ownerAnswered: () => undefined }
-      })
-      const given = asks.ask(
-        { tabId: 't1', by: 'x', what: 'y', before: '', after: 'z' },
-        60_000,
-        () => waiting
-      )
+      const { asks, ended } = listened()
+      const given = asks.ask(ASK, 60_000, WRITES, () => waiting)
       asks.rehome('t1', 't9')
       expect(asks.views().map((v) => v.tabId)).toEqual(['t9'])
       waiting = false
       await vi.advanceTimersByTimeAsync(5000)
       expect(await given).toBe('closed')
+      expect(ended).toEqual([{ how: 'stopped-waiting' }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('tells who listens (Discord) when an ask opens, and where the owner answered it once the write is done: on the phone or at the computer', async () => {
+    const { asks, asked, ended } = listened()
+    let finishWrite!: (ok: boolean) => void
+    const writing = new Promise<boolean>((resolve) => (finishWrite = resolve))
+    const fromPhone = asks.ask(ASK, 60_000, () => writing)
+    expect(asked).toEqual([ASK])
+    asks.answer(asks.views()[0].id, true, 'phone')
+    expect(asks.views()).toEqual([])
+    await Promise.resolve()
+    expect(ended).toEqual([])
+    finishWrite(true)
+    expect(await fromPhone).toBe('agreed')
+    const atTheMac = asks.ask(ASK, 60_000, WRITES)
+    asks.answer(asks.views()[0].id, false)
+    expect(await atTheMac).toBe('declined')
+    expect(ended).toEqual([
+      { how: 'changed', at: 'phone' },
+      { how: 'not-changed', at: 'computer' }
+    ])
+  })
+
+  it('when the owner agrees but the text changed meanwhile, nothing is written and the owner is told at the Mac too', async () => {
+    const { asks, ended, told } = listened()
+    const given = asks.ask(ASK, 60_000, async () => false)
+    asks.answer(asks.views()[0].id, true)
+    expect(await given).toBe('changed-meanwhile')
+    expect(ended).toEqual([{ how: 'changed-meanwhile', at: 'computer' }])
+    expect(told).toEqual(['The instructions changed meanwhile, so nothing changed.'])
+  })
+
+  it('a write that fails after the owner agreed still ends the ask for every listener, tells the owner why, and reaches the agent as that error', async () => {
+    const { asks, ended, told } = listened()
+    const unreachable = new Error('Koloft cannot reach this machine now.')
+    const given = asks.ask(ASK, 60_000, async () => {
+      throw unreachable
+    })
+    asks.answer(asks.views()[0].id, true, 'phone')
+    await expect(given).rejects.toBe(unreachable)
+    expect(ended).toEqual([{ how: 'write-failed', at: 'phone', error: unreachable }])
+    expect(told).toEqual(['Koloft cannot reach this machine now.'])
+  })
+
+  it('a closed tab ends its asks before forget returns, so a card is changed before its room is put away', () => {
+    const { asks, ended } = listened()
+    void asks.ask(ASK, 60_000, WRITES)
+    asks.forget('t1')
+    expect(ended).toEqual([{ how: 'tab-closed' }])
+  })
+
+  it('an ask nobody answers in time ends as timed out for every listener', async () => {
+    vi.useFakeTimers()
+    try {
+      const { asks, ended } = listened()
+      const given = asks.ask(ASK, 60_000, WRITES)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(await given).toBe('timeout')
+      expect(ended).toEqual([{ how: 'timeout' }])
     } finally {
       vi.useRealTimers()
     }
   })
 })
+
+const ASK = { tabId: 't1', by: 'x', what: 'y', before: '', after: 'z' }
+const WRITES = async (): Promise<boolean> => true
+
+function listened() {
+  const asked: InstructionAsk[] = []
+  const ended: InstructionAskEnd[] = []
+  const told: string[] = []
+  const asks = new InstructionAsks({
+    show: () => undefined,
+    owner: { waitsOnTheOwner: () => undefined, ownerAnswered: () => undefined },
+    told: (text) => void told.push(text)
+  })
+  asks.listen({
+    asked: (_id, ask) => void asked.push(ask),
+    ended: (_id, end) => void ended.push(end)
+  })
+  return { asks, asked, ended, told }
+}

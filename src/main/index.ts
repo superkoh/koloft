@@ -485,6 +485,7 @@ import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
 import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
+import { INSTRUCTIONS_ID_PREFIX, InstructionCards } from '@plugins/discord/main/instructionCards'
 import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
 import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
@@ -1577,6 +1578,7 @@ const discordChannels = tabChannels({
 const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
 let askButtons: AskButtons | null = null
 let secretCards: SecretCards | null = null
+let instructionCards: InstructionCards | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
 let instructionAsks: InstructionAsks | null = null
@@ -2392,9 +2394,15 @@ registerSessionCommands(commands, {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
-    askTheOwner: (ask, stillWaiting) =>
+    // CC§28 CODEX§4 AGY§13 MUSE§8
+    askTheOwner: (ask, write, stillWaiting) =>
       instructionAsks
-        ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS, stillWaiting)
+        ? instructionAsks.ask(
+            ask,
+            cronTestMs('KOLOFT_INSTRUCTIONS_ASK_MS', OWNER_TYPES_A_SECRET_WITHIN_MS),
+            write,
+            stillWaiting
+          )
         : Promise.reject(new Error(STILL_STARTING)),
     overseerSide: butlerSide,
     isOverseer: isButlerNow,
@@ -4260,19 +4268,22 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
+  const waitsBesidesInstructions = (tabId: string): boolean =>
+    tracker.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
   const ownerWaits = {
     waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
     ownerAnswered: (tabId: string) => {
-      const stillAsked =
-        !!instructionAsks?.asking(tabId) || !!secretAsks?.views().some((a) => a.tabId === tabId)
-      if (!stillAsked && tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
+      if (!instructionAsks?.asking(tabId) && !waitsBesidesInstructions(tabId))
+        attention.ownerAnswered(tabId)
     }
   }
   const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
-  instructionAsks = new InstructionAsks({
+  const instructions = new InstructionAsks({
     show: (asks) => pushToSessions.instructionAsks(asks),
-    owner: ownerWaits
+    owner: ownerWaits,
+    told: (text) => sendToRenderer(CH.toast.show, text)
   })
+  instructionAsks = instructions
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4384,6 +4395,25 @@ app.whenReady().then(() => {
   secrets.listen(cards)
   secretCards = cards
   secretAsks = secrets
+  const instructionCardsNow = new InstructionCards({
+    asks: instructions,
+    owner: () => bindingNow.owner(),
+    cardWanted: (tabId) => discordConnected && discordOn() && !!discordRelay?.reaches(tabId),
+    place: async (tabId, card) => {
+      const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
+      if (!channelId) return undefined
+      const name =
+        butlerSide(tabId) || roomOfTab(tabId)
+          ? (discordRelay?.askerName(tabId) ?? butlerNameNow())
+          : await secretAskerName(tabId)
+      const messageId = (await link.card(channelId, card(name))).at(-1)
+      return messageId ? { channelId, messageId, name } : undefined
+    },
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
+    respond: (i, body) => link.respond(i, body)
+  })
+  instructions.listen(instructionCardsNow)
+  instructionCards = instructionCardsNow
   const interactions = new Interactions({
     owner: () => bindingNow.owner(),
     ownerWrote: ownerCameBack,
@@ -4392,7 +4422,12 @@ app.whenReady().then(() => {
         bindingNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
         text
       ),
-    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? cards.press(i) : buttons.press(i)),
+    press: (i) =>
+      i.customId?.startsWith(SECRET_ID_PREFIX)
+        ? cards.press(i)
+        : i.customId?.startsWith(INSTRUCTIONS_ID_PREFIX)
+          ? instructionCardsNow.press(i)
+          : buttons.press(i),
     submit: (i) => cards.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
@@ -4478,6 +4513,8 @@ app.whenReady().then(() => {
     marks: () => attention.list(),
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
+    instructionsCard: (tabId) =>
+      waitsBesidesInstructions(tabId) ? undefined : instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
@@ -4728,6 +4765,7 @@ app.whenReady().then(() => {
     presence.screenLocked()
     awayDigest?.marked()
     discordRelay?.checkHeld()
+    instructionCards?.checkHeld()
   })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
@@ -5760,7 +5798,8 @@ function followDiscordSwitch(): void {
   }
   discordEnding = Promise.all([
     askButtons?.endAll(DISCORD_TURNED_OFF),
-    secretCards?.endAll(DISCORD_TURNED_OFF)
+    secretCards?.endAll(DISCORD_TURNED_OFF),
+    instructionCards?.endAll(DISCORD_TURNED_OFF)
   ])
     .then(() => link.quiet(CARDS_IN_FLIGHT_LAND_WITHIN_MS))
     .finally(() => {

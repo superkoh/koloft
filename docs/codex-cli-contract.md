@@ -237,6 +237,17 @@ Thus `turn/completed` does not imply that all commands are done. A command item 
 outlast its turn; its later completion remains observable on the TUI connection.
 The string `processId` is a tool handle, **not proof of an operating-system PID**.
 
+A command given no `yield_time_ms` returns after 10 s, and under `codex exec` it ends
+with the run. 2026-11-19, codex-cli 0.169.0 on macOS, `codex exec --skip-git-repo-check
+--dangerously-bypass-approvals-and-sandbox` with a throwaway `CODEX_HOME` whose
+`config.toml` named a fake Responses provider (`wire_api = "responses"`, a local
+`base_url`), whose model called `exec_command {cmd: "sleep 660; echo done-after-660"}`;
+`ps` read every 15 s; one run. At 10 s the tool output read "Wall time: 10.0008 seconds
+/ Process running with session ID 61240"; the fake model then ended the turn, `codex
+exec` exited 0 at 15 s, and the `sleep` was gone at the same read. How long such a
+command lives in the TUI, where the turn ends but the session goes on (above, 12 s),
+is not probed past 12 s.
+
 ### Child agent
 
 The main task spawned a child that ran `sleep 12`, then immediately returned its own
