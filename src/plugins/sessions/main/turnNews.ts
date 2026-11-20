@@ -1,7 +1,7 @@
 import type { BackgroundItem } from '@shared/types'
 import type { Turn } from '@shared/turns'
-
-type TurnAssist = (job: { row: 'turn'; system: string; prompt: string }) => Promise<string | null>
+import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 
 const REPLY_CHARS_SENT = 4000
 const MOST_REPLIES_OFFERED = 4
@@ -97,7 +97,7 @@ export function waitsOnOtherWork(
   )
 }
 
-export async function judgeTurn(assist: TurnAssist, turn: Turn): Promise<Verdict> {
+export async function judgeTurn(assist: Assist<SessionsAssistJobId>, turn: Turn): Promise<Verdict> {
   const reply = turn.reply.trim()
   if (!reply) return { news: false }
   if (saysNothingForYou(reply)) return { news: true }
