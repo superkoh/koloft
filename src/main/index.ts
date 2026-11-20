@@ -6209,31 +6209,30 @@ function butlerTarget(ref: string): Target | undefined {
   }
 }
 
-async function cronPick(req: LaunchRequest): Promise<OwnPick> {
+async function cronPick(req: LaunchRequest): Promise<OwnPickResolved> {
   const job = { model: req.model, effort: req.effort }
   const filled =
     job.model && job.effort
       ? undefined
       : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
-  const { pick, note } = await ownPick(req.backend, filled ?? job)
-  sayOnceOfWhatStartsItself(`⏰ ${req.name}`, note)
-  return pick
+  return ownPick(req.backend, filled ?? job)
 }
 
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
+    const { pick, note } = await cronPick(req)
     const options: CreateTabOptions & { kind: BackendId } = {
       kind: req.backend,
       cwd: req.cwd,
       worktree: req.worktree,
-      ...(await cronPick(req)),
+      ...pick,
       permission: req.permission,
       firstPrompt: req.firstPrompt,
       name: req.name,
       scheduled: true
     }
     const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
-    return tabId ? { ok: true, tabId } : { ok: false }
+    return tabId ? { ok: true, tabId, ...(note && { note }) } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
     return { ok: false }
