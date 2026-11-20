@@ -94,9 +94,10 @@ function make(): Butler {
       return noticeArrives
     },
     noticeWhileOpen: async (t) => {
+      if (!butler.liveTab()) return false
       if (run === testRun) notices.push(t)
       await noticeLands
-      return noticeArrives
+      return noticeArrives && !!butler.liveTab()
     },
     news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}`, on: () => todoOn },
     pluginsOn: () => ({ todo: todoOn, passwords: passwordsOn }),
@@ -107,7 +108,8 @@ function make(): Butler {
     showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
-  return new Butler(deps)
+  const butler = new Butler(deps)
+  return butler
 }
 
 async function opened(c: Butler): Promise<string> {
@@ -425,6 +427,32 @@ describe('the butler', () => {
     await c.open()
     expect(notices).toHaveLength(2)
     expect(notices[1]).toContain(': Todo is now off. ')
+  })
+
+  it('two messages on their way at once that both fail leave both changes to tell at the next resume', async () => {
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    let land = (): void => {}
+    noticeLands = new Promise((resolve) => (land = resolve))
+    noticeArrives = false
+    todoOn = false
+    c.pluginsSwitched()
+    passwordsOn = false
+    c.pluginsSwitched()
+    expect(notices).toHaveLength(2)
+    expect(notices[1]).toContain(': Passwords and sign-in is now off. ')
+    land()
+    await vi.waitFor(() =>
+      expect(session.pluginsSeen).toEqual({ key: CLAUDE_KEY, on: { todo: true, passwords: true } })
+    )
+
+    c.onPtyExit(tab)
+    noticeLands = Promise.resolve()
+    noticeArrives = true
+    transcripts.add(CLAUDE_KEY)
+    await c.open()
+    expect(notices[2]).toContain(': Todo is now off, Passwords and sign-in is now off. ')
   })
 
   it('a conversation from before Koloft kept what it knows of the plugins is told nothing of a switch at its first resume, only of later ones', async () => {

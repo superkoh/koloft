@@ -3631,7 +3631,7 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[koloft] could not rewrite what a plugin switch changed:', err)
     }
-    butler?.pluginsSwitched()
+    setImmediate(() => butler?.pluginsSwitched())
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)

@@ -228,6 +228,7 @@ export class Butler {
         const live = this.d.liveTabFor(launch.backend, key)
         if (live) {
           this.resident = live
+          this.launchedWith = undefined
           return { ok: true, tabId: live }
         }
         if (await this.d.runningElsewhere(launch.backend, key))
@@ -255,9 +256,9 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined) this.tellWhatChanged(key)
     this.resident = tabId
     this.launchedWith = launchedWith
+    if (resumedOld && key !== undefined) this.tellWhatChanged(key)
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
       this.waitingForWords = tabId
@@ -275,9 +276,7 @@ export class Butler {
   private pluginsChangedSince(key: string, now: PluginsOn): PluginsOn {
     const seen = this.session.pluginsSeen
     if (seen?.key !== key) return {}
-    return Object.fromEntries(
-      Object.entries(now).filter(([id, on]) => (seen.on[id] ?? true) !== on)
-    )
+    return Object.fromEntries(Object.entries(now).filter(([id, on]) => (seen.on[id] ?? on) !== on))
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
@@ -302,13 +301,21 @@ export class Butler {
       .noticeWhileOpen(withNews ? parts.join(' ') : `${FROM_KOLOFT}${parts[0]}`)
       .catch(() => false)
       .then((told) => {
-        if (told || this.session.pluginsSeen !== seen) return
-        this.changeSession(({ pluginsSeen: _notTold, ...s }) => ({
-          ...s,
-          ...(before && { pluginsSeen: before }),
-          ...(withNews && { [knownBy]: (s[knownBy] ?? []).filter((k) => k !== key) })
-        }))
+        if (!told) this.untold(key, changed, withNews)
       })
+  }
+
+  private untold(key: string, changed: PluginsOn, withNews: boolean): void {
+    const { knownBy } = this.d.news
+    this.changeSession((s) => {
+      const seen = s.pluginsSeen
+      const asBefore = Object.fromEntries(Object.entries(changed).map(([id, on]) => [id, !on]))
+      return {
+        ...s,
+        ...(seen?.key === key && { pluginsSeen: { key, on: { ...seen.on, ...asBefore } } }),
+        ...(withNews && { [knownBy]: (s[knownBy] ?? []).filter((k) => k !== key) })
+      }
+    })
   }
 
   pluginsSwitched(): void {
@@ -353,6 +360,7 @@ export class Butler {
     if (tabId !== this.resident) {
       if (this.session.lastSessionKey !== key || this.liveTab()) return
       this.resident = tabId
+      this.launchedWith = undefined
     }
     this.forgetTab(tabId)
     this.changeSession((s) => {
