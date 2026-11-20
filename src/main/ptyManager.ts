@@ -233,10 +233,13 @@ export class PtyManager extends EventEmitter {
     ) {
       env.LANG = 'en_US.UTF-8'
     }
-    // CC§9 PLATFORM§2
+    // CC§9 AGY§9 AGY§25 PLATFORM§2
     for (const key of Object.keys(env)) {
       if (
         key.startsWith('CLAUDE_CODE_') ||
+        key.startsWith('ANTIGRAVITY_') ||
+        (args.kind !== 'agy' && (key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||
+        (args.kind !== 'muse' && key === 'TBH_MANAGED_HOOKS_PATH') ||
         key === 'CLAUDECODE' ||
         key === 'CLAUDE_EFFORT' ||
         key === 'CLAUDE_JOB_DIR' ||
@@ -248,6 +251,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AUX_TITLE' ||
         key === 'KOLOFT_SESSION_DIR' ||
         key === 'KOLOFT_OPEN_DIR' ||
+        key === 'KOLOFT_PICK_DIR' ||
         key === 'KOLOFT_HOOK_SETTINGS' ||
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
@@ -259,6 +263,10 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_OWNER_TEXT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
+        key === 'KOLOFT_CODEX_SAID' ||
+        key === 'KOLOFT_CODEX_DISCORD_SAID' ||
+        key === 'KOLOFT_CODEX_REPLY_LANGUAGE' ||
+        key === 'KOLOFT_SHELL_WROTE' ||
         key === OWNING_TAB_ENV ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)

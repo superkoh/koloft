@@ -502,6 +502,7 @@ describe('DiscordRelay: an owner message to a Codex or Muse butler', () => {
     fs.writeFileSync(script, CODEX_REPLY_LANGUAGE_SCRIPT)
     const env = {
       ...process.env,
+      KOLOFT_NOTICE: '',
       [CODEX_SAID_ENV]: path.join(dir, 'codex.said'),
       [CODEX_DISCORD_SAID_ENV]: discordSaidFile(dir, TAB)
     }

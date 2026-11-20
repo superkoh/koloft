@@ -20,6 +20,7 @@ import {
   ownersGemini,
   seededAccount,
   seedSettings,
+  setupE2EEnv,
   trustInAgy,
   type AgyCall,
   type E2EEnv
@@ -619,6 +620,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
     let other: ChildProcess | undefined
+    let outsideEnv: E2EEnv | undefined
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
@@ -629,23 +631,43 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(agyRows(page)).toHaveClass(/cold/)
 
+      const hostLog = path.join(env.home, 'host-tab-agy.jsonl')
+      fs.writeFileSync(hostLog, '')
+      const savedLog = process.env.KOLOFT_AGY_LOG
+      process.env.KOLOFT_AGY_LOG = hostLog
+      try {
+        outsideEnv = setupE2EEnv()
+      } finally {
+        if (savedLog === undefined) delete process.env.KOLOFT_AGY_LOG
+        else process.env.KOLOFT_AGY_LOG = savedLog
+      }
+      expect(outsideEnv.launchEnv.KOLOFT_AGY_LOG).toBeUndefined()
+
       other = spawn(
         process.execPath,
         [FAKE_AGY, `--gemini_dir=${accountHome(env)}`, `--conversation=${id}`],
         {
           cwd: env.workspaces.a,
-          env: { ...env.launchEnv, PWD: env.workspaces.a, GEMINI_API_KEY: 'fake-gemini-key' },
+          env: {
+            ...outsideEnv.launchEnv,
+            HOME: env.home,
+            PATH: env.launchEnv.PATH,
+            PWD: env.workspaces.a,
+            GEMINI_API_KEY: 'fake-gemini-key'
+          },
           stdio: ['pipe', 'ignore', 'ignore']
         }
       )
       const lock = path.join(ownersApp(env), 'presence', `${id}.lock`)
       await expect.poll(() => lockHolders(lock), { timeout: 20_000 }).toBe(String(other.pid))
+      expect(fs.readFileSync(hostLog, 'utf8')).toBe('')
 
       await agyRows(page).click()
       await expect(page.getByText(/open in another agy window/)).toBeVisible({ timeout: 20_000 })
       expect(sessionCalls(env).filter((c) => c.pid !== other!.pid)).toHaveLength(1)
     } finally {
       other?.kill('SIGTERM')
+      outsideEnv?.cleanup()
       await quitAndClose(app)
     }
   })
