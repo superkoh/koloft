@@ -1,4 +1,4 @@
-import { CRON_EFFORTS, type BackendId, type CronEffort } from './types'
+import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort } from './types'
 
 export interface NamedModel {
   id: string
@@ -47,8 +47,8 @@ const AGY_EFFORTS_OF: ReadonlyMap<string, readonly CronEffort[]> = new Map([
 export function effortsFor(backend: BackendId, model: string | undefined): readonly CronEffort[] {
   if (backend !== 'agy') return CRON_EFFORTS
   // AGY§21
-  const named = model && LOW_TO_XHIGH.find((e) => model.endsWith(`-${e}`))
-  if (named) return [named]
+  const suffix = model?.slice(model.lastIndexOf('-') + 1)
+  if (isCronEffort(suffix)) return [suffix]
   return (model && AGY_EFFORTS_OF.get(model)) || AGY_EFFORTS_EVERY_MODEL_TAKES
 }
 

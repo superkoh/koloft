@@ -170,11 +170,11 @@ test.describe("a workspace's session defaults: the model and thinking its own se
 
       await newSessionInWith(page, 'ws-a', 'Antigravity')
       await expect(page.locator('.toast-msg')).toContainText(
-        'This account has no carbon model, so it runs on gemini-4-argon.'
+        'This account has no carbon model, so it runs on gemini-4-neon.'
       )
       await expect.poll(() => agySessions(env).length, { timeout: 60_000 }).toBe(1)
       const agy = agySessions(env)[0].argv
-      expect(flagAfter(agy, '--model')).toBe('gemini-4-argon')
+      expect(flagAfter(agy, '--model')).toBe('gemini-4-neon')
       expect(flagAfter(agy, '--effort')).toBe('high')
 
       const claudeRow = wsRows(page, 'ws-a')
@@ -321,7 +321,7 @@ test.describe("a workspace's session defaults: the model and thinking its own se
       await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(1)
       expect(flagAfter(machineMuseCalls(env)[0].argv, '--reasoning-effort')).toBe('low')
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 60_000 }).toBe(1)
-      expect(flagAfter(machineAgyCalls(env)[0].argv, '--model')).toBe('gemini-4-argon')
+      expect(flagAfter(machineAgyCalls(env)[0].argv, '--model')).toBe('gemini-4-neon')
       expect(flagAfter(machineAgyCalls(env)[0].argv, '--effort')).toBe('high')
     } finally {
       await quitAndClose(app)

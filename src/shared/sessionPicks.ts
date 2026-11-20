@@ -36,19 +36,25 @@ export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = {
   }
 }
 
-const FORMER_TIER_MODELS: Partial<Record<BackendId, string[]>> = { agy: ['argon'] }
-
-const STAND_IN_WHEN_MISSING: Partial<Record<BackendId, Record<string, string>>> = {
-  agy: { neon: 'argon' }
-}
+// AGY§21
+const NORMAL_ON_EVERY_ACCOUNT: Partial<Record<BackendId, string>> = { agy: 'argon' }
 
 const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }
 
 export const pickFlags = (pick: Pick): string =>
   `${pick.model ? `--model ${pick.model} ` : ''}--effort ${pick.effort}`
 
-export const tierModelOf = (backend: BackendId, model: string | undefined): boolean =>
-  TASK_TIERS.some((tier) => TIER_PICKS[backend][tier].model === model)
+export const familyNamesOf = (backend: BackendId): string[] => [
+  ...new Set(
+    [
+      ...TASK_TIERS.map((tier) => TIER_PICKS[backend][tier].model),
+      NORMAL_ON_EVERY_ACCOUNT[backend]
+    ].filter((family): family is string => !!family)
+  )
+]
+
+export const familyModelOf = (backend: BackendId, model: string | undefined): boolean =>
+  !!model && familyNamesOf(backend).includes(model)
 
 export const tierPicksOf = (backend: BackendId): string =>
   TASK_TIERS.map((tier) => `${tier}: ${pickFlags(TIER_PICKS[backend][tier])}`).join('; ')
@@ -103,8 +109,12 @@ export function agyListedModels(stdout: string): ListedModel[] {
   return [...efforts].map(([id, taken]) => ({ id, efforts: knownEfforts(taken) }))
 }
 
-const lastKnown = (backend: BackendId): ListedModel[] =>
-  NAMED_MODELS[backend].map((m) => ({ id: m.id, efforts: [...effortsFor(backend, m.id)] }))
+function lastKnown(backend: BackendId): ListedModel[] {
+  const notOnEveryAccount = NORMAL_ON_EVERY_ACCOUNT[backend] && TIER_PICKS[backend].normal.model
+  return NAMED_MODELS[backend]
+    .filter((m) => !notOnEveryAccount || !m.id.endsWith(`-${notOnEveryAccount}`))
+    .map((m) => ({ id: m.id, efforts: [...effortsFor(backend, m.id)] }))
+}
 
 function versionOf(id: string): number[] {
   return (id.match(/\d+(?:\.\d+)*/)?.[0] ?? '0').split('.').map(Number)
@@ -135,12 +145,10 @@ function runsOn(
   if (found) return { model: found, fellBack: false }
   const stand = TIER_PICKS[backend].normal.model
   const hard = TIER_PICKS[backend]['very hard'].model
-  const instead = wanted === hard ? stand : STAND_IN_WHEN_MISSING[backend]?.[wanted]
+  const instead =
+    wanted === hard ? stand : wanted === stand ? NORMAL_ON_EVERY_ACCOUNT[backend] : undefined
   return { model: instead ? runsOn(backend, instead, listed).model : undefined, fellBack: true }
 }
-
-const familyModelOf = (backend: BackendId, model: string): boolean =>
-  tierModelOf(backend, model) || !!FORMER_TIER_MODELS[backend]?.includes(model)
 
 const runsInstead = (read: boolean, wanted: string, instead: string): string =>
   read
@@ -164,10 +172,9 @@ export function familyEfforts(
 ): Record<string, CronEffort[]> {
   const list = listed?.length ? listed : lastKnown(backend)
   return Object.fromEntries(
-    TASK_TIERS.flatMap((tier) => {
-      const family = TIER_PICKS[backend][tier].model
-      const model = family && runsOn(backend, family, list).model
-      return family && model ? [[family, model.efforts]] : []
+    familyNamesOf(backend).flatMap((family) => {
+      const model = runsOn(backend, family, list).model
+      return model ? [[family, model.efforts]] : []
     })
   )
 }
