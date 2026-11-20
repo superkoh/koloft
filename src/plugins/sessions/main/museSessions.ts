@@ -227,7 +227,7 @@ const keepsItsSandbox = (permission: LaunchPermission): boolean => permission !=
 
 // MUSE§12
 const museContexts = (lead: string[], owner: { own?: string; workspace: string[] }): string[] =>
-  promptParts([...lead, ...promptParts(owner.own)].join('\n\n'), ...owner.workspace)
+  promptParts(lead.join('\n\n'), owner.own, ...owner.workspace)
 
 // ADR-0038 MUSE§15
 function approvalFlags(permission: LaunchPermission): string[] {
