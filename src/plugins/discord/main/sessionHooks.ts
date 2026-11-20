@@ -63,10 +63,15 @@ export function discordFollowsEachTurn<Ask>(
   }
 ): void {
   moments.listen(plugin.id, TURN_ENDED, ({ tabId, turn }) => d.relay()?.turnEnded(tabId, turn))
-  moments.listen(plugin.id, SESSION_BOUND, ({ tabId, key, idleCompaction }) => {
-    d.typing()?.refresh(tabId)
-    void d.rooms()?.bound(tabId, key, async () => !idleCompaction && (await d.noTurnsYet(key)))
-  })
+  moments.listen(plugin.id, SESSION_BOUND, ({ tabId }) => d.typing()?.refresh(tabId))
+  moments.listen(
+    plugin.id,
+    SESSION_BOUND,
+    ({ tabId, key, idleCompaction }) =>
+      void d.rooms()?.bound(tabId, key, async () => !idleCompaction && (await d.noTurnsYet(key))),
+    [],
+    ROOMS_FOLLOW_A_NEW_CONVERSATION_WHILE_DISCORD_IS_OFF
+  )
   moments.listen(plugin.id, STATE_CHANGED, ({ tabId, next }) => {
     const asksOnDiscord = !!d.askChannelOf(tabId)
     if (next !== 'approval') d.relay()?.stoppedAsking(tabId)
@@ -99,6 +104,8 @@ export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void 
 }
 
 const SECRET_ASK_CARDS_END_BEFORE_THE_ROOM_CLOSES = ['passwords']
+
+const ROOMS_FOLLOW_A_NEW_CONVERSATION_WHILE_DISCORD_IS_OFF = true
 
 const RELAYED = `${DISCORD_PREFIX} `
 

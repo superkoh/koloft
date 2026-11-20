@@ -6,6 +6,7 @@ import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from
 import {
   startSessionIn,
   terminalText,
+  transcriptFile,
   waitBooted,
   waitConductorStarted,
   picksFor
@@ -284,6 +285,67 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
         .toBe(true)
       const resumed = await sessionOf(page, 'claude')
       expect(resumed.tabId).not.toBe(session.tabId)
+    })
+  })
+
+  test('a /clear typed at the Mac while Discord is turned off still carries the room: once Discord is on again and the session restarts, what the owner writes in the room reaches the new conversation, not the old one', async ({
+    env
+  }) => {
+    await withTheButler(env, async (page, fake, app) => {
+      await startSessionIn(page, 'ws-a')
+      const first = await sessionOf(page, 'claude')
+      fake.say(OWNER, `/koloft discord thread open ${first.sessionId}`)
+      const room = await theRoom(fake)
+      await expect
+        .poll(() => inRoom(fake, room.id).some((p) => p.includes('where it is')), {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+
+      await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: false } }))
+      await page.evaluate((id) => window.api.terminal.write(id, '/clear\r'), first.tabId)
+      await expect
+        .poll(async () => (await sessionOf(page, 'claude')).sessionId, {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .not.toBe(first.sessionId)
+      const cleared = await sessionOf(page, 'claude')
+      await page.evaluate((id) => window.api.terminal.write(id, 'while it was off\r'), first.tabId)
+      await expect
+        .poll(
+          () =>
+            fs.readFileSync(transcriptFile(env.home, env.workspaces.a, cleared.sessionId), 'utf8'),
+          { timeout: STARTS_AND_ANSWERS_MS }
+        )
+        .toContain('while it was off')
+
+      await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: true } }))
+      await expect.poll(() => fake.identifies, { timeout: STARTS_AND_ANSWERS_MS }).toBe(2)
+      await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
+      )
+      await expect
+        .poll(async () => (await sessionOf(page, 'claude')).tabId, {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .not.toBe(first.tabId)
+      const restarted = await sessionOf(page, 'claude')
+      expect(restarted.sessionId).toBe(cleared.sessionId)
+
+      fake.say(OWNER, 'after the switch', { channelId: room.id })
+      await expect
+        .poll(() => inRoom(fake, room.id).some((p) => p.includes('after the switch')), {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      expect(
+        fs.readFileSync(transcriptFile(env.home, env.workspaces.a, cleared.sessionId), 'utf8')
+      ).toContain('after the switch')
+      const live = (await page.evaluate(() => window.api.sessions.list())).filter(
+        (s) => s.alive && !s.overseer
+      )
+      expect(live.map((s) => s.sessionId)).toEqual([cleared.sessionId])
+      expect(fake.threads).toHaveLength(1)
     })
   })
 
