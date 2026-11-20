@@ -1007,7 +1007,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks; its task, which starts with /, is typed once agy is ready instead of given with -i, and the run finishes', async ({
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that level on Neon, saying so, as the account has no Carbon, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks; its task, which starts with /, is typed once agy is ready instead of given with -i, and the run finishes', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -1038,17 +1038,23 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await chip('Gemini 3.1 Pro').click()
       await expect(thinking).toHaveText(['Same as usual', 'Low', 'High'])
       await expect(dlg.locator('.chip.on', { hasText: /^Same as usual$/ })).toHaveCount(1)
-      await chip('Gemini 4 Argon').click()
+      await chip('Gemini 4 Neon').click()
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'Medium', 'High', 'Extra high'])
+      await chip('Gemini 4 Carbon').click()
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'Medium', 'High'])
       await expect(dlg.locator('.chip.on', { hasText: /^Medium$/ })).toHaveCount(1)
       await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(1)
       await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gemini-4-argon · medium`)
+      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gemini-4-carbon · medium`)
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+      await expect(page.locator('.toast-msg')).toContainText(
+        'This account has no gemini-4-carbon model, so it runs on gemini-4-neon.'
+      )
 
       await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(1)
       expect(sessionCalls(env)[0].argv.slice(2)).toEqual([
         '--model',
-        'gemini-4-argon',
+        'gemini-4-neon',
         '--effort',
         'medium',
         '--dangerously-skip-permissions'
@@ -1410,6 +1416,66 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(
         wsRows(page, 'ws-a').getByRole('img', { name: 'Antigravity', exact: true })
       ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§21
+  test('an Assist job set to Gemini 4 Carbon runs agy -p on Neon when the account has no Carbon, and says so once', async ({
+    env
+  }) => {
+    const PROMPT = 'Fix the flaky login test'
+    const NOTE =
+      'Koloft Assist: This account has no gemini-4-carbon model, so it runs on gemini-4-neon.'
+    installAgy(env)
+    seedSettings(env, {
+      hintsOff: true,
+      assist: {
+        backend: 'agy',
+        rows: { route: { backend: 'agy', model: 'gemini-4-carbon', effort: 'medium' } }
+      }
+    })
+    fs.writeFileSync(
+      path.join(env.home, 'fake-agy-assist-reply'),
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', why: 'ws-a.' })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const note = page.locator('.toast-msg', { hasText: NOTE })
+      const ranOn = (model: string): string[][] =>
+        agyCalls(env)
+          .filter((c) => c.argv[1] === '-p' && c.argv.includes(model))
+          .map((c) => c.argv.slice(5))
+      const ask = async (): Promise<void> => {
+        await sendShortcut(app, 'shortcut:command-palette')
+        const askBox = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
+        await expect(askBox).toBeFocused()
+        await askBox.fill(PROMPT)
+        await page.keyboard.press('Enter')
+      }
+      await ask()
+      await expect(note).toBeVisible({ timeout: 40_000 })
+      await expect.poll(() => readAllCalls(env).length, { timeout: 40_000 }).toBe(1)
+      expect(ranOn('gemini-4-neon')).toEqual([['--model', 'gemini-4-neon', '--effort', 'medium']])
+      expect(ranOn('gemini-4-carbon')).toEqual([])
+      await expect(note).toHaveCount(0)
+
+      await ask()
+      let saidAgain = false
+      await expect
+        .poll(
+          async () => {
+            saidAgain ||= (await note.count()) > 0
+            return readAllCalls(env).length
+          },
+          { timeout: 40_000 }
+        )
+        .toBe(2)
+      expect(ranOn('gemini-4-neon')).toHaveLength(2)
+      expect(saidAgain).toBe(false)
     } finally {
       await quitAndClose(app)
     }

@@ -270,6 +270,14 @@ describe('koloft cron: changing tasks', () => {
     expect(c.runner.state().jobs[0]).toMatchObject({ model: 'gemini-4-neon', effort: 'xhigh' })
   })
 
+  it('takes medium for Gemini 4 Carbon', async () => {
+    const c = cron([job({ backend: 'agy' })], { backend: 'agy' })
+    expect(
+      (await c.run('edit', 'nightly', '--model', 'gemini-4-carbon', '--effort', 'medium')).exit
+    ).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ model: 'gemini-4-carbon', effort: 'medium' })
+  })
+
   it('reaches only the caller workspace: another workspace’s task is neither listed nor found by name or number', async () => {
     const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })])
     const listed = await c.run('list')

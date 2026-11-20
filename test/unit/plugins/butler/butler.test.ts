@@ -571,6 +571,22 @@ describe('the butler', () => {
     expect(session.lastSessionKey).toBe(CODEX_KEY)
   })
 
+  // AGY§21
+  it('says which model it runs on in place of the picked one: under its own name, or in the same line as why it starts a new conversation', async () => {
+    const modelNote = 'This account has no gemini-4-carbon model, so it runs on gemini-4-neon.'
+    choice = { backend: 'agy', model: 'gemini-4-neon', modelNote }
+    await opened(make())
+    expect(toasts).toEqual([`Alfred: ${modelNote}`])
+
+    toasts = []
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
+    transcripts.add(CLAUDE_KEY)
+    await opened(make())
+    expect(toasts).toEqual([
+      `Alfred now runs on Antigravity, so it starts a new conversation. ${modelNote}`
+    ])
+  })
+
   // CC§3 CODEX§11
   it('given a model and thinking, it resumes its conversation with them and remembers them; set back to the tool’s own, it starts a new conversation and says so, since the old one would keep what it was given', async () => {
     session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
