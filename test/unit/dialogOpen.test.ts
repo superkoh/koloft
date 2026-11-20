@@ -57,16 +57,29 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(keep)
   })
 
-  it("takes the keys from its own session's terminal", () => {
-    const wrap = document.createElement('div')
-    wrap.className = 'term-wrap'
-    const terminal = document.createElement('textarea')
-    const keep = document.createElement('button')
-    wrap.append(terminal, keep)
-    document.body.append(wrap)
-    terminal.focus()
+  it("takes the keys from a session's terminal, its own or the one just switched away from", () => {
+    for (const sameTab of [true, false]) {
+      const wrap = document.createElement('div')
+      wrap.className = 'term-wrap'
+      const terminal = document.createElement('textarea')
+      wrap.append(terminal)
+      document.body.append(wrap)
+      const keep = sameTab ? wrap.appendChild(document.createElement('button')) : button()
+      terminal.focus()
+      focusOnceNoDialogIsOpen(keep)
+      expect(document.activeElement).toBe(keep)
+    }
+  })
+
+  it('takes the keys only once: focus the owner later moves to nowhere stays nowhere', async () => {
+    const keep = button()
     focusOnceNoDialogIsOpen(keep)
-    expect(document.activeElement).toBe(keep)
+    const elsewhere = button()
+    elsewhere.focus()
+    elsewhere.blur()
+    elsewhere.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(document.body)
   })
 
   it('takes the keys back when a dialog opened after it closes', async () => {
