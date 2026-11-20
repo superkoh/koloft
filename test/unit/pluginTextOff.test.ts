@@ -119,13 +119,13 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     )
   })
 
-  it('with Discord off, koloft help, the koloft skill, every session prompt and the butler lose Discord, pinned, and the butler bound to a channel reads as one with none', async () => {
-    const unbound = butlerRole(BUTLER)
-    const helper = butlerHelperRole(BUTLER)
+  it('with Discord off, koloft help, the koloft skill, every session prompt, the butler and its helper lose Discord, pinned, and the butler bound to a channel reads as one with none', async () => {
     turnOff(['discord'])
     expect(butlerRole(BUTLER, [DISCORD_BOUND])).toBe(butlerRole(BUTLER))
-    expect(butlerRole(BUTLER)).toBe(unbound)
-    expect(butlerHelperRole(BUTLER)).toBe(helper)
+    await expect(butlerRole(BUTLER)).toMatchFileSnapshot('./prompt-text/discord-off/butler.txt')
+    await expect(butlerHelperRole(BUTLER)).toMatchFileSnapshot(
+      './prompt-text/discord-off/helper.txt'
+    )
     await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/discord-off/koloft-help.txt')
     const files = agentPluginFiles()
     await expect(files['skills/koloft/SKILL.md']).toMatchFileSnapshot(

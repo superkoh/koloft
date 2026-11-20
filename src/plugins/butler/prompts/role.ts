@@ -29,7 +29,7 @@ export const pluginsChangedNews = (now: readonly { name: string; on: boolean }[]
   })
 
 export const GUIDE_MOVED_NEWS: OldConversationNews = {
-  knownBy: 'knowsItsOwnLines',
+  knownBy: 'knowsAllItsOwnLines',
   text: () => composePrompt('butler-guide-moved'),
   on: () => true
 }

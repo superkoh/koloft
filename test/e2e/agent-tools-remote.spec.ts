@@ -45,6 +45,7 @@ import {
 } from './helpers/remote'
 
 const BOUND_CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
+const PASSWORDS_IN_THE_SKILL = 'get a password, code or sign-in from the owner'
 
 async function sessionOf(page: Page, tabId: string): Promise<SessionInfo | undefined> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
@@ -181,7 +182,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         expect(await koloftInSession(page, tab, 'help')).toBe('0')
         const help = await terminalText(page, tab)
         expect(help).toContain('koloft session new')
-        expect(help).not.toContain('koloft discord send')
+        expect(help).not.toContain('koloft discord setup')
         const skills = koloftSkillsUnder(machineHome(env))
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toMatch(/discord/i)
@@ -224,7 +225,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
       }
     })
 
-  test('turning Todo off in Settings ▸ Plugins while Koloft runs hands the next Claude Code session on the machine a koloft skill with no to-dos, though an earlier session there was handed one with them', async ({
+  test('turning Passwords and sign-in off in Settings ▸ Plugins while Koloft runs hands the next Claude Code session on the machine a koloft skill with no passwords, though an earlier session there was handed one with them', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -232,18 +233,16 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
     const { app, page } = await launchWithRemote(env)
     try {
       await startRemoteTab(page, env, 'claude')
-      expect(koloftSkillHandedTo(readCalls(env)[0])).toContain('gather what waits on the owner')
+      expect(koloftSkillHandedTo(readCalls(env)[0])).toContain(PASSWORDS_IN_THE_SKILL)
 
-      await switchPlugin(page, 'Todo', false)
-      await expect
-        .poll(() => agentPluginSays(env.userData, 'gather what waits on the owner'))
-        .toBe(false)
+      await switchPlugin(page, 'Passwords and sign-in', false)
+      await expect.poll(() => agentPluginSays(env.userData, PASSWORDS_IN_THE_SKILL)).toBe(false)
 
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       expect(readCalls(env)).toHaveLength(2)
       const handed = koloftSkillHandedTo(readCalls(env)[1])
       expect(handed).toContain('name: koloft')
-      expect(handed).not.toContain('gather what waits on the owner')
+      expect(handed).not.toContain(PASSWORDS_IN_THE_SKILL)
     } finally {
       await quitAndClose(app)
     }

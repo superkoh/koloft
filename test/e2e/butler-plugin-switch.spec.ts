@@ -14,7 +14,6 @@ import {
   terminalText,
   waitBooted
 } from './helpers/p1'
-import { agentPluginSays } from './helpers/koloftSkills'
 import { switchPlugin } from './helpers/extensions'
 import { GUIDE_MOVED_NEWS } from '../../src/plugins/butler/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -39,6 +38,13 @@ function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
   return readAllCalls(env).filter(
     (c) => c.cwd === fs.realpathSync(path.join(env.userData, 'conductors', 'global'))
   )
+}
+
+function todoSavedOff(env: E2EEnv): boolean {
+  const saved = JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')) as {
+    pluginsOn?: Record<string, boolean>
+  }
+  return saved.pluginsOn?.todo === false
 }
 
 function fileText(env: E2EEnv, name: string): string {
@@ -152,9 +158,7 @@ test.describe('The butler while a plugin switch changes', () => {
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
 
       await switchPlugin(page, 'Todo', false)
-      await expect
-        .poll(() => agentPluginSays(env.userData, 'gather what waits on the owner'))
-        .toBe(false)
+      await expect.poll(() => todoSavedOff(env)).toBe(true)
       await page.waitForTimeout(BUTLER_WOULD_HAVE_HEARD_WITHIN_MS)
       expect(butlerCalls(env)).toHaveLength(1)
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)

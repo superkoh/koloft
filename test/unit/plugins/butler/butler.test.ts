@@ -332,17 +332,22 @@ describe('the butler', () => {
     ['muse', 'muse:local:old-thread'],
     ['agy', 'agy:local:old-conv']
   ] as const)(
-    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside nothing it already knew; one started since is told nothing',
+    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside nothing it already knew, even when it was told the sessions lines before the Todo and Discord ones joined them; one started since is told nothing',
     async (backend, oldKey) => {
       news = [{ ...TODO_NEWS, on: () => todoOn }, GUIDE_MOVED_NEWS]
-      session = { sessionIds: [oldKey], lastSessionKey: oldKey, knowsTodo: [oldKey] }
+      session = {
+        sessionIds: [oldKey],
+        lastSessionKey: oldKey,
+        knowsTodo: [oldKey],
+        knowsItsOwnLines: [oldKey]
+      }
       transcripts.add(oldKey)
       choice = { backend }
       const c = make()
       const back = await c.open()
       if (!back.ok) throw new Error(back.error)
       expect(notices).toEqual([`${FROM_KOLOFT}${GUIDE_MOVED_NEWS.text()}`])
-      await vi.waitFor(() => expect(session.knowsItsOwnLines).toEqual([oldKey]))
+      await vi.waitFor(() => expect(session.knowsAllItsOwnLines).toEqual([oldKey]))
       c.onBound(back.tabId, oldKey)
       c.onPtyExit(back.tabId)
       await c.open()
@@ -352,7 +357,7 @@ describe('the butler', () => {
       const fresh = make()
       const freshTab = await opened(fresh)
       fresh.onBound(freshTab, `${oldKey}-new`)
-      expect(session.knowsItsOwnLines).toEqual([`${oldKey}-new`])
+      expect(session.knowsAllItsOwnLines).toEqual([`${oldKey}-new`])
       fresh.onPtyExit(freshTab)
       transcripts.add(`${oldKey}-new`)
       await fresh.open()

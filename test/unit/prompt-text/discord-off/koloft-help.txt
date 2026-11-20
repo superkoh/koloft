@@ -164,21 +164,6 @@ koloft inbox delete <key>
 koloft inbox list [<state>]
     List your cards.
 
-TO-DOS
-
-Only for the butler and the helpers it starts in its own folder.
-
-koloft todo
-    Gather what waits on the owner in every workspace, and print how to sort it out with the owner: each workspace with its to-do note, the sessions asking the owner, done with their turn or closed with work left, the open pull requests (whose they are, checks, size, which issues they close), and the tools (MCP servers) each agent can reach.
-
-koloft todo note <workspace> [-- "<note>"]
-    Print a workspace's to-do note, or save it: where its to-dos are kept and which count. Workspaces of one GitHub repository share one note. An empty note removes it.
-    Example: koloft todo note koloft -- "To-dos are GitHub issues assigned to octo. Pull requests: opened by octo or asking octo to review."
-
-koloft todo file <workspace> <file>
-    Print one of the instruction or TODO files koloft todo lists for a workspace, also from a workspace on another machine.
-    Example: koloft todo file koloft CLAUDE.md
-
 PASSWORDS, CODES, SIGN-INS AND ROBOT CHECKS
 
 When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's tab in Koloft (a web page or sign-in in this session's Workbench). Koloft passes it on itself: you never see it. Never ask the owner to write a password or code in a message.
