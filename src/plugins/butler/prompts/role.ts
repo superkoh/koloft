@@ -19,5 +19,12 @@ export const butlerHelperRole = (name: string, instructions = ''): string =>
     instructions
   )
 
+export const pluginsChangedNews = (now: readonly { name: string; on: boolean }[]): string =>
+  composePrompt('butler-plugins-changed', {
+    values: {
+      'plugins-now': now.map(({ name, on }) => `${name} is now ${on ? 'on' : 'off'}`).join(', ')
+    }
+  })
+
 export const helperRoleOf = (butler: ButlerSetting): string =>
   butlerHelperRole(butler.name, instructionsOf(butler))

@@ -44,6 +44,24 @@ describe('handing Koloft’s words to a session', () => {
     expect(handOver.delivering('r')).toBe(false)
   })
 
+  it('words queued behind others to the same session are handed the way their own sender asked: one that may not open it fails while the next one opens it', async () => {
+    const { handOver, to, typed, open } = setup()
+    const first = handOver.tell(to, 'first')
+    const onlyWhileOpen = handOver.tell(
+      {
+        ...to,
+        open: async () => {
+          throw new Error('Helper is closed.')
+        }
+      },
+      'notice'
+    )
+    const last = handOver.tell(to, 'last')
+    open()
+    expect([await first, await onlyWhileOpen, await last]).toEqual([true, false, true])
+    expect(typed).toEqual(['first (The owner is away.)', 'last (The owner is away.)'])
+  })
+
   it('marks words as they are handed with the marks they came with, and takes the mark back when they could not be handed', async () => {
     const { handOver, to, open } = setup({
       queue: async (_t, text) => {
