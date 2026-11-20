@@ -4242,9 +4242,9 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   "/code-review medium origin/main...HEAD" --model claude-opus-5-5 --output-format json
   --allowedTools 'Bash(git:*)' Read Grep Glob Agent` in a checkout of a past Koloft PR,
   scratch `HOME` and fake key, `ANTHROPIC_BASE_URL` pointed at a closed port or at a
-  local server that records the request and answers 400; no token spent). Two marks
-  tell this failure apart from a review: `num_turns: 0` and a `result` that starts
-  `API Error`.
+  local server that records the request and answers 400; no token spent). A review
+  that did run reports `num_turns: 0` too (2.1.329, the same command with a real
+  account), so only a `result` that starts `API Error` tells this failure apart.
 - **2.1.328 changed the recipe Opus 5.5 gets at `medium`.** The request body each build
   sends (captured by that local server, same command) holds the same recipe, byte for
   byte, on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10
