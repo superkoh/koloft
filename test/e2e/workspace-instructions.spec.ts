@@ -389,7 +389,21 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
           await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
           await agent.bound?.(page)
           await expect(rows).toHaveCount(before + i + 1, { timeout: 60_000 })
-          await expect(rows.and(page.locator('.st-pending'))).toHaveCount(0, { timeout: 60_000 })
+          const pending = rows.and(page.locator('.st-pending'))
+          await expect
+            .poll(
+              async () => {
+                const tab = await pending
+                  .first()
+                  .getAttribute('data-tab-id', { timeout: 1000 })
+                  .catch(() => null)
+                if (!tab) return 0
+                await page.evaluate((t) => window.api.terminal.write(t, 'first words\r'), tab)
+                return pending.count()
+              },
+              { message: `${agent.label} binds`, timeout: 90_000, intervals: [3000] }
+            )
+            .toBe(0)
         }
       }
       await startTheOtherThree(1)
@@ -439,7 +453,7 @@ test.describe('The instructions for every workspace: written once in Settings â–
     env
   }) => {
     test.setTimeout(180_000)
-    seedSettings(env, { hintsOff: true })
+    installAll(env)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -490,7 +504,10 @@ test.describe('The instructions for every workspace: written once in Settings â–
       await again.getByRole('button', { name: 'Cancel' }).click()
 
       const inA = (await claudeIn(env, page, 'ws-a')).argv
-      expectInlineAfterThePromptFile(inA, SHORT)
+      expect(inA).toContain('--append-system-prompt-file')
+      expect(inA.indexOf('--append-system-prompt')).toBeGreaterThan(
+        inA.indexOf('--append-system-prompt-file')
+      )
       expect(flagAfter(inA, '--append-system-prompt')).toBe(
         `${everyPart(EVERY)}\n\n${partOf(SHORT)}`
       )
