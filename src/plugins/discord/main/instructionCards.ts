@@ -117,11 +117,14 @@ export class InstructionCards implements InstructionAskListener {
   }
 
   async endAll(footer: string): Promise<void> {
-    const waiting = [...this.shown].filter(([id]) => this.d.asks.pendingAsk(id))
+    const all = [...this.shown]
+    this.shown.clear()
     await Promise.all(
-      waiting.map(([id, ended]) => {
-        this.shown.set(id, { ask: ended.ask })
-        this.post(id)
+      all.map(([id, ended]) => {
+        if (this.d.asks.pendingAsk(id)) {
+          this.shown.set(id, { ask: ended.ask })
+          this.post(id)
+        }
         ended.footer = footer
         return ended.placed ? this.editCard(ended) : undefined
       })
@@ -176,8 +179,8 @@ export class InstructionCards implements InstructionAskListener {
       await this.d.respond(i, privately(NO_LONGER_WAITING))
       return
     }
-    await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
     this.d.asks.answer(id, choice === AGREE, 'phone')
+    await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
   }
 
   private cardOf(id: string, shown: Shown, name: string): Card {

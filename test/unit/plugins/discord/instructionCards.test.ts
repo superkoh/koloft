@@ -312,6 +312,20 @@ describe('an agent asks to change the Instructions, and the owner answers on a D
     }
   })
 
+  it('turning Discord off while an agreed change is still being written ends that card too', async () => {
+    const s = setup()
+    let finish!: (ok: boolean) => void
+    const given = s.asks.ask(ASK, LONG, () => new Promise((resolve) => (finish = resolve)))
+    await s.until(() => s.cards.length > 0)
+    await s.press(1)
+    await s.instructionCards.endAll(DISCORD_TURNED_OFF)
+    expect(s.lastFooter()).toBe(`-# ${DISCORD_TURNED_OFF}`)
+    expect(s.lastButtons()).toEqual([])
+    finish(true)
+    expect(await given).toBe('agreed')
+    expect(s.cards).toHaveLength(1)
+  })
+
   it('a card that could not be posted is not posted again, even while another ask waits for the owner to leave', async () => {
     vi.useFakeTimers()
     try {

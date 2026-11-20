@@ -4382,7 +4382,7 @@ app.whenReady().then(() => {
   const instructionCardsNow = new InstructionCards({
     asks: instructions,
     owner: () => bindingNow.owner(),
-    cardWanted: (tabId) => discordOn() && !!discordRelay?.reaches(tabId),
+    cardWanted: (tabId) => discordConnected && discordOn() && !!discordRelay?.reaches(tabId),
     place: async (tabId, card) => {
       const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
       if (!channelId) return undefined
@@ -4498,7 +4498,9 @@ app.whenReady().then(() => {
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
     instructionsCard: (tabId) =>
-      waitsBesidesInstructions(tabId) ? undefined : instructionCardsNow.onDiscord(tabId),
+      waitsBesidesInstructions(tabId) || tracker.awaitsInput(tabId)
+        ? undefined
+        : instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {

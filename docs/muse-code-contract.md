@@ -442,7 +442,7 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `call_id`, or whether it is the `CLAUDE_CODE_TOOL_USE_ID` the command's environment
   carries (bullet above).
 - **A `bash` command waits 10 s in the foreground, then runs on for at least 11
-  minutes.** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)` in Docker (`--network none`,
+  minutes (Linux).** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)` in Docker (`--network none`,
   `MUSE_NO_AUTO_UPDATE=1`), `muse exec --approval-mode never --disable-sandbox` against
   a fake `/responses` model (its stream events need a `sequence_number`; the catalog at
   `/muse-code/models` was `{"object":"list","data":[{"id":"fake-model",…}]}`), whose
