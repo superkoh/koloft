@@ -146,15 +146,29 @@ async function ownerDeclinesThenAgrees(
   expect(versionsOnDisk(env).at(-1)?.by).not.toBe('owner')
 }
 
-async function proposesUnderAnOpenEditor(page: Page, tabId: string, line: string): Promise<void> {
+async function proposesWhileTheOwnerTypesInAnEditor(
+  page: Page,
+  tabId: string,
+  line: string,
+  editing: Locator,
+  typed: string
+): Promise<void> {
   await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [
     tabId,
     `/koloft instructions add -- ${line}\r`
   ] as const)
   await expect(askDialog(page)).toBeAttached({ timeout: AN_ASK_SHOWS_WITHIN_MS })
-  await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
-  await page.keyboard.press('Tab')
-  await page.keyboard.press('Enter')
+  await expect(editing).toBeFocused()
+  await page.keyboard.press('Space')
+  await expect(editing).toHaveValue(`${typed} `)
+  await page.keyboard.press('Backspace')
+  await expect(editing).toHaveValue(typed)
+}
+
+async function agreedWhileTheEditorIsOpen(page: Page): Promise<void> {
+  const asks = await page.evaluate(() => window.api.instructionAsks.list())
+  expect(asks).toHaveLength(1)
+  await page.evaluate((id) => window.api.instructionAsks.answer(id, true), asks[0].id)
   await expect(askDialog(page)).toHaveCount(0)
 }
 
@@ -237,6 +251,41 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
     }
   })
 
+  test("an ask that arrives while Session defaults is open leaves the owner's keys in Session defaults, and takes them only once it closes", async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ownerWrites(page, 'ws-a', WRITTEN)
+      await startSessionIn(page, 'ws-a')
+      const [tab] = await tabIds(page, 'ws-a')
+      const typed = 'Answer in English.'
+      const dlg = await ownerTypes(page, 'ws-a', typed)
+      const line = 'Run npm test first.'
+      await proposesWhileTheOwnerTypesInAnEditor(
+        page,
+        tab,
+        line,
+        dlg.getByRole('textbox', { name: 'Instructions' }),
+        typed
+      )
+
+      await dlg.getByLabel('Close').click()
+      await expect(dlg).toHaveCount(0)
+      await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Enter')
+      await expect(askDialog(page)).toHaveCount(0)
+      await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(`${WRITTEN}\n${line}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a change agreed while Session defaults is open with typed text is not replaced by Save: Save says so and keeps the change, and only a second Save puts the typed text in', async ({
     env
   }) => {
@@ -252,7 +301,14 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       const typed = 'Answer in English.'
       const dlg = await ownerTypes(page, 'ws-a', typed)
       const line = 'Run npm test first.'
-      await proposesUnderAnOpenEditor(page, tab, line)
+      await proposesWhileTheOwnerTypesInAnEditor(
+        page,
+        tab,
+        line,
+        dlg.getByRole('textbox', { name: 'Instructions' }),
+        typed
+      )
+      await agreedWhileTheEditorIsOpen(page)
       const agreed = `${WRITTEN}\n${line}`
       await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(agreed)
 
@@ -292,7 +348,14 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       const typed = 'Answer in English.'
       await editor.getByRole('textbox', { name: 'Instructions' }).fill(typed)
       const line = 'Ask me before any session merges a pull request.'
-      await proposesUnderAnOpenEditor(page, butlerTab, line)
+      await proposesWhileTheOwnerTypesInAnEditor(
+        page,
+        butlerTab,
+        line,
+        editor.getByRole('textbox', { name: 'Instructions' }),
+        typed
+      )
+      await agreedWhileTheEditorIsOpen(page)
       await expect.poll(() => butlerVersions().at(-1)?.text).toBe(line)
 
       await editor.getByRole('button', { name: /Save/ }).click()
