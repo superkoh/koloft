@@ -1,7 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, type JSX } from 'react'
-import type { InstructionAskView } from '@plugins/sessions/shared/instructionAsks'
+import {
+  CHANGE_THEM,
+  KEEP_THEM,
+  NOTHING_CHANGES_UNTIL_YOU_AGREE,
+  changeSummary,
+  type InstructionAskView
+} from '@plugins/sessions/shared/instructionAsks'
 import { IconClose } from '../icons'
-import { diffLines } from './editDiff'
+import { diffLines } from '@shared/editDiff'
 import { InlineDiff } from './InlineDiff'
 import '../inlineDiff.css'
 
@@ -10,17 +16,6 @@ export function instructionAskOf(
   tabId: string
 ): InstructionAskView | undefined {
   return asks.find((a) => a.tabId === tabId)
-}
-
-const lines = (n: number, what: string): string => `${n} line${n === 1 ? '' : 's'} ${what}`
-
-export function changeSummary(before: string, after: string): string {
-  const { rows } = diffLines(before, after)
-  const added = rows.filter((r) => r.kind === 'add').length
-  const removed = rows.filter((r) => r.kind === 'del').length
-  if (!rows.some((r) => r.kind === 'ctx') && added && removed) return 'the whole text replaced'
-  const counted = [added && lines(added, 'added'), removed && lines(removed, 'removed')]
-  return counted.filter(Boolean).join(', ') || 'a small change'
 }
 
 export function InstructionsChangeLines({
@@ -74,16 +69,14 @@ export function InstructionsAskDialog({
             <b>{ask.by}</b> wants to change {ask.what}: {changeSummary(ask.before, ask.after)}.
           </p>
           <InstructionsChangeLines before={ask.before} after={ask.after} />
-          <p className="field-hint">
-            Nothing changes until you agree. Sessions started afterwards follow the new text.
-          </p>
+          <p className="field-hint">{NOTHING_CHANGES_UNTIL_YOU_AGREE}</p>
         </div>
         <div className="modal-foot">
           <button ref={keep} className="mini" onClick={() => answer(false)}>
-            Don&apos;t change
+            {KEEP_THEM}
           </button>
           <button className="btn-primary" onClick={() => answer(true)}>
-            Change them
+            {CHANGE_THEM}
           </button>
         </div>
       </div>

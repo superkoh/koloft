@@ -26,7 +26,11 @@ export interface InstructionsBlock {
 }
 
 export interface InstructionsVerbDeps {
-  askTheOwner(ask: InstructionAsk, stillWaiting?: () => boolean): Promise<OwnersAnswer>
+  askTheOwner(
+    ask: InstructionAsk,
+    write: () => Promise<boolean>,
+    stillWaiting?: () => boolean
+  ): Promise<OwnersAnswer>
   overseerSide(tabId: string): boolean
   isOverseer(tabId: string): boolean
   overseerBlock(): InstructionsBlock
@@ -49,7 +53,7 @@ export const A_HELPER_ONLY_PROPOSES_FOR_THE_BUTLER =
 const NO_WORKSPACE =
   'koloft instructions: this session is in no workspace of the sidebar, so it has no instructions to change.'
 
-const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
+const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed' | 'changed-meanwhile'>, string> = {
   declined: 'koloft instructions: the owner did not agree, so nothing was changed.',
   timeout: 'koloft instructions: the owner did not answer in time, so nothing was changed.',
   closed:
@@ -125,10 +129,11 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     const by = d.nameOf(caller.session)
     const given = await d.askTheOwner(
       { tabId: caller.tabId, by, what: block.name, before, after },
+      () => block.writeIfStill(before, after, by),
       caller.stillWaiting
     )
+    if (given === 'changed-meanwhile') return refused(CHANGED_WHILE_ASKING)
     if (given !== 'agreed') return refused(NOT_CHANGED[given])
-    if (!(await block.writeIfStill(before, after, by))) return refused(CHANGED_WHILE_ASKING)
     return answered(changedLine(p.edit, block.name))
   }
 }
