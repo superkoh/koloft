@@ -575,7 +575,11 @@ promise nobody handled to the same log, with no toast.
   Electron 43, T-FX-01's probe). After a click inside a guest, the element becomes the
   host's `document.activeElement` but matches neither `:focus` nor `:focus-within`, and
   no focus event fires in the host; the guest's webContents fires neither focus nor
-  blur. `focusout` fires while the old element is still active.
+  blur. `focusout` fires while the old element is still active. The way out is just as
+  quiet (measured on Electron 43 with `KOLOFT_TEST_BACKGROUND=1`, 2026-11-19,
+  instructions-by-agent's web-page case): a click on a plain host element moves
+  `activeElement` from the `<webview>` to `<body>` with no `blur` or `focusout` on the
+  `<webview>`, so only the host's own `pointerdown` tells the caret left the page.
 - **While a guest holds the caret, the host's `document.hasFocus()` is false** on a real
   window (measured in a manual round), and window `blur`/`focus` fire for that
   hand-over; only main's BrowserWindow focus events tell "went into a page" from "left

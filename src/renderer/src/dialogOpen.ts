@@ -61,12 +61,15 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
     })
   const stopWaitingOnTheField = (): void => {
     field?.removeEventListener('focusout', theOwnerLeftTheField)
+    document.removeEventListener('pointerdown', theOwnerLeftTheField, true)
     stopWatchingTheField()
   }
 
   if (aDialogIsOpen()) waitForTheDialogToClose()
   else if (field) {
     field.addEventListener('focusout', theOwnerLeftTheField)
+    // PLATFORM§10
+    document.addEventListener('pointerdown', theOwnerLeftTheField, true)
     stopWatchingTheField = watchTheDomUntil(() => !field.isConnected, theOwnerLeftTheField)
   } else el.focus()
   document.addEventListener('focusin', aDialogTookTheKeys)
