@@ -2006,9 +2006,13 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
   if ('error' in choice) return choice
   const asked = assistLaunchOn('butler', choice.backend, settings)
   const { pick, note } = await ownPick(choice.backend, asked, modelsAssistGoesBy)
-  sayOnceOfWhatStartsItself(butlerNameNow(), note)
   const { model, effort } = pick
-  return { ...choice, ...(model && { model }), ...(effort && { effort }) }
+  return {
+    ...choice,
+    ...(model && { model }),
+    ...(effort && { effort }),
+    ...(note && { modelNote: note })
+  }
 }
 
 function logWhyButlerIsNotOn(
@@ -2180,18 +2184,14 @@ async function ownPick(
   return resolveOwnPick(backend, asked, listed)
 }
 
-const notesSaidOfWhatStartsItself = new Set<string>()
-
-function sayOnceOfWhatStartsItself(what: string, note: string | undefined): void {
-  const line = `${what}: ${note}`
-  if (!note || notesSaidOfWhatStartsItself.has(line)) return
-  notesSaidOfWhatStartsItself.add(line)
-  sendToRenderer(CH.toast.show, line)
-}
+const assistNotesSaid = new Set<string>()
 
 async function assistJobPick(backend: BackendId, asked: OwnPick): Promise<OwnPick> {
   const { pick, note } = await ownPick(backend, asked, modelsAssistGoesBy)
-  sayOnceOfWhatStartsItself('Koloft Assist', note)
+  if (note && !assistNotesSaid.has(note)) {
+    assistNotesSaid.add(note)
+    sendToRenderer(CH.toast.show, `Koloft Assist: ${note}`)
+  }
   return pick
 }
 
