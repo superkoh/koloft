@@ -132,7 +132,7 @@ function installAll(env: E2EEnv): void {
 }
 
 test.describe("a workspace's session defaults: the model and thinking its own sessions start on, and the rules its agents pick by", () => {
-  test('set in the dialog, they reach Claude from the + button, Codex from ⌘N, Muse from ⌘P and Antigravity from the menu — Carbon on Argon with a note — while a resume and a session an agent starts keep their own, and the rules reach the prompt, koloft help and a refusal', async ({
+  test('set in the dialog, they reach Claude from the + button, Codex from ⌘N, Muse from ⌘P and Antigravity from the menu — Carbon on Neon with a note — while a resume and a session an agent starts keep their own, and the rules reach the prompt, koloft help and a refusal', async ({
     env
   }) => {
     test.setTimeout(300_000)

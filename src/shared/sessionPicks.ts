@@ -46,10 +46,10 @@ export const pickFlags = (pick: Pick): string =>
 
 export const familyNamesOf = (backend: BackendId): string[] => [
   ...new Set(
-    [
-      ...TASK_TIERS.map((tier) => TIER_PICKS[backend][tier].model),
-      NORMAL_ON_EVERY_ACCOUNT[backend]
-    ].filter((family): family is string => !!family)
+    TASK_TIERS.flatMap((tier) => [
+      TIER_PICKS[backend][tier].model,
+      tier === 'normal' ? NORMAL_ON_EVERY_ACCOUNT[backend] : undefined
+    ]).filter((family): family is string => !!family)
   )
 ]
 
@@ -109,12 +109,8 @@ export function agyListedModels(stdout: string): ListedModel[] {
   return [...efforts].map(([id, taken]) => ({ id, efforts: knownEfforts(taken) }))
 }
 
-function lastKnown(backend: BackendId): ListedModel[] {
-  const notOnEveryAccount = NORMAL_ON_EVERY_ACCOUNT[backend] && TIER_PICKS[backend].normal.model
-  return NAMED_MODELS[backend]
-    .filter((m) => !notOnEveryAccount || !m.id.endsWith(`-${notOnEveryAccount}`))
-    .map((m) => ({ id: m.id, efforts: [...effortsFor(backend, m.id)] }))
-}
+const lastKnown = (backend: BackendId): ListedModel[] =>
+  NAMED_MODELS[backend].map((m) => ({ id: m.id, efforts: [...effortsFor(backend, m.id)] }))
 
 function versionOf(id: string): number[] {
   return (id.match(/\d+(?:\.\d+)*/)?.[0] ?? '0').split('.').map(Number)

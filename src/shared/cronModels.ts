@@ -1,4 +1,4 @@
-import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort } from './types'
+import { CRON_EFFORTS, type BackendId, type CronEffort } from './types'
 
 export interface NamedModel {
   id: string
@@ -21,7 +21,6 @@ export const NAMED_MODELS: Record<BackendId, NamedModel[]> = {
   muse: [],
   // AGY§21
   agy: [
-    { id: 'gemini-4-neon', label: 'Gemini 4 Neon' },
     { id: 'gemini-4-argon', label: 'Gemini 4 Argon' },
     { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
     { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' }
@@ -47,8 +46,8 @@ const AGY_EFFORTS_OF: ReadonlyMap<string, readonly CronEffort[]> = new Map([
 export function effortsFor(backend: BackendId, model: string | undefined): readonly CronEffort[] {
   if (backend !== 'agy') return CRON_EFFORTS
   // AGY§21
-  const suffix = model?.slice(model.lastIndexOf('-') + 1)
-  if (isCronEffort(suffix)) return [suffix]
+  const named = model && LOW_TO_XHIGH.find((e) => model.endsWith(`-${e}`))
+  if (named) return [named]
   return (model && AGY_EFFORTS_OF.get(model)) || AGY_EFFORTS_EVERY_MODEL_TAKES
 }
 
