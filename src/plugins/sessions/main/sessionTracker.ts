@@ -706,11 +706,14 @@ export class SessionTracker extends SessionRuntime {
   private async endTurn(tabId: string, hasAPromptOfItsOwn: boolean): Promise<void> {
     const t = this.tracked.get(tabId)
     if (!t) return
+    const caughtUpBefore = t.caughtUp
     await this.parse(t).catch(() => {})
     if (this.tracked.get(tabId) !== t) return
     const turn = t.turns.open()
+    const itsTurnWasCaughtUpAsHistory = !caughtUpBefore && t.caughtUp
     if (turn) this.endOpenTurn(t, turn)
-    else if (t.remote && hasAPromptOfItsOwn) t.stopsBeforeTheirLines.push(Date.now())
+    else if (t.remote && hasAPromptOfItsOwn && !itsTurnWasCaughtUpAsHistory)
+      t.stopsBeforeTheirLines.push(Date.now())
   }
 
   private endOpenTurn(t: Tracked, turn: TalkTurn): void {
