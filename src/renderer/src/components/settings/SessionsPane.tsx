@@ -1,9 +1,10 @@
-import { useState, type JSX } from 'react'
+import { useCallback, useState, type JSX } from 'react'
 import { bytesLeft, instructionsBytes, textInUse } from '@core/ownerInstructions'
 import { EVERY_WORKSPACE_TEXT_MAX_BYTES } from '@plugins/sessions/shared/workspaceInstructions'
 import { useStore } from '../../store'
 import { OwnerInstructionsEditor } from '../OwnerInstructionsEditor'
 import { SessionMethodsSection } from './SessionMethodsSection'
+import { useEscConsumer } from './escScope'
 
 const EVERY_WORKSPACE = 'Instructions for every workspace'
 
@@ -17,6 +18,8 @@ function EveryWorkspaceInstructions(): JSX.Element {
   const text = useStore((s) => textInUse(s.settings.everyWorkspaceInstructions))
   const butler = useStore((s) => s.settings.butler.name)
   const [editing, setEditing] = useState(false)
+  const close = useCallback(() => setEditing(false), [])
+  useEscConsumer(editing, close)
   return (
     <>
       <div className="set-grp">Instructions</div>
@@ -41,7 +44,7 @@ function EveryWorkspaceInstructions(): JSX.Element {
           maxBytes={EVERY_WORKSPACE_TEXT_MAX_BYTES}
           save={(typed, opened) => window.api.sessionDefaults.saveEveryWorkspace(typed, opened)}
           savedToast="Instructions saved. Sessions started from now on follow them."
-          onClose={() => setEditing(false)}
+          onClose={close}
         />
       )}
     </>

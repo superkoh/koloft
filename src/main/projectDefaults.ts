@@ -53,9 +53,15 @@ export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
       if (Object.keys(saved).length === 0) return undefined
       try {
         const root = d.rootOf(dir)
-        const repo = (await repoOf(root)) ?? lastFound.get(root)
-        if (repo) lastFound.set(root, repo)
-        return saved[repo ?? root]
+        const found = await repoOf(root)
+        if (found) lastFound.set(root, found)
+        const unreachable =
+          !found &&
+          (await d.reachable(root).then(
+            () => false,
+            () => true
+          ))
+        return saved[found ?? (unreachable ? lastFound.get(root) : undefined) ?? root]
       } catch {
         return undefined
       }

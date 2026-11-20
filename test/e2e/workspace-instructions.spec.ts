@@ -454,6 +454,10 @@ test.describe('The instructions for every workspace: written once in Settings â–
       await expect(editor.locator('.pal-status')).toHaveText(
         'Every session started from now on follows this, in every workspace that does not leave it out. A resumed conversation keeps the text it started with. Alfred does not get it.'
       )
+      await page.keyboard.press('Escape')
+      await expect(editor).toHaveCount(0)
+      await expect(row).toBeVisible()
+      await row.getByRole('button', { name: 'Edit' }).click()
       await editor.getByRole('textbox', { name: 'Instructions' }).fill(EVERY)
       await editor.getByRole('button', { name: /Save/ }).click()
       await expect(editor).toHaveCount(0)
