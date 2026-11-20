@@ -122,7 +122,7 @@ export interface ClaudeBackendDeps {
   machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
-  workspaceInstructions?(workspace: string): Promise<string | undefined>
+  workspaceInstructions?(workspace: string): Promise<string[]>
 }
 
 // PLATFORM§28
@@ -1109,7 +1109,7 @@ export class ClaudeBackend implements SessionBackend {
       ...spec,
       fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
       projectRules: await this.d.projectRules?.(spec.root),
-      workspaceText: await this.d.workspaceInstructions?.(spec.root)
+      workspaceParts: await this.d.workspaceInstructions?.(spec.root)
     })
     if (!plan.ok) return plan
     const machine = plan.machine

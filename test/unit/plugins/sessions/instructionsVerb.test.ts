@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionDefaults, SessionInfo } from '../../../../src/shared/types'
-import { OWNER } from '../../../../src/core/ownerInstructions'
+import { OWNER, type InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import {
   A_HELPER_ONLY_PROPOSES_FOR_THE_BUTLER,
   ONLY_ITS_OWN_WORKSPACE,
@@ -12,7 +12,7 @@ import {
   type InstructionAskEnd,
   type OwnersAnswer
 } from '../../../../src/plugins/sessions/main/instructionAsks'
-import { workspaceBlock } from '../../../../src/plugins/sessions/api'
+import { everyWorkspaceBlock, workspaceBlock } from '../../../../src/plugins/sessions/api'
 import { butlersBlock } from '../../../../src/plugins/butler/api'
 import { WORKSPACE_TEXT_MAX_BYTES } from '../../../../src/plugins/sessions/shared/workspaceInstructions'
 import type { InstructionAskView } from '../../../../src/plugins/sessions/shared/instructionAsks'
@@ -34,6 +34,7 @@ function world(answer: OwnersAnswer = 'agreed') {
     [WS_A, { picks: {}, instructions: [{ text: 'Answer in Chinese.', at: 1, by: OWNER }] }]
   ])
   const butler = { value: { name: 'Alfred' } as ButlerSetting }
+  const everyWorkspace = { value: [] as InstructionsVersion[] }
   const asked: Omit<InstructionAskView, 'id'>[] = []
   const store = {
     read: async (dir: string) => defaults.get(dir) ?? { picks: {} },
@@ -69,6 +70,12 @@ function world(answer: OwnersAnswer = 'agreed') {
       { path: WS_B, missing: false }
     ],
     workspaceBlock: (ws) => workspaceBlock(store, ws, () => AT),
+    everyWorkspaceBlock: () =>
+      everyWorkspaceBlock(
+        () => everyWorkspace.value,
+        (v) => (everyWorkspace.value = v),
+        () => AT
+      ),
     nameOf: (s) => s.title || 'Codex'
   })
   const run = (tabId: string, args: string[]) =>
@@ -77,7 +84,7 @@ function world(answer: OwnersAnswer = 'agreed') {
       cwd: '/',
       session: { tabId, title: TITLES[tabId] ?? 'Fix login' } as SessionInfo
     })
-  return Object.assign(w, { defaults, butler, asked, run })
+  return Object.assign(w, { defaults, butler, everyWorkspace, asked, run })
 }
 
 describe('koloft instructions asks the owner before anything changes', () => {
@@ -178,18 +185,60 @@ describe('koloft instructions asks the owner before anything changes', () => {
     expect((await w.run(HELPER_TAB, ['--workspace', 'ws-a'])).exit).toBe(0)
   })
 
+  it.each([
+    ['a session in a workspace', 'tab-a', 'Fix login'],
+    ['the butler', BUTLER_TAB, 'Alfred'],
+    ['a helper of the butler', HELPER_TAB, 'Helper']
+  ])(
+    '%s reads the instructions for every workspace and proposes a change to them, asked in its own tab as a change for every workspace',
+    async (_, tabId, by) => {
+      const w = world()
+      expect(await w.run(tabId, ['--every-workspace'])).toEqual({
+        text: 'The instructions for every workspace are empty.',
+        exit: 0
+      })
+      const r = await w.run(tabId, ['add', '--every-workspace', '--', 'Answer in Chinese.'])
+      expect(w.asked).toEqual([
+        {
+          tabId,
+          by,
+          what: 'the instructions for every workspace',
+          before: '',
+          after: 'Answer in Chinese.',
+          forEveryWorkspace: true
+        }
+      ])
+      expect(r.text).toBe(
+        'The owner agreed: added to the instructions for every workspace. Sessions started from now on follow it.'
+      )
+      expect(w.everyWorkspace.value).toEqual([{ text: 'Answer in Chinese.', at: AT, by }])
+      expect(w.defaults.get(WS_A)?.instructions).toHaveLength(1)
+    }
+  )
+
+  it('leaves the instructions for every workspace as they were when the owner does not agree', async () => {
+    const w = world('declined')
+    const r = await w.run('tab-a', ['set', '--every-workspace', '--', 'Be brief.'])
+    expect(r.exit).toBe(1)
+    expect(w.everyWorkspace.value).toEqual([])
+  })
+
   it('a session with no title is named by its agent', async () => {
     const w = world()
     await w.run('tab-untitled', ['add', '--', 'x'])
     expect(w.asked[0].by).toBe('Codex')
   })
 
-  it.each([[['add']], [['add', '--']], [['set']], [['remove', '--', 'x']], [['--workspace']]])(
-    'answers a malformed call %j with its usage',
-    async (args) => {
-      expect((await world().run('tab-a', args)).exit).toBe(2)
-    }
-  )
+  it.each([
+    [['add']],
+    [['add', '--']],
+    [['set']],
+    [['remove', '--', 'x']],
+    [['--workspace']],
+    [['add', '--every-workspace', '--workspace', 'ws-a', '--', 'x']]
+  ])('answers a malformed call %j with its usage', async (args) => {
+    expect((await world().run('tab-a', args)).exit).toBe(2)
+  })
 })
 
 describe("the owner's answer, kept until it comes", () => {

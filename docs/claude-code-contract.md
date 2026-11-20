@@ -3274,7 +3274,18 @@ sessions.
   settings file (a fake `apiKeyHelper` and `ANTHROPIC_BASE_URL`) and the first prompt
   were written by hand. Both times the request's last `system` block held the file's text and then the
   inline text, each as one exact substring (SHA-256 of the inline text matched), the
-  inline text last in the block. Not tried: an inline text much longer than 7 KB.
+  inline text last in the block. Not tried there: an inline text much longer than 7 KB.
+- **On a remote machine an inline appended prompt of about 20 KB reaches the model whole
+  too.** 2026-11-20, CC 2.1.329 linux-arm64 in the e2e SSH lab image, the same way as the
+  bullet above (Koloft's `claudeTabSpec` + `writeTabPackage` rendered from this repo, run
+  as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`, packages in with
+  `docker cp`), the text handed as Koloft hands it, in the tab's `.owner.md` file that the
+  tab script reads into `--append-system-prompt "$(cat …)"`. It was two blocks of 9,845
+  and 9,844 bytes under their headings, each at the 10,000-byte limit as Koloft counts
+  it, made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
+  `$(id)`, curly quotes and an emoji (19,691 bytes). The request's last `system` block
+  held it as one exact string at its very end, after the prompt file's text, 2 of 2 runs,
+  each on a new tab.
 - **A `SessionStart` hook's `additionalContext` reaches the model whole up to 10,000
   UTF-16 code units; past that only a 2 KB preview does.** 2026-11-18, CC 2.1.327
   darwin-arm64, `claude -p hello --settings <file>` with a scratch `HOME`, an

@@ -114,6 +114,7 @@ import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
+import type { InstructionsVersion } from '@core/ownerInstructions'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
@@ -655,7 +656,9 @@ import {
 import {
   HandOver,
   resolveWorkspace,
-  instructionsPartOf,
+  everyWorkspaceBlock,
+  everyWorkspaceSavedByTheOwner,
+  ownerPartsOf,
   savedFromTheDialog,
   InstructionAsks,
   workspaceBlock,
@@ -2134,8 +2137,18 @@ async function rulesOf(workspace: string): Promise<string | undefined> {
   return (await defaultsOfProjects.of(workspace))?.rules
 }
 
-async function instructionsOf(workspace: string): Promise<string | undefined> {
-  return instructionsPartOf(await defaultsOfProjects.of(workspace))
+async function instructionsOf(workspace: string): Promise<string[]> {
+  return ownerPartsOf(
+    loadSettings().everyWorkspaceInstructions,
+    await defaultsOfProjects.of(workspace),
+    workspace === butlerFolderNow()
+  )
+}
+
+const everyWorkspaceVersions = (): InstructionsVersion[] =>
+  loadSettings().everyWorkspaceInstructions
+const saveEveryWorkspaceVersions = (everyWorkspaceInstructions: InstructionsVersion[]): void => {
+  commitSettings({ everyWorkspaceInstructions })
 }
 
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
@@ -2409,6 +2422,8 @@ registerSessionCommands(commands, {
     workspaceOf: pinnedWorkspaceOfTab,
     pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
     workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now),
+    everyWorkspaceBlock: () =>
+      everyWorkspaceBlock(everyWorkspaceVersions, saveEveryWorkspaceVersions, Date.now),
     nameOf: (s) =>
       isButlerNow(s.tabId) ? butlerNameNow() : (sidebarTitle(s) ?? BACKEND_LABEL[s.backendId])
   }
@@ -6800,6 +6815,17 @@ function registerIpc(): void {
       defaultsOfProjects.write(workspacePath, (saved) =>
         savedFromTheDialog(saved, raw, Date.now())
       ),
+    saveEveryWorkspace: (text, opened) => {
+      const saved = everyWorkspaceSavedByTheOwner(
+        everyWorkspaceVersions(),
+        text,
+        opened,
+        Date.now()
+      )
+      if (!saved.ok) return saved
+      saveEveryWorkspaceVersions(saved.versions)
+      return { ok: true }
+    },
     instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined },
     worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
     storedSessions,
