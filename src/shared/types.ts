@@ -767,6 +767,12 @@ export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
   agy: 'Antigravity session'
 }
 
+const PLACEHOLDER_TITLE_SET = new Set<string>(Object.values(PLACEHOLDER_TITLES))
+
+export function isPlaceholderSessionTitle(title: string | undefined): boolean {
+  return !!title && PLACEHOLDER_TITLE_SET.has(title)
+}
+
 export const PENDING_SESSION_TITLE = 'Starting…'
 
 export interface SessionSource {

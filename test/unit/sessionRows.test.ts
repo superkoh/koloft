@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { PLAN_READY, type AttentionEvent, type WorkspaceRows } from '../../src/shared/types'
+import {
+  PLACEHOLDER_TITLES,
+  PLAN_READY,
+  type AttentionEvent,
+  type WorkspaceRows
+} from '../../src/shared/types'
 import {
   clampNotesHeight,
   isOrphanRow,
@@ -19,6 +24,7 @@ import {
   rowStateClass,
   selectionRoot,
   sessionTree,
+  shownTitle,
   rowsUnder,
   welcomeQuietLine,
   welcomeTarget,
@@ -31,6 +37,18 @@ import {
 
 it('a workspace row’s own Workbench belongs to that workspace, so its pages are kept in that workspace’s history', () => {
   expect(workspaceOfTab([], [], 'ws:ssh://devbox/p')).toBe('ssh://devbox/p')
+})
+
+describe('shownTitle', () => {
+  it('keeps the row title when the live title is any backend placeholder', () => {
+    for (const placeholder of Object.values(PLACEHOLDER_TITLES)) {
+      expect(shownTitle('Debugging AGY Session Names', placeholder)).toBe(
+        'Debugging AGY Session Names'
+      )
+    }
+    expect(shownTitle('Old title', 'New live title')).toBe('New live title')
+    expect(shownTitle('Row title', undefined)).toBe('Row title')
+  })
 })
 
 describe('withEndedRows (a tab whose agent died on its own keeps one row until it is closed)', () => {
