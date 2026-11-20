@@ -1,6 +1,6 @@
 import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort, type OwnPick } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
-import { NAMED_MODELS, effortsFor, takenEffort } from './cronModels'
+import { NAMED_MODELS, effortsFor, namedModel, takenEffort } from './cronModels'
 import { isValidModelName } from './cronNames'
 import { isRecord } from './workbenchState'
 
@@ -110,7 +110,9 @@ export function agyListedModels(stdout: string): ListedModel[] {
 }
 
 const lastKnown = (backend: BackendId): ListedModel[] =>
-  NAMED_MODELS[backend].map((m) => ({ id: m.id, efforts: [...effortsFor(backend, m.id)] }))
+  NAMED_MODELS[backend]
+    .filter((m) => !m.notOnEveryAccount)
+    .map((m) => ({ id: m.id, efforts: [...effortsFor(backend, m.id)] }))
 
 function versionOf(id: string): number[] {
   return (id.match(/\d+(?:\.\d+)*/)?.[0] ?? '0').split('.').map(Number)
@@ -182,16 +184,30 @@ export interface OwnPickResolved {
 
 export const listsModels = (backend: BackendId): boolean => backend === 'codex' || backend === 'agy'
 
+const familyOfAModelSomeAccountsLack = (backend: BackendId, id: string): string | undefined =>
+  namedModel(backend, id)?.notOnEveryAccount
+    ? familyNamesOf(backend).find((family) => id.endsWith(`-${family}`))
+    : undefined
+
+export const needsTheAccountsModels = (backend: BackendId, model: string | undefined): boolean =>
+  !!model &&
+  listsModels(backend) &&
+  (familyModelOf(backend, model) || !!familyOfAModelSomeAccountsLack(backend, model))
+
 export function resolveOwnPick(
   backend: BackendId,
   asked: OwnPick,
   listed: ListedModel[] | undefined
 ): OwnPickResolved {
   const named = asked.model
-  if (!named || !listsModels(backend) || !familyModelOf(backend, named))
+  if (!named || !needsTheAccountsModels(backend, named))
     return { pick: ownPickOf(named, takenEffort(backend, named, asked.effort)) ?? {} }
   const read = !!listed?.length
-  const { model, fellBack } = runsOn(backend, named, read ? listed! : lastKnown(backend))
+  const models = read ? listed! : lastKnown(backend)
+  const wanted = models.some((m) => m.id === named)
+    ? named
+    : (familyOfAModelSomeAccountsLack(backend, named) ?? named)
+  const { model, fellBack } = runsOn(backend, wanted, models)
   const effort = model
     ? asked.effort && model.efforts.includes(asked.effort)
       ? asked.effort

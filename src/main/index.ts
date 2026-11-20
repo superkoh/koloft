@@ -99,6 +99,7 @@ import {
   familyEfforts,
   resolveOwnPick,
   listsModels,
+  needsTheAccountsModels,
   type ListedModel,
   type OwnPickResolved
 } from '@shared/sessionPicks'
@@ -1973,7 +1974,8 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
-  target: (backend) => assistTargets[backend]()
+  target: (backend) => assistTargets[backend](),
+  onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
 
@@ -2002,7 +2004,8 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
   if ('error' in choice) return choice
-  const { model, effort } = assistLaunchOn('butler', choice.backend, settings)
+  const asked = assistLaunchOn('butler', choice.backend, settings)
+  const { model, effort } = (await ownPick(choice.backend, asked)).pick
   return { ...choice, ...(model && { model }), ...(effort && { effort }) }
 }
 
@@ -2122,6 +2125,14 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
 }
 
 const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
+// AGY§21
+const AN_ASSIST_JOB_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 5000
+
+const listedModelsWithin = (backend: BackendId, ms: number): Promise<ListedModel[] | undefined> =>
+  Promise.race([
+    listedModels(backend),
+    new Promise<undefined>((done) => setTimeout(() => done(undefined), ms))
+  ])
 
 const defaultsOfProjects = projectDefaults({
   rootOf: (dir) => projectInfoOnHost(dir).root,
@@ -2154,10 +2165,25 @@ const saveEveryWorkspaceVersions = (everyWorkspaceInstructions: InstructionsVers
 }
 
 async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
-  const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
+  const listed = needsTheAccountsModels(backend, asked.model)
+    ? await listedModels(backend)
+    : undefined
   const resolved = resolveOwnPick(backend, asked, listed)
   if (resolved.note) sendToRenderer(CH.toast.show, resolved.note)
   return resolved
+}
+
+const assistNotesSaid = new Set<string>()
+
+async function assistJobPick(backend: BackendId, asked: OwnPick): Promise<OwnPick> {
+  if (!needsTheAccountsModels(backend, asked.model)) return asked
+  const listed = await listedModelsWithin(backend, AN_ASSIST_JOB_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+  const { pick, note } = resolveOwnPick(backend, asked, listed)
+  if (note && !assistNotesSaid.has(note)) {
+    assistNotesSaid.add(note)
+    sendToRenderer(CH.toast.show, `Koloft Assist: ${note}`)
+  }
+  return pick
 }
 
 async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions> {
@@ -6177,7 +6203,7 @@ async function cronPick(req: LaunchRequest): Promise<OwnPick> {
     job.model && job.effort
       ? undefined
       : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
-  return filled ? (await ownPick(req.backend, filled)).pick : job
+  return (await ownPick(req.backend, filled ?? job)).pick
 }
 
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
@@ -6805,12 +6831,7 @@ function registerIpc(): void {
       const [defaults, listed] = await Promise.all([
         defaultsOfProjects.read(workspacePath),
         loadSettings().sessionMethods.enabled.agy
-          ? Promise.race([
-              listedModels('agy'),
-              new Promise<undefined>((done) =>
-                setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
-              )
-            ])
+          ? listedModelsWithin('agy', THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
           : undefined
       ])
       return { defaults, familyEfforts: familyEfforts('agy', listed) }

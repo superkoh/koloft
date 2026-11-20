@@ -133,6 +133,7 @@ export interface AssistDeps {
   picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
   target(backend: BackendId): Promise<AssistTarget | null>
+  onThisAccount(backend: BackendId, asked: ModelAndEffort): Promise<ModelAndEffort>
 }
 
 type OneRun = (signal: AbortSignal | undefined, timeoutMs: number) => Promise<string | null>
@@ -210,6 +211,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
       if (!target) continue
       const shot = ONE_SHOT[backend]
       const launch = assistLaunchOn(job.row, backend, picks)
+      const onThisAccount = await deps.onThisAccount(backend, launch)
       const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()
       const safe = EVERY_ACCOUNT_TAKES[backend]
@@ -227,8 +229,8 @@ export function koloftAssist(deps: AssistDeps): Assist {
           )
       const answered = async (): Promise<string | null> => {
         const first = await (shot.secondTryWhenLate
-          ? withASecondTryWhenLate(runWith(launch), job.signal)
-          : runWith(launch)(job.signal, ASSIST_TIMEOUT_MS))
+          ? withASecondTryWhenLate(runWith(onThisAccount), job.signal)
+          : runWith(onThisAccount)(job.signal, ASSIST_TIMEOUT_MS))
         const leftMs = limitMs - (Date.now() - started)
         const tableModelRefused =
           first === null && modelRefused && launch.modelFromTheTable && launch.model !== safe.model

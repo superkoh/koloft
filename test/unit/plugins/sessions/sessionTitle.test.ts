@@ -21,7 +21,8 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
       accounts: []
     }),
     enabled: () => true,
-    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null)
+    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null),
+    onThisAccount: async (_backend, asked) => asked
   })
 }
 

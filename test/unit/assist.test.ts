@@ -49,7 +49,8 @@ function assistWith(
       const binary = bins[backend]
       if (!binary) return null
       return { binary, env: backend === 'codex' ? { CODEX_HOME: '/homes/work' } : {} }
-    }
+    },
+    onThisAccount: async (_backend, asked) => asked
   })
 }
 
@@ -129,6 +130,25 @@ describe('Koloft Assist', () => {
         .slice(0, 5)
     ).toEqual(['-p', '--model', 'opus', '--effort', 'high'])
     expect(read(codex.log + '.argv')).toBeNull()
+  })
+
+  // AGY§21
+  it('runs a job on the model its account has in place of the picked one, without the thinking level that model does not take', async () => {
+    const agy = recordingBinary('agy', JSON.stringify({ status: 'SUCCESS', response: 'NEWS' }))
+    const reply = await koloftAssist({
+      picks: picksOf({
+        backend: 'agy',
+        rows: { turn: { backend: 'agy', model: 'gemini-4-neon', effort: 'xhigh' } }
+      }),
+      enabled: () => true,
+      target: async () => ({ binary: agy.bin, env: {} }),
+      onThisAccount: async () => ({ model: 'gemini-4-argon' })
+    })({ ...JOB, row: 'turn' })
+    expect(reply).toBe('NEWS')
+    const argv = read(agy.log + '.argv')!
+      .trim()
+      .split('\n')
+    expect(argv.slice(argv.indexOf('json') + 1)).toEqual(['--model', 'gemini-4-argon'])
   })
 
   describe('a model the account does not take', () => {
@@ -220,7 +240,8 @@ describe('Koloft Assist', () => {
             rows: { title: { backend: 'codex', model: 'gpt-6-luna' } }
           }),
           enabled: () => true,
-          target: async () => ({ binary: codex, env: {} })
+          target: async () => ({ binary: codex, env: {} }),
+          onThisAccount: async (_backend, asked) => asked
         })
       } finally {
         delete process.env.KOLOFT_ASSIST_TIMEOUT_MS
