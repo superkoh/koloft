@@ -75,6 +75,7 @@ function InstructionsEditor(): JSX.Element {
   useEscapeCloses(close)
   const save = async (): Promise<void> => {
     if (left < 0) return
+    setChanged(null)
     const r = await window.api.butler
       .saveInstructions(text, opened)
       .catch((): InstructionsSaveResult => ({ ok: false, error: COULD_NOT_SAVE }))

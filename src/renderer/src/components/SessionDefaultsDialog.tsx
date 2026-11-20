@@ -164,6 +164,7 @@ export function SessionDefaultsDialog({
       instructions,
       instructionsOpened: saved.instructions
     }
+    setChanged(null)
     const r = await window.api.sessionDefaults.write(wsPath, out)
     if (r.ok) return onClose()
     setError(r.error ?? 'Koloft could not save these.')
