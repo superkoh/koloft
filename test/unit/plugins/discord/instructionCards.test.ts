@@ -233,6 +233,24 @@ describe('an agent asks to change the Instructions, and the owner answers on a D
     }
   })
 
+  it('says whether a session’s ask has a card on Discord, so the butler’s digest can leave it out: posted, on its way, or none when the card could not be posted', async () => {
+    let land!: (placed: PlacedCard | undefined) => void
+    const landing = (): Promise<PlacedCard | undefined> =>
+      new Promise((resolve) => (land = resolve))
+    const s = setup({ place: () => landing() })
+    expect(s.instructionCards.onDiscord(ASK.tabId)).toBeUndefined()
+    void s.ask()
+    expect(s.instructionCards.onDiscord(ASK.tabId)).toBe('posting')
+    land(PLACED)
+    await s.until(() => s.instructionCards.onDiscord(ASK.tabId) === 'posted')
+    expect(s.instructionCards.onDiscord('another-tab')).toBeUndefined()
+
+    const failed = setup({ place: () => landing() })
+    void failed.ask()
+    land(undefined)
+    await failed.until(() => failed.instructionCards.onDiscord(ASK.tabId) === undefined)
+  })
+
   it('an ask answered at the Mac before the owner left never reaches Discord', async () => {
     vi.useFakeTimers()
     try {

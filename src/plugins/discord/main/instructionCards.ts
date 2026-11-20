@@ -77,6 +77,7 @@ export interface InstructionCardDeps {
 
 interface Shown {
   ask: InstructionAsk
+  tried?: boolean
   placing?: boolean
   placed?: PlacedCard
   footer?: string
@@ -112,6 +113,15 @@ export class InstructionCards implements InstructionAskListener {
     )
   }
 
+  onDiscord(tabId: string): 'posted' | 'posting' | undefined {
+    const mine = [...this.shown].flatMap(([id, s]) =>
+      (this.d.asks.pendingAsk(id) ?? s.ask).tabId === tabId ? [s] : []
+    )
+    if (mine.some((s) => s.placed)) return 'posted'
+    const onItsWay = (s: Shown): boolean => !!s.placing || (!s.tried && this.d.cardWanted(tabId))
+    return mine.some(onItsWay) ? 'posting' : undefined
+  }
+
   checkHeld(): void {
     for (const id of this.shown.keys()) this.post(id)
     if ([...this.shown.values()].some((s) => !s.placing && !s.placed)) return
@@ -133,6 +143,7 @@ export class InstructionCards implements InstructionAskListener {
       .catch(() => undefined)
       .then((placed) => {
         shown.placing = false
+        shown.tried = true
         shown.placed = placed
         if (placed && shown.footer) void this.editCard(shown)
       })

@@ -2392,7 +2392,7 @@ registerSessionCommands(commands, {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
-    // CC§28
+    // CC§28 AGY§13 MUSE§8
     askTheOwner: (ask, write, stillWaiting) =>
       instructionAsks
         ? instructionAsks.ask(
@@ -4496,6 +4496,7 @@ app.whenReady().then(() => {
     marks: () => attention.list(),
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
+    instructionsCard: (tabId) => instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
