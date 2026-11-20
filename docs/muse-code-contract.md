@@ -850,6 +850,43 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   neither was (the text was dropped whole, not cut), and the turn still ran. The filler was
   ASCII only, so whether the limit counts bytes or characters for Chinese text was not
   told apart. Koloft's own Muse prompt makes a 3,717-byte output.
+- **That cap is per hook: several `SessionStart` hooks each reach the model whole, in the
+  order the hooks file lists them, and one over the cap is dropped alone.** 2026-11-19,
+  `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker image `koloft-probe-muse-agy` with
+  `--network none` and `MUSE_NO_AUTO_UPDATE=1`, `muse exec --base-url <stand-in>
+  --approval-mode never --disable-sandbox --trust-workspace`, the hooks file given by
+  `TBH_MANAGED_HOOKS_PATH`, each hook `cat`-ing a JSON output of an exact size whose
+  `additionalContext` began and ended with marker words; the markers were looked for in
+  the turn's main request (the one with the longest developer message, since Muse
+  sometimes sends a small request first). Both ways of listing the hooks were run, all
+  commands in one group and one group per command, 3 runs each: 2 × 12,000, 2 × 16,384,
+  3 × 12,000, 3 × 16,384 and 6 × 16,000 bytes (96,000 in all) each arrived whole and in
+  order; with 16,384 + 16,385 the first arrived and the second alone was dropped; one hook
+  of 16,383 or 16,384 arrived and 16,385 did not, as above. 43 runs in all, one without
+  hooks.
+- **In the TUI the hooks run again, each whole and in order, after `/clear` and on `muse
+  resume`, and each time they print the text as it is then.** 2026-11-20, the same version
+  and image, the TUI in tmux (a 200 × 50 pane, as on a remote tab) against a stand-in model
+  that streams a whole Responses reply, one group of three `cat` hooks printing 5,166,
+  12,094 and 12,094 bytes whose texts held Chinese, `"`, `$HOME`, backticks, `\`,
+  `{{x}}`, `'`, `%s`, `!!` and a tab. The files were rewritten with new markers before
+  `/clear` and again before the session was resumed with `muse --base-url <stand-in> …
+  resume <id>`: the first turn, the turn after `/clear` and the resumed turn each carried
+  all three texts of that moment whole and in order, and the resumed request also held
+  the earlier turn. 3 of 3 runs. On `Muse Code 1.4.9 (1.4.9-R6297.1)` (its own
+  `aarch64_linux` build from Meta's download manifest, checksum matched) the first turn
+  and the turn after `/clear` did the same, 1 run; its resume was not seen to start in
+  that harness, and 1.4.9 replays the old text on resume anyway (above).
+- **A remote tab with three start hooks gets all three, whole and in order, also after
+  `/clear` and on a resume.** 2026-11-20, 1.4.23 in the e2e SSH lab image, started
+  through Koloft's own `museRunLines`, `remoteMuseHooks` and `sessionStartContext`
+  rendered from this repo and run as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh"
+  start 120 40'`, its hooks file then given two more `cat` hooks for the other two files.
+  The texts were `koloftPrompt('muse', <rules at their limit>)` (13,909 bytes) and two
+  blocks of 9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it.
+  The first turn, a turn after `/clear` (files rewritten first) and a turn of the session
+  resumed through the tab script (files rewritten again) each held the three texts of
+  that moment as exact strings, in order. 1 run each.
 - The same shape with `"hookEventName":"UserPromptSubmit"` lands as a developer message
   in that turn's request, and with `"PostToolUse"` in the next request after the tool
   (1.4.9, fake model, Docker, 2026-10: read from the request body).

@@ -4,6 +4,9 @@ import { withProjectRules } from '../prompts/text'
 // MUSE§12
 export const WORKSPACE_TEXT_MAX_BYTES = 10_000
 
+// MUSE§12
+export const EVERY_WORKSPACE_TEXT_MAX_BYTES = 10_000
+
 export const workspaceTextBytes = (rules: string, instructions: string): number =>
   instructionsBytes(withProjectRules(rules, '')) + instructionsBytes(instructions)
 

@@ -97,7 +97,7 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   hostOfKey,
-  ownerTextFor,
+  ownerTextApart,
   type HistoryListing,
   type StartContext,
   type StoredRun,
@@ -224,6 +224,10 @@ const MUSE: CliSpec = {
 const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
 
 const keepsItsSandbox = (permission: LaunchPermission): boolean => permission !== 'bypass'
+
+// MUSE§12
+const museContexts = (lead: string[], owner: { own?: string; workspace: string[] }): string[] =>
+  promptParts([...lead, ...promptParts(owner.own)].join('\n\n'), ...owner.workspace)
 
 // ADR-0038 MUSE§15
 function approvalFlags(permission: LaunchPermission): string[] {
@@ -676,10 +680,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
-      context:
-        promptParts(agentTools && koloftPrompt('muse', rules), ownerTextFor(ctx, false)).join(
-          '\n\n'
-        ) || undefined,
+      contexts: museContexts(
+        promptParts(agentTools && koloftPrompt('muse', rules)),
+        ownerTextApart(ctx, false)
+      ),
       koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords
@@ -764,17 +768,16 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
-    const instructions = promptParts(
-      !!agent && !conductor && koloftPrompt('muse', rules),
-      role,
-      ownerTextFor(ctx, conductor, assist)
+    const contexts = museContexts(
+      promptParts(!!agent && !conductor && koloftPrompt('muse', rules), role),
+      ownerTextApart(ctx, conductor, assist)
     )
     let bound: MuseRun | undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
-      instructions.join('\n\n') || undefined,
+      contexts,
       opts.ownerWords,
       this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined,
       rules
@@ -825,7 +828,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     open: (target: string) => void,
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
-    context: string | undefined,
+    contexts: string[],
     ownerWords: string | undefined,
     relay: MuseRelayFiles | undefined,
     rules: string | undefined
@@ -856,7 +859,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, relay)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, contexts, ownerWords, relay)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },

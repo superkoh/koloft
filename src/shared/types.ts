@@ -363,6 +363,7 @@ export interface AppSettings {
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
   sessionDefaults: Record<string, SessionDefaults>
+  everyWorkspaceInstructions: InstructionsVersion[]
 }
 
 export type Settings = AppSettings & PluginSettingValues
@@ -376,6 +377,7 @@ export interface SessionDefaults {
   picks: Partial<Record<BackendId, OwnPick>>
   rules?: string
   instructions?: InstructionsVersion[]
+  leavesOutEveryWorkspace?: true
 }
 
 export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & {
@@ -477,7 +479,8 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  sessionDefaults: {}
+  sessionDefaults: {},
+  everyWorkspaceInstructions: []
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
