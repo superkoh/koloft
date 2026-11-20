@@ -2157,27 +2157,34 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         .toEqual(['Picked: Green', 'Picked: Small'])
     })
 
+    function bindAsItsPromptedTurnReachesTheMirror(
+      sid: string
+    ): InstanceType<typeof SessionTracker> {
+      ended.length = 0
+      const mirror = path.join(home, 'remote', sid, 'projects')
+      file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      const justBeforeTheBind = new Date(Date.now() - 500).toISOString()
+      fs.writeFileSync(
+        file,
+        [human('first task', 1), said(text('first answer'), 2)]
+          .map((l) => JSON.stringify({ ...(l as object), timestamp: justBeforeTheBind }))
+          .join('\n') + '\n'
+      )
+      const tracker = newTracker()
+      tracker.on('turn-ended', (e) => ended.push(e))
+      tracker.track('tabRT', RCWD, { host: 'devbox', projectsRoot: mirror, tmuxName: `k-${sid}` })
+      tracker.bindSession('tabRT', file, sid, RCWD)
+      tracker.receive('tabRT', { type: 'prompt' })
+      return tracker
+    }
+
     for (const [sid, stopAfterTheCatchUp] of [
       ['55555555-5555-4555-8555-555555555555', false],
       ['44444444-4444-4444-8444-444444444444', true]
     ] as const)
       it(`the Stop of a turn that was already on the mirror when the tab bound belongs to that turn${stopAfterTheCatchUp ? ', even when it comes after the catch-up' : ''}, so the next turn waits for a Stop of its own`, async () => {
-        ended.length = 0
-        const mirror = path.join(home, 'remote', sid, 'projects')
-        file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')
-        fs.mkdirSync(path.dirname(file), { recursive: true })
-        const justBeforeTheBind = new Date(Date.now() - 500).toISOString()
-        fs.writeFileSync(
-          file,
-          [human('first task', 1), said(text('first answer'), 2)]
-            .map((l) => JSON.stringify({ ...(l as object), timestamp: justBeforeTheBind }))
-            .join('\n') + '\n'
-        )
-        const tracker = newTracker()
-        tracker.on('turn-ended', (e) => ended.push(e))
-        tracker.track('tabRT', RCWD, { host: 'devbox', projectsRoot: mirror, tmuxName: `k-${sid}` })
-        tracker.bindSession('tabRT', file, sid, RCWD)
-        tracker.receive('tabRT', { type: 'prompt' })
+        const tracker = bindAsItsPromptedTurnReachesTheMirror(sid)
         if (stopAfterTheCatchUp)
           await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.title === 'first task')
         await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status === 'working')
@@ -2197,6 +2204,16 @@ describe('SessionTracker — what each turn said: the owner, another session, an
           .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
           .toEqual(['Answer to: shall I merge it?'])
       })
+
+    it('a turn caught up as history that the owner stops with Esc, which sends no Stop, leaves the next turn’s early Stop to that next turn', async () => {
+      const tracker = bindAsItsPromptedTurnReachesTheMirror('33333333-3333-4333-8333-333333333333')
+      await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.title === 'first task')
+      await stopBeforeAnyLine(tracker)
+      append(human('pick a colour', 30), said(text('Picked: Green'), 31))
+      await expect
+        .poll(() => replies(), { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 })
+        .toEqual(['Picked: Green'])
+    })
   })
 
   // CC§2

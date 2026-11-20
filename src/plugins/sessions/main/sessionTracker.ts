@@ -609,6 +609,7 @@ export class SessionTracker extends SessionRuntime {
     if (event.type === 'prompt' && t) {
       t.promptSinceLastStop = true
       t.promptedSinceBind = true
+      if (t.caughtUp) t.historyTurnAwaitsItsStop = false
     }
     if (event.type === 'stop') {
       const hasAPromptOfItsOwn = !!t?.promptSinceLastStop
@@ -1124,9 +1125,11 @@ export class SessionTracker extends SessionRuntime {
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = undefined
     t.stopsBeforeTheirLines = []
-    t.promptedSinceBind = false
-    t.historyTurnAwaitsItsStop = false
-    if (!keepBindMs) t.bindMs = Date.now()
+    if (!keepBindMs) {
+      t.bindMs = Date.now()
+      t.promptedSinceBind = false
+      t.historyTurnAwaitsItsStop = false
+    }
     t.resetMs = Date.now()
   }
 
