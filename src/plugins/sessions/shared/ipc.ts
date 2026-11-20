@@ -26,5 +26,6 @@ export const CHANNELS = {
   defaultsWrite: 'sessionDefaults:write',
   instructionAsks: 'instructions:asks',
   instructionAsksList: 'instructions:list',
-  instructionAnswer: 'instructions:answer'
+  instructionAnswer: 'instructions:answer',
+  worktrees: 'workspace:worktrees'
 } as const

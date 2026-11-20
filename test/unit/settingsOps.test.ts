@@ -12,7 +12,7 @@ import {
   sanitizeLoadedSettings,
   DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {

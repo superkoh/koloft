@@ -67,7 +67,6 @@ export const CH = {
     remove: 'workspace:remove',
     removeConfirmed: 'workspace:removeConfirmed',
     move: 'workspace:move',
-    worktrees: 'workspace:worktrees',
     historyRows: 'workspace:historyRows',
     rows: 'workspace:rows',
     fetchFreshness: 'workspace:fetchFreshness',

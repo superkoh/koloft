@@ -216,7 +216,7 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `Math.max(timeout, 1) * 1000`). From 2.1.302 to 2.1.311 the limit was 12 hooks of one
   event (`strings`, 2026-10-17, not run: a limit constant of 12 and a filter on those two
   types, absent from 2.1.301). Every hook Koloft writes is `type: "command"` with a
-  `timeout` of 3600 s or none (`src/main/hooks.ts`, local and SSH tabs alike), so none
+  `timeout` of 3600 s or none (`src/plugins/sessions/main/hooks.ts`, local and SSH tabs alike), so none
   of them queues or is raised to 1 s. The hook event list is the same 33
   names on 2.1.301 and 2.1.302 (`strings`, 2026-10-17), on 2.1.303 (`strings`,
   2026-10-19: the same array, the same limit constant and type filter) and on 2.1.304
@@ -263,10 +263,10 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `compact` (it can fire mid-turn, with no prompt after it).
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
-in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
+in `src/plugins/sessions/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
 the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
 then moves the root to the worktree the last `worktree-state` names); the start line in
-the status log (`HOOK_SCRIPT` in `src/main/hooks.ts`), which `ClaudeBackend` applies in
+the status log (`HOOK_SCRIPT` in `src/plugins/sessions/main/hooks.ts`), which `ClaudeBackend` applies in
 order with the turns and holds back until the tab's shim registration;
 `test/e2e/fixtures/fake-claude.js`
 mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
@@ -1235,7 +1235,7 @@ moment its CC starts removing, and on this Mac finishes the removal if Koloft qu
 Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading; the two
 background-move bullets and the `/fork` copy probe (2026-10-27, CC 2.1.311) as dated
 above. Koloft dependents: the fork gate and session_id
-extraction in `src/main/hooks.ts`'s injected script (marked `CC§5`);
+extraction in `src/plugins/sessions/main/hooks.ts`'s injected script (marked `CC§5`);
 `src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
 never wrote a transcript.
 
@@ -1291,7 +1291,7 @@ Evidence: binary reading, the CLI reference and two local experiments, 2026-08-0
 2.1.224; render latency measured in live testing (date and CC version not recorded).
 Koloft dependents: `src/main/statusline.ts` (its wrapper script is marked `CC§6`; the
 ccstatusline side is platform ledger §36), `writeTabHookSettings` in
-`src/main/hooks.ts`, `test/e2e/statusline.spec.ts`.
+`src/plugins/sessions/main/hooks.ts`, `test/e2e/statusline.spec.ts`.
 
 ## §7 Anthropic API: usage headers, auth env, model fallback
 
@@ -2008,9 +2008,9 @@ Stop records in Koloft's run-state logs cross-checked
 against their transcripts, `lsof`/`ps` on live sessions, and a headless probe
 (`printf <prompt> | claude -p --settings <stop-hook settings> --allowedTools Bash`;
 the prompt must ride stdin or `--allowedTools` swallows it). Koloft dependents: the
-`bgl` list in `src/main/hooks.ts`'s injected script, `src/main/taskProcs.ts`,
+`bgl` list in `src/plugins/sessions/main/hooks.ts`'s injected script, `src/main/taskProcs.ts`,
 `judgeReported` and the server test (`IDLE_SERVER_CPU_MS_PER_MINUTE`,
-`SERVER_QUIET_WINDOW_MS`) in `src/main/sessionTracker.ts`.
+`SERVER_QUIET_WINDOW_MS`) in `src/plugins/sessions/main/sessionTracker.ts`.
 
 ## §9 Launch flags for a run nobody is watching
 
@@ -3714,7 +3714,7 @@ below was one run.
   only replaces the on-screen dialog — a tab whose hook answers nothing would be refused
   instead of asked: every remote tab (`dialogs: 'record-only'`), and a local tab whose
   `ask` hook turns into the logging-only `asked` (no `.answerable` file, or a `.typed`
-  one, in `src/main/hooks.ts`). From `strings` (darwin-arm64 and linux-arm64,
+  one, in `src/plugins/sessions/main/hooks.ts`). From `strings` (darwin-arm64 and linux-arm64,
   not run: inferred, not checked): it is read from user settings, `--settings` and
   managed settings, not project or local settings; it also stops offering
   `AskUserQuestion` and plan mode's tools to the model; and a run of refusals ends the
@@ -4171,7 +4171,7 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   a foreground Bash kills it with no result, so no PostToolUse fires on 2.1.318 or
   2.1.319; a send-now during a running PostToolUse hook queues and waits for the hook
   (12 s) on 2.1.319. None of Koloft's PostToolUse hooks (`tool`, `shell-after`,
-  `posttool` in `src/main/hooks.ts`) writes a running or done state, so a late one
+  `posttool` in `src/plugins/sessions/main/hooks.ts`) writes a running or done state, so a late one
   cannot mark a tab running or done; a late `shell-after` still appends a `shell-wrote`
   record, which reaches the changed-files list only through `ownsHookReport`.
 
@@ -4250,7 +4250,7 @@ folder with a `--settings` file whose `Stop` hook printed
   Stop had `"stop_hook_active":false`. No `UserPromptSubmit` fired for the second answer.
 
 Koloft dependents: the Stop branch of `HOOK_SCRIPT` and the Codex reply-language script
-in `src/main/hooks.ts`.
+in `src/plugins/sessions/main/hooks.ts`.
 
 ## §22 Where MCP servers are set up, and which folders reach them
 
@@ -4368,7 +4368,7 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
   above it.
 
 Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
-`writeTabHookSettings` in `src/main/hooks.ts`.
+`writeTabHookSettings` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §25 A Bash call's `description` is its title on screen
 
@@ -4379,7 +4379,7 @@ screen` while the call ran.
   line under it (`⎿  $ <command>`). Without one it is `⏺ Running <command>`.
 - Once done, the one call seen folded into `Ran 1 shell command`.
 
-Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/main/hooks.ts`.
+Koloft dependents: `NOTES_COMMAND_TITLES_AND_REPLY` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §26 An inline appended prompt against the folder's CLAUDE.md
 
@@ -4397,7 +4397,7 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
 - **Every run named the clash in its reply** and said which one it followed.
 
 Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
-`--append-system-prompt` (`src/main/backends/claude.ts`), and the Session defaults dialog
+`--append-system-prompt` (`src/plugins/sessions/main/backends/claude.ts`), and the Session defaults dialog
 says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).
 
 ## §27 Who started a turn: a person's typing and a program's look the same

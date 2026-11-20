@@ -43,6 +43,7 @@ import {
   type JobFields,
   type WhenKind
 } from './cronForm'
+import { setCron, useCron } from './state'
 import { modelValue } from '@renderer/modelPick'
 import { isComposing } from '@renderer/keys'
 import { useStore } from '@renderer/store'
@@ -125,7 +126,7 @@ export function CronJobsDialog({
   initialJobId?: string
   onClose: () => void
 }): JSX.Element {
-  const cron = useStore((s) => s.cron)
+  const cron = useCron()
   const settings = useStore((s) => s.settings)
   const isGit = useStore(
     (s) => s.workspaceRows.find((w) => w.workspace.path === wsPath)?.workspace.isGit === true
@@ -159,11 +160,11 @@ export function CronJobsDialog({
   const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const stateWhenAsked = useStore.getState().cron
+    const stateWhenAsked = useCron.getState()
     void window.api.cron
       .list()
       .then((s) => {
-        if (useStore.getState().cron === stateWhenAsked) useStore.getState().setCron(s)
+        if (useCron.getState() === stateWhenAsked) setCron(s)
       })
       .catch(() => {})
   }, [])

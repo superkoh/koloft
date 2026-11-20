@@ -32,7 +32,11 @@ import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
 import { listSkills, type SkillFs } from '../skillList'
 import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
-import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
+import {
+  saidFile,
+  seedHandedOverOwnerWords,
+  writeConductorMarker
+} from '@plugins/sessions/main/hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 import { ownerTextOver } from '../launchPrompt'
 

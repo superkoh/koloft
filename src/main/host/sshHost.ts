@@ -80,7 +80,7 @@ import {
   remoteDiscordSaidFile,
   remoteNoticeFile,
   type NoticeFile
-} from '../hooks'
+} from '@plugins/sessions/main/hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {

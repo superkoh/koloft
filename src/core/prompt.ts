@@ -21,18 +21,24 @@ const DECLARED_SLOTS = new Set(BLOCKS_IN_LIST_ORDER.map(({ block }) => block.slo
 const textFor = (block: TextBlock, agent: BackendId | undefined): string =>
   (agent ? block.byAgent?.[agent] : undefined) ?? block.text
 
+const OR_LIST = '-or-list'
+
+const asTheEndOfAList = (items: readonly string[]): string =>
+  items.map((item, i) => (i === items.length - 1 ? ', or ' : ', ') + item).join('')
+
 export function composePrompt(slot: string, context: PromptContext = {}): string {
   const { agent, facts = [], values = {} } = context
-  return BLOCKS_IN_LIST_ORDER.filter(
+  const texts = BLOCKS_IN_LIST_ORDER.filter(
     ({ block, plugin }) =>
       block.slot === slot && pluginStateOf(plugin).on && (!block.when || facts.includes(block.when))
-  )
-    .map(({ block }) => textFor(block, agent))
-    .join('')
-    .replace(SLOT_OR_VALUE, (_, name: string) => {
+  ).map(({ block }) => textFor(block, agent))
+  return (slot.endsWith(OR_LIST) ? asTheEndOfAList(texts) : texts.join('')).replace(
+    SLOT_OR_VALUE,
+    (_, name: string) => {
       if (Object.hasOwn(values, name)) return values[name]
       if (!DECLARED_SLOTS.has(name))
         throw new Error(`No text block fills {{${name}}} and no value was given for it`)
       return composePrompt(name, context)
-    })
+    }
+  )
 }

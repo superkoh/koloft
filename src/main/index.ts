@@ -20,24 +20,24 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SleepingTabs } from './sleepingTabs'
-import { SessionTracker, type ToolCall } from './sessionTracker'
+import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
+import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
-import { CodexSessions } from './codexSessions'
+import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
+import { CodexSessions } from '@plugins/sessions/main/codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
   museShowsItsInputBox,
   type MuseHomePick,
   type MuseRemoteDeps
-} from './museSessions'
+} from '@plugins/sessions/main/museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions, type AgyHomePick } from './agySessions'
+import { AgySessions, type AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -50,7 +50,7 @@ import {
   setAgyApiKeyRoute
 } from './agyAccounts'
 import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@plugins/sessions/main/agyHooks'
 import {
   AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
@@ -60,7 +60,7 @@ import {
   AGY_TITLE_FILE,
   agyStatuslineScript
 } from './remote/agyTab'
-import { agyBackend } from './backends/agy'
+import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { museConfigHome, museHome } from './museSessionLog'
@@ -68,10 +68,10 @@ import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
 import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
 import { readMuseQuota } from './museQuota'
-import type { SessionsWithStore } from './storedSessions'
+import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
-import type { WorktreeResource } from './sessionStore'
+import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -83,7 +83,7 @@ import {
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
 import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
-import { SessionBackends } from './sessionBackends'
+import { SessionBackends } from '@plugins/sessions/main/sessionBackends'
 import {
   BACKEND_LABEL,
   backendIdOf,
@@ -105,13 +105,14 @@ import {
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker } from './attention'
+import { AttentionTracker } from '@plugins/sessions/main/attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
-import { openDropTarget, type OpenDrop } from './openDrop'
+import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
-import { enforceGuestAttach, isAppNavigation, isUnderAnyRoot } from './browserSecurity'
+import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
+import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import {
@@ -131,7 +132,7 @@ import {
   setupHooks,
   writeTabHookSettings,
   type NoticeFile
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -190,7 +191,12 @@ import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
-import { SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
+import {
+  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
+  SUDO_SHIM_FILES,
+  writeSudoShims
+} from '@plugins/passwords/main/sudoShim'
+import { passwordsOn } from '@plugins/passwords/api'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
@@ -251,7 +257,11 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import {
+  WorkspaceManager,
+  scratchRootsAround,
+  type LiveSession
+} from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -266,9 +276,13 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
-import { codexBackend, trustCodexFolder } from './backends/codex'
-import { museBackend } from './backends/muse'
+import {
+  ClaudeBackend,
+  machineHookSettings,
+  pickMachineAccount
+} from '@plugins/sessions/main/backends/claude'
+import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
+import { museBackend } from '@plugins/sessions/main/backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
   HomeAccountPicker,
@@ -283,13 +297,13 @@ import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
 import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
-import { envMs } from './sessionRuntime'
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import { SessionSync, type SyncSession } from './sessionSync'
+import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
 import { GithubCountsSweep, githubCountsData } from '@plugins/github/main/countsSweep'
 import { githubLookups } from '@plugins/github/main/lookup'
@@ -354,7 +368,7 @@ import { compositionDone } from '@plugins/workbench/main/hostComposition'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
-import { reachesThisMacsServer } from './thisMacsServers'
+import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
@@ -436,15 +450,9 @@ import type {
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import {
-  AgentRequests,
-  answered,
-  errorText,
-  refused,
-  tabSpokenFor,
-  type AgentReply,
-  type AgentVerb
-} from './agentRequests'
+import { AgentRequests, tabSpokenFor } from './agentRequests'
+import { answered, refused, type AgentReply, type AgentVerb } from '@core/command'
+import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
@@ -485,7 +493,7 @@ import {
   tapAt,
   type PartOnPage
 } from '@plugins/workbench/main/guestTap'
-import { within } from './within'
+import { within } from '@core/within'
 import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
 import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
@@ -501,7 +509,7 @@ import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { toChannel } from '@plugins/discord/main/slash'
-import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
+import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
@@ -541,7 +549,7 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { asPeerName } from '@plugins/butler/shared/names'
 import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
 import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
@@ -1516,8 +1524,9 @@ function machinePackage(): MachinePackage {
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
     [AGY_LIST_FILE]: AGY_LIST_JS
   }
-  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
-    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
+  if (passwordsOn())
+    for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+      pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   for (const [rel, text] of Object.entries(docsPluginFiles()))
@@ -3613,7 +3622,13 @@ app.whenReady().then(() => {
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
-    if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+    if (!passwordsOn()) secretAsks?.declineAll()
+    try {
+      writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
+      if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+    } catch (err) {
+      console.error('[koloft] could not rewrite what a plugin switch changed:', err)
+    }
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -6581,31 +6596,6 @@ function registerIpc(): void {
     return workspaceMgr?.rows() ?? []
   })
   ipcMain.handle(CH.workspace.discover, () => workspaceMgr?.discover() ?? [])
-  ipcMain.handle(CH.workspace.worktrees, async (_e, p: string) => {
-    const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    for (const stored of storedSessions()) {
-      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
-      const there = await Promise.all(
-        mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
-      )
-      for (const [i, resource] of mine.entries()) {
-        if (there[i]) continue
-        const existing = trees.find((t) => t.dir === resource.worktreePath)
-        if (existing) {
-          existing.recoveryResourceId = resource.id
-          existing.recoveryBackend = stored.id
-        } else
-          trees.push({
-            name: resource.worktreeName,
-            dir: resource.worktreePath,
-            branch: resource.worktreeBranch ?? undefined,
-            recoveryResourceId: resource.id,
-            recoveryBackend: stored.id
-          })
-      }
-    }
-    return trees
-  })
   ipcMain.handle(CH.workspace.fetchFreshness, (_e, p: string) => freshness?.fetchNow(p) ?? null)
   ipcMain.handle(
     CH.workspace.pull,
@@ -6719,7 +6709,10 @@ function registerIpc(): void {
       defaultsOfProjects.write(workspacePath, (saved) =>
         savedFromTheDialog(saved, raw, Date.now())
       ),
-    instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined }
+    instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined },
+    worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
+    storedSessions,
+    dirExists: (dir) => hosts.of(dir).dirExists(dir)
   })
 
   async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {

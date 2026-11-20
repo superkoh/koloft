@@ -9,6 +9,7 @@ import { settingsPaneName } from '@shared/settingsPanes'
 import { useInstalledBackends } from '@renderer/useInstalledBackends'
 import { useStore } from '@renderer/store'
 import { rowStateClass, shownRows, statusWithSecrets } from '@renderer/sessionRows'
+import { useAskedTabs } from '@renderer/ownerAsks'
 import { assistInputs } from '@renderer/assistInputs'
 import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
@@ -50,8 +51,7 @@ export function ButlerRow(): JSX.Element {
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
-  const secretAsks = useStore((s) => s.secretAsks)
-  const instructionAsks = useStore((s) => s.instructionAsks)
+  const ownerAsks = useAskedTabs()
   const opened = useButler((s) => s.openedTab)
   const askToSetUp = (): void => useButler.setState({ setUpAsked: true })
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
@@ -94,7 +94,7 @@ export function ButlerRow(): JSX.Element {
   const stateClass =
     rowStateClass(
       !!tabId,
-      statusWithSecrets(sess?.status, tabId, [...secretAsks, ...instructionAsks]),
+      statusWithSecrets(sess?.status, tabId, ownerAsks),
       !!tabId && !sess,
       sess?.turnOver
     ) + (tabId && tabId === activeTabId ? ' active' : '')

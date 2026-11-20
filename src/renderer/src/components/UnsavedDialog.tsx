@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { useStore } from '../store'
 import { unsavedBody, UNSAVED_TITLE } from '../closeSession'
-import { removeJobsNote } from '../unsavedGuard'
+import { removalLossNote } from '../unsavedGuard'
+import { fillsOf } from '../pluginUi'
+import { WORKSPACE_REMOVAL_LOSS } from '../slots'
 
 export function UnsavedDialog(): JSX.Element | null {
   const prompt = useStore((s) => s.unsavedPrompt)
@@ -39,7 +41,12 @@ export function UnsavedDialog(): JSX.Element | null {
   if (!prompt) return null
   const body =
     prompt.ended ??
-    [unsavedBody(prompt.files), removeJobsNote(prompt.jobs ?? 0)].filter(Boolean).join(' ')
+    [
+      unsavedBody(prompt.files),
+      removalLossNote(prompt.lost ?? 0, fillsOf(WORKSPACE_REMOVAL_LOSS)[0])
+    ]
+      .filter(Boolean)
+      .join(' ')
   const cancel = (): void => {
     if (saveInFlight) return
     useStore.getState().setUnsavedPrompt(null)

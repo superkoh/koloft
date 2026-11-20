@@ -69,11 +69,13 @@ import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { fillsOf, gitPartsOf, PartsAt } from '../pluginUi'
+import { useAskedTabs } from '../ownerAsks'
 import {
   ROW_MARK,
   WORKSPACE_GIT_PART,
   WORKSPACE_LINE,
   WORKSPACE_MENU,
+  WORKSPACE_REMOVAL_LOSS,
   type RowMark
 } from '../slots'
 import { SessionRowsOfContext } from './sidebarRows'
@@ -82,7 +84,7 @@ import {
   discardAll,
   dirtyInWorkspace,
   labelPaths,
-  removeJobsNote,
+  removalLossNote,
   removePlan,
   removeUnsavedNote,
   saveAll
@@ -106,14 +108,14 @@ function memoryShown(machine: MachineState | null, tabId: string | undefined): s
   return bytes !== undefined && bytes / GIB >= SMALLEST_MEMORY_SHOWN_GB ? gbLabel(bytes) : undefined
 }
 
-function removeConfirmText(running: number, jobs: number): string {
+function removeConfirmText(running: number, lost: number): string {
+  const [loss] = fillsOf(WORKSPACE_REMOVAL_LOSS)
   const s = `${running} running session${running === 1 ? '' : 's'} will be closed`
-  const j = `${jobs} scheduled job${jobs === 1 ? '' : 's'} will be deleted`
   const kept =
     'Sessions are kept by Claude or Codex — re-adding the folder brings them back as resumable.'
-  if (jobs === 0) return `${s}. ${kept}`
-  if (running === 0) return removeJobsNote(jobs)
-  return `${s}, and ${j}. ${kept} Jobs do not come back.`
+  if (lost === 0 || !loss) return `${s}. ${kept}`
+  if (running === 0) return removalLossNote(lost, loss)
+  return `${s}, and ${loss.willGo(lost)}. ${kept} ${loss.goneForGood}`
 }
 
 const HOVER_MENU_MS = 350
@@ -1000,12 +1002,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     [listedRows, listedClaimed, storeTabs]
   )
   const activeTabId = useStore((s) => s.activeTabId)
-  const secretAsks = useStore((s) => s.secretAsks)
-  const instructionAsks = useStore((s) => s.instructionAsks)
-  const ownerAsks = useMemo(
-    () => [...secretAsks, ...instructionAsks],
-    [secretAsks, instructionAsks]
-  )
+  const ownerAsks = useAskedTabs()
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const selectedWs = useStore((s) => s.selectedWs)
   const showToast = useStore((s) => s.showToast)
@@ -1016,7 +1013,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [confirmRemove, setConfirmRemove] = useState<{
     path: string
     running: number
-    jobs: number
+    lost: number
     dirty: DirtyTab[]
   } | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -1197,24 +1194,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const running = (rows.find((w) => w.workspace.path === path)?.rows ?? []).filter(
       (r) => look.running(r) || r.pending
     ).length
-    const jobsHere = useStore.getState().cron.jobs.filter((j) => j.workspacePath === path).length
+    const lost = fillsOf(WORKSPACE_REMOVAL_LOSS)[0]?.countIn(path) ?? 0
     const plan = removePlan(running, dirty.length)
     if (plan === 'remove') {
       const r = await window.api.workspace.remove(path)
       if (!r.removed) {
         setRemoving(false)
-        setConfirmRemove({ path, running: r.running, jobs: r.jobs, dirty: [] })
+        setConfirmRemove({ path, running: r.running, lost: r.jobs, dirty: [] })
       }
       return
     }
     if (plan === 'confirm-running') {
       setRemoving(false)
-      setConfirmRemove({ path, running, jobs: jobsHere, dirty })
+      setConfirmRemove({ path, running, lost, dirty })
       return
     }
     useStore.getState().setUnsavedPrompt({
       files: labelPaths(dirty),
-      jobs: jobsHere,
+      lost,
       onCancel: () => {},
       onDiscard: () => {
         discardAll(dirty)
@@ -1422,7 +1419,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 </div>
                 <div className="modal-body">
                   <div className="field-hint">
-                    {removeConfirmText(confirmRemove.running, confirmRemove.jobs)}
+                    {removeConfirmText(confirmRemove.running, confirmRemove.lost)}
                     {confirmRemove.dirty.length > 0 &&
                       ' ' + removeUnsavedNote(confirmRemove.dirty.length)}
                   </div>

@@ -12,8 +12,8 @@ import {
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
   REMIND_REPLY_LANGUAGE_FN,
   seedHandedOverOwnerWords
-} from './hooks'
-import { record } from './codexObservation'
+} from '@plugins/sessions/main/hooks'
+import { record } from '@plugins/sessions/main/codexObservation'
 
 // MUSE§9
 export const MUSE_HOOKS_ENV = 'TBH_MANAGED_HOOKS_PATH'

@@ -12,11 +12,13 @@ import type {
   SessionInfo,
   SessionResumeRequest,
   SessionResumeResult,
-  SessionSearchHits
+  SessionSearchHits,
+  WorktreeInfo
 } from '@shared/types'
 import { CHANNELS } from '../shared/ipc'
 import type { InstructionAskView } from '../shared/instructionAsks'
 import type { InstructionAsks } from './instructionAsks'
+import type { SessionsWithStore } from './storedSessions'
 
 interface SessionBackend {
   id: BackendId
@@ -52,6 +54,9 @@ export interface ChannelDeps {
   ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
   writeDefaults(workspacePath: string, raw: unknown): Promise<void>
   instructionAsks(): Pick<InstructionAsks, 'views' | 'answer'>
+  worktrees(workspacePath: string): Promise<WorktreeInfo[]>
+  storedSessions(): Pick<SessionsWithStore, 'id' | 'store'>[]
+  dirExists(dir: string): Promise<boolean>
 }
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
@@ -136,6 +141,31 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.on(CHANNELS.instructionAnswer, (id: unknown, agreed: unknown) => {
     if (typeof id === 'string' && typeof agreed === 'boolean')
       deps.instructionAsks().answer(id, agreed)
+  })
+  ipc.handle(CHANNELS.worktrees, async (p: string) => {
+    const trees = await deps.worktrees(p)
+    for (const stored of deps.storedSessions()) {
+      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
+      const there = await Promise.all(
+        mine.map((r) => r.state === 'ready' && deps.dirExists(r.worktreePath))
+      )
+      for (const [i, resource] of mine.entries()) {
+        if (there[i]) continue
+        const existing = trees.find((t) => t.dir === resource.worktreePath)
+        if (existing) {
+          existing.recoveryResourceId = resource.id
+          existing.recoveryBackend = stored.id
+        } else
+          trees.push({
+            name: resource.worktreeName,
+            dir: resource.worktreePath,
+            branch: resource.worktreeBranch ?? undefined,
+            recoveryResourceId: resource.id,
+            recoveryBackend: stored.id
+          })
+      }
+    }
+    return trees
   })
 }
 
