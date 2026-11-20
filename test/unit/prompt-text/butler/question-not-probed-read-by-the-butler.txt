@@ -1,1 +1,1 @@
-Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list. The butler can still answer this one by pressing its keys.
+Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list.

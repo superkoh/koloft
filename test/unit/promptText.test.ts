@@ -61,8 +61,8 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   it('what Koloft tells a session about the butler outside the guide: a question only keys answer, and the note a session the butler started reads first', async () => {
     await pin(asksWhatKoloftCannotSee(), 'butler/question-only-keys-answer')
     await pin(inputNotProbed('Codex'), 'butler/question-not-probed')
-    await pin(asksWhatKoloftCannotSee(), 'butler/question-only-keys-answer-read-by-the-butler')
-    await pin(inputNotProbed('Codex'), 'butler/question-not-probed-read-by-the-butler')
+    await pin(asksWhatKoloftCannotSee(true), 'butler/question-only-keys-answer-read-by-the-butler')
+    await pin(inputNotProbed('Codex', true), 'butler/question-not-probed-read-by-the-butler')
     await pin(
       handoverPreamble({ name: BUTLER, id: 'butler-id', label: 'Claude', assist: true }),
       'butler/handover-from-the-butler'

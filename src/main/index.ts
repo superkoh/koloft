@@ -2382,8 +2382,14 @@ function claudeAskEnded(tabId: string): void {
   questionSeen.delete(tabId)
 }
 
-async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
-  return sessionAsks ? sessionAsks.answerSession(tabId, reply) : STILL_STARTING
+async function answerSession(
+  tabId: string,
+  reply: string,
+  byTheOverseer = false
+): Promise<string | undefined> {
+  return sessionAsks
+    ? sessionAsks.answerSession(tabId, reply, false, byTheOverseer)
+    : STILL_STARTING
 }
 
 const ownerAsks = {

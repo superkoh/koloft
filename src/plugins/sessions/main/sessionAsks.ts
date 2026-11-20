@@ -32,13 +32,15 @@ export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
 export const ANSWER_ON_ITS_WAY =
   'Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.'
-const whoElseAnswers = (question: string): string =>
-  composePrompt('session-answered-by-keys', { values: { 'the-question': question } })
+const whoElseAnswers = (question: string, byTheOverseer: boolean): string =>
+  byTheOverseer
+    ? ''
+    : composePrompt('session-answered-by-keys', { values: { 'the-question': question } })
 // MUSE§3
-export const asksWhatKoloftCannotSee = (): string =>
-  `It is waiting for an answer Koloft cannot read from here.${whoElseAnswers('it')}`
-export const inputNotProbed = (label: string): string =>
-  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list.${whoElseAnswers('this one')}`
+export const asksWhatKoloftCannotSee = (byTheOverseer = false): string =>
+  `It is waiting for an answer Koloft cannot read from here.${whoElseAnswers('it', byTheOverseer)}`
+export const inputNotProbed = (label: string, byTheOverseer = false): string =>
+  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list.${whoElseAnswers('this one', byTheOverseer)}`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const NOT_ANSWERED_FROM_HERE = ''
 export const STARTED_IN_THE_TERMINAL =
@@ -274,8 +276,13 @@ export class SessionAsks {
     }
   }
 
-  answerSession(tab: string, reply: string, toItsCard = false): Promise<string | undefined> {
-    return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard))
+  answerSession(
+    tab: string,
+    reply: string,
+    toItsCard = false,
+    byTheOverseer = false
+  ): Promise<string | undefined> {
+    return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard, byTheOverseer))
   }
 
   // CC§14 CODEX§3 MUSE§11 AGY§14
@@ -306,7 +313,12 @@ export class SessionAsks {
     return (await took) ? undefined : ANSWER_NOT_TAKEN
   }
 
-  private async sendAnswer(tab: string, reply: string, toItsCard: boolean): Promise<SentAnswer> {
+  private async sendAnswer(
+    tab: string,
+    reply: string,
+    toItsCard: boolean,
+    byTheOverseer: boolean
+  ): Promise<SentAnswer> {
     const backend = this.d.backendOf(tab)
     const answerKeysFor = answerKeysOf(backend)
     if (backend && answerKeysFor) {
@@ -329,7 +341,9 @@ export class SessionAsks {
       }
       const question = this.d.pendingQuestion(tab)
       if (!question)
-        return { error: this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG }
+        return {
+          error: this.d.awaitsInput(tab) ? inputNotProbed(label, byTheOverseer) : SHOWS_NO_DIALOG
+        }
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
       // CODEX§20 MUSE§11 AGY§14
@@ -357,7 +371,7 @@ export class SessionAsks {
       return {
         error:
           this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)
-            ? asksWhatKoloftCannotSee()
+            ? asksWhatKoloftCannotSee(byTheOverseer)
             : SHOWS_NO_DIALOG
       }
     // CC§14
