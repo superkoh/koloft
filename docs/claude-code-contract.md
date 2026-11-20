@@ -4238,24 +4238,29 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   as a local command (`local_command: "code_review"` in the JSON result). When its
   model request fails, the run still exits 0 with `is_error: false` and `num_turns: 0`,
   and the error is the `result` (`API Error: Connection refused …`, `API Error: 400 …`).
-  Seen on 2.1.302, 2.1.326, 2.1.327, 2.1.328 and 2.1.329 (2026-11-19, the argv above,
+  Seen on 2.1.302, 2.1.326, 2.1.327, 2.1.328 and 2.1.329 (2026-11-19, `claude -p
+  "/code-review medium origin/main...HEAD" --model claude-opus-5-5 --output-format json
+  --allowedTools 'Bash(git:*)' Read Grep Glob Agent` in a checkout of a past Koloft PR,
   scratch `HOME` and fake key, `ANTHROPIC_BASE_URL` pointed at a closed port or at a
-  local server that records the request and answers 400; no token spent). So only a
-  `result` that starts `API Error` tells this failure apart from a review.
+  local server that records the request and answers 400; no token spent). Two marks
+  tell this failure apart from a review: `num_turns: 0` and a `result` that starts
+  `API Error`.
 - **2.1.328 changed the recipe Opus 5.5 gets at `medium`.** The request body each build
-  sends (captured by that local server, same argv) holds the same recipe, byte for byte,
-  on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10
+  sends (captured by that local server, same command) holds the same recipe, byte for
+  byte, on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10
   findings` — 3 correctness, 3 cleanup (reuse, simplification, efficiency), 1 altitude
   and 1 CLAUDE.md conventions angle, up to 6 candidates each, all in the one context, no
-  subagents; the request sets effort `medium` and adaptive thinking. From 2.1.328 it
-  reads `high effort → 4 inline angles (bugs + conventions)`: the cleanup and altitude
-  angles are gone, each finding carries a `severity` (`important`, `pre_existing` or
-  `nit`), and its `summary` ends with `Fix:`. 2.1.329 also rewrote the step that gathers
-  the diff (`git diff origin/HEAD...HEAD` unless a target is named). The bundled text of
-  every darwin-arm64 build from 2.1.302 to 2.1.327 changes nothing else in the recipe.
-  So the catches, costs and times above describe the recipe up to 2.1.327 only. The
-  binary's text alone misleads here: its model table gives `claude-opus-5` an `o5-bmin`
-  "minimal prompt" at `medium`, yet `claude-opus-5-5` is sent the inline recipe.
+  subagents. That `high effort` is the recipe's own label; the request itself sets
+  effort `medium` and adaptive thinking. From 2.1.328 it reads `high effort → 4 inline
+  angles (bugs + conventions)`: the cleanup and altitude angles are gone, each finding
+  carries a `severity` (`important`, `pre_existing` or `nit`), and its `summary` ends
+  with `Fix:` and the change to make. 2.1.329 also rewrote the step that gathers the
+  diff (`git diff origin/HEAD...HEAD` unless a target is named). No darwin-arm64 build
+  from 2.1.302 to 2.1.327 changes the recipe text. So the catches, costs and times above
+  describe the recipe up to 2.1.327 only, and that `high` still gets `medium`'s steps
+  on 2.1.328 and later is not checked. The binary's text alone misleads here: its model
+  table gives `claude-opus-5` an `o5-bmin` "minimal prompt" at `medium`, yet
+  `claude-opus-5-5` is sent the inline recipe.
 - **`/security-review` puts the whole diff into its prompt, and a failed call fails
   loudly.** On 2.1.329 (same setup, the folder trusted and not) its expanded prompt holds
   the output of `git status`, `git diff --name-only origin/HEAD...`, `git log
