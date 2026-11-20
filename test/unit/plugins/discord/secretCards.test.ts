@@ -16,6 +16,7 @@ import type { Card } from '../../../../src/plugins/discord/main/cards'
 import type { DiscordInteraction } from '../../../../src/plugins/discord/main/link'
 import type { SecretAskView } from '../../../../src/shared/types'
 import { ONLY_THE_OWNER_ANSWERS } from '../../../../src/plugins/discord/main/buttons'
+import { DISCORD_TURNED_OFF } from '../../../../src/plugins/discord/main/switchOn'
 
 const OWNER = '555'
 const SECRET = 'hunter2 "x" \\ 日本'
@@ -174,6 +175,25 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
     expect(edits[0].buttons ?? []).toEqual([])
     await secretCards.press(interaction(3))
     expect(responses).toEqual([{ type: 4, data: { content: NO_LONGER_WAITING, flags: 64 } }])
+  })
+
+  it('Discord turned off: the card says so and loses its button, the ask goes on waiting in Koloft with the session marked there, and a later press says Koloft no longer waits', async () => {
+    const { asks, secretCards, edits, responses, onlyInKoloft, interaction, posted, lastShown } =
+      setup()
+    const answer = asks.ask(ask, LONG)
+    await posted()
+    expect(onlyInKoloft).toEqual([])
+    await secretCards.endAll(DISCORD_TURNED_OFF)
+    expect(edits.map((e) => [e.footer, e.buttons ?? []])).toEqual([
+      [`-# ${DISCORD_TURNED_OFF}`, []]
+    ])
+    expect(onlyInKoloft).toEqual(['tab-1'])
+    await secretCards.press(interaction(3))
+    expect(responses).toEqual([{ type: 4, data: { content: NO_LONGER_WAITING, flags: 64 } }])
+    asks.answer(lastShown()[0].id, 'pw')
+    expect(await answer).toEqual({ typed: 'pw' })
+    await settle()
+    expect(edits).toHaveLength(1)
   })
 
   it('a card still being posted when Koloft is answered is marked answered as soon as it lands', async () => {

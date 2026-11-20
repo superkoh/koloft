@@ -11,6 +11,7 @@ export interface TextBlock {
   byAgent?: Partial<Record<BackendId, string>>
   byModel?: Readonly<Record<string, string>>
   when?: string
+  whenOff?: string
 }
 
 export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): TextBlock => ({

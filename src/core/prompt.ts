@@ -27,18 +27,23 @@ const asTheEndOfAList = (items: readonly string[]): string =>
   items.map((item, i) => (i === items.length - 1 ? ', or ' : ', ') + item).join('')
 
 export function composePrompt(slot: string, context: PromptContext = {}): string {
-  const { agent, facts = [], values = {} } = context
+  const { agent, facts = [] } = context
   const texts = BLOCKS_IN_LIST_ORDER.filter(
     ({ block, plugin }) =>
-      block.slot === slot && pluginStateOf(plugin).on && (!block.when || facts.includes(block.when))
+      block.slot === slot &&
+      pluginStateOf(plugin).on &&
+      (!block.when || facts.includes(block.when)) &&
+      (!block.whenOff || !pluginStateOf(block.whenOff).on)
   ).map(({ block }) => textFor(block, agent))
-  return (slot.endsWith(OR_LIST) ? asTheEndOfAList(texts) : texts.join('')).replace(
-    SLOT_OR_VALUE,
-    (_, name: string) => {
-      if (Object.hasOwn(values, name)) return values[name]
-      if (!DECLARED_SLOTS.has(name))
-        throw new Error(`No text block fills {{${name}}} and no value was given for it`)
-      return composePrompt(name, context)
-    }
-  )
+  return fillSlots(slot.endsWith(OR_LIST) ? asTheEndOfAList(texts) : texts.join(''), context)
+}
+
+export function fillSlots(text: string, context: PromptContext = {}): string {
+  const { values = {} } = context
+  return text.replace(SLOT_OR_VALUE, (_, name: string) => {
+    if (Object.hasOwn(values, name)) return values[name]
+    if (!DECLARED_SLOTS.has(name))
+      throw new Error(`No text block fills {{${name}}} and no value was given for it`)
+    return composePrompt(name, context)
+  })
 }

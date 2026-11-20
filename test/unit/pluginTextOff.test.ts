@@ -4,6 +4,7 @@ import type { SavedSettings } from '../../src/core/settings'
 import { PLUGINS } from '../../src/plugins/list'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { agentGuide, agentSkillDescription } from '../../src/shared/agentGuide'
+import { todoMethod } from '../../src/plugins/todo/api'
 import { koloftPrompt } from '../../src/plugins/sessions/api'
 import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
 import { DISCORD_BOUND } from '../../src/plugins/discord/api'
@@ -30,6 +31,7 @@ const everyText = (): Record<string, string> => ({
   'skill description': agentSkillDescription(),
   butler: butlerRole(BUTLER, [DISCORD_BOUND]),
   helper: butlerHelperRole(BUTLER),
+  'todo method': todoMethod(),
   ...Object.fromEntries(SESSION_BACKENDS.map((b) => [`${b} session`, koloftPrompt(b)]))
 })
 
@@ -93,5 +95,25 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     await expect(agentPluginFiles()['skills/koloft/SKILL.md']).toMatchFileSnapshot(
       './prompt-text/passwords-off/koloft-skill.md'
     )
+  })
+
+  it('with Discord off, koloft help, the koloft skill, every session prompt and the butler lose Discord, pinned, and the butler bound to a channel reads as one with none', async () => {
+    const unbound = butlerRole(BUTLER)
+    const helper = butlerHelperRole(BUTLER)
+    turnOff(['discord'])
+    expect(butlerRole(BUTLER, [DISCORD_BOUND])).toBe(butlerRole(BUTLER))
+    expect(butlerRole(BUTLER)).toBe(unbound)
+    expect(butlerHelperRole(BUTLER)).toBe(helper)
+    await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/discord-off/koloft-help.txt')
+    const files = agentPluginFiles()
+    await expect(files['skills/koloft/SKILL.md']).toMatchFileSnapshot(
+      './prompt-text/discord-off/koloft-skill.md'
+    )
+    await expect(files['koloft-prompt.md']).toMatchFileSnapshot(
+      './prompt-text/discord-off/claude-prompt-file.md'
+    )
+    for (const b of SESSION_BACKENDS)
+      await expect(koloftPrompt(b)).toMatchFileSnapshot(`./prompt-text/discord-off/${b}.txt`)
+    await expect(todoMethod()).toMatchFileSnapshot('./prompt-text/discord-off/todo-method.txt')
   })
 })
