@@ -201,20 +201,40 @@ async function remoteExitOnDisk(
   return undefined
 }
 
-function callerOnTheMachineWaits(host: SshHost, pid: number): () => boolean {
-  let seenRunning = false
-  let goneAfterRunning = false
-  let asking: Promise<void> | undefined
-  return () => {
-    asking ??= host
-      .agentCallerRuns(pid)
+class CallerOnTheMachine {
+  private state: 'unseen' | 'runs' | 'stopped' = 'unseen'
+  private asked = false
+  private checking?: Promise<void>
+
+  constructor(
+    private host: SshHost,
+    private requestId: string,
+    private pid: number
+  ) {}
+
+  stillWaiting = (): boolean => {
+    this.asked = true
+    void this.check()
+    return this.state !== 'stopped'
+  }
+
+  async stoppedWaiting(): Promise<boolean> {
+    if (!this.asked) return false
+    await this.check()
+    return this.state === 'stopped'
+  }
+
+  private check(): Promise<void> {
+    this.checking ??= this.host
+      .agentCallerWaits(this.requestId, this.pid)
       .catch(() => undefined)
-      .then((runs) => {
-        if (runs) seenRunning = true
-        else if (runs === false && seenRunning) goneAfterRunning = true
-        asking = undefined
+      .then((seen) => {
+        this.checking = undefined
+        if (seen === 'request-gone' || (seen === 'gone' && this.state === 'runs'))
+          this.state = 'stopped'
+        else if (seen === 'runs' && this.state === 'unseen') this.state = 'runs'
       })
-    return !goneAfterRunning
+    return this.checking
   }
 }
 
@@ -679,14 +699,14 @@ export class ClaudeBackend implements SessionBackend {
       return
     }
     const pid = (raw as { pid?: unknown } | null)?.pid
-    const stillWaiting =
-      noOneWaits || typeof pid !== 'number' ? undefined : callerOnTheMachineWaits(host, pid)
-    void this.agentReply(tabId, raw, stillWaiting).then((reply) =>
-      host.answerAgent(
-        requestId,
-        noOneWaits || (stillWaiting && !stillWaiting()) ? null : replyJson(reply)
-      )
-    )
+    const caller =
+      noOneWaits || typeof pid !== 'number'
+        ? undefined
+        : new CallerOnTheMachine(host, requestId, pid)
+    void this.agentReply(tabId, raw, caller?.stillWaiting).then(async (reply) => {
+      const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
+      await host.answerAgent(requestId, nobodyReads ? null : replyJson(reply))
+    })
   }
 
   private handleStatusRegistration(raw: unknown): void {

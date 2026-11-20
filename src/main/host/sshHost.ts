@@ -610,6 +610,11 @@ const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
 
+export type AgentCallerState = 'runs' | 'gone' | 'request-gone'
+const REQUEST_TAKEN_BACK_EXIT = 3
+const CALLER_GONE_EXIT = 4
+const A_CALLER_CHECK_ANSWERS_WITHIN_MS = 10_000
+
 // PLATFORM§35
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
@@ -1012,13 +1017,16 @@ export class SshHost implements Host {
     else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
-  async agentCallerRuns(pid: number): Promise<boolean | undefined> {
+  async agentCallerWaits(requestId: string, pid: number): Promise<AgentCallerState | undefined> {
     const r = await this.sh(
-      'if kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1; then echo runs; else echo gone; fi',
-      [String(pid)]
+      `[ -f "${REMOTE_HOOK_DIR}/req-$1.json" ] || exit ${REQUEST_TAKEN_BACK_EXIT}
+kill -0 "$2" 2>/dev/null || ps -p "$2" >/dev/null 2>&1 || exit ${CALLER_GONE_EXIT}`,
+      [requestId, String(pid)],
+      { timeoutMs: A_CALLER_CHECK_ANSWERS_WITHIN_MS }
     )
-    const said = r.code === 0 ? r.stdout.toString('utf8').trim() : ''
-    return said === 'runs' ? true : said === 'gone' ? false : undefined
+    if (r.code === 0) return 'runs'
+    if (r.code === CALLER_GONE_EXIT) return 'gone'
+    return r.code === REQUEST_TAKEN_BACK_EXIT ? 'request-gone' : undefined
   }
 
   async savePick(name: string, png: Buffer): Promise<string> {
