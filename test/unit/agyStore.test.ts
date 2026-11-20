@@ -117,7 +117,7 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
     expect(fs.existsSync(path.join(gemini, 'antigravity-cli'))).toBe(false)
   })
 
-  it('reads one conversation title even while step_count is 0, and falls back to its annotations pbtxt before the summaries row has it', async () => {
+  it('reads one conversation title even while step_count is 0, and falls back to its annotations pbtxt (including protobuf text escapes and unreadable db)', async () => {
     writeSummaries(gemini, [
       {
         conversation_id: 'zero-steps',
@@ -134,10 +134,25 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
     ])
     const ann = annotationFile(gemini, 'only-ann')
     fs.mkdirSync(path.dirname(ann), { recursive: true })
-    fs.writeFileSync(ann, 'title:"中文 \\"引用\\" 标题"\n')
+    fs.writeFileSync(ann, 'title:"Fix user\\\'s \\"bug\\" \\344\\270\\255\\346\\226\\207"\n')
     expect(await readAgyConversationTitle(gemini, 'zero-steps')).toBe('Fresh title')
-    expect(await readAgyConversationTitle(gemini, 'only-ann')).toBe('中文 "引用" 标题')
+    expect(await readAgyConversationTitle(gemini, 'only-ann')).toBe('Fix user\'s "bug" 中文')
     expect(await readAgyConversationTitle(gemini, 'missing')).toBeUndefined()
+
+    const brokenGemini = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-broken-')))
+    try {
+      const brokenDb = path.join(brokenGemini, 'antigravity-cli', 'conversation_summaries.db')
+      fs.mkdirSync(path.dirname(brokenDb), { recursive: true })
+      fs.writeFileSync(brokenDb, 'not a sqlite file')
+      const brokenAnn = annotationFile(brokenGemini, 'fallback-id')
+      fs.mkdirSync(path.dirname(brokenAnn), { recursive: true })
+      fs.writeFileSync(brokenAnn, 'title:"From annotation despite corrupt db"\n')
+      expect(await readAgyConversationTitle(brokenGemini, 'fallback-id')).toBe(
+        'From annotation despite corrupt db'
+      )
+    } finally {
+      fs.rmSync(brokenGemini, { recursive: true, force: true })
+    }
   })
 })
 
