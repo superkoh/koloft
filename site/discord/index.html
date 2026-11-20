@@ -91,8 +91,10 @@
           Discord until you want to work on one from your phone: then your butler opens a
           <a href="#rooms">room just for that session</a>. One exception: while you are away, a
           session with no room that needs a password, a code or a sign-in sends a 🔑 card to your
-          butler's channel (see <a href="#secrets">below</a>), and one that needs you to click on a
-          web page sends a 👆 card (see <a href="#page-tap">robot checks</a>).
+          butler's channel (see <a href="#secrets">below</a>), one that needs you to click on a web
+          page sends a 👆 card (see <a href="#page-tap">robot checks</a>), and one that wants to
+          change your instructions sends a card you can agree to (see
+          <a href="#instructions-card">changes to your instructions</a>).
         </p>
 
         <pre
@@ -180,9 +182,10 @@ your Mac
           is me (or Not me). After that, the page shows your Discord account ("Only messages from
           this user reach Alfred."), the status ("The bot reads only the bound channel."), the
           server, and the channel. Click Set up with Alfred again any time to fix a problem: the
-          steps that are done are skipped. The <code>Turn on Discord</code> switch on this page does
-          not stop the bot yet: today only Todo's switch acts (see
-          <a href="../agents/#plugins">Settings ▸ Plugins</a>).
+          steps that are done are skipped. Switch off <code>Turn on Discord</code> on this page and
+          the bot leaves Discord; the status reads <code>Off</code>, and the channel can be changed
+          again once it is back on (see
+          <a href="../agents/#plugins">what turning a plugin off does</a>).
         </p>
 
         <figure class="shot" style="--ar: 1322 / 886; --ar-phone: 790 / 1236">
@@ -211,7 +214,8 @@ your Mac
 
         <h2>Its channel</h2>
         <p>
-          Your butler has one channel. Under its name in the sessions list is that channel, or
+          While Discord is on, your butler has one channel. Under its name in the sessions list is
+          that channel, or
           <code>not on Discord</code>. To pick one, right-click the butler's row ▸
           <code>Bind Discord channel…</code>, or click Settings ▸ Plugins ▸ Discord ▸
           <code>Bind a channel…</code>. The dialog lists your server's channels, with a new one on
@@ -447,6 +451,21 @@ your Mac
           <a href="../remote/">remote folder</a>.
         </p>
 
+        <h3 id="instructions-card">Changes to your instructions</h3>
+        <p>
+          When a session proposes a change to your
+          <a href="../sessions/#instructions">instructions</a>, it asks in its own tab. While you
+          are away, or talking to that session from Discord, a card comes too: to the session's
+          <a href="#rooms">room</a> if it has one, or else to your butler's channel. The card says
+          who wants to change which instructions, shows the lines added (<code>+</code>) and removed
+          (<code>-</code>), and has two buttons: <code>Don't change</code> and
+          <code>Change them</code>. The first answer wins, on the card or in Koloft. The card then
+          ends with what happened, such as <code>✅ Changed.</code>,
+          <code>⏹ Not changed, on the computer.</code> or
+          <code>⌛ Koloft stopped waiting, so nothing changed.</code> Koloft does this the same way
+          for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
+        </p>
+
         <h3>Slash commands</h3>
         <p>
           A slash command is a command you type that starts with <code>/</code>. Discord shows three
@@ -562,6 +581,14 @@ your Mac
                 <td>
                   The session's name and folder, the page's site, what it asks you to do, and
                   pictures of that part of the page, only while you are away or talking to that
+                  session from Discord.
+                </td>
+              </tr>
+              <tr>
+                <td>instruction cards</td>
+                <td>
+                  Who wants to change which instructions, and the lines it adds or removes with a
+                  few unchanged lines around them, only while you are away or talking to that
                   session from Discord.
                 </td>
               </tr>
