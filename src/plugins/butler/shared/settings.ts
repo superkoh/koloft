@@ -52,11 +52,10 @@ function cleanSession(raw: Record<string, unknown>): ButlerSession {
 
 function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   const last = sessions.find((s) => s.lastSessionKey)
-  const pluginsSeen = sessions.find((s) => s.pluginsSeen)?.pluginsSeen
   return {
     sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
     ...(last?.lastSessionKey ? { lastSessionKey: last.lastSessionKey } : {}),
-    ...(pluginsSeen ? { pluginsSeen } : {}),
+    ...(last?.pluginsSeen ? { pluginsSeen: last.pluginsSeen } : {}),
     ...knownLists(sessions),
     ...(last?.carried ? { carried: last.carried } : {})
   }

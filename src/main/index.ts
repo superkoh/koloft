@@ -4205,14 +4205,16 @@ app.whenReady().then(() => {
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
     news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
+    noticeWhileOpen: async (text) =>
+      (await handOver?.tell(butlerWhileOpen(), text, discordRelay?.quietMarks)) ?? false,
     pluginsOn: () =>
       Object.fromEntries(
         PLUGINS.filter((p) => !p.mandatory).map((p) => [p.id, pluginStateOf(p.id).on])
       ),
     pluginsNews: (changed) =>
-      `${FROM_KOLOFT}${pluginsChangedNews(
+      pluginsChangedNews(
         PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] }))
-      )}`,
+      ),
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -5947,6 +5949,17 @@ async function roomForNew({
 }
 
 const BUTLER_RECIPIENT = 'butler'
+
+function butlerWhileOpen(): Recipient {
+  return {
+    ...butlerRecipient(),
+    open: async () => {
+      const tab = butler?.liveTab()
+      if (!tab) throw new Error(`${butlerNameNow()} is closed.`)
+      return tab
+    }
+  }
+}
 
 function butlerRecipient(): Recipient {
   return {
