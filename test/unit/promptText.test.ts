@@ -8,6 +8,11 @@ import { todoMethod, TODO_NOTICE } from '../../src/plugins/todo/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
 import { DISCORD_SETUP_STEPS } from '../../src/plugins/discord/main/setupSteps'
+import {
+  ASKS_WHAT_KOLOFT_CANNOT_SEE,
+  inputNotProbed
+} from '../../src/plugins/sessions/main/sessionAsks'
+import { handoverPreamble } from '../../src/plugins/sessions/main/handoverPreamble'
 
 const PINNED = './prompt-text'
 const RULES = 'Docs: sonnet, low.\nNever start a Codex session for work in src/renderer.'
@@ -50,6 +55,15 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
     )
     await pin(butlerHelperRole(BUTLER, OWNER_INSTRUCTIONS), 'butler/helper-owner-instructions')
     await pin(ownerInstructionsPart(OWNER_INSTRUCTIONS), 'butler/owner-instructions-part')
+  })
+
+  it('what Koloft tells a session about the butler outside the guide: a question only keys answer, and the note a session the butler started reads first', async () => {
+    await pin(ASKS_WHAT_KOLOFT_CANNOT_SEE, 'butler/question-only-keys-answer')
+    await pin(inputNotProbed('Codex'), 'butler/question-not-probed')
+    await pin(
+      handoverPreamble({ name: BUTLER, id: 'butler-id', label: 'Claude', assist: true }),
+      'butler/handover-from-the-butler'
+    )
   })
 
   it("what koloft help prints, with and without a project's own rules for picking a model", async () => {

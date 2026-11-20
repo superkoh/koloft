@@ -2087,7 +2087,9 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect((await verb(['close', OTHER_THREAD], from('butler'))).exit).toBe(0)
     expect(closed).toEqual(['old-id', ENDED_CODEX])
     expect((await verb(['close', 'api-old'], from('butler'))).text).toContain('another machine')
-    expect((await verb(['close', 'Alfred'], from('fix'))).text).toContain('is the butler')
+    expect((await verb(['close', 'Alfred'], from('fix'))).text).toBe(
+      'koloft session close: Alfred is the butler, which only closes itself.'
+    )
     expect(closed).toEqual(['old-id', ENDED_CODEX])
     expect((await verb(['close', 'fix-login'], from('butler'))).exit).toBe(0)
     expect((await verb(['close', 'site-build'], from('butler'))).exit).toBe(0)
