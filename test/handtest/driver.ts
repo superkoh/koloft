@@ -45,7 +45,18 @@ export async function attach(cdp: string): Promise<Driver> {
   const browser = await chromium.connectOverCDP(cdp)
   const page = await koloftPage(browser)
   const row = (tabId: string): Locator => page.locator(`.ws-tab[data-tab-id="${tabId}"]`)
-  const show = (tabId: string): Promise<void> => switchToRow(page, row(tabId))
+  const closeTipThatWouldEatTheNextClick = async (): Promise<void> => {
+    const tip = page.locator('.hint-card')
+    if (await tip.isVisible()) await tip.getByRole('button', { name: 'Got it' }).click()
+  }
+  const show = async (tabId: string): Promise<void> => {
+    await closeTipThatWouldEatTheNextClick()
+    await switchToRow(page, row(tabId))
+  }
+  const markOf = async (tabId: string): Promise<string> => {
+    const mark = (await pendingAttention(page)).find((e) => e.tabId === tabId)
+    return mark ? `${mark.kind}@${mark.at}` : ''
+  }
   const write = (tabId: string, text: string): Promise<void> =>
     page.evaluate(([id, t]) => window.api.terminal.write(id, t), [tabId, text])
   const waitFor = (tabId: string, state: RowState, timeoutMs = TURN_DEADLINE_MS): Promise<void> =>
@@ -72,13 +83,14 @@ export async function attach(cdp: string): Promise<Driver> {
           .locator('.ws-tab.active[data-tab-id]')
           .evaluateAll((rows) => rows[0]?.getAttribute('data-tab-id') ?? null)
       const before = await activeTab()
+      await closeTipThatWouldEatTheNextClick()
       await openMenu(page, group.locator('.ws-head'))
-      await page
-        .locator('.menu .mi:not(.disabled)', {
-          hasText: agent ? new RegExp(`^New ${agent} session`) : /^New (\w+ )?session/
-        })
-        .first()
-        .click()
+      const items = page.locator('.menu .mi:not(.disabled)')
+      await (
+        agent
+          ? items.filter({ hasText: new RegExp(`^New ${agent} session`) })
+          : items.filter({ has: page.locator('.k', { hasText: /^⌘N$/ }) })
+      ).click()
       let tabId: string | null = null
       await expect
         .poll(
@@ -89,18 +101,22 @@ export async function attach(cdp: string): Promise<Driver> {
           { timeout: NEW_SESSION_BIND_DEADLINE_MS }
         )
         .toBeTruthy()
+      await expect(row(tabId!)).toHaveClass(/\bst-(working|waiting|approval|idle)\b/, {
+        timeout: NEW_SESSION_BIND_DEADLINE_MS
+      })
       return tabId!
     },
     async askAndWait(tabId, text, timeoutMs = TURN_DEADLINE_MS) {
-      const typedAt = Date.now()
+      const markBefore = await markOf(tabId)
       await type(tabId, text)
       let kind: AttentionKind | undefined
       await expect
         .poll(
           async () => {
-            kind = (await pendingAttention(page)).find(
-              (e) => e.tabId === tabId && e.at > typedAt
-            )?.kind
+            const mark = await markOf(tabId)
+            if (mark && mark !== markBefore) kind = mark.split('@')[0] as AttentionKind
+            else if (/\bst-approval\b/.test((await row(tabId).getAttribute('class')) ?? ''))
+              kind = 'approval'
             return kind
           },
           { timeout: timeoutMs }

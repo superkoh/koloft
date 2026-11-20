@@ -440,6 +440,8 @@ async function drive(home: string, script: string): Promise<void> {
   const steps = (await import(path.resolve(script))) as {
     default: (d: Driver) => Promise<unknown>
   }
+  if (typeof steps.default !== 'function')
+    throw new Error(`${script} must default-export a function that takes the Driver`)
   const result = JSON.stringify((await steps.default(driver)) ?? null, null, 2)
   await new Promise((printed) => process.stdout.write(`${result}\n`, printed))
 }
