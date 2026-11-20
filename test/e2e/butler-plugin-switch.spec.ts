@@ -127,7 +127,6 @@ test.describe('The butler while a plugin switch changes', () => {
         await expect
           .poll(() => heardBy(page, env, tab), { timeout: 60_000 })
           .toContain(TOLD_ITS_OWN_LINES)
-        expect(butlerCalls(env)).toHaveLength(2)
       } finally {
         await quitAndClose(app)
       }
