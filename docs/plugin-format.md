@@ -396,7 +396,8 @@ text per block. A state names which plugins are on (`on`, a map from plugin id; 
 leaves out counts as it is now) and which facts hold (`facts`). Only the blocks are weighed
 against the two states: a `{{…}}` inside a block is filled from the switches as they are now,
 with the facts of `now`, so `now` should be the state the prompt is put together in today.
-It does not join an `-or-list` slot's items. The butler uses it to tell a conversation that
+It does not join an `-or-list` slot's items, takes each block's `text` (never `byAgent`), and
+gives no values, so it suits slots whose blocks need no agent and no value. The butler uses it to tell a conversation that
 is already running the sentences a plugin turned on, or a fact that came to hold, adds to its
 prompt.
 

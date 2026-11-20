@@ -562,7 +562,10 @@ describe('the butler', () => {
     c.whatItKnowsMayHaveChanged()
     await vi.waitFor(() => expect(notices).toHaveLength(1))
     expect(notices[0]).toBe(
-      `${FROM_KOLOFT}${pluginsChangedNews([{ name: 'Todo', on: true }], [' When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints.'])}`
+      `${FROM_KOLOFT}${pluginsChangedNews(
+        [{ name: 'Todo', on: true }],
+        butlerLinesGained({ on: { todo: false }, facts: [] }, { on: { todo: true }, facts: [] })
+      )}`
     )
 
     passwordsOn = false
