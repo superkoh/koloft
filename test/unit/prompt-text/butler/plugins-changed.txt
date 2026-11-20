@@ -1,0 +1,1 @@
+The owner changed Settings ▸ Plugins after this conversation began: Todo is now off, Passwords and sign-in is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.

@@ -145,6 +145,13 @@ export async function openPluginPage(page: Page, plugin: string): Promise<Locato
   return main
 }
 
+export async function switchPlugin(page: Page, plugin: string, on: boolean): Promise<void> {
+  await openSettings(page)
+  await page.locator(EXT.nav, { hasText: 'Plugins' }).click()
+  await page.getByRole('switch', { name: plugin, exact: true }).setChecked(on)
+  await closeSettings(page)
+}
+
 export async function openExtensionsPane(page: Page): Promise<void> {
   await openSettings(page)
   await page.locator(EXT.nav, { hasText: 'Extensions' }).click()
