@@ -34,6 +34,16 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(keep)
   })
 
+  it('once given up, as when its tab is no longer on screen, takes no keys when the dialog closes', async () => {
+    const keep = button()
+    const { backdrop } = dialogWithAField()
+    const giveUp = focusOnceNoDialogIsOpen(keep)
+    giveUp()
+    backdrop.remove()
+    await domSettled()
+    expect(document.activeElement).not.toBe(keep)
+  })
+
   it('leaves the keys where closing the dialog put them', async () => {
     const keep = button()
     const elsewhere = button()
