@@ -5,7 +5,7 @@ import { tiersOf } from '@shared/sessionPicks'
 import { SESSION_BACKENDS, kindsOf } from '@shared/sessionBackend'
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
 
-const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
+export const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 
 const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =
   'Write the task you give a Koloft session, and every message you send one, in the language the owner writes to you, even though these instructions are in English.'
@@ -125,7 +125,11 @@ export const TEXT: readonly TextBlock[] = [
   },
   {
     slot: 'owners-ai-itself-koloft',
-    text: ` koloft session new with --workspace always gives the session a worktree of its own in a git workspace: -w names it, and without -w Koloft picks a name. A helper in your own folder shows under you in the sidebar and is told your goals and to report back. koloft session list takes no options for you and gives every session in every workspace, open or closed: name, ${EVERY_KIND}, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, its id, its workspace, and who started it. Use koloft session send for every session, ${EVERY_KIND}: your message reaches the session marked as coming from you, for the owner, and only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If the session is asking the owner a question, the answer says so: it reads your message only once that is answered. When it ends the turn that follows your message, Koloft hands you its reply, unless it reported to you itself.`
+    text: ` In a git workspace, koloft session new --workspace always gives the session a worktree of its own (-w names it; without -w Koloft picks one). A helper shows under you in the sidebar and is told your goals and to report back. koloft session list, with no options, gives you every session in every workspace, open or closed, with its agent, machine, state, last activity, id, workspace and who started it. Use koloft session send for every session, ${EVERY_KIND}.`
+  },
+  {
+    slot: 'owners-ai-folder-koloft',
+    text: ` What you send a project's session with koloft session send reaches it marked as from the butler, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If it is asking the owner a question, it reads your message once that is answered. When the turn after your message ends, Koloft hands you its reply, unless it reported to you itself.`
   },
   {
     slot: 'workspace-owner-instructions',

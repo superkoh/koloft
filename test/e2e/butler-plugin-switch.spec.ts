@@ -16,6 +16,7 @@ import {
 } from './helpers/p1'
 import { agentPluginSays } from './helpers/koloftSkills'
 import { switchPlugin } from './helpers/extensions'
+import { GUIDE_MOVED_NEWS } from '../../src/plugins/butler/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId } from '../../src/shared/types'
 
@@ -28,9 +29,9 @@ const INSTALL: Record<BackendId, (env: E2EEnv) => void> = {
 
 const TOLD_TODO_IS_OFF = 'TheownerchangedSettings▸Pluginsafterthisconversationbegan:Todoisnowoff.'
 const BUTLER_WOULD_HAVE_HEARD_WITHIN_MS = 4000
-const KNOWN_BY_NEWER_KOLOFT = 'knowsItsOwnLines'
+const KNOWN_BY_NEWER_KOLOFT = GUIDE_MOVED_NEWS.knownBy
 const TOLD_ITS_OWN_LINES =
-  'Kolofttookthelinesthatareonlyforyououtofkolofthelp,soitnolongersaysthem.Heretheyare:koloftsessionnewwith--workspace'
+  'Kolofttookthelinesthatareonlyforyououtofkolofthelp,soitnolongersaysthem.Heretheyare:Inagitworkspace,koloftsessionnew--workspace'
 
 function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
   return readAllCalls(env).filter(
@@ -100,7 +101,9 @@ test.describe('The butler while a plugin switch changes', () => {
         // AGY§8
         if (backend === 'agy') await runIn(page, centerTerm(page), 'hello')
         await expect
-          .poll(() => butlerSessionOnDisk(env)?.knowsItsOwnLines?.length ?? 0, { timeout: 60_000 })
+          .poll(() => butlerSessionOnDisk(env)?.[KNOWN_BY_NEWER_KOLOFT]?.length ?? 0, {
+            timeout: 60_000
+          })
           .toBe(1)
         await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
       } finally {

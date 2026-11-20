@@ -83,6 +83,16 @@ function knowing(
   return Object.fromEntries(news.map(({ knownBy }) => [knownBy, [...(s[knownBy] ?? []), key]]))
 }
 
+function forgetting(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    news.map(({ knownBy }) => [knownBy, (s[knownBy] ?? []).filter((k) => k !== key)])
+  )
+}
+
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
@@ -297,7 +307,7 @@ export class Butler {
       ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
     )
     const parts = [
-      ...untoldNews.map(({ text }) => text),
+      ...untoldNews.map(({ text }) => text()),
       ...(Object.keys(changed).length > 0 ? [this.d.pluginsNews(changed)] : [])
     ]
     if (before?.key === key && parts.length === 0) return
@@ -322,9 +332,7 @@ export class Butler {
       return {
         ...s,
         ...(seen?.key === key && { pluginsSeen: { key, on: { ...seen.on, ...asBefore } } }),
-        ...Object.fromEntries(
-          news.map(({ knownBy }) => [knownBy, (s[knownBy] ?? []).filter((k) => k !== key)])
-        )
+        ...forgetting(s, news, key)
       }
     })
   }

@@ -12,7 +12,6 @@ import {
   GUIDE_MOVED_NEWS,
   pluginsChangedNews
 } from '../../../../src/plugins/butler/api'
-import { guideMovedNotice } from '../../../../src/plugins/butler/prompts/role'
 import type { BackendId, ButlerSession } from '@shared/types'
 import type { InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
@@ -342,7 +341,7 @@ describe('the butler', () => {
       const c = make()
       const back = await c.open()
       if (!back.ok) throw new Error(back.error)
-      expect(notices).toEqual([`${FROM_KOLOFT}${guideMovedNotice()}`])
+      expect(notices).toEqual([`${FROM_KOLOFT}${GUIDE_MOVED_NEWS.text()}`])
       await vi.waitFor(() => expect(session.knowsItsOwnLines).toEqual([oldKey]))
       c.onBound(back.tabId, oldKey)
       c.onPtyExit(back.tabId)
@@ -386,7 +385,7 @@ describe('the butler', () => {
     transcripts.add(NEW_CODEX)
     await fresh.open()
     expect(notices).toEqual([
-      `${FROM_KOLOFT}${TODO_NEWS.text} The owner changed Settings ▸ Plugins after this conversation began: Todo is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
+      `${FROM_KOLOFT}${TODO_NEWS.text()} The owner changed Settings ▸ Plugins after this conversation began: Todo is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
     ])
   })
 

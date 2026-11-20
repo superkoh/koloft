@@ -4,10 +4,6 @@ import { SESSION_BACKENDS } from '@shared/sessionBackend'
 export const TEXT: readonly TextBlock[] = [
   { slot: 'koloft-skill-cron', text: 'list, add, change or run scheduled tasks, ' },
   {
-    slot: 'owners-ai-folder-koloft',
-    text: ' Your folder is no workspace, so give every koloft cron command --workspace <workspace>.'
-  },
-  {
     slot: 'koloft-help-rule-cron',
     text: `
 3. Scheduled tasks: before you add or change one, tell the owner how often it runs, what it does and which permission it gets. Before you remove one, run "koloft cron show" to be sure it is the right one.`

@@ -6,9 +6,8 @@ import {
   messagingOf,
   namedAtLaunch
 } from '@shared/sessionBackend'
-import { PICKED_FLAGS } from '../prompts/text'
+import { EVERY_KIND, PICKED_FLAGS } from '../prompts/text'
 
-const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
 const KINDS_BUT_CLAUDE = kindsOf(
   SESSION_BACKENDS.filter((b) => b !== 'claude'),

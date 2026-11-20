@@ -11,6 +11,6 @@ export const todoMethod = (): string => fillSlots(TODO_METHOD)
 
 export const TODO_NEWS: OldConversationNews = {
   knownBy: 'knowsTodo',
-  text: TODO_NOTICE,
+  text: () => TODO_NOTICE,
   on: () => pluginStateOf(plugin.id).on
 }

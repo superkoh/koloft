@@ -32,9 +32,9 @@ export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
 export const ANSWER_ON_ITS_WAY =
   'Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.'
-// MUSE§3
 const whoElseAnswers = (question: string): string =>
   composePrompt('session-answered-by-keys', { values: { 'the-question': question } })
+// MUSE§3
 export const asksWhatKoloftCannotSee = (): string =>
   `It is waiting for an answer Koloft cannot read from here.${whoElseAnswers('it')}`
 export const inputNotProbed = (label: string): string =>
