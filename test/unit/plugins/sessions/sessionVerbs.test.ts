@@ -658,6 +658,11 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(reply.exit).toBe(EXIT_USAGE)
     expect(reply.text).toContain("astra is one of Codex's models")
+    const argon = await verb(
+      ['new', '--model', 'argon', '--effort', 'medium', '--', 'go'],
+      from('me')
+    )
+    expect(argon.text).toContain("argon is one of Antigravity's models")
     expect(launched).toEqual([])
   })
 

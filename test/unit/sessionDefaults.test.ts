@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CronEffort, SessionDefaults } from '../../src/shared/types'
-import { cronPickFor, takesOwnDefaults } from '../../src/shared/sessionDefaults'
+import { cronPickFor, ownPickModels, takesOwnDefaults } from '../../src/shared/sessionDefaults'
 import { familyEfforts, resolveOwnPick } from '../../src/shared/sessionPicks'
 import {
   A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS,
@@ -63,6 +63,36 @@ describe('the model and thinking a session the owner starts runs on', () => {
     })
   })
 
+  it('starts Neon on Argon when the account has no Neon, and says so', () => {
+    const argonOnly = [{ id: 'gemini-4-argon', efforts: LMH }]
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, argonOnly)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'medium' },
+      note: 'This account has no neon model, so it runs on gemini-4-argon.'
+    })
+    const both = [{ id: 'gemini-4-neon', efforts: [...LMH, 'xhigh'] as CronEffort[] }, ...argonOnly]
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, both)).toEqual({
+      pick: { model: 'gemini-4-neon', effort: 'xhigh' }
+    })
+  })
+
+  it('starts Neon on Argon when the account’s models cannot be read, as not every account has Neon', () => {
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, undefined)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'medium' },
+      note: "Koloft could not read this account's models, so it runs on gemini-4-argon."
+    })
+  })
+
+  it('keeps an Argon pick saved before Neon took the normal tier on Argon', () => {
+    const listed = [
+      { id: 'gemini-4-neon', efforts: LMH },
+      { id: 'gemini-4-argon', efforts: LMH }
+    ]
+    expect(resolveOwnPick('agy', { model: 'argon', effort: 'medium' }, listed)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'medium' }
+    })
+    expect(ownPickModels('agy').map((m) => m.id)).toContain('argon')
+  })
+
   it('passes a full model name the owner typed straight through', () => {
     expect(resolveOwnPick('codex', { model: 'gpt-7-nova' }, [])).toEqual({
       pick: { model: 'gpt-7-nova' }
@@ -71,8 +101,9 @@ describe('the model and thinking a session the owner starts runs on', () => {
 
   it('offers each Antigravity family the thinking levels of the model it would run on', () => {
     expect(familyEfforts('agy', [{ id: 'gemini-4-argon', efforts: LMH }])).toEqual({
-      argon: LMH,
-      carbon: LMH
+      neon: LMH,
+      carbon: LMH,
+      argon: LMH
     })
   })
 })

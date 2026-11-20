@@ -11,7 +11,7 @@ import {
   type WorktreeInfo
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
-import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
+import { familyModelOf, resolvePick, tiersOf, type PickFacts } from '@shared/sessionPicks'
 import { agentGuide } from '@shared/agentGuide'
 import { PICK_FOR_THE_TASK, withProjectRules } from '../prompts/text'
 import {
@@ -448,7 +448,7 @@ function modelAndEffortRefusal(
     return (rules) =>
       `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
   const owner = SESSION_BACKENDS.find(
-    (b) => b !== backend && (namedModel(b, args.model) || tierModelOf(b, args.model))
+    (b) => b !== backend && (namedModel(b, args.model) || familyModelOf(b, args.model))
   )
   return owner
     ? (rules) =>
