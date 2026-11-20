@@ -35,6 +35,18 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   first message. `muse resume <session-uuid-or-name>` reopens a session in the TUI.
   `muse exec [OPTIONS] [PROMPT]` runs one prompt headless (subcommand first, its flags
   after). Root options may sit on either side of `resume`.
+- **A first message given on the command line reaches the model whole, at least up to
+  122,866 bytes.** 2026-11-20, `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker image
+  `koloft-probe-muse-agy` with `--network none` and `MUSE_NO_AUTO_UPDATE=1`, the TUI in a
+  python pty answering the terminal's queries, started as Koloft starts a local tab
+  (`--base-url <stand-in> --approval-judge off --sandbox-network enabled
+  --trust-workspace <prompt>`) against a stand-in model that saved each request. The
+  prompts were what Koloft hands a helper the butler starts (its role with the owner's
+  instructions at their 10,000-byte limit in plain letters, in Chinese, and in a mix of
+  line breaks, tabs, quotes, `$HOME`, backticks, `\`, `%s`, `!!`, Chinese and an emoji,
+  then the handover; 16,820–17,860 bytes), and 65,522 and 122,866 bytes of plain
+  letters, each between marker words. In 15 of 15 runs (3 each) the turn's request held
+  the whole prompt as one exact string. Longer prompts and a macOS muse were not run.
 - Options Koloft uses: `--model <id>`, `--reasoning-effort
   none|minimal|low|medium|high|xhigh|max|ultra`, `--trust-workspace` (§10), and the
   approval and sandbox flags of §15. `--model` is refused with `--provider echo`.
