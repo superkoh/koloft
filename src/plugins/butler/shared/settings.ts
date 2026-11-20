@@ -34,7 +34,11 @@ function knownLists(records: readonly object[]): Record<KnownBy, string[]> {
 function cleanPluginsSeen(raw: unknown): PluginsSeen | undefined {
   if (!isRecord(raw) || typeof raw.key !== 'string' || !isRecord(raw.on)) return undefined
   const on = Object.entries(raw.on).filter(([, value]) => typeof value === 'boolean')
-  return { key: raw.key, on: Object.fromEntries(on) as PluginsOn }
+  return {
+    key: raw.key,
+    on: Object.fromEntries(on) as PluginsOn,
+    ...(Array.isArray(raw.facts) && { facts: stringsIn(raw.facts) })
+  }
 }
 
 function cleanSession(raw: Record<string, unknown>): ButlerSession {

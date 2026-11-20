@@ -13,7 +13,14 @@ import {
 import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
 import { FROM_KOLOFT } from '@plugins/sessions/api'
-import { butlerRole, ownerInstructionsPart } from '../prompts/role'
+import type { PromptState } from '@core/prompt'
+import {
+  butlerLinesGained,
+  butlerRole,
+  factGivesLinesWhile,
+  linesCameNews,
+  ownerInstructionsPart
+} from '../prompts/role'
 import { conductorFolder } from './folder'
 
 interface ButlerPrompt {
@@ -60,7 +67,7 @@ export interface ButlerDeps {
   news: readonly OldConversationNews[]
   noticeWhileOpen(text: string): Promise<boolean>
   pluginsOn(): PluginsOn
-  pluginsNews(changed: PluginsOn): string
+  pluginsNews(changed: PluginsOn, lines: readonly string[]): string
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
@@ -94,6 +101,16 @@ function forgetting(
   )
 }
 
+interface FactsChange {
+  gained: readonly string[]
+  dropped: readonly string[]
+}
+
+const withFacts = (facts: readonly string[], { gained, dropped }: FactsChange): string[] => [
+  ...facts.filter((fact) => !dropped.includes(fact)),
+  ...gained.filter((fact) => !facts.includes(fact))
+]
+
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
@@ -105,7 +122,7 @@ export class Butler {
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private waitingForWords: string | undefined
-  private launchedWith: PluginsOn | undefined
+  private launchedWith: PromptState | undefined
 
   constructor(private d: ButlerDeps) {
     this.session = d.loadSession()
@@ -243,7 +260,7 @@ export class Butler {
     if (says || modelNote) this.d.toast([says, modelNote].filter(Boolean).join(' '))
     let tabId: string | null
     let started = false
-    const launchedWith = this.d.pluginsOn()
+    const launchedWith = this.knownNow()
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -293,27 +310,43 @@ export class Butler {
     return true
   }
 
+  private knownNow(): PromptState {
+    return { on: this.d.pluginsOn(), facts: this.d.roleFacts() }
+  }
+
   // CC§23 CODEX§17 MUSE§9 AGY§8
   private tellWhatChanged(key: string): void {
-    const before = this.session.pluginsSeen
-    const now = this.d.pluginsOn()
-    const changed =
-      before?.key === key
-        ? Object.fromEntries(
-            Object.entries(now).filter(([id, isOn]) => (before.on[id] ?? isOn) !== isOn)
-          )
-        : {}
+    const seen = this.session.pluginsSeen?.key === key ? this.session.pluginsSeen : undefined
+    const now = this.knownNow()
+    const was: PromptState = seen ? { on: seen.on, facts: seen.facts ?? now.facts } : now
+    const changed = Object.fromEntries(
+      Object.entries(now.on).filter(([id, isOn]) => (was.on[id] ?? isOn) !== isOn)
+    )
+    const factsGained = now.facts.filter((fact) => !was.facts.includes(fact))
+    const factsDropped = was.facts.filter(
+      (fact) => !now.facts.includes(fact) && !factGivesLinesWhile(fact, now.on)
+    )
     const untoldNews = this.d.news.filter(
       ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
     )
+    const newsTexts = untoldNews.map(({ text }) => text())
+    const lines = butlerLinesGained(was, now).filter(
+      (line) => !newsTexts.some((text) => text.includes(line.trim()))
+    )
     const parts = [
-      ...untoldNews.map(({ text }) => text()),
-      ...(Object.keys(changed).length > 0 ? [this.d.pluginsNews(changed)] : [])
+      ...newsTexts,
+      ...(Object.keys(changed).length > 0
+        ? [this.d.pluginsNews(changed, lines)]
+        : lines.length > 0
+          ? [linesCameNews(lines)]
+          : [])
     ]
-    if (before?.key === key && parts.length === 0) return
+    const factsChange = { gained: factsGained, dropped: factsDropped }
+    if (seen?.facts && parts.length === 0 && factsGained.length === 0 && factsDropped.length === 0)
+      return
     this.remember((s) => ({
       ...s,
-      pluginsSeen: { key, on: now },
+      pluginsSeen: { key, on: now.on, facts: withFacts(was.facts, factsChange) },
       ...knowing(s, untoldNews, key)
     }))
     if (parts.length === 0) return
@@ -321,23 +354,37 @@ export class Butler {
       .noticeWhileOpen(`${FROM_KOLOFT}${parts.join(' ')}`)
       .catch(() => false)
       .then((told) => {
-        if (!told) this.untold(key, changed, untoldNews)
+        if (!told) this.untold(key, changed, factsChange, untoldNews)
       })
   }
 
-  private untold(key: string, changed: PluginsOn, news: readonly OldConversationNews[]): void {
+  private untold(
+    key: string,
+    changed: PluginsOn,
+    factsChange: FactsChange,
+    news: readonly OldConversationNews[]
+  ): void {
     this.remember((s) => {
       const seen = s.pluginsSeen
       const asBefore = Object.fromEntries(Object.entries(changed).map(([id, on]) => [id, !on]))
       return {
         ...s,
-        ...(seen?.key === key && { pluginsSeen: { key, on: { ...seen.on, ...asBefore } } }),
+        ...(seen?.key === key && {
+          pluginsSeen: {
+            key,
+            on: { ...seen.on, ...asBefore },
+            facts: withFacts(seen.facts ?? [], {
+              gained: factsChange.dropped,
+              dropped: factsChange.gained
+            })
+          }
+        }),
         ...forgetting(s, news, key)
       }
     })
   }
 
-  pluginsSwitched(): void {
+  whatItKnowsMayHaveChanged(): void {
     const tab = this.liveTab()
     const key = this.session.lastSessionKey
     if (!tab || this.deadlines.has(tab) || tab === this.waitingForWords || key === undefined) return
@@ -386,7 +433,7 @@ export class Butler {
       const pluginsSeen =
         s.pluginsSeen?.key === key
           ? s.pluginsSeen
-          : { key, on: this.launchedWith ?? this.d.pluginsOn() }
+          : { key, ...(this.launchedWith ?? this.knownNow()) }
       return s.sessionIds.includes(key)
         ? { ...s, lastSessionKey: key, pluginsSeen }
         : {
@@ -401,7 +448,7 @@ export class Butler {
             )
           }
     })
-    this.pluginsSwitched()
+    this.whatItKnowsMayHaveChanged()
   }
 
   onPtyExit(tabId: string): void {
