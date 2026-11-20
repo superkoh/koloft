@@ -53,15 +53,14 @@ export const A_HELPER_ONLY_PROPOSES_FOR_THE_BUTLER =
 const NO_WORKSPACE =
   'koloft instructions: this session is in no workspace of the sidebar, so it has no instructions to change.'
 
-const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed' | 'changed-meanwhile'>, string> = {
+const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
   declined: 'koloft instructions: the owner did not agree, so nothing was changed.',
   timeout: 'koloft instructions: the owner did not answer in time, so nothing was changed.',
   closed:
-    'koloft instructions: the command stopped waiting, or this session was closed, before the owner answered, so nothing was changed.'
+    'koloft instructions: the command stopped waiting, or this session was closed, before the owner answered, so nothing was changed.',
+  'changed-meanwhile':
+    'koloft instructions: the instructions changed while the owner was asked, so nothing was changed. Read them again before you propose.'
 }
-
-const CHANGED_WHILE_ASKING =
-  'koloft instructions: the instructions changed while the owner was asked, so nothing was changed. Read them again before you propose.'
 
 function parsed(
   args: string[]
@@ -132,7 +131,6 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
       () => block.writeIfStill(before, after, by),
       caller.stillWaiting
     )
-    if (given === 'changed-meanwhile') return refused(CHANGED_WHILE_ASKING)
     if (given !== 'agreed') return refused(NOT_CHANGED[given])
     return answered(changedLine(p.edit, block.name))
   }

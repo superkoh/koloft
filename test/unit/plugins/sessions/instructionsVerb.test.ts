@@ -237,7 +237,7 @@ describe("the owner's answer, kept until it comes", () => {
     const writing = new Promise<boolean>((resolve) => (finishWrite = resolve))
     const fromPhone = asks.ask(ASK, 60_000, () => writing)
     expect(asked).toEqual([ASK])
-    asks.answerFromElsewhere(asks.views()[0].id, true)
+    asks.answer(asks.views()[0].id, true, 'phone')
     expect(asks.views()).toEqual([])
     await Promise.resolve()
     expect(ended).toEqual([])
@@ -267,7 +267,7 @@ describe("the owner's answer, kept until it comes", () => {
     const given = asks.ask(ASK, 60_000, async () => {
       throw unreachable
     })
-    asks.answerFromElsewhere(asks.views()[0].id, true)
+    asks.answer(asks.views()[0].id, true, 'phone')
     await expect(given).rejects.toBe(unreachable)
     expect(ended).toEqual([{ how: 'write-failed', at: 'phone', error: unreachable }])
     expect(told).toEqual(['Koloft cannot reach this machine now.'])

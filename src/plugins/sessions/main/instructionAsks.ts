@@ -7,7 +7,7 @@ export type OwnersAnswer = 'agreed' | 'declined' | 'timeout' | 'closed' | 'chang
 
 export type InstructionAsk = Omit<InstructionAskView, 'id'>
 
-export type AnsweredAt = 'computer' | 'phone'
+type AnsweredAt = 'computer' | 'phone'
 
 export type InstructionAskEnd =
   | { how: 'changed' | 'not-changed' | 'changed-meanwhile'; at: AnsweredAt }
@@ -31,9 +31,6 @@ type Given =
   | { how: 'agreed'; at: AnsweredAt }
   | { how: 'not-changed'; at: AnsweredAt }
   | { how: 'timeout' | 'tab-closed' | 'stopped-waiting' }
-
-const given = (agreed: boolean, at: AnsweredAt): Given =>
-  agreed ? { how: 'agreed', at } : { how: 'not-changed', at }
 
 interface Pending {
   ask: InstructionAsk
@@ -101,12 +98,8 @@ export class InstructionAsks {
     return [...this.pending.values()].some((p) => p.ask.tabId === tabId)
   }
 
-  answer(id: string, agreed: boolean): void {
-    this.end(id, given(agreed, 'computer'))
-  }
-
-  answerFromElsewhere(id: string, agreed: boolean): void {
-    this.end(id, given(agreed, 'phone'))
+  answer(id: string, agreed: boolean, at: AnsweredAt = 'computer'): void {
+    this.end(id, agreed ? { how: 'agreed', at } : { how: 'not-changed', at })
   }
 
   rehome(fromTabId: string, toTabId: string): void {

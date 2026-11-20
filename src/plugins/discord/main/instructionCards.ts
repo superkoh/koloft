@@ -10,7 +10,7 @@ import {
   type InstructionAskEnd,
   type InstructionAskListener
 } from '@plugins/sessions/api'
-import { CONDUCTOR_ACCENT, type Card } from './cards'
+import { CONDUCTOR_ACCENT, type Card, type CardButton } from './cards'
 import { privately, type DiscordInteraction } from './link'
 import { ONLY_THE_OWNER_ANSWERS, SESSION_CLOSED, UPDATE_MESSAGE_LATER } from './buttons'
 import { NO_LONGER_WAITING, type PlacedCard } from './secretCards'
@@ -31,7 +31,7 @@ export const STOPPED_WAITING = '⌛ Koloft stopped waiting, so nothing changed.'
 export const SESSION_STOPPED_WAITING = '⏹ The session stopped waiting, so nothing changed.'
 export const CHANGED_MEANWHILE = `⏹ ${INSTRUCTIONS_CHANGED_MEANWHILE}`
 
-export function footerWhenEnded(end: InstructionAskEnd): string {
+function footerWhenEnded(end: InstructionAskEnd): string {
   switch (end.how) {
     case 'changed':
       return end.at === 'phone' ? CHANGED : CHANGED_ON_THE_COMPUTER
@@ -52,7 +52,7 @@ export function footerWhenEnded(end: InstructionAskEnd): string {
 
 const withoutFences = (line: string): string => line.replaceAll(FENCE, FENCE_THAT_CANNOT_CLOSE)
 
-export function changeShown(ask: InstructionAsk): string {
+function changeShown(ask: InstructionAsk): string {
   const mark = { ctx: '  ', add: '+ ', del: '- ' } as const
   const { rows } = diffLines(ask.before, ask.after)
   const shown = rows.map(
@@ -80,7 +80,7 @@ export function changeShown(ask: InstructionAsk): string {
 export interface InstructionCardDeps {
   asks: {
     pendingAsk(id: string): InstructionAsk | undefined
-    answerFromElsewhere(id: string, agreed: boolean): void
+    answer(id: string, agreed: boolean, at: 'phone'): void
   }
   owner(): string | undefined
   cardWanted(tabId: string): boolean
@@ -129,15 +129,17 @@ export class InstructionCards implements InstructionAskListener {
   }
 
   onDiscord(tabId: string): 'posted' | 'posting' | undefined {
-    const mine = [...this.shown].flatMap(([id, s]) =>
-      (this.d.asks.pendingAsk(id) ?? s.ask).tabId === tabId ? [s] : []
-    )
+    const mine = [...this.shown].flatMap(([id, s]) => (this.tabOf(id, s) === tabId ? [s] : []))
     if (mine.some((s) => s.placed)) return 'posted'
     const onItsWay = (s: Shown): boolean => !!s.placing || (!s.tried && this.d.cardWanted(tabId))
     return mine.some(onItsWay) ? 'posting' : undefined
   }
 
-  checkHeld(): void {
+  private tabOf(id: string, shown: Shown): string {
+    return (this.d.asks.pendingAsk(id) ?? shown.ask).tabId
+  }
+
+  private checkHeld(): void {
     for (const id of this.shown.keys()) this.post(id)
     if ([...this.shown.values()].some((s) => !s.tried && !s.placing)) return
     clearInterval(this.heldCheck)
@@ -147,7 +149,7 @@ export class InstructionCards implements InstructionAskListener {
   private post(id: string): void {
     const shown = this.shown.get(id)
     if (!shown || shown.placing || shown.tried) return
-    const tabId = (this.d.asks.pendingAsk(id) ?? shown.ask).tabId
+    const tabId = this.tabOf(id, shown)
     if (!this.d.cardWanted(tabId)) {
       this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()
       return
@@ -170,16 +172,16 @@ export class InstructionCards implements InstructionAskListener {
       return
     }
     const [id, choice] = (i.customId ?? '').slice(INSTRUCTIONS_ID_PREFIX.length).split(':')
-    if (!this.d.asks.pendingAsk(id) || !this.shown.has(id)) {
+    if (!this.d.asks.pendingAsk(id)) {
       await this.d.respond(i, privately(NO_LONGER_WAITING))
       return
     }
     await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
-    this.d.asks.answerFromElsewhere(id, choice === AGREE)
+    this.d.asks.answer(id, choice === AGREE, 'phone')
   }
 
   private cardOf(id: string, shown: Shown, name: string): Card {
-    const button = (label: string, style: 'secondary' | 'success', choice: string) => ({
+    const button = (label: string, style: CardButton['style'], choice: string): CardButton => ({
       label,
       style,
       id: `${INSTRUCTIONS_ID_PREFIX}${id}:${choice}`

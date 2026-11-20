@@ -441,6 +441,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   file's name or fate once the command ends; whether a hook's input carries the
   `call_id`, or whether it is the `CLAUDE_CODE_TOOL_USE_ID` the command's environment
   carries (bullet above).
+- **A `bash` command waits 10 s in the foreground, then runs on for at least 11
+  minutes.** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)` in Docker (`--network none`,
+  `MUSE_NO_AUTO_UPDATE=1`), `muse exec --approval-mode never --disable-sandbox` against
+  a fake `/responses` model (its stream events need a `sequence_number`; the catalog at
+  `/muse-code/models` was `{"object":"list","data":[{"id":"fake-model",…}]}`), whose
+  model called `muse.bash` with only `{command: "sleep 660; echo done-after-660"}`; `ps`
+  read every 15 s; one run. The tools come as one `namespace` tool `muse` with nested
+  functions; `bash`'s parameters no longer include `timeout_ms`, and its description
+  says the runtime "waits at most 10 seconds in the foreground" unless `yield_time_ms`
+  (up to 300000) is given, and that a command still running then "remain[s] managed by
+  the runtime … final output arrives later as runtime context". At 10 s the tool result
+  was `execution_state: "background_running"`; the command ran its full 660 s; at 660 s
+  muse sent the model a new request carrying the finished call's output, and `muse exec`
+  stayed up the whole time. Not probed: the TUI, macOS, a command longer than 11
+  minutes.
 - **A `bash` command has no terminal unless the model asks for one, and the macOS
   sandbox refuses sudo itself.** 2026-11-05, `Muse Code 1.4.14 (1.4.14-R7309.1)` on macOS
   27 (official installer, a throwaway HOME, the TUI under `expect`) and `Muse Code 1.4.11

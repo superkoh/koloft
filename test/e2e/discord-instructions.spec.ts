@@ -34,7 +34,12 @@ import {
   startIn,
   versionsOnDisk
 } from './helpers/instructions'
-import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import {
+  callbackText,
+  startFakeDiscord,
+  type FakeDiscord,
+  type FakePost
+} from './helpers/fakeDiscord'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 import {
   CHANGED,
@@ -68,21 +73,28 @@ function seedBinding(env: E2EEnv, more: Parameters<typeof seedSettings>[1] = {})
   })
 }
 
-async function connected(
-  env: E2EEnv,
-  fake: FakeDiscord,
-  launch: () => Promise<{ app: ElectronApplication; page: Page }>
-): Promise<{ app: ElectronApplication; page: Page }> {
-  const { app, page } = await launch()
-  await waitBooted(page)
-  await expect.poll(() => fake.identifies).toBe(1)
-  await waitConductorStarted(env, STARTS_AND_ANSWERS_MS)
-  return { app, page }
-}
+type Launch = () => Promise<{ app: ElectronApplication; page: Page }>
+type Body = (page: Page, fake: FakeDiscord, app: ElectronApplication) => Promise<void>
 
-const onThisMac = (env: E2EEnv) => async () => {
-  const app = await launchApp(env)
-  return { app, page: await app.firstWindow() }
+const onThisMac =
+  (env: E2EEnv): Launch =>
+  async () => {
+    const app = await launchApp(env)
+    return { app, page: await app.firstWindow() }
+  }
+
+async function withDiscord(env: E2EEnv, body: Body, launch = onThisMac(env)): Promise<void> {
+  const fake = await startFakeDiscord(env)
+  const { app, page } = await launch()
+  try {
+    await waitBooted(page)
+    await expect.poll(() => fake.identifies).toBe(1)
+    await waitConductorStarted(env, STARTS_AND_ANSWERS_MS)
+    await body(page, fake, app)
+  } finally {
+    await quitAndClose(app)
+    await fake.close()
+  }
 }
 
 const cardsFor = (fake: FakeDiscord, line: string, channelId: string): FakePost[] =>
@@ -162,21 +174,12 @@ async function phoneDeclinesThenAgrees(
   await endsAs(fake, second, CHANGED)
 }
 
-async function withOneSession(
-  env: E2EEnv,
-  body: (page: Page, fake: FakeDiscord, app: ElectronApplication) => Promise<void>
-): Promise<void> {
-  const fake = await startFakeDiscord(env)
-  const { app, page } = await connected(env, fake, onThisMac(env))
-  try {
+const withOneSession = (env: E2EEnv, body: Body): Promise<void> =>
+  withDiscord(env, async (page, fake, app) => {
     await ownerWrites(page, 'ws-a', WRITTEN)
     await startSessionIn(page, 'ws-a')
     await body(page, fake, app)
-  } finally {
-    await quitAndClose(app)
-    await fake.close()
-  }
-}
+  })
 
 test.describe('Discord: the owner agrees on the phone to an agent’s proposed change to the Instructions', () => {
   test('on this Mac, a Claude Code, Codex, Muse and Antigravity session with no room each post their change to the butler’s channel, naming the session and its workspace; Don’t change writes nothing, Change them writes the line, and the box at the Mac goes either way', async ({
@@ -188,18 +191,13 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
     installAgy(env)
     trustInMuse(env, env.workspaces.a)
     trustInAgy(env, env.workspaces.a)
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake, onThisMac(env))
-    try {
+    await withDiscord(env, async (page, fake) => {
       await ownerWrites(page, 'ws-a', WRITTEN)
       for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
         await startIn(page, 'ws-a', backend)
         await phoneDeclinesThenAgrees(page, env, fake, 'ws-a', backend)
       }
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
+    })
   })
 
   test('on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each post their change the same way, and Change them writes that workspace’s own instructions', async ({
@@ -207,28 +205,25 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
   }) => {
     seedBinding(env)
     for (const agent of OTHER_AGENTS_ON_THE_MACHINE) agent.install(env)
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake, () => launchWithRemote(env))
-    try {
-      await addRemoteWorkspace(page, env)
-      await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
-      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
-        await startIn(page, REMOTE_WS_NAME, backend)
-        await phoneDeclinesThenAgrees(page, env, fake, REMOTE_WS_NAME, backend)
-      }
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
+    await withDiscord(
+      env,
+      async (page, fake) => {
+        await addRemoteWorkspace(page, env)
+        await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
+        for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+          await startIn(page, REMOTE_WS_NAME, backend)
+          await phoneDeclinesThenAgrees(page, env, fake, REMOTE_WS_NAME, backend)
+        }
+      },
+      () => launchWithRemote(env)
+    )
   })
 
   test('the butler’s own change, asked from Discord, comes as a card in its channel under its name, and Change them there writes its instructions', async ({
     env
   }) => {
     seedBinding(env)
-    const fake = await startFakeDiscord(env)
-    const { app } = await connected(env, fake, onThisMac(env))
-    try {
+    await withDiscord(env, async (_page, fake) => {
       const line = 'Ask me before any session merges a pull request.'
       fake.say(OWNER, `/koloft instructions add -- ${line}`)
       const card = await cardFor(fake, line)
@@ -240,19 +235,14 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
         .poll(() => butlerVersions(env).at(-1))
         .toMatchObject({ text: line, by: 'Alfred' })
       await endsAs(fake, card, CHANGED)
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
+    })
   })
 
   test('a helper the butler started proposes a line for the butler’s instructions: its card in the butler’s channel names it as the butler’s helper', async ({
     env
   }) => {
     seedBinding(env)
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake, onThisMac(env))
-    try {
+    await withDiscord(env, async (page, fake) => {
       const line = 'Keep helpers short.'
       fake.say(OWNER, `/koloft session new ${picksFor('claude')} --name Tidy -- sort it`)
       const helper = await liveSession(page, (s) => s.title === 'Tidy')
@@ -262,19 +252,14 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
       press(fake, card, 'Change them')
       await expect.poll(() => butlerVersions(env).at(-1)).toMatchObject({ text: line, by: 'Tidy' })
       await endsAs(fake, card, CHANGED)
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
+    })
   })
 
   test('a session with a room of its own posts its change in that room, under its own name, and not in the butler’s channel', async ({
     env
   }) => {
     seedBinding(env)
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake, onThisMac(env))
-    try {
+    await withDiscord(env, async (page, fake) => {
       const line = 'Rooms ask here.'
       await startSessionIn(page, 'ws-a')
       const session = await liveSession(page, (s) => !!s.sessionId)
@@ -293,10 +278,7 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
       press(fake, card, 'Change them')
       await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(line)
       await endsAs(fake, card, CHANGED)
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
+    })
   })
 
   test('answered at the Mac first, the card loses its buttons and says what was answered there', async ({
@@ -312,7 +294,7 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
       expect(versionsOnDisk(env).at(-1)?.text).toBe(`${WRITTEN}\n${line}`)
       press(fake, card, 'Change them')
       await expect
-        .poll(() => fake.callbacks.map((c) => c.data.content))
+        .poll(() => fake.callbacks.map(callbackText))
         .toContain('Koloft is no longer waiting for this.')
     })
   })
