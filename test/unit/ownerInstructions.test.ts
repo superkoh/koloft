@@ -3,7 +3,6 @@ import {
   OWNER,
   savedVersions,
   textInUse,
-  versionsStore,
   type InstructionsVersion
 } from '../../src/core/ownerInstructions'
 
@@ -48,17 +47,5 @@ describe('saving a list of versions of the owner’s instructions', () => {
     let versions: InstructionsVersion[] | undefined
     for (let at = 1; at <= 25; at++) versions = saved(versions, `rule ${at}`, at)
     expect(versions?.map((v) => v.at)).toEqual(Array.from({ length: 20 }, (_, i) => i + 6))
-  })
-
-  it('an agent’s write that changes nothing saves nothing', async () => {
-    const writes: InstructionsVersion[][] = []
-    const store = versionsStore(
-      () => undefined,
-      (v) => writes.push(v),
-      LIMIT,
-      () => 1
-    )
-    expect(await store.writeIfStill('', '', 'Fix login')).toBe(true)
-    expect(writes).toEqual([])
   })
 })

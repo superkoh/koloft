@@ -3,7 +3,8 @@ import {
   textInUse,
   versionsSavedByTheOwner,
   versionsStore,
-  type InstructionsVersion
+  type InstructionsVersion,
+  type VersionsSaved
 } from '@core/ownerInstructions'
 import type { SessionDefaults } from '@shared/types'
 import type { InstructionsBlock } from './instructionsVerb'
@@ -30,7 +31,7 @@ export function ownerPartsOf(
 }
 
 export type EveryWorkspaceSaved =
-  { ok: true; versions: InstructionsVersion[] } | { ok: false; error: string; inUse?: string }
+  { ok: true; versions: InstructionsVersion[] } | Exclude<VersionsSaved, { ok: true }>
 
 export function savedByTheOwner(
   versions: readonly InstructionsVersion[],

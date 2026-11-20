@@ -95,7 +95,7 @@ describe('how long the owner’s instructions for the butler may be', () => {
 })
 
 describe('saving the owner’s instructions', () => {
-  it('refuses text over the limit and says by how much', () => {
+  it('are held to the butler’s own limit', () => {
     const saved = savedByTheOwner(BUTLER, 'a'.repeat(INSTRUCTIONS_MAX_BYTES + 12), '', 1)
     expect(saved).toEqual({ ok: false, error: 'The instructions are 12 over the limit.' })
   })

@@ -1,4 +1,4 @@
-import { textInUse, versionsSavedByTheOwner } from '@core/ownerInstructions'
+import { textInUse, versionsSavedByTheOwner, type VersionsSaved } from '@core/ownerInstructions'
 import type { ButlerSetting } from './types'
 
 // CC§13 MUSE§12
@@ -7,7 +7,7 @@ export const INSTRUCTIONS_MAX_BYTES = 10_000
 export const instructionsOf = (butler: ButlerSetting): string => textInUse(butler.instructions)
 
 export type InstructionsSaved =
-  { ok: true; butler: ButlerSetting } | { ok: false; error: string; inUse?: string }
+  { ok: true; butler: ButlerSetting } | Exclude<VersionsSaved, { ok: true }>
 
 export function savedByTheOwner(
   butler: ButlerSetting,
