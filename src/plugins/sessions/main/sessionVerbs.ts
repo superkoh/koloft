@@ -386,7 +386,7 @@ export interface SessionVerbDeps {
   deliver(tabId: string, text: string): Promise<boolean>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
-  answer(tabId: string, reply: string): Promise<string | undefined>
+  answer(tabId: string, reply: string, byTheOverseer: boolean): Promise<string | undefined>
   undelivered(callerTab: string, target: Target, why: string): void
   command(
     callerTab: string,
@@ -1254,7 +1254,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const error = await repliesOwed.owing(
         tab,
         { owner: caller.session.sessionId },
-        () => d.answer(tab, text),
+        () => d.answer(tab, text, d.overseer.is(caller.tabId)),
         (e) => e !== undefined
       )
       return error
