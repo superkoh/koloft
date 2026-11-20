@@ -256,6 +256,20 @@ describe('koloft cron: changing tasks', () => {
     expect('effort' in c.runner.state().jobs[0]).toBe(false)
   })
 
+  it('takes xhigh for Gemini 4 Neon, and reads an id ending -xhigh as that one level', async () => {
+    const c = cron([job({ backend: 'agy' })], { backend: 'agy' })
+    expect(
+      await c.run('edit', 'nightly', '--model', 'gemini-4-neon-xhigh', '--effort', 'high')
+    ).toEqual({
+      text: 'koloft cron: gemini-4-neon-xhigh does not take --effort high; it takes xhigh.',
+      exit: 1
+    })
+    expect(
+      (await c.run('edit', 'nightly', '--model', 'gemini-4-neon', '--effort', 'xhigh')).exit
+    ).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ model: 'gemini-4-neon', effort: 'xhigh' })
+  })
+
   it('reaches only the caller workspace: another workspace’s task is neither listed nor found by name or number', async () => {
     const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })])
     const listed = await c.run('list')

@@ -31,9 +31,15 @@ export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = {
   },
   agy: {
     'very simple': { model: 'flash', effort: 'low' },
-    normal: { model: 'argon', effort: 'medium' },
+    normal: { model: 'neon', effort: 'medium' },
     'very hard': { model: 'carbon', effort: 'high' }
   }
+}
+
+const FORMER_TIER_MODELS: Partial<Record<BackendId, string[]>> = { agy: ['argon'] }
+
+const STAND_IN_WHEN_MISSING: Partial<Record<BackendId, Record<string, string>>> = {
+  agy: { neon: 'argon' }
 }
 
 const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }
@@ -129,8 +135,12 @@ function runsOn(
   if (found) return { model: found, fellBack: false }
   const stand = TIER_PICKS[backend].normal.model
   const hard = TIER_PICKS[backend]['very hard'].model
-  return { model: wanted === hard && stand ? newestOf(stand, listed) : undefined, fellBack: true }
+  const instead = wanted === hard ? stand : STAND_IN_WHEN_MISSING[backend]?.[wanted]
+  return { model: instead ? runsOn(backend, instead, listed).model : undefined, fellBack: true }
 }
+
+const familyModelOf = (backend: BackendId, model: string): boolean =>
+  tierModelOf(backend, model) || !!FORMER_TIER_MODELS[backend]?.includes(model)
 
 const runsInstead = (read: boolean, wanted: string, instead: string): string =>
   read
@@ -175,7 +185,7 @@ export function resolveOwnPick(
   listed: ListedModel[] | undefined
 ): OwnPickResolved {
   const named = asked.model
-  if (!named || !listsModels(backend) || !tierModelOf(backend, named))
+  if (!named || !listsModels(backend) || !familyModelOf(backend, named))
     return { pick: ownPickOf(named, takenEffort(backend, named, asked.effort)) ?? {} }
   const read = !!listed?.length
   const { model, fellBack } = runsOn(backend, named, read ? listed! : lastKnown(backend))

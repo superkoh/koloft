@@ -1377,6 +1377,17 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   reads it to turn a family name (`flash`, `argon`, `carbon`) into the newest id the
   account has. `--model gemini-4-carbon --effort high -p "Reply with exactly: OK"` on
   that account exited 0 with `OK` (24 thinking tokens).
+- **Gemini 4 Neon** (2026-11-19, agy 1.5.13 on macOS, the same copied-token route):
+  `agy models` prints 27 rows: `gemini-4-neon-{high,xhigh,medium,low}` first, then
+  Carbon, Argon (still listed), `gemini-4-hydrogen-{high,xhigh,medium,low}`, three
+  `gemini-pro-orchestrator`, `-neon`, `-argon` rows with no effort in the id (so
+  `agyListedModels` skips them), 3.8 Flash, the Claude rows and `gpt-oss-120b-medium`.
+  `--model gemini-4-neon --effort xhigh -p "Reply with exactly: OK"` exited 0 with `OK`
+  in 2.9 s (22 thinking tokens); `--effort max` exited 1 before any request: `gemini-4-neon
+  has no "max" effort (available: low, medium, high, xhigh)`. Hydrogen's efforts are read
+  off its ids only, not run. That an account without Neon lists Argon, as this one
+  still does, is inferred, not checked: Carbon was not open to every account (above),
+  so Koloft's normal tier runs Argon where Neon is missing.
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
