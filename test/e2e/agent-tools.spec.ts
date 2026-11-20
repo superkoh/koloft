@@ -10,6 +10,7 @@ import {
   agyTranscriptOf,
   installAgy,
   installCodex,
+  installFakeGh,
   installMuse,
   museCalls,
   museSaid,
@@ -1392,6 +1393,72 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         const skills = koloftSkillsUnder(env.home)
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toContain('gather what waits on the owner')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  test('with GitHub on, koloft gh in a session runs gh in that session’s workspace on this Mac and prints what gh said', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installFakeGh(env, {
+      issues: [
+        {
+          number: 7,
+          title: 'koloft-gh-ran-here',
+          url: 'https://github.com/acme/app/issues/7',
+          updatedAt: '2026-11-01T00:00:00Z'
+        }
+      ]
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+
+      expect(await koloftInSession(page, 'gh issue list')).toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain('koloft-gh-ran-here')
+      expect(fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8')).toContain(
+        'issue list'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session's koloft help and koloft skill say nothing of koloft gh or the to-dos, and koloft gh and koloft todo are refused with the reason`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { github: false } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'gh auth status')).not.toBe('0')
+        expect(await koloftInSession(page, 'todo')).not.toBe('0')
+        const said = await shownTermText(page, CENTER)
+        expect(said).toContain('koloft: GitHub is turned off in Settings ▸ Plugins.')
+        expect(said).toContain(
+          'koloft: Todo is off because GitHub is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        const help = await shownTermText(page, CENTER)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft gh <gh command>')
+        expect(help).not.toContain('koloft todo note')
+        const skills = koloftSkillsUnder(env.home)
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) {
+          expect(skill).not.toContain('koloft gh ')
+          expect(skill).not.toContain('gather what waits on the owner')
+        }
       } finally {
         await quitAndClose(app)
       }

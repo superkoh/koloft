@@ -14,7 +14,7 @@ import {
 } from './slots'
 import type { Settings, WorkspaceRows } from '@shared/types'
 import type { PluginState } from '@core/switches'
-import { actingStatesIn } from '@shared/pluginSwitches'
+import { pluginStatesIn } from '@shared/pluginSwitches'
 
 let placedOnce: PlacedUi | undefined
 
@@ -32,27 +32,27 @@ export function placePluginUi(): void {
   placed()
 }
 
-interface ActingStates {
+interface PluginStates {
   settings: Settings
   states: Record<string, PluginState>
   onKey: string
 }
 
-let statesFor: ActingStates | undefined
+let statesFor: PluginStates | undefined
 
-function actingStatesOf(settings: Settings): ActingStates {
+function pluginStatesOf(settings: Settings): PluginStates {
   if (statesFor?.settings === settings) return statesFor
-  const states = actingStatesIn(settings)
+  const states = pluginStatesIn(settings)
   const onKey = Object.keys(states)
     .filter((id) => states[id].on)
     .join(' ')
   return (statesFor = { settings, states, onKey })
 }
 
-const onIn =
+export const onIn =
   (settings: Settings) =>
   (plugin: string): boolean =>
-    actingStatesOf(settings).states[plugin]?.on ?? true
+    pluginStatesOf(settings).states[plugin]?.on ?? true
 
 const onNow = (plugin: string): boolean => onIn(useStore.getState().settings)(plugin)
 
@@ -66,14 +66,18 @@ const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])
 export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
   (placed().parts[place] ?? []).filter((p) => KEPT_WHILE_OFF.has(place) || onNow(p.plugin))
 
-const usePluginsOnKey = (): string => useStore((s) => actingStatesOf(s.settings).onKey)
+const usePluginsOnKey = (): string => useStore((s) => pluginStatesOf(s.settings).onKey)
 
-export function useFillsOf<T, R>(into: Slot<T>, use: (fill: T) => R): (R | undefined)[] {
+export function useFillsOf<T, R>(
+  into: Slot<T>,
+  use: (fill: T, on: boolean) => R
+): (R | undefined)[] {
   usePluginsOnKey()
-  const every = fillsOfOnOrOff(into)
-  const used = every.map(use)
   const on = new Set(fillsOf(into))
-  return used.map((result, i) => (on.has(every[i]) ? result : undefined))
+  return fillsOfOnOrOff(into).map((fill) => {
+    const result = use(fill, on.has(fill))
+    return on.has(fill) ? result : undefined
+  })
 }
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>

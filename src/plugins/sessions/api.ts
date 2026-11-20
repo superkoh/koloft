@@ -40,6 +40,18 @@ export {
 } from './main/everyWorkspaceInstructions'
 export type { InstructionsBlock } from './main/instructionsVerb'
 export { InstructionAsks } from './main/instructionAsks'
+export type {
+  InstructionAsk,
+  InstructionAskEnd,
+  InstructionAskListener
+} from './main/instructionAsks'
+export {
+  CHANGE_THEM,
+  INSTRUCTIONS_CHANGED_MEANWHILE,
+  KEEP_THEM,
+  nothingChangesUntilYouAgree,
+  changeSummary
+} from './shared/instructionAsks'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

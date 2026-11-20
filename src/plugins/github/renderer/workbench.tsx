@@ -165,6 +165,9 @@ export function useWorkbenchPart({
 }: WorkbenchPartContext): WorkbenchPartView {
   const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, gitSteps)
   const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => {
+    if (!visible) setMenuOpen(false)
+  }, [visible])
 
   const openGithub = useCallback(
     (what: GithubTarget): void => {
