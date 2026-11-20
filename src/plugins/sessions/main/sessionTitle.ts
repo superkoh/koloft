@@ -1,4 +1,5 @@
 import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 
 const NAME_MAX_CHARS = 40
 const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000
@@ -64,7 +65,7 @@ export function distinctTitle(name: string, taken: Set<string>): string {
 
 export async function titleForTask(
   task: string,
-  assist: Assist,
+  assist: Assist<SessionsAssistJobId>,
   ownerWords?: string
 ): Promise<string> {
   const reply = await assist({
