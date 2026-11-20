@@ -112,7 +112,6 @@ import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
-import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import {
@@ -2469,21 +2468,25 @@ registerPageCommand(commands, {
   sleep
 })
 
+async function pinnedPathsChecked(): Promise<{ path: string; missing: boolean }[]> {
+  return (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
+}
+
 const github = startGithubMain({
   commands,
   repos: (wsPath) => hosts.of(wsPath).github,
-  pinnedWorkspaces: async () => (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? [],
+  pinnedWorkspaces: pinnedPathsChecked,
   restampRows: () => workspaceMgr?.restampLive(),
   browserCookies: (domain) => session.fromPartition(BROWSER_PARTITION).cookies.get({ domain }),
   accounts: {
-    ready: () => loginEnvReady(),
+    ready: loginEnvReady,
     picked: (root) => gitAccounts?.pickedAccount(root),
     ghEnv: async (root) => gitAccounts?.ghEnv(root),
     ghEnvForRepo: async (repo, pinned) => gitAccounts?.ghEnvForRepo(repo, pinned),
     machineGh: async (root, args) => (await gitAccounts?.machineGh(root, args)) ?? null
   },
   ghOnThisMac: ghRead,
-  butlerSide: (tabId) => butlerSide(tabId),
+  butlerSide,
   workspaceOfTab: (tabId) => sessionBackends.workspaceOfTab(tabId),
   pinnedPaths: () => workspaceMgr?.pinnedPathList() ?? []
 })
@@ -4569,8 +4572,6 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
-  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
-    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
     workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,

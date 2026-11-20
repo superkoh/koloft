@@ -97,9 +97,8 @@ export function startGithubMain(d: GithubMainDeps): GithubMain {
     if (on === running) return
     const first = running === undefined
     running = on
-    if (!on) counts.stop()
-    else if (first) counts.start()
-    else counts.start(SWEEP_AT_ONCE_ON_TURNING_ON_MS)
+    if (on) counts.start(first ? undefined : SWEEP_AT_ONCE_ON_TURNING_ON_MS)
+    else counts.stop()
   }
 
   return {

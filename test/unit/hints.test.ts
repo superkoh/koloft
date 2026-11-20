@@ -16,6 +16,13 @@ describe('tip n of N', () => {
     expect(tipNumber(['workbench', 'github'], allOn)).toEqual({ n: 3, of: HINT_IDS.length })
   })
 
+  it('a seen tip that no longer exists does not push n past N', () => {
+    expect(tipNumber([...HINT_IDS, 'a-tip-since-removed'].slice(1), allOn)).toEqual({
+      n: HINT_IDS.length,
+      of: HINT_IDS.length
+    })
+  })
+
   it('leaves a turned-off plugin tip out of both n and N, even one seen before', () => {
     expect(tipNumber(['workbench', 'github'], githubOff)).toEqual({
       n: 2,

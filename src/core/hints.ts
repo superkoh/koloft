@@ -11,8 +11,6 @@ export function tipNumber(
   on: (plugin: string) => boolean
 ): { n: number; of: number } {
   const uncounted = new Set(PLUGINS.filter((p) => !on(p.id)).flatMap((p) => p.hints ?? []))
-  return {
-    n: seen.filter((hint) => !uncounted.has(hint)).length + 1,
-    of: HINT_IDS.filter((hint) => !uncounted.has(hint)).length
-  }
+  const counted = new Set(HINT_IDS.filter((hint) => !uncounted.has(hint)))
+  return { n: seen.filter((hint) => counted.has(hint)).length + 1, of: counted.size }
 }

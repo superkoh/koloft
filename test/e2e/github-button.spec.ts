@@ -425,9 +425,7 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       await app.close().catch(() => {})
     }
   })
-})
 
-test.describe('Workbench · GitHub button against the REAL gh and GitHub: opt-in; the pull request number comes from the fixture because PR #3’s branch is gone from GitHub', () => {
   test('G15: turning GitHub off in Settings ▸ Plugins while its button shows takes the button and the sidebar counts away, keeps the branch button whose Commit… and Push still work, and turning it on brings them back, the window working throughout', async ({
     env
   }) => {
@@ -477,7 +475,9 @@ test.describe('Workbench · GitHub button against the REAL gh and GitHub: opt-in
       await app.close().catch(() => {})
     }
   })
+})
 
+test.describe('Workbench · GitHub button against the REAL gh and GitHub: opt-in; the pull request number comes from the fixture because PR #3’s branch is gone from GitHub', () => {
   test('G13: the real gh reads superkoh/koloft PR #3 as one failing check of two, and Send failing checks pastes its name, job link and the npm ERESOLVE excerpt up to the first ##[error] line, with the runner’s line prefixes, byte-order mark and colours stripped', async ({
     env
   }) => {

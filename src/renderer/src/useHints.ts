@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fillsOf } from './pluginUi'
+import { fillsOf, onIn } from './pluginUi'
 import { PART_HINT } from './slots'
 import { firedHints, selectorOf, type ActiveHint, type HintFire, type HintSnapshot } from './hints'
 import { tipNumber } from '@core/hints'
 import { panelIsOpen, panelTabId, useStore } from './store'
 import { updateSettings } from './components/settings/useSettingsUpdate'
-import { pluginStatesIn } from '@shared/pluginSwitches'
 
 const HINT_GAP_AFTER_DISMISS_MS = 2000
 
@@ -73,10 +72,9 @@ export function useHints(): ActiveHint | null {
       if (!document.querySelector(selectorOf(next, panelShownOf(st), st.settings.sidebarHidden)))
         return
       const seen = st.settings.hintsSeen
-      const states = pluginStatesIn(st.settings)
       drop()
       updateSettings({ hintsSeen: [...seen, next.id] })
-      setActive({ ...next, ...tipNumber(seen, (plugin) => states[plugin]?.on ?? true) })
+      setActive({ ...next, ...tipNumber(seen, onIn(st.settings)) })
     }
     const t = setTimeout(tryShow, Math.max(0, readyAt - Date.now()))
     const off = useStore.subscribe(tryShow)

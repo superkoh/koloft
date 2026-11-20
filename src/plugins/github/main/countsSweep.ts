@@ -22,12 +22,14 @@ function same(a: WorkspaceGithub | undefined, b: WorkspaceGithub | undefined): b
 export class GithubCountsSweep {
   private cache = new Map<string, WorkspaceGithub>()
   private timers: NodeJS.Timeout[] = []
-  private stopped = false
   constructor(private deps: GithubCountsDeps) {}
 
+  private get stopped(): boolean {
+    return this.timers.length === 0
+  }
+
   start(delayMs = STARTUP_DELAY_MS): void {
-    if (this.timers.length > 0) return
-    this.stopped = false
+    if (!this.stopped) return
     this.timers = [
       setTimeout(() => void this.sweep(), delayMs).unref(),
       setInterval(() => void this.sweep(), RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS).unref()
@@ -35,7 +37,6 @@ export class GithubCountsSweep {
   }
 
   stop(): void {
-    this.stopped = true
     for (const t of this.timers) clearTimeout(t)
     this.timers = []
     if (this.cache.size === 0) return
@@ -53,6 +54,7 @@ export class GithubCountsSweep {
   }
 
   private async sweepOnce(): Promise<void> {
+    if (this.stopped) return
     const live = (await this.deps.workspaces()).filter((ws) => !ws.missing)
     const answers = await Promise.all(
       live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
