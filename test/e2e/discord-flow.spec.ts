@@ -77,6 +77,7 @@ const CHANNEL = '222'
 const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const REMOTE_ANSWER_CASE_MS = 240_000
+const A_REMOTE_MUSE_TURN_END_REACHES_THE_ROW_LATE_MS = 4000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
 const WAITING_TO_IDLE_MS = 1000
@@ -1214,7 +1215,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       fake.say(OWNER, `/koloft session answer ${managed} "Medium please"`)
       await expect
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('Picked: Medium please')
+        .toContain('"Picked: Medium please"')
 
       await type('/ask Which colour?|Red|Green||+Which fruits?|Apple|Banana|Cherry')
       await expect.poll(dialogs).toBe(4)
@@ -1515,7 +1516,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         ['/ask', 'Blue', 'Picked: Blue'],
         ['/ask-several', 'cherry, 1', 'Picked: Apple, Cherry']
       ] as const) {
-        await page.evaluate(([t, l]) => window.api.terminal.write(t, l + '\r'), [muse.tabId, line])
+        await page.waitForTimeout(A_REMOTE_MUSE_TURN_END_REACHES_THE_ROW_LATE_MS)
+        await runIn(page, centerTerm(page), line)
         await expect(row).toHaveClass(/\bst-approval\b/, {
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })

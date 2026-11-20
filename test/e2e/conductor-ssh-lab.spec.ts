@@ -212,8 +212,8 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/^(waiting|idle)$/)
         for (const [line, reply, result] of [
-          ['/bash make test', 'yes', 'Ran: make test'],
-          ['/ask Which drink?|Tea|Coffee', '"Hot water please"', 'Picked: Hot water please']
+          ['/bash make test', 'yes', '"Ran: make test"'],
+          ['/ask Which drink?|Tea|Coffee', '"Hot water please"', '"Picked: Hot water please"']
         ] as const) {
           await page.evaluate(
             ([id, l]) => window.api.terminal.write(id, l + '\r'),
