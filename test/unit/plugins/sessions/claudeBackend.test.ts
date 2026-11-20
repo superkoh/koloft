@@ -119,6 +119,9 @@ function machineBackend(): {
   binds: [string, string][]
   answeredFor: (string | undefined)[]
   sent: [string, string, string | null][]
+  callerRuns: (boolean | undefined)[]
+  waits: (() => boolean)[]
+  release(): void
   drop(name: string, body: unknown): void
   appendLog(name: string, lines: unknown[]): void
 } {
@@ -136,7 +139,8 @@ function machineBackend(): {
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
-        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply])
+        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply]),
+        agentCallerRuns: async () => callerRuns.shift()
       })
     },
     tracker: {
@@ -160,8 +164,16 @@ function machineBackend(): {
     events: () => {},
     machineOf: (id: string) => MACHINE_TABS[id]?.host
   } as unknown as ClaudeBackendDeps)
-  backend.agentReply = async (tabId) => {
+  const callerRuns: (boolean | undefined)[] = []
+  const waits: (() => boolean)[] = []
+  let release = (): void => {}
+  const held = new Promise<void>((r) => (release = r))
+  backend.agentReply = async (tabId, _raw, stillWaiting) => {
     answeredFor.push(tabId)
+    if (stillWaiting) {
+      waits.push(stillWaiting)
+      await held
+    }
     return answered(`for ${tabId}`)
   }
   backend.watchRemoteHookMirrors()
@@ -171,6 +183,9 @@ function machineBackend(): {
     binds,
     answeredFor,
     sent,
+    callerRuns,
+    waits,
+    release,
     drop: (name, body) => fs.writeFileSync(path.join(mirrorDir, name), JSON.stringify(body)),
     appendLog: (name, lines) =>
       fs.appendFileSync(
@@ -204,6 +219,24 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
 
     expect(m.sent).toEqual([['devbox', 'r1', replyJson(answered('for pty-a'))]])
     expect(m.boundTo.get('pty-a')).toBe('sid-of-pty-a')
+  })
+
+  it('reads a koloft command on the machine as no longer waiting only once its pid, first seen running, is gone: a pid never seen running, as from another pid namespace, or a broken link keeps it waiting; once it stopped, its answer is taken away instead of written', async () => {
+    const m = machineBackend()
+    m.callerRuns.push(false, undefined, true, undefined, false)
+    m.drop('req-r11.json', { ...(request('pty-a', 'k-sa') as object), pid: 77 })
+    await vi.waitFor(() => expect(m.waits).toHaveLength(1), { timeout: 5000 })
+    const [stillWaiting] = m.waits
+    const read: boolean[] = []
+    for (let i = 0; i < 6; i++) {
+      read.push(stillWaiting())
+      await new Promise((r) => setTimeout(r, 0))
+    }
+    m.release()
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+
+    expect(read).toEqual([true, true, true, true, true, false])
+    expect(m.sent).toEqual([['devbox', 'r11', null]])
   })
 
   // CC§1

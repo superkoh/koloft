@@ -1012,6 +1012,15 @@ export class SshHost implements Host {
     else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
+  async agentCallerRuns(pid: number): Promise<boolean | undefined> {
+    const r = await this.sh(
+      'if kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1; then echo runs; else echo gone; fi',
+      [String(pid)]
+    )
+    const said = r.code === 0 ? r.stdout.toString('utf8').trim() : ''
+    return said === 'runs' ? true : said === 'gone' ? false : undefined
+  }
+
   async savePick(name: string, png: Buffer): Promise<string> {
     const r = await this.sh(SAVE_PICK, [name], { input: png })
     if (r.code !== 0) throw new Error(problemOf(r))

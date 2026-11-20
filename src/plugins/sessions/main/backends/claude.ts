@@ -201,6 +201,23 @@ async function remoteExitOnDisk(
   return undefined
 }
 
+function callerOnTheMachineWaits(host: SshHost, pid: number): () => boolean {
+  let seenRunning = false
+  let goneAfterRunning = false
+  let asking: Promise<void> | undefined
+  return () => {
+    asking ??= host
+      .agentCallerRuns(pid)
+      .catch(() => undefined)
+      .then((runs) => {
+        if (runs) seenRunning = true
+        else if (runs === false && seenRunning) goneAfterRunning = true
+        asking = undefined
+      })
+    return !goneAfterRunning
+  }
+}
+
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   private hookRegDir = ''
@@ -212,7 +229,11 @@ export class ClaudeBackend implements SessionBackend {
   private launchedBypassing = new Set<string>()
   private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
-  agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
+  agentReply?: (
+    tabId: string | undefined,
+    raw: unknown,
+    stillWaiting?: () => boolean
+  ) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -657,8 +678,14 @@ export class ClaudeBackend implements SessionBackend {
       if (noOneWaits) void host.answerAgent(requestId, null)
       return
     }
-    void this.agentReply(tabId, raw).then((reply) =>
-      host.answerAgent(requestId, noOneWaits ? null : replyJson(reply))
+    const pid = (raw as { pid?: unknown } | null)?.pid
+    const stillWaiting =
+      noOneWaits || typeof pid !== 'number' ? undefined : callerOnTheMachineWaits(host, pid)
+    void this.agentReply(tabId, raw, stillWaiting).then((reply) =>
+      host.answerAgent(
+        requestId,
+        noOneWaits || (stillWaiting && !stillWaiting()) ? null : replyJson(reply)
+      )
     )
   }
 
