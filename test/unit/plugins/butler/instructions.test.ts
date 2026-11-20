@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   INSTRUCTIONS_MAX_BYTES,
   instructionsOf,
+  savedByTheOwner,
   savedInstructions
 } from '../../../../src/plugins/butler/shared/instructions'
 import { instructionsBytes, OWNER } from '../../../../src/core/ownerInstructions'
@@ -133,6 +134,21 @@ describe('saving the owner’s instructions', () => {
     expect(butler.instructions?.map((v) => v.at)).toEqual(
       Array.from({ length: 20 }, (_, i) => i + 6)
     )
+  })
+
+  it('changed by an agent while the editor was open are kept when the owner saves the text as opened, and kept with the owner told when the owner typed; a second Save then puts the owner’s text in', () => {
+    const opened = 'Be brief.'
+    const agreed = 'Be brief.\nAsk before merging.'
+    const butler = { ...BUTLER, instructions: [{ text: agreed, at: 1, by: 'Alfred' }] }
+    expect(savedByTheOwner(butler, opened, opened, 2)).toEqual({ ok: true, butler })
+    const typed = 'Answer in Chinese.'
+    expect(savedByTheOwner(butler, typed, opened, 2)).toEqual({
+      ok: false,
+      error: expect.stringMatching(/Save again/),
+      inUse: agreed
+    })
+    const again = savedByTheOwner(butler, typed, agreed, 3)
+    expect(again.ok && instructionsOf(again.butler)).toBe(typed)
   })
 
   it('survive renaming the butler and reading the settings back', () => {

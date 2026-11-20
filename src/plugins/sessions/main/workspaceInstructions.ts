@@ -1,5 +1,11 @@
 import { composePrompt } from '@core/prompt'
-import { OWNER, cleanInstructions, textInUse, withNewVersion } from '@core/ownerInstructions'
+import {
+  OWNER,
+  cleanInstructions,
+  textInUse,
+  textTheOwnerChose,
+  withNewVersion
+} from '@core/ownerInstructions'
 import type { SessionDefaults } from '@shared/types'
 import { sanitizeDefaults } from '@shared/sessionDefaults'
 import { isRecord } from '@shared/workbenchState'
@@ -31,7 +37,12 @@ export function savedFromTheDialog(
 ): SessionDefaults | undefined {
   const draft = isRecord(raw) ? raw : {}
   const kept = sanitizeDefaults({ ...draft, instructions: undefined }) ?? { picks: {} }
-  const text = cleanInstructions(typeof draft.instructions === 'string' ? draft.instructions : '')
+  const cleaned = (v: unknown): string => cleanInstructions(typeof v === 'string' ? v : '')
+  const text = textTheOwnerChose(
+    textInUse(saved?.instructions),
+    cleaned(draft.instructionsOpened),
+    cleaned(draft.instructions)
+  )
   const rules = kept.rules ?? ''
   if (rules !== (saved?.rules ?? '') || text !== textInUse(saved?.instructions))
     checkTheLimit(rules, text)

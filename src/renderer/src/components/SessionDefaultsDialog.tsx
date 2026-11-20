@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -15,6 +15,7 @@ import {
 import { modelValue } from '../modelPick'
 import { useStore } from '../store'
 import { ModelAndThinking, OTHER_MODEL, effortLabel, useFieldFocus } from './ModelAndThinking'
+import { InstructionsChangeLines } from './InstructionsChange'
 import '../cronJobs.css'
 
 interface PickFields {
@@ -70,6 +71,9 @@ export function SessionDefaultsDialog({
   const [rules, setRules] = useState('')
   const [instructions, setInstructions] = useState('')
   const [saved, setSaved] = useState({ rules: '', instructions: '' })
+  const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
+  const changedView = useRef<HTMLDivElement>(null)
+  useEffect(() => changedView.current?.scrollIntoView({ block: 'nearest' }), [changed])
   const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
@@ -159,11 +163,17 @@ export function SessionDefaultsDialog({
         })
       ),
       ...(rules.trim() && { rules: rules.trim() }),
-      instructions
+      instructions,
+      instructionsOpened: saved.instructions
     }
+    setChanged(null)
     const r = await window.api.sessionDefaults.write(wsPath, out)
-    if (r.ok) onClose()
-    else setError(r.error ?? 'Koloft could not save these.')
+    if (r.ok) return onClose()
+    setError(r.error ?? 'Koloft could not save these.')
+    const { inUse } = r
+    if (inUse === undefined) return
+    setChanged({ before: saved.instructions, after: inUse })
+    setSaved((s) => ({ ...s, instructions: inUse }))
   }
 
   return (
@@ -181,7 +191,7 @@ export function SessionDefaultsDialog({
           </span>
         </div>
         <div className="modal-body">
-          {error && <p className="field-hint bad">{error}</p>}
+          {error && !changed && <p className="field-hint bad">{error}</p>}
           {familyEfforts && (
             <div className="fgrid">
               <span className="flabel">When you start one</span>
@@ -252,6 +262,12 @@ export function SessionDefaultsDialog({
                     {...focusProps('instructions')}
                   />
                 </div>
+                {changed && (
+                  <div className="fcol" ref={changedView}>
+                    <p className="field-hint bad">{error}</p>
+                    <InstructionsChangeLines {...changed} />
+                  </div>
+                )}
                 <p className={'field-hint' + (left < 0 ? ' bad' : '')}>
                   {`${bytesLeft(left)}. ${whenItCounts(butler)}`}
                 </p>

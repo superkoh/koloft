@@ -1768,7 +1768,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
-  test('E-SSH-12: the GitHub button on a session on the machine commits and pushes there with real git to an origin on the machine, and the failing checks the REAL gh reads on this Mac reach a REAL claude there through ssh and tmux as one paste that waits for the question typed after it (opt-in, spends real money)', async ({
+  test('E-SSH-12: the branch button on a session on the machine commits and pushes there with real git to an origin on the machine, and the failing checks the REAL gh reads on this Mac reach a REAL claude there through ssh and tmux as one paste that waits for the question typed after it (opt-in, spends real money)', async ({
     env
   }) => {
     test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
@@ -1796,8 +1796,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(ghButton.locator('.ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
 
         runOnTarget(lab, 'kuser', 'printf "new\\n" > proj/ssh12.txt')
-        await ghButton.click({ button: 'right' })
-        await page.locator('.wb-ghmenu .mi', { hasText: 'Commit…' }).click()
+        const gitButton = page.locator('.wb-git')
+        await expect(gitButton).toHaveText(branch)
+        await gitButton.click()
+        await page.locator('.wb-gitmenu .mi', { hasText: 'Commit…' }).click()
         const dialog = page.locator('.modal', { hasText: 'Commit changes' })
         await dialog.getByLabel('Commit message').fill(message)
         await dialog.getByLabel('Commit message').press('Enter')
@@ -1807,8 +1809,8 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           'ssh12.txt'
         )
 
-        await ghButton.click({ button: 'right' })
-        await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+        await gitButton.click()
+        await page.locator('.wb-gitmenu .mi', { hasText: 'Push' }).click()
         const head = runOnTarget(lab, 'kuser', 'git -C proj rev-parse HEAD').trim()
         await expect
           .poll(
