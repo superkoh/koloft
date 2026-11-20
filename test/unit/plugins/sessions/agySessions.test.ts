@@ -139,7 +139,10 @@ const events = (type: SessionEvent['type']): SessionEvent[] =>
     .mock.calls.map(([, e]) => e)
     .filter((e) => e.type === type)
 
-const tabEnv = (tabId: string): NodeJS.ProcessEnv => created.find((c) => c.id === tabId)!.env
+const tabEnv = (tabId: string): NodeJS.ProcessEnv => {
+  const c = created.find((one) => one.id === tabId)!
+  return { ...c.env, ...c.setForTab }
+}
 const say = (tabId: string, data: string): void => {
   pty.emit('data', { id: tabId, data })
 }
