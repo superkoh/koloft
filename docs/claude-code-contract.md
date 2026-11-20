@@ -4582,8 +4582,6 @@ turns it on (the binary checks the disable switch first).
 Not probed: a real account (only the forced-on advisor with a fake key ran); the
 precedence of a project's `settings.json` `model`.
 
-Koloft dependents: the claude shim and the remote tab script set the switch when the
-launch's model is Fable — its `--model`, else `ANTHROPIC_MODEL`, else on a resume by id
-the transcript's last `modelId` (or its last `"message":{"model":…}` when it has none),
-else, for a launch that resumes nothing, `settings.json`'s `model` — and clear it on any
-other launch only when Koloft set it (`src/main/advisorOnFable.ts`).
+Koloft dependents: the claude shim and the remote tab script turn the advisor off for a
+Fable launch, and read a resumed session's model from its transcript
+(`src/main/advisorOnFable.ts`).

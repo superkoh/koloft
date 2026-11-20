@@ -363,6 +363,23 @@ describe('claude shim (the Fable advisor)', () => {
       advisorOff(['--model', 'opus'], configDir('opus'), { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' })
     ).toBe('1')
     expect(advisorOff(['-c'], configDir('fable'))).toBe('')
+    const ownersSwitchInAFableTab = runShim(['--model', 'fable'], {
+      CLAUDE_CONFIG_DIR: configDir('opus'),
+      CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
+    }).realEnv
+    expect(ownersSwitchInAFableTab?.CLAUDE_CODE_DISABLE_ADVISOR_TOOL).toBe('1')
+    expect(ownersSwitchInAFableTab?.KOLOFT_ADVISOR_OFF).toBeUndefined()
+  })
+
+  it('reads the model of a resumed session from its replies when its transcript names none', () => {
+    const replies = (model: string): string =>
+      JSON.stringify({ type: 'assistant', message: { model, content: [] } })
+    expect(
+      advisorOff(
+        ['--resume', 's9'],
+        configDir('opus', [replies('claude-opus-5-5'), replies('claude-fable-5-2')])
+      )
+    ).toBe('1')
   })
 })
 

@@ -28,8 +28,10 @@ export const ADVISOR_OFF_ON_FABLE_FN = `advisor_off_on_fable() {
   fi
   case "$am" in
     *[Ff]able*)
-      ${ADVISOR_SWITCH_ENV}=1; ${KOLOFT_TURNED_THE_ADVISOR_OFF}=1
-      export ${ADVISOR_SWITCH_ENV} ${KOLOFT_TURNED_THE_ADVISOR_OFF} ;;
+      if [ "$${ADVISOR_SWITCH_ENV}" != 1 ]; then
+        ${ADVISOR_SWITCH_ENV}=1; ${KOLOFT_TURNED_THE_ADVISOR_OFF}=1
+        export ${ADVISOR_SWITCH_ENV} ${KOLOFT_TURNED_THE_ADVISOR_OFF}
+      fi ;;
     *)
       if [ "$${KOLOFT_TURNED_THE_ADVISOR_OFF}" = 1 ]; then
         unset ${ADVISOR_SWITCH_ENV} ${KOLOFT_TURNED_THE_ADVISOR_OFF}
