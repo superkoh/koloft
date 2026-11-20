@@ -4549,3 +4549,40 @@ instructions add` / `set` (`OWNER_TYPES_A_SECRET_WITHIN_MS`) still reach a Claud
 agent that gave its Bash call no timeout, as a background task's result; the owner's
 answer from a Discord card, posted only once the owner is away, can come after 120 s
 (`src/main/index.ts`, `askTheOwner`).
+
+## §29 `CLAUDE_CODE_DISABLE_ADVISOR_TOOL` takes the advisor away from a whole interactive session
+
+2026-11-20, CC 2.1.330, measured: the interactive TUI on a pty, a throwaway `HOME` and
+`CLAUDE_CONFIG_DIR` whose `settings.json` had an `apiKeyHelper` with a fake key and
+`advisorModel: "fable"`, `ANTHROPIC_BASE_URL` at a fake Messages API that wrote down
+every request, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. A fake key gets no advisor
+on its own, so every run also set `CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL=1`, which
+turns it on (the binary checks the disable switch first).
+
+- **Without the switch**, a `--model fable` session's requests carry the
+  `advisor-tool-2026-03-01` beta and a tool
+  `{"type":"advisor_20260301","name":"advisor","model":"claude-fable-5-2","defer_loading":true}`;
+  `/advisor` opens the advisor picker.
+- **With `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`**, no request has that tool or that beta,
+  and `/advisor` is not in the command list ("No commands match").
+- **`/model` mid-session** (it asks "Switch model?" first and saves the new model as
+  `model` in `settings.json`) leaves the tool as it was: Fable → Opus keeps it on without
+  the switch and keeps it off with it; Opus → Fable keeps it on without the switch.
+- **The switch reaches helpers**: an Opus `Agent` helper started inside a session with
+  the switch set had no advisor tool; without the switch it had one.
+- **A resume with no `--model`** runs on the model the session last used, not on
+  `settings.json`'s `model`: a `--model fable` session resumed under `model: "opus"` ran
+  on Fable; one switched Fable → Opus resumed on Opus. The transcript records each model
+  it runs on as an attachment `{"type":"model","identity":{"modelId":"claude-…"}}`, at
+  the start and after each switch; the advisor tool's own attachment carries
+  `"model":"claude-fable-5-2"` too, so `modelId` is the key that names the session's model.
+- **`-p --tools ''`** (an Assist one-shot) sends no tools at all, the advisor included,
+  even with `--model fable`.
+
+Not probed: a real account (only the forced-on advisor with a fake key ran); the
+precedence of a project's `settings.json` `model`.
+
+Koloft dependents: the claude shim and the remote tab script set the switch when the
+launch's model is Fable — its `--model`, else `ANTHROPIC_MODEL`, else on a resume the
+transcript's last `modelId`, else `settings.json`'s `model` — and clear it otherwise
+(`src/main/advisorOnFable.ts`).
