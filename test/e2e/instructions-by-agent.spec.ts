@@ -18,8 +18,10 @@ import {
   newSessionInWith,
   notesArea,
   runIn,
+  sendShortcut,
   settingsOnDisk,
   startSessionIn,
+  switchToRow,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -337,6 +339,45 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       await page.keyboard.press('Enter')
       await expect(askDialog(page)).toHaveCount(0)
       await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(`${WRITTEN}\n${line}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('switching to a session whose box waits gives the box the keys, even from a web page in the session left behind', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const form = path.join(env.workspaces.a, 'form.html')
+    fs.writeFileSync(form, '<input id="q">')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ownerWrites(page, 'ws-a', WRITTEN)
+      await startSessionIn(page, 'ws-a')
+      const [left] = await tabIds(page, 'ws-a')
+      await startSessionIn(page, 'ws-a')
+      const asking = (await tabIds(page, 'ws-a')).find((id) => id !== left)!
+      await switchToRow(page, page.locator(`[data-tab-id="${left}"]`))
+
+      await openBrowser(page)
+      await newWebTab(page)
+      await typeInAddressBar(page, `file://${form}`)
+      const guest = await guestByUrl(app, 'form.html')
+      await guest.locator('#q').click({ timeout: 20_000 })
+      await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
+      await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [
+        asking,
+        '/koloft instructions add -- Run npm test first.\r'
+      ] as const)
+      await expect(page.locator(`[data-tab-id="${asking}"]`)).toHaveClass(/\bst-approval\b/, {
+        timeout: AN_ASK_SHOWS_WITHIN_MS
+      })
+
+      await sendShortcut(app, 'shortcut:next-waiting-session')
+      await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
     } finally {
       await quitAndClose(app)
     }

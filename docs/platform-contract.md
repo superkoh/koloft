@@ -579,7 +579,7 @@ promise nobody handled to the same log, with no toast.
   quiet (measured on Electron 43 with `KOLOFT_TEST_BACKGROUND=1`, 2026-11-19,
   instructions-by-agent's web-page case): a click on a plain host element moves
   `activeElement` from the `<webview>` to `<body>` with no `blur` or `focusout` on the
-  `<webview>`, so only the host's own `pointerdown` tells the caret left the page.
+  `<webview>`; the host's own `pointerdown` for that click still fires.
 - **While a guest holds the caret, the host's `document.hasFocus()` is false** on a real
   window (measured in a manual round), and window `blur`/`focus` fire for that
   hand-over; only main's BrowserWindow focus events tell "went into a page" from "left
