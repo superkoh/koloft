@@ -4261,6 +4261,28 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   on 2.1.328 and later is not checked. The binary's text alone misleads here: its model
   table gives `claude-opus-5` an `o5-bmin` "minimal prompt" at `medium`, yet
   `claude-opus-5-5` is sent the inline recipe.
+- **On 2.1.329 three `medium` runs caught 1 of the 12, where 2.1.302's caught 2.3–3.0.**
+  Re-measured 2026-11-19 with the command in "How established", through the claude
+  shim, 3 at a time, on the same 8 PRs with later-fixed bugs and 9 that never needed a
+  fix, 3 fresh runs each, every run finished. A Fable 5.2 judge read every finding
+  against the same 12 bugs. All three runs on PR #324 caught its bug (the one pull
+  request #352 later fixed); no run on any PR caught the other eleven. 2.1.302's first
+  three runs had caught that bug and two more (fixed later by pull requests #557, in
+  PR #85, and #610, in PR #441), each once in three. The same judge, given 2.1.302's
+  findings, marks the same three, so the grading did not move. Taking each of those two
+  as caught once in four runs, three new runs missing both by chance has odds of about
+  1 in 6. On 2.1.329 a second and third run added no catch.
+
+  | 2.1.329 `medium` | per run, list price | median / slowest run | findings, 3 runs merged |
+  |---|---|---|---|
+  | PR with bugs | $1.47 (2.1.302: $1.38) | 3.7 / 6.7 min | 16.4 (2.1.302: 19.1) |
+  | clean PR | $0.67 (2.1.302: $0.56) | 2.1 / 2.9 min | 12.1 (2.1.302: 13.8) |
+
+  The 2.1.302 figures are recomputed from the 2026-10 runs on these same 17 PRs (the
+  table above averages all 26). "Merged" counts the issues the judge grouped as one
+  across the three runs. Over all 51 runs, before merging, there were 391 findings: 198
+  marked `important`, 88 of those on the clean PRs, and 34 with no `severity` at all;
+  so `important` does not mean a real bug.
 - **`/security-review` puts the whole diff into its prompt, and a failed call fails
   loudly.** On 2.1.329 (same setup, the folder trusted and not) its expanded prompt holds
   the output of `git status`, `git diff --name-only origin/HEAD...`, `git log
@@ -4270,7 +4292,14 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   parallel sub-task per candidate to filter false positives, keeping those scored 8 or
   more of 10. Its allowed tools are `git diff`, `status`, `log`, `show` and `remote
   show`, Read, Glob, Grep, LS and Task. Where `/code-review` reports a failed model call
-  as a success, it ends with exit 1 and `is_error: true`.
+  as a success, it ends with exit 1 and `is_error: true`. Run once on each of the same
+  17 PRs (2026-11-19, `--model claude-opus-5-5`, through the claude shim) it cost $0.43
+  to $7.18, $40.68 in all, took 0.8 to 14.7 minutes, and reported one finding, on PR #85;
+  the other 16 answered no HIGH or MEDIUM finding. In 11 of the 17 runs part of the cost,
+  $25.68 in all, was `claude-fable-5-2`: the session started its sub-tasks with `model:
+  "fable"` (seen in its `Agent` calls), as the CLAUDE.md of the Koloft commit under
+  review tells agents to do for review work. Every `/code-review medium` run, which
+  starts no sub-task, used only `claude-opus-5-5`.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
 
