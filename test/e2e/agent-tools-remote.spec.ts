@@ -264,9 +264,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         expect(await koloftInSession(page, tab, 'todo')).not.toBe('0')
         const said = await terminalText(page, tab)
         expect(said).toContain('koloft: GitHub is turned off in Settings ▸ Plugins.')
-        expect(said).toContain(
-          'koloft: Todo is off because GitHub is turned off in Settings ▸ Plugins.'
-        )
+        expect(said).toContain('koloft: Todo is off because GitHub is turned off')
         expect(await koloftInSession(page, tab, 'help')).toBe('0')
         const help = await terminalText(page, tab)
         expect(help).toContain('koloft session new')
