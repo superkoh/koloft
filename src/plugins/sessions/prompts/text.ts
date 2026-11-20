@@ -2,6 +2,10 @@ import { eachAgent, type TextBlock } from '@core/plugin'
 import type { BackendId } from '@shared/types'
 import { needsModel } from '@shared/cronModels'
 import { tiersOf } from '@shared/sessionPicks'
+import { SESSION_BACKENDS, kindsOf } from '@shared/sessionBackend'
+import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
+
+export const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
 
 const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =
   'Write the task you give a Koloft session, and every message you send one, in the language the owner writes to you, even though these instructions are in English.'
@@ -118,6 +122,14 @@ export const TEXT: readonly TextBlock[] = [
   {
     slot: 'owners-ai-koloft',
     text: ` Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's). ${PICK_FOR_THE_TASK} ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}`
+  },
+  {
+    slot: 'owners-ai-itself-koloft',
+    text: ` In a git workspace, koloft session new --workspace always gives the session a worktree of its own (-w names it; without -w Koloft picks one). A helper shows under you in the sidebar and is told your goals and to report back. koloft session list, with no options, gives you every session in every workspace, open or closed, with its agent, machine, state, last activity, id, workspace and who started it. Use koloft session send for every session, ${EVERY_KIND}.`
+  },
+  {
+    slot: 'owners-ai-folder-koloft',
+    text: ` What you send a project's session with koloft session send reaches it marked as from the butler, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If it is asking the owner a question, it reads your message once that is answered. When the turn after your message ends, Koloft hands you its reply, unless it reported to you itself.`
   },
   {
     slot: 'every-workspace-owner-instructions',

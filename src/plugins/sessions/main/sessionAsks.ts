@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
+import { composePrompt } from '@core/prompt'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { AskPayload } from '@shared/sessionEvent'
 import { watchJsonDrops, writeWholeBeforeVisible } from '../../../main/jsonDrops'
@@ -31,11 +32,13 @@ export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
 export const ANSWER_ON_ITS_WAY =
   'Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.'
+const whoElseAnswers = (question: string): string =>
+  composePrompt('session-answered-by-keys', { values: { 'the-question': question } })
 // MUSE§3
-export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
-  'It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.'
+export const asksWhatKoloftCannotSee = (): string =>
+  `It is waiting for an answer Koloft cannot read from here.${whoElseAnswers('it')}`
 export const inputNotProbed = (label: string): string =>
-  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list. The butler can still answer this one by pressing its keys.`
+  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list.${whoElseAnswers('this one')}`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const NOT_ANSWERED_FROM_HERE = ''
 export const STARTED_IN_THE_TERMINAL =
@@ -354,7 +357,7 @@ export class SessionAsks {
       return {
         error:
           this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)
-            ? ASKS_WHAT_KOLOFT_CANNOT_SEE
+            ? asksWhatKoloftCannotSee()
             : SHOWS_NO_DIALOG
       }
     // CC§14
