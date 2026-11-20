@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ATTENTION_REASON } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import {
@@ -14,7 +15,6 @@ import {
 } from './helpers/env'
 import { codexRows, startCodex } from './helpers/codex'
 import {
-  OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
   addRemoteWorkspace,
   agyReady,
@@ -22,6 +22,7 @@ import {
   launchWithRemote,
   machineHome
 } from './helpers/remote'
+import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
 import {
   agyConversationOnceFirstTurnEnded,
   centerTerm,
@@ -118,24 +119,35 @@ interface ParentTabKind {
   kind: string
   remote: boolean
   install: (env: E2EEnv) => void
-  start: (page: Page) => Promise<unknown>
+  start: (page: Page, env: E2EEnv) => Promise<string>
+}
+
+const activeTabOnceBound = async (page: Page): Promise<string> => {
+  const row = page.locator('.ws .ws-tab.active')
+  await expect.poll(() => sessionInRow(page, row), { timeout: 60_000 }).toBeTruthy()
+  await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
+  return (await row.getAttribute('data-tab-id'))!
 }
 
 const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
   {
-    kind: 'local Claude Code',
+    kind: 'local Claude',
     remote: false,
     install: () => {},
     start: async (page) => {
       await startSessionIn(page, 'ws-a')
       await waitStartupTurnOver(page, 'ws-a')
+      return activeTabOnceBound(page)
     }
   },
   {
     kind: 'local Codex',
     remote: false,
     install: (env) => installCodex(env),
-    start: (page) => newSessionInWith(page, 'ws-a', 'Codex')
+    start: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      return activeTabOnceBound(page)
+    }
   },
   {
     kind: 'local Muse',
@@ -144,7 +156,10 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
       installMuse(env)
       trustInMuse(env, env.workspaces.a)
     },
-    start: (page) => newSessionInWith(page, 'ws-a', 'Muse')
+    start: async (page) => {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      return activeTabOnceBound(page)
+    }
   },
   {
     kind: 'local Antigravity',
@@ -157,26 +172,14 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
       await newSessionInWith(page, 'ws-a', 'Antigravity')
       await agyReady(page)
       await runIn(page, centerTerm(page), 'keep me running')
-      await agyConversationOnceFirstTurnEnded(page)
+      return (await agyConversationOnceFirstTurnEnded(page)).tabId
     }
   },
-  {
-    kind: 'remote Claude Code',
+  ...SESSION_BACKENDS.map((backend) => ({
+    kind: `remote ${BACKEND_LABEL[backend]}`,
     remote: true,
-    install: () => {},
-    start: async (page) => {
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await waitStartupTurnOver(page, REMOTE_WS_NAME)
-    }
-  },
-  ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
-    kind: `remote ${agent.label}`,
-    remote: true,
-    install: agent.install,
-    start: async (page: Page) => {
-      await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-      await agent.bound?.(page)
-    }
+    install: (env: E2EEnv) => installOnTheMachine(env, backend),
+    start: (page: Page, env: E2EEnv) => startRemoteTab(page, env, backend)
   }))
 ]
 
@@ -184,18 +187,14 @@ async function launchFor(
   parent: ParentTabKind,
   env: E2EEnv
 ): Promise<{ app: ElectronApplication; page: Page }> {
-  if (parent.remote) {
-    const launched = await launchWithRemote(env)
-    await addRemoteWorkspace(launched.page, env)
-    return launched
-  }
+  if (parent.remote) return launchWithRemote(env)
   const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await waitBooted(page)
-  return { app, page }
+  return { app, page: await app.firstWindow() }
 }
 
 test.describe('attention markers come from real session-status transitions (shim → hooks → tracker → attention set)', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
+
   test('a finished turn pends attention and a red dot on its row, visiting the tab keeps both, and only the session working again clears them', async ({
     page
   }) => {
@@ -338,55 +337,51 @@ test.describe('attention markers come from real session-status transitions (shim
       seedSettings(env, { hintsOff: true })
       const { app, page } = await launchFor(parent, env)
       try {
-        await parent.start(page)
-        const parentRow = page.locator('.ws .ws-tab.active')
-        await expect.poll(() => sessionInRow(page, parentRow), { timeout: 60_000 }).toBeTruthy()
-        await expect(parentRow).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
-        const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+        await waitBooted(page)
+        const parentTab = await parent.start(page, env)
         const parentAt = page.locator(`.ws .ws-tab[data-tab-id="${parentTab}"]`)
+        const markAt = async (tab: string): Promise<number> => (await markOn(page, tab))?.at ?? 0
 
-        await runIn(
-          page,
-          centerTerm(page),
-          `/koloft session new ${picksFor('claude')} --backend claude -- help me`
+        expect(
+          await koloftInSession(
+            page,
+            parentTab,
+            `session new ${picksFor('claude')} --backend claude -- help me`
+          )
+        ).toBe('0')
+        const helper = page.locator(
+          `.ws .ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
         )
-        const helper = page.locator(`.ws .ws-tab:not([data-tab-id="${parentTab}"])`)
-        await expect(helper).toHaveCount(1, { timeout: 60_000 })
         await expect(helper).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
         const helperTab = (await helper.getAttribute('data-tab-id'))!
         const typeToHelper = (line: string): Promise<void> =>
           page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [helperTab, line])
-        await expect(parentAt).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
-        const beforeTheHelperReports = Date.now()
+
+        const helperBefore = await markAt(helperTab)
         await typeToHelper('/answer the report it owes')
         await expect
-          .poll(async () => (await markOn(page, parentTab))?.at ?? 0, { timeout: 60_000 })
-          .toBeGreaterThan(beforeTheHelperReports)
+          .poll(() => markAt(helperTab), { timeout: 60_000 })
+          .toBeGreaterThan(helperBefore)
+        const reported = await markAt(helperTab)
+        await expect.poll(() => markAt(parentTab), { timeout: 60_000 }).toBeGreaterThan(reported)
         await typeToHelper('/hold')
         await expect(helper).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
-        await expect(parentAt).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
-        await expect(parentAt).toHaveClass(/\bactive\b/)
 
-        const before = (await markOn(page, parentTab))?.at ?? 0
-        await runIn(page, centerTerm(page), 'reporting back')
-        await expect
-          .poll(
-            async () => {
-              const mark = await markOn(page, parentTab)
-              return !!mark && mark.at > before && mark.fyi === true
-            },
-            { timeout: 60_000 }
-          )
-          .toBe(true)
-        await expect(helper).toHaveClass(/\bst-working\b/)
-        await parentAt.click()
+        const before = await markAt(parentTab)
         await expect(parentAt).toHaveClass(/\bactive\b/)
-        expect(await markOn(page, parentTab)).toBeTruthy()
+        await runIn(page, centerTerm(page), 'reporting back')
+        await expect.poll(() => markAt(parentTab), { timeout: 60_000 }).toBeGreaterThan(before)
+        expect((await markOn(page, parentTab))?.fyi).toBe(true)
+        await expect(parentAt.locator('.ws-tab-unread')).toHaveAttribute(
+          'title',
+          'turn done — just letting you know'
+        )
+        await expect(helper).toHaveClass(/\bst-working\b/)
         await lookAtTheWindow(app)
         await expect.poll(() => markOn(page, parentTab)).toBeUndefined()
+        await expect(parentAt.locator('.ws-tab-unread')).toHaveCount(0)
       } finally {
         await quitAndClose(app)
-        if (parent.remote) killFakeRemote(env)
       }
     })
   }
