@@ -6,7 +6,7 @@ import {
   wbTabSelector,
   type HintSnapshot
 } from '../../src/renderer/src/hints'
-import { HINT_IDS, tipNumber } from '../../src/core/hints'
+import { HINT_IDS, hintOn, tipNumber } from '../../src/core/hints'
 
 describe('tip n of N', () => {
   const allOn = (): boolean => true
@@ -14,6 +14,12 @@ describe('tip n of N', () => {
 
   it('counts every tip while every plugin is on', () => {
     expect(tipNumber(['workbench', 'github'], allOn)).toEqual({ n: 3, of: HINT_IDS.length })
+  })
+
+  it('a turned-off plugin tip is off, so one already queued is dropped, not waited for; a core tip is always on', () => {
+    expect(hintOn('github', githubOff)).toBe(false)
+    expect(hintOn('github', allOn)).toBe(true)
+    expect(hintOn('workbench', githubOff)).toBe(true)
   })
 
   it('a seen tip that no longer exists does not push n past N', () => {

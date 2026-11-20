@@ -52,7 +52,10 @@ const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person
 
 export const ROUTE_WORKTREE_PICKS = 'route-worktree-picks'
 
-const issueWasOffered = (): boolean => composePrompt(ROUTE_WORKTREE_PICKS).includes('{"issue":')
+const ISSUE_PICK = 'issue'
+
+const issueWasOffered = (): boolean =>
+  composePrompt(ROUTE_WORKTREE_PICKS).includes(`"${ISSUE_PICK}"`)
 
 function worktreePicks(): string {
   const picks = composePrompt(ROUTE_WORKTREE_PICKS)
@@ -182,8 +185,9 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
   if (!ws.git) return { kind: 'main' }
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
-  if (typeof o.issue === 'number' && Number.isInteger(o.issue) && o.issue > 0)
-    return issueWasOffered() ? { kind: 'issue', number: o.issue } : null
+  const issue = o[ISSUE_PICK]
+  if (typeof issue === 'number' && Number.isInteger(issue) && issue > 0 && issueWasOffered())
+    return { kind: 'issue', number: issue }
   if (typeof o.new === 'string') {
     const name = o.new.trim()
     if (!isValidWorktreeName(name) || name.toLowerCase() === 'main') return null

@@ -22,6 +22,7 @@ function same(a: WorkspaceGithub | undefined, b: WorkspaceGithub | undefined): b
 export class GithubCountsSweep {
   private cache = new Map<string, WorkspaceGithub>()
   private timers: NodeJS.Timeout[] = []
+  private stops = 0
   constructor(private deps: GithubCountsDeps) {}
 
   private get stopped(): boolean {
@@ -37,6 +38,7 @@ export class GithubCountsSweep {
   }
 
   stop(): void {
+    this.stops++
     for (const t of this.timers) clearTimeout(t)
     this.timers = []
     if (this.cache.size === 0) return
@@ -55,11 +57,12 @@ export class GithubCountsSweep {
 
   private async sweepOnce(): Promise<void> {
     if (this.stopped) return
+    const stopsBefore = this.stops
     const live = (await this.deps.workspaces()).filter((ws) => !ws.missing)
     const answers = await Promise.all(
       live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
     )
-    if (this.stopped) return
+    if (this.stops !== stopsBefore) return
     let changed = false
     live.forEach((ws, i) => {
       const next = answers[i] ?? undefined

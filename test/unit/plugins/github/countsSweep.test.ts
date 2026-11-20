@@ -117,6 +117,31 @@ describe('GithubCountsSweep', () => {
     expect(calls).toBe(1)
   })
 
+  it('stopped and started again while an answer is out, it drops that older answer and asks gh again', async () => {
+    let release = (): void => {}
+    const held = new Promise<void>((r) => (release = r))
+    const answerOfCall = [{ ...KOLOFT, prs: 1 }, KOLOFT]
+    let calls = 0
+    const sweep = started({
+      workspaces: async () => [{ path: '/a', missing: false }],
+      openCounts: async () => {
+        const call = calls++
+        if (call === 0) await held
+        return answerOfCall[call] ?? null
+      },
+      onChange: () => {}
+    })
+    const out = sweep.sweep()
+    sweep.stop()
+    sweep.start()
+    const fresh = sweep.sweep()
+    release()
+    await out
+    await fresh
+    expect(calls).toBe(2)
+    expect(sweep.get('/a')).toEqual(KOLOFT)
+  })
+
   it('a sweep asked for while one is still out runs again once that one ends, so a new account pick is not lost', async () => {
     let release = (): void => {}
     const firstAnswerHeld = new Promise<void>((r) => (release = r))

@@ -280,10 +280,17 @@ describe('with GitHub turned off', () => {
     )
   })
 
-  it('an issue answered anyway starts no issue worktree', () => {
+  it('an issue answered anyway starts no issue worktree, and a new name given beside it still counts', () => {
     githubOff()
-    const r = parseRoute(reply({ workspace: 1, worktree: { issue: 433 } }), LIST)
-    expect(r).toMatchObject({ kind: 'workspace', worktree: null })
+    const tree = (worktree: unknown): unknown => {
+      const r = parseRoute(reply({ workspace: 1, worktree }), LIST)
+      return r?.kind === 'workspace' ? r.worktree : undefined
+    }
+    expect(tree({ issue: 433 })).toBeNull()
+    expect(tree({ issue: 433, new: 'fix-login-again' })).toEqual({
+      kind: 'new',
+      name: 'fix-login-again'
+    })
   })
 })
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fillsOf, onIn } from './pluginUi'
 import { PART_HINT } from './slots'
 import { firedHints, selectorOf, type ActiveHint, type HintFire, type HintSnapshot } from './hints'
-import { tipNumber } from '@core/hints'
+import { hintOn, tipNumber } from '@core/hints'
 import { panelIsOpen, panelTabId, useStore } from './store'
 import { updateSettings } from './components/settings/useSettingsUpdate'
 
@@ -64,6 +64,7 @@ export function useHints(): ActiveHint | null {
     const tryShow = (): void => {
       if (done || Date.now() < readyAt) return
       const st = useStore.getState()
+      if (!hintOn(next.id, onIn(st.settings))) return drop()
       if (st.settingsOpen || st.update.open) return
       if (next.id === 'workbench') {
         if (!mainHasAnsweredPanelState(st)) return
