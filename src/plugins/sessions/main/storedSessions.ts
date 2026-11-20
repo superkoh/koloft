@@ -10,7 +10,7 @@ import type {
   ProjectInfo,
   SessionResumeRequest
 } from '@shared/types'
-import { PLACEHOLDER_TITLES } from '@shared/types'
+import { isPlaceholderSessionTitle, PLACEHOLDER_TITLES } from '@shared/types'
 import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -471,21 +471,36 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return (
       this.store.nameOfLeftMember(key) ||
       t.name ||
+      (member?.title && !isPlaceholderSessionTitle(member.title) ? member.title : '') ||
       t.preview?.slice(0, 100) ||
       member?.title ||
       PLACEHOLDER_TITLES[this.id]
     )
   }
   protected rememberListedTitles(listingStartedAt: number, machine?: string): void {
+    const liveBySession = new Map<string, R>()
+    for (const run of this.runs.values()) {
+      if (run.info) liveBySession.set(run.info.sessionId, run)
+    }
     const titles = new Map<string, string>()
     for (const m of this.store.listMembers()) {
       const t = this.history.get(m.key)
       if (!t || m.updatedAt >= listingStartedAt || (this.keepsItsOwnTitle && m.named)) continue
       if (machine !== undefined && hostOfKey(m.key) !== machine) continue
+      if (!t.name && !isPlaceholderSessionTitle(m.title)) continue
       const title = this.titleOf(m.key, t, m)
       if (title !== m.title) titles.set(m.key, title)
     }
     this.store.retitleMembers(titles)
+    for (const [key, title] of titles) {
+      const live = liveBySession.get(key)
+      if (
+        live?.info &&
+        isPlaceholderSessionTitle(live.info.title) &&
+        !isPlaceholderSessionTitle(title)
+      )
+        live.info.title = title
+    }
   }
   adopt(keys: string[]): void {
     let adopted = 0
