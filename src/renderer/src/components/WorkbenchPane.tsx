@@ -35,6 +35,7 @@ import { useGitEntry } from './GitEntry'
 import { relOf } from './filesModel'
 import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { fileExists } from '../fileExists'
+import { focusOnceNoDialogIsOpen } from '../dialogOpen'
 import { editRefusal, startEditRead, useEditProbe } from './EditPane'
 import {
   allEditTabs,
@@ -769,8 +770,15 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined
-    const raf = requestAnimationFrame(() => els.current.get(secretBarGuest)?.focus())
-    return () => cancelAnimationFrame(raf)
+    let giveUp = (): void => {}
+    const raf = requestAnimationFrame(() => {
+      const guest = els.current.get(secretBarGuest)
+      if (guest) giveUp = focusOnceNoDialogIsOpen(guest)
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      giveUp()
+    }
   }, [secretBarGuest, secretBarAsk?.id])
   const activeGuestId = useCallback(
     () => (activeWebId ? guestIdOf(activeWebId) : 0),

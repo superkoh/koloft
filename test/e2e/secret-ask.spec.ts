@@ -1,9 +1,16 @@
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { startSessionIn, switchToRow, terminalText, waitForCalls } from './helpers/p1'
+import {
+  butlerRow,
+  startSessionIn,
+  switchToRow,
+  terminalText,
+  waitBooted,
+  waitForCalls
+} from './helpers/p1'
 import { guestByUrl } from './helpers/browser'
 import { closeSettings, openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -44,6 +51,38 @@ async function askSudo(page: Page, tab: string): Promise<void> {
   await expect(page.locator(SUDO_BOX)).toBeVisible({ timeout: 30_000 })
 }
 
+const twoFramesPass = (page: Page): Promise<void> =>
+  page.evaluate(
+    () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+  )
+
+const sudoField = (page: Page): Locator => page.locator(SUDO_BOX).getByLabel('Your sudo password')
+
+async function ownerTypesInSessionDefaults(page: Page, typed: string): Promise<Locator> {
+  await page.locator('.ws-head', { hasText: 'ws-a' }).click({ button: 'right' })
+  await page.locator('.menu .mi', { hasText: 'Session defaults…' }).click()
+  const box = page
+    .getByRole('dialog', { name: 'Session defaults' })
+    .getByRole('textbox', { name: 'Instructions' })
+  await box.fill(typed)
+  return box
+}
+
+async function keysStayIn(page: Page, box: Locator, typed: string): Promise<void> {
+  await twoFramesPass(page)
+  await expect(box).toBeFocused()
+  await page.keyboard.type(' more')
+  await expect(box).toHaveValue(`${typed} more`)
+}
+
+async function sudoTakesTheKeysOnceItShows(page: Page, tab: string, typed: string): Promise<void> {
+  await expect(sudoField(page)).toBeFocused()
+  await page.keyboard.type('hunter2-after')
+  await page.keyboard.press('Enter')
+  await expect.poll(() => terminalText(page, tab)).toContain('hunter2-after\ngot-it')
+  expect(await terminalText(page, tab)).not.toContain(typed)
+}
+
 test.describe('Koloft asks the owner for a password in the session’s own tab, with no Discord bound', () => {
   test('sudo’s password helper shows a box over that session’s terminal, which holds the keys, marks the row and the bell as needing the owner, and passes what is typed to sudo alone; Esc turns it down', async ({
     env
@@ -77,6 +116,62 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         .poll(async () => unwrapped(await terminalText(page, tab)))
         .toContain(unwrapped(OWNER_DECLINED))
       await expect(page.locator(SUDO_BOX)).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a sudo ask that comes while the owner types in Session defaults leaves the keys there, so nothing they type reaches the sudo field or sudo; once Session defaults closes, the sudo box takes the keys', async ({
+    env
+  }) => {
+    ownerAtTheMac(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      const tab = await sessionTab(page, env)
+      const typed = 'Answer in English.'
+      const box = await ownerTypesInSessionDefaults(page, typed)
+      await askSudo(page, tab)
+      await keysStayIn(page, box, typed)
+      await expect(sudoField(page)).toHaveValue('')
+      expect(await terminalText(page, tab)).not.toMatch(/^got-it$/m)
+
+      const dlg = page.getByRole('dialog', { name: 'Session defaults' })
+      await dlg.getByLabel('Close').click()
+      await expect(dlg).toHaveCount(0)
+      await sudoTakesTheKeysOnceItShows(page, tab, typed)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a sudo ask from the butler while the owner types in its Instructions editor leaves the keys there; Esc closes the editor, not the ask, and the sudo box then takes the keys', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    ownerAtTheMac(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const tab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+      await page.locator('.butler-strip').getByRole('button', { name: 'Instructions' }).click()
+      const editor = page.getByRole('dialog', { name: 'Instructions', exact: true })
+      const box = editor.getByRole('textbox', { name: 'Instructions' })
+      const typed = 'Answer in English.'
+      await box.fill(typed)
+      await askSudo(page, tab)
+      await keysStayIn(page, box, typed)
+      await expect(sudoField(page)).toHaveValue('')
+
+      await page.keyboard.press('Escape')
+      await expect(editor).toHaveCount(0)
+      await expect(page.locator(SUDO_BOX)).toBeVisible()
+      await sudoTakesTheKeysOnceItShows(page, tab, typed)
     } finally {
       await quitAndClose(app)
     }
@@ -139,6 +234,51 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         .toContain(unwrapped(OWNER_FILLED))
       await expect(page.locator(SECRET_BAR)).toHaveCount(0)
       expect(unwrapped(await terminalText(page, tab))).not.toContain('typed-by-the-owner')
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+
+  test('koloft secret page while the owner types in Session defaults leaves the keys there, so nothing they type lands in the page’s password field; once Session defaults closes, the page takes the keys', async ({
+    env
+  }) => {
+    ownerAtTheMac(env)
+    seedSettings(env, { hintsOff: true })
+    const server = await startEchoServer()
+    const app = await launchApp(env)
+    try {
+      const login = server.page(
+        '/login',
+        '<!doctype html><title>login</title><form id="f" action="/done"><label for="pw">Password</label><input type="password" id="pw" name="pw"><button id="go">Sign in</button></form>'
+      )
+      server.page('/done', '<!doctype html><title>done</title>')
+      const page = await app.firstWindow()
+      const tab = await sessionTab(page, env)
+      await type(page, tab, `/koloft open ${login}`)
+      const guest = await guestByUrl(app, '/login')
+      await expect(guest.locator('#pw')).toBeVisible()
+      const typed = 'Answer in English.'
+      const box = await ownerTypesInSessionDefaults(page, typed)
+      await type(page, tab, '/koloft secret page "#pw"')
+      await expect(page.locator(SECRET_BAR)).toContainText('needs your Password on this page')
+      await keysStayIn(page, box, typed)
+      await expect(guest.locator('#pw')).toHaveValue('')
+
+      const dlg = page.getByRole('dialog', { name: 'Session defaults' })
+      await dlg.getByLabel('Close').click()
+      await expect(dlg).toHaveCount(0)
+      await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
+      await page.keyboard.type('typed-by-the-owner')
+      await expect(guest.locator('#pw')).toHaveValue('typed-by-the-owner')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => guest.title()).toBe('done')
+      await expect
+        .poll(async () => unwrapped(await terminalText(page, tab)))
+        .toContain(unwrapped(OWNER_FILLED))
+      const heard = await terminalText(page, tab)
+      expect(heard).not.toContain('typed-by-the-owner')
+      expect(heard).not.toContain(typed)
     } finally {
       await quitAndClose(app)
       await server.close()
