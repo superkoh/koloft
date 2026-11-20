@@ -4234,6 +4234,38 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   by Claude, not directly by users. …`. Both exit 0, `is_error: false`, on both builds
   (2026-11-04, `--model haiku`, text and JSON output). So a `/code-review` that failed
   to expand reads as a review whose text is the error, where 2.1.317 gave an empty one.
+- **A failed API call also reads as a finished review.** Under `-p`, `/code-review` runs
+  as a local command (`local_command: "code_review"` in the JSON result). When its
+  model request fails, the run still exits 0 with `is_error: false` and `num_turns: 0`,
+  and the error is the `result` (`API Error: Connection refused …`, `API Error: 400 …`).
+  Seen on 2.1.302, 2.1.326, 2.1.327, 2.1.328 and 2.1.329 (2026-11-19, the argv above,
+  scratch `HOME` and fake key, `ANTHROPIC_BASE_URL` pointed at a closed port or at a
+  local server that records the request and answers 400; no token spent). So only a
+  `result` that starts `API Error` tells this failure apart from a review.
+- **2.1.328 changed the recipe Opus 5.5 gets at `medium`.** The request body each build
+  sends (captured by that local server, same argv) holds the same recipe, byte for byte,
+  on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10
+  findings` — 3 correctness, 3 cleanup (reuse, simplification, efficiency), 1 altitude
+  and 1 CLAUDE.md conventions angle, up to 6 candidates each, all in the one context, no
+  subagents; the request sets effort `medium` and adaptive thinking. From 2.1.328 it
+  reads `high effort → 4 inline angles (bugs + conventions)`: the cleanup and altitude
+  angles are gone, each finding carries a `severity` (`important`, `pre_existing` or
+  `nit`), and its `summary` ends with `Fix:`. 2.1.329 also rewrote the step that gathers
+  the diff (`git diff origin/HEAD...HEAD` unless a target is named). The bundled text of
+  every darwin-arm64 build from 2.1.302 to 2.1.327 changes nothing else in the recipe.
+  So the catches, costs and times above describe the recipe up to 2.1.327 only. The
+  binary's text alone misleads here: its model table gives `claude-opus-5` an `o5-bmin`
+  "minimal prompt" at `medium`, yet `claude-opus-5-5` is sent the inline recipe.
+- **`/security-review` puts the whole diff into its prompt, and a failed call fails
+  loudly.** On 2.1.329 (same setup, the folder trusted and not) its expanded prompt holds
+  the output of `git status`, `git diff --name-only origin/HEAD...`, `git log
+  --no-decorate origin/HEAD...` and `git diff origin/HEAD...`, so it reviews the branch
+  against `refs/remotes/origin/HEAD` and takes no target. It asks for one sub-task that
+  hunts vulnerabilities, told to "include all of the above" in its prompt, then one
+  parallel sub-task per candidate to filter false positives, keeping those scored 8 or
+  more of 10. Its allowed tools are `git diff`, `status`, `log`, `show` and `remote
+  show`, Read, Glob, Grep, LS and Task. Where `/code-review` reports a failed model call
+  as a success, it ends with exit 1 and `is_error: true`.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
 
