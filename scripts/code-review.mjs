@@ -24,6 +24,9 @@ function freshSessionEnv() {
 }
 
 // CC§20
+const isFailedModelCall = (text) => text.startsWith('API Error')
+
+// CC§20
 function review(n) {
   const args = [
     '-p',
@@ -56,7 +59,11 @@ function review(n) {
       try {
         result = JSON.parse(stdout.trim().split('\n').at(-1))
       } catch {}
-      if (typeof result?.result === 'string' && !result.is_error) {
+      if (
+        typeof result?.result === 'string' &&
+        !result.is_error &&
+        !isFailedModelCall(result.result)
+      ) {
         console.log(`${head}\n\n${result.result}\n`)
         return resolve(true)
       }
