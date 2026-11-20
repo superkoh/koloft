@@ -14,7 +14,10 @@ import { sanitizeLoadedSettings } from '../../../../src/shared/settingsOps'
 import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { sessionStartContext } from '../../../../src/main/museHooks'
-import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import {
+  handoverPreamble,
+  withHandover
+} from '../../../../src/plugins/sessions/main/handoverPreamble'
 import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 
 const BUTLER: ButlerSetting = { name: 'Alfred', formerNames: [] }
@@ -33,6 +36,8 @@ const CLAUDE_START_HOOK_MAX_UNITS = 10_000
 const CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES = 22_438
 // AGY§12
 const AGY_START_MESSAGE_SEEN_WHOLE_BYTES = 300_000
+// MUSE§1
+const MUSE_FIRST_MESSAGE_SEEN_WHOLE_BYTES = 122_866
 
 describe('how long the owner’s instructions for the butler may be', () => {
   it.each([
@@ -42,13 +47,30 @@ describe('how long the owner’s instructions for the butler may be', () => {
     ['Chinese', '中'],
     ['emoji', '😀']
   ])(
-    'at the limit, written in %s, a Muse butler with the longest name and every fact still starts',
+    'at the limit, written in %s, fit a Muse start hook of their own, beside the one holding the role of a butler with the longest name and every fact',
     (_, unit) => {
       const text = textOfBytes(unit, INSTRUCTIONS_MAX_BYTES)
       expect(instructionsBytes(text)).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES)
-      expect(() => sessionStartContext(butlerPrompt(LONGEST_NAME, EVERY_FACT, text))).not.toThrow()
+      expect(() => sessionStartContext(ownerInstructionsPart(text))).not.toThrow()
+      expect(() => sessionStartContext(butlerRole(LONGEST_NAME, EVERY_FACT))).not.toThrow()
     }
   )
+
+  it('a Muse helper’s first message — its role with the owner’s text at the limit, the handover — stays within the length seen reaching the model whole', () => {
+    const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
+    const handover = handoverPreamble({
+      name: LONGEST_NAME,
+      id: 'muse:local:01a13795-6b09-7531-bdd6-84ce54f976ea',
+      label: 'Muse',
+      assist: true,
+      ownerWords: '中'.repeat(500)
+    })
+    const firstMessage = withHandover(
+      `${butlerHelperRole(LONGEST_NAME, text)}\n\n${handover}`,
+      'Sort the inbox.'
+    )
+    expect(Buffer.byteLength(firstMessage)).toBeLessThanOrEqual(MUSE_FIRST_MESSAGE_SEEN_WHOLE_BYTES)
+  })
 
   it('a Claude Code butler’s role, which goes through its start hook while the owner’s text goes beside it, stays under what that hook hands on whole', () => {
     expect(butlerRole(LONGEST_NAME, EVERY_FACT).length).toBeLessThanOrEqual(

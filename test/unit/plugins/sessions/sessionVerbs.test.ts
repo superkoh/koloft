@@ -2190,10 +2190,17 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       { ...live[0], tabId: 'butler-reopened' },
       { prompt: 'Sort the inbox.', ownerWords: 'sort it', backend: 'claude' }
     )
-    const [byNew, codexByNew, byPalette, byHelper, afterAReopen] = h.launched
+    await h.verb(['new', ...PICKED, '--backend', 'muse', '--', 'look into it'], from('butler'))
+    const [byNew, codexByNew, byPalette, byHelper, afterAReopen, museByNew] = h.launched
     expect(afterAReopen.trustFolder).toBe(true)
     expect(afterAReopen.firstPrompt?.startsWith(`${BUTLER_HELPER_ROLE}\n\n`)).toBe(true)
-    for (const told of [byNew.firstPrompt, codexByNew.role, byPalette.firstPrompt])
+    expect(museByNew.role).toBeUndefined()
+    for (const told of [
+      byNew.firstPrompt,
+      codexByNew.role,
+      byPalette.firstPrompt,
+      museByNew.firstPrompt
+    ])
       expect(
         told?.startsWith(
           `${BUTLER_HELPER_ROLE}\n\nKoloft started you because the session "Alfred" asked it to`

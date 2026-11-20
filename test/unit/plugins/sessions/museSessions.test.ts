@@ -65,7 +65,7 @@ let projectRules: string | undefined
 let endpoint: string
 let picked: { account: string; env: Record<string, string>; notice?: string } | undefined
 let shown: string[]
-let assist: { role: string } | undefined
+let assist: { role: string; ownerText?: string } | undefined
 let skipPermissions: boolean
 let servers: Set<string>
 
@@ -431,6 +431,21 @@ describe('The butler on Muse', () => {
     skipPermissions = true
     await launch()
     expect(created[1].argv).toEqual(['--permission-profile', ':unrestricted'])
+  })
+
+  it('is told its role and the owner’s instructions for it from a start hook each, in that order', async () => {
+    assist = { role: 'You are the butler.', ownerText: 'Written by the owner\nBe "brief".' }
+    await launch()
+    const hooks = JSON.parse(fs.readFileSync(created[0].env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
+    const printed = (hooks.SessionStart[0].hooks as { command: string }[]).map(({ command }) =>
+      context(
+        execFileSync('/bin/sh', ['-c', command], {
+          input: JSON.stringify({ hook_event_name: 'SessionStart', cwd: repo, session_id: A }),
+          encoding: 'utf8'
+        })
+      )
+    )
+    expect(printed).toEqual(['You are the butler.', 'Written by the owner\nBe "brief".'])
   })
 
   // ADR-0029
