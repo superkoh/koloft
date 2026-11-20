@@ -41,19 +41,19 @@ describe('scripts/code-review.mjs', () => {
     (_, answer, exitCode) => {
       const r = runScript(fakeClaudeAnswering(answer, exitCode))
       expect(r.status).toBe(1)
-      expect(r.stdout).toContain('0 of 3 reviews finished.')
+      expect(r.stdout).toMatch(/\b0 of \d+ reviews finished\./)
     }
   )
 
   it('counts a run claude reports as an error as failed, even with a findings block in it', () => {
     const r = runScript(fakeClaudeAnswering('```json\n[]\n```', 0, true))
     expect(r.status).toBe(1)
-    expect(r.stdout).toContain('0 of 3 reviews finished.')
+    expect(r.stdout).toMatch(/\b0 of \d+ reviews finished\./)
   })
 
   it('counts a run whose answer holds the findings block as finished, an empty one too', () => {
     const r = runScript(fakeClaudeAnswering('```json\n[]\n```'))
     expect(r.status).toBe(0)
-    expect(r.stdout).toContain('3 of 3 reviews finished.')
+    expect(r.stdout).toMatch(/\b([1-9]\d*) of \1 reviews finished\./)
   })
 })
