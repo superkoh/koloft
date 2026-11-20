@@ -352,9 +352,17 @@ describe('claude shim (the Fable advisor)', () => {
     expect(
       advisorOff(['-p', '--model', 'opus', 'hi'], opus, {
         CLAUDECODE: '1',
-        CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
+        CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1',
+        KOLOFT_ADVISOR_OFF: '1'
       })
     ).toBe('')
+  })
+
+  it("never turns the advisor back on for an owner who turned it off, and does not guess the model of a session `claude -c` continues from Claude's default", () => {
+    expect(
+      advisorOff(['--model', 'opus'], configDir('opus'), { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' })
+    ).toBe('1')
+    expect(advisorOff(['-c'], configDir('fable'))).toBe('')
   })
 })
 

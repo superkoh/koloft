@@ -733,7 +733,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       return b.env().CLAUDE_CODE_DISABLE_ADVISOR_TOOL ?? ''
     }
     const opusDefault = { '.claude/settings.json': '{\n  "model": "opus"\n}\n' }
-    const fableDefault = { '.claude/settings.json': '{\n  "model": "fable[1m]"\n}\n' }
+    const fableDefault = { '.claude/settings.json': '{"theme":"dark","model":"fable[1m]"}' }
     const switchedToFable = {
       ...opusDefault,
       '.claude/projects/-w/s9.jsonl': [
