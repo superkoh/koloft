@@ -3666,7 +3666,10 @@ app.whenReady().then(() => {
       console.error('[koloft] could not rewrite what a plugin switch changed:', err)
     }
     clearTimeout(butlerHearsOfSwitches)
-    butlerHearsOfSwitches = setTimeout(() => butler?.pluginsSwitched(), SWITCH_FLIPS_GATHER_MS)
+    butlerHearsOfSwitches = setTimeout(
+      () => butler?.whatItKnowsMayHaveChanged(),
+      SWITCH_FLIPS_GATHER_MS
+    )
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -4173,6 +4176,7 @@ app.whenReady().then(() => {
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
+      butler?.whatItKnowsMayHaveChanged()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     rowsChanged: () => workspaceMgr?.refresh(),
@@ -4245,9 +4249,10 @@ app.whenReady().then(() => {
         discordOn() ? discordRelay?.quietMarks : undefined
       )) ?? false,
     pluginsOn: switchesThatAct,
-    pluginsNews: (changed) =>
+    pluginsNews: (changed, lines) =>
       pluginsChangedNews(
-        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] }))
+        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] })),
+        lines
       ),
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()

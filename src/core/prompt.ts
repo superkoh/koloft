@@ -26,17 +26,39 @@ const OR_LIST = '-or-list'
 const asTheEndOfAList = (items: readonly string[]): string =>
   items.map((item, i) => (i === items.length - 1 ? ', or ' : ', ') + item).join('')
 
+export interface PromptState {
+  on: Readonly<Record<string, boolean>>
+  facts: readonly string[]
+}
+
+type ListedBlock = (typeof BLOCKS_IN_LIST_ORDER)[number]
+
+const isOnIn = (state: PromptState, id: string): boolean => state.on[id] ?? pluginStateOf(id).on
+
+const holdsIn = (state: PromptState, { block, plugin }: ListedBlock): boolean =>
+  isOnIn(state, plugin) &&
+  (!block.when || state.facts.includes(block.when)) &&
+  (!block.whenOff || !isOnIn(state, block.whenOff))
+
 export function composePrompt(slot: string, context: PromptContext = {}): string {
-  const { agent, facts = [] } = context
+  const now: PromptState = { on: {}, facts: context.facts ?? [] }
   const texts = BLOCKS_IN_LIST_ORDER.filter(
-    ({ block, plugin }) =>
-      block.slot === slot &&
-      pluginStateOf(plugin).on &&
-      (!block.when || facts.includes(block.when)) &&
-      (!block.whenOff || !pluginStateOf(block.whenOff).on)
-  ).map(({ block }) => textFor(block, agent))
+    (listed) => listed.block.slot === slot && holdsIn(now, listed)
+  ).map(({ block }) => textFor(block, context.agent))
   return fillSlots(slot.endsWith(OR_LIST) ? asTheEndOfAList(texts) : texts.join(''), context)
 }
+
+export const fillsGained = (
+  slots: readonly string[],
+  was: PromptState,
+  now: PromptState,
+  context: PromptContext = {}
+): string[] =>
+  slots.flatMap((slot) =>
+    BLOCKS_IN_LIST_ORDER.filter(
+      (listed) => listed.block.slot === slot && holdsIn(now, listed) && !holdsIn(was, listed)
+    ).map(({ block }) => fillSlots(textFor(block, context.agent), { ...context, facts: now.facts }))
+  )
 
 export function fillSlots(text: string, context: PromptContext = {}): string {
   const { values = {} } = context
