@@ -401,6 +401,7 @@ These are the slots, values and facts in use today:
 | slot | `session` | Sessions core and Discord; the prompt every session gets |
 | slot | `session-opening` | Browser control; half a sentence in the session prompt |
 | slot | `question-tool` | Sessions core; the name of each agent's question tool |
+| slot | `every-workspace-owner-instructions` | Sessions core; the owner's Instructions for every workspace, put before a workspace's own in the prompt of every session started in a workspace that does not leave them out (the butler's side never gets them) |
 | slot | `workspace-owner-instructions` | Sessions core; the owner's own Instructions for a workspace, put last in the prompt of every session started in it (or in another copy of the same repository) when the owner wrote some |
 | slot | `butler` | Butler; the butler's prompt |
 | slot | `butler-helper` | Butler; the prompt of a helper the butler starts |
@@ -414,7 +415,7 @@ These are the slots, values and facts in use today:
 | slot | `koloft-help-…` | one for each section, rule or half-sentence of that guide; filled by Sessions core, Workbench, Browser control, Inbox, Scheduled tasks, GitHub, Discord, Todo and Passwords and sign-in (each plugin's `skill/text.ts` names its own) |
 | slot | `koloft-skill` | Sessions core; the `koloft` skill's one-line description, with slots `koloft-skill-…` where Workbench, Browser control and Scheduled tasks add a few words, and `koloft-skill-or-list`, where Todo and Passwords and sign-in each add an item |
 | value | `butler-name` | the butler's code; the butler's name |
-| value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, or in a workspace's |
+| value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, in a workspace's, or in the Instructions for every workspace |
 | value | `plugins-now` | the butler's code; which plugins are now on or off, as "Todo is now off, Passwords and sign-in is now on" |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
@@ -473,7 +474,7 @@ files. Scheduled tasks is the example.
    } as const
    ```
 
-   (The real table has eight channels.) No name repeats a core channel or another plugin's.
+   (The real table has nine channels.) No name repeats a core channel or another plugin's.
 2. `plugin.ts` sets `channels: Object.values(CHANNELS)`.
 3. `main/channels.ts` exports `registerChannels(ipc: MainIpc, deps)`. It calls
    `ipc.handle(CHANNELS.x, (...args) => …)` for each request the window makes and waits on,
@@ -638,6 +639,7 @@ These are the slots core's window offers, in `src/renderer/src/slots.ts`:
 | `palette-run` | `{ key, run(currentWs), disabled(currentWs) }`: what a `palette-item` entry does | Scheduled tasks |
 | `palette-route` | `{ kind, run(prompt) }`: what to do with ⌘P words Assist routed to a kind core leaves to plugins | Discord, for `discord` |
 | `palette-hand-off` | the one function that takes ⌘P words core cannot route | Butler |
+| `started-before-exit` | `(tabId) => boolean`: whether a scheduled run had started in a tab whose process just ended; asking also clears the answer. The window asks it first thing when a tab's exit arrives | Scheduled tasks |
 | `window-feed` | `(adopted) => off`: started once when the window starts, given a promise that settles once the window has adopted its tabs; returns what stops it. A plugin keeps its own state fed from the main process through it | Scheduled tasks |
 | `workspace-removal-loss` | `{ countIn(wsPath), willGo(count), goneForGood }`: what removing a workspace deletes for good, said in the remove confirm and the unsaved-files question; exactly one plugin fills it | Scheduled tasks |
 
@@ -911,9 +913,9 @@ page was last checked against, it listed 662 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
-| names a plugin outside the lists | 160 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
-| imports `src/shared/` | 266 | plugin code that imports `src/shared/`, which is not core |
-| imports app code outside `src/core` | 226 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
+| names a plugin outside the lists | 161 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
+| imports `src/shared/` | 267 | plugin code that imports `src/shared/`, which is not core |
+| imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |
 
