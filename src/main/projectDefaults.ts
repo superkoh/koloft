@@ -26,6 +26,7 @@ export interface ProjectDefaults {
 
 export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
   const askedFresh = new Map<string, { at: number; repo: string | null }>()
+  const lastFound = new Map<string, string>()
   const freshRepoOf = async (root: string): Promise<string | null> => {
     const repo = await d.repoOf(root, true).catch(() => null)
     askedFresh.set(root, { at: d.now(), repo })
@@ -52,7 +53,9 @@ export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
       if (Object.keys(saved).length === 0) return undefined
       try {
         const root = d.rootOf(dir)
-        return saved[(await repoOf(root)) ?? root]
+        const repo = (await repoOf(root)) ?? lastFound.get(root)
+        if (repo) lastFound.set(root, repo)
+        return saved[repo ?? root]
       } catch {
         return undefined
       }

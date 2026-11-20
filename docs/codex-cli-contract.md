@@ -2191,6 +2191,11 @@ from the Mac, the script copied in with `docker cp`. By hand: a stand-in Respons
 entry in `config`, and a small WebSocket client in the container on the server's socket
 (`initialize`, `thread/start`, `turn/start`) instead of the TUI. The one `/v1/responses`
 request held the whole text as one exact string (SHA-256 matched).
+2026-11-20, the same version, lab and way, with `koloftPrompt('codex')` and two blocks of
+9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it, made of lines
+holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`, `$(id)`, curly quotes
+and an emoji (23,942 bytes in all): the one `/v1/responses` request held it as one exact
+string, last in its item, 2 of 2 runs, each on a new tab.
 
 Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
@@ -2216,8 +2221,15 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   20,014 characters (22,438 bytes) the second `developer` item of the request held the
   text as one exact string (3 runs at 20 KB). At 30,000 and 45,000 characters it did
   too, once each; at 60,000 the end marker arrived but the exact-string match failed in 3
-  of 4 runs, not looked into. `exec`, not the app-server Koloft runs; that the same `-c`
-  parses the same way there is inferred, not checked.
+  of 4 runs, not looked into. `exec`, not the app-server Koloft runs.
+- **The app-server Koloft runs takes a `-c developer_instructions=` of about 24 KB whole.**
+  2026-11-20, Codex CLI 0.169.0 (Homebrew, macOS), `codex app-server --stdio` as Koloft
+  starts it locally, with a scratch `CODEX_HOME` and `HOME`, a `model_providers` entry
+  pointing at a local stand-in Responses server that saved each request body, and a
+  JSON-RPC client sending `initialize`, `thread/start` and `turn/start`. The text was
+  three blocks of 4,300, 10,150 and 10,150 bytes, made of lines holding Chinese, `"`,
+  `$HOME`, backticks, `\`, `{{x}}`, `'`, `%s`, `!!`, a tab and an emoji, joined by blank
+  lines (24,604 bytes): the turn's one request held it as one exact string, 3 of 3 runs.
 - **The developer instructions are saved with the thread and outlive a resume without
   them**, and **Codex names a thread from its first message, instructions left out.**
   Checked on 2026-10-07 with Codex CLI 0.159.3 and a real model: an app-server started

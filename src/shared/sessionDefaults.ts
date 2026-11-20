@@ -28,8 +28,15 @@ export function sanitizeDefaults(raw: unknown): SessionDefaults | undefined {
   )
   const rules = typeof raw.rules === 'string' ? raw.rules.trim() : ''
   const instructions = cleanVersions(raw.instructions)
-  if (!rules && Object.keys(picks).length === 0 && !instructions.length) return undefined
-  return { picks, ...(rules && { rules }), ...(instructions.length && { instructions }) }
+  const leavesOut = raw.leavesOutEveryWorkspace === true
+  if (!rules && Object.keys(picks).length === 0 && !instructions.length && !leavesOut)
+    return undefined
+  return {
+    picks,
+    ...(rules && { rules }),
+    ...(instructions.length && { instructions }),
+    ...(leavesOut && { leavesOutEveryWorkspace: true as const })
+  }
 }
 
 export function sanitizeSessionDefaults(raw: unknown): Record<string, SessionDefaults> {

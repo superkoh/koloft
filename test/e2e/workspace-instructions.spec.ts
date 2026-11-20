@@ -13,6 +13,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
+  butlerRow,
   centerTerm,
   newSessionInWith,
   openMenu,
@@ -25,6 +26,7 @@ import {
   type ClaudeCall
 } from './helpers/p1'
 import { fakeCodexLog } from './helpers/codex'
+import { closeSettings, openSettings } from './helpers/extensions'
 import {
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
@@ -34,6 +36,7 @@ import {
   machineCodexLog
 } from './helpers/remote'
 import {
+  EVERY_WORKSPACE_TEXT_MAX_BYTES,
   WORKSPACE_TEXT_MAX_BYTES,
   workspaceTextBytes
 } from '../../src/plugins/sessions/shared/workspaceInstructions'
@@ -57,6 +60,32 @@ const LAST = `\n\n${partOf(TEXT)}`
 const HEADING = 'Written by the owner for this workspace'
 
 type LogLine = Record<string, unknown>
+
+const EVERY = 'Answer me in Chinese, short.\n每个项目都先跑测试。 "$HOME" {{nope}}'
+const EVERY_HEADING = 'Written by the owner for every workspace'
+const everyPart = (text: string): string => `${EVERY_HEADING}\n${text}`
+const SHARED_THEN_OWN = `\n\n${everyPart(EVERY)}${LAST}`
+const EVERY_ROW = 'Instructions for every workspace'
+
+async function writeEveryWorkspace(page: Page, text = EVERY): Promise<void> {
+  await openSettings(page)
+  await page.locator('.set-ni', { hasText: 'Sessions' }).click()
+  const row = page.locator('.set-row', { hasText: EVERY_ROW })
+  await row.getByRole('button', { name: 'Edit' }).click()
+  const editor = page.getByRole('dialog', { name: 'Instructions', exact: true })
+  await editor.getByRole('textbox', { name: 'Instructions' }).fill(text)
+  await editor.getByRole('button', { name: /Save/ }).click()
+  await expect(editor).toHaveCount(0)
+  await expect(row.locator('small').last()).not.toHaveText('Empty')
+  await closeSettings(page)
+}
+
+async function leaveOutEveryWorkspace(page: Page, wsName: string): Promise<void> {
+  const dlg = await openDefaults(page, wsName)
+  await dlg.locator('.chip', { hasText: 'Leave them out' }).click()
+  await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
+  await expect(dlg).toHaveCount(0)
+}
 
 const left = (rules: string, text: string): string =>
   `${(WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules, text)).toLocaleString('en-US')} left`
@@ -109,9 +138,12 @@ function codexInstructions(log: LogLine[], cwd?: string): string[] {
 }
 
 function museTold(log: LogLine[]): string[] {
-  return log.map(
-    ({ out }) => JSON.parse(out as string).hookSpecificOutput.additionalContext as string
-  )
+  const bySession = new Map<string, string[]>()
+  for (const { sessionId, out } of log) {
+    const told = JSON.parse(out as string).hookSpecificOutput.additionalContext as string
+    bySession.set(String(sessionId), [...(bySession.get(String(sessionId)) ?? []), told])
+  }
+  return [...bySession.values()].map((parts) => parts.join('\n\n'))
 }
 
 function agyStarts(log: LogLine[]): string[] {
@@ -244,7 +276,7 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
     }
   })
 
-  test('Codex: the developer instructions of a session in ws-a end with the text, and those of a session in ws-b do not hold it', async ({
+  test('Codex: the developer instructions of a session in ws-a end with the instructions for every workspace and then the text, and those of a session in ws-b, which leaves them out, hold neither', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -254,6 +286,8 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       const page = await app.firstWindow()
       await waitBooted(page)
       await writeInstructions(page, 'ws-a')
+      await writeEveryWorkspace(page)
+      await leaveOutEveryWorkspace(page, 'ws-b')
       const told = (ws: string): string[] =>
         codexInstructions(
           fakeCodexLog<LogLine>(env, 'fake-codex-server-calls.jsonl'),
@@ -268,15 +302,18 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
         await expect.poll(() => told(ws).length, { timeout: 60_000 }).toBeGreaterThan(0)
       }
       for (const instructions of told(env.workspaces.a))
-        expect(instructions.endsWith(LAST)).toBe(true)
-      for (const instructions of told(env.workspaces.b)) expect(instructions).not.toContain(HEADING)
+        expect(instructions.endsWith(SHARED_THEN_OWN)).toBe(true)
+      for (const instructions of told(env.workspaces.b)) {
+        expect(instructions).not.toContain(HEADING)
+        expect(instructions).not.toContain(EVERY_HEADING)
+      }
     } finally {
       await quitAndClose(app)
     }
   })
 
   // MUSE§12
-  test('Muse: the start hook text of a session in ws-a ends with the text, and that of a session in ws-b does not hold it', async ({
+  test('Muse: the start hooks of a session in ws-a end with the instructions for every workspace and then the text, each from a hook of its own, and those of a session in ws-b, which leaves them out, hold neither', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -286,16 +323,23 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       const page = await app.firstWindow()
       await waitBooted(page)
       await writeInstructions(page, 'ws-a')
-      const told = (): string[] => museTold(fakeCodexLog<LogLine>(env, 'fake-muse-told.jsonl'))
-      expect((await firstTurnIn(page, 'ws-a', 'Muse', told, 0)).endsWith(LAST)).toBe(true)
-      expect(await firstTurnIn(page, 'ws-b', 'Muse', told, 1)).not.toContain(HEADING)
+      await writeEveryWorkspace(page)
+      await leaveOutEveryWorkspace(page, 'ws-b')
+      const log = (): LogLine[] => fakeCodexLog<LogLine>(env, 'fake-muse-told.jsonl')
+      const told = (): string[] => museTold(log())
+      await firstTurnIn(page, 'ws-a', 'Muse', told, 0)
+      await expect.poll(() => told()[0]?.endsWith(SHARED_THEN_OWN)).toBe(true)
+      expect(museTold(log().slice(-2))).toEqual([`${everyPart(EVERY)}${LAST}`])
+      const inB = await firstTurnIn(page, 'ws-b', 'Muse', told, 1)
+      expect(inB).not.toContain(HEADING)
+      expect(inB).not.toContain(EVERY_HEADING)
     } finally {
       await quitAndClose(app)
     }
   })
 
   // AGY§8
-  test('Antigravity: the start message of a session in ws-a ends with the text, and that of a session in ws-b does not hold it', async ({
+  test('Antigravity: the start message of a session in ws-a ends with the instructions for every workspace and then the text, and that of a session in ws-b, which leaves them out, holds neither', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -305,55 +349,221 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
       const page = await app.firstWindow()
       await waitBooted(page)
       await writeInstructions(page, 'ws-a')
+      await writeEveryWorkspace(page)
+      await leaveOutEveryWorkspace(page, 'ws-b')
       const starts = (): string[] =>
         agyStarts(fakeCodexLog<LogLine>(env, 'fake-agy-injected.jsonl'))
       const inA = await firstTurnIn(page, 'ws-a', 'Antigravity', starts, 0)
-      expect(inA.endsWith(LAST)).toBe(true)
-      expect(await firstTurnIn(page, 'ws-b', 'Antigravity', starts, 1)).not.toContain(HEADING)
+      expect(inA.endsWith(SHARED_THEN_OWN)).toBe(true)
+      const inB = await firstTurnIn(page, 'ws-b', 'Antigravity', starts, 1)
+      expect(inB).not.toContain(HEADING)
+      expect(inB).not.toContain(EVERY_HEADING)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('on a remote workspace each of the four agents gets the text last, and a session in a workspace on this Mac does not', async ({
+  test('on a remote workspace each of the four agents gets the instructions for every workspace and then the text, last; a session on this Mac gets only the ones for every workspace; once the remote workspace leaves them out, none of the four gets them', async ({
     env
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(480_000)
     seedSettings(env, { hintsOff: true })
     for (const agent of OTHER_AGENTS_ON_THE_MACHINE) agent.install(env)
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
       await writeInstructions(page, REMOTE_WS_NAME)
+      await writeEveryWorkspace(page)
 
-      expectInlineAfterThePromptFile((await claudeIn(env, page, REMOTE_WS_NAME)).argv)
-      expect((await claudeIn(env, page, 'ws-a')).argv).not.toContain('--append-system-prompt')
+      const remoteClaude = (await claudeIn(env, page, REMOTE_WS_NAME)).argv
+      expect(flagAfter(remoteClaude, '--append-system-prompt')).toBe(
+        `${everyPart(EVERY)}\n\n${partOf(TEXT)}`
+      )
+      expect(flagAfter((await claudeIn(env, page, 'ws-a')).argv, '--append-system-prompt')).toBe(
+        everyPart(EVERY)
+      )
 
       const rows = wsRows(page, REMOTE_WS_NAME)
-      for (const [i, agent] of OTHER_AGENTS_ON_THE_MACHINE.entries()) {
-        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-        await agent.bound?.(page)
-        await expect(rows).toHaveCount(i + 2, { timeout: 60_000 })
-        await expect(rows.and(page.locator('.st-pending'))).toHaveCount(0, { timeout: 60_000 })
+      const startTheOtherThree = async (before: number): Promise<void> => {
+        for (const [i, agent] of OTHER_AGENTS_ON_THE_MACHINE.entries()) {
+          await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+          await agent.bound?.(page)
+          await expect(rows).toHaveCount(before + i + 1, { timeout: 60_000 })
+          await expect(rows.and(page.locator('.st-pending'))).toHaveCount(0, { timeout: 60_000 })
+        }
       }
+      await startTheOtherThree(1)
 
       const codex = (): string[] =>
         codexInstructions(machineCodexLog<LogLine>(env, 'fake-codex-server-calls.jsonl'))
-      await expect.poll(() => codex().length, { timeout: 60_000 }).toBeGreaterThan(0)
-      for (const told of codex()) expect(told.endsWith(LAST)).toBe(true)
+      const agy = (): string[] =>
+        agyStarts(machineCodexLog<LogLine>(env, 'fake-agy-injected.jsonl'))
+      const muse = (): string[] => museTold(machineCodexLog<LogLine>(env, 'fake-muse-told.jsonl'))
+      const museTabs: string[] = []
+      const museHeard = async (index: number): Promise<string> => {
+        const museTab = (
+          await rows
+            .filter({ has: page.getByRole('img', { name: 'Muse', exact: true }) })
+            .evaluateAll((all) => all.map((r) => r.getAttribute('data-tab-id') ?? ''))
+        ).find((id) => id && !museTabs.includes(id))!
+        museTabs.push(museTab)
+        await typeUntilHeard(muse, index, () =>
+          page.evaluate((tab) => window.api.terminal.write(tab, 'first words\r'), museTab)
+        )
+        await expect.poll(() => muse()[index]?.endsWith(LAST)).toBe(true)
+        return muse()[index]
+      }
+      await expect.poll(() => codex().length, { timeout: 60_000 }).toBe(1)
+      expect(codex()[0].endsWith(SHARED_THEN_OWN)).toBe(true)
+      expect(agy()).toHaveLength(1)
+      expect(agy()[0].endsWith(SHARED_THEN_OWN)).toBe(true)
+      expect((await museHeard(0)).endsWith(SHARED_THEN_OWN)).toBe(true)
 
-      const agy = agyStarts(machineCodexLog<LogLine>(env, 'fake-agy-injected.jsonl'))
-      expect(agy).toHaveLength(1)
-      expect(agy[0].endsWith(LAST)).toBe(true)
+      await leaveOutEveryWorkspace(page, REMOTE_WS_NAME)
+      expectInlineAfterThePromptFile((await claudeIn(env, page, REMOTE_WS_NAME)).argv)
+      await startTheOtherThree(5)
+      await expect.poll(() => codex().length, { timeout: 60_000 }).toBe(2)
+      await expect.poll(() => agy().length, { timeout: 60_000 }).toBe(2)
+      for (const told of [codex()[1], agy()[1], await museHeard(1)]) {
+        expect(told.endsWith(LAST)).toBe(true)
+        expect(told).not.toContain(EVERY_HEADING)
+      }
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
 
-      const museRow = rows.filter({ has: page.getByRole('img', { name: 'Muse', exact: true }) })
-      const museTab = (await museRow.getAttribute('data-tab-id'))!
-      const told = await typeUntilHeard(
-        () => museTold(machineCodexLog<LogLine>(env, 'fake-muse-told.jsonl')),
-        0,
-        () => page.evaluate((tab) => window.api.terminal.write(tab, 'first words\r'), museTab)
+test.describe('The instructions for every workspace: written once in Settings ▸ Sessions, given to the sessions of every workspace before that workspace’s own, and left out where a workspace says so', () => {
+  test('Settings ▸ Sessions shows them as empty, opens the editor on Edit, saves them as the owner’s version and shows how much is left; Claude Code in ws-a gets them and then ws-a’s own as one inline appended prompt after Koloft’s prompt file; ws-b, set to leave them out in its Session defaults, gets none', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Sessions' }).click()
+      const row = page.locator('.set-row', { hasText: EVERY_ROW })
+      await expect(row.locator('small').last()).toHaveText('Empty')
+      await row.getByRole('button', { name: 'Edit' }).click()
+      const editor = page.getByRole('dialog', { name: 'Instructions', exact: true })
+      await expect(editor.locator('.pal-count')).toHaveText(`${EVERY_ROW} · written by you`)
+      await expect(editor.locator('.pal-status')).toHaveText(
+        'Every session started from now on follows this, in every workspace that does not leave it out. A resumed conversation keeps the text it started with. Alfred does not get it.'
       )
-      expect(told.endsWith(LAST)).toBe(true)
+      await editor.getByRole('textbox', { name: 'Instructions' }).fill(EVERY)
+      await editor.getByRole('button', { name: /Save/ }).click()
+      await expect(editor).toHaveCount(0)
+      await expect(page.locator('.toast .toast-msg')).toHaveText(
+        'Instructions saved. Sessions started from now on follow them.'
+      )
+      await expect(row.locator('small').last()).toHaveText(
+        `2 lines · ${(EVERY_WORKSPACE_TEXT_MAX_BYTES - instructionsBytes(EVERY)).toLocaleString('en-US')} left`
+      )
+      await closeSettings(page)
+      expect(
+        (settingsOnDisk(env).everyWorkspaceInstructions as { text: string; by: string }[]).map(
+          (v) => [v.text, v.by]
+        )
+      ).toEqual([[EVERY, 'owner']])
+
+      await writeInstructions(page, 'ws-a', SHORT)
+      const dlg = await openDefaults(page, 'ws-b')
+      await expect(dlg.locator('.chip.on', { hasText: 'Follow them' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'Leave them out' }).click()
+      await expect(
+        dlg.locator('.field-hint', { hasText: 'do not get the instructions for every workspace' })
+      ).toHaveText(
+        'Sessions started in this workspace, or in another copy of the same repository, do not get the instructions for every workspace.'
+      )
+      await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
+      await expect(dlg).toHaveCount(0)
+      const again = await openDefaults(page, 'ws-b')
+      await expect(again.locator('.chip.on', { hasText: 'Leave them out' })).toHaveCount(1)
+      await again.getByRole('button', { name: 'Cancel' }).click()
+
+      const inA = (await claudeIn(env, page, 'ws-a')).argv
+      expectInlineAfterThePromptFile(inA, SHORT)
+      expect(flagAfter(inA, '--append-system-prompt')).toBe(
+        `${everyPart(EVERY)}\n\n${partOf(SHORT)}`
+      )
+      expect((await claudeIn(env, page, 'ws-b')).argv).not.toContain('--append-system-prompt')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a session Alfred starts in a workspace and a scheduled job’s session get them; Alfred itself and a helper it starts in its own folder do not', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.userData, 'cron.json'),
+      JSON.stringify({
+        version: 1,
+        jobs: [
+          {
+            id: 'every-ws-job',
+            workspacePath: env.workspaces.b,
+            name: 'Nightly check',
+            task: 'Check the build.',
+            schedule: { kind: 'daily', at: '03:00' },
+            permission: 'same',
+            enabled: true,
+            createdAt: 1,
+            history: []
+          }
+        ]
+      })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await writeEveryWorkspace(page)
+      const holds = (call: ClaudeCall): boolean => call.argv.join('\n').includes(EVERY_HEADING)
+      const nextCall = async (): Promise<ClaudeCall> => {
+        const before = readAllCalls(env).length
+        await expect.poll(() => readAllCalls(env).length, { timeout: 60_000 }).toBe(before + 1)
+        return readAllCalls(env)[before]
+      }
+
+      const butlerStarts = nextCall()
+      await butlerRow(page).click()
+      expect(holds(await butlerStarts)).toBe(false)
+      await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id'))!
+      const butlerSays = (line: string): Promise<void> =>
+        page.evaluate(([tab, text]) => window.api.terminal.write(tab, `${text}\r`), [
+          butlerTab,
+          line
+        ] as const)
+
+      const helperStarts = nextCall()
+      await butlerSays('/koloft session new --model sonnet --effort low -- look into the logs')
+      const helper = await helperStarts
+      expect(helper.firstPrompt).toContain('This session is not Alfred itself')
+      expect(holds(helper)).toBe(false)
+
+      const inWorkspace = nextCall()
+      await butlerSays(
+        '/koloft session new --workspace ws-a --model sonnet --effort low -- fix the docs'
+      )
+      expect(flagAfter((await inWorkspace).argv, '--append-system-prompt')).toBe(everyPart(EVERY))
+
+      const scheduled = nextCall()
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-b' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await page
+        .locator('.modal.cronjobs .job-row')
+        .filter({ hasText: 'Nightly check' })
+        .locator('button.mini', { hasText: 'Run now' })
+        .click()
+      expect(flagAfter((await scheduled).argv, '--append-system-prompt')).toBe(everyPart(EVERY))
     } finally {
       await quitAndClose(app)
     }

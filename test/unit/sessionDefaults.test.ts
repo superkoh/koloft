@@ -147,6 +147,24 @@ describe('where a workspace’s session defaults are kept', () => {
     expect(lookups).toEqual(['kept /work/notes', 'fresh /work/notes'])
   })
 
+  it('keeps using the repository it last found for a folder when git cannot tell now, so a workspace that leaves out the instructions for every workspace still does', async () => {
+    let answer: string | null = 'octo/app'
+    let now = 0
+    const leftOut: SessionDefaults = { picks: {}, leavesOutEveryWorkspace: true }
+    const store = projectDefaults({
+      rootOf: (dir) => dir,
+      reachable: async () => {},
+      repoOf: async () => answer,
+      saved: () => ({ 'octo/app': leftOut }),
+      save: () => {},
+      now: () => now
+    })
+    expect(await store.of('ssh://box/srv/app')).toEqual(leftOut)
+    answer = null
+    now = A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS
+    expect(await store.of('ssh://box/srv/app')).toEqual(leftOut)
+  })
+
   it('asks nothing at all while no workspace has defaults', async () => {
     let lookups = 0
     const store = projectDefaults({

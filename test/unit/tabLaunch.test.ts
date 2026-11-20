@@ -265,7 +265,7 @@ type Landing = { handed: string[]; dropped?: string[] } | { takesNothing: string
 
 type LaunchFeature = Exclude<
   keyof ClaudeLaunch,
-  'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId' | 'projectRules' | 'workspaceText'
+  'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId' | 'projectRules' | 'workspaceParts'
 >
 
 const CONDUCTORS_RUN_ON_THIS_MAC: Landing = {

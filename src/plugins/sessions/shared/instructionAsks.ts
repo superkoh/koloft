@@ -5,4 +5,5 @@ export interface InstructionAskView {
   what: string
   before: string
   after: string
+  forEveryWorkspace?: true
 }

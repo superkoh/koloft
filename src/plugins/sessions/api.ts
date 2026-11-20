@@ -29,11 +29,15 @@ export {
 } from './main/placedRows'
 export { GITHUB_NOT_ASKED, type MergedHeads, type WorkLeft } from './main/sessionClose'
 export {
-  instructionsPartOf,
   savedFromTheDialog,
   workspaceBlock,
   workspaceInstructionsPart
 } from './main/workspaceInstructions'
+export {
+  everyWorkspaceBlock,
+  ownerPartsOf,
+  savedByTheOwner as everyWorkspaceSavedByTheOwner
+} from './main/everyWorkspaceInstructions'
 export type { InstructionsBlock } from './main/instructionsVerb'
 export { InstructionAsks } from './main/instructionAsks'
 

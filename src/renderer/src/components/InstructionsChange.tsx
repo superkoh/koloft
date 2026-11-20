@@ -75,7 +75,9 @@ export function InstructionsAskDialog({
           </p>
           <InstructionsChangeLines before={ask.before} after={ask.after} />
           <p className="field-hint">
-            Nothing changes until you agree. Sessions started afterwards follow the new text.
+            {ask.forEveryWorkspace
+              ? 'Nothing changes until you agree. Sessions started afterwards, in every workspace that does not leave them out, follow the new text.'
+              : 'Nothing changes until you agree. Sessions started afterwards follow the new text.'}
           </p>
         </div>
         <div className="modal-foot">

@@ -24,8 +24,11 @@ export const CHANNELS = {
   attentionChanged: 'attention:changed',
   defaultsRead: 'sessionDefaults:read',
   defaultsWrite: 'sessionDefaults:write',
+  everyWorkspaceSave: 'sessionDefaults:everyWorkspaceSave',
   instructionAsks: 'instructions:asks',
   instructionAsksList: 'instructions:list',
   instructionAnswer: 'instructions:answer',
   worktrees: 'workspace:worktrees'
 } as const
+
+export type InstructionsSaveResult = { ok: true } | { ok: false; error: string; inUse?: string }
