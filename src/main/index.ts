@@ -310,7 +310,7 @@ import { githubLookups } from '@plugins/github/main/lookup'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
-import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
+import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch, readReadiness } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, usableSessionScreen, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -6926,6 +6926,11 @@ function registerIpc(): void {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
+  })
+  ipcMain.handle(CH.git.readiness, (_e, root: unknown) => {
+    if (typeof root !== 'string' || !root) return null
+    const host = hosts.of(root)
+    return readReadiness((args) => host.gitRun(root, args))
   })
   ipcMain.handle(CH.window.isFullScreen, () => mainWindow?.isFullScreen() ?? false)
 
