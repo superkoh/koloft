@@ -2,17 +2,24 @@ export function aDialogIsOpen(): boolean {
   return !!document.querySelector('.modal-backdrop:not(.in-session), .bmodal-backdrop')
 }
 
-const keysWentNowhere = (): boolean =>
-  !document.activeElement || document.activeElement === document.body
+const underAnAskBox = (at: Element): boolean =>
+  !at.closest('.modal-backdrop.in-session') &&
+  !!at.closest('.term-wrap')?.querySelector(':scope > .modal-backdrop.in-session')
 
-const keysAreInATerminal = (): boolean => !!document.activeElement?.closest('.term-wrap')
+const keysWentNowhere = (): boolean =>
+  !document.activeElement ||
+  document.activeElement === document.body ||
+  underAnAskBox(document.activeElement)
+
+const keysAreInATerminal = (at: Element): boolean =>
+  !at.closest('.modal-backdrop.in-session') && !!at.closest('.term-wrap')
 
 const A_FIELD_THE_OWNER_TYPES_IN =
   'textarea, select, webview, input:not([type=checkbox], [type=radio], [type=button], [type=range], [type=submit], [type=reset], [type=image], [type=file], [type=color], [type=hidden])'
 
 function fieldTheOwnerTypesInOutsideTheTerminals(): HTMLElement | null {
   const at = document.activeElement
-  if (!(at instanceof HTMLElement) || keysAreInATerminal()) return null
+  if (!(at instanceof HTMLElement) || keysAreInATerminal(at)) return null
   if (at.checkVisibility?.({ visibilityProperty: true }) === false) return null
   return at.matches(A_FIELD_THE_OWNER_TYPES_IN) || at.isContentEditable ? at : null
 }
@@ -29,7 +36,7 @@ function watchTheDomUntil(done: () => boolean, then: () => void): () => void {
 
 export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
   const takeTheKeysIfFree = (): void => {
-    if (!aDialogIsOpen() && (keysWentNowhere() || keysAreInATerminal())) el.focus()
+    if (!aDialogIsOpen() && keysWentNowhere()) el.focus()
   }
   let landing: ReturnType<typeof setTimeout> | undefined
   const onceTheKeysSettle = (then: () => void): void => {
@@ -66,7 +73,7 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
   }
 
   if (aDialogIsOpen()) waitForTheDialogToClose()
-  else if (field) {
+  else if (field && field !== el) {
     field.addEventListener('focusout', theOwnerLeftTheField)
     // PLATFORM§10
     document.addEventListener('pointerdown', theOwnerLeftTheField, true)

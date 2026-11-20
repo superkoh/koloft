@@ -24,6 +24,19 @@ function dialogWithAField(): { backdrop: HTMLElement; field: HTMLTextAreaElement
   return { backdrop, field }
 }
 
+function terminalUnderAnAskBox(): { terminalInput: HTMLTextAreaElement; field: HTMLInputElement } {
+  const wrap = document.createElement('div')
+  wrap.className = 'term-wrap'
+  const terminalInput = document.createElement('textarea')
+  const askBox = document.createElement('div')
+  askBox.className = 'modal-backdrop in-session'
+  const field = document.createElement('input')
+  askBox.append(field)
+  wrap.append(terminalInput, askBox)
+  document.body.append(wrap)
+  return { terminalInput, field }
+}
+
 const aTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 const domSettled = async (): Promise<void> => {
   await aTick()
@@ -84,6 +97,14 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(keep)
   })
 
+  it('waits on nothing when the field the owner types in is the element itself, so leaving it later does not pull the keys back', async () => {
+    const page = focused(document.createElement('textarea'))
+    focusOnce(page)
+    page.blur()
+    await domSettled()
+    expect(document.activeElement).toBe(document.body)
+  })
+
   it('takes the keys from a checkbox, which is not a field the owner types in', () => {
     const box = document.createElement('input')
     box.type = 'checkbox'
@@ -127,6 +148,27 @@ describe('focusOnceNoDialogIsOpen', () => {
     backdrop.remove()
     await domSettled()
     expect(document.activeElement).toBe(keep)
+  })
+
+  it('takes the keys when closing the dialog puts them back on a terminal an ask box covers, where the owner cannot see them land', async () => {
+    const { terminalInput, field } = terminalUnderAnAskBox()
+    const { backdrop } = dialogWithAField()
+    focusOnce(field)
+    backdrop.remove()
+    terminalInput.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('of two elements waiting behind one dialog, the second leaves the keys in the ask box field the first gave them to', async () => {
+    const { field } = terminalUnderAnAskBox()
+    const page = button()
+    const { backdrop } = dialogWithAField()
+    focusOnce(field)
+    focusOnce(page)
+    backdrop.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
   })
 
   it('leaves the keys where closing the dialog put them', async () => {

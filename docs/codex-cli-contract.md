@@ -237,6 +237,17 @@ Thus `turn/completed` does not imply that all commands are done. A command item 
 outlast its turn; its later completion remains observable on the TUI connection.
 The string `processId` is a tool handle, **not proof of an operating-system PID**.
 
+A command given no `yield_time_ms` returns after 10 s, and under `codex exec` it ends
+with the run. 2026-11-19, codex-cli 0.169.0 on macOS, `codex exec --skip-git-repo-check
+--dangerously-bypass-approvals-and-sandbox` with a throwaway `CODEX_HOME` whose
+`config.toml` named a fake Responses provider (`wire_api = "responses"`, a local
+`base_url`), whose model called `exec_command {cmd: "sleep 660; echo done-after-660"}`;
+`ps` read every 15 s; one run. At 10 s the tool output read "Wall time: 10.0008 seconds
+/ Process running with session ID 61240"; the fake model then ended the turn, `codex
+exec` exited 0 at 15 s, and the `sleep` was gone at the same read. How long such a
+command lives in the TUI, where the turn ends but the session goes on (above, 12 s),
+is not probed past 12 s.
+
 ### Child agent
 
 The main task spawned a child that ran `sleep 12`, then immediately returned its own
@@ -1924,6 +1935,20 @@ real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-us
   refusal and, when the model came from Koloft's own table, runs once more on
   `gpt-6-luna` inside the same wait. That a plan without `gpt-6.1-sol` words its
   refusal the same way is **not probed yet** (section 14).
+
+**A ChatGPT login refreshes only within 5 minutes of its access token's expiry, and a
+refresh token works once.** Read 2026-11-19 from the 0.169.0 source
+(`codex-rs/login/src/auth/manager.rs` at tag `rust-v0.169.0`): when the access token is a
+JWT with an `exp`, Codex refreshes it once `exp` is within
+`CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES = 5` of now (`ProactiveExpiry`); only a token
+without `exp` falls back to `last_refresh` older than `TOKEN_REFRESH_INTERVAL = 8` days.
+The same file has the refusal "Your access token could not be refreshed because your
+refresh token was already used. Please log out and sign in again.", so two homes holding
+copies of one login sign each other out when either refreshes. Measured the same day on
+the two logins in the installed Koloft's `codex-homes` (claims decoded, no token
+printed): each access token was issued at `last_refresh` and expires 240 h later; the
+`id_token` lives 1 h. The enabled login had not refreshed 9 days after `last_refresh`,
+past the 8-day mark, as the `exp` rule predicts. Not probed: a refresh forced by a 401.
 
 ## 16. Codex on a remote machine
 

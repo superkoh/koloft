@@ -26,7 +26,11 @@ export interface InstructionsBlock {
 }
 
 export interface InstructionsVerbDeps {
-  askTheOwner(ask: InstructionAsk, stillWaiting?: () => boolean): Promise<OwnersAnswer>
+  askTheOwner(
+    ask: InstructionAsk,
+    write: () => Promise<boolean>,
+    stillWaiting?: () => boolean
+  ): Promise<OwnersAnswer>
   overseerSide(tabId: string): boolean
   isOverseer(tabId: string): boolean
   overseerBlock(): InstructionsBlock
@@ -53,11 +57,10 @@ const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
   declined: 'koloft instructions: the owner did not agree, so nothing was changed.',
   timeout: 'koloft instructions: the owner did not answer in time, so nothing was changed.',
   closed:
-    'koloft instructions: the command stopped waiting, or this session was closed, before the owner answered, so nothing was changed.'
+    'koloft instructions: the command stopped waiting, or this session was closed, before the owner answered, so nothing was changed.',
+  'changed-meanwhile':
+    'koloft instructions: the instructions changed while the owner was asked, so nothing was changed. Read them again before you propose.'
 }
-
-const CHANGED_WHILE_ASKING =
-  'koloft instructions: the instructions changed while the owner was asked, so nothing was changed. Read them again before you propose.'
 
 function parsed(
   args: string[]
@@ -125,10 +128,10 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     const by = d.nameOf(caller.session)
     const given = await d.askTheOwner(
       { tabId: caller.tabId, by, what: block.name, before, after },
+      () => block.writeIfStill(before, after, by),
       caller.stillWaiting
     )
     if (given !== 'agreed') return refused(NOT_CHANGED[given])
-    if (!(await block.writeIfStill(before, after, by))) return refused(CHANGED_WHILE_ASKING)
     return answered(changedLine(p.edit, block.name))
   }
 }

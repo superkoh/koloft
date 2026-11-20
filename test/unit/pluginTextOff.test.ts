@@ -97,6 +97,28 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     )
   })
 
+  it('with GitHub off, koloft help and the koloft skill lose koloft gh and the to-dos, the butler stops being told how to open an issue, pinned, and every session prompt stays as it was', async () => {
+    const before = { sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)), todo: todoMethod() }
+    turnOff(['github'])
+    expect({ sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)), todo: todoMethod() }).toEqual(
+      before
+    )
+    await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/github-off/koloft-help.txt')
+    const files = agentPluginFiles()
+    await expect(files['skills/koloft/SKILL.md']).toMatchFileSnapshot(
+      './prompt-text/github-off/koloft-skill.md'
+    )
+    await expect(files['koloft-prompt.md']).toMatchFileSnapshot(
+      './prompt-text/github-off/claude-prompt-file.md'
+    )
+    await expect(butlerRole(BUTLER, [DISCORD_BOUND])).toMatchFileSnapshot(
+      './prompt-text/github-off/butler-discord-bound.txt'
+    )
+    await expect(butlerHelperRole(BUTLER)).toMatchFileSnapshot(
+      './prompt-text/github-off/helper.txt'
+    )
+  })
+
   it('with Discord off, koloft help, the koloft skill, every session prompt and the butler lose Discord, pinned, and the butler bound to a channel reads as one with none', async () => {
     const unbound = butlerRole(BUTLER)
     const helper = butlerHelperRole(BUTLER)

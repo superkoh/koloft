@@ -383,7 +383,7 @@ describe('koloft cron: printing tasks', () => {
     expect(second).toMatch(/^2\. weekly · .* · off · .*never run/)
   })
 
-  it('show prints the task, its settings and its recent runs', () => {
+  it('show prints the task, its settings and its recent runs, each with its full local time and the session it ran in', () => {
     const text = formatShow(
       job({
         model: 'opus',
@@ -393,6 +393,17 @@ describe('koloft cron: printing tasks', () => {
             dueAt: new Date(2026, 8, 2, 2, 0).getTime(),
             state: 'failed',
             note: 'no usable account'
+          },
+          {
+            dueAt: new Date(2026, 8, 1, 2, 0).getTime(),
+            state: 'skipped',
+            count: 2,
+            until: new Date(2026, 8, 1, 3, 0).getTime()
+          },
+          {
+            dueAt: new Date(2025, 11, 31, 2, 0).getTime(),
+            state: 'finished',
+            sessionId: 'codex:%2Fhome%2Fcodex:s-1'
           }
         ]
       }),
@@ -404,6 +415,16 @@ describe('koloft cron: printing tasks', () => {
     expect(text).toContain('opus')
     expect(text).toContain('When done: open')
     expect(text).toContain('    Run the tests\n    and report')
-    expect(text).toContain('today 02:00 · Could not start — no usable account')
+    const zone = '[+-]\\d\\d:\\d\\d'
+    const runs = text.split('Recent runs:\n')[1].split('\n')
+    expect(runs[0]).toMatch(
+      new RegExp(`^ {4}2026-09-02T02:00${zone} · Could not start — no usable account$`)
+    )
+    expect(runs[1]).toMatch(
+      new RegExp(`^ {4}2026-09-01T02:00${zone} → 2026-09-01T03:00${zone} · Skipped 2 times`)
+    )
+    expect(runs[2]).toMatch(
+      new RegExp(`^ {4}2025-12-31T02:00${zone} · session s-1 · Done — closed itself$`)
+    )
   })
 })
