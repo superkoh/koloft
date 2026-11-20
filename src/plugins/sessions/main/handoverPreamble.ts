@@ -1,5 +1,6 @@
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
 import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 
 export interface SessionCaller {
   name?: string
@@ -55,7 +56,7 @@ const holdsOnce = (text: string, slot: string): boolean => text.split(slot).leng
 // ADR-0031
 export async function handoverInOwnersLanguage(
   caller: SessionCaller,
-  assist: Assist
+  assist: Assist<SessionsAssistJobId>
 ): Promise<string> {
   if (!caller.ownerWords) return handoverPreamble(caller)
   const english = englishProse(caller)

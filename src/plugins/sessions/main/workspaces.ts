@@ -58,7 +58,7 @@ import type { RemoteGitInfo } from '../../../main/remote/install'
 import type { SearchCandidate } from '../../../main/sessionSearch'
 import type { SessionPlace } from '../../../main/usageCache'
 import { mapAtMost } from '@core/mapAtMost'
-import { isUnderAnyRoot } from '../../../main/browserSecurity'
+import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { mergeUse } from '@shared/firstRun'
 import { BackgroundFile } from '../../../main/backgroundFile'
 

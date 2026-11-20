@@ -72,6 +72,7 @@ import {
 } from './handoverPreamble'
 import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 import { keysFor } from '@core/typeKeys'
 import type { StartedSessions } from './startedSessions'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
@@ -359,7 +360,7 @@ export interface SessionVerbDeps {
   pickFacts(backend: BackendId): Promise<PickFacts>
   projectRules(workspace: string): Promise<string | undefined>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
-  assist: Assist
+  assist: Assist<SessionsAssistJobId>
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]

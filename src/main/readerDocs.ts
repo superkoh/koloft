@@ -5,6 +5,7 @@ import type { Turn } from '@shared/turns'
 import { barePath, formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
 import type { Assist } from '@core/assistModels'
+import type { WorkbenchAssistJobId } from '@plugins/workbench/shared/assistJobs'
 import { PrivateRecordFile } from '@core/privateFile'
 import { localFile } from './realFiles'
 
@@ -28,7 +29,7 @@ const INSTRUCTIONS = [
 
 export interface ReaderDocsDeps {
   file(): string
-  assist: Assist
+  assist: Assist<WorkbenchAssistJobId>
   session(tabId: string): SessionInfo | undefined
   remoteFileExists(host: string, keyed: string): Promise<boolean>
   changed(): void
