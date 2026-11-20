@@ -17,7 +17,8 @@ import {
   startSessionIn,
   terminalText,
   waitBooted,
-  waitConductorStarted
+  waitConductorStarted,
+  wsRows
 } from './helpers/p1'
 import {
   OTHER_AGENTS_ON_THE_MACHINE,
@@ -58,6 +59,12 @@ const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const STARTS_AND_ANSWERS_MS = 90_000
 const A_CARD_WOULD_HAVE_LANDED_MS = 3000
+const AWAY_DIGEST_GATHERS_MS = 500
+
+const butlerGot = (env: E2EEnv): string => {
+  const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
+  return fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''
+}
 const WRITTEN = 'Answer in Chinese.'
 
 function seedBinding(env: E2EEnv, more: Parameters<typeof seedSettings>[1] = {}): void {
@@ -339,6 +346,28 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
       await expect(page.locator('.toast-msg')).toContainText(INSTRUCTIONS_CHANGED_MEANWHILE)
       await endsAs(fake, card, CHANGED_MEANWHILE)
       expect(versionsOnDisk(env).at(-1)?.text).toBe('The owner rewrote it.')
+    })
+  })
+
+  test('the butler’s away digest leaves out a session whose Instructions card is already in its channel, and still names another session that changed', async ({
+    env
+  }) => {
+    seedBinding(env)
+    env.launchEnv.KOLOFT_AWAY_DIGEST_MS = String(AWAY_DIGEST_GATHERS_MS)
+    await withOneSession(env, async (page, fake) => {
+      await startSessionIn(page, 'ws-b')
+      const tabIn = async (ws: string): Promise<string> =>
+        (await wsRows(page, ws).first().getAttribute('data-tab-id'))!
+      const [wsA, wsB] = [await tabIn('ws-a'), await tabIn('ws-b')]
+      const line = 'Asked while away.'
+      await typeIn(page, wsA, `/koloft instructions add -- ${line}`)
+      await cardFor(fake, line)
+      const before = butlerGot(env).length
+      await typeIn(page, wsB, 'one more turn')
+      await expect
+        .poll(() => butlerGot(env).slice(before), { timeout: STARTS_AND_ANSWERS_MS })
+        .toMatch(/workspace ws-b\) finished its turn/)
+      expect(butlerGot(env)).not.toMatch(/workspace ws-a\) waits for an answer or an approval/)
     })
   })
 

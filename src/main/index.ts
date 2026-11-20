@@ -4498,9 +4498,7 @@ app.whenReady().then(() => {
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
     instructionsCard: (tabId) =>
-      waitsBesidesInstructions(tabId) || tracker.awaitsInput(tabId)
-        ? undefined
-        : instructionCardsNow.onDiscord(tabId),
+      waitsBesidesInstructions(tabId) ? undefined : instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
