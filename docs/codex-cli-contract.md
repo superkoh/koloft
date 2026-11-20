@@ -460,7 +460,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0, 0.169.0 or 0.170.0. Koloft
+0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0, 0.169.0, 0.170.0 or 0.171.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -768,6 +768,54 @@ turn can hold several `agentMessage`s), which the case read too early. That 0.16
 passed because its catalog has another default model, not because of the build, is
 **inferred, not checked**: `model/list` was not read on 0.161.0.
 
+On 0.171.0 (2026-11-20, against 0.170.0, one throwaway `CODEX_HOME` and `HOME` per build
+holding a copied login, four real `gpt-6-luna` turns at effort `low` per build on the
+app-server side; on the TUI side a python pty in Koloft's `--remote unix://` shape with
+Koloft's `-c` settings against a stand-in Responses server): `codex --help` and the
+`--help` of `app-server`, `app-server proxy` and `resume` are byte-identical to
+0.170.0's; `exec` (and its `resume`, `fork` and `review`) adds `--remote <ADDR>` and
+`--remote-auth-token-env`, `exec-server` (and `forward`) adds
+`--linux-sandbox-transparent-tcp` and `--tcp-upstream-proxy`, and the hidden
+`stdio-to-uds` is gone (`codex help stdio-to-uds` exits 2; openai/codex#62163 moved its
+relay into `app-server proxy`, which Koloft's remote tabs use and which still carried
+`initialize` and `thread/start` over WebSocket on the Mac and on Linux). `features list`
+turns `tui_workspace` from `under development false` to `stable true` (#61352) and
+`tui_extensions_statusline` to `experimental false`. `app-server generate-json-schema`
+adds the client method `modelProvider/default/set`, the server notification
+`thread/search/partial`, `ThreadListParams.includedThreadIds` (0.171.0 lists only the
+ids given; 0.170.0 ignores it and lists all), `bioPolicy` in `CodexErrorInfo`, `reason`
+on `account/updated`, and `environmentId` on `ThreadItem` and the MCP params;
+experimentally `thread/search/stream`, `thread/search/cancel`,
+`thread/search/stream/cancel` and `thread/realtime/list` (0.170.0 answers them `-32600
+unknown variant`); it removes `Project.position` and, experimentally, the server request
+`currentTime/read`. Measured again: sections 1 (`initialize` keys, `thread/start`'s 14
+keys, `thread/list` keys and 33 keys per thread, the same notification kinds in a turn),
+5 (the npm `codex` one native process on the Mac and on Linux; SIGTERM ends `--stdio` in
+3–5 ms with code 0, SIGHUP in 3–4 ms; #61221 touches only the `bin/codex.js` fallback
+used when Node lacks `process.execve`, read from the diff, not run), 8 (the footer with
+Koloft's `tui.status_line` list and with none, the same on both), 11 (the three shapes
+again, with one correction written there), 13/14 (`model/list` the same ten models on
+both, `gpt-6.2-sol` the default; `codex debug models --bundled` byte-identical), 15
+(`login status`, `auth.json` unchanged by the turns), 16 (there), 18 (no new public
+subcommand), 20 (the waiting question and a digit answer, the same on both), 21 (the
+slash popup; `/rc` is new), 23 (a bracketed paste lands unsent), 24 (`thread/search` and
+`thread/searchOccurrences` keys unchanged; `thread/search/stream` sent one partial before
+its final reply, and `thread/search/cancel` ended a pending search with `-32600 "thread
+search cancelled"`), 25 and 37 (startup and exit bytes, one new startup question, there),
+27 (the same five `sessionFlags` hooks with the same `currentHash`, none running
+untrusted, then SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop in that
+order with the same stdin keys; no bundled hook listed) and 35 (file links, changed by
+`tui_workspace`, there). A real TUI on Koloft's resume line was not refused on either
+build (alive at 15 s, footer drawn, OSC 7501 `idle`; #62065 refuses only a `--remote`
+given at two levels that disagree); that it drew the thread's history was not seen. Not
+reached on 0.171.0: #61180 and #61195 (§11), the read-state broadcast #61852 (one
+connection only), `bioPolicy` (schema only), the bundled Memory and App hooks (#62112,
+#62080; none listed), two signals in a row, `exec --remote` (help only), a turn on Linux,
+mouse-wheel batching (#62146), subagent transcripts and image previews in the workspace
+pane. Sections 3, 4, 6, 9, 10, 12, 17, 19, 22, 26 and 28–36 but 35 stand on earlier
+measurements. `TESTED_CODEX_LINE` stays at 0.170 until Koloft's TUI launch turns
+`tui_workspace` off (§35).
+
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4 (but how
@@ -796,7 +844,11 @@ columns. First measured on 2026-09-10 with 0.153.4; the findings below hold on b
 unless marked.
 
 - `[tui]` has three keys for this, and only three: `status_line`,
-  `status_line_use_colors` and `terminal_title` (binary strings). `tui.status_line` is a
+  `status_line_use_colors` and `terminal_title` (binary strings; on 0.170.0 and 0.171.0,
+  2026-11-20, the strings also name `status_line_provider` beside other `[tui]` keys such
+  as `sidebar_width_percent`, `mouse_scroll_speed` and `copy_on_select`, and the MCP
+  status-line providers stay behind `tui_extensions_statusline`, off; the default footer
+  read the same on both). `tui.status_line` is a
   flat, ordered list of built-in item IDs. Passing it with `-c` to the app-server and to
   the remote TUI displayed the selected items. A list of lists stops startup:
   `invalid type: sequence, expected a string in tui.status_line`. That server startup
@@ -1103,6 +1155,16 @@ turns, each turn's settings read from the rollout's `turn_context` (its keys as 
   `workspace-write`) resumed with `-c approval_policy="never" -c
   sandbox_mode="danger-full-access"` stayed `on-request` / `workspace-write`, through
   the plain client and through the real TUI alike.
+- **Not for a thread started with explicit `on-request` / `workspace-write` params.**
+  Resumed by an app-server given `-c approval_policy="never" -c
+  sandbox_mode="danger-full-access"`, it came back `on-request` / `dangerFullAccess`, and
+  the next turn's `turn_context` said `on-request` / `danger-full-access`: the sandbox
+  `-c` took, the approval one did not. The same on 0.170.0 and 0.171.0 (2026-11-20, a git
+  repository, a Node client on `app-server --stdio`, one real `gpt-6-luna` turn per
+  shape, one run per build); the other two shapes behaved as the bullets above say. The
+  cause, and the first build that does it, were not probed. Koloft resumes with the
+  permission it saved for the session (below), so its `-c` names what the thread
+  already has.
 - Explicit params on the request win: `thread/resume {threadId, approvalPolicy:
   "on-request", sandbox: "workspace-write"}` on the `never` / danger thread ran
   `on-request` / `workspace-write`, and the next bare resume restored *that* — a value
@@ -2160,6 +2222,18 @@ empty `thread/list` and a `config/read` of 107 keys, the same on both; the missi
 ERROR line is word for word the same on both (openai/codex#60898 changed only a test
 fixture).
 
+**Rechecked in part on 0.171.0** (2026-11-20, the same image as `kuser`, a throwaway
+`--rm` container of its own, against 0.170.0 in its own prefix): `npm install -g
+--prefix ~/.koloft-<v>/codex-cli` printed `codex-cli 0.171.0`; `app-server --stdio`
+answered `initialize` in 104 ms (0.170.0 113 ms) with the same keys, an empty
+`thread/list` and a `config/read` of 110 keys (0.170.0 107; the three new keys not
+listed); one `codex` process beside a curated-plugins `git ls-remote`; the
+missing-bubblewrap ERROR the same. `app-server --listen unix://…` with `app-server proxy
+--sock` in front, reached over WebSocket with the repo's `ws` package as Koloft's remote
+tabs do, carried `initialize` (22–24 ms) and `thread/start` (14 keys) on 0.170.0 and
+0.171.0 alike, after openai/codex#62163 moved that relay into the CLI. No turn ran
+there.
+
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
@@ -2932,6 +3006,17 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   `/daemon` and `/side` are on both). `/keymap` names a "Global Leader ctrl-x"
   (`tui.keymap.global.leader`, default `ctrl-x`), "Chat Interrupt Turn esc", "Composer
   Queue tab" and "Toggle Side Conversation ctrl-/" among 153 actions (§25).
+- **0.171.0 adds `/rc`** ("manage remote control for the local background server")
+  to the popup; `/remote` is in neither 0.170.0's nor 0.171.0's popup, and `/statusline`
+  and `/side` are on both (2026-11-20, Koloft's launch shape, 120×40, one run per
+  build). Run in a Koloft-shaped tab, `/rc` drew "Remote control requires the local
+  background server" with `› Enable (disabled)` and `esc back`, and Esc closed it.
+  `/statusline`'s picker ends `esc cancel` on both builds.
+- **0.171.0's composer undoes and redoes** (openai/codex#61954, 2026-11-20, one run per
+  build): after `abc`, ` def` and a word delete, `ESC z` (⌥z) undid the edit and `ESC Z`
+  redid it on 0.171.0 and did nothing on 0.170.0; Ctrl+Y still yanks the deleted word on
+  both. The binary names only the actions `composer.undo` / `composer.redo`, not their
+  keys, and `?` does not list them.
 
 ## 22. `codex update`
 
@@ -3104,6 +3189,13 @@ word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it an
   spaces (`… alpha beta gamma delta. …`; openai/codex#60846). A single-space `"alpha
   beta"` matched the double-spaced text on neither. `thread/searchOccurrences` found it on
   both, with the same keys and the white space kept as written.
+- **0.171.0 can stream a search and cancel it** (2026-11-20, against 0.170.0, a Node
+  client on `app-server --stdio`, real turns holding a marker): `thread/search` (hits
+  `{thread, snippet}`) and `thread/searchOccurrences` (`data, nextCursor`) answer as
+  before on both. The experimental `thread/search/stream` sent one `thread/search/partial
+  {requestId, data}` before its final reply, and `thread/search/cancel` sent while a
+  `thread/search` was pending ended it with `-32600 "thread search cancelled"` (a cancel
+  for an id never sent answers `{}`); 0.170.0 answers all three `-32600 unknown variant`.
 
 Rechecked 2026-10-25 on this Mac with Codex CLI 0.162.0, and the schema,
 `thread/searchOccurrences` and `thread/turns/list` again with 0.161.0 (`npm install
@@ -3201,6 +3293,20 @@ the one before, the screen read back through `pyte`.
   `TERM_SESSION_ID` from the terminal-detection env list (`ITERM_SESSION_ID` stays);
   `TERM_PROGRAM` and `Apple_Terminal` are still named, and nothing the TUI wrote differed
   with `TERM_PROGRAM` set.
+- **0.171.0 asks one more question at start and restores alternate-scroll from its
+  answer** (2026-11-20, 0.171.0 against 0.170.0, a python pty 100×30 in Koloft's
+  `--remote unix://` shape and env, answering DA1, DA2, `6n`, OSC 10/11 and DECRQM, not
+  `?u`; one full run per build and two idle runs on 0.171.0). 0.170.0 starts
+  `?2004h >4;0m >7u ?1004h ?u c 6n ]10;? ]11;? ?2026h ?25l ?1049h >4;0m >7u ?1007l ?1000h
+  ?1002h ?1003h ?1006h`; 0.171.0 sends the same with `ESC[?1007$p` (DECRQM for
+  alternate-scroll, openai/codex#61697) right after `?u`. Both exit `?1006l ?1015l ?1003l
+  ?1002l ?1000l <1u ?1007l ?1049l <1u <u >4;0m ?2004l ?1004l ESC[c … ]7501;state=clear`,
+  except that 0.171.0 writes `?1007h` in place of `?1007l` when the answer was
+  `?1007;1$y`. xterm.js answers mode 1007 with `ESC[?1007;0$y` (it is not in its
+  `requestMode` list, `@xterm/xterm` `InputHandler.ts`), so in Koloft the exit still
+  writes `?1007l`. The `>4;0m` (modifyOtherKeys off) at start and exit is on both builds,
+  not new. Both builds also wrote `state=blocked:app=codex:kind=question` while a
+  model's question waited, so the `blocked` above is seen, and carries `kind`.
 - **A line typed before the TUI starts lands in the composer unsent** (2026-11-08,
   0.166.0, `codex --no-daemon` started from `zsh -i` in a python pty at 120×40, a scratch
   `HOME` and `CODEX_HOME` with an API-key `auth.json` and a fake Responses server on
@@ -4007,6 +4113,10 @@ to 100×30, `/clear`, a second prompt, Ctrl+C twice. An earlier round with `?u` 
 - Nothing else: no XTVERSION, no DECRQM, no OSC 4, no DCS or APC question, and nothing
   new during the turn, the approval question or `/clear`. Every run, both versions and
   both shapes, the same.
+- **0.171.0 adds one DECRQM at start, `ESC[?1007$p`, right after `ESC[?u`** (2026-11-20,
+  Koloft's launch shape against 0.170.0, which does not send it; §25 has the bytes).
+  `asksTheTerminal` (`\??[\d;]*\$p`) matches it, so an off-screen tab lets it through at
+  once, as it does the others; during a turn both builds asked only `ESC[6n`.
 - Each run's reads, replayed in order and at their recorded times into Koloft's
   `TerminalOutput` for a tab off screen, sent all 3 reads holding a question at once;
   the same replay counting reads that hold `ESC[?25l` (no question) found every one of

@@ -1074,6 +1074,10 @@ starts a new conversation when it is set back to the tool's own.
   matches in claude's output — `Resume this session with:`, `Removing worktree`, `Worktree removed`,
   `<local-command-stdout>`, the two "Request interrupted" lines — appear as often as
   on 2.1.327, and the resume hint is printed by the same code.
+- On 2.1.329 (2026-11-20, `strings` beside 2.1.328, not run) those texts are all still
+  there; of 211 string literals taken from the 8 lines after each `CC§` marker in `src/`,
+  plus every `CLAUDE_*` / `ANTHROPIC_*` name `src/` spells, the 73 found in 2.1.328 are
+  all found in 2.1.329 and none is new.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -2334,7 +2338,15 @@ other bullets of §9 were not re-measured on this build.
   `TRANSCRIPT_SLIM_TOOL_RESULTS`; gone: `WEBSEARCH_CITATIONS_DECLARED`.
 - **A new directory always asks for trust on its first launch**, and
   `--dangerously-skip-permissions` does not skip that question ("Quick safety check: Is
-  this a project you created or one you trust?", default answer "No, exit"). A worktree
+  this a project you created or one you trust?", default answer "No, exit"). **From
+  2.1.329 the question adds one line when the folder's own settings declare hooks**:
+  `⚠ This folder configures hooks that can run commands without asking, declared in
+  .claude/settings.json`; the options (`❯ No, exit` / `Yes, I trust this folder`), the
+  footer and ↓ then Enter (which writes `hasTrustDialogAccepted: true`) are as on
+  2.1.328, which does not draw that line for the same folder; hooks given only through
+  `--settings` add no line, and a trust entry written beforehand still skips the
+  question. Measured 2026-11-20 on 2.1.328 and 2.1.329, a python pty drawn through
+  `pyte`, a scratch `HOME`, a stand-in Messages API, one run per case. A worktree
   created under an already-trusted repo inherits the trust and asks nothing. Anything
   automated that launches CC in a folder for the first time therefore stalls on a
   question. The answer is recorded in `~/.claude.json` as
@@ -2550,7 +2562,13 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   remote machine too. On a remote machine with a broken file, where Koloft supplies the
   login, the warm-up now fails at every launch (it runs while `cachedGrowthBookFeatures` is missing, and its output is
   thrown away) and the tab opens on the "Configuration error" dialog; on 2.1.317 the
-  first warm-up reset the file to defaults.
+  first warm-up reset the file to defaults. Still so on 2.1.328 and 2.1.329 (2026-11-20,
+  `claude -p ok --max-turns 1`, a scratch `HOME`, the API pointed at a dead port):
+  `{broken` exits 1 with the file left as it was; an empty file prints the same "…was
+  empty and no backup holds anything" line and gets a full file without
+  `hasCompletedOnboarding` (its exit code not seen: the run hit the 40 s limit on the dead
+  port). 2.1.329's fix for a file emptied by a save during a network stall or a file
+  lock was not reproduced.
 - **A home can hold two config files, and the legacy one wins; since 2.1.319 claude says
   so on stderr.** The legacy file is `.config.json` in the config folder
   (`$CLAUDE_CONFIG_DIR`, else `~/.claude/`); the current one is `.claude.json` in
@@ -3073,7 +3091,11 @@ sessions.
   `.claude-plugin/plugin.json` (`{"name":"koloft",…}`) and `skills/<n>/SKILL.md` showed up
   as `plugins: [{name:"koloft", source:"koloft@inline"}]` and
   `skills: ["koloft:<n>"]`. The model called the skill through the Skill tool and read
-  its body.
+  its body. Still so in an interactive 2.1.329 session (2026-11-20, a python pty, a
+  scratch `HOME`, a stand-in Messages API): the transcript's `skill_listing` held
+  `- probe:probe: …`, and after a `Skill {skill: "probe:probe"}` call the next request
+  carried the skill's body. 2.1.329's fix for `--add-dir` naming the working folder does
+  not reach Koloft, whose only `--add-dir` is a picture folder (below).
 - **Two `--plugin-dir` flags load both plugins.** 2026-11-05, CC 2.1.318, on this Mac:
   `claude -p --output-format stream-json --verbose --max-turns 1 --plugin-dir A
   --plugin-dir B` in a scratch folder, A holding plugin `koloft` with skill `koloft` and B
@@ -3898,7 +3920,13 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
   written and the transcript held `PreToolUse:<tool> hook error`. That case went with
-  the gate (ADR-0029); nothing has re-measured this since.
+  the gate (ADR-0029). Re-measured on 2.1.329 (2026-11-20, a python pty, a scratch
+  `HOME`, a stand-in Messages API, `--dangerously-skip-permissions`, one run): a
+  `PreToolUse` hook (matcher `*`) printing `deny` stopped a Bash `echo … > ran.txt`, no
+  file was made, and the transcript held `PreToolUse:Bash hook error: <text>`. 2.1.329's
+  change to a hook that *errors* inside Code Mode (it no longer refuses the call) does not
+  touch a hook that exits 0 with `deny`; whether Code Mode is on by default was not
+  probed.
 - **The hook's input names the transcript.** 2026-10-09, CC 2.1.295, `claude -p` with a
   `PreToolUse` hook that logged its input, asked to Write a file then Edit it: each
   input held `session_id`, `transcript_path` (absolute,
