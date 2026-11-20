@@ -598,6 +598,15 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(unknown.text).toContain('Codex has no model "nova" for this account')
     expect(launched).toHaveLength(1)
+    const noAstra = await verb(
+      ['new', '--model', 'astra', '--effort', 'max', '--', 'go'],
+      from('me')
+    )
+    expect(noAstra.exit).toBe(0)
+    expect(launched[1]).toMatchObject({ model: 'gpt-6.1-sol', effort: 'high' })
+    expect(noAstra.text).toContain(
+      'This account has no astra model, so it runs on gpt-6.1-sol at high.'
+    )
   })
 
   it('starts a very hard Antigravity task on argon, saying so, when the account lists no carbon, and an xhigh neon task on argon at high', async () => {
