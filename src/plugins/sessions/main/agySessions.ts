@@ -3,11 +3,12 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { randomBytes } from 'crypto'
 import { promisify } from 'util'
-import type {
-  BackendSessionInfo,
-  BackgroundItem,
-  CreateTabOptions,
-  LaunchPermission
+import {
+  PLACEHOLDER_TITLES,
+  type BackendSessionInfo,
+  type BackgroundItem,
+  type CreateTabOptions,
+  type LaunchPermission
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
@@ -47,6 +48,7 @@ import {
   historyEntries,
   lastDiffFor,
   listAgyConversations,
+  readAgyConversationTitle,
   readAgyTurns,
   saidInTranscript,
   TranscriptFollower,
@@ -249,7 +251,7 @@ interface AgyRun extends StoredRun {
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
-  titleChase?: { id: string; readsLeft: number }
+  titleChase?: { id: string; readsLeft: number; timer?: ReturnType<typeof setTimeout> }
   touched: Map<string, FileAcc>
   liveWrites: number
   unattributedBackground?: boolean
@@ -1120,8 +1122,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.ticking.unref?.()
   }
 
+  protected preservesLiveTitle(run: AgyRun): boolean {
+    return !!run.givenTitle
+  }
+
   protected async endRun(run: AgyRun): Promise<void> {
     run.stream?.close()
+    this.stopTitleChase(run)
     if (run.compacting?.timer) clearTimeout(run.compacting.timer)
     this.clearForeignTimers(run)
     if (!run.remote || this.shuttingDown) return
@@ -1783,7 +1790,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.settleCommands(run, state, false, wasConfirming)
     if (state.title && state.title !== before?.title) {
       run.givenTitle = undefined
+      this.stopTitleChase(run)
       this.retitle(run.info, state.title)
+    } else if (
+      state.agentState === 'working' &&
+      !run.givenTitle &&
+      run.info.title === PLACEHOLDER_TITLES.agy &&
+      run.info.nativeSessionId &&
+      !this.history.get(agySessionKey(run.info.nativeSessionId, run.remote?.host))?.name
+    ) {
+      this.chaseListedTitle(run, run.info.nativeSessionId, true)
     }
     // AGY§19
     if (state.agentState === 'reviewing' && before?.agentState !== 'reviewing')
@@ -1895,6 +1911,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const switched = !!run.info && !!known
     const earlyHooks = run.pendingForeignHooks?.get(conversationId)
     if (run.info) run.givenTitle = undefined
+    this.stopTitleChase(run)
     run.touched.clear()
     run.liveWrites = 0
     this.resetTransientForSwitch(run, conversationId)
@@ -2599,9 +2616,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    const chasing = run.titleChase?.id === id
-    run.titleChase = { id, readsLeft: LISTED_TITLE_REREADS_AFTER_A_TURN }
-    if (!chasing) void this.takeListedTitle(run, id, true)
+    this.chaseListedTitle(run, id, false)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     if (!run.transcript || run.info?.nativeSessionId !== id) return
     const read = await run.transcript.catchUp().catch(() => undefined)
@@ -2638,25 +2653,50 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.watchApiState(run)
     const id = run.info?.nativeSessionId
     if (id && !run.givenTitle && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
-      this.takeListedTitleSoon(run, id)
+      this.chaseListedTitle(run, id, true)
+  }
+
+  private stopTitleChase(run: AgyRun): void {
+    if (run.titleChase?.timer) clearTimeout(run.titleChase.timer)
+    run.titleChase = undefined
+  }
+
+  // AGY§8
+  private chaseListedTitle(run: AgyRun, id: string, delayFirst: boolean): void {
+    const chasing = run.titleChase?.id === id
+    const pendingTimer = chasing ? run.titleChase?.timer : undefined
+    if (run.titleChase && !chasing) this.stopTitleChase(run)
+    if (pendingTimer && !delayFirst) clearTimeout(pendingTimer)
+    run.titleChase = {
+      id,
+      readsLeft: LISTED_TITLE_REREADS_AFTER_A_TURN,
+      timer: delayFirst ? pendingTimer : undefined
+    }
+    if (chasing && (delayFirst || !pendingTimer)) return
+    if (delayFirst) this.takeListedTitleSoon(run, id)
+    else void this.takeListedTitle(run, id)
   }
 
   // AGY§8 AGY§11
-  private async takeListedTitle(run: AgyRun, id: string, chase = false): Promise<void> {
+  private async takeListedTitle(run: AgyRun, id: string): Promise<void> {
+    if (run.titleChase?.id === id) run.titleChase.timer = undefined
     const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
           .machine(run.remote.host)
           .agyConversations()
-          .then((rows) => historyEntries(rows))
-      : listAgyConversations(this.gemini)
-    const rows = await listed.catch(() => undefined)
-    const name = rows?.find((e) => e.id === id)?.name
-    const current = this.runs.get(run.tabId) === run && run.info?.nativeSessionId === id
-    const chased = chase && run.titleChase?.id === id ? run.titleChase : undefined
+          .then((rows) => historyEntries(rows).find((e) => e.id === id)?.name ?? undefined)
+      : readAgyConversationTitle(this.gemini, id)
+    const name = await listed.catch(() => undefined)
+    const current =
+      this.runs.get(run.tabId) === run &&
+      !run.explicitStop &&
+      !run.stopping &&
+      run.info?.nativeSessionId === id
+    const chased = run.titleChase?.id === id ? run.titleChase : undefined
     if (chased) {
-      if (current && !name && chased.readsLeft-- > 0) return this.takeListedTitleSoon(run, id, true)
-      run.titleChase = undefined
+      if (current && !name && chased.readsLeft-- > 0) return this.takeListedTitleSoon(run, id)
+      this.stopTitleChase(run)
     }
     if (!current || !name || !run.info) return
     if (!given) {
@@ -2669,11 +2709,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§8
-  private takeListedTitleSoon(run: AgyRun, id: string, chase = false): void {
-    setTimeout(
-      () => void this.takeListedTitle(run, id, chase),
-      LISTED_TITLE_AFTER_PROMPT_MS
-    ).unref?.()
+  private takeListedTitleSoon(run: AgyRun, id: string): void {
+    const timer = setTimeout(() => void this.takeListedTitle(run, id), LISTED_TITLE_AFTER_PROMPT_MS)
+    timer.unref?.()
+    if (run.titleChase?.id === id) run.titleChase.timer = timer
   }
 
   // AGY§16 AGY§17

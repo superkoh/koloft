@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   agyTranscript,
   ancestryOfAgyConversation,
+  annotationFile,
   diffCounts,
   lastDiffFor,
   listAgyConversations,
   ownersWords,
+  readAgyConversationTitle,
   readAgyTurns,
   saidInTranscript,
   TranscriptFollower
@@ -113,6 +115,29 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
   it('lists nothing, and makes no db, in a folder agy never used', async () => {
     expect(await listAgyConversations(gemini)).toEqual([])
     expect(fs.existsSync(path.join(gemini, 'antigravity-cli'))).toBe(false)
+  })
+
+  it('reads one conversation title even while step_count is 0, and falls back to its annotations pbtxt before the summaries row has it', async () => {
+    writeSummaries(gemini, [
+      {
+        conversation_id: 'zero-steps',
+        workspace_uris: uris('/w/a'),
+        title: 'Fresh title',
+        step_count: 0
+      },
+      {
+        conversation_id: 'only-ann',
+        workspace_uris: uris('/w/a'),
+        title: '',
+        step_count: 0
+      }
+    ])
+    const ann = annotationFile(gemini, 'only-ann')
+    fs.mkdirSync(path.dirname(ann), { recursive: true })
+    fs.writeFileSync(ann, 'title:"中文 \\"引用\\" 标题"\n')
+    expect(await readAgyConversationTitle(gemini, 'zero-steps')).toBe('Fresh title')
+    expect(await readAgyConversationTitle(gemini, 'only-ann')).toBe('中文 "引用" 标题')
+    expect(await readAgyConversationTitle(gemini, 'missing')).toBeUndefined()
   })
 })
 

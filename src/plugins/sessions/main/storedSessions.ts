@@ -476,16 +476,30 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       PLACEHOLDER_TITLES[this.id]
     )
   }
+  protected preservesLiveTitle(_run: R): boolean {
+    return false
+  }
+
   protected rememberListedTitles(listingStartedAt: number, machine?: string): void {
+    const liveBySession = new Map<string, R>()
+    for (const run of this.runs.values()) {
+      if (run.info) liveBySession.set(run.info.sessionId, run)
+    }
     const titles = new Map<string, string>()
     for (const m of this.store.listMembers()) {
       const t = this.history.get(m.key)
       if (!t || m.updatedAt >= listingStartedAt || (this.keepsItsOwnTitle && m.named)) continue
       if (machine !== undefined && hostOfKey(m.key) !== machine) continue
+      const live = liveBySession.get(m.key)
+      if (live && this.preservesLiveTitle(live)) continue
       const title = this.titleOf(m.key, t, m)
       if (title !== m.title) titles.set(m.key, title)
     }
     this.store.retitleMembers(titles)
+    for (const [key, title] of titles) {
+      const live = liveBySession.get(key)
+      if (live?.info) live.info.title = title
+    }
   }
   adopt(keys: string[]): void {
     let adopted = 0

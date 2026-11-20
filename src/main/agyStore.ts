@@ -34,6 +34,52 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
 export const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
 
+// AGY§8
+export const annotationFile = (geminiDir: string, id: string): string =>
+  path.join(geminiDir, AGY_APP_DIR, 'annotations', `${id}.pbtxt`)
+
+const ANNOTATION_TITLE_RE = /^title:\s*("(?:[^"\\]|\\.)*")/m
+
+// AGY§8
+function readAnnotationTitle(geminiDir: string, id: string): string | undefined {
+  let text: string
+  try {
+    text = fs.readFileSync(annotationFile(geminiDir, id), 'utf8')
+  } catch {
+    return undefined
+  }
+  const matched = ANNOTATION_TITLE_RE.exec(text)
+  if (!matched) return undefined
+  try {
+    const parsed: unknown = JSON.parse(matched[1])
+    return typeof parsed === 'string' && parsed ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// AGY§8
+export async function readAgyConversationTitle(
+  geminiDir: string,
+  conversationId: string
+): Promise<string | undefined> {
+  const db = summariesDb(geminiDir)
+  if (fs.existsSync(db)) {
+    const { DatabaseSync } = await import('node:sqlite')
+    const sqlite = new DatabaseSync(db, { readOnly: true })
+    try {
+      const row = sqlite
+        .prepare('select title from conversation_summaries where conversation_id = ?')
+        .get(conversationId) as { title?: unknown } | undefined
+      if (typeof row?.title === 'string' && row.title) return row.title
+    } catch {
+    } finally {
+      sqlite.close()
+    }
+  }
+  return readAnnotationTitle(geminiDir, conversationId)
+}
+
 export interface SummaryRow {
   conversation_id: unknown
   title: unknown

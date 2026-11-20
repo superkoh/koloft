@@ -13,7 +13,7 @@ import {
 } from '../../../../src/plugins/sessions/main/agySessions'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import { agySessionKey } from '../../../../src/plugins/sessions/main/sessionStore'
-import { agyTranscript, type SummaryRow } from '../../../../src/main/agyStore'
+import { agyTranscript, annotationFile, type SummaryRow } from '../../../../src/main/agyStore'
 import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/main/remote/agyTab'
 import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
 import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
@@ -878,6 +878,43 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'), {
       timeout: 3000
     })
+  })
+
+  it('picks up a title that lands more than a second into the first turn without waiting for the turn to end, even from annotations while step_count is still 0', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: '',
+        step_count: 0,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    const ann = annotationFile(gemini, A)
+    fs.mkdirSync(path.dirname(ann), { recursive: true })
+    fs.writeFileSync(ann, 'title:"First turn title"')
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('First turn title'), {
+      timeout: 3000
+    })
+    expect(sessions.rows(repo)[0].title).toBe('First turn title')
+  })
+
+  it('syncs a live session title when refreshHistory reads an updated title from agy’s summaries db', async () => {
+    const id = await boundTab()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Refreshed title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('Refreshed title')
+    expect(sessions.list()[0].title).toBe('Refreshed title')
+    expect(id).toBeTruthy()
   })
 
   // AGY§16
