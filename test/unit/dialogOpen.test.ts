@@ -171,6 +171,111 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(field)
   })
 
+  it('of two elements waiting behind one dialog, the ask box field takes the keys even when the other began waiting first', async () => {
+    const { field } = terminalUnderAnAskBox()
+    const page = button()
+    const { backdrop } = dialogWithAField()
+    focusOnce(page)
+    focusOnce(field)
+    backdrop.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('leaves the keys in an ask box field the owner types in while the box is on screen, and takes them once the box is gone, even when the terminal it covered takes them first or later', async () => {
+    for (const terminalRefocuses of ['first', 'later'] as const) {
+      const { terminalInput, field } = terminalUnderAnAskBox()
+      field.focus()
+      const page = button()
+      focusOnce(page)
+      await domSettled()
+      expect(document.activeElement).toBe(field)
+      field.closest('.modal-backdrop')!.remove()
+      if (terminalRefocuses === 'first') terminalInput.focus()
+      await domSettled()
+      expect(document.activeElement).toBe(page)
+      terminalInput.focus()
+      expect(document.activeElement).toBe(page)
+      document.body.replaceChildren()
+    }
+  })
+
+  it('leaves the keys in the terminal the owner clicks into once the page took them from it', async () => {
+    const { terminalInput, field } = terminalUnderAnAskBox()
+    field.focus()
+    const page = button()
+    focusOnce(page)
+    field.closest('.modal-backdrop')!.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(page)
+    terminalInput.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    terminalInput.focus()
+    expect(document.activeElement).toBe(terminalInput)
+  })
+
+  it('waits for the owner to leave the field they type in when the ask box goes, and takes the keys then', async () => {
+    terminalUnderAnAskBox()
+    const note = focused(document.createElement('textarea'))
+    const page = button()
+    focusOnce(page)
+    document.querySelector('.modal-backdrop.in-session')!.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(note)
+    note.blur()
+    await domSettled()
+    expect(document.activeElement).toBe(page)
+  })
+
+  it('leaves the keys in the terminal of another session that took them as the ask box went', async () => {
+    const { field } = terminalUnderAnAskBox()
+    field.focus()
+    const page = button()
+    focusOnce(page)
+    const other = terminalUnderAnAskBox()
+    other.field.closest('.modal-backdrop')!.remove()
+    field.closest('.modal-backdrop')!.remove()
+    other.terminalInput.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(other.terminalInput)
+  })
+
+  it('leaves the keys in the terminal a dialog closing put them on, when the ask box went while the dialog was open', async () => {
+    const { terminalInput, field } = terminalUnderAnAskBox()
+    field.focus()
+    const page = button()
+    focusOnce(page)
+    const { backdrop } = dialogWithAField()
+    field.closest('.modal-backdrop')!.remove()
+    await domSettled()
+    backdrop.remove()
+    terminalInput.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(terminalInput)
+  })
+
+  it('leaves the keys in a terminal the owner went to after a dialog closed, when no ask box held it back', async () => {
+    const wrap = document.createElement('div')
+    wrap.className = 'term-wrap'
+    const terminal = wrap.appendChild(document.createElement('textarea'))
+    document.body.append(wrap)
+    const page = button()
+    const { backdrop } = dialogWithAField()
+    focusOnce(page)
+    backdrop.remove()
+    terminal.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(terminal)
+  })
+
+  it('is not held back by an ask box that is not on screen', () => {
+    const { field } = terminalUnderAnAskBox()
+    const box = field.closest<HTMLElement>('.modal-backdrop')!
+    box.checkVisibility = () => false
+    const page = button()
+    focusOnce(page)
+    expect(document.activeElement).toBe(page)
+  })
+
   it('leaves the keys where closing the dialog put them', async () => {
     const keep = button()
     const elsewhere = button()
