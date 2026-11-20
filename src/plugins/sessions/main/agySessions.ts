@@ -291,6 +291,21 @@ function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): Progra
   return kept
 }
 
+// AGY§6 AGY§9 AGY§25
+function agyEnvironment(given: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...given }
+  for (const key of Object.keys(env)) {
+    if (
+      key.startsWith('KOLOFT_AGY_') ||
+      key.startsWith('ANTIGRAVITY_') ||
+      key === NOTICE_ENV ||
+      key === 'GEMINI_API_KEY'
+    )
+      delete env[key]
+  }
+  return env
+}
+
 // AGY§1 AGY§3
 const AGY: CliSpec = {
   command: 'agy',
@@ -807,7 +822,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const pick = this.deps.pickHome(opts.resumeSessionId)
     if (!pick) throw new Error(this.deps.noAccountMessage('agy'))
     if (pick.notice) this.deps.error(pick.notice)
-    return { binary: this.binary!, pick, env: { ...(this.processEnv ?? process.env) } }
+    return { binary: this.binary!, pick, env: agyEnvironment(this.processEnv ?? process.env) }
   }
 
   protected launchAccount({ pick }: AgyLaunch): string {

@@ -168,8 +168,32 @@ export function setupE2EEnv(): E2EEnv {
   )
 
   const nodeDir = path.dirname(process.execPath)
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !key.startsWith('KOLOFT_') &&
+        !key.startsWith('ANTIGRAVITY_') &&
+        !key.startsWith('CLAUDE_CODE_') &&
+        !key.startsWith('CODEX_') &&
+        !key.startsWith('TBH_') &&
+        !key.startsWith('PLAYWRIGHT_') &&
+        !key.startsWith('PWTEST_') &&
+        !key.startsWith('GIT_CONFIG_') &&
+        !key.startsWith('TMUX') &&
+        key !== 'ANT_ACCOUNT' &&
+        key !== 'CLAUDECODE' &&
+        key !== 'CLAUDE_EFFORT' &&
+        key !== 'CLAUDE_JOB_DIR' &&
+        key !== 'CLAUDE_PID' &&
+        key !== 'AI_AGENT' &&
+        key !== 'WSL_INTEROP' &&
+        key !== 'WSL_DISTRO_NAME' &&
+        key !== 'GEMINI_API_KEY' &&
+        key !== 'ELECTRON_RENDERER_URL'
+    )
+  )
   const launchEnv: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...inheritedEnv,
     HOME: home,
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
@@ -187,10 +211,8 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_FILE_DIALOG_FILE: fileDialogFile,
     KOLOFT_TEST_MACHINE_FILE: roomyMachineNotTheDevMacsOwnLoad,
     KOLOFT_TEST_BACKGROUND: '1',
-    KOLOFT_DOM_RENDERER: '1',
-    ELECTRON_RENDERER_URL: undefined
+    KOLOFT_DOM_RENDERER: '1'
   }
-  delete (launchEnv as Record<string, unknown>).ELECTRON_RENDERER_URL
 
   return {
     home,

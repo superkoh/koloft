@@ -66,6 +66,15 @@ beforeEach(() => {
 
 let stubBin: string
 
+function hookEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.startsWith('KOLOFT_') && !key.startsWith('TMUX') && key !== 'ANT_ACCOUNT')
+      env[key] = value
+  }
+  return { ...env, ...extraEnv, PATH: `${stubBin}:${process.env.PATH}` }
+}
+
 function fire(
   tab: string,
   event: string,
@@ -75,7 +84,7 @@ function fire(
   const res = spawnSync(hookScript, [regDir, tab, event], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
-    env: { ...process.env, ...extraEnv, PATH: `${stubBin}:${process.env.PATH}` }
+    env: hookEnv(extraEnv)
   })
   if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
   return res.stdout
@@ -259,15 +268,11 @@ esac
       const res = spawnSync('sh', [script], {
         input: JSON.stringify({ conversation_id: 'abc-123' }),
         encoding: 'utf8',
-        env: {
-          ...process.env,
+        env: hookEnv({
           ...inTmuxOnTheMachine,
           HOME: home,
-          KOLOFT_TAB_ID: 'tabN3',
-          KOLOFT_AGY_LOG: '',
-          KOLOFT_AGY_OWNER_TITLE: '',
-          PATH: `${stubBin}:${process.env.PATH}`
-        }
+          KOLOFT_TAB_ID: 'tabN3'
+        })
       })
       expect(res.status).toBe(0)
       expect(fs.readFileSync(seen, 'utf8')).toBe('k-abc-123')
@@ -408,17 +413,16 @@ esac
         spawnSync('bash', [codexReplyLanguage, 'stop'], {
           input: JSON.stringify({ stop_hook_active: active }),
           encoding: 'utf8',
-          env: {
-            ...process.env,
+          env: hookEnv({
             KOLOFT_CODEX_SAID: saidFile(regDir, tab),
             KOLOFT_NOTICE: noticeFile(regDir, tab)
-          }
+          })
         }).stdout,
       agy: (tab) =>
         spawnSync('sh', [agyScript, 'Stop'], {
           input: JSON.stringify({ terminationReason: 'NO_TOOL_CALL', fullyIdle: true }),
           encoding: 'utf8',
-          env: { ...process.env, KOLOFT_NOTICE: noticeFile(regDir, tab) }
+          env: hookEnv({ KOLOFT_NOTICE: noticeFile(regDir, tab) })
         }).stdout
     }
 
@@ -616,7 +620,11 @@ esac
   })
 
   it('a payload-less hook invocation still writes a parseable record', () => {
-    const res = spawnSync(hookScript, [regDir, 'tabNP', 'stop'], { input: '', encoding: 'utf8' })
+    const res = spawnSync(hookScript, [regDir, 'tabNP', 'stop'], {
+      input: '',
+      encoding: 'utf8',
+      env: hookEnv()
+    })
     expect(res.status).toBe(0)
     const rec = readStatusLog('tabNP')[0] as unknown as { event: string; bgl?: string }
     expect(rec.event).toBe('stop')
@@ -836,7 +844,7 @@ esac
         const res = spawnSync('bash', [codexReplyLanguage, event], {
           input: JSON.stringify(payload),
           encoding: 'utf8',
-          env: { ...process.env, KOLOFT_CODEX_SAID: said }
+          env: hookEnv({ KOLOFT_CODEX_SAID: said })
         })
         if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
         return res.stdout
@@ -872,7 +880,7 @@ esac
         spawnSync('bash', [codexReplyLanguage, event], {
           input: JSON.stringify(payload),
           encoding: 'utf8',
-          env: { ...process.env, KOLOFT_CODEX_SAID: seeded }
+          env: hookEnv({ KOLOFT_CODEX_SAID: seeded })
         }).stdout
       const englishTask = { hook_event_name: 'UserPromptSubmit', prompt: 'Fix the sidebar width.' }
       expect(remindedQuote(child('prompt', englishTask), 'UserPromptSubmit')).toBe(
@@ -913,7 +921,7 @@ esac
         spawnSync('bash', [codexReplyLanguage, 'tool'], {
           input: JSON.stringify(input),
           encoding: 'utf8',
-          env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+          env: hookEnv({ KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice })
         }).stdout
       fs.writeFileSync(notice, noticeLine(moved))
       expect(codexTool({ tool_name: 'Bash', agent_id: 'a1' })).toBe('')
@@ -924,7 +932,7 @@ esac
         spawnSync('bash', [codexReplyLanguage, 'stop'], {
           input: JSON.stringify(input),
           encoding: 'utf8',
-          env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+          env: hookEnv({ KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice })
         }).stdout
       fs.writeFileSync(notice, noticeLine(moved))
       expect(codexStop({ stop_hook_active: true })).toBe('')
@@ -1019,7 +1027,8 @@ esac
     const startOutput = (tab: string, source: string): string =>
       spawnSync(hookScript, [regDir, tab, 'start'], {
         input: JSON.stringify({ session_id: 's1', source }),
-        encoding: 'utf8'
+        encoding: 'utf8',
+        env: hookEnv()
       }).stdout
 
     it("a conductor tab's SessionStart hands claude its role as additional context, again after /clear", () => {
@@ -1265,11 +1274,10 @@ esac
     const runAsk = (tab: string, givesUpAfterS?: number): ReturnType<typeof spawn> =>
       spawn(hookScript, [regDir, tab, 'ask'], {
         stdio: ['pipe', 'pipe', 'ignore'],
-        env: {
-          ...process.env,
+        env: hookEnv({
           SECONDS: '7200',
           ...(givesUpAfterS && { KOLOFT_ASK_GIVES_UP_AFTER_S: String(givesUpAfterS) })
-        }
+        })
       })
     const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
       let out = ''
@@ -1362,6 +1370,7 @@ esac
       const res = spawnSync(hookScript, [regDir, 'tabNotLookedAfter', 'ask'], {
         input: JSON.stringify(ask),
         encoding: 'utf8',
+        env: hookEnv(),
         timeout: 5000
       })
       expect(res.status).toBe(0)
@@ -1387,6 +1396,7 @@ esac
         const res = spawnSync(hookScript, [regDir, tab, 'ask'], {
           input: JSON.stringify(ask),
           encoding: 'utf8',
+          env: hookEnv(),
           timeout: 5000
         })
         return res.status === 0 && res.stdout === '' && readStatusLog(tab).at(-1)?.event === 'ask'
@@ -1601,7 +1611,7 @@ describe("a shell command's written files", () => {
     const hook = (event: string): void => {
       spawnSync('/bin/dash', [codexReplyLanguage, event], {
         input: call,
-        env: { ...process.env, KOLOFT_SHELL_WROTE: out }
+        env: hookEnv({ KOLOFT_SHELL_WROTE: out })
       })
     }
     hook('shell-before')

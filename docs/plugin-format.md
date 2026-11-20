@@ -390,6 +390,17 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 slot of its own. Todo's `koloft todo` method uses it: Discord fills its
 `{{todo-method-phone}}`.
 
+`fillsGained(slots, was, now)` gives the filled text of each block in those slots that is
+kept in state `now` but was dropped in state `was`, slot by slot in the order given, one
+text per block. A state names which plugins are on (`on`, a map from plugin id; a plugin it
+leaves out counts as it is now) and which facts hold (`facts`). Only the blocks are weighed
+against the two states: a `{{…}}` inside a block is filled from the switches as they are now,
+with the facts of `now`, so `now` should be the state the prompt is put together in today.
+It does not join an `-or-list` slot's items, takes each block's `text` (never `byAgent`), and
+gives no values, so it suits slots whose blocks need no agent and no value. The butler uses it to tell a conversation that
+is already running the sentences a plugin turned on, or a fact that came to hold, adds to its
+prompt.
+
 For example, the slot `owners-ai-koloft` is filled by Sessions core, GitHub, Discord and
 Todo, in that order. Discord's block there has `when: 'discord-bound'`, so its sentences are
 in the butler's prompt only while Discord has a bound channel.
@@ -406,7 +417,9 @@ These are the slots, values and facts in use today:
 | slot | `butler` | Butler; the butler's prompt |
 | slot | `butler-helper` | Butler; the prompt of a helper the butler starts |
 | slot | `butler-owner-instructions` | Butler; the owner's own Instructions for the butler, put last in the butler's and its helpers' prompt when the owner wrote some |
-| slot | `butler-plugins-changed` | Butler; the message the butler gets when the owner turned plugins on or off since its conversation began |
+| slot | `butler-plugins-changed` | Butler; the message the butler gets when the owner turned plugins on or off since its conversation began; its value `lines-gained` is `butler-lines-gained` when that adds sentences to the butler's prompt, else empty |
+| slot | `butler-lines-gained` | Butler; the end of `butler-plugins-changed` that gives the sentences, with the value `lines` |
+| slot | `butler-lines-came` | Butler; the message the butler gets when sentences came into its prompt with no switch turned (Discord got a bound channel), with the value `lines` |
 | slot | `butler-guide-moved` | Butler; the notice a butler conversation from before the butler's own lines left `koloft help` gets once; it holds `owners-ai-itself-koloft` and `owners-ai-folder-koloft` |
 | slot | `owners-ai-itself-koloft` | Sessions core; sentences in the butler's prompt about the `koloft` command that only the butler itself gets (its helpers' prompt gives this slot the value `''`) |
 | slot | `owners-ai-folder-koloft` | Sessions core, Scheduled tasks, GitHub; sentences in the butler's prompt that hold for every session in its folder, so its helpers get them too |
@@ -423,6 +436,8 @@ These are the slots, values and facts in use today:
 | value | `butler-name` | the butler's code; the butler's name |
 | value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, in a workspace's, or in the Instructions for every workspace |
 | value | `plugins-now` | the butler's code; which plugins are now on or off, as "Todo is now off, Passwords and sign-in is now on" |
+| value | `lines-gained` | the butler's code; `butler-lines-gained` filled, or empty |
+| value | `lines` | the butler's code; the sentences its conversation does not have yet, from `fillsGained` over every slot the `butler` block names (today `owners-ai-itself-koloft`, `owners-ai-folder-koloft`, `owners-ai-koloft`) |
 | value | `the-question` | Sessions core; "it" or "this one" in `session-answered-by-keys` |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
@@ -810,8 +825,10 @@ The window reads slots in three ways, in `src/renderer/src/pluginUi.tsx`:
   `worktree-items`. The callers of `row-extras` and `owner-asks` run the hook as usual.
 
 When the owner turns a plugin on or off, the butler is told once, in a message put together
-from `butler-plugins-changed`. Sessions started afterwards get the new text; sessions already
-running keep what they were given.
+from `butler-plugins-changed`. That message also gives the sentences a plugin turned on adds
+to the butler's prompt, and a sentence that comes to hold later (Discord's, once Discord has
+a bound channel) reaches the butler once in `butler-lines-came`. Sessions started afterwards
+get the new text; other sessions already running keep what they were given.
 
 ### Main-process parts
 

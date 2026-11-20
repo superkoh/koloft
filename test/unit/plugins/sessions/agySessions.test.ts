@@ -447,6 +447,38 @@ describe('AgySessions launch', () => {
     expect(JSON.parse(fs.readFileSync(settings, 'utf8')).modelProvider).toBe('gemini')
   })
 
+  // AGY§9 AGY§25
+  it("strips an ancestor Antigravity tab's log, start file, owner title, notice, API key and ANTIGRAVITY_* variables from the environment before launching a new tab", async () => {
+    const ancestor = {
+      KOLOFT_AGY_LOG: '/ancestor/agy.jsonl',
+      KOLOFT_AGY_START: '/ancestor/agy-session-start.json',
+      KOLOFT_AGY_COST: '/ancestor/agy-cost',
+      KOLOFT_AGY_OWNER_TITLE: '/ancestor/title.sh',
+      KOLOFT_NOTICE: '/ancestor/tab.notice',
+      ANTIGRAVITY_AGENT: '1',
+      ANTIGRAVITY_CONVERSATION_ID: B,
+      GEMINI_API_KEY: 'ancestor-key'
+    }
+    mocks.runtime.mockResolvedValueOnce({
+      binary: '/fixture/agy',
+      env: { HOME: home, PATH: '/usr/bin:/bin', ...ancestor },
+      version: '1.4.0',
+      verified: true
+    })
+    sessions.forgetAvailability()
+    await sessions.availability({ force: true })
+    const { id } = await launch()
+    const env = tabEnv(id)
+    expect(env.KOLOFT_AGY_LOG).not.toBe(ancestor.KOLOFT_AGY_LOG)
+    expect(env.KOLOFT_AGY_COST).not.toBe(ancestor.KOLOFT_AGY_COST)
+    expect(env.KOLOFT_AGY_START).toBeUndefined()
+    expect(env.KOLOFT_AGY_OWNER_TITLE).toBeUndefined()
+    expect(env.KOLOFT_NOTICE).toBeUndefined()
+    expect(env.ANTIGRAVITY_AGENT).toBeUndefined()
+    expect(env.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+    expect(env.GEMINI_API_KEY).toBeUndefined()
+  })
+
   it('does not start without a usable account', async () => {
     picked = undefined
     await expect(launch()).rejects.toThrow(/No Antigravity account/)
