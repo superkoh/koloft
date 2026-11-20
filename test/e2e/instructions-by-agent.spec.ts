@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   installAgy,
@@ -51,11 +51,16 @@ function versionsOnDisk(env: E2EEnv): InstructionsVersion[] {
   return all.flatMap((d) => d.instructions ?? [])
 }
 
-async function ownerWrites(page: Page, wsName: string, text: string): Promise<void> {
+async function ownerTypes(page: Page, wsName: string, text: string): Promise<Locator> {
   await page.locator('.ws-head', { hasText: wsName }).click({ button: 'right' })
   await page.locator('.menu .mi', { hasText: 'Session defaults…' }).click()
   const dlg = page.getByRole('dialog', { name: 'Session defaults' })
   await dlg.getByRole('textbox', { name: 'Instructions' }).fill(text)
+  return dlg
+}
+
+async function ownerWrites(page: Page, wsName: string, text: string): Promise<void> {
+  const dlg = await ownerTypes(page, wsName, text)
   await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
   await expect(dlg).toHaveCount(0)
 }
@@ -244,11 +249,8 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       await ownerWrites(page, 'ws-a', WRITTEN)
       await startSessionIn(page, 'ws-a')
       const [tab] = await tabIds(page, 'ws-a')
-      await page.locator('.ws-head', { hasText: 'ws-a' }).click({ button: 'right' })
-      await page.locator('.menu .mi', { hasText: 'Session defaults…' }).click()
-      const dlg = page.getByRole('dialog', { name: 'Session defaults' })
       const typed = 'Answer in English.'
-      await dlg.getByRole('textbox', { name: 'Instructions' }).fill(typed)
+      const dlg = await ownerTypes(page, 'ws-a', typed)
       const line = 'Run npm test first.'
       await proposesUnderAnOpenEditor(page, tab, line)
       const agreed = `${WRITTEN}\n${line}`
@@ -256,6 +258,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
 
       await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg.locator('.field-hint.bad')).toContainText('Save again')
+      await expect(dlg.locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
       expect(versionsOnDisk(env).at(-1)?.text).toBe(agreed)
       await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg).toHaveCount(0)
@@ -289,6 +292,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
 
       await editor.getByRole('button', { name: /Save/ }).click()
       await expect(editor.locator('.field-hint.bad')).toContainText('Save again')
+      await expect(editor.locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
       expect(butlerVersions().at(-1)?.text).toBe(line)
       await editor.getByRole('button', { name: /Save/ }).click()
       await expect(editor).toHaveCount(0)

@@ -15,6 +15,7 @@ import {
 import { modelValue } from '../modelPick'
 import { useStore } from '../store'
 import { ModelAndThinking, OTHER_MODEL, effortLabel, useFieldFocus } from './ModelAndThinking'
+import { InstructionsChangeLines } from './InstructionsChange'
 import '../cronJobs.css'
 
 interface PickFields {
@@ -70,6 +71,7 @@ export function SessionDefaultsDialog({
   const [rules, setRules] = useState('')
   const [instructions, setInstructions] = useState('')
   const [saved, setSaved] = useState({ rules: '', instructions: '' })
+  const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
   const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
@@ -166,7 +168,9 @@ export function SessionDefaultsDialog({
     if (r.ok) return onClose()
     setError(r.error ?? 'Koloft could not save these.')
     const { inUse } = r
-    if (inUse !== undefined) setSaved((s) => ({ ...s, instructions: inUse }))
+    if (inUse === undefined) return
+    setChanged({ before: saved.instructions, after: inUse })
+    setSaved((s) => ({ ...s, instructions: inUse }))
   }
 
   return (
@@ -185,6 +189,7 @@ export function SessionDefaultsDialog({
         </div>
         <div className="modal-body">
           {error && <p className="field-hint bad">{error}</p>}
+          {changed && <InstructionsChangeLines {...changed} />}
           {familyEfforts && (
             <div className="fgrid">
               <span className="flabel">When you start one</span>

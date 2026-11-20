@@ -43,7 +43,7 @@ export function withNewVersion(
 export class ChangedWhileOpen extends Error {
   constructor(readonly inUse: string) {
     super(
-      'While this was open, the instructions were changed. Your text is still here: Save again to put it in their place, or Cancel to keep the change.'
+      'While this was open, the instructions were changed as shown. Nothing was saved. Save again to put your text in their place.'
     )
   }
 }

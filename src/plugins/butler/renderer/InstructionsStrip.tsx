@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { IconAiStart, IconClose } from '@renderer/icons'
 import { useStore } from '@renderer/store'
 import { isComposing } from '@renderer/keys'
+import { InstructionsChangeLines } from '@renderer/components/InstructionsChange'
 import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
 import { INSTRUCTIONS_MAX_BYTES, instructionsOf } from '../shared/instructions'
 import type { InstructionsSaveResult } from '../shared/ipc'
@@ -68,6 +69,7 @@ function InstructionsEditor(): JSX.Element {
   const [opened, setOpened] = useState(() => instructionsOf(butler))
   const [text, setText] = useState(opened)
   const [error, setError] = useState('')
+  const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
   const left = INSTRUCTIONS_MAX_BYTES - instructionsBytes(cleanInstructions(text))
   const close = (): void => useButler.setState({ editingInstructions: false })
   useEscapeCloses(close)
@@ -78,7 +80,9 @@ function InstructionsEditor(): JSX.Element {
       .catch((): InstructionsSaveResult => ({ ok: false, error: COULD_NOT_SAVE }))
     if (!r.ok) {
       setError(r.error)
-      if (r.inUse !== undefined) setOpened(r.inUse)
+      if (r.inUse === undefined) return
+      setChanged({ before: opened, after: r.inUse })
+      setOpened(r.inUse)
       return
     }
     close()
@@ -120,6 +124,7 @@ function InstructionsEditor(): JSX.Element {
             onKeyDown={onKeyDown}
           />
         </div>
+        {changed && <InstructionsChangeLines {...changed} />}
         <div className="pal-status">
           {`${butler.name} and the helpers it starts follow this. ${whenItTakesEffect(butler.name)}`}
         </div>
