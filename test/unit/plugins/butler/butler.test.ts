@@ -55,7 +55,12 @@ let todoOn: boolean
 let passwordsOn: boolean
 let noticeLands: Promise<void>
 let news: ButlerDeps['news']
-const PLUGIN_NAMES: Record<string, string> = { todo: 'Todo', passwords: 'Passwords and sign-in' }
+let discordOn: boolean | undefined
+const PLUGIN_NAMES: Record<string, string> = {
+  todo: 'Todo',
+  passwords: 'Passwords and sign-in',
+  discord: 'Discord'
+}
 
 function make(): Butler {
   const run = testRun
@@ -106,7 +111,11 @@ function make(): Butler {
       return noticeArrives && !!butler.liveTab()
     },
     news,
-    pluginsOn: () => ({ todo: todoOn, passwords: passwordsOn }),
+    pluginsOn: () => ({
+      todo: todoOn,
+      passwords: passwordsOn,
+      ...(discordOn !== undefined && { discord: discordOn })
+    }),
     pluginsNews: (changed, lines) =>
       pluginsChangedNews(
         Object.entries(changed).map(([id, on]) => ({ name: PLUGIN_NAMES[id], on })),
@@ -133,6 +142,7 @@ beforeEach(() => {
   testRun++
   todoOn = true
   passwordsOn = true
+  discordOn = undefined
   noticeLands = Promise.resolve()
   news = [{ ...TODO_NEWS, on: () => todoOn }]
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
@@ -533,6 +543,15 @@ describe('the butler', () => {
     ).toMatchFileSnapshot('../../prompt-text/butler/lines-came.txt')
   })
 
+  it('the sentences told for a plugin come from every slot plugins fill in the butler’s role: those only for the butler, those for its folder, and those about the koloft command, in the role’s order', () =>
+    expect(
+      butlerLinesGained({ on: { sessions: false }, facts: [] }, { on: {}, facts: [] })
+    ).toEqual([
+      expect.stringContaining('koloft session list, with no options, gives you every session'),
+      expect.stringContaining("What you send a project's session"),
+      expect.stringContaining('Every session you start gets the model and effort')
+    ]))
+
   it('a conversation started while a plugin was off is told, with the switch, the sentences that plugin adds to its prompt; one that never had them off is told none', async () => {
     news = []
     todoOn = false
@@ -586,6 +605,27 @@ describe('the butler', () => {
     facts = [DISCORD_BOUND]
     c.whatItKnowsMayHaveChanged()
     expect(notices).toHaveLength(2)
+  })
+
+  it('told that Discord is off, a conversation whose channel was unbound before no longer counts as having Discord’s sentences, so it is told them when Discord is on and bound again', async () => {
+    const relay = "The owner's Discord messages reach you"
+    discordOn = true
+    facts = [DISCORD_BOUND]
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    facts = []
+    c.whatItKnowsMayHaveChanged()
+    discordOn = false
+    c.whatItKnowsMayHaveChanged()
+    discordOn = true
+    c.whatItKnowsMayHaveChanged()
+    await vi.waitFor(() => expect(notices).toHaveLength(2))
+    expect(notices.join('')).not.toContain(relay)
+    facts = [DISCORD_BOUND]
+    c.whatItKnowsMayHaveChanged()
+    await vi.waitFor(() => expect(notices).toHaveLength(3))
+    expect(notices[2]).toContain(relay)
   })
 
   it('a conversation whose record is from before Koloft kept what it knows of Discord is told Discord’s sentences once a channel is bound', async () => {

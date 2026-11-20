@@ -51,13 +51,12 @@ export function composePrompt(slot: string, context: PromptContext = {}): string
 export const fillsGained = (
   slots: readonly string[],
   was: PromptState,
-  now: PromptState,
-  context: PromptContext = {}
+  now: PromptState
 ): string[] =>
   slots.flatMap((slot) =>
     BLOCKS_IN_LIST_ORDER.filter(
       (listed) => listed.block.slot === slot && holdsIn(now, listed) && !holdsIn(was, listed)
-    ).map(({ block }) => fillSlots(textFor(block, context.agent), { ...context, facts: now.facts }))
+    ).map(({ block }) => fillSlots(block.text, { facts: now.facts }))
   )
 
 export function fillSlots(text: string, context: PromptContext = {}): string {

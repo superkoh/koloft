@@ -17,6 +17,7 @@ import type { PromptState } from '@core/prompt'
 import {
   butlerLinesGained,
   butlerRole,
+  factGivesLinesWhile,
   linesCameNews,
   ownerInstructionsPart
 } from '../prompts/role'
@@ -98,6 +99,16 @@ function forgetting(
     news.map(({ knownBy }) => [knownBy, (s[knownBy] ?? []).filter((k) => k !== key)])
   )
 }
+
+interface FactsChange {
+  gained: readonly string[]
+  dropped: readonly string[]
+}
+
+const withFacts = (facts: readonly string[], { gained, dropped }: FactsChange): string[] => [
+  ...facts.filter((fact) => !dropped.includes(fact)),
+  ...gained.filter((fact) => !facts.includes(fact))
+]
 
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
@@ -312,6 +323,9 @@ export class Butler {
       Object.entries(now.on).filter(([id, isOn]) => (was.on[id] ?? isOn) !== isOn)
     )
     const factsGained = now.facts.filter((fact) => !was.facts.includes(fact))
+    const factsDropped = was.facts.filter(
+      (fact) => !now.facts.includes(fact) && !factGivesLinesWhile(fact, now.on)
+    )
     const untoldNews = this.d.news.filter(
       ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
     )
@@ -327,10 +341,12 @@ export class Butler {
           ? [linesCameNews(lines)]
           : [])
     ]
-    if (seen?.facts && parts.length === 0 && factsGained.length === 0) return
+    const factsChange = { gained: factsGained, dropped: factsDropped }
+    if (seen?.facts && parts.length === 0 && factsGained.length === 0 && factsDropped.length === 0)
+      return
     this.remember((s) => ({
       ...s,
-      pluginsSeen: { key, on: now.on, facts: [...was.facts, ...factsGained] },
+      pluginsSeen: { key, on: now.on, facts: withFacts(was.facts, factsChange) },
       ...knowing(s, untoldNews, key)
     }))
     if (parts.length === 0) return
@@ -338,14 +354,14 @@ export class Butler {
       .noticeWhileOpen(`${FROM_KOLOFT}${parts.join(' ')}`)
       .catch(() => false)
       .then((told) => {
-        if (!told) this.untold(key, changed, factsGained, untoldNews)
+        if (!told) this.untold(key, changed, factsChange, untoldNews)
       })
   }
 
   private untold(
     key: string,
     changed: PluginsOn,
-    factsGained: readonly string[],
+    factsChange: FactsChange,
     news: readonly OldConversationNews[]
   ): void {
     this.remember((s) => {
@@ -357,7 +373,10 @@ export class Butler {
           pluginsSeen: {
             key,
             on: { ...seen.on, ...asBefore },
-            facts: (seen.facts ?? []).filter((fact) => !factsGained.includes(fact))
+            facts: withFacts(seen.facts ?? [], {
+              gained: factsChange.dropped,
+              dropped: factsChange.gained
+            })
           }
         }),
         ...forgetting(s, news, key)

@@ -3653,6 +3653,13 @@ app.whenReady().then(() => {
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
   let butlerHearsOfSwitches: ReturnType<typeof setTimeout> | undefined
+  const butlerHearsSoon = (): void => {
+    clearTimeout(butlerHearsOfSwitches)
+    butlerHearsOfSwitches = setTimeout(
+      () => butler?.whatItKnowsMayHaveChanged(),
+      SWITCH_FLIPS_GATHER_MS
+    )
+  }
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
@@ -3665,11 +3672,7 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[koloft] could not rewrite what a plugin switch changed:', err)
     }
-    clearTimeout(butlerHearsOfSwitches)
-    butlerHearsOfSwitches = setTimeout(
-      () => butler?.whatItKnowsMayHaveChanged(),
-      SWITCH_FLIPS_GATHER_MS
-    )
+    butlerHearsSoon()
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -4176,7 +4179,7 @@ app.whenReady().then(() => {
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
-      butler?.whatItKnowsMayHaveChanged()
+      butlerHearsSoon()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     rowsChanged: () => workspaceMgr?.refresh(),

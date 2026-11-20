@@ -390,10 +390,13 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 slot of its own. Todo's `koloft todo` method uses it: Discord fills its
 `{{todo-method-phone}}`.
 
-`fillsGained(slots, was, now, context)` gives the filled text of each block in those slots
-that is kept in state `now` but was dropped in state `was`, slot by slot in the order given.
-A state names which plugins are on (`on`, a map from plugin id; a plugin it leaves out counts
-as it is now) and which facts hold (`facts`). The butler uses it to tell a conversation that
+`fillsGained(slots, was, now)` gives the filled text of each block in those slots that is
+kept in state `now` but was dropped in state `was`, slot by slot in the order given, one
+text per block. A state names which plugins are on (`on`, a map from plugin id; a plugin it
+leaves out counts as it is now) and which facts hold (`facts`). Only the blocks are weighed
+against the two states: a `{{…}}` inside a block is filled from the switches as they are now,
+with the facts of `now`, so `now` should be the state the prompt is put together in today.
+It does not join an `-or-list` slot's items. The butler uses it to tell a conversation that
 is already running the sentences a plugin turned on, or a fact that came to hold, adds to its
 prompt.
 
@@ -433,7 +436,7 @@ These are the slots, values and facts in use today:
 | value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, in a workspace's, or in the Instructions for every workspace |
 | value | `plugins-now` | the butler's code; which plugins are now on or off, as "Todo is now off, Passwords and sign-in is now on" |
 | value | `lines-gained` | the butler's code; `butler-lines-gained` filled, or empty |
-| value | `lines` | the butler's code; the sentences of the butler's prompt (`owners-ai-itself-koloft`, `owners-ai-folder-koloft`, `owners-ai-koloft`) that its conversation does not have yet, from `fillsGained` |
+| value | `lines` | the butler's code; the sentences its conversation does not have yet, from `fillsGained` over every slot the `butler` block names (today `owners-ai-itself-koloft`, `owners-ai-folder-koloft`, `owners-ai-koloft`) |
 | value | `the-question` | Sessions core; "it" or "this one" in `session-answered-by-keys` |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |

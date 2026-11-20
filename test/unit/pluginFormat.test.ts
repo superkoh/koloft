@@ -195,12 +195,7 @@ interface PinnedFormats {
     promptContext: V1PromptContext
     composePrompt: (slot: string, context?: V1PromptContext) => string
     fillSlots: (text: string, context?: V1PromptContext) => string
-    fillsGained: (
-      slots: readonly string[],
-      was: V1PromptState,
-      now: V1PromptState,
-      context?: V1PromptContext
-    ) => string[]
+    fillsGained: (slots: readonly string[], was: V1PromptState, now: V1PromptState) => string[]
     pluginStateOf: (id: string) => { on: boolean; offBecause?: V1Manifest }
     carries: {
       FILE_OPENED: { tabId: string; target: string; view?: 'render' | 'diff' | 'source' }
