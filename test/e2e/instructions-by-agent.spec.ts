@@ -151,7 +151,7 @@ function waitingShimOnTheMachine(env: E2EEnv, line: string): { pid: number; file
 }
 
 const callerChecks = (env: E2EEnv): number =>
-  sshCommands(env, 'end').filter((c) => c.includes('kill -0')).length
+  sshCommands(env, 'end').filter((c) => c.includes('ps -o args=')).length
 
 function stopShim(env: E2EEnv, pid: number, signal: NodeJS.Signals): void {
   const cmd = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' })

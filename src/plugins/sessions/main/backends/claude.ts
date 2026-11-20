@@ -219,8 +219,10 @@ class CallerOnTheMachine {
   }
 
   async stoppedWaiting(): Promise<boolean> {
-    if (!this.asked) return false
-    await this.check()
+    if (this.asked && this.state !== 'stopped') {
+      await this.checking
+      await this.check()
+    }
     return this.state === 'stopped'
   }
 

@@ -245,7 +245,7 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     return { read, sent: m.sent }
   }
 
-  it('reads a koloft command on the machine as no longer waiting once its pid, first seen running, is gone; a pid never seen running, as from another pid namespace, or a broken link keeps it waiting; once it stopped, its answer is taken away instead of written', async () => {
+  it('reads a koloft command on the machine as no longer waiting once its pid, first seen running koloft, is gone; a pid never seen running koloft, as from another pid namespace, or a broken link keeps it waiting; once it stopped, its answer is taken away instead of written', async () => {
     const { read, sent } = await readsWhileTheOwnerIsAsked([
       'gone',
       undefined,

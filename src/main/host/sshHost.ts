@@ -1020,7 +1020,8 @@ export class SshHost implements Host {
   async agentCallerWaits(requestId: string, pid: number): Promise<AgentCallerState | undefined> {
     const r = await this.sh(
       `[ -f "${REMOTE_HOOK_DIR}/req-$1.json" ] || exit ${REQUEST_TAKEN_BACK_EXIT}
-kill -0 "$2" 2>/dev/null || ps -p "$2" >/dev/null 2>&1 || exit ${CALLER_GONE_EXIT}`,
+case "$(ps -o args= -p "$2" 2>/dev/null)" in */koloft[[:space:]]*) exit 0 ;; esac
+exit ${CALLER_GONE_EXIT}`,
       [requestId, String(pid)],
       { timeoutMs: A_CALLER_CHECK_ANSWERS_WITHIN_MS }
     )
