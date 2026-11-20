@@ -308,7 +308,9 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await expect(sudoField(page)).toHaveValue('hunter2-rest')
       await expect(guest.locator('#pw')).toHaveValue('')
       await page.keyboard.press('Enter')
-      await expect.poll(() => terminalText(page, tab)).toContain('hunter2-rest\ngot-it')
+      await expect
+        .poll(async () => unwrapped(await terminalText(page, tab)))
+        .toContain('hunter2-restgot-it')
 
       await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
       await page.keyboard.type('typed-by-the-owner')
@@ -318,7 +320,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await expect
         .poll(async () => unwrapped(await terminalText(page, tab)))
         .toContain(unwrapped(OWNER_FILLED))
-      expect(await terminalText(page, tab)).not.toContain('typed-by-the-owner')
+      expect(unwrapped(await terminalText(page, tab))).not.toContain('typed-by-the-owner')
     } finally {
       await quitAndClose(app)
       await server.close()

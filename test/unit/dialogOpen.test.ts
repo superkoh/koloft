@@ -43,8 +43,6 @@ const domSettled = async (): Promise<void> => {
   await aTick()
 }
 
-const framesPass = (): Promise<void> => new Promise((r) => setTimeout(r, 100))
-
 const givingUp: (() => void)[] = []
 function focusOnce(el: HTMLElement): () => void {
   const giveUp = focusOnceNoDialogIsOpen(el)
@@ -184,17 +182,47 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(field)
   })
 
-  it('leaves the keys in an ask box field the owner types in while the box is on screen, and takes them once the box is gone, even from the terminal it covered', async () => {
+  it('leaves the keys in an ask box field the owner types in while the box is on screen, and takes them once the box is gone, even when the terminal it covered takes them first or later', async () => {
+    for (const terminalRefocuses of ['first', 'later'] as const) {
+      const { terminalInput, field } = terminalUnderAnAskBox()
+      field.focus()
+      const page = button()
+      focusOnce(page)
+      await domSettled()
+      expect(document.activeElement).toBe(field)
+      field.closest('.modal-backdrop')!.remove()
+      if (terminalRefocuses === 'first') terminalInput.focus()
+      await domSettled()
+      expect(document.activeElement).toBe(page)
+      terminalInput.focus()
+      expect(document.activeElement).toBe(page)
+      document.body.replaceChildren()
+    }
+  })
+
+  it('leaves the keys in the terminal the owner clicks into once the page took them from it', async () => {
     const { terminalInput, field } = terminalUnderAnAskBox()
     field.focus()
     const page = button()
     focusOnce(page)
-    await domSettled()
-    expect(document.activeElement).toBe(field)
     field.closest('.modal-backdrop')!.remove()
     await domSettled()
+    expect(document.activeElement).toBe(page)
+    terminalInput.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     terminalInput.focus()
-    await framesPass()
+    expect(document.activeElement).toBe(terminalInput)
+  })
+
+  it('waits for the owner to leave the field they type in when the ask box goes, and takes the keys then', async () => {
+    terminalUnderAnAskBox()
+    const note = focused(document.createElement('textarea'))
+    const page = button()
+    focusOnce(page)
+    document.querySelector('.modal-backdrop.in-session')!.remove()
+    await domSettled()
+    expect(document.activeElement).toBe(note)
+    note.blur()
+    await domSettled()
     expect(document.activeElement).toBe(page)
   })
 
@@ -207,7 +235,7 @@ describe('focusOnceNoDialogIsOpen', () => {
     other.field.closest('.modal-backdrop')!.remove()
     field.closest('.modal-backdrop')!.remove()
     other.terminalInput.focus()
-    await framesPass()
+    await domSettled()
     expect(document.activeElement).toBe(other.terminalInput)
   })
 
@@ -221,7 +249,7 @@ describe('focusOnceNoDialogIsOpen', () => {
     await domSettled()
     backdrop.remove()
     terminalInput.focus()
-    await framesPass()
+    await domSettled()
     expect(document.activeElement).toBe(terminalInput)
   })
 

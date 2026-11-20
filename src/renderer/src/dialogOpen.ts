@@ -36,7 +36,7 @@ function watchTheDomUntil(done: () => boolean, then: () => void): () => void {
 
 const anotherAskBoxOnScreen = (el: HTMLElement): HTMLElement | undefined =>
   [...document.querySelectorAll<HTMLElement>('.modal-backdrop.in-session')].find(
-    (box) => !box.contains(el) && box.checkVisibility?.({ visibilityProperty: true }) !== false
+    (box) => !box.contains(el) && box.checkVisibility?.() !== false
   )
 
 export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
@@ -49,14 +49,9 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
     return true
   }
   let landing: ReturnType<typeof setTimeout> | undefined
-  let frame = 0
   const onceTheKeysSettle = (then: () => void): void => {
     clearTimeout(landing)
     landing = setTimeout(then)
-  }
-  const onceTheCoveredTerminalTookTheKeysBack = (then: () => void): void => {
-    cancelAnimationFrame(frame)
-    frame = requestAnimationFrame(() => (frame = requestAnimationFrame(then)))
   }
 
   let stopWaitingOnTheDialog: (() => void) | undefined
@@ -65,50 +60,77 @@ export function focusOnceNoDialogIsOpen(el: HTMLElement): () => void {
       () => !aDialogIsOpenOverEl(),
       () => {
         stopWaitingOnTheDialog = undefined
-        if (theTerminalAnAskBoxCovered) onceTheCoveredTerminalTookTheKeysBack(takeTheKeysIfFree)
-        else onceTheKeysSettle(takeTheKeysIfFree)
+        onceTheKeysSettle(takeTheKeysIfFree)
       }
     )
-  }
-  const takeTheKeysIfFree = (): void => {
-    if (aDialogIsOpenOverEl()) return waitForTheDialogToClose()
-    const covered = theTerminalAnAskBoxCovered
-    theTerminalAnAskBoxCovered = null
-    const keysAreInTheTerminalItCovered =
-      !!covered && document.activeElement?.closest('.term-wrap') === covered
-    if (keysWentNowhere() || keysAreInTheTerminalItCovered) el.focus()
   }
   const aDialogTookTheKeys = (): void => {
     if (aDialogIsOpen()) waitForTheDialogToClose()
   }
 
-  const field = fieldTheOwnerTypesInOutsideTheTerminals()
-  let stopWatchingTheField = (): void => {}
-  const theOwnerLeftTheField = (): void =>
-    onceTheKeysSettle(() => {
-      if (document.activeElement === field) return
-      stopWaitingOnTheField()
-      takeTheKeysIfFree()
-    })
-  const stopWaitingOnTheField = (): void => {
-    field?.removeEventListener('focusout', theOwnerLeftTheField)
-    document.removeEventListener('pointerdown', theOwnerLeftTheField, true)
-    stopWatchingTheField()
+  let stopTakingThemBackFromTheTerminal = (): void => {}
+  const takeThemBackWhenTheTerminalRefocuses = (covered: Element): void => {
+    stopTakingThemBackFromTheTerminal()
+    const takeThemBack = (): void => {
+      stopTakingThemBackFromTheTerminal()
+      el.focus()
+    }
+    const theOwnerActed = (): void => stopTakingThemBackFromTheTerminal()
+    covered.addEventListener('focusin', takeThemBack)
+    document.addEventListener('pointerdown', theOwnerActed, true)
+    document.addEventListener('keydown', theOwnerActed, true)
+    stopTakingThemBackFromTheTerminal = () => {
+      covered.removeEventListener('focusin', takeThemBack)
+      document.removeEventListener('pointerdown', theOwnerActed, true)
+      document.removeEventListener('keydown', theOwnerActed, true)
+    }
   }
 
-  if (aDialogIsOpenOverEl()) waitForTheDialogToClose()
-  else if (field && field !== el) {
+  let stopWaitingOnTheField = (): void => {}
+  const waitForTheOwnerToLeave = (field: HTMLElement): void => {
+    const theOwnerLeftTheField = (): void =>
+      onceTheKeysSettle(() => {
+        if (document.activeElement === field) return
+        stopWaitingOnTheField()
+        takeTheKeysIfFree()
+      })
     field.addEventListener('focusout', theOwnerLeftTheField)
     // PLATFORM§10
     document.addEventListener('pointerdown', theOwnerLeftTheField, true)
-    stopWatchingTheField = watchTheDomUntil(() => !field.isConnected, theOwnerLeftTheField)
-  } else el.focus()
+    const stopWatchingTheField = watchTheDomUntil(() => !field.isConnected, theOwnerLeftTheField)
+    stopWaitingOnTheField = () => {
+      field.removeEventListener('focusout', theOwnerLeftTheField)
+      document.removeEventListener('pointerdown', theOwnerLeftTheField, true)
+      stopWatchingTheField()
+    }
+  }
+
+  const takeTheKeysIfFree = (): void => {
+    if (aDialogIsOpenOverEl()) return waitForTheDialogToClose()
+    const covered = theTerminalAnAskBoxCovered
+    theTerminalAnAskBoxCovered = null
+    if (
+      keysWentNowhere() ||
+      (covered && document.activeElement?.closest('.term-wrap') === covered)
+    ) {
+      el.focus()
+      if (covered) takeThemBackWhenTheTerminalRefocuses(covered)
+      return
+    }
+    const typing = covered && fieldTheOwnerTypesInOutsideTheTerminals()
+    if (typing && typing !== el) waitForTheOwnerToLeave(typing)
+  }
+
+  const field = fieldTheOwnerTypesInOutsideTheTerminals()
+  if (aDialogIsOpenOverEl()) waitForTheDialogToClose()
+  else if (field && field !== el) waitForTheOwnerToLeave(field)
+  else el.focus()
   document.addEventListener('focusin', aDialogTookTheKeys)
   return () => {
     clearTimeout(landing)
-    cancelAnimationFrame(frame)
     stopWaitingOnTheDialog?.()
     stopWaitingOnTheField()
+    stopTakingThemBackFromTheTerminal()
     document.removeEventListener('focusin', aDialogTookTheKeys)
   }
 }
