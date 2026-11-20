@@ -1,4 +1,9 @@
-import type { SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
+import {
+  isPlaceholderSessionTitle,
+  type SessionInfo,
+  type SessionRow,
+  type WorkspaceRows
+} from '@shared/types'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
 import { fail, type Parsed } from '@core/command'
@@ -31,7 +36,7 @@ export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): P
           workspace: w.workspace.path,
           shownAs: w.workspace.claim?.shownAs ?? workspaceLabel(w.workspace.path),
           row,
-          title: live?.title ?? row.title,
+          title: live?.title && !isPlaceholderSessionTitle(live.title) ? live.title : row.title,
           live
         }
       })
