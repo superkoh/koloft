@@ -312,26 +312,34 @@ describe('CronRunner — starting one run', () => {
     expect(h.launches.map((l) => l.worktree)).toEqual(['nightly-report-260902-1000-2'])
   })
 
-  it('a run opens its first message with when the last run that started a session was due and that session, never on a run with none before it or a slash-command task', async () => {
-    const lastStarted = at(10, 0, 0, -1)
+  it("a run opens its first message with when its agent's last run that started a session was due and that session's own id, never on a run with none before it or a slash-command task", async () => {
+    const TASK = 'Look at the issues'
+    const lastLine = (id: string): RegExp =>
+      new RegExp(
+        `^Last run of this task: 2026-09-01T10:00[+-]\\d\\d:\\d\\d, session ${id}\\.\\n\\n${TASK}$`
+      )
     const history: CronJob['history'] = [
       { dueAt: at(9, 0), state: 'failed', note: 'no usable account' },
-      { dueAt: lastStarted, state: 'finished', sessionId: 's-last' },
+      { dueAt: at(10, 0, 0, -1), state: 'finished', sessionId: 's-last' },
       { dueAt: at(10, 0, 0, -2), state: 'closed', sessionId: 's-older' }
     ]
+    const switchedToCodex: CronJob['history'] = [
+      { dueAt: at(10, 0, 0, -1), state: 'closed', sessionId: 'codex:%2Fhome%2Fcodex:019a-thread' },
+      ...history.slice(1)
+    ]
     const h = makeHarness([
-      makeJob({ task: 'Look at the issues', history }),
-      makeJob({ id: 'j2', task: 'Look at the issues', history: [history[0]] }),
-      makeJob({ id: 'j3', history })
+      makeJob({ task: TASK, history }),
+      makeJob({ id: 'j2', task: TASK, history: [history[0]] }),
+      makeJob({ id: 'j3', history }),
+      makeJob({ id: 'j4', task: TASK, backend: 'codex', history: switchedToCodex }),
+      makeJob({ id: 'j5', task: TASK, backend: 'codex', history })
     ])
-    await h.runner.runNow('j1')
-    await h.runner.runNow('j2')
-    await h.runner.runNow('j3')
-    expect(h.launches[0].firstPrompt).toMatch(
-      /^Last run of this task: 2026-09-01T10:00[+-]\d\d:\d\d, session s-last\.\n\nLook at the issues$/
-    )
-    expect(h.launches[1].firstPrompt).toBe('Look at the issues')
+    for (const id of ['j1', 'j2', 'j3', 'j4', 'j5']) await h.runner.runNow(id)
+    expect(h.launches[0].firstPrompt).toMatch(lastLine('s-last'))
+    expect(h.launches[1].firstPrompt).toBe(TASK)
     expect(h.launches[2].firstPrompt).toBe('/koloft.release-dmg patch')
+    expect(h.launches[3].firstPrompt).toMatch(lastLine('019a-thread'))
+    expect(h.launches[4].firstPrompt).toBe(TASK)
   })
 
   it('BB-E22: a folder whose .git is not a directory runs in place, with no worktree', async () => {

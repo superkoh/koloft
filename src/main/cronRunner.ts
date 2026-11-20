@@ -63,7 +63,7 @@ const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
 
 function firstPromptOf(job: CronJob): string {
   const typedAsSlashCommand = job.task.startsWith('/')
-  const last = typedAsSlashCommand ? null : lastRunLine(job.history)
+  const last = typedAsSlashCommand ? null : lastRunLine(job.history, cronBackend(job))
   return last ? `${last}\n\n${job.task}` : job.task
 }
 

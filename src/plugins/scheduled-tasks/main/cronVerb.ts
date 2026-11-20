@@ -15,12 +15,12 @@ import {
 import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { effortNotTaken } from '@shared/cronModels'
-import { describeSchedule, DOW } from '@shared/schedule'
+import { describeSchedule, DOW, localIso } from '@shared/schedule'
 import {
+  agentSessionId,
   histIso,
   histText,
   lastRunOf,
-  localIso,
   liveOf,
   liveWords,
   nextWords,
@@ -274,7 +274,7 @@ export function formatList(jobs: CronJob[], live: LiveRun[], now: Date): string 
 }
 
 function runLine(when: string, sessionId: string | undefined, words: string): string {
-  return `    ${when}${sessionId ? ` · session ${sessionId}` : ''} · ${words}`
+  return `    ${when}${sessionId ? ` · session ${agentSessionId(sessionId)}` : ''} · ${words}`
 }
 
 export function formatShow(job: CronJob, number: number, live: LiveRun[], now: Date): string {

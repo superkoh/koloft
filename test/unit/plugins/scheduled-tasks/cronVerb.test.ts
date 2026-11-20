@@ -400,7 +400,11 @@ describe('koloft cron: printing tasks', () => {
             count: 2,
             until: new Date(2026, 8, 1, 3, 0).getTime()
           },
-          { dueAt: new Date(2025, 11, 31, 2, 0).getTime(), state: 'finished', sessionId: 's-1' }
+          {
+            dueAt: new Date(2025, 11, 31, 2, 0).getTime(),
+            state: 'finished',
+            sessionId: 'codex:%2Fhome%2Fcodex:s-1'
+          }
         ]
       }),
       1,
