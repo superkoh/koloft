@@ -151,6 +151,23 @@ const runsInstead = (read: boolean, wanted: string, instead: string): string =>
     ? `This account has no ${wanted} model, so it runs on ${instead}.`
     : `Koloft could not read this account's models, so it runs on ${instead}.`
 
+const highestTakenUpTo = (asked: CronEffort, model: ListedModel): CronEffort | undefined =>
+  CRON_EFFORTS.slice(0, CRON_EFFORTS.indexOf(asked) + 1)
+    .filter((e) => model.efforts.includes(e))
+    .pop()
+
+function fallbackEffort(
+  asked: CronEffort | undefined,
+  model: ListedModel
+): { effort?: CronEffort; stepped: boolean } {
+  if (!asked || model.efforts.includes(asked)) return { effort: asked, stepped: false }
+  const effort = highestTakenUpTo(asked, model)
+  return { effort, stepped: !!effort }
+}
+
+const onModelAt = (id: string, effort: CronEffort | undefined, stepped: boolean): string =>
+  stepped ? `${id} at ${effort}` : id
+
 export const ownPickOf = (model?: string, effort?: CronEffort): OwnPick | undefined =>
   model || effort ? { ...(model && { model }), ...(effort && { effort }) } : undefined
 
@@ -192,16 +209,22 @@ export function resolveOwnPick(
     return { pick: ownPickOf(named, takenEffort(backend, named, asked.effort)) ?? {} }
   const read = !!listed?.length
   const { model, fellBack } = runsOn(backend, named, read ? listed! : lastKnown(backend))
-  const effort = model
-    ? asked.effort && model.efforts.includes(asked.effort)
-      ? asked.effort
-      : undefined
-    : takenEffort(backend, undefined, asked.effort)
-  const pick = ownPickOf(model?.id, effort) ?? {}
-  if (!fellBack) return { pick }
+  if (!model) {
+    const pick = ownPickOf(undefined, takenEffort(backend, undefined, asked.effort)) ?? {}
+    return { pick, note: runsInstead(read, named, `${BACKEND_LABEL[backend]}'s own model`) }
+  }
+  if (!fellBack)
+    return {
+      pick:
+        ownPickOf(
+          model.id,
+          asked.effort && model.efforts.includes(asked.effort) ? asked.effort : undefined
+        ) ?? {}
+    }
+  const { effort, stepped } = fallbackEffort(asked.effort, model)
   return {
-    pick,
-    note: runsInstead(read, named, model?.id ?? `${BACKEND_LABEL[backend]}'s own model`)
+    pick: ownPickOf(model.id, effort) ?? {},
+    note: runsInstead(read, named, onModelAt(model.id, effort, stepped))
   }
 }
 
@@ -234,14 +257,17 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
       ok: false,
       error: `${BACKEND_LABEL[backend]} has no model "${wanted}" for this account; it has ${familiesOf(listed)}.`
     }
-  if (!model.efforts.includes(asked.effort))
+  const { effort, stepped } = fellBack
+    ? fallbackEffort(asked.effort, model)
+    : { effort: asked.effort, stepped: false }
+  if (!effort || !model.efforts.includes(effort))
     return {
       ok: false,
       error: `${model.id} does not take --effort ${asked.effort}; it takes ${model.efforts.join(', ')}.`
     }
   return {
     ok: true,
-    pick: { model: model.id, effort: asked.effort },
-    ...(fellBack && { note: runsInstead(read, wanted, model.id) })
+    pick: { model: model.id, effort },
+    ...(fellBack && { note: runsInstead(read, wanted, onModelAt(model.id, effort, stepped)) })
   }
 }

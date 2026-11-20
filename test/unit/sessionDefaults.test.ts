@@ -63,11 +63,15 @@ describe('the model and thinking a session the owner starts runs on', () => {
     })
   })
 
-  it('starts Neon on Argon when the account has no Neon, and says so', () => {
+  it('starts Neon on Argon when the account has no Neon, at Argon’s highest level when it lacks the one asked, and says so', () => {
     const argonOnly = [{ id: 'gemini-4-argon', efforts: LMH }]
     expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, argonOnly)).toEqual({
       pick: { model: 'gemini-4-argon', effort: 'medium' },
       note: 'This account has no neon model, so it runs on gemini-4-argon.'
+    })
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, argonOnly)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'high' },
+      note: 'This account has no neon model, so it runs on gemini-4-argon at high.'
     })
     const both = [{ id: 'gemini-4-neon', efforts: [...LMH, 'xhigh'] as CronEffort[] }, ...argonOnly]
     expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, both)).toEqual({
@@ -79,6 +83,10 @@ describe('the model and thinking a session the owner starts runs on', () => {
     expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, undefined)).toEqual({
       pick: { model: 'gemini-4-argon', effort: 'medium' },
       note: "Koloft could not read this account's models, so it runs on gemini-4-argon."
+    })
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, undefined)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'high' },
+      note: "Koloft could not read this account's models, so it runs on gemini-4-argon at high."
     })
   })
 
