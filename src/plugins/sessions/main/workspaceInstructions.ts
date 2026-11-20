@@ -20,11 +20,6 @@ import {
 export const workspaceInstructionsPart = (text: string): string =>
   composePrompt('workspace-owner-instructions', { values: { 'owner-instructions': text } })
 
-export function instructionsPartOf(defaults: SessionDefaults | undefined): string | undefined {
-  const text = textInUse(defaults?.instructions)
-  return text ? workspaceInstructionsPart(text) : undefined
-}
-
 function checkTheLimit(rules: string, text: string): void {
   const over = workspaceTextBytes(rules, text) - WORKSPACE_TEXT_MAX_BYTES
   if (over > 0) throw new Error(rulesAndInstructionsOver(over))

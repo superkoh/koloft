@@ -179,6 +179,10 @@ export type WindowFeed = (adopted: Promise<void>) => () => void
 
 export const WINDOW_FEED = slot<WindowFeed>('window-feed')
 
+export type StartedBeforeExit = (tabId: string) => boolean
+
+export const STARTED_BEFORE_EXIT = slot<StartedBeforeExit>('started-before-exit')
+
 export interface WorkspaceRemovalLoss {
   countIn: (wsPath: string) => number
   willGo: (count: number) => string

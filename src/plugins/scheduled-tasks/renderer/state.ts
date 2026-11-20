@@ -18,11 +18,21 @@ export const useCron = create<CronState>(() => ({ jobs: [], live: [], folders: {
 
 export const setCron = (s: CronState): void => useCron.setState(s, true)
 
+const tabsWhoseRunStarted = new Set<string>()
+
+export function runStartedBeforeExit(tabId: string): boolean {
+  return tabsWhoseRunStarted.delete(tabId)
+}
+
 export function feedCron(adopted: Promise<void>): () => void {
   let pushed = false
-  const off = window.api.cron.onState((s) => {
+  const offState = window.api.cron.onState((s) => {
     pushed = true
     setCron(s)
+  })
+  const offRunStarted = window.api.cron.onRunStarted(({ tabId, started }) => {
+    if (started) tabsWhoseRunStarted.add(tabId)
+    else tabsWhoseRunStarted.delete(tabId)
   })
   void adopted.then(() =>
     window.api.cron
@@ -32,7 +42,10 @@ export function feedCron(adopted: Promise<void>): () => void {
       })
       .catch(() => {})
   )
-  return off
+  return () => {
+    offState()
+    offRunStarted()
+  }
 }
 
 export const jobsLost: WorkspaceRemovalLoss = {

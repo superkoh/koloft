@@ -1,21 +1,18 @@
-import { useLayoutEffect, useState, type JSX, type KeyboardEvent } from 'react'
+import type { JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { IconAiStart, IconClose } from '@renderer/icons'
+import { IconClose } from '@renderer/icons'
 import { useStore } from '@renderer/store'
-import { isComposing } from '@renderer/keys'
-import { InstructionsChangeLines } from '@renderer/components/InstructionsChange'
-import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
+import {
+  OwnerInstructionsEditor,
+  useEscapeCloses
+} from '@renderer/components/OwnerInstructionsEditor'
 import { INSTRUCTIONS_MAX_BYTES, instructionsOf } from '../shared/instructions'
-import type { InstructionsSaveResult } from '../shared/ipc'
 import { isButlerTab } from './butlerTabs'
 import { openButler, useButler } from './state'
-import '@renderer/commandPalette.css'
 import './butler.css'
 
 const whenItTakesEffect = (name: string): string =>
   `${name} uses it from the next fresh conversation (on Muse, from the next start).`
-
-const COULD_NOT_SAVE = 'Koloft could not save the instructions.'
 
 export function InstructionsStrip(): JSX.Element | null {
   const opened = useButler((s) => s.openedTab)
@@ -45,109 +42,21 @@ export function InstructionsStrip(): JSX.Element | null {
   )
 }
 
-function useEscapeCloses(close: () => void): void {
-  // PLATFORM§25
-  useLayoutEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent): void => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      close()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
-}
-
 export function InstructionsDialog(): JSX.Element | null {
   const open = useButler((s) => s.editingInstructions)
-  return open ? <InstructionsEditor /> : null
-}
-
-function InstructionsEditor(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
-  const showToast = useStore((s) => s.showToast)
-  const [opened, setOpened] = useState(() => instructionsOf(butler))
-  const [text, setText] = useState(opened)
-  const [error, setError] = useState('')
-  const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
-  const left = INSTRUCTIONS_MAX_BYTES - instructionsBytes(cleanInstructions(text))
-  const close = (): void => useButler.setState({ editingInstructions: false })
-  useEscapeCloses(close)
-  const save = async (): Promise<void> => {
-    if (left < 0) return
-    setChanged(null)
-    const r = await window.api.butler
-      .saveInstructions(text, opened)
-      .catch((): InstructionsSaveResult => ({ ok: false, error: COULD_NOT_SAVE }))
-    if (!r.ok) {
-      setError(r.error)
-      if (r.inUse === undefined) return
-      setChanged({ before: opened, after: r.inUse })
-      setOpened(r.inUse)
-      return
-    }
-    close()
-    showToast(`Instructions saved. ${whenItTakesEffect(butler.name)}`)
-  }
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (isComposing(e)) return e.stopPropagation()
-    if (e.key !== 'Enter' || !e.metaKey) return
-    e.preventDefault()
-    void save()
-  }
-  // ADR-0013
-  return createPortal(
-    <div className="modal-backdrop palette-top" onClick={close}>
-      <div
-        className="modal palette"
-        role="dialog"
-        aria-label="Instructions"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="pal-count">{`Instructions for ${butler.name} · written by you`}</div>
-        <div className="pal-ask">
-          <span className="pal-glyph">
-            <IconAiStart size={18} />
-          </span>
-          <textarea
-            autoFocus
-            className="pal-field"
-            rows={3}
-            spellCheck={false}
-            autoComplete="off"
-            aria-label="Instructions"
-            placeholder={`What should ${butler.name} always know or do? One rule a line.`}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value)
-              if (!changed) setError('')
-            }}
-            onKeyDown={onKeyDown}
-          />
-        </div>
-        {error && <div className="pal-status field-hint bad">{error}</div>}
-        {changed && <InstructionsChangeLines {...changed} />}
-        <div className="pal-status">
-          {`${butler.name} and the helpers it starts follow this. ${whenItTakesEffect(butler.name)}`}
-        </div>
-        <div className="pal-bar">
-          <span className="pal-tips">
-            {left >= 0 ? (
-              bytesLeft(left)
-            ) : (
-              <span className="field-hint bad">{bytesLeft(left)}</span>
-            )}
-          </span>
-          <button className="pal-pill" onClick={close}>
-            Cancel <span className="k">Esc</span>
-          </button>
-          <button className="pal-pill go" disabled={left < 0} onClick={() => void save()}>
-            Save <span className="k">⌘⏎</span>
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
+  if (!open) return null
+  return (
+    <OwnerInstructionsEditor
+      title={`Instructions for ${butler.name} · written by you`}
+      placeholder={`What should ${butler.name} always know or do? One rule a line.`}
+      status={`${butler.name} and the helpers it starts follow this. ${whenItTakesEffect(butler.name)}`}
+      inUse={instructionsOf(butler)}
+      maxBytes={INSTRUCTIONS_MAX_BYTES}
+      save={(text, opened) => window.api.butler.saveInstructions(text, opened)}
+      savedToast={`Instructions saved. ${whenItTakesEffect(butler.name)}`}
+      onClose={() => useButler.setState({ editingInstructions: false })}
+    />
   )
 }
 

@@ -31,6 +31,10 @@ const INTRO =
 const RULES_HINT =
   "How an agent in this workspace picks the model and thinking for a session it starts with koloft session new. Left empty, agents sort the task as very simple, normal or very hard and use Koloft's own pick for each."
 const RULES_PLACEHOLDER = `Left empty, an agent sorts the task and uses Koloft's own pick:\n${SESSION_BACKENDS.map(tiersOf).join('\n')}`
+const FOLLOWED_HINT =
+  "Sessions started in this workspace get the instructions for every workspace first, then this workspace's own. You write them in Settings ▸ Sessions."
+const LEFT_OUT_HINT =
+  'Sessions started in this workspace, or in another copy of the same repository, do not get the instructions for every workspace.'
 const BAD_MODEL = 'A model name is letters, digits, dots, colons, dashes or underscores.'
 // CC§26 CODEX§17 AGY§32
 const PROJECT_FILE_MAY_WIN =
@@ -70,6 +74,7 @@ export function SessionDefaultsDialog({
   const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
   const [rules, setRules] = useState('')
   const [instructions, setInstructions] = useState('')
+  const [leavesOut, setLeavesOut] = useState(false)
   const [saved, setSaved] = useState({ rules: '', instructions: '' })
   const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
   const changedView = useRef<HTMLDivElement>(null)
@@ -88,6 +93,7 @@ export function SessionDefaultsDialog({
         const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
         setInstructions(text)
+        setLeavesOut(!!r.defaults.leavesOutEveryWorkspace)
         setSaved({ rules: r.defaults.rules ?? '', instructions: text })
         setFamilyEfforts(r.familyEfforts)
       },
@@ -164,7 +170,8 @@ export function SessionDefaultsDialog({
       ),
       ...(rules.trim() && { rules: rules.trim() }),
       instructions,
-      instructionsOpened: saved.instructions
+      instructionsOpened: saved.instructions,
+      ...(leavesOut && { leavesOutEveryWorkspace: true })
     }
     setChanged(null)
     const r = await window.api.sessionDefaults.write(wsPath, out)
@@ -246,6 +253,25 @@ export function SessionDefaultsDialog({
                   />
                 </div>
                 <p className="field-hint">{RULES_HINT}</p>
+              </div>
+
+              <span className="flabel">Instructions for every workspace</span>
+              <div className="fcol">
+                <div className="chips">
+                  <button
+                    className={'chip' + (leavesOut ? '' : ' on')}
+                    onClick={() => setLeavesOut(false)}
+                  >
+                    Follow them
+                  </button>
+                  <button
+                    className={'chip' + (leavesOut ? ' on' : '')}
+                    onClick={() => setLeavesOut(true)}
+                  >
+                    Leave them out
+                  </button>
+                </div>
+                <p className="field-hint">{leavesOut ? LEFT_OUT_HINT : FOLLOWED_HINT}</p>
               </div>
 
               <span className="flabel">Instructions</span>

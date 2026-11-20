@@ -20,6 +20,7 @@ import type { InstructionAsk, OwnersAnswer } from './instructionAsks'
 
 export interface InstructionsBlock {
   name: string
+  forEveryWorkspace?: true
   read(): Promise<string>
   check(text: string): Promise<void>
   writeIfStill(before: string, after: string, by: string): Promise<boolean>
@@ -37,11 +38,13 @@ export interface InstructionsVerbDeps {
   workspaceOf(tabId: string): string | undefined
   pinnedWorkspaces(): PinnedWorkspace[]
   workspaceBlock(workspace: string): InstructionsBlock
+  everyWorkspaceBlock(): InstructionsBlock
   nameOf(session: SessionInfo): string
 }
 
-const USAGE =
-  'koloft instructions: run it alone to read them, or: koloft instructions add [--workspace <workspace>] -- "<sentence>" | koloft instructions set [--workspace <workspace>] -- "<whole text>"'
+const EVERY_WORKSPACE_FLAG = '--every-workspace'
+const WHICH = `[--workspace <workspace> | ${EVERY_WORKSPACE_FLAG}]`
+const USAGE = `koloft instructions: run it alone to read them, or: koloft instructions add ${WHICH} -- "<sentence>" | koloft instructions set ${WHICH} -- "<whole text>"`
 const WORDS_AFTER_DASHES = (edit: AgentEdit): string =>
   edit === ADD_A_LINE
     ? 'koloft instructions add: put the sentence after --, like: koloft instructions add -- "Run npm test before you say a change is done."'
@@ -62,15 +65,19 @@ const NOT_CHANGED: Record<Exclude<OwnersAnswer, 'agreed'>, string> = {
     'koloft instructions: the instructions changed while the owner was asked, so nothing was changed. Read them again before you propose.'
 }
 
+type Target = { workspace?: string; everyWorkspace?: true }
+
 function parsed(
   args: string[]
-): { ok: true; edit?: AgentEdit; workspace?: string; words: string } | { ok: false } {
+): ({ ok: true; edit?: AgentEdit; words: string } & Target) | { ok: false } {
   const { before, after } = splitAtDashes(args)
   const [first, ...rest] = before
   const edit = first === ADD_A_LINE || first === REPLACE_THE_TEXT ? first : undefined
   const flags = edit ? rest : before
   if (edit === undefined && args.includes('--')) return { ok: false }
   if (flags.length === 0) return { ok: true, edit, words: after }
+  if (flags.length === 1 && flags[0] === EVERY_WORKSPACE_FLAG)
+    return { ok: true, edit, everyWorkspace: true, words: after }
   if (flags.length === 2 && flags[0] === '--workspace')
     return { ok: true, edit, workspace: flags[1], words: after }
   return { ok: false }
@@ -79,9 +86,10 @@ function parsed(
 function blockOf(
   d: InstructionsVerbDeps,
   caller: AgentCaller,
-  ref: string | undefined,
+  { workspace: ref, everyWorkspace }: Target,
   editing: boolean
 ): { ok: true; block: InstructionsBlock } | { ok: false; reply: AgentReply } {
+  if (everyWorkspace) return { ok: true, block: d.everyWorkspaceBlock() }
   const overseerSide = d.overseerSide(caller.tabId)
   if (ref === undefined) {
     if (overseerSide) return { ok: true, block: d.overseerBlock() }
@@ -109,7 +117,7 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
   return async (args, caller) => {
     const p = parsed(args)
     if (!p.ok) return refused(USAGE, EXIT_USAGE)
-    const target = blockOf(d, caller, p.workspace, p.edit !== undefined)
+    const target = blockOf(d, caller, p, p.edit !== undefined)
     if (!target.ok) return target.reply
     const { block } = target
     if (!p.edit) {
@@ -127,7 +135,14 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
     await block.check(after)
     const by = d.nameOf(caller.session)
     const given = await d.askTheOwner(
-      { tabId: caller.tabId, by, what: block.name, before, after },
+      {
+        tabId: caller.tabId,
+        by,
+        what: block.name,
+        before,
+        after,
+        forEveryWorkspace: block.forEveryWorkspace
+      },
       () => block.writeIfStill(before, after, by),
       caller.stillWaiting
     )

@@ -4,7 +4,7 @@ import {
   CHANGE_THEM,
   INSTRUCTIONS_CHANGED_MEANWHILE,
   KEEP_THEM,
-  NOTHING_CHANGES_UNTIL_YOU_AGREE,
+  nothingChangesUntilYouAgree,
   changeSummary,
   type InstructionAsk,
   type InstructionAskEnd,
@@ -193,7 +193,7 @@ export class InstructionCards implements InstructionAskListener {
       accent: CONDUCTOR_ACCENT,
       header: butlerAsks(name),
       body: changeShown(shown.ask),
-      footer: `-# ${shown.footer ?? NOTHING_CHANGES_UNTIL_YOU_AGREE}`,
+      footer: `-# ${shown.footer ?? nothingChangesUntilYouAgree(shown.ask)}`,
       buttons: shown.footer
         ? []
         : [button(KEEP_THEM, 'secondary', 'keep'), button(CHANGE_THEM, 'success', AGREE)]

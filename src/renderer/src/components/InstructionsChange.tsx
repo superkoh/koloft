@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, type JSX } from 'react'
 import {
   CHANGE_THEM,
   KEEP_THEM,
-  NOTHING_CHANGES_UNTIL_YOU_AGREE,
+  nothingChangesUntilYouAgree,
   changeSummary,
   type InstructionAskView
 } from '@plugins/sessions/shared/instructionAsks'
@@ -71,7 +71,7 @@ export function InstructionsAskDialog({
             <b>{ask.by}</b> wants to change {ask.what}: {changeSummary(ask.before, ask.after)}.
           </p>
           <InstructionsChangeLines before={ask.before} after={ask.after} />
-          <p className="field-hint">{NOTHING_CHANGES_UNTIL_YOU_AGREE}</p>
+          <p className="field-hint">{nothingChangesUntilYouAgree(ask)}</p>
         </div>
         <div className="modal-foot">
           <button ref={keep} className="mini" onClick={() => answer(false)}>

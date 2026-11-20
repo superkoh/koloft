@@ -701,6 +701,12 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
     with a text holding `OLDTEXT-A1`, then started again with `--conversation=<its id>`
     and a text holding `NEWTEXT-B2`: the resumed request carried both turns and
     `OLDTEXT-A1`, never `NEWTEXT-B2`, and its hook log had no `SessionStart`.
+  - **A text of about 24 KB arrives whole on a remote tab too.** 2026-11-20, agy 1.5.10,
+    the same lab, rendering and stand-in. The text was `koloftPrompt('agy')`, then two
+    blocks of 9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it,
+    made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
+    `$(id)`, curly quotes and an emoji (23,797 bytes in all). The `gemini-3.1-pro-preview`
+    request held it as one exact string, 2 of 2 runs, each on a new tab.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
   - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux

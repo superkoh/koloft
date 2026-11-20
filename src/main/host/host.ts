@@ -49,7 +49,7 @@ export interface ClaudeLaunch {
   conductor?: boolean
   trustFolder?: boolean
   projectRules?: string
-  workspaceText?: string
+  workspaceParts?: string[]
 }
 
 export interface MachineTab {
