@@ -459,6 +459,7 @@ import {
   butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
+  GUIDE_MOVED_NEWS,
   helperRoleOf,
   OwnerAsleep,
   pluginsChangedNews,
@@ -610,7 +611,8 @@ import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
 import {
   registerChannels as registerCronChannels,
-  pushState as pushCronState
+  pushState as pushCronState,
+  pushRunStarted
 } from '@plugins/scheduled-tasks/main/channels'
 import {
   registerChannels as registerInboxChannels,
@@ -3792,7 +3794,7 @@ app.whenReady().then(() => {
   })
   closeEachStoppingTabsEndpoint(moments)
   butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
-  followEachRun(moments, () => cronRunner)
+  followEachRun(moments, () => cronRunner, pushRunStarted(pluginIpc))
   closeRoomsOfEndedTabs(moments, {
     typing: () => discordTyping,
     relay: () => discordRelay,
@@ -3868,10 +3870,8 @@ app.whenReady().then(() => {
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     claudeAsks.delete(e.id)
-    const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
-    if (runStarted) sent.runStarted = true
     const accountIssue = shimAccountRefusals.get(e.id)
     shimAccountRefusals.delete(e.id)
     // ADR-0030
@@ -4233,7 +4233,7 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    news: TODO_NEWS,
+    news: [TODO_NEWS, GUIDE_MOVED_NEWS],
     noticeWhileOpen: async (text) =>
       (await handOver?.tell(
         butlerWhileOpen(),

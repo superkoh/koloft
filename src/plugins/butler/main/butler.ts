@@ -56,7 +56,7 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
-  news: OldConversationNews
+  news: readonly OldConversationNews[]
   noticeWhileOpen(text: string): Promise<boolean>
   pluginsOn(): PluginsOn
   pluginsNews(changed: PluginsOn): string
@@ -72,6 +72,24 @@ function knownListsOnDisk(
     Object.entries(s).flatMap(([knownBy, keys]) =>
       isKnownBy(knownBy) && Array.isArray(keys) ? [[knownBy, keys.filter(stillOnDisk)]] : []
     )
+  )
+}
+
+function knowing(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(news.map(({ knownBy }) => [knownBy, [...(s[knownBy] ?? []), key]]))
+}
+
+function forgetting(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    news.map(({ knownBy }) => [knownBy, (s[knownBy] ?? []).filter((k) => k !== key)])
   )
 }
 
@@ -277,7 +295,6 @@ export class Butler {
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
   private tellWhatChanged(key: string): void {
-    const { knownBy, on, text } = this.d.news
     const before = this.session.pluginsSeen
     const now = this.d.pluginsOn()
     const changed =
@@ -286,35 +303,36 @@ export class Butler {
             Object.entries(now).filter(([id, isOn]) => (before.on[id] ?? isOn) !== isOn)
           )
         : {}
-    const withNews = on() && !this.session[knownBy]?.includes(key)
+    const untoldNews = this.d.news.filter(
+      ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
+    )
     const parts = [
-      ...(withNews ? [text] : []),
+      ...untoldNews.map(({ text }) => text()),
       ...(Object.keys(changed).length > 0 ? [this.d.pluginsNews(changed)] : [])
     ]
     if (before?.key === key && parts.length === 0) return
     this.remember((s) => ({
       ...s,
       pluginsSeen: { key, on: now },
-      ...(withNews && { [knownBy]: [...(s[knownBy] ?? []), key] })
+      ...knowing(s, untoldNews, key)
     }))
     if (parts.length === 0) return
     void this.d
       .noticeWhileOpen(`${FROM_KOLOFT}${parts.join(' ')}`)
       .catch(() => false)
       .then((told) => {
-        if (!told) this.untold(key, changed, withNews)
+        if (!told) this.untold(key, changed, untoldNews)
       })
   }
 
-  private untold(key: string, changed: PluginsOn, withNews: boolean): void {
-    const { knownBy } = this.d.news
+  private untold(key: string, changed: PluginsOn, news: readonly OldConversationNews[]): void {
     this.remember((s) => {
       const seen = s.pluginsSeen
       const asBefore = Object.fromEntries(Object.entries(changed).map(([id, on]) => [id, !on]))
       return {
         ...s,
         ...(seen?.key === key && { pluginsSeen: { key, on: { ...seen.on, ...asBefore } } }),
-        ...(withNews && { [knownBy]: (s[knownBy] ?? []).filter((k) => k !== key) })
+        ...forgetting(s, news, key)
       }
     })
   }
@@ -376,9 +394,11 @@ export class Butler {
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
             pluginsSeen,
-            ...(this.d.news.on() && {
-              [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
-            })
+            ...knowing(
+              s,
+              this.d.news.filter(({ on }) => on()),
+              key
+            )
           }
     })
     this.pluginsSwitched()

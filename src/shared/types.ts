@@ -1071,7 +1071,6 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
-  runStarted?: true
   accountIssue?: string
 }
 

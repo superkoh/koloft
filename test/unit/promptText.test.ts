@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { agentGuide, ownerSays, projectRulesForTheButler } from '../../src/shared/agentGuide'
 import { koloftPrompt, workspaceInstructionsPart } from '../../src/plugins/sessions/api'
-import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
+import { butlerHelperRole, butlerRole, GUIDE_MOVED_NEWS } from '../../src/plugins/butler/api'
 import { ownerInstructionsPart } from '../../src/plugins/butler/prompts/role'
 import { DISCORD_BOUND } from '../../src/plugins/discord/api'
 import { todoMethod, TODO_NOTICE } from '../../src/plugins/todo/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
 import { DISCORD_SETUP_STEPS } from '../../src/plugins/discord/main/setupSteps'
+import {
+  asksWhatKoloftCannotSee,
+  inputNotProbed
+} from '../../src/plugins/sessions/main/sessionAsks'
+import { handoverPreamble } from '../../src/plugins/sessions/main/handoverPreamble'
 
 const PINNED = './prompt-text'
 const RULES = 'Docs: sonnet, low.\nNever start a Codex session for work in src/renderer.'
@@ -41,6 +46,7 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
     await pin(projectRulesForTheButler('koloft', RULES), 'butler/project-rules')
     await pin(ownerSays('«Merge it.»'), 'butler/message-for-the-owner')
     await pin(TODO_NOTICE, 'butler/todo-notice')
+    await pin(GUIDE_MOVED_NEWS.text(), 'butler/guide-moved-notice')
   })
 
   it('the butler and its helper when the owner wrote instructions, and the part a Claude Code butler gets beside its role', async () => {
@@ -50,6 +56,15 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
     )
     await pin(butlerHelperRole(BUTLER, OWNER_INSTRUCTIONS), 'butler/helper-owner-instructions')
     await pin(ownerInstructionsPart(OWNER_INSTRUCTIONS), 'butler/owner-instructions-part')
+  })
+
+  it('what Koloft tells a session about the butler outside the guide: a question only keys answer, and the note a session the butler started reads first', async () => {
+    await pin(asksWhatKoloftCannotSee(), 'butler/question-only-keys-answer')
+    await pin(inputNotProbed('Codex'), 'butler/question-not-probed')
+    await pin(
+      handoverPreamble({ name: BUTLER, id: 'butler-id', label: 'Claude', assist: true }),
+      'butler/handover-from-the-butler'
+    )
   })
 
   it("what koloft help prints, with and without a project's own rules for picking a model", async () => {
