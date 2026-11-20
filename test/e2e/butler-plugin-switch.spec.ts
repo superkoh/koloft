@@ -11,6 +11,7 @@ import {
   readAllCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   terminalText,
   waitBooted
 } from './helpers/p1'
@@ -38,13 +39,6 @@ function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
   return readAllCalls(env).filter(
     (c) => c.cwd === fs.realpathSync(path.join(env.userData, 'conductors', 'global'))
   )
-}
-
-function todoSavedOff(env: E2EEnv): boolean {
-  const saved = JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')) as {
-    pluginsOn?: Record<string, boolean>
-  }
-  return saved.pluginsOn?.todo === false
 }
 
 function fileText(env: E2EEnv, name: string): string {
@@ -158,7 +152,7 @@ test.describe('The butler while a plugin switch changes', () => {
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
 
       await switchPlugin(page, 'Todo', false)
-      await expect.poll(() => todoSavedOff(env)).toBe(true)
+      await expect.poll(() => settingsOnDisk(env).pluginsOn).toMatchObject({ todo: false })
       await page.waitForTimeout(BUTLER_WOULD_HAVE_HEARD_WITHIN_MS)
       expect(butlerCalls(env)).toHaveLength(1)
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)

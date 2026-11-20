@@ -11,7 +11,8 @@ import {
   agentPluginSays,
   docsSkillHandedOut,
   filesNamedUnder,
-  koloftSkillsUnder
+  koloftSkillsUnder,
+  PASSWORDS_IN_THE_SKILL
 } from './helpers/koloftSkills'
 import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import type { CodexWireLine } from './helpers/codex'
@@ -45,7 +46,6 @@ import {
 } from './helpers/remote'
 
 const BOUND_CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
-const PASSWORDS_IN_THE_SKILL = 'get a password, code or sign-in from the owner'
 
 async function sessionOf(page: Page, tabId: string): Promise<SessionInfo | undefined> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
@@ -199,7 +199,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
     })
 
   for (const backend of SESSION_BACKENDS)
-    test(`with Todo turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help and a koloft skill with no to-dos, and koloft todo is refused with the reason`, async ({
+    test(`with Todo turned off in Settings ▸ Plugins, koloft todo in a new ${backend} session on the machine is refused with the reason`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -213,13 +213,6 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         expect(await terminalText(page, tab)).toContain(
           'koloft: Todo is turned off in Settings ▸ Plugins.'
         )
-        expect(await koloftInSession(page, tab, 'help')).toBe('0')
-        const help = await terminalText(page, tab)
-        expect(help).toContain('koloft session new')
-        expect(help).not.toContain('koloft todo note')
-        const skills = koloftSkillsUnder(machineHome(env))
-        expect(skills.length).toBeGreaterThan(0)
-        for (const skill of skills) expect(skill).not.toContain('gather what waits on the owner')
       } finally {
         await quitAndClose(app)
       }
@@ -265,7 +258,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
   })
 
   for (const backend of SESSION_BACKENDS)
-    test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help and a koloft skill with no koloft gh or to-dos, and koloft gh and koloft todo are refused with the reason`, async ({
+    test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help and a koloft skill with no koloft gh, and koloft gh and koloft todo are refused with the reason`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -284,13 +277,9 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         const help = await terminalText(page, tab)
         expect(help).toContain('koloft session new')
         expect(help).not.toContain('koloft gh <gh command>')
-        expect(help).not.toContain('koloft todo note')
         const skills = koloftSkillsUnder(machineHome(env))
         expect(skills.length).toBeGreaterThan(0)
-        for (const skill of skills) {
-          expect(skill).not.toContain('koloft gh ')
-          expect(skill).not.toContain('gather what waits on the owner')
-        }
+        for (const skill of skills) expect(skill).not.toContain('koloft gh ')
       } finally {
         await quitAndClose(app)
       }

@@ -65,14 +65,18 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     }
   )
 
-  it('with Todo off, koloft help, the koloft skill and the butler lose the to-dos, pinned, and every session prompt stays as it was', async () => {
-    const sessions = SESSION_BACKENDS.map((b) => koloftPrompt(b))
+  it('with Todo off, the butler and its helper lose the to-dos, pinned, and every session prompt, koloft help and the koloft skill stay as they were', async () => {
+    const before = {
+      sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)),
+      help: agentGuide(),
+      skill: agentPluginFiles()['skills/koloft/SKILL.md']
+    }
     turnOff(['todo'])
-    expect(SESSION_BACKENDS.map((b) => koloftPrompt(b))).toEqual(sessions)
-    await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/todo-off/koloft-help.txt')
-    await expect(agentPluginFiles()['skills/koloft/SKILL.md']).toMatchFileSnapshot(
-      './prompt-text/todo-off/koloft-skill.md'
-    )
+    expect({
+      sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)),
+      help: agentGuide(),
+      skill: agentPluginFiles()['skills/koloft/SKILL.md']
+    }).toEqual(before)
     await expect(butlerRole(BUTLER, [DISCORD_BOUND])).toMatchFileSnapshot(
       './prompt-text/todo-off/butler-discord-bound.txt'
     )
