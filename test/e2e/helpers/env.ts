@@ -179,6 +179,7 @@ export function setupE2EEnv(): E2EEnv {
         !key.startsWith('PLAYWRIGHT_') &&
         !key.startsWith('PWTEST_') &&
         !key.startsWith('GIT_CONFIG_') &&
+        !key.startsWith('TMUX') &&
         key !== 'ANT_ACCOUNT' &&
         key !== 'CLAUDECODE' &&
         key !== 'CLAUDE_EFFORT' &&

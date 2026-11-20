@@ -102,6 +102,44 @@ describe('PtyManager per-tab environment', () => {
     const env = spawnedEnv()
     for (const k of Object.keys(POLLUTANTS)) expect(env[k]).toBeUndefined()
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
+    expect(Object.keys(env).some((k) => k.startsWith('ANTIGRAVITY_'))).toBe(false)
+  })
+
+  it('keeps the hook log and notice a local Antigravity launch passes and the managed hooks path a local Muse launch passes, while stripping inherited ones when a remote tab starts without processEnv', () => {
+    const mgr = new PtyManager()
+    const envOf = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
+      mocks.spawn.mockClear()
+      mgr.create(args)
+      return spawnedEnv()
+    }
+    const localAgy = envOf({
+      kind: 'agy',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      processEnv: {
+        PATH: '/usr/bin:/bin',
+        KOLOFT_AGY_LOG: '/tab/agy.jsonl',
+        KOLOFT_NOTICE: '/tab/pty-1.notice'
+      }
+    })
+    expect(localAgy.KOLOFT_AGY_LOG).toBe('/tab/agy.jsonl')
+    expect(localAgy.KOLOFT_NOTICE).toBe('/tab/pty-1.notice')
+    expect(localAgy.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+
+    const remoteAgy = envOf({ kind: 'agy', koloftShim: SHIM, cwd: os.tmpdir() })
+    expect(remoteAgy.KOLOFT_AGY_LOG).toBeUndefined()
+    expect(remoteAgy.KOLOFT_NOTICE).toBeUndefined()
+
+    const localMuse = envOf({
+      kind: 'muse',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      processEnv: { PATH: '/usr/bin:/bin', TBH_MANAGED_HOOKS_PATH: '/tab/hooks.json' }
+    })
+    expect(localMuse.TBH_MANAGED_HOOKS_PATH).toBe('/tab/hooks.json')
+
+    const remoteMuse = envOf({ kind: 'muse', koloftShim: SHIM, cwd: os.tmpdir() })
+    expect(remoteMuse.TBH_MANAGED_HOOKS_PATH).toBeUndefined()
   })
 
   it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a placeholder id such as a sleeping tab's asleep-1, which later runs hand out again, is never carried", () => {

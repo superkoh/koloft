@@ -10,6 +10,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
+import { MUSE_HOOKS_ENV } from './museHooks'
 import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
@@ -238,8 +239,9 @@ export class PtyManager extends EventEmitter {
       if (
         key.startsWith('CLAUDE_CODE_') ||
         key.startsWith('ANTIGRAVITY_') ||
-        (args.kind !== 'agy' && (key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||
-        (args.kind !== 'muse' && key === 'TBH_MANAGED_HOOKS_PATH') ||
+        ((args.kind !== 'agy' || !args.processEnv) &&
+          (key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||
+        ((args.kind !== 'muse' || !args.processEnv) && key === MUSE_HOOKS_ENV) ||
         key === 'CLAUDECODE' ||
         key === 'CLAUDE_EFFORT' ||
         key === 'CLAUDE_JOB_DIR' ||

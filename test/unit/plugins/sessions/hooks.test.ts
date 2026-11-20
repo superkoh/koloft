@@ -430,25 +430,15 @@ esac
     it.each(Object.keys(stops))(
       'a %s turn about to end is pushed once to go on by itself, then ends as usual, and the next turn is pushed once again; the butler is never pushed, and once the owner is back no turn is',
       (kind) => {
-        const hostLog = path.join(regDir, 'host-agy.jsonl')
-        fs.writeFileSync(hostLog, '')
-        const savedLog = process.env.KOLOFT_AGY_LOG
-        process.env.KOLOFT_AGY_LOG = hostLog
-        try {
-          const stop = stops[kind]
-          markOwnerAsleep(regDir, ['butler-tab'])
-          expect(JSON.parse(stop('worker', false))).toEqual(pushed)
-          expect(stop('worker', true)).toBe('')
-          expect(JSON.parse(stop('worker', false))).toEqual(pushed)
-          expect(stop('worker', true)).toBe('')
-          expect(stop('butler-tab', false)).toBe('')
-          markOwnerAsleep(regDir, null)
-          expect(stop('worker', false)).toBe('')
-          expect(fs.readFileSync(hostLog, 'utf8')).toBe('')
-        } finally {
-          if (savedLog === undefined) delete process.env.KOLOFT_AGY_LOG
-          else process.env.KOLOFT_AGY_LOG = savedLog
-        }
+        const stop = stops[kind]
+        markOwnerAsleep(regDir, ['butler-tab'])
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
+        expect(stop('butler-tab', false)).toBe('')
+        markOwnerAsleep(regDir, null)
+        expect(stop('worker', false)).toBe('')
       }
     )
 
@@ -630,7 +620,11 @@ esac
   })
 
   it('a payload-less hook invocation still writes a parseable record', () => {
-    const res = spawnSync(hookScript, [regDir, 'tabNP', 'stop'], { input: '', encoding: 'utf8' })
+    const res = spawnSync(hookScript, [regDir, 'tabNP', 'stop'], {
+      input: '',
+      encoding: 'utf8',
+      env: hookEnv()
+    })
     expect(res.status).toBe(0)
     const rec = readStatusLog('tabNP')[0] as unknown as { event: string; bgl?: string }
     expect(rec.event).toBe('stop')
@@ -1033,7 +1027,8 @@ esac
     const startOutput = (tab: string, source: string): string =>
       spawnSync(hookScript, [regDir, tab, 'start'], {
         input: JSON.stringify({ session_id: 's1', source }),
-        encoding: 'utf8'
+        encoding: 'utf8',
+        env: hookEnv()
       }).stdout
 
     it("a conductor tab's SessionStart hands claude its role as additional context, again after /clear", () => {
@@ -1375,6 +1370,7 @@ esac
       const res = spawnSync(hookScript, [regDir, 'tabNotLookedAfter', 'ask'], {
         input: JSON.stringify(ask),
         encoding: 'utf8',
+        env: hookEnv(),
         timeout: 5000
       })
       expect(res.status).toBe(0)
@@ -1400,6 +1396,7 @@ esac
         const res = spawnSync(hookScript, [regDir, tab, 'ask'], {
           input: JSON.stringify(ask),
           encoding: 'utf8',
+          env: hookEnv(),
           timeout: 5000
         })
         return res.status === 0 && res.stdout === '' && readStatusLog(tab).at(-1)?.event === 'ask'

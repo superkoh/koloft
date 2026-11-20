@@ -309,7 +309,7 @@ const AGY: CliSpec = {
   name: 'Antigravity',
   cliName: 'Antigravity CLI',
   notInstalled: 'Install the Antigravity CLI to start Antigravity sessions.',
-  environment: agyEnvironment,
+  environment: (env) => env,
   version: /^(\d+)\.(\d+)\.(\d+)/m,
   testedLine: TESTED_AGY_LINE,
   installedOffPath: (env) => path.join(env.HOME || '', '.local', 'bin', 'agy')
