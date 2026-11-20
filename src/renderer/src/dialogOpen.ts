@@ -3,6 +3,7 @@ export function aDialogIsOpen(): boolean {
 }
 
 const underAnAskBox = (at: Element): boolean =>
+  !at.closest('.modal-backdrop.in-session') &&
   !!at.closest('.term-wrap')?.querySelector(':scope > .modal-backdrop.in-session')
 
 const keysWentNowhere = (): boolean =>
