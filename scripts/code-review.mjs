@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 const RUNS = 2
 const LEVEL = 'high'
 const MODEL = 'claude-opus-5-5'
-const RUN_TIME_LIMIT_MINUTES = 20
+const RUN_TIME_LIMIT_MINUTES = 25
 const PARENT_SESSION_VARS = [
   'CLAUDECODE',
   'CLAUDE_EFFORT',

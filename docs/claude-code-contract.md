@@ -4273,8 +4273,8 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   with `Fix:` and the change to make. 2.1.329 also rewrote the step that gathers the
   diff (`git diff origin/HEAD...HEAD` unless a target is named). No darwin-arm64 build
   from 2.1.302 to 2.1.327 changes the recipe text. So the catches, costs and times above
-  describe the recipe up to 2.1.327 only, and that `high` still gets `medium`'s steps
-  on 2.1.328 and later is not checked. The binary's text alone misleads here: its model
+  describe the recipe up to 2.1.327 only (`high` on 2.1.329: below). The binary's text
+  alone misleads here: its model
   table gives `claude-opus-5` an `o5-bmin` "minimal prompt" at `medium`, yet
   `claude-opus-5-5` is sent the inline recipe.
 - **On 2.1.329 three `medium` runs caught 1 of the 12, where 2.1.302's caught 2.3–3.0.**
@@ -4304,7 +4304,7 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   word, with effort `high`; `xhigh` gets `xhigh effort → 6 inline angles (bugs +
   conventions) → dedup (no verify) → sweep → ≤15 findings` (5 correctness angles and 1
   conventions angle, up to 8 each, then one more pass for gaps), with effort `xhigh`.
-  Measured 2026-11-20 like the bullet above, on the same 8 PRs and 12 bugs, by the same
+  Measured 2026-11-19 like the bullet above, on the same 8 PRs and 12 bugs, by the same
   judge reading `medium`'s, `high`'s and `xhigh`'s findings together (`medium` still
   caught 1); `high` 3 runs per PR, `xhigh` 1. "×2" is every pair of the three runs.
 
