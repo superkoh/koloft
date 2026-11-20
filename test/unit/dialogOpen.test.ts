@@ -43,6 +43,8 @@ const domSettled = async (): Promise<void> => {
   await aTick()
 }
 
+const framesPass = (): Promise<void> => new Promise((r) => setTimeout(r, 100))
+
 const givingUp: (() => void)[] = []
 function focusOnce(el: HTMLElement): () => void {
   const giveUp = focusOnceNoDialogIsOpen(el)
@@ -171,7 +173,7 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).toBe(field)
   })
 
-  it('of two elements waiting behind one dialog, the ask box field takes the keys whichever began waiting first', async () => {
+  it('of two elements waiting behind one dialog, the ask box field takes the keys even when the other began waiting first', async () => {
     const { field } = terminalUnderAnAskBox()
     const page = button()
     const { backdrop } = dialogWithAField()
@@ -190,22 +192,37 @@ describe('focusOnceNoDialogIsOpen', () => {
     await domSettled()
     expect(document.activeElement).toBe(field)
     field.closest('.modal-backdrop')!.remove()
-    terminalInput.focus()
     await domSettled()
+    terminalInput.focus()
+    await framesPass()
     expect(document.activeElement).toBe(page)
   })
 
-  it('takes the keys back once an ask box that took them from it is gone', async () => {
-    const page = button()
-    focusOnce(page)
-    expect(document.activeElement).toBe(page)
+  it('leaves the keys in the terminal of another session that took them as the ask box went', async () => {
     const { field } = terminalUnderAnAskBox()
     field.focus()
-    await domSettled()
-    expect(document.activeElement).toBe(field)
+    const page = button()
+    focusOnce(page)
+    const other = terminalUnderAnAskBox()
+    other.field.closest('.modal-backdrop')!.remove()
+    field.closest('.modal-backdrop')!.remove()
+    other.terminalInput.focus()
+    await framesPass()
+    expect(document.activeElement).toBe(other.terminalInput)
+  })
+
+  it('leaves the keys in the terminal a dialog closing put them on, when the ask box went while the dialog was open', async () => {
+    const { terminalInput, field } = terminalUnderAnAskBox()
+    field.focus()
+    const page = button()
+    focusOnce(page)
+    const { backdrop } = dialogWithAField()
     field.closest('.modal-backdrop')!.remove()
     await domSettled()
-    expect(document.activeElement).toBe(page)
+    backdrop.remove()
+    terminalInput.focus()
+    await framesPass()
+    expect(document.activeElement).toBe(terminalInput)
   })
 
   it('leaves the keys in a terminal the owner went to after a dialog closed, when no ask box held it back', async () => {
