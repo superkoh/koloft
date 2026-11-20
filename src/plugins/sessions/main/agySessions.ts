@@ -278,9 +278,10 @@ interface AgyRun extends StoredRun {
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   streamShowsRunning?: boolean
-  streamRanSinceTurnEnd?: boolean
+  streamRunStarts?: number
+  terminalState?: string
   turnEndedOnTerminal?: boolean
-  nextTurnNotOnStreamYet?: boolean
+  terminalTurnStarts?: number
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
   transcript?: TranscriptFollower
 }
@@ -2594,14 +2595,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {
-    // AGY§16
-    if (status.state === 'done' || status.state === 'error') {
+    // AGY§10 AGY§16
+    const declinedAsk = status.state === 'idle' && run.terminalState === 'blocked'
+    if (status.state === 'done' || status.state === 'error' || declinedAsk) {
       run.turnEndedOnTerminal = true
-      run.streamRanSinceTurnEnd = false
     } else if (status.state === 'working') {
-      if (run.turnEndedOnTerminal) run.nextTurnNotOnStreamYet = !run.streamRanSinceTurnEnd
+      if (run.turnEndedOnTerminal)
+        run.terminalTurnStarts = Math.min(
+          (run.terminalTurnStarts ?? 0) + 1,
+          (run.streamRunStarts ?? 0) + 1
+        )
       run.turnEndedOnTerminal = false
     }
+    run.terminalState = status.state
     if (status.state === 'idle' || status.state === 'error') run.mainTurnActive = false
     if (status.state === 'working') run.exitedAskToIdle = false
     const turn = this.deps.runtime.turn(run.tabId)
@@ -2764,7 +2770,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run.api || !id || run.stream?.conversationId === id) return
     run.stream?.close()
     run.streamShowsRunning = undefined
-    run.nextTurnNotOnStreamYet = false
+    run.streamRunStarts = 0
+    run.terminalTurnStarts = 0
+    run.turnEndedOnTerminal = false
     const stream = run.api.streamState(id, (message) => {
       if (
         this.runs.get(run.tabId) !== run ||
@@ -2794,18 +2802,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const idleNow = st === 'CASCADE_RUN_STATUS_IDLE'
       // AGY§16
       const endsAnEarlierTurn =
-        idleNow && !!run.nextTurnNotOnStreamYet && run.streamShowsRunning !== undefined
-      if (st && !idleNow && run.streamShowsRunning === false) {
-        run.nextTurnNotOnStreamYet = false
-        run.streamRanSinceTurnEnd = true
-      }
+        idleNow &&
+        run.streamShowsRunning !== undefined &&
+        (run.terminalState === 'working' || run.terminalState === 'blocked') &&
+        (run.terminalTurnStarts ?? 0) > (run.streamRunStarts ?? 0)
+      if (st && !idleNow && run.streamShowsRunning === false)
+        run.streamRunStarts = (run.streamRunStarts ?? 0) + 1
       if (st) run.streamShowsRunning = !idleNow
       if (idleNow && !run.remote) {
         run.log.read()
         if (this.runs.get(run.tabId) !== run || run.info?.nativeSessionId !== id) return
       }
       if (update.backgroundTasksTotal === 0) {
-        this.applyApiTasks(run, id, [], true, idleNow)
+        this.applyApiTasks(run, id, [], true, idleNow && !endsAnEarlierTurn)
       } else if (update.backgroundTasks !== undefined) {
         if (
           update.backgroundTasksTotal === undefined ||
@@ -2819,7 +2828,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
               conversationId: t.conversationId || id
             })),
             true,
-            idleNow
+            idleNow && !endsAnEarlierTurn
           )
         } else if (run.commands?.size || run.schedules?.size) {
           this.askCommands(run)

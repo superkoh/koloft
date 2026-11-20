@@ -1686,7 +1686,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
   })
 
-  it('a next turn the stream shows running before the terminal does is still ended by its own stream IDLE', async () => {
+  it('a next turn the stream shows running before the terminal has even ended the last one is still ended by its own stream IDLE', async () => {
     apiAnswers = true
     let pushStream!: (msg: unknown) => void
     streamHandler = (res) => {
@@ -1697,7 +1697,6 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(pushStream).toBeDefined())
     say(id, state('working'))
     pushStream({ update: { conversationId: A, status: 'CASCADE_RUN_STATUS_RUNNING' } })
-    say(id, state('done'))
     pushStream({
       update: {
         conversationId: A,
@@ -1730,6 +1729,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
       }
     })
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    say(id, state('done'))
     say(id, state('working'))
     expect(runtime.statusOf(id)).toBe('working')
 
