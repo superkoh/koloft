@@ -4217,7 +4217,11 @@ app.whenReady().then(() => {
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
     news: TODO_NEWS,
     noticeWhileOpen: async (text) =>
-      (await handOver?.tell(butlerWhileOpen(), text, discordRelay?.quietMarks)) ?? false,
+      (await handOver?.tell(
+        butlerWhileOpen(),
+        text,
+        discordOn() ? discordRelay?.quietMarks : undefined
+      )) ?? false,
     pluginsOn: switchesThatAct,
     pluginsNews: (changed) =>
       pluginsChangedNews(

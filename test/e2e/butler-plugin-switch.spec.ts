@@ -8,10 +8,13 @@ import {
   butlerSessionOnDisk,
   centerTerm,
   landsOnTheButler,
+  readAllCalls,
   runIn,
+  sendShortcut,
   terminalText,
   waitBooted
 } from './helpers/p1'
+import { agentPluginSays } from './helpers/koloftSkills'
 import { switchPlugin } from './helpers/extensions'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId } from '../../src/shared/types'
@@ -24,6 +27,13 @@ const INSTALL: Record<BackendId, (env: E2EEnv) => void> = {
 }
 
 const TOLD_TODO_IS_OFF = 'TheownerchangedSettings▸Pluginsafterthisconversationbegan:Todoisnowoff.'
+const BUTLER_WOULD_HAVE_HEARD_WITHIN_MS = 4000
+
+function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
+  return readAllCalls(env).filter(
+    (c) => c.cwd === fs.realpathSync(path.join(env.userData, 'conductors', 'global'))
+  )
+}
 
 function fileText(env: E2EEnv, name: string): string {
   const file = path.join(env.home, name)
@@ -69,4 +79,44 @@ test.describe('The butler while a plugin switch changes', () => {
         await quitAndClose(app)
       }
     })
+
+  // CC§23
+  test('a butler that is closed when Todo is switched off is not started for it, and is told once its conversation is resumed', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await butlerRow(page).click()
+      await landsOnTheButler(page)
+      await expect
+        .poll(() => butlerSessionOnDisk(env)?.sessionIds.length ?? 0, { timeout: 60_000 })
+        .toBe(1)
+      await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+
+      await switchPlugin(page, 'Todo', false)
+      await expect
+        .poll(() => agentPluginSays(env.userData, 'gather what waits on the owner'))
+        .toBe(false)
+      await page.waitForTimeout(BUTLER_WOULD_HAVE_HEARD_WITHIN_MS)
+      expect(butlerCalls(env)).toHaveLength(1)
+      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+
+      await butlerRow(page).click()
+      await landsOnTheButler(page)
+      await expect.poll(() => butlerCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(butlerCalls(env)[1].argv).toContain('--resume')
+      const tab = (await butlerRow(page).getAttribute('data-tab-id'))!
+      await expect
+        .poll(() => heardBy(page, env, tab), { timeout: 60_000 })
+        .toContain(TOLD_TODO_IS_OFF)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })
