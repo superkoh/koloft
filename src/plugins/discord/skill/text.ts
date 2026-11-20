@@ -11,7 +11,6 @@ export const TEXT: readonly TextBlock[] = [
     slot: 'koloft-help-diff',
     text: ' On Discord, as with koloft open, the changes go as a picture, with the whole diff as a file when it is long.'
   },
-  { slot: 'koloft-help-other-ways-to-talk', text: ' or through Discord' },
   { slot: 'koloft-help-session-title', text: ' and Discord' },
   {
     slot: 'koloft-help-command-output',

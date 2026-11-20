@@ -4,6 +4,10 @@ import { SESSION_BACKENDS } from '@shared/sessionBackend'
 export const TEXT: readonly TextBlock[] = [
   { slot: 'koloft-skill-cron', text: 'list, add, change or run scheduled tasks, ' },
   {
+    slot: 'owners-ai-folder-koloft',
+    text: ' Your folder is no workspace, so give every koloft cron command --workspace <workspace>.'
+  },
+  {
     slot: 'koloft-help-rule-cron',
     text: `
 3. Scheduled tasks: before you add or change one, tell the owner how often it runs, what it does and which permission it gets. Before you remove one, run "koloft cron show" to be sure it is the right one.`
@@ -18,7 +22,7 @@ A scheduled task (cron) is a job that starts a new session by itself on a timer.
 
 A task's name may have spaces: put it in quotes, like "Nightly tests". If you forget, Koloft still finds it: the words that stand together, with no option or -- between them, are the name.
 
-Every cron command works on this session's workspace, or on the one --workspace <workspace> names (its folder name or full path). The butler has no workspace of its own, so it always gives --workspace.
+Every cron command works on this session's workspace, or on the one --workspace <workspace> names (its folder name or full path).
 
 When it runs: --every 30m, --every 2h, --daily 09:00, --weekly mon,wed,fri@09:00, --once 2026-10-25@14:00, or --after 2h
     --every runs on the clock: every 2h is 0:00, 2:00, 4:00 and so on.

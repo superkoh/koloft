@@ -458,6 +458,7 @@ import {
   butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
+  GUIDE_MOVED_NEWS,
   helperRoleOf,
   OwnerAsleep,
   pluginsChangedNews,
@@ -4218,7 +4219,7 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    news: TODO_NEWS,
+    news: [TODO_NEWS, GUIDE_MOVED_NEWS],
     noticeWhileOpen: async (text) =>
       (await handOver?.tell(
         butlerWhileOpen(),

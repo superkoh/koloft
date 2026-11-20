@@ -28,6 +28,9 @@ const INSTALL: Record<BackendId, (env: E2EEnv) => void> = {
 
 const TOLD_TODO_IS_OFF = 'TheownerchangedSettings▸Pluginsafterthisconversationbegan:Todoisnowoff.'
 const BUTLER_WOULD_HAVE_HEARD_WITHIN_MS = 4000
+const KNOWN_BY_NEWER_KOLOFT = 'knowsItsOwnLines'
+const TOLD_ITS_OWN_LINES =
+  'Kolofttookthelinesthatareonlyforyououtofkolofthelp,soitnolongersaysthem.Heretheyare:koloftsessionnewwith--workspace'
 
 function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
   return readAllCalls(env).filter(
@@ -75,6 +78,51 @@ test.describe('The butler while a plugin switch changes', () => {
         await expect
           .poll(() => heardBy(page, env, tab), { timeout: 60_000 })
           .toContain(TOLD_TODO_IS_OFF)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const backend of SESSION_BACKENDS)
+    // CC§23 CODEX§17 MUSE§9 AGY§8
+    test(`a ${backend} butler resumed on a conversation from before koloft help stopped carrying the lines only for it is told them in its own tab`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      INSTALL[backend](env)
+      seedSettings(env, { hintsOff: true, assist: { backend } })
+      const first = await launchApp(env)
+      try {
+        const page = await first.firstWindow()
+        await waitBooted(page)
+        await butlerRow(page).click()
+        await landsOnTheButler(page)
+        // AGY§8
+        if (backend === 'agy') await runIn(page, centerTerm(page), 'hello')
+        await expect
+          .poll(() => butlerSessionOnDisk(env)?.knowsItsOwnLines?.length ?? 0, { timeout: 60_000 })
+          .toBe(1)
+        await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      } finally {
+        await quitAndClose(first)
+      }
+      seedSettings(env, {
+        butlerSession: Object.fromEntries(
+          Object.entries(butlerSessionOnDisk(env)!).filter(([key]) => key !== KNOWN_BY_NEWER_KOLOFT)
+        )
+      })
+
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await butlerRow(page).click()
+        await landsOnTheButler(page)
+        const tab = (await butlerRow(page).getAttribute('data-tab-id'))!
+        await expect
+          .poll(() => heardBy(page, env, tab), { timeout: 60_000 })
+          .toContain(TOLD_ITS_OWN_LINES)
+        expect(butlerCalls(env)).toHaveLength(2)
       } finally {
         await quitAndClose(app)
       }
