@@ -18,9 +18,9 @@ it is done.
   manifest: by the code that takes it, which throws an error, or by a unit test.
 - An optional plugin has a switch in Settings ▸ Plugins. Turning it off takes its text,
   commands, moments, UI and running parts away ([Switches](#switches)).
-- The shape of the manifest and of every registry is pinned for format version 1. Changing it
-  fails Koloft's typecheck until the change is pinned or the version goes up
-  ([Format version](#format-version)).
+- The shape of the manifest and of what a plugin registers through is pinned for format
+  version 1. Changing it fails Koloft's typecheck until the change is pinned or the version
+  goes up ([Format version](#format-version)).
 - A plugin imports only core, its own folder, and the `api.ts` or `windowApi.ts` of plugins it
   says it needs. Much code does not follow this rule yet; a check lists each case
   ([The import rule](#the-import-rule)).
@@ -173,7 +173,7 @@ the types a plugin registers with.
 | `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks |
 | `src/core/ownerInstructions.ts` | the versions of the owner's Instructions and the edits an agent may propose to them |
 | `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in |
-| `src/core/gh.ts` | what running `gh` gives back, for core and plugins alike: `GhResult`, `Gh`, `GH_SIGNED_OUT`, `slug`, `ghJsonArray`, and the shape of the e2e GitHub fixture (`GithubFixture`) |
+| `src/core/gh.ts` | what running `gh` gives back, for core and plugins alike: `GhResult`, `Gh`, `GH_SIGNED_OUT`, `slug`, `ghJsonArray`, and the shape of the GitHub fixture that Koloft's end-to-end tests use (`GithubFixture`) |
 | `src/core/worktree.ts` | `GitOut`, `branchExists` and `TidyResult`, for the worktree git helpers |
 | `src/core/typeKeys.ts` | `typeKeys`, `pressesAKey`, `clicksTheMouse` and their helpers: what Koloft types into a session's terminal |
 | `src/core/transcriptPlaces.ts` | `TranscriptPlaces`: where a session's transcript is, on this Mac or on its machine |
@@ -344,9 +344,10 @@ fills:
 
 Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
 
-This is the Todo plugin's `prompts/text.ts`. Its first block adds a sentence to the part of
-the butler's prompt about the `koloft` command; its second ends a sentence of the butler's
-away digest:
+These are the Todo plugin's blocks, from its `prompts/text.ts` (the file also exports the
+notice an old butler conversation gets, [Main-process parts](#main-process-parts)). The first
+adds a sentence to the part of the butler's prompt about the `koloft` command; the second
+ends a sentence of the butler's away digest:
 
 ```ts
 import type { TextBlock } from '@core/plugin'
@@ -549,7 +550,8 @@ A key registered with `setting` has these parts:
 clean, reset and save the plugins' settings beside the app's own. `registerSettings` throws
 when settings are given for a plugin not on the list, a plugin registers a key its manifest
 does not list or lists a key it does not register, two plugins list one key, or a key hands
-records to a key that is neither its own plugin's nor one of a plugin in its own `needs`.
+records to a key no plugin registers, or to one that is neither its own plugin's nor one of a
+plugin in its own `needs`.
 `test/unit/pluginSettings.test.ts` holds these rules. `src/shared/types.ts` still re-exports
 the butler's and Discord's setting types for the app's `Settings` shape.
 
@@ -714,11 +716,11 @@ it. `listen` returns a function that stops listening. `announce` rejects a momen
 announces.
 
 - **Order.** Plugins hear a moment in the order of the list of plugins, and one plugin in the
-  order it listened. A listener that must hear after a later plugin passes that plugin's id
-  in `listen`'s fourth argument, `afterPlugins`; an id there that is not on the list throws.
-  The Inbox and the butler pass `sessions` for `turn-ended`, as they read whether Sessions
-  core handed the turn to someone else; Discord passes `passwords` for `tab-exited`, so a
-  tab's password cards end before its Discord room closes.
+  order it listened. A listener that must hear after a plugin later on the list passes that
+  plugin's id in `listen`'s fourth argument, `afterPlugins`; an id there that is not on the
+  list throws. Discord passes `passwords` for `tab-exited`, so a tab's password cards end
+  before its Discord room closes. (The Inbox and the butler pass `sessions` for `turn-ended`;
+  as Sessions core is first on the list, that changes nothing today.)
 - **Answers.** Every listener has heard the moment by the time `announce` settles. A listener
   may hand back a sentence; `announce` resolves to every sentence, in listener order.
 - **Failures.** A listener that throws or rejects does not stop the others. Once all have
@@ -787,9 +789,10 @@ The window reads slots in three ways, in `src/renderer/src/pluginUi.tsx`:
 - `useFillsOf(slot, (fill, on) => …)` is for a slot whose fills are React hooks and that an
   optional plugin fills: `row-extras`, `owner-asks`, `worktree-items` and `workbench-part`.
   It calls every fill's hook on each draw, so a switch never changes how many hooks run. For
-  a fill of a plugin that is off, `on` is false, and the caller gives its hook empty input so
-  it reads nothing (the Workbench passes `visible: false`, the New Worktree Session dialog
-  `isGit: false`); its result is dropped.
+  a fill of a plugin that is off, `on` is false and its result is dropped. Two callers also
+  give such a hook empty input, so it reads nothing: the Workbench passes `visible: false`
+  for `workbench-part`, and the New Worktree Session dialog `isGit: false` for
+  `worktree-items`. The callers of `row-extras` and `owner-asks` run the hook as usual.
 
 When the owner turns a plugin on or off, the butler is told once, in a message put together
 from `butler-plugins-changed`. Sessions started afterwards get the new text; sessions already
@@ -807,7 +810,10 @@ code answers. A part that sends to the window takes `push` as a dep
 ([IPC channels](#ipc-channels)).
 
 A part may own its plugin's command and follow its plugin's switch. GitHub's
-`startGithubMain` registers `koloft gh`, takes core's git-account calls as deps, and has
+`startGithubMain` registers `koloft gh`, takes core's git-account calls as deps, and gets
+each workspace's repository and `gh` runner as a `RepoSource` from the app's `GithubRepos`
+(`src/main/githubRepos.ts`), which stays outside the plugin because closing a worktree needs
+its "is this branch merged" query. It has
 `followSwitch()`, which `src/main/index.ts` calls whenever the switches change: it starts or
 stops the sweep of issue and pull request counts. The counts reach the sidebar's workspace
 rows through the `pluginData` dep of Sessions core's workspaces, only while the sweep runs.
@@ -848,12 +854,15 @@ version, would no longer mean the same thing:
   or would mean something else. Bump.
 
 `test/unit/pluginFormat.test.ts` holds this rule. It pins, for each format version, the
-shape of the manifest and its parts, of `Commands.register` and a command handler, of
-`MainIpc` and `PreloadIpc`, of `setting` and a setting key, of `PluginUi`, `slot` and `fill`,
-of `Moments.listen` and `announce`, of what each moment carries, and of `composePrompt` and
-`fillSlots`; and the name of every moment. A change to any of them fails Koloft's typecheck
-(`npm run typecheck`), or the unit test for a moment's name, until whoever made it does one
-of two things:
+shape of the manifest and its parts and of `eachAgent`; of `Commands.register`, a command
+handler, `answered` and `refused`; of `MainIpc` and `PreloadIpc`; of `setting`, a setting key
+and `SettingKeys`; of `PluginUi`, `slot` and `fill`; of `Moments.listen` and `announce`, and
+of what each moment carries; of `composePrompt`, `fillSlots` and `pluginStateOf`; and the
+name of every moment. The pin holds its own copy of each shape these use, such as the agent
+ids and what a turn holds, so a change made elsewhere in the app trips it too; only the
+session a command's caller carries (`SessionInfo`) is pinned by name. A change to any of them
+fails Koloft's typecheck (`npm run typecheck`), or the unit test for a moment's name, until
+whoever made it does one of two things:
 
 - for a change the rule above lets through without a bump, adds it to the pin of the current
   version;
@@ -861,7 +870,7 @@ of two things:
 
 The same test fails when a built-in plugin uses a manifest field, command, setting key, UI
 entry or place, Assist job, tip, moment, text slot, fact or window slot that this page does
-not name.
+not name in the section about that kind of registration.
 
 Text slots, values, facts and the window's slots are not pinned: whether they stay stable for
 plugins written outside Koloft is not decided.
@@ -891,13 +900,13 @@ breaking the rule ([Not built or not decided](#not-built-or-not-decided)).
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 661 imports, in five kinds:
+page was last checked against, it listed 662 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
 | names a plugin outside the lists | 160 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
 | imports `src/shared/` | 266 | plugin code that imports `src/shared/`, which is not core |
-| imports app code outside `src/core` | 225 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
+| imports app code outside `src/core` | 226 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |
 
