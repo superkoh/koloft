@@ -14,6 +14,7 @@ import {
 import {
   closeActiveTab,
   picksFor,
+  settingsOnDisk,
   startSessionIn,
   terminalText,
   waitBooted,
@@ -42,6 +43,7 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
+import type { InstructionsVersion } from '../../src/core/ownerInstructions'
 import {
   CHANGED,
   CHANGED_MEANWHILE,
@@ -258,6 +260,33 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
       expect(card.content).toMatch(/^❓ \*\*Tidy \(Alfred's helper\)\*\* is waiting for you\./)
       press(fake, card, 'Change them')
       await expect.poll(() => butlerVersions(env).at(-1)).toMatchObject({ text: line, by: 'Tidy' })
+      await endsAs(fake, card, CHANGED)
+    })
+  })
+
+  test('a session with no room proposes a line for the instructions for every workspace: its card in the butler’s channel says so in its first sentence and in its last, and Change them writes that block, not the workspace’s', async ({
+    env
+  }) => {
+    seedBinding(env)
+    await withOneSession(env, async (page, fake) => {
+      const line = 'Answer every message in Chinese.'
+      const session = await liveSession(page, (s) => !!s.sessionId)
+      await typeIn(page, session.tabId, `/koloft instructions add --every-workspace -- ${line}`)
+      const card = await cardFor(fake, line)
+      expect(card.content.split('\n')[0]).toContain('ws-a')
+      expect(card.content).toMatch(
+        /wants to change the instructions for every workspace: 1 line added\./
+      )
+      expect(card.content).toContain(
+        '-# Nothing changes until you agree. Sessions started afterwards, in every workspace that does not leave them out, follow the new text.'
+      )
+      press(fake, card, 'Change them')
+      await expect
+        .poll(() =>
+          (settingsOnDisk(env).everyWorkspaceInstructions as InstructionsVersion[]).at(-1)
+        )
+        .toMatchObject({ text: line })
+      expect(versionsOnDisk(env).at(-1)?.text).toBe(WRITTEN)
       await endsAs(fake, card, CHANGED)
     })
   })

@@ -6,6 +6,8 @@ export interface InstructionsVersion {
 
 export const OWNER = 'owner'
 
+export type InstructionsSaveResult = { ok: true } | { ok: false; error: string; inUse?: string }
+
 const VERSIONS_KEPT = 20
 
 const UNSEEN_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f]/g

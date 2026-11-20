@@ -1936,6 +1936,20 @@ real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-us
   `gpt-6-luna` inside the same wait. That a plan without `gpt-6.1-sol` words its
   refusal the same way is **not probed yet** (section 14).
 
+**A ChatGPT login refreshes only within 5 minutes of its access token's expiry, and a
+refresh token works once.** Read 2026-11-19 from the 0.169.0 source
+(`codex-rs/login/src/auth/manager.rs` at tag `rust-v0.169.0`): when the access token is a
+JWT with an `exp`, Codex refreshes it once `exp` is within
+`CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES = 5` of now (`ProactiveExpiry`); only a token
+without `exp` falls back to `last_refresh` older than `TOKEN_REFRESH_INTERVAL = 8` days.
+The same file has the refusal "Your access token could not be refreshed because your
+refresh token was already used. Please log out and sign in again.", so two homes holding
+copies of one login sign each other out when either refreshes. Measured the same day on
+the two logins in the installed Koloft's `codex-homes` (claims decoded, no token
+printed): each access token was issued at `last_refresh` and expires 240 h later; the
+`id_token` lives 1 h. The enabled login had not refreshed 9 days after `last_refresh`,
+past the 8-day mark, as the `exp` rule predicts. Not probed: a refresh forced by a 401.
+
 ## 16. Codex on a remote machine
 
 **Checked on 2026-10-16.** On the Mac: standalone Codex CLI 0.162.0 (`codex-cli 0.162.0`).
@@ -2202,6 +2216,11 @@ from the Mac, the script copied in with `docker cp`. By hand: a stand-in Respons
 entry in `config`, and a small WebSocket client in the container on the server's socket
 (`initialize`, `thread/start`, `turn/start`) instead of the TUI. The one `/v1/responses`
 request held the whole text as one exact string (SHA-256 matched).
+2026-11-20, the same version, lab and way, with `koloftPrompt('codex')` and two blocks of
+9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it, made of lines
+holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`, `$(id)`, curly quotes
+and an emoji (23,942 bytes in all): the one `/v1/responses` request held it as one exact
+string, last in its item, 2 of 2 runs, each on a new tab.
 
 Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
@@ -2227,8 +2246,15 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   20,014 characters (22,438 bytes) the second `developer` item of the request held the
   text as one exact string (3 runs at 20 KB). At 30,000 and 45,000 characters it did
   too, once each; at 60,000 the end marker arrived but the exact-string match failed in 3
-  of 4 runs, not looked into. `exec`, not the app-server Koloft runs; that the same `-c`
-  parses the same way there is inferred, not checked.
+  of 4 runs, not looked into. `exec`, not the app-server Koloft runs.
+- **The app-server Koloft runs takes a `-c developer_instructions=` of about 24 KB whole.**
+  2026-11-20, Codex CLI 0.169.0 (Homebrew, macOS), `codex app-server --stdio` as Koloft
+  starts it locally, with a scratch `CODEX_HOME` and `HOME`, a `model_providers` entry
+  pointing at a local stand-in Responses server that saved each request body, and a
+  JSON-RPC client sending `initialize`, `thread/start` and `turn/start`. The text was
+  three blocks of 4,300, 10,150 and 10,150 bytes, made of lines holding Chinese, `"`,
+  `$HOME`, backticks, `\`, `{{x}}`, `'`, `%s`, `!!`, a tab and an emoji, joined by blank
+  lines (24,604 bytes): the turn's one request held it as one exact string, 3 of 3 runs.
 - **The developer instructions are saved with the thread and outlive a resume without
   them**, and **Codex names a thread from its first message, instructions left out.**
   Checked on 2026-10-07 with Codex CLI 0.159.3 and a real model: an app-server started

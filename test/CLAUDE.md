@@ -351,7 +351,9 @@ first of these that can do it; only a step none of them can do goes to the owner
 1. The hand-test sandbox, `npm run handtest` (test/handtest/sandbox.ts; its usage text
    says how). It lends a Claude account from the installed Koloft: the token goes into
    a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
-   Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
+   Claude tabs run there; local Codex tabs only when `start`'s `codex` says `lent:` (a
+   Codex login is lent only while sharing it cannot sign the installed Koloft out,
+   CODEX§15); a remote Claude tab with `--remote`; a remote
    Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
    it cannot reach OpenAI (CODEX§16). `--discord` puts it on the real Discord as the dev
    build's test bot, so the owner's only step is a press on the phone. Drive it with
