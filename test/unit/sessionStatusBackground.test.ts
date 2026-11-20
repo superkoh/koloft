@@ -1244,6 +1244,22 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   })
 
+  it('a type monitor Koloft already knows as a Monitor is parked whatever its id starts with', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabL1k', cwd, initialLines(cwd))
+    tracker.setStatus('tabL1k', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_mon3', cwd, 'watch.sh', 'Monitor'),
+      monitorAckRec('toolu_mon3', cwd)
+    ])
+    await tracker.reportTurnEnd('tabL1k', [{ id: 'mtoolu_mon3', type: 'monitor' }])
+    expect(status(tracker, 'tabL1k')).toBe('waiting')
+    expect(parked(tracker, 'tabL1k')).toEqual([
+      { id: 'mtoolu_mon3', kind: 'monitor', label: 'watch.sh', state: 'waiting' }
+    ])
+  })
+
   it('a type monitor under a b id is parked even when its spawn was never seen, labelled by its id', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()

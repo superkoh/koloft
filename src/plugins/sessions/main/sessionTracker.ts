@@ -756,22 +756,16 @@ export class SessionTracker extends SessionRuntime {
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
-    const parkMonitor = (task: ReportedTask): void => {
-      parked.push({
-        id: task.id,
-        kind: 'monitor',
-        label: t.ledger.labelOf(task.id) ?? task.id,
-        state: 'waiting'
-      })
-    }
     for (const task of t.reported) {
-      if (task.type === 'monitor') {
-        if (task.id.startsWith(MONITOR_SCRIPT_ID_PREFIX)) parkMonitor(task)
+      const isMonitor =
+        ((task.type === 'shell' || task.type === 'monitor') && t.ledger.isMonitor(task.id)) ||
+        (task.type === 'monitor' && task.id.startsWith(MONITOR_SCRIPT_ID_PREFIX))
+      if (isMonitor) {
+        const label = t.ledger.labelOf(task.id) ?? task.id
+        parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
       } else if (task.type === 'shell') {
         const label = t.ledger.labelOf(task.id) ?? task.id
-        if (t.ledger.isMonitor(task.id)) {
-          parkMonitor(task)
-        } else if (!procs) {
+        if (!procs) {
           trusted = true
           run(task, 'command', label)
         } else {
