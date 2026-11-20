@@ -1,5 +1,6 @@
+import { versionsStore } from '@core/ownerInstructions'
 import type { InstructionsBlock } from '@plugins/sessions/api'
-import { instructionsOf, savedInstructions } from '../shared/instructions'
+import { INSTRUCTIONS_MAX_BYTES } from '../shared/instructions'
 import type { ButlerSetting } from '../shared/types'
 
 export const butlersBlock = (
@@ -8,17 +9,10 @@ export const butlersBlock = (
   now: () => number
 ): InstructionsBlock => ({
   name: `${butler().name}'s instructions`,
-  read: async () => instructionsOf(butler()),
-  check: async (text) => {
-    const saved = savedInstructions(butler(), text, '', now())
-    if (!saved.ok) throw new Error(saved.error)
-  },
-  writeIfStill: async (before, after, by) => {
-    const was = butler()
-    if (instructionsOf(was) !== before) return false
-    const saved = savedInstructions(was, after, by, now())
-    if (!saved.ok) throw new Error(saved.error)
-    save(saved.butler)
-    return true
-  }
+  ...versionsStore(
+    () => butler().instructions,
+    (instructions) => save({ ...butler(), instructions }),
+    INSTRUCTIONS_MAX_BYTES,
+    now
+  )
 })

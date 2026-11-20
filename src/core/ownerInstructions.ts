@@ -56,6 +56,70 @@ export function textTheOwnerChose(inUse: string, opened: string, typed: string):
   return typed
 }
 
+export type VersionsSaved =
+  | { ok: true; versions: InstructionsVersion[] | undefined }
+  | Exclude<InstructionsSaveResult, { ok: true }>
+
+export function savedVersions(
+  versions: readonly InstructionsVersion[] | undefined,
+  raw: string,
+  by: string,
+  at: number,
+  maxBytes: number
+): VersionsSaved {
+  const text = cleanInstructions(raw)
+  const over = instructionsBytes(text) - maxBytes
+  if (over > 0) return { ok: false, error: overTheLimit(over) }
+  return { ok: true, versions: withNewVersion(versions, text, by, at) }
+}
+
+export function versionsSavedByTheOwner(
+  versions: readonly InstructionsVersion[] | undefined,
+  typed: string,
+  opened: string,
+  at: number,
+  maxBytes: number
+): VersionsSaved {
+  try {
+    const text = textTheOwnerChose(
+      textInUse(versions),
+      cleanInstructions(opened),
+      cleanInstructions(typed)
+    )
+    return savedVersions(versions, text, OWNER, at, maxBytes)
+  } catch (error) {
+    if (!(error instanceof ChangedWhileOpen)) throw error
+    return { ok: false, error: error.message, inUse: error.inUse }
+  }
+}
+
+export interface InstructionsStore {
+  read(): Promise<string>
+  check(text: string): Promise<void>
+  writeIfStill(before: string, after: string, by: string): Promise<boolean>
+}
+
+export const versionsStore = (
+  versions: () => readonly InstructionsVersion[] | undefined,
+  save: (versions: InstructionsVersion[]) => void,
+  maxBytes: number,
+  now: () => number
+): InstructionsStore => ({
+  read: async () => textInUse(versions()),
+  check: async (text) => {
+    const saved = savedVersions(versions(), text, '', now(), maxBytes)
+    if (!saved.ok) throw new Error(saved.error)
+  },
+  writeIfStill: async (before, after, by) => {
+    const was = versions()
+    if (textInUse(was) !== before) return false
+    const saved = savedVersions(was, after, by, now(), maxBytes)
+    if (!saved.ok) throw new Error(saved.error)
+    if (saved.versions) save(saved.versions)
+    return true
+  }
+})
+
 export const ADD_A_LINE = 'add'
 export const REPLACE_THE_TEXT = 'set'
 export type AgentEdit = typeof ADD_A_LINE | typeof REPLACE_THE_TEXT

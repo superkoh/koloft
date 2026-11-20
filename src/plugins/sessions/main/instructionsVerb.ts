@@ -12,18 +12,16 @@ import {
   REPLACE_THE_TEXT,
   cleanInstructions,
   editedText,
-  type AgentEdit
+  type AgentEdit,
+  type InstructionsStore
 } from '@core/ownerInstructions'
 import type { SessionInfo } from '@shared/types'
 import { resolveWorkspace, type PinnedWorkspace } from './placedRows'
 import type { InstructionAsk, OwnersAnswer } from './instructionAsks'
 
-export interface InstructionsBlock {
+export interface InstructionsBlock extends InstructionsStore {
   name: string
   forEveryWorkspace?: true
-  read(): Promise<string>
-  check(text: string): Promise<void>
-  writeIfStill(before: string, after: string, by: string): Promise<boolean>
 }
 
 export interface InstructionsVerbDeps {
