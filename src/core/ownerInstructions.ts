@@ -58,7 +58,7 @@ export function textTheOwnerChose(inUse: string, opened: string, typed: string):
 
 export type VersionsSaved =
   | { ok: true; versions: InstructionsVersion[] | undefined }
-  | { ok: false; error: string; inUse?: string }
+  | Exclude<InstructionsSaveResult, { ok: true }>
 
 export function savedVersions(
   versions: readonly InstructionsVersion[] | undefined,
@@ -115,7 +115,7 @@ export const versionsStore = (
     if (textInUse(was) !== before) return false
     const saved = savedVersions(was, after, by, now(), maxBytes)
     if (!saved.ok) throw new Error(saved.error)
-    save(saved.versions ?? [...(was ?? [])])
+    if (saved.versions) save(saved.versions)
     return true
   }
 })
