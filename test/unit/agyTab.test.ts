@@ -5,6 +5,7 @@ import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   AGY_LIST_JS,
+  agyTranscript,
   annotationFile,
   historyEntries,
   parseAnnotationTitle,
@@ -19,7 +20,7 @@ import {
   readAgyConfigCmd
 } from '../../src/main/remote/agyTab'
 import { answerOf } from '../../src/main/remote/ssh'
-import { writeSummaries } from './helpers/agyStore'
+import { appendTranscript, writeSummaries } from './helpers/agyStore'
 
 let home: string
 
@@ -60,11 +61,19 @@ describe('the command Koloft runs on a remote machine to list its Antigravity co
         title: 'Deleted',
         workspace_uris: JSON.stringify(['file:///home/me/proj']),
         dbRemoved: true
+      },
+      {
+        conversation_id: 'c4',
+        title: 'Row never caught up',
+        workspace_uris: JSON.stringify(['file:///home/me/proj']),
+        step_count: 0
       }
     ])
+    appendTranscript(agyTranscript(path.join(home, '.gemini'), 'c4'), [{ type: 'USER_INPUT' }])
     const rows = JSON.parse(onMachine(cmd).stdout) as SummaryRow[]
     expect(historyEntries(rows)).toEqual([
-      expect.objectContaining({ id: 'c1', name: 'On the box', cwd: '/home/me/proj' })
+      expect.objectContaining({ id: 'c1', name: 'On the box', cwd: '/home/me/proj' }),
+      expect.objectContaining({ id: 'c4', cwd: '/home/me/proj' })
     ])
   })
 

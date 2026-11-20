@@ -178,8 +178,7 @@ function firstFolder(uris: unknown): string | undefined {
 export const TOP_LEVEL_ROWS = `select conversation_id, title, preview, workspace_uris, last_modified_time, step_count
   from conversation_summaries
   where (parent_conversation_id is null or parent_conversation_id = '')
-    and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')
-    and step_count > 0`
+    and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')`
 
 const MAX_ANCESTOR_HOPS = 16
 
@@ -248,6 +247,11 @@ export async function ancestryOfAgyConversation(
   }
 }
 
+// AGY§8
+function hasSteps(row: SummaryRow, transcript: string): boolean {
+  return Number(row.step_count) > 0 || !!fs.statSync(transcript, { throwIfNoEntry: false })?.size
+}
+
 export async function listAgyConversations(geminiDir: string): Promise<HistoryEntry[]> {
   const db = summariesDb(geminiDir)
   if (!fs.existsSync(db)) return []
@@ -260,12 +264,12 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
     sqlite.close()
   }
   const kept = rows.filter((row) => {
-    if (typeof row.conversation_id !== 'string') return false
-    const st = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
-      throwIfNoEntry: false
-    })
-    if (st) row.born = st.birthtimeMs || st.ctimeMs
-    return !!st
+    const id = row.conversation_id
+    if (typeof id !== 'string') return false
+    const st = fs.statSync(conversationDb(geminiDir, id), { throwIfNoEntry: false })
+    if (!st || !hasSteps(row, agyTranscript(geminiDir, id))) return false
+    row.born = st.birthtimeMs || st.ctimeMs
+    return true
   })
   return historyEntries(kept)
 }
@@ -292,7 +296,7 @@ export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
 // AGY§8
 export const AGY_LIST_JS = `import fs from 'fs'
 import { DatabaseSync } from 'node:sqlite'
-const [db, sql, conversations] = process.argv.slice(2)
+const [db, sql, conversations, brain] = process.argv.slice(2)
 let rows = []
 if (fs.existsSync(db)) {
   const sqlite = new DatabaseSync(db, { readOnly: true })
@@ -302,9 +306,12 @@ if (fs.existsSync(db)) {
     sqlite.close()
   }
 }
+const transcript = (id) => brain + '/' + id + '/${AGY_LOGS_FOLDER}/logs/transcript.jsonl'
 rows = rows.filter((row) => {
   try {
     const st = fs.statSync(conversations + '/' + row.conversation_id + '.db')
+    if (!(row.step_count > 0) && fs.statSync(transcript(row.conversation_id)).size === 0)
+      return false
     row.born = st.birthtimeMs || st.ctimeMs
     return true
   } catch {

@@ -34,17 +34,23 @@ afterEach(() => {
 const uris = (...dirs: string[]): string => JSON.stringify(dirs.map((d) => pathToFileURL(d).href))
 
 describe('listAgyConversations (the summaries db, AGY§8)', () => {
-  it('lists only top-level conversations of the CLI that have at least one step', async () => {
+  it('lists only top-level conversations of the CLI that have at least one step, counting a written transcript as steps while the summaries row still says 0', async () => {
     writeSummaries(gemini, [
       { conversation_id: 'top', workspace_uris: uris('/w/a') },
       { conversation_id: 'child', workspace_uris: uris('/w/a'), parent_conversation_id: 'top' },
       { conversation_id: 'unused-new', workspace_uris: uris('/w/a'), step_count: 0 },
+      { conversation_id: 'stale-row', workspace_uris: uris('/w/a'), step_count: 0 },
       { conversation_id: 'desktop', workspace_uris: uris('/w/a'), app_data_dir: 'antigravity' },
       { conversation_id: 'cli', workspace_uris: uris('/w/a'), app_data_dir: 'antigravity-cli' },
       { conversation_id: 'nowhere', workspace_uris: '[]' }
     ])
+    appendTranscript(agyTranscript(gemini, 'stale-row'), [
+      { type: 'USER_INPUT', content: ownerTyped('hi') }
+    ])
+    fs.mkdirSync(path.dirname(agyTranscript(gemini, 'unused-new')), { recursive: true })
+    fs.writeFileSync(agyTranscript(gemini, 'unused-new'), '')
     const ids = (await listAgyConversations(gemini)).map((e) => e.id).sort()
-    expect(ids).toEqual(['cli', 'top'])
+    expect(ids).toEqual(['cli', 'stale-row', 'top'])
   })
 
   it('leaves out a conversation whose own db was deleted, though agy keeps its row in the summaries db', async () => {
