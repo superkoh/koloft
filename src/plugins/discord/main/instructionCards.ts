@@ -20,6 +20,8 @@ export const INSTRUCTIONS_ID_PREFIX = 'instructions:'
 const AGREE = 'agree'
 const FENCE = '```'
 const FENCE_THAT_CANNOT_CLOSE = '`​`​`'
+const UNCHANGED_LINES_AROUND_A_CHANGE = 3
+const UNCHANGED_LINES_LEFT_OUT = '  …'
 
 export const CHANGED = '✅ Changed.'
 export const NOT_CHANGED = '⏹ Not changed.'
@@ -38,7 +40,7 @@ export function footerWhenEnded(end: InstructionAskEnd): string {
     case 'changed-meanwhile':
       return CHANGED_MEANWHILE
     case 'write-failed':
-      return `⚠ ${errorText(end.error)}`
+      return `⚠ ${errorText(end.error).replace(/\s+/g, ' ')}`
     case 'timeout':
       return STOPPED_WAITING
     case 'tab-closed':
@@ -52,13 +54,25 @@ const withoutFences = (line: string): string => line.replaceAll(FENCE, FENCE_THA
 
 export function changeShown(ask: InstructionAsk): string {
   const mark = { ctx: '  ', add: '+ ', del: '- ' } as const
-  const rows = diffLines(ask.before, ask.after).rows.map(
-    (r) => `${mark[r.kind]}${withoutFences(r.text)}`
+  const { rows } = diffLines(ask.before, ask.after)
+  const shown = rows.map(
+    (r, i) =>
+      r.kind !== 'ctx' ||
+      rows
+        .slice(
+          Math.max(0, i - UNCHANGED_LINES_AROUND_A_CHANGE),
+          i + UNCHANGED_LINES_AROUND_A_CHANGE + 1
+        )
+        .some((near) => near.kind !== 'ctx')
   )
+  const lines = rows.flatMap((r, i) => {
+    if (shown[i]) return [`${mark[r.kind]}${withoutFences(r.text)}`]
+    return i === 0 || shown[i - 1] ? [UNCHANGED_LINES_LEFT_OUT] : []
+  })
   return [
     `${ask.by} wants to change ${ask.what}: ${changeSummary(ask.before, ask.after)}.`,
     `${FENCE}diff`,
-    ...rows,
+    ...lines,
     FENCE
   ].join('\n')
 }
@@ -103,12 +117,13 @@ export class InstructionCards implements InstructionAskListener {
   }
 
   async endAll(footer: string): Promise<void> {
-    const all = [...this.shown.values()]
-    this.shown.clear()
+    const waiting = [...this.shown].filter(([id]) => this.d.asks.pendingAsk(id))
     await Promise.all(
-      all.map((s) => {
-        s.footer = footer
-        return s.placed ? this.editCard(s) : undefined
+      waiting.map(([id, ended]) => {
+        this.shown.set(id, { ask: ended.ask })
+        this.post(id)
+        ended.footer = footer
+        return ended.placed ? this.editCard(ended) : undefined
       })
     )
   }
@@ -124,14 +139,14 @@ export class InstructionCards implements InstructionAskListener {
 
   checkHeld(): void {
     for (const id of this.shown.keys()) this.post(id)
-    if ([...this.shown.values()].some((s) => !s.placing && !s.placed)) return
+    if ([...this.shown.values()].some((s) => !s.tried && !s.placing)) return
     clearInterval(this.heldCheck)
     this.heldCheck = undefined
   }
 
   private post(id: string): void {
     const shown = this.shown.get(id)
-    if (!shown || shown.placing || shown.placed) return
+    if (!shown || shown.placing || shown.tried) return
     const tabId = (this.d.asks.pendingAsk(id) ?? shown.ask).tabId
     if (!this.d.cardWanted(tabId)) {
       this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()

@@ -288,16 +288,81 @@ describe('an agent asks to change the Instructions, and the owner answers on a D
     expect(s.lastFooter()).toBe(`-# ${NOT_CHANGED_ON_THE_COMPUTER}`)
   })
 
-  it('turning Discord off ends every open card, and the ask goes on at the Mac', async () => {
+  it('turning Discord off ends every open card while the ask goes on at the Mac; turned on again, a still open ask gets a new card', async () => {
+    vi.useFakeTimers()
+    try {
+      let on = true
+      const s = setup({ cardWanted: () => on })
+      const given = s.ask(ASK, 10 * HELD_ASKS_CHECKED_EVERY_MS)
+      await vi.advanceTimersByTimeAsync(0)
+      on = false
+      await s.instructionCards.endAll(DISCORD_TURNED_OFF)
+      expect(s.lastFooter()).toBe(`-# ${DISCORD_TURNED_OFF}`)
+      expect(s.lastButtons()).toEqual([])
+      expect(s.asks.views()).toHaveLength(1)
+      on = true
+      await vi.advanceTimersByTimeAsync(HELD_ASKS_CHECKED_EVERY_MS)
+      expect(s.cards).toHaveLength(2)
+      expect(s.cards[1].buttons).toHaveLength(2)
+      s.asks.answer(s.asks.views()[0].id, true)
+      expect(await given).toBe('agreed')
+      expect(s.lastFooter()).toBe(`-# ${CHANGED_ON_THE_COMPUTER}`)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a card that could not be posted is not posted again, even while another ask waits for the owner to leave', async () => {
+    vi.useFakeTimers()
+    try {
+      const tries: string[] = []
+      const s = setup({
+        cardWanted: (tab) => tab !== 'held-tab',
+        place: async (tab) => {
+          tries.push(tab)
+          return undefined
+        }
+      })
+      void s.ask({ ...ASK, tabId: 'held-tab' }, 10 * HELD_ASKS_CHECKED_EVERY_MS)
+      void s.ask(ASK, 10 * HELD_ASKS_CHECKED_EVERY_MS)
+      await vi.advanceTimersByTimeAsync(3 * HELD_ASKS_CHECKED_EVERY_MS)
+      expect(tries).toEqual([ASK.tabId])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows only the unchanged lines next to a change, so one added line in long instructions stays one short card', async () => {
     const s = setup()
-    const given = s.ask()
+    const long = Array.from({ length: 40 }, (_, n) => `Rule ${n + 1}.`)
+    const before = long.join('\n')
+    const after = [...long.slice(0, 20), 'A new rule.', ...long.slice(20)].join('\n')
+    void s.ask({ ...ASK, before, after })
     await s.until(() => s.cards.length > 0)
-    await s.instructionCards.endAll(DISCORD_TURNED_OFF)
-    expect(s.lastFooter()).toBe(`-# ${DISCORD_TURNED_OFF}`)
-    expect(s.asks.views()).toHaveLength(1)
-    s.asks.answer(s.asks.views()[0].id, true)
-    expect(await given).toBe('agreed')
-    expect(s.edits).toHaveLength(1)
+    expect(s.cards[0].body!.split('\n').slice(1)).toEqual([
+      '```diff',
+      '  …',
+      '  Rule 18.',
+      '  Rule 19.',
+      '  Rule 20.',
+      '+ A new rule.',
+      '  Rule 21.',
+      '  Rule 22.',
+      '  Rule 23.',
+      '  …',
+      '```'
+    ])
+  })
+
+  it('a write that failed ends the card with its error on one line', async () => {
+    const s = setup()
+    const given = s.asks.ask(ASK, LONG, async () => {
+      throw new Error('Koloft cannot reach this machine now.\nssh: connect timed out')
+    })
+    await s.until(() => s.cards.length > 0)
+    await s.press(1)
+    await expect(given).rejects.toThrow()
+    expect(s.lastFooter()).toBe('-# ⚠ Koloft cannot reach this machine now. ssh: connect timed out')
   })
 
   it('a line holding three backticks cannot close the diff block early, and a change too long for one message keeps the block open into the next, buttons on the last', async () => {
