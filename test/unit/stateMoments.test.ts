@@ -48,11 +48,16 @@ function wired(o: { onDiscord?: boolean; pendingAsk?: string } = {}): {
     inbox: { turnEnded: () => {}, asked: () => {}, rebound: () => {}, sync: say('inbox.sync') },
     tookTheTurn: () => false
   })
-  followEachRun(moments, () => ({
-    onBound: () => {},
-    onPtyExit: () => {},
-    onStatus: say('cron.onStatus')
-  }))
+  followEachRun(
+    moments,
+    () => ({
+      onBound: () => {},
+      onPtyExit: () => {},
+      onStatus: say('cron.onStatus'),
+      runStartedIn: () => false
+    }),
+    () => {}
+  )
   discordFollowsEachTurn<string>(moments, {
     relay: () => ({
       turnEnded: () => {},

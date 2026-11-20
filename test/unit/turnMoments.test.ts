@@ -67,11 +67,16 @@ function wired(o: { handsOff?: boolean; asksMade?: boolean; butlerTab?: boolean 
     },
     tookTheTurn: turns.tookTheTurn
   })
-  followEachRun(moments, () => ({
-    onBound: say('cron.onBound'),
-    onPtyExit: () => {},
-    onStatus: () => {}
-  }))
+  followEachRun(
+    moments,
+    () => ({
+      onBound: say('cron.onBound'),
+      onPtyExit: () => {},
+      onStatus: () => {},
+      runStartedIn: () => false
+    }),
+    () => {}
+  )
   discordFollowsEachTurn(moments, {
     relay: () => ({
       turnEnded: (tabId) => say('relay.turnEnded')(tabId),

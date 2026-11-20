@@ -32,11 +32,16 @@ function wired(over: Partial<EndedTabParts> = {}): { moments: Moments; calls: st
     butler: () => ({ onPtyExit: say('butler.onPtyExit') }),
     digest: () => ({ forget: say('digest.forget') })
   })
-  followEachRun(moments, () => ({
-    onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot),
-    onBound: () => {},
-    onStatus: () => {}
-  }))
+  followEachRun(
+    moments,
+    () => ({
+      onPtyExit: (tabId, left) => say('cron.onPtyExit')(tabId, left?.treeRoot),
+      onBound: () => {},
+      onStatus: () => {},
+      runStartedIn: (tabId) => tabId === 'started'
+    }),
+    ({ tabId, started }) => say('window.runStarted')(tabId, started)
+  )
   closeRoomsOfEndedTabs(moments, {
     typing: () => ({ forget: say('typing.forget') }),
     relay: () => ({ forget: say('relay.forget') }),
@@ -116,6 +121,18 @@ describe('what each plugin lets go of when a tab ends', () => {
     const { moments, calls } = wired()
     void moments.announce(TAB_TORN_DOWN, exitOf({ left: { treeRoot: '/repo' } }))
     expect(calls).toEqual(['butler.onPtyExit t1', 'cron.onPtyExit t1 /repo'])
+  })
+
+  it('an unexpected teardown tells the window whether a scheduled run had started in the tab, before the run lets the tab go', () => {
+    const { moments, calls } = wired()
+    void moments.announce(TAB_TORN_DOWN, exitOf({ tabId: 'started', unexpected: true }))
+    void moments.announce(TAB_TORN_DOWN, exitOf({ unexpected: true }))
+    expect(calls.filter((c) => !c.startsWith('butler.'))).toEqual([
+      'window.runStarted started true',
+      'cron.onPtyExit started undefined',
+      'window.runStarted t1 false',
+      'cron.onPtyExit t1 undefined'
+    ])
   })
 
   it('a sleeping tab closed for good is told to the butler', () => {
