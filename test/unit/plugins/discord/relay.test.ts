@@ -497,14 +497,27 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
 describe('DiscordRelay: an owner message to a Codex or Muse butler', () => {
   const OWNER_WORDS = 'look at "a.ts" <now>\nthen merge it'
 
+  const hookEnv = (extra?: Record<string, string>): NodeJS.ProcessEnv => {
+    const env: NodeJS.ProcessEnv = {}
+    for (const [key, value] of Object.entries(process.env)) {
+      if (
+        !key.startsWith('KOLOFT_') &&
+        !key.startsWith('ANTIGRAVITY_') &&
+        !key.startsWith('TMUX') &&
+        key !== 'ANT_ACCOUNT'
+      )
+        env[key] = value
+    }
+    return { ...env, ...extra }
+  }
+
   const codexHook = (): ((input: string) => string) => {
     const script = path.join(dir, 'codex-reply-language.sh')
     fs.writeFileSync(script, CODEX_REPLY_LANGUAGE_SCRIPT)
-    const env = {
-      ...process.env,
+    const env = hookEnv({
       [CODEX_SAID_ENV]: path.join(dir, 'codex.said'),
       [CODEX_DISCORD_SAID_ENV]: discordSaidFile(dir, TAB)
-    }
+    })
     return (input) => spawnSync('bash', [script, 'prompt'], { input, env, encoding: 'utf8' }).stdout
   }
   const museHook = (): ((input: string) => string) => {
@@ -519,7 +532,8 @@ describe('DiscordRelay: an owner message to a Codex or Muse butler', () => {
       )
     )
     const command: string = hooks.hooks.UserPromptSubmit[0].hooks[0].command
-    return (input) => spawnSync('/bin/sh', ['-c', command], { input, encoding: 'utf8' }).stdout
+    const env = hookEnv()
+    return (input) => spawnSync('/bin/sh', ['-c', command], { input, env, encoding: 'utf8' }).stdout
   }
   const context = (out: string): string => JSON.parse(out).hookSpecificOutput.additionalContext
 

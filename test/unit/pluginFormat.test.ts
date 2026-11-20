@@ -10,7 +10,7 @@ import type { answered, refused } from '@core/command'
 import type { MainIpc, PreloadIpc } from '@core/ipc'
 import type { SettingKey, SettingKeys, setting } from '@core/settings'
 import type { PluginUi, fill, slot } from '@core/ui'
-import type { PromptContext, composePrompt, fillSlots } from '@core/prompt'
+import type { PromptContext, composePrompt, fillSlots, fillsGained } from '@core/prompt'
 import type { pluginStateOf } from '@core/switches'
 import * as moments from '@core/moment'
 import type { Hears, Moment, Moments } from '@core/moment'
@@ -147,6 +147,11 @@ interface V1PromptContext {
   values?: Readonly<Record<string, string>>
 }
 
+interface V1PromptState {
+  on: Readonly<Record<string, boolean>>
+  facts: readonly string[]
+}
+
 interface V1TabEnded {
   exitCode: number
   signal?: number
@@ -191,6 +196,7 @@ interface PinnedFormats {
     promptContext: V1PromptContext
     composePrompt: (slot: string, context?: V1PromptContext) => string
     fillSlots: (text: string, context?: V1PromptContext) => string
+    fillsGained: (slots: readonly string[], was: V1PromptState, now: V1PromptState) => string[]
     pluginStateOf: (id: string) => { on: boolean; offBecause?: V1Manifest }
     carries: {
       FILE_OPENED: { tabId: string; target: string; view?: 'render' | 'diff' | 'source' }
@@ -304,6 +310,7 @@ describe('the plugin format', () => {
       same<PromptContext, Pinned['promptContext']>(true)
       same<typeof composePrompt, Pinned['composePrompt']>(true)
       same<typeof fillSlots, Pinned['fillSlots']>(true)
+      same<typeof fillsGained, Pinned['fillsGained']>(true)
       same<typeof pluginStateOf, Pinned['pluginStateOf']>(true)
       same<WhatEachMomentCarries, Flat<Pinned['carries']>>(true)
     }

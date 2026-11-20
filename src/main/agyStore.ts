@@ -142,6 +142,8 @@ export interface SummaryRow {
   last_modified_time: unknown
   step_count: unknown
   born?: unknown
+  touched?: unknown
+  annotation?: unknown
 }
 
 const seconds = (ms: number): number => Math.floor(ms / 1000)
@@ -178,8 +180,7 @@ function firstFolder(uris: unknown): string | undefined {
 export const TOP_LEVEL_ROWS = `select conversation_id, title, preview, workspace_uris, last_modified_time, step_count
   from conversation_summaries
   where (parent_conversation_id is null or parent_conversation_id = '')
-    and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')
-    and step_count > 0`
+    and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')`
 
 const MAX_ANCESTOR_HOPS = 16
 
@@ -248,6 +249,14 @@ export async function ancestryOfAgyConversation(
   }
 }
 
+// AGY§8
+function readStepsWithoutSummary(row: SummaryRow, geminiDir: string, id: string): boolean {
+  const transcript = fs.statSync(agyTranscript(geminiDir, id), { throwIfNoEntry: false })
+  if (!transcript?.size) return false
+  row.touched = transcript.mtimeMs
+  return true
+}
+
 export async function listAgyConversations(geminiDir: string): Promise<HistoryEntry[]> {
   const db = summariesDb(geminiDir)
   if (!fs.existsSync(db)) return []
@@ -260,12 +269,14 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
     sqlite.close()
   }
   const kept = rows.filter((row) => {
-    if (typeof row.conversation_id !== 'string') return false
-    const st = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
-      throwIfNoEntry: false
-    })
-    if (st) row.born = st.birthtimeMs || st.ctimeMs
-    return !!st
+    const id = row.conversation_id
+    if (typeof id !== 'string') return false
+    const st = fs.statSync(conversationDb(geminiDir, id), { throwIfNoEntry: false })
+    if (!st) return false
+    if (!(Number(row.step_count) > 0) && !readStepsWithoutSummary(row, geminiDir, id)) return false
+    row.born = st.birthtimeMs || st.ctimeMs
+    if (!row.title) row.title = readAnnotationTitle(geminiDir, id)
+    return true
   })
   return historyEntries(kept)
 }
@@ -275,12 +286,15 @@ export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
     const id = row.conversation_id
     const cwd = firstFolder(row.workspace_uris)
     if (typeof id !== 'string' || !id || !cwd) return []
-    const updatedAt = timeOf(row.last_modified_time)
+    const touched = typeof row.touched === 'number' ? seconds(row.touched) : undefined
+    const updatedAt = timeOf(row.last_modified_time) ?? touched
     const born = typeof row.born === 'number' ? row.born : undefined
+    const annotated =
+      typeof row.annotation === 'string' ? parseAnnotationTitle(row.annotation) : undefined
     const entry: HistoryEntry = {
       id,
       cwd,
-      name: typeof row.title === 'string' && row.title ? row.title : null,
+      name: (typeof row.title === 'string' && row.title) || annotated || null,
       preview: typeof row.preview === 'string' ? row.preview : undefined,
       createdAt: born ? seconds(born) : updatedAt,
       updatedAt
@@ -292,7 +306,8 @@ export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
 // AGY§8
 export const AGY_LIST_JS = `import fs from 'fs'
 import { DatabaseSync } from 'node:sqlite'
-const [db, sql, conversations] = process.argv.slice(2)
+const [dir, sql] = process.argv.slice(2)
+const db = dir + '/conversation_summaries.db'
 let rows = []
 if (fs.existsSync(db)) {
   const sqlite = new DatabaseSync(db, { readOnly: true })
@@ -302,10 +317,23 @@ if (fs.existsSync(db)) {
     sqlite.close()
   }
 }
+const stepsWithoutSummary = (row) => {
+  const id = row.conversation_id
+  const transcript = fs.statSync(dir + '/brain/' + id + '/${AGY_LOGS_FOLDER}/logs/transcript.jsonl')
+  if (transcript.size === 0) return false
+  row.touched = transcript.mtimeMs
+  return true
+}
 rows = rows.filter((row) => {
   try {
-    const st = fs.statSync(conversations + '/' + row.conversation_id + '.db')
+    const st = fs.statSync(dir + '/conversations/' + row.conversation_id + '.db')
+    if (!(row.step_count > 0) && !stepsWithoutSummary(row)) return false
     row.born = st.birthtimeMs || st.ctimeMs
+    if (!row.title) {
+      try {
+        row.annotation = fs.readFileSync(dir + '/annotations/' + row.conversation_id + '.pbtxt', 'utf8')
+      } catch {}
+    }
     return true
   } catch {
     return false
