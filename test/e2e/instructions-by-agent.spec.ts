@@ -114,8 +114,28 @@ async function startIn(page: Page, wsName: string, backend: BackendId): Promise<
 
 const askDialog = (page: Page) => page.getByRole('dialog', { name: 'Change the instructions?' })
 
-async function agentProposes(page: Page, line: string): Promise<void> {
-  const typed = `/koloft instructions add -- ${line}`
+interface Block {
+  flag: string
+  versions(env: E2EEnv): InstructionsVersion[]
+  said: string[]
+}
+
+const OWN_WORKSPACE: Block = { flag: '', versions: versionsOnDisk, said: [] }
+
+const everyWorkspaceOnDisk = (env: E2EEnv): InstructionsVersion[] =>
+  (settingsOnDisk(env).everyWorkspaceInstructions as InstructionsVersion[] | undefined) ?? []
+
+const EVERY_WORKSPACE: Block = {
+  flag: '--every-workspace ',
+  versions: everyWorkspaceOnDisk,
+  said: [
+    'wants to change the instructions for every workspace:',
+    'Sessions started afterwards, in every workspace that does not leave them out, follow the new text.'
+  ]
+}
+
+async function agentProposes(page: Page, line: string, block = OWN_WORKSPACE): Promise<void> {
+  const typed = `/koloft instructions add ${block.flag}-- ${line}`
   await runIn(page, centerTerm(page), typed)
   try {
     await expect(askDialog(page)).toBeVisible({ timeout: AN_ASK_SHOWS_WITHIN_MS })
@@ -124,6 +144,7 @@ async function agentProposes(page: Page, line: string): Promise<void> {
     await expect(askDialog(page)).toBeVisible({ timeout: AN_ASK_SHOWS_WITHIN_MS })
   }
   await expect(askDialog(page).locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
+  for (const words of block.said) await expect(askDialog(page)).toContainText(words)
 }
 
 async function ownerDeclinesThenAgrees(
@@ -131,26 +152,38 @@ async function ownerDeclinesThenAgrees(
   env: E2EEnv,
   wsName: string,
   tabId: string,
-  backend: BackendId
+  backend: BackendId,
+  block = OWN_WORKSPACE
 ): Promise<void> {
   const row = wsRows(page, wsName).and(page.locator(`[data-tab-id="${tabId}"]`))
-  const before = versionsOnDisk(env)
+  const before = block.versions(env)
   const declined = `${backend} asked first: lint before pushing.`
-  await agentProposes(page, declined)
+  await agentProposes(page, declined, block)
   await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
   await expect(row).toHaveClass(/\bst-approval\b/)
   await askDialog(page).getByRole('button', { name: "Don't change" }).click()
   await expect(askDialog(page)).toHaveCount(0)
-  expect(versionsOnDisk(env)).toEqual(before)
+  expect(block.versions(env)).toEqual(before)
 
   const agreed = `${backend} says: run npm test first.`
-  await agentProposes(page, agreed)
+  await agentProposes(page, agreed, block)
   await askDialog(page).getByRole('button', { name: 'Change them' }).click()
   await expect(askDialog(page)).toHaveCount(0)
-  await expect
-    .poll(() => versionsOnDisk(env).at(-1)?.text)
-    .toBe(`${before.at(-1)?.text ?? ''}\n${agreed}`)
-  expect(versionsOnDisk(env).at(-1)?.by).not.toBe('owner')
+  const was = before.at(-1)?.text
+  await expect.poll(() => block.versions(env).at(-1)?.text).toBe(was ? `${was}\n${agreed}` : agreed)
+  expect(block.versions(env).at(-1)?.by).not.toBe('owner')
+}
+
+async function proposesForEveryWorkspace(
+  page: Page,
+  env: E2EEnv,
+  wsName: string,
+  tabId: string,
+  backend: BackendId
+): Promise<void> {
+  const ownBefore = versionsOnDisk(env)
+  await ownerDeclinesThenAgrees(page, env, wsName, tabId, backend, EVERY_WORKSPACE)
+  expect(versionsOnDisk(env)).toEqual(ownBefore)
 }
 
 async function proposesWhileTheOwnerTypesInAnEditor(
@@ -180,7 +213,7 @@ async function agreedWhileTheEditorIsOpen(page: Page): Promise<void> {
 }
 
 test.describe('koloft instructions: an agent proposes a line for the owner’s instructions, the owner is asked in that session’s own tab, and only what the owner agrees to is kept', () => {
-  test('on this Mac, a Claude Code, Codex, Muse and Antigravity session each propose a line for their own workspace; the ask shows in the session’s tab, which waits on the owner; declined changes nothing, agreed adds the line', async ({
+  test('on this Mac, a Claude Code, Codex, Muse and Antigravity session each propose a line for their own workspace, then one for every workspace; the ask shows in the session’s tab, which waits on the owner, and names the block; declined changes nothing, agreed adds the line to that block only', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -195,20 +228,17 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       const page = await app.firstWindow()
       await waitBooted(page)
       await ownerWrites(page, 'ws-a', WRITTEN)
-      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
-        await ownerDeclinesThenAgrees(
-          page,
-          env,
-          'ws-a',
-          await startIn(page, 'ws-a', backend),
-          backend
-        )
+      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+        const tab = await startIn(page, 'ws-a', backend)
+        await ownerDeclinesThenAgrees(page, env, 'ws-a', tab, backend)
+        await proposesForEveryWorkspace(page, env, 'ws-a', tab, backend)
+      }
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test("on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each propose a line for that workspace's own instructions, asked in its tab", async ({
+  test("on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each propose a line for that workspace's own instructions, then one for every workspace, asked in its tab", async ({
     env
   }) => {
     test.setTimeout(400_000)
@@ -218,14 +248,11 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
     try {
       await addRemoteWorkspace(page, env)
       await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
-      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
-        await ownerDeclinesThenAgrees(
-          page,
-          env,
-          REMOTE_WS_NAME,
-          await startIn(page, REMOTE_WS_NAME, backend),
-          backend
-        )
+      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+        const tab = await startIn(page, REMOTE_WS_NAME, backend)
+        await ownerDeclinesThenAgrees(page, env, REMOTE_WS_NAME, tab, backend)
+        await proposesForEveryWorkspace(page, env, REMOTE_WS_NAME, tab, backend)
+      }
       const kept = Object.keys(settingsOnDisk(env).sessionDefaults as object)
       expect(kept).toHaveLength(1)
       expect(isRemoteKey(kept[0])).toBe(true)
@@ -234,7 +261,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
     }
   })
 
-  test("the butler proposes a line for its own instructions: the ask shows in the butler's tab, and the line is kept once the owner agrees", async ({
+  test("the butler proposes a line for its own instructions, then one for every workspace: each ask shows in the butler's tab, and each line is kept in its own block once the owner agrees", async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -253,6 +280,14 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       expect(butlerVersions()).toEqual([])
       await askDialog(page).getByRole('button', { name: 'Change them' }).click()
       await expect.poll(() => butlerVersions().at(-1)).toMatchObject({ text: line, by: 'Alfred' })
+
+      const forAll = 'Answer every message in Chinese.'
+      await agentProposes(page, forAll, EVERY_WORKSPACE)
+      await askDialog(page).getByRole('button', { name: 'Change them' }).click()
+      await expect
+        .poll(() => everyWorkspaceOnDisk(env).at(-1))
+        .toMatchObject({ text: forAll, by: 'Alfred' })
+      expect(butlerVersions().at(-1)?.text).toBe(line)
     } finally {
       await quitAndClose(app)
     }

@@ -99,11 +99,14 @@ export interface MuseRelayFiles {
   tabId: string
 }
 
-// MUSE§9
+const contextFileName = (i: number): string =>
+  i === 0 ? 'session-start.json' : `session-start-${i + 1}.json`
+
+// MUSE§9 MUSE§12
 export function writeMuseHooks(
   shimDir: string,
   requestDir: string,
-  context?: string,
+  contexts: readonly string[] = [],
   ownerWords?: string,
   relay?: MuseRelayFiles
 ): string {
@@ -111,8 +114,12 @@ export function writeMuseHooks(
   const discordSaid = relay ? discordSaidFile(relay.regDir, relay.tabId) : ''
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
-  const contextFile = path.join(shimDir, 'session-start.json')
-  if (context) fs.writeFileSync(contextFile, sessionStartContext(context))
+  const contextFiles = contexts.map((text, i) => {
+    const full = path.join(shimDir, contextFileName(i))
+    fs.writeFileSync(full, sessionStartContext(text))
+    return full
+  })
+  const contextFile = contextFiles[0] ?? path.join(shimDir, contextFileName(0))
   const saidFile = path.join(shimDir, 'said')
   if (ownerWords) seedHandedOverOwnerWords(saidFile, ownerWords)
   const file = path.join(shimDir, 'hooks.json')
@@ -120,23 +127,38 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`,
+      contextFiles.slice(1).map((f) => `/bin/cat ${shq(f)}`)
     )
   )
   return file
 }
 
-function hooksJson(command: (event: MuseHookName) => string): string {
-  const run = (line: string): unknown[] => [{ hooks: [{ type: 'command', command: line }] }]
+// MUSE§12
+function hooksJson(command: (event: MuseHookName) => string, laterStarts: string[]): string {
+  const run = (lines: string[]): unknown[] => [
+    { hooks: lines.map((line) => ({ type: 'command', command: line })) }
+  ]
   return JSON.stringify({
-    hooks: Object.fromEntries(EVENTS.map((event) => [event, run(command(event))]))
+    hooks: Object.fromEntries(
+      EVENTS.map((event) => [
+        event,
+        run([command(event), ...(event === 'SessionStart' ? laterStarts : [])])
+      ])
+    )
   })
 }
 
-// MUSE§9 MUSE§17
-export function remoteMuseHooks(script: string, runId: string, contextFile?: string): string {
+// MUSE§9 MUSE§12 MUSE§17
+export function remoteMuseHooks(
+  script: string,
+  runId: string,
+  contextFiles: readonly string[] = []
+): string {
+  const [first, ...later] = contextFiles
   return hooksJson(
-    (event) => `bash "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`
+    (event) => `bash "${script}" ${runId} ${event}${first ? ` "${first}"` : ''}`,
+    later.map((f) => `cat "${f}"`)
   )
 }
 

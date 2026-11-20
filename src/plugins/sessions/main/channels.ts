@@ -16,7 +16,7 @@ import type {
   SessionSearchHits,
   WorktreeInfo
 } from '@shared/types'
-import { CHANNELS } from '../shared/ipc'
+import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
 import type { InstructionAskView } from '../shared/instructionAsks'
 import type { InstructionAsks } from './instructionAsks'
 import type { SessionsWithStore } from './storedSessions'
@@ -54,6 +54,7 @@ export interface ChannelDeps {
     workspacePath: string
   ): Promise<Omit<Extract<SessionDefaultsRead, { ok: true }>, 'ok'>>
   writeDefaults(workspacePath: string, raw: unknown): Promise<void>
+  saveEveryWorkspace(text: string, opened: string): InstructionsSaveResult
   instructionAsks(): Pick<InstructionAsks, 'views' | 'answer'>
   worktrees(workspacePath: string): Promise<WorktreeInfo[]>
   storedSessions(): Pick<SessionsWithStore, 'id' | 'store'>[]
@@ -141,6 +142,13 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
         ...(error instanceof ChangedWhileOpen && { inUse: error.inUse })
       })
     )
+  )
+  ipc.handle(
+    CHANNELS.everyWorkspaceSave,
+    (text: unknown, opened: unknown): InstructionsSaveResult =>
+      typeof text === 'string' && typeof opened === 'string'
+        ? deps.saveEveryWorkspace(text, opened)
+        : { ok: false, error: 'Koloft could not read the text.' }
   )
   ipc.handle(CHANNELS.instructionAsksList, () => deps.instructionAsks().views())
   ipc.on(CHANNELS.instructionAnswer, (id: unknown, agreed: unknown) => {

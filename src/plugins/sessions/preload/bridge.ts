@@ -14,7 +14,7 @@ import type {
   SessionSearchHits,
   WorktreeInfo
 } from '@shared/types'
-import { CHANNELS } from '../shared/ipc'
+import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
 import type { InstructionAskView } from '../shared/instructionAsks'
 
 export interface SessionsBridge {
@@ -54,6 +54,7 @@ export interface SessionsBridge {
       workspacePath: string,
       defaults: SessionDefaultsDraft
     ): Promise<{ ok: boolean; error?: string; inUse?: string }>
+    saveEveryWorkspace(text: string, opened: string): Promise<InstructionsSaveResult>
   }
   instructionAsks: {
     list(): Promise<InstructionAskView[]>
@@ -94,7 +95,8 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
   },
   sessionDefaults: {
     read: (workspacePath) => ipc.invoke(CHANNELS.defaultsRead, workspacePath),
-    write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults)
+    write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults),
+    saveEveryWorkspace: (text, opened) => ipc.invoke(CHANNELS.everyWorkspaceSave, text, opened)
   },
   instructionAsks: {
     list: () => ipc.invoke(CHANNELS.instructionAsksList),

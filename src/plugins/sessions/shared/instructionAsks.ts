@@ -7,10 +7,13 @@ export interface InstructionAskView {
   what: string
   before: string
   after: string
+  forEveryWorkspace?: true
 }
 
-export const NOTHING_CHANGES_UNTIL_YOU_AGREE =
-  'Nothing changes until you agree. Sessions started afterwards follow the new text.'
+export const nothingChangesUntilYouAgree = (ask: Pick<InstructionAskView, 'forEveryWorkspace'>) =>
+  ask.forEveryWorkspace
+    ? 'Nothing changes until you agree. Sessions started afterwards, in every workspace that does not leave them out, follow the new text.'
+    : 'Nothing changes until you agree. Sessions started afterwards follow the new text.'
 export const KEEP_THEM = "Don't change"
 export const CHANGE_THEM = 'Change them'
 export const INSTRUCTIONS_CHANGED_MEANWHILE =

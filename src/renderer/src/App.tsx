@@ -113,7 +113,13 @@ import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { useOverTerminal, useWatchOwnerAsks } from './ownerAsks'
 import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
 import { fillsOf, fillsOfOnOrOff, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
-import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN, WINDOW_FEED } from './slots'
+import {
+  PALETTE_HAND_OFF,
+  PALETTE_ROUTE,
+  PALETTE_RUN,
+  STARTED_BEFORE_EXIT,
+  WINDOW_FEED
+} from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -1012,6 +1018,9 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
+      const runStarted = fillsOf(STARTED_BEFORE_EXIT)
+        .map((started) => started(e.id))
+        .some(Boolean)
       if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
       if (useStore.getState().terminalExited(e.id)) return
@@ -1020,7 +1029,7 @@ export default function App(): JSX.Element {
       const found = useStore.getState().tabs.find((t) => t.id === e.id)
       const tab = e.unexpected ? tabAsItsAgent(found) : found
       if (tab?.sessionId) releaseResume(tab.sessionId)
-      if (unexpectedExitWanted(tab, e)) {
+      if (unexpectedExitWanted(tab, e, runStarted)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
         useStore.getState().showToast(notice)
         if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
