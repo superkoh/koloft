@@ -36,7 +36,7 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `muse exec [OPTIONS] [PROMPT]` runs one prompt headless (subcommand first, its flags
   after). Root options may sit on either side of `resume`.
 - **A first message given on the command line reaches the model whole, at least up to
-  122,866 bytes.** 2026-11-20, `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker image
+  122,866 bytes.** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker image
   `koloft-probe-muse-agy` with `--network none` and `MUSE_NO_AUTO_UPDATE=1`, the TUI in a
   python pty answering the terminal's queries, started as Koloft starts a local tab
   (`--base-url <stand-in> --approval-judge off --sandbox-network enabled
