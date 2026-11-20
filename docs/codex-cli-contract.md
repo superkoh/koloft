@@ -823,7 +823,7 @@ reached on 0.171.0: #61180 and #61195 (§11), the read-state broadcast #61852 (o
 connection only), `bioPolicy` (schema only), the bundled Memory and App hooks (#62112,
 #62080; none listed), two signals in a row, `exec --remote` (help only), a turn on Linux,
 mouse-wheel batching (#62146), subagent transcripts and image previews in the workspace
-pane. Sections 3, 4, 6, 9, 10, 12, 17, 19, 22, 26 and 28–36 but 35 stand on earlier
+pane. Sections 2, 3, 4, 6, 9, 10, 12, 17, 19, 22, 26 and 28–36 but 35 stand on earlier
 measurements. The file pane breaking Koloft's Codex tabs keeps `TESTED_CODEX_LINE` at
 0.170.
 
@@ -1173,9 +1173,12 @@ turns, each turn's settings read from the rollout's `turn_context` (its keys as 
   `-c` took, the approval one did not. The same on 0.170.0 and 0.171.0 (2026-11-20, a git
   repository, a Node client on `app-server --stdio`, one real `gpt-6-luna` turn per
   shape, one run per build); the other two shapes behaved as the bullets above say. The
-  cause, and the first build that does it, were not probed. Koloft resumes with the
-  permission it saved for the session (below), so its `-c` names what the thread
-  already has.
+  cause, and the first build that does it, were not probed. A session tab resumes with
+  the permission saved for it (below), so its `-c` names what the thread already has;
+  the butler resumes with the owner's current skip-permissions setting instead, so a
+  butler thread of this shape resumed after that setting turned on would come back
+  `on-request` / `danger-full-access` (**inferred, not checked**: that thread was not
+  built).
 - Explicit params on the request win: `thread/resume {threadId, approvalPolicy:
   "on-request", sandbox: "workspace-write"}` on the `never` / danger thread ran
   `on-request` / `workspace-write`, and the next bare resume restored *that* — a value
@@ -1203,7 +1206,8 @@ on start and resume — as long as the thread's last turn ran under that choice.
 `bypass` thread whose last turn was a resume without Koloft's `-c` (on 0.161–0.162 a
 bare resume always came back `workspace-write`, above) keeps `workspace-write` on
 0.163.0 while Koloft's row says bypass, and the old path cannot lift it (inferred from
-the three resume shapes measured; that thread was not built). The `-c` pair on a
+the three resume shapes measured on 0.163.0; that thread was not built, and on 0.170.0+,
+where the sandbox `-c` takes for some threads, it was not rechecked). The `-c` pair on a
 resume sets the sandbox on 0.161–0.162; on 0.163.0 it changed nothing in the shapes
 measured then, but on 0.170.0 and 0.171.0 its sandbox half does take for a thread
 started with explicit `on-request` / `workspace-write` params (the bullet above), so it
