@@ -7,7 +7,11 @@ import {
   type AssistBackendChoice,
   type ButlerDeps
 } from '../../../../src/plugins/butler/main/butler'
-import { conductorFolder, pluginsChangedNews } from '../../../../src/plugins/butler/api'
+import {
+  conductorFolder,
+  GUIDE_MOVED_NEWS,
+  pluginsChangedNews
+} from '../../../../src/plugins/butler/api'
 import type { BackendId, ButlerSession } from '@shared/types'
 import type { InstructionsVersion } from '../../../../src/core/ownerInstructions'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
@@ -49,6 +53,7 @@ let testRun = 0
 let todoOn: boolean
 let passwordsOn: boolean
 let noticeLands: Promise<void>
+let news: ButlerDeps['news']
 const PLUGIN_NAMES: Record<string, string> = { todo: 'Todo', passwords: 'Passwords and sign-in' }
 
 function make(): Butler {
@@ -99,7 +104,7 @@ function make(): Butler {
       await noticeLands
       return noticeArrives && !!butler.liveTab()
     },
-    news: { ...TODO_NEWS, on: () => todoOn },
+    news,
     pluginsOn: () => ({ todo: todoOn, passwords: passwordsOn }),
     pluginsNews: (changed) =>
       pluginsChangedNews(
@@ -127,6 +132,7 @@ beforeEach(() => {
   todoOn = true
   passwordsOn = true
   noticeLands = Promise.resolve()
+  news = [{ ...TODO_NEWS, on: () => todoOn }]
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
@@ -319,6 +325,41 @@ describe('the butler', () => {
     expect(notices).toHaveLength(3)
   })
 
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  it.each([
+    ['claude', 'old-claude'],
+    ['codex', 'codex:local:old-thread'],
+    ['muse', 'muse:local:old-thread'],
+    ['agy', 'agy:local:old-conv']
+  ] as const)(
+    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside nothing it already knew; one started since is told nothing',
+    async (backend, oldKey) => {
+      news = [{ ...TODO_NEWS, on: () => todoOn }, GUIDE_MOVED_NEWS]
+      session = { sessionIds: [oldKey], lastSessionKey: oldKey, knowsTodo: [oldKey] }
+      transcripts.add(oldKey)
+      choice = { backend }
+      const c = make()
+      const back = await c.open()
+      if (!back.ok) throw new Error(back.error)
+      expect(notices).toEqual([`${FROM_KOLOFT}${GUIDE_MOVED_NEWS.text()}`])
+      await vi.waitFor(() => expect(session.knowsItsOwnLines).toEqual([oldKey]))
+      c.onBound(back.tabId, oldKey)
+      c.onPtyExit(back.tabId)
+      await c.open()
+      expect(notices).toHaveLength(1)
+
+      session = { sessionIds: [] }
+      const fresh = make()
+      const freshTab = await opened(fresh)
+      fresh.onBound(freshTab, `${oldKey}-new`)
+      expect(session.knowsItsOwnLines).toEqual([`${oldKey}-new`])
+      fresh.onPtyExit(freshTab)
+      transcripts.add(`${oldKey}-new`)
+      await fresh.open()
+      expect(notices).toHaveLength(1)
+    }
+  )
+
   it('while Todo is off, a resumed conversation is told nothing of koloft todo and one started then is not counted as knowing it, so it is told once Todo is on again', async () => {
     const OLD_CODEX = 'codex:local:old-thread'
     const NEW_CODEX = 'codex:local:new-thread'
@@ -344,7 +385,7 @@ describe('the butler', () => {
     transcripts.add(NEW_CODEX)
     await fresh.open()
     expect(notices).toEqual([
-      `${FROM_KOLOFT}${TODO_NEWS.text} The owner changed Settings ▸ Plugins after this conversation began: Todo is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
+      `${FROM_KOLOFT}${TODO_NEWS.text()} The owner changed Settings ▸ Plugins after this conversation began: Todo is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
     ])
   })
 

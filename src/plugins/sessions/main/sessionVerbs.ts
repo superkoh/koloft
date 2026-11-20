@@ -53,6 +53,7 @@ import {
   type Parsed
 } from '@core/command'
 import { errorText } from '@core/errorText'
+import { composePrompt } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
@@ -829,7 +830,9 @@ async function sessionOnThisComputer(
   const target = d.closable().find((s) => s.sessionId === row.id)
   if (!target) return fail(`koloft session close: ${title} is gone.`)
   if (target.tabId && d.overseer.is(target.tabId))
-    return fail(`koloft session close: ${title} is the butler, which only closes itself.`)
+    return fail(
+      `koloft session close: ${title}${composePrompt('session-close-refused-for-the-owners-ai')}`
+    )
   return { ok: true, value: target }
 }
 

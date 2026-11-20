@@ -407,7 +407,13 @@ These are the slots, values and facts in use today:
 | slot | `butler-helper` | Butler; the prompt of a helper the butler starts |
 | slot | `butler-owner-instructions` | Butler; the owner's own Instructions for the butler, put last in the butler's and its helpers' prompt when the owner wrote some |
 | slot | `butler-plugins-changed` | Butler; the message the butler gets when the owner turned plugins on or off since its conversation began |
+| slot | `butler-guide-moved` | Butler; the notice a butler conversation from before the butler's own lines left `koloft help` gets once; it holds `owners-ai-itself-koloft` and `owners-ai-folder-koloft` |
+| slot | `owners-ai-itself-koloft` | Sessions core; sentences in the butler's prompt about the `koloft` command that only the butler itself gets (its helpers' prompt gives this slot the value `''`) |
+| slot | `owners-ai-folder-koloft` | Sessions core, Scheduled tasks, GitHub; sentences in the butler's prompt that hold for every session in its folder, so its helpers get them too |
 | slot | `owners-ai-koloft` | Sessions core, GitHub, Discord, Todo; sentences in the butler's prompt about the `koloft` command |
+| slot | `session-answered-by-keys` | Butler; half a sentence at the end of Sessions core's `koloft session answer` reply for a question Koloft cannot read, with the value `the-question` |
+| slot | `session-close-refused-for-the-owners-ai` | Butler; the end of Sessions core's `koloft session close` refusal for the butler |
+| slot | `handover-from-the-owners-ai` | Butler; the paragraph of Sessions core's handover note that a session the butler started reads first |
 | slot | `away-digest-more` | Todo; the end of the away digest's "And N more" sentence |
 | slot | `todo-method-phone` | Discord; the half-sentence about the phone in `koloft todo`'s method |
 | slot | `route-worktree-picks` | GitHub; the picks ⌘P's routing prompt offers for a new worktree session (an issue number) |
@@ -417,6 +423,7 @@ These are the slots, values and facts in use today:
 | value | `butler-name` | the butler's code; the butler's name |
 | value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, in a workspace's, or in the Instructions for every workspace |
 | value | `plugins-now` | the butler's code; which plugins are now on or off, as "Todo is now off, Passwords and sign-in is now on" |
+| value | `the-question` | Sessions core; "it" or "this one" in `session-answered-by-keys` |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
 | fact | `discord-bound` | Discord's code, when Discord has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
@@ -837,12 +844,14 @@ either:
   `butlersFolderClaim` in `butler/api.ts`. The main process lists the folder last and marks
   its row with `claim`; the main process and Sessions core treat a claimed folder as no
   project, and Sessions core shows its sessions under `shownAs` instead of the path.
-- **News for an old conversation.** The butler takes one `OldConversationNews`
-  (`{ knownBy, text, on }`, from `butler/api.ts`). When an old butler conversation is resumed,
-  `on()` holds and its key is not yet in the saved list named `knownBy`, the butler sends it
-  `text` once, after `(From Koloft:) `, and adds the key; a new conversation is added when it binds, as it already
-  knows. The plugin that hands in the news names its own list, so the saved record keeps that
-  name. `src/main/index.ts` hands in Todo's `TODO_NEWS` (`knownBy: 'knowsTodo'`).
+- **News for an old conversation.** The butler takes a list of `OldConversationNews`
+  (`{ knownBy, text, on }`, from `butler/api.ts`; `text` and `on` are functions). When an old
+  butler conversation is resumed, each news whose `on()` holds and whose saved list named
+  `knownBy` does not yet hold the conversation's key is sent, all in one message after
+  `(From Koloft:) `, and the key is added; a new conversation is added to every list whose
+  `on()` holds when it binds, as it already knows. The plugin that hands in a news names its own
+  list, so the saved record keeps that name. `src/main/index.ts` hands in Todo's `TODO_NEWS`
+  (`knownBy: 'knowsTodo'`) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsItsOwnLines'`).
 
 ## Format version
 

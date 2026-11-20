@@ -15,7 +15,7 @@ export const isKnownBy = (key: string): key is KnownBy => key.startsWith('knows'
 
 export interface OldConversationNews {
   knownBy: KnownBy
-  text: string
+  text: () => string
   on: () => boolean
 }
 
