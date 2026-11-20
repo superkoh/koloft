@@ -8,6 +8,7 @@ import {
 } from '@plugins/sessions/shared/instructionAsks'
 import { IconClose } from '../icons'
 import { diffLines } from '@shared/editDiff'
+import { focusOnceNoDialogIsOpen } from '../dialogOpen'
 import { InlineDiff } from './InlineDiff'
 import '../inlineDiff.css'
 
@@ -42,7 +43,8 @@ export function InstructionsAskDialog({
 }): JSX.Element {
   const keep = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => {
-    if (shown) keep.current?.focus()
+    if (shown && keep.current) return focusOnceNoDialogIsOpen(keep.current)
+    return undefined
   }, [shown, ask.id])
   const answer = (agreed: boolean): void => window.api.instructionAsks.answer(ask.id, agreed)
   return (

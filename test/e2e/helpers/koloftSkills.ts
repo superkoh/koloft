@@ -78,6 +78,9 @@ export function sessionPromptsHandedOut(home: string): Record<BackendId, string[
   }
 }
 
+export const agentPluginSays = (userData: string, words: string): boolean =>
+  koloftSkillsUnder(path.join(userData, 'agent-plugin')).some((skill) => skill.includes(words))
+
 export function koloftSkillsUnder(dir: string): string[] {
   return pathsUnderWhileTheAppWrites(dir)
     .filter((rel) => rel.endsWith(path.join('koloft', 'SKILL.md')))
