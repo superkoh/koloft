@@ -4244,7 +4244,11 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   scratch `HOME` and fake key, `ANTHROPIC_BASE_URL` pointed at a closed port or at a
   local server that records the request and answers 400; no token spent). A review
   that did run reports `num_turns: 0` too (2.1.329, the same command with a real
-  account), so only a `result` that starts `API Error` tells this failure apart.
+  account), so the count tells nothing. What every `medium` review that did run held
+  is its findings as a fenced ` ```json ` array, `[]` when it found nothing: all 51 runs
+  on 2.1.329 (2026-11-20) and all 104 on 2.1.302. A failed call holds none, and neither
+  does a refused sign-in, whose text (`Failed to authenticate. API Error: 401 …`, §9)
+  does not start with `API Error`.
 - **2.1.328 changed the recipe Opus 5.5 gets at `medium`.** The request body each build
   sends (captured by that local server, same command) holds the same recipe, byte for
   byte, on 2.1.302 and 2.1.327: `high effort → 8 inline angles → dedup (no verify) → ≤10

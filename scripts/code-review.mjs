@@ -24,7 +24,7 @@ function freshSessionEnv() {
 }
 
 // CC§20
-const isFailedModelCall = (text) => text.startsWith('API Error')
+const holdsTheFindingsBlock = (text) => text.includes('```json')
 
 // CC§20
 function review(n) {
@@ -59,17 +59,16 @@ function review(n) {
       try {
         result = JSON.parse(stdout.trim().split('\n').at(-1))
       } catch {}
-      if (
-        typeof result?.result === 'string' &&
-        !result.is_error &&
-        !isFailedModelCall(result.result)
-      ) {
-        console.log(`${head}\n\n${result.result}\n`)
+      const answer = typeof result?.result === 'string' ? result.result : ''
+      if (!result?.is_error && holdsTheFindingsBlock(answer)) {
+        console.log(`${head}\n\n${answer}\n`)
         return resolve(true)
       }
       const why = child.killed
         ? `stopped at the ${RUN_TIME_LIMIT_MINUTES}-minute limit`
-        : `exit ${code ?? signal}`
+        : code === 0
+          ? 'its answer holds no findings block'
+          : `exit ${code ?? signal}`
       console.log(`${head} failed (${why})\n\n${(result?.result ?? (stderr || stdout)).trim()}\n`)
       resolve(false)
     })
