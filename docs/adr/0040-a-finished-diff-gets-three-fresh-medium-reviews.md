@@ -6,10 +6,12 @@ paid for on every PR.
 **Decision**: three `medium` runs at once, each a fresh process, their reports merged by
 the session. On Koloft's own past PRs this caught two to three times what one run did,
 about as much as three `high` runs, for less money and half the slowest wait (CC§20).
-That was Claude Code's review recipe up to 2.1.327. On 2.1.329, whose recipe changed,
-three runs caught no more than one did (CC§20); the other levels were not measured on
-it, so the choice stands until they are (issue #2260).
-**Rejected**:
+All of this, and the Rejected list below, was measured on Claude Code's review recipe
+up to 2.1.327. The recipe changed in 2.1.328, and on 2.1.329 one `medium` run caught as
+much as three (CC§20). That sample is small (12 bugs, three runs, about 1 in 6 odds
+that the two misses were luck) and no other level was measured on the new recipe, so
+whether to keep three runs, drop to one, or move level is open in GitHub issue #2260.
+**Rejected** (on the recipe up to 2.1.327):
 - One `low` run, the step before: it caught none of the known bugs and stops part way
   on a big diff (CC§20).
 - One run of any level: half or less of what three `medium` runs catch.
