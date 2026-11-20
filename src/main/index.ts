@@ -2005,7 +2005,7 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
   if ('error' in choice) return choice
   const asked = assistLaunchOn('butler', choice.backend, settings)
-  const { pick, note } = await ownPick(choice.backend, asked)
+  const { pick, note } = await ownPick(choice.backend, asked, modelsAssistGoesBy)
   sayOnceOfWhatStartsItself(butlerNameNow(), note)
   const { model, effort } = pick
   return { ...choice, ...(model && { model }), ...(effort && { effort }) }
@@ -2129,15 +2129,15 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
 
 const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
 // AGY§21
-const AN_ASSIST_JOB_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS = 5000
+const ASSIST_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS = 5000
 
 const listedModelsWithin = (backend: BackendId, ms: number): Promise<ListedModel[] | undefined> =>
   within(listedModels(backend), ms, 'the model list').catch(() => undefined)
 
 const modelsLastRead = new Map<BackendId, ListedModel[]>()
 
-async function modelsAnAssistJobGoesBy(backend: BackendId): Promise<ListedModel[] | undefined> {
-  const reading = listedModelsWithin(backend, AN_ASSIST_JOB_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS)
+async function modelsAssistGoesBy(backend: BackendId): Promise<ListedModel[] | undefined> {
+  const reading = listedModelsWithin(backend, ASSIST_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS)
   return modelsLastRead.get(backend) ?? reading
 }
 
@@ -2190,7 +2190,7 @@ function sayOnceOfWhatStartsItself(what: string, note: string | undefined): void
 }
 
 async function assistJobPick(backend: BackendId, asked: OwnPick): Promise<OwnPick> {
-  const { pick, note } = await ownPick(backend, asked, modelsAnAssistJobGoesBy)
+  const { pick, note } = await ownPick(backend, asked, modelsAssistGoesBy)
   sayOnceOfWhatStartsItself('Koloft Assist', note)
   return pick
 }

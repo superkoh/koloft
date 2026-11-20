@@ -232,7 +232,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
         if (job.signal?.aborted) return null
         const first = await (shot.secondTryWhenLate
           ? withASecondTryWhenLate(runWith(theAccountHas), job.signal)
-          : runWith(theAccountHas)(job.signal, ASSIST_TIMEOUT_MS - spentMs()))
+          : runWith(theAccountHas)(job.signal, Math.max(1, ASSIST_TIMEOUT_MS - spentMs())))
         const leftMs = limitMs - spentMs()
         const tableModelRefused =
           first === null && modelRefused && launch.modelFromTheTable && launch.model !== safe.model
