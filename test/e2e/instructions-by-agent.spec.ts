@@ -1,5 +1,8 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { guestByUrl, newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
 import {
   installAgy,
   installCodex,
@@ -13,9 +16,12 @@ import {
   butlerRow,
   centerTerm,
   newSessionInWith,
+  notesArea,
   runIn,
+  sendShortcut,
   settingsOnDisk,
   startSessionIn,
+  switchToRow,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -153,6 +159,7 @@ async function ownerDeclinesThenAgrees(
   const before = block.versions(env)
   const declined = `${backend} asked first: lint before pushing.`
   await agentProposes(page, declined, block)
+  await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
   await expect(row).toHaveClass(/\bst-approval\b/)
   await askDialog(page).getByRole('button', { name: "Don't change" }).click()
   await expect(askDialog(page)).toHaveCount(0)
@@ -316,6 +323,128 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       await page.keyboard.press('Enter')
       await expect(askDialog(page)).toHaveCount(0)
       await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(`${WRITTEN}\n${line}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an ask that arrives while the owner types in the note or a web page leaves the keys there, and takes them once the owner leaves the field', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const form = path.join(env.workspaces.a, 'form.html')
+    fs.writeFileSync(form, '<input id="q">')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ownerWrites(page, 'ws-a', WRITTEN)
+      await startSessionIn(page, 'ws-a')
+      const [tab] = await tabIds(page, 'ws-a')
+      const typed = 'Buy milk.'
+      await notesArea(page).click()
+      await page.keyboard.type(typed)
+      const line = 'Run npm test first.'
+      await proposesWhileTheOwnerTypesInAnEditor(page, tab, line, notesArea(page), typed)
+
+      await notesArea(page).blur()
+      await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(askDialog(page)).toHaveCount(0)
+
+      await openBrowser(page)
+      await newWebTab(page)
+      await typeInAddressBar(page, `file://${form}`)
+      const guest = await guestByUrl(app, 'form.html')
+      await guest.locator('#q').click({ timeout: 20_000 })
+      const keysOnThePage = (): Promise<string | undefined> =>
+        page.evaluate(() => document.activeElement?.tagName)
+      await expect.poll(keysOnThePage).toBe('WEBVIEW')
+      await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [
+        tab,
+        `/koloft instructions add -- ${line}\r`
+      ] as const)
+      await expect(askDialog(page)).toBeAttached({ timeout: AN_ASK_SHOWS_WITHIN_MS })
+      expect(await keysOnThePage()).toBe('WEBVIEW')
+
+      await askDialog(page).locator('.field-hint').first().click()
+      await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Enter')
+      await expect(askDialog(page)).toHaveCount(0)
+      await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(`${WRITTEN}\n${line}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('switching to a session whose box waits gives the box the keys, even from a web page in the session left behind', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const form = path.join(env.workspaces.a, 'form.html')
+    fs.writeFileSync(form, '<input id="q">')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ownerWrites(page, 'ws-a', WRITTEN)
+      await startSessionIn(page, 'ws-a')
+      const [left] = await tabIds(page, 'ws-a')
+      await startSessionIn(page, 'ws-a')
+      const asking = (await tabIds(page, 'ws-a')).find((id) => id !== left)!
+      await switchToRow(page, page.locator(`[data-tab-id="${left}"]`))
+
+      await openBrowser(page)
+      await newWebTab(page)
+      await typeInAddressBar(page, `file://${form}`)
+      const guest = await guestByUrl(app, 'form.html')
+      await guest.locator('#q').click({ timeout: 20_000 })
+      await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
+      await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [
+        asking,
+        '/koloft instructions add -- Run npm test first.\r'
+      ] as const)
+      await expect(page.locator(`[data-tab-id="${asking}"]`)).toHaveClass(/\bst-approval\b/, {
+        timeout: AN_ASK_SHOWS_WITHIN_MS
+      })
+
+      await sendShortcut(app, 'shortcut:next-waiting-session')
+      await expect(askDialog(page).getByRole('button', { name: "Don't change" })).toBeFocused()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('the box takes the keys back when Settings, opened over it, closes', async ({ env }) => {
+    test.setTimeout(180_000)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ownerWrites(page, 'ws-a', WRITTEN)
+      await startSessionIn(page, 'ws-a')
+      const [tab] = await tabIds(page, 'ws-a')
+      await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [
+        tab,
+        '/koloft instructions add -- Run npm test first.\r'
+      ] as const)
+      const keep = askDialog(page).getByRole('button', { name: "Don't change" })
+      await expect(keep).toBeFocused({ timeout: AN_ASK_SHOWS_WITHIN_MS })
+
+      const settings = page.getByRole('dialog', { name: 'Settings' })
+      await page.locator('.tb-ico[title="Settings"]').click()
+      await expect(settings).toBeVisible()
+      await expect(keep).not.toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(settings).toHaveCount(0)
+      await expect(keep).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(askDialog(page)).toHaveCount(0)
+      expect(versionsOnDisk(env).at(-1)?.text).toBe(WRITTEN)
     } finally {
       await quitAndClose(app)
     }
