@@ -1231,44 +1231,39 @@ export class WorkspaceManager {
   private watchRoot(root: string): void {
     try {
       fs.mkdirSync(root, { recursive: true })
-      const onEntry = (name: string): void => {
-        if (planRescan({ kind: 'projects-dir-added', dirName: name }, this.state) === 'rescan') {
-          this.scheduleRescan()
-        }
+    } catch {}
+    const onEntry = (name: string): void => {
+      if (planRescan({ kind: 'projects-dir-added', dirName: name }, this.state) === 'rescan') {
+        this.scheduleRescan()
       }
-      const watcher = fs.watch(root, (_event, filename) => {
+    }
+    // PLATFORM§40
+    const relist = (now: fs.Stats, before: fs.Stats): void => {
+      if (now.mtimeMs === before.mtimeMs) return
+      void this.listProjectSlugs(root).then((names) => {
+        const listed = this.slugsListedByLastScan.get(root)
+        for (const name of names) if (!listed?.has(name)) onEntry(name)
+      })
+    }
+    fs.watchFile(
+      root,
+      { persistent: false, interval: RELIST_A_PROJECTS_ROOT_THE_WATCHER_MAY_HAVE_MISSED_EVERY_MS },
+      relist
+    )
+    let watcher: fs.FSWatcher | undefined
+    try {
+      watcher = fs.watch(root, (_event, filename) => {
         if (filename) onEntry(filename.toString())
       })
-      // PLATFORM§40
-      const relist = (now: fs.Stats, before: fs.Stats): void => {
-        if (now.mtimeMs === before.mtimeMs) return
-        void fs.promises.readdir(root).then(
-          (names) => {
-            const listed = this.slugsListedByLastScan.get(root)
-            for (const name of names) if (!listed?.has(name)) onEntry(name)
-          },
-          () => {}
-        )
-      }
-      fs.watchFile(
-        root,
-        {
-          persistent: false,
-          interval: RELIST_A_PROJECTS_ROOT_THE_WATCHER_MAY_HAVE_MISSED_EVERY_MS
-        },
-        relist
-      )
-      const close = (): void => {
-        watcher.close()
-        fs.unwatchFile(root, relist)
-      }
-      watcher.on('error', () => {
-        close()
-        this.rootWatchers.delete(root)
-        this.scheduleRescan()
-      })
-      this.rootWatchers.set(root, { close })
+      watcher.on('error', () => watcher?.close())
     } catch {}
+    this.rootWatchers.set(root, {
+      close: () => {
+        watcher?.close()
+        fs.unwatchFile(root, relist)
+        this.slugsListedByLastScan.delete(root)
+      }
+    })
   }
 
   private reconcileBucketWatchers(wanted: Set<string>): void {
