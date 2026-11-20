@@ -269,6 +269,7 @@ export class WorkspaceManager {
   private launches = new Map<string, PendingLaunch>()
   private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
   private rootWatchers = new Map<string, { close(): void }>()
+  private slugsListedByLastScan = new Map<string, Set<string>>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
   private timer?: NodeJS.Timeout
   private panelTimer?: NodeJS.Timeout
@@ -1041,6 +1042,9 @@ export class WorkspaceManager {
     for (const [id, leaving] of this.leavingTheirWorktree)
       if (leaving.tabEnded && !listed.has(id)) this.leavingTheirWorktree.delete(id)
     this.state = { bucketDirs, workspaceSlugs }
+    for (const [root, slugs] of slugsByRoot) {
+      this.slugsListedByLastScan.set(root, new Set(await slugs))
+    }
     this.reconcileBucketWatchers(wantedBucketDirs)
     for (const file of this.headScans.keys()) {
       if (this.headScansSeen.has(file)) continue
@@ -1227,13 +1231,7 @@ export class WorkspaceManager {
   private watchRoot(root: string): void {
     try {
       fs.mkdirSync(root, { recursive: true })
-      let reported: Set<string> | undefined
-      void fs.promises.readdir(root).then(
-        (names) => (reported = new Set([...names, ...(reported ?? [])])),
-        () => {}
-      )
       const onEntry = (name: string): void => {
-        reported?.add(name)
         if (planRescan({ kind: 'projects-dir-added', dirName: name }, this.state) === 'rescan') {
           this.scheduleRescan()
         }
@@ -1243,12 +1241,11 @@ export class WorkspaceManager {
       })
       // PLATFORM§40
       const relist = (now: fs.Stats, before: fs.Stats): void => {
-        if (now.mtimeMs === before.mtimeMs || !reported) return
+        if (now.mtimeMs === before.mtimeMs) return
         void fs.promises.readdir(root).then(
           (names) => {
-            const missed = names.filter((name) => !reported?.has(name))
-            reported = new Set(names)
-            for (const name of missed) onEntry(name)
+            const listed = this.slugsListedByLastScan.get(root)
+            for (const name of names) if (!listed?.has(name)) onEntry(name)
           },
           () => {}
         )
@@ -1268,6 +1265,7 @@ export class WorkspaceManager {
       watcher.on('error', () => {
         close()
         this.rootWatchers.delete(root)
+        this.scheduleRescan()
       })
       this.rootWatchers.set(root, { close })
     } catch {}
