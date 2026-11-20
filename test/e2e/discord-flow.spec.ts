@@ -1453,28 +1453,26 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .toContain('Codex fixture answered: please approve')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
 
-      const asked = (): number =>
-        wire().filter(
-          (w) => w.direction === 'server' && w.frame.method === 'item/tool/requestUserInput'
-        ).length
       const answers = (): unknown[] =>
         wire()
-          .filter((w) => w.direction === 'client')
-          .map((w) => (w.frame as { result?: { answers?: unknown } }).result?.answers)
-          .filter(Boolean)
-      for (const [n, reply, answer] of [
-        [1, 'Green', ['Green']],
-        [2, '"Purple please"', ['None of the above', 'user_note: Purple please']]
+          .filter(
+            (w) =>
+              w.direction === 'client' &&
+              (w.frame as { result?: { answers?: unknown } }).result?.answers
+          )
+          .map((w) => (w.frame as { result?: unknown }).result)
+      const expected: unknown[] = []
+      for (const [reply, answer] of [
+        ['Green', ['Green']],
+        ['"Purple please"', ['None of the above', 'user_note: Purple please']]
       ] as const) {
         await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codex.tabId)
-        await expect.poll(asked, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBe(n)
         await expect(row).toHaveClass(/\bst-approval\b/, {
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
         fake.say(OWNER, `/koloft session answer ${codex.id} ${reply}`)
-        await expect
-          .poll(() => answers()[n - 1], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-          .toEqual({ colour: { answers: answer } })
+        expected.push({ answers: { colour: { answers: answer } } })
+        await expect.poll(answers, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toEqual(expected)
         await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       }
     })
@@ -1589,10 +1587,12 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
     seedConductor(env, 'claude')
+    seedSettings(env, { skipPermissions: false })
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
       await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await agyReady(page)
       await runIn(page, centerTerm(page), 'warm up')
       const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
       const row = wsRows(page, 'ws-a')
@@ -1607,7 +1607,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         })
         fake.say(OWNER, `/koloft session answer ${id} ${reply}`)
         await expect
-          .poll(() => terminalText(page, tabId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .poll(() => agyTranscriptOf(env, id), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
           .toContain(picked)
       }
     } finally {
