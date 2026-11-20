@@ -70,7 +70,7 @@ export class AskButtons {
       return
     }
     ask.placed = at
-    if (ask.footer) this.settle(id, ask.footer)
+    if (ask.footer) void this.settle(id, ask.footer)
   }
 
   answered(tabId: string, reply: string): void {
@@ -84,7 +84,7 @@ export class AskButtons {
     const text = await this.d.dialogText(tabId)
     for (const [id, ask] of open)
       if (text !== ask.text && this.asks.get(id) === ask && !ask.footer && !ask.pressing)
-        this.settle(id, ask.reply ? answeredWith(ask.reply) : ANSWERED_ON_THE_COMPUTER)
+        void this.settle(id, ask.reply ? answeredWith(ask.reply) : ANSWERED_ON_THE_COMPUTER)
   }
 
   async press(i: DiscordInteraction): Promise<void> {
@@ -100,7 +100,7 @@ export class AskButtons {
     }
     const choice = ask?.choices[Number(n)]
     if (!ask || ask.footer || !choice || (await this.d.dialogText(ask.tabId)) !== ask.text) {
-      if (ask && !ask.footer) this.settle(id, ANSWERED_ON_THE_COMPUTER)
+      if (ask && !ask.footer) void this.settle(id, ANSWERED_ON_THE_COMPUTER)
       await this.d.respond(i, privately(NO_LONGER_OPEN))
       return
     }
@@ -121,16 +121,24 @@ export class AskButtons {
   forget(tabId: string, footer = SESSION_CLOSED): void {
     for (const [id, ask] of this.asks)
       if (ask.tabId === tabId && !ask.footer && !ask.pressing)
-        this.settle(id, ask.reply ? answeredWith(ask.reply) : footer)
+        void this.settle(id, ask.reply ? answeredWith(ask.reply) : footer)
   }
 
-  private settle(id: string, footer: string): void {
+  async endAll(footer: string): Promise<void> {
+    await Promise.all(
+      [...this.asks]
+        .filter(([, ask]) => !ask.footer && !ask.pressing)
+        .map(([id]) => this.settle(id, footer))
+    )
+  }
+
+  private async settle(id: string, footer: string): Promise<void> {
     const ask = this.asks.get(id)
     if (!ask) return
     ask.footer = footer
     if (!ask.placed) return
     this.asks.delete(id)
-    void this.d.edit(ask.placed, this.settledCard(ask, footer)).catch(() => undefined)
+    await this.d.edit(ask.placed, this.settledCard(ask, footer)).catch(() => undefined)
   }
 
   private settledCard(ask: OpenAsk, footer: string): Card {

@@ -4,7 +4,7 @@ import { koloftPrompt, workspaceInstructionsPart } from '../../src/plugins/sessi
 import { butlerHelperRole, butlerRole } from '../../src/plugins/butler/api'
 import { ownerInstructionsPart } from '../../src/plugins/butler/prompts/role'
 import { DISCORD_BOUND } from '../../src/plugins/discord/api'
-import { TODO_METHOD, TODO_NOTICE } from '../../src/plugins/todo/api'
+import { todoMethod, TODO_NOTICE } from '../../src/plugins/todo/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
 import { DISCORD_SETUP_STEPS } from '../../src/plugins/discord/main/setupSteps'
@@ -58,7 +58,7 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   })
 
   it('the method koloft todo prints first, and the steps koloft discord setup prints', async () => {
-    await pin(TODO_METHOD, 'help/todo-method')
+    await pin(todoMethod(), 'help/todo-method')
     await pin(DISCORD_SETUP_STEPS, 'help/discord-setup-steps')
   })
 

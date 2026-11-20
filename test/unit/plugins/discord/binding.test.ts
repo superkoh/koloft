@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DiscordBinding } from '../../../../src/plugins/discord/main/binding'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import type { DiscordSettings } from '@shared/types'
+import { knowPluginStates } from '../../../../src/core/switches'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'global' }
 const BUTLER_TAB = 'tab-1'
@@ -28,6 +29,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  knowPluginStates({})
+})
+
+describe('Discord turned off in Settings ▸ Plugins', () => {
+  it('reads as bound to nothing, with no word of Discord for the butler, and keeps the channel on disk for when it is on again', () => {
+    saved = { channel: CHANNEL }
+    const c = make()
+    knowPluginStates({ discord: { on: false } })
+    expect(c.channel()).toBeUndefined()
+    expect(c.channelOfTab(BUTLER_TAB)).toBeUndefined()
+    expect(c.isButlerChannel('200')).toBe(false)
+    expect(c.butlerRoleFacts()).toEqual([])
+    knowPluginStates({ discord: { on: true } })
+    expect(c.channelOfTab(BUTLER_TAB)).toBe('200')
+    expect(saved.channel).toEqual(CHANNEL)
+  })
 })
 
 describe('the butler’s Discord channel', () => {

@@ -53,6 +53,20 @@ describe('DiscordRest', () => {
     expect([...auth]).toEqual(['Bot tok'])
   })
 
+  it('going quiet waits for a post still on its way and for the edit started as soon as it lands', async () => {
+    const order: string[] = []
+    const url = await fakeDiscord((req) => {
+      order.push(req.method!)
+      return { status: 200, json: { id: '1' } }
+    })
+    const rest = new DiscordRest(url, 'tok')
+    void rest
+      .request('POST', '/channels/9/messages', { content: 'card' })
+      .then(() => rest.request('PATCH', '/channels/9/messages/1', { components: [] }))
+    await rest.quiet(5000)
+    expect(order).toEqual(['POST', 'PATCH'])
+  })
+
   it('edits to a channel’s messages wait in a queue of their own, so a held-up edit never holds back a post there', async () => {
     let release: () => void = () => undefined
     const editHeld = new Promise<void>((r) => (release = r))
