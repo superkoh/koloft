@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -72,6 +72,8 @@ export function SessionDefaultsDialog({
   const [instructions, setInstructions] = useState('')
   const [saved, setSaved] = useState({ rules: '', instructions: '' })
   const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
+  const changedView = useRef<HTMLDivElement>(null)
+  useEffect(() => changedView.current?.scrollIntoView({ block: 'nearest' }), [changed])
   const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
@@ -260,8 +262,12 @@ export function SessionDefaultsDialog({
                     {...focusProps('instructions')}
                   />
                 </div>
-                {changed && <p className="field-hint bad">{error}</p>}
-                {changed && <InstructionsChangeLines {...changed} />}
+                {changed && (
+                  <div className="fcol" ref={changedView}>
+                    <p className="field-hint bad">{error}</p>
+                    <InstructionsChangeLines {...changed} />
+                  </div>
+                )}
                 <p className={'field-hint' + (left < 0 ? ' bad' : '')}>
                   {`${bytesLeft(left)}. ${whenItCounts(butler)}`}
                 </p>

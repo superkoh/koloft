@@ -265,7 +265,9 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       expect(versionsOnDisk(env).at(-1)?.text).toBe(agreed)
       await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg).toHaveCount(0)
-      expect(versionsOnDisk(env).at(-1)).toMatchObject({ text: typed, by: 'owner' })
+      await expect
+        .poll(() => versionsOnDisk(env).at(-1))
+        .toMatchObject({ text: typed, by: 'owner' })
     } finally {
       await quitAndClose(app)
     }
@@ -299,7 +301,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       expect(butlerVersions().at(-1)?.text).toBe(line)
       await editor.getByRole('button', { name: /Save/ }).click()
       await expect(editor).toHaveCount(0)
-      expect(butlerVersions().at(-1)).toMatchObject({ text: typed, by: 'owner' })
+      await expect.poll(() => butlerVersions().at(-1)).toMatchObject({ text: typed, by: 'owner' })
     } finally {
       await quitAndClose(app)
     }
