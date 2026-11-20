@@ -1,12 +1,8 @@
 import {
-  ChangedWhileOpen,
-  OWNER,
-  cleanInstructions,
-  instructionsBytes,
-  overTheLimit,
+  savedVersions,
   textInUse,
-  textTheOwnerChose,
-  withNewVersion
+  versionsSavedByTheOwner,
+  type VersionsSaved
 } from '@core/ownerInstructions'
 import type { ButlerSetting } from './types'
 
@@ -18,34 +14,26 @@ export const instructionsOf = (butler: ButlerSetting): string => textInUse(butle
 export type InstructionsSaved =
   { ok: true; butler: ButlerSetting } | { ok: false; error: string; inUse?: string }
 
-export function savedInstructions(
+const withVersions = (butler: ButlerSetting, saved: VersionsSaved): InstructionsSaved => {
+  if (!saved.ok) return saved
+  return { ok: true, butler: saved.versions ? { ...butler, instructions: saved.versions } : butler }
+}
+
+export const savedInstructions = (
   butler: ButlerSetting,
   raw: string,
   by: string,
   at: number
-): InstructionsSaved {
-  const text = cleanInstructions(raw)
-  const over = instructionsBytes(text) - INSTRUCTIONS_MAX_BYTES
-  if (over > 0) return { ok: false, error: overTheLimit(over) }
-  const versions = withNewVersion(butler.instructions, text, by, at)
-  return { ok: true, butler: versions ? { ...butler, instructions: versions } : butler }
-}
+): InstructionsSaved =>
+  withVersions(butler, savedVersions(butler.instructions, raw, by, at, INSTRUCTIONS_MAX_BYTES))
 
-export function savedByTheOwner(
+export const savedByTheOwner = (
   butler: ButlerSetting,
   typed: string,
   opened: string,
   at: number
-): InstructionsSaved {
-  try {
-    const text = textTheOwnerChose(
-      instructionsOf(butler),
-      cleanInstructions(opened),
-      cleanInstructions(typed)
-    )
-    return savedInstructions(butler, text, OWNER, at)
-  } catch (error) {
-    if (!(error instanceof ChangedWhileOpen)) throw error
-    return { ok: false, error: error.message, inUse: error.inUse }
-  }
-}
+): InstructionsSaved =>
+  withVersions(
+    butler,
+    versionsSavedByTheOwner(butler.instructions, typed, opened, at, INSTRUCTIONS_MAX_BYTES)
+  )
