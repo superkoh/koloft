@@ -1395,10 +1395,9 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   still does, is inferred, not checked: Carbon was not open to every account (above),
   so Koloft's normal tier runs Argon where Neon is missing.
 - **How long `agy models` takes** (2026-11-20, agy 1.5.13 on macOS, the same copied-token
-  route, four runs one after another): 1.3 to 1.5 s each, exit 0, the same 27 rows. So a
-  scheduled job or an Assist job set to Neon or Carbon reads the list before it starts
-  (Koloft keeps it for an hour), and an Assist job, which has 15 s in all, waits at most
-  5 s for it.
+  route, four runs one after another): 1.3 to 1.5 s each, exit 0, the same 27 rows. So an
+  Assist job set to Neon or Carbon goes by the list Koloft last read, and only while none
+  has come back since Koloft started does it wait for one: at most 5 s of the 15 s it has.
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on

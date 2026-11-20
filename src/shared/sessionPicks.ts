@@ -214,7 +214,7 @@ export function resolveOwnPick(
       : undefined
     : takenEffort(backend, undefined, asked.effort)
   const pick = ownPickOf(model?.id, effort) ?? {}
-  if (!fellBack) return { pick }
+  if (!fellBack && wanted === named) return { pick }
   return {
     pick,
     note: runsInstead(read, named, model?.id ?? `${BACKEND_LABEL[backend]}'s own model`)

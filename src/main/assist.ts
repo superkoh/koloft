@@ -211,9 +211,9 @@ export function koloftAssist(deps: AssistDeps): Assist {
       if (!target) continue
       const shot = ONE_SHOT[backend]
       const launch = assistLaunchOn(job.row, backend, picks)
-      const onThisAccount = await deps.onThisAccount(backend, launch)
       const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()
+      const spentMs = (): number => Date.now() - started
       const safe = EVERY_ACCOUNT_TAKES[backend]
       let modelRefused = false
       const runWith =
@@ -228,10 +228,12 @@ export function koloftAssist(deps: AssistDeps): Assist {
             (said) => (modelRefused ||= !!shot.saysItHasNoSuchModel?.test(said))
           )
       const answered = async (): Promise<string | null> => {
+        const theAccountHas = await deps.onThisAccount(backend, launch)
+        if (job.signal?.aborted) return null
         const first = await (shot.secondTryWhenLate
-          ? withASecondTryWhenLate(runWith(onThisAccount), job.signal)
-          : runWith(onThisAccount)(job.signal, ASSIST_TIMEOUT_MS))
-        const leftMs = limitMs - (Date.now() - started)
+          ? withASecondTryWhenLate(runWith(theAccountHas), job.signal)
+          : runWith(theAccountHas)(job.signal, ASSIST_TIMEOUT_MS - spentMs()))
+        const leftMs = limitMs - spentMs()
         const tableModelRefused =
           first === null && modelRefused && launch.modelFromTheTable && launch.model !== safe.model
         if (!tableModelRefused || leftMs < WORTH_ANOTHER_RUN_MS || job.signal?.aborted) return first

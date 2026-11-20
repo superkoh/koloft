@@ -131,6 +131,14 @@ describe('the model and thinking a session the owner starts runs on', () => {
       })
     })
 
+    it('says so too when the account only has a newer model of that family', () => {
+      const newer = { id: 'gemini-4.1-carbon', efforts: LMH }
+      expect(resolveOwnPick('agy', { model: 'gemini-4-carbon', effort: 'low' }, [newer])).toEqual({
+        pick: { model: 'gemini-4.1-carbon', effort: 'low' },
+        note: 'This account has no gemini-4-carbon model, so it runs on gemini-4.1-carbon.'
+      })
+    })
+
     it('runs on Argon when the account’s models cannot be read, never on the Carbon or Neon it could not see', () => {
       for (const model of ['gemini-4-carbon', 'gemini-4-neon'])
         expect(resolveOwnPick('agy', { model, effort: 'medium' }, undefined)).toEqual({

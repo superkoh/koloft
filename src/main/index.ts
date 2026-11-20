@@ -2005,7 +2005,9 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
   if ('error' in choice) return choice
   const asked = assistLaunchOn('butler', choice.backend, settings)
-  const { model, effort } = (await ownPick(choice.backend, asked)).pick
+  const { pick, note } = await ownPick(choice.backend, asked)
+  sayOnceOfWhatStartsItself(butlerNameNow(), note)
+  const { model, effort } = pick
   return { ...choice, ...(model && { model }), ...(effort && { effort }) }
 }
 
@@ -2119,20 +2121,25 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   const listed = readModelList(backend).catch(() => undefined)
   modelLists.set(backend, { at: Date.now(), listed })
   void listed.then((models) => {
-    if (!models?.length && modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
+    if (models?.length) modelsLastRead.set(backend, models)
+    else if (modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
   })
   return listed
 }
 
 const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
 // AGY§21
-const AN_ASSIST_JOB_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 5000
+const AN_ASSIST_JOB_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS = 5000
 
 const listedModelsWithin = (backend: BackendId, ms: number): Promise<ListedModel[] | undefined> =>
-  Promise.race([
-    listedModels(backend),
-    new Promise<undefined>((done) => setTimeout(() => done(undefined), ms))
-  ])
+  within(listedModels(backend), ms, 'the model list').catch(() => undefined)
+
+const modelsLastRead = new Map<BackendId, ListedModel[]>()
+
+async function modelsAnAssistJobGoesBy(backend: BackendId): Promise<ListedModel[] | undefined> {
+  const reading = listedModelsWithin(backend, AN_ASSIST_JOB_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS)
+  return modelsLastRead.get(backend) ?? reading
+}
 
 const defaultsOfProjects = projectDefaults({
   rootOf: (dir) => projectInfoOnHost(dir).root,
@@ -2164,25 +2171,27 @@ const saveEveryWorkspaceVersions = (everyWorkspaceInstructions: InstructionsVers
   commitSettings({ everyWorkspaceInstructions })
 }
 
-async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
-  const listed = needsTheAccountsModels(backend, asked.model)
-    ? await listedModels(backend)
-    : undefined
-  const resolved = resolveOwnPick(backend, asked, listed)
-  if (resolved.note) sendToRenderer(CH.toast.show, resolved.note)
-  return resolved
+async function ownPick(
+  backend: BackendId,
+  asked: OwnPick,
+  models: (backend: BackendId) => Promise<ListedModel[] | undefined> = listedModels
+): Promise<OwnPickResolved> {
+  const listed = needsTheAccountsModels(backend, asked.model) ? await models(backend) : undefined
+  return resolveOwnPick(backend, asked, listed)
 }
 
-const assistNotesSaid = new Set<string>()
+const notesSaidOfWhatStartsItself = new Set<string>()
+
+function sayOnceOfWhatStartsItself(what: string, note: string | undefined): void {
+  const line = `${what}: ${note}`
+  if (!note || notesSaidOfWhatStartsItself.has(line)) return
+  notesSaidOfWhatStartsItself.add(line)
+  sendToRenderer(CH.toast.show, line)
+}
 
 async function assistJobPick(backend: BackendId, asked: OwnPick): Promise<OwnPick> {
-  if (!needsTheAccountsModels(backend, asked.model)) return asked
-  const listed = await listedModelsWithin(backend, AN_ASSIST_JOB_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
-  const { pick, note } = resolveOwnPick(backend, asked, listed)
-  if (note && !assistNotesSaid.has(note)) {
-    assistNotesSaid.add(note)
-    sendToRenderer(CH.toast.show, `Koloft Assist: ${note}`)
-  }
+  const { pick, note } = await ownPick(backend, asked, modelsAnAssistJobGoesBy)
+  sayOnceOfWhatStartsItself('Koloft Assist', note)
   return pick
 }
 
@@ -2190,7 +2199,10 @@ async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions
   const backend = backendIdOf(opts.kind)
   if (!backend || typeof opts.cwd !== 'string' || !takesOwnDefaults(opts)) return opts
   const asked = (await defaultsOfProjects.of(opts.cwd))?.picks[backend]
-  return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
+  if (!asked) return opts
+  const { pick, note } = await ownPick(backend, asked)
+  if (note) sendToRenderer(CH.toast.show, note)
+  return { ...opts, ...pick }
 }
 
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
@@ -6203,7 +6215,9 @@ async function cronPick(req: LaunchRequest): Promise<OwnPick> {
     job.model && job.effort
       ? undefined
       : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
-  return (await ownPick(req.backend, filled ?? job)).pick
+  const { pick, note } = await ownPick(req.backend, filled ?? job)
+  sayOnceOfWhatStartsItself(`⏰ ${req.name}`, note)
+  return pick
 }
 
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
