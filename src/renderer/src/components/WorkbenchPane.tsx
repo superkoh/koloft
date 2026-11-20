@@ -75,8 +75,8 @@ import {
 import type { WorkbenchCommandSignal } from './workbenchCommands'
 import { FileTabBar, FullWidthButton } from './WorkbenchBars'
 import { WorkbenchFind } from './WorkbenchFind'
-import { fillsOf } from '../pluginUi'
-import { WORKBENCH_PART } from '../slots'
+import { useFillsOf } from '../pluginUi'
+import { WORKBENCH_PART, type WorkbenchPartView } from '../slots'
 import { NewTabMenu, PageMoreMenu } from './WorkbenchMenus'
 import { WorkbenchTabStrip, type TabAudio } from './WorkbenchTabStrip'
 import { FileTabHost, TerminalHost } from './WorkbenchTabHosts'
@@ -104,6 +104,13 @@ const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 const WATCHLESS_REFRESH_THROTTLE_MS = 600
 
 const NO_TABS = emptyTabSet()
+
+const PART_OF_A_PLUGIN_TURNED_OFF: WorkbenchPartView = {
+  button: null,
+  layer: null,
+  menuOpen: false,
+  closeMenu: () => {}
+}
 
 const PREARMED_COMMANDS: ReadonlySet<WorkbenchCommandSignal['id']> = new Set([
   'find-files',
@@ -215,9 +222,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     onStepped: bumpGitSteps,
     closeOtherMenus
   })
-  const pluginParts = fillsOf(WORKBENCH_PART).map((usePart) =>
+  const pluginParts = useFillsOf(WORKBENCH_PART, (usePart, on) =>
     usePart({
-      visible,
+      visible: visible && on,
       treeRoot,
       session,
       onReturnFocus,
@@ -227,7 +234,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       gitSteps,
       push: gitEntry.push
     })
-  )
+  ).map((part) => part ?? PART_OF_A_PLUGIN_TURNED_OFF)
   const parts = [gitEntry, ...pluginParts]
   const partMenuOpen = parts.some((p) => p.menuOpen)
   const partClosers = parts.map((p) => p.closeMenu)

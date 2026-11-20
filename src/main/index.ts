@@ -112,7 +112,6 @@ import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
-import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import {
@@ -305,8 +304,7 @@ import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
-import { GithubCountsSweep, githubCountsData } from '@plugins/github/main/countsSweep'
-import { githubLookups } from '@plugins/github/main/lookup'
+import { startGithubMain } from '@plugins/github/main/githubMain'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
@@ -485,6 +483,7 @@ import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
 import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
+import { INSTRUCTIONS_ID_PREFIX, InstructionCards } from '@plugins/discord/main/instructionCards'
 import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
 import type { WebPage } from '@core/webPage'
 import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
@@ -533,7 +532,6 @@ import {
   withDiscordAsBefore,
   withDiscordOn
 } from '@plugins/discord/main/switchOn'
-import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
@@ -1461,7 +1459,6 @@ function requestWebglRepair(): void {
 let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
-let githubCounts: GithubCountsSweep | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
@@ -1577,6 +1574,7 @@ const discordChannels = tabChannels({
 const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
 let askButtons: AskButtons | null = null
 let secretCards: SecretCards | null = null
+let instructionCards: InstructionCards | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
 let instructionAsks: InstructionAsks | null = null
@@ -2017,8 +2015,6 @@ function logWhyButlerIsNotOn(
     `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
-const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
-  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
 // CC§11
 async function liveClaudeRegistryOn(host: string): Promise<string> {
@@ -2392,9 +2388,15 @@ registerSessionCommands(commands, {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
-    askTheOwner: (ask, stillWaiting) =>
+    // CC§28 CODEX§4 AGY§13 MUSE§8
+    askTheOwner: (ask, write, stillWaiting) =>
       instructionAsks
-        ? instructionAsks.ask(ask, OWNER_TYPES_A_SECRET_WITHIN_MS, stillWaiting)
+        ? instructionAsks.ask(
+            ask,
+            cronTestMs('KOLOFT_INSTRUCTIONS_ASK_MS', OWNER_TYPES_A_SECRET_WITHIN_MS),
+            write,
+            stillWaiting
+          )
         : Promise.reject(new Error(STILL_STARTING)),
     overseerSide: butlerSide,
     isOverseer: isButlerNow,
@@ -2476,27 +2478,27 @@ registerPageCommand(commands, {
   sleep
 })
 
-registerGithubCommand(commands, {
-  writesInEnglishOnly: butlerSide,
-  // PLATFORM§1 ADR-0036
-  run: async (args, tabId, cwd) => {
-    await loginEnvReady()
-    const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
-    if (!workspace) {
-      const pinned = workspaceMgr?.pinnedPathList() ?? []
-      return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
-    }
-    const remote = parseRemoteKey(workspace)
-    if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
-    const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
-      ? formatRemoteKey(remote.host, cwd)
-      : workspace
-    const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
-    if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
-    return onMachine.code === 0
-      ? { ok: true, out: onMachine.stdout }
-      : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
-  }
+async function pinnedPathsChecked(): Promise<{ path: string; missing: boolean }[]> {
+  return (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
+}
+
+const github = startGithubMain({
+  commands,
+  repos: (wsPath) => hosts.of(wsPath).github,
+  pinnedWorkspaces: pinnedPathsChecked,
+  restampRows: () => workspaceMgr?.restampLive(),
+  browserCookies: (domain) => session.fromPartition(BROWSER_PARTITION).cookies.get({ domain }),
+  accounts: {
+    ready: loginEnvReady,
+    picked: (root) => gitAccounts?.pickedAccount(root),
+    ghEnv: async (root) => gitAccounts?.ghEnv(root),
+    ghEnvForRepo: async (repo, pinned) => gitAccounts?.ghEnvForRepo(repo, pinned),
+    machineGh: async (root, args) => (await gitAccounts?.machineGh(root, args)) ?? null
+  },
+  ghOnThisMac: ghRead,
+  butlerSide,
+  workspaceOfTab: (tabId) => sessionBackends.workspaceOfTab(tabId),
+  pinnedPaths: () => workspaceMgr?.pinnedPathList() ?? []
 })
 
 registerTodoCommand(commands, {
@@ -3635,6 +3637,7 @@ app.whenReady().then(() => {
     machinePkg = null
     if (!passwordsOn()) secretAsks?.declineAll()
     followDiscordSwitch()
+    github.followSwitch()
     try {
       writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
       if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -3692,7 +3695,7 @@ app.whenReady().then(() => {
     progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
     accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
     picksChanged: () => {
-      void githubCounts?.sweep()
+      github.sweepNow()
       workspaceMgr?.restampLive()
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
@@ -4115,13 +4118,13 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
-    pluginData: (wsPath) => githubCountsData(githubCounts?.get(wsPath)),
+    pluginData: github.rowData,
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
-      void githubCounts?.sweep()
+      github.sweepNow()
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
@@ -4260,19 +4263,22 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
+  const waitsBesidesInstructions = (tabId: string): boolean =>
+    tracker.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
   const ownerWaits = {
     waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
     ownerAnswered: (tabId: string) => {
-      const stillAsked =
-        !!instructionAsks?.asking(tabId) || !!secretAsks?.views().some((a) => a.tabId === tabId)
-      if (!stillAsked && tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
+      if (!instructionAsks?.asking(tabId) && !waitsBesidesInstructions(tabId))
+        attention.ownerAnswered(tabId)
     }
   }
   const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
-  instructionAsks = new InstructionAsks({
+  const instructions = new InstructionAsks({
     show: (asks) => pushToSessions.instructionAsks(asks),
-    owner: ownerWaits
+    owner: ownerWaits,
+    told: (text) => sendToRenderer(CH.toast.show, text)
   })
+  instructionAsks = instructions
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4384,6 +4390,25 @@ app.whenReady().then(() => {
   secrets.listen(cards)
   secretCards = cards
   secretAsks = secrets
+  const instructionCardsNow = new InstructionCards({
+    asks: instructions,
+    owner: () => bindingNow.owner(),
+    cardWanted: (tabId) => discordConnected && discordOn() && !!discordRelay?.reaches(tabId),
+    place: async (tabId, card) => {
+      const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
+      if (!channelId) return undefined
+      const name =
+        butlerSide(tabId) || roomOfTab(tabId)
+          ? (discordRelay?.askerName(tabId) ?? butlerNameNow())
+          : await secretAskerName(tabId)
+      const messageId = (await link.card(channelId, card(name))).at(-1)
+      return messageId ? { channelId, messageId, name } : undefined
+    },
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
+    respond: (i, body) => link.respond(i, body)
+  })
+  instructions.listen(instructionCardsNow)
+  instructionCards = instructionCardsNow
   const interactions = new Interactions({
     owner: () => bindingNow.owner(),
     ownerWrote: ownerCameBack,
@@ -4392,7 +4417,12 @@ app.whenReady().then(() => {
         bindingNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
         text
       ),
-    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? cards.press(i) : buttons.press(i)),
+    press: (i) =>
+      i.customId?.startsWith(SECRET_ID_PREFIX)
+        ? cards.press(i)
+        : i.customId?.startsWith(INSTRUCTIONS_ID_PREFIX)
+          ? instructionCardsNow.press(i)
+          : buttons.press(i),
     submit: (i) => cards.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
@@ -4478,6 +4508,8 @@ app.whenReady().then(() => {
     marks: () => attention.list(),
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
+    instructionsCard: (tabId) =>
+      waitsBesidesInstructions(tabId) ? undefined : instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
@@ -4593,8 +4625,6 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
-  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
-    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
     workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,
@@ -4609,14 +4639,9 @@ app.whenReady().then(() => {
     },
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
-  githubCounts = new GithubCountsSweep({
-    workspaces: pinnedPathsChecked,
-    openCounts: (wsPath) => githubLookup(hosts.of(wsPath).github).openCounts(wsPath),
-    onChange: () => workspaceMgr?.restampLive()
-  })
   workspaceMgr.start()
   freshness.start()
-  githubCounts.start()
+  github.followSwitch()
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
@@ -4728,6 +4753,7 @@ app.whenReady().then(() => {
     presence.screenLocked()
     awayDigest?.marked()
     discordRelay?.checkHeld()
+    instructionCards?.checkHeld()
   })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
@@ -5760,7 +5786,8 @@ function followDiscordSwitch(): void {
   }
   discordEnding = Promise.all([
     askButtons?.endAll(DISCORD_TURNED_OFF),
-    secretCards?.endAll(DISCORD_TURNED_OFF)
+    secretCards?.endAll(DISCORD_TURNED_OFF),
+    instructionCards?.endAll(DISCORD_TURNED_OFF)
   ])
     .then(() => link.quiet(CARDS_IN_FLIGHT_LAND_WITHIN_MS))
     .finally(() => {
@@ -6197,24 +6224,6 @@ const githubOptions: GithubReposOptions = {
     return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
   }
 }
-
-const githubLookup = githubLookups({
-  // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedAccount(root),
-  signedIn: async () => {
-    try {
-      const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
-        domain: 'github.com'
-      })
-      // PLATFORM§32
-      return jar.some(
-        (c) => (c.name === 'logged_in' && c.value === 'yes') || c.name === 'user_session'
-      )
-    } catch {
-      return false
-    }
-  }
-})
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
@@ -6896,7 +6905,7 @@ function registerIpc(): void {
     }
   })
   registerGithubChannels(pluginIpc, {
-    lookup: (root) => githubLookup(hosts.of(root).github),
+    lookup: github.lookup,
     prWorktree: async (root, pr, branch) => {
       if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
       const host = hosts.of(root)

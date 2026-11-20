@@ -2706,7 +2706,12 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   write of 63 bytes or more that ended in CR put a newline in the box instead of
   sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
   300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
-  2.1.286); the setup was not re-run here.
+  2.1.286); the setup was not re-run here. Still so on 2.1.329 (2026-11-19, the
+  hand-test sandbox, `window.api.terminal.write` on a Koloft tab, Sonnet 5.5): 352 bytes
+  and CR in one write stayed in the box, the screen noting `Removed 1 invisible character
+  from your prompt`, and a lone CR 0.8 s later sent it; 31- and 34-byte lines ending in
+  CR were sent by their one write, on the tab on screen and on one off screen, local and
+  over ssh into tmux.
 - **A line typed before claude starts lands in the input box unsent.** At zsh's
   `ESC[?2004h`, one write of the launch line (`exec claude …` CR) and `hello` CR — or
   `hello` LF — showed `❯ hello` in the box and sent nothing in 14 s (2.1.319 twice for
@@ -4418,3 +4423,25 @@ terminal; the other three agents were not probed.
 Koloft dependents: `koloft instructions` does not try to tell whose words started the turn;
 it asks the owner to agree to every change in the proposing session's own tab
 (`src/plugins/sessions/main/instructionsVerb.ts`).
+
+## §28 A Bash command given no timeout moves to the background at 120 s and runs on
+
+2026-11-19, CC 2.1.328 (`-p --dangerously-skip-permissions`, a throwaway HOME, a fake
+Messages API whose model ran one Bash call with no `timeout`:
+`perl -e "select(undef,undef,undef,150)"; echo done-after-150`), measured:
+
+- At 121 s the model got a tool result, not a kill: "Command did not complete within its
+  120s timeout and was moved to the background (ID: …). Output is being written to: …
+  You will be notified when it completes. If it is still running after 10m in the
+  background, it will be stopped and you will be notified."
+- The command ran on; at 150 s, when it ended, Claude Code sent the model a new request
+  (a `task-notification`, §27) and `claude -p` exited 0 after 150 s.
+
+Not probed: the interactive TUI (only `-p` ran); a `timeout` the model sets above 120 s
+(the tool's description says the most is 600000 ms).
+
+Koloft dependents: the 9 minutes Koloft waits for the owner's answer to `koloft
+instructions add` / `set` (`OWNER_TYPES_A_SECRET_WITHIN_MS`) still reach a Claude Code
+agent that gave its Bash call no timeout, as a background task's result; the owner's
+answer from a Discord card, posted only once the owner is away, can come after 120 s
+(`src/main/index.ts`, `askTheOwner`).

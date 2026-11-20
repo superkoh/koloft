@@ -356,7 +356,7 @@ export class DiscordRelay {
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
-  private askerName(tab: string): string {
+  askerName(tab: string): string {
     const helper = this.d.helperTitle(tab)
     const butler = this.d.butlerName()
     return helper === undefined ? butler : this.d.inRoom(tab) ? helper : helperOf(helper, butler)

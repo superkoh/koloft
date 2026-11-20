@@ -19,7 +19,7 @@ import {
   positionAt,
   TAB_TEXT
 } from './editBuffer'
-import { diffLines } from './editDiff'
+import { diffLines } from '@shared/editDiff'
 import { InlineDiff } from './InlineDiff'
 import { useStore } from '../store'
 import {
