@@ -9,7 +9,7 @@ import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { agentPluginFiles, claudeProjectPrompt, docsPluginFiles } from '../../src/main/agentPlugin'
 import { DISCORD_SETUP_STEPS } from '../../src/plugins/discord/main/setupSteps'
 import {
-  ASKS_WHAT_KOLOFT_CANNOT_SEE,
+  asksWhatKoloftCannotSee,
   inputNotProbed
 } from '../../src/plugins/sessions/main/sessionAsks'
 import { handoverPreamble } from '../../src/plugins/sessions/main/handoverPreamble'
@@ -58,7 +58,7 @@ describe('the full text of what Koloft tells an agent, pinned so that moving it 
   })
 
   it('what Koloft tells a session about the butler outside the guide: a question only keys answer, and the note a session the butler started reads first', async () => {
-    await pin(ASKS_WHAT_KOLOFT_CANNOT_SEE, 'butler/question-only-keys-answer')
+    await pin(asksWhatKoloftCannotSee(), 'butler/question-only-keys-answer')
     await pin(inputNotProbed('Codex'), 'butler/question-not-probed')
     await pin(
       handoverPreamble({ name: BUTLER, id: 'butler-id', label: 'Claude', assist: true }),
