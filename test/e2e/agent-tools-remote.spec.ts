@@ -9,7 +9,6 @@ import { docsSkillHandedOut, filesNamedUnder, koloftSkillsUnder } from './helper
 import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
-import { closeSettings, openSettings } from './helpers/extensions'
 import {
   encodeCwd,
   notesOnDisk,
@@ -24,6 +23,7 @@ import {
   type ClaudeCall
 } from './helpers/p1'
 import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
+import { closeSettings, openSettings } from './helpers/extensions'
 import {
   REMOTE_WS_NAME,
   killFakeRemote,
@@ -36,13 +36,6 @@ import {
   remoteKey
 } from './helpers/remote'
 
-function koloftSkillHandedTo(call: ClaudeCall): string {
-  const dir = call.argv.find(
-    (a, i) => call.argv[i - 1] === '--plugin-dir' && a.includes('agent-plugin')
-  )
-  return dir ? fs.readFileSync(path.join(dir, 'skills', 'koloft', 'SKILL.md'), 'utf8') : ''
-}
-
 async function sessionOf(page: Page, tabId: string): Promise<SessionInfo | undefined> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
 }
@@ -52,6 +45,13 @@ function machineProcessOf(env: E2EEnv, backend: BackendId, id: string): number |
   if (backend === 'muse') return machineMuseCalls(env).find((c) => c.sessionId === id)?.pid
   if (backend === 'agy') return machineAgyCalls(env)[0]?.pid
   return undefined
+}
+
+function koloftSkillHandedTo(call: ClaudeCall): string {
+  const dir = call.argv.find(
+    (a, i) => call.argv[i - 1] === '--plugin-dir' && a.includes('agent-plugin')
+  )
+  return dir ? fs.readFileSync(path.join(dir, 'skills', 'koloft', 'SKILL.md'), 'utf8') : ''
 }
 
 function codexFramesTo(env: E2EEnv, method: string, threadId: string): string[] {
