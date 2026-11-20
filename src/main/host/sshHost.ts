@@ -82,12 +82,13 @@ import {
   type NoticeFile
 } from '@plugins/sessions/main/hooks'
 import { claudeArgv } from '../claudeArgs'
-import type { SummaryRow } from '../agyStore'
+import { parseAnnotationTitle, type SummaryRow } from '../agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,
   AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
   agyHeldCmd,
   agySendCmd,
+  agyTitleCmd,
   listAgyCmd,
   parseAgyConfig,
   readAgyConfigCmd,
@@ -1212,6 +1213,20 @@ export class SshHost implements Host {
       timeoutMs: AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS
     })
     return r.code === 0
+  }
+
+  async agyConversationTitle(conversationId: string): Promise<string | undefined> {
+    const r = await this.deps.run(agyTitleCmd(conversationId))
+    if (r.code !== 0) return undefined
+    const text = r.stdout.toString('utf8').trim()
+    if (!text) return undefined
+    try {
+      const parsed = JSON.parse(text) as { title?: unknown; pbtxt?: unknown }
+      if (typeof parsed.title === 'string' && parsed.title) return parsed.title
+      if (typeof parsed.pbtxt === 'string' && parsed.pbtxt)
+        return parseAnnotationTitle(parsed.pbtxt)
+    } catch {}
+    return undefined
   }
 
   async agyConversations(): Promise<SummaryRow[]> {
