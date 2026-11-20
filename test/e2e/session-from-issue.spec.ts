@@ -170,8 +170,11 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       page.on('pageerror', (error) => windowErrors.push(error.message))
       await waitBooted(page)
 
+      const ghCalls = path.join(env.home, 'fake-gh-calls.txt')
+      const listsAsked = /issue list|pr list/
       let dlg = await openWorktreeSession(page, 'ws-a')
       await expect(itemRow(dlg, 218)).toBeVisible({ timeout: 15_000 })
+      expect(fs.readFileSync(ghCalls, 'utf8')).toMatch(listsAsked)
       await sendShortcut(app, 'shortcut:open-settings')
       await page.locator('.set-ni', { hasText: 'Plugins' }).click()
       await page.getByRole('switch', { name: 'GitHub', exact: true }).setChecked(false)
@@ -187,15 +190,12 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await dlg.locator('.modal-foot button', { hasText: 'Cancel' }).click()
       await expect(dlg).toHaveCount(0)
 
-      const ghCalls = path.join(env.home, 'fake-gh-calls.txt')
       fs.rmSync(ghCalls, { force: true })
       dlg = await openWorktreeSession(page, 'ws-a')
       await createsWhatIsTyped()
       await expect(dlg.getByText('Loading issues and pull requests…')).toHaveCount(0)
       await expect(dlg.locator('.gh-items')).toHaveCount(0)
-      expect(fs.existsSync(ghCalls) ? fs.readFileSync(ghCalls, 'utf8') : '').not.toMatch(
-        /issue list|pr list/
-      )
+      expect(fs.existsSync(ghCalls) ? fs.readFileSync(ghCalls, 'utf8') : '').not.toMatch(listsAsked)
       expect(windowErrors).toEqual([])
     } finally {
       await quitAndClose(app)

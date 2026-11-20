@@ -10,6 +10,7 @@ import {
   agyTranscriptOf,
   installAgy,
   installCodex,
+  installFakeGh,
   installMuse,
   museCalls,
   museSaid,
@@ -1396,6 +1397,36 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         await quitAndClose(app)
       }
     })
+
+  test('with GitHub on, koloft gh in a session runs gh in that session’s workspace on this Mac and prints what gh said', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installFakeGh(env, {
+      issues: [
+        {
+          number: 7,
+          title: 'koloft-gh-ran-here',
+          url: 'https://github.com/acme/app/issues/7',
+          updatedAt: '2026-11-01T00:00:00Z'
+        }
+      ]
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+
+      expect(await koloftInSession(page, 'gh issue list')).toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain('koloft-gh-ran-here')
+      expect(fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8')).toContain(
+        'issue list'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   for (const backend of SESSION_BACKENDS)
     test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session's koloft help and koloft skill say nothing of koloft gh or the to-dos, and koloft gh and koloft todo are refused with the reason`, async ({

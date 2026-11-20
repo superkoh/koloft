@@ -249,6 +249,22 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
     }
   })
 
+  test('with GitHub on and no GitHub account picked on the machine, koloft gh in a session there says so instead of running gh on this Mac', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installOnTheMachine(env, 'claude')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const tab = await startRemoteTab(page, env, 'claude')
+
+      expect(await koloftInSession(page, tab, 'gh issue list')).not.toBe('0')
+      expect(await terminalText(page, tab)).toContain('Koloft has picked no GitHub account')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const backend of SESSION_BACKENDS)
     test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session on the machine gets a koloft help and a koloft skill with no koloft gh or to-dos, and koloft gh and koloft todo are refused with the reason`, async ({
       env
