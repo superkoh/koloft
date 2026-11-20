@@ -226,10 +226,21 @@ beforeEach(() => {
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
-    create: vi.fn((args: { id: string; argv: string[]; processEnv: NodeJS.ProcessEnv }) => {
-      created.push({ id: args.id, argv: args.argv, env: args.processEnv })
-      return { id: args.id, startedAt: Date.now() }
-    }),
+    create: vi.fn(
+      (args: {
+        id: string
+        argv: string[]
+        processEnv: NodeJS.ProcessEnv
+        envSetForThisTab?: Record<string, string>
+      }) => {
+        created.push({
+          id: args.id,
+          argv: args.argv,
+          env: { ...args.processEnv, ...args.envSetForThisTab }
+        })
+        return { id: args.id, startedAt: Date.now() }
+      }
+    ),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
     type: vi.fn(async () => undefined),

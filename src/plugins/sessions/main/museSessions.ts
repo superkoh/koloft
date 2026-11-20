@@ -800,9 +800,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         processEnv: {
           ...env,
           PATH: pathWithDirFirst(env.PATH, tools.dir),
-          ...tools.env,
-          ...browserControlEnv(tabId, endpoint)
+          ...tools.env
         },
+        envSetForThisTab: browserControlEnv(tabId, endpoint),
         resumeSessionId: opts.resumeSessionId,
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
       })

@@ -167,13 +167,14 @@ beforeEach(() => {
         id: string
         argv: string[]
         processEnv: NodeJS.ProcessEnv
+        envSetForThisTab?: Record<string, string>
         extraEnv: Record<string, string>
       }) => {
         pids.set(args.id, 4000 + tab)
         created.push({
           id: args.id,
           argv: args.argv,
-          env: args.processEnv,
+          env: { ...args.processEnv, ...args.envSetForThisTab },
           extraEnv: args.extraEnv
         })
         return { id: args.id, startedAt: started }

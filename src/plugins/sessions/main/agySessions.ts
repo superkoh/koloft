@@ -946,9 +946,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ...(instructions ? { [AGY_START_ENV]: startFile } : {}),
           [AGY_COST_ENV]: path.join(dir, 'agy-cost'),
           ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) }),
-          ANT_ACCOUNT: pick.account,
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
-          ...agyAccountEnv(apiKey),
+          ...agyAccountEnv(apiKey)
+        },
+        envSetForThisTab: {
+          ANT_ACCOUNT: pick.account,
           // AGY§30
           ...browserControlEnv(tabId, endpoint)
         },
