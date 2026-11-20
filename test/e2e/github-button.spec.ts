@@ -30,6 +30,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { newWebTab, openBrowser } from './helpers/browser'
+import { closeSettings, openSettings } from './helpers/extensions'
 import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
@@ -80,7 +81,17 @@ function repoWithOrigin(env: E2EEnv, branch: string): string {
 async function startWithGithub(
   env: E2EEnv,
   ws = 'ws-a',
-  extra: Record<string, { owner: string; repo: string; branch?: string; pr?: number | null }> = {},
+  extra: Record<
+    string,
+    {
+      owner: string
+      repo: string
+      branch?: string
+      pr?: number | null
+      issues?: number
+      prs?: number
+    }
+  > = {},
   gh: Parameters<typeof installFakeGh>[1] = { checks: ONE_PASSING }
 ): Promise<{ app: ElectronApplication; page: Page }> {
   installFakeGh(env, gh)
@@ -410,6 +421,56 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       expect(gitOut(origin, 'rev-parse', 'refs/heads/feature/login')).toBe(
         gitOut(env.workspaces.a, 'rev-parse', 'HEAD')
       )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('G15: turning GitHub off in Settings ▸ Plugins while its button shows takes the button and the sidebar counts away, keeps the branch button whose Commit… and Push still work, and turning it on brings them back, the window working throughout', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const origin = repoWithOrigin(env, 'feature/login')
+    const dir = env.workspaces.a
+    const { app, page } = await startWithGithub(env, 'ws-a', {
+      [dir]: { ...REPO, issues: 4, prs: 2 }
+    })
+    const windowErrors: string[] = []
+    page.on('pageerror', (error) => windowErrors.push(error.message))
+    const counts = page.locator('.ws-gh')
+    const setGithub = async (on: boolean): Promise<void> => {
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+      await page.getByRole('switch', { name: 'GitHub', exact: true }).setChecked(on)
+      await closeSettings(page)
+    }
+    try {
+      await expect(ghButton(page)).toBeVisible({ timeout: 30_000 })
+      await expect(counts).toBeVisible({ timeout: 30_000 })
+
+      await setGithub(false)
+      await expect(ghButton(page)).toHaveCount(0)
+      await expect(counts).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.locator('.wb-git')).toBeVisible()
+
+      fs.writeFileSync(path.join(dir, 'G15-new.txt'), 'new\n')
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Commit…' }).click()
+      const dialog = page.locator('.modal', { hasText: 'Commit changes' })
+      await dialog.getByLabel('Commit message').fill('G15 commit with GitHub off')
+      await dialog.locator('.btn-primary', { hasText: 'Commit' }).click()
+      await expect(page.locator('.toast-msg')).toHaveText('Committed.', { timeout: 30_000 })
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Push' }).click()
+      await expect(page.locator('.toast-msg')).toHaveText('Pushed.', { timeout: 30_000 })
+      expect(
+        gitOut(origin, 'for-each-ref', '--format=%(objectname)', 'refs/heads/feature/login')
+      ).toBe(gitOut(dir, 'rev-parse', 'HEAD'))
+
+      await setGithub(true)
+      await expect(ghButton(page)).toBeVisible({ timeout: 30_000 })
+      await expect(counts).toBeVisible({ timeout: 30_000 })
+      expect(windowErrors).toEqual([])
     } finally {
       await app.close().catch(() => {})
     }

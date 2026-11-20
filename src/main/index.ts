@@ -112,7 +112,6 @@ import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
-import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import {
@@ -305,8 +304,7 @@ import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
-import { GithubCountsSweep, githubCountsData } from '@plugins/github/main/countsSweep'
-import { githubLookups } from '@plugins/github/main/lookup'
+import { startGithubMain } from '@plugins/github/main/githubMain'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
@@ -534,7 +532,6 @@ import {
   withDiscordAsBefore,
   withDiscordOn
 } from '@plugins/discord/main/switchOn'
-import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
 import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
@@ -1462,7 +1459,6 @@ function requestWebglRepair(): void {
 let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
-let githubCounts: GithubCountsSweep | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
@@ -2019,8 +2015,6 @@ function logWhyButlerIsNotOn(
     `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
-const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
-  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
 // CC§11
 async function liveClaudeRegistryOn(host: string): Promise<string> {
@@ -2484,27 +2478,27 @@ registerPageCommand(commands, {
   sleep
 })
 
-registerGithubCommand(commands, {
-  writesInEnglishOnly: butlerSide,
-  // PLATFORM§1 ADR-0036
-  run: async (args, tabId, cwd) => {
-    await loginEnvReady()
-    const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
-    if (!workspace) {
-      const pinned = workspaceMgr?.pinnedPathList() ?? []
-      return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
-    }
-    const remote = parseRemoteKey(workspace)
-    if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
-    const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
-      ? formatRemoteKey(remote.host, cwd)
-      : workspace
-    const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
-    if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
-    return onMachine.code === 0
-      ? { ok: true, out: onMachine.stdout }
-      : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
-  }
+async function pinnedPathsChecked(): Promise<{ path: string; missing: boolean }[]> {
+  return (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
+}
+
+const github = startGithubMain({
+  commands,
+  repos: (wsPath) => hosts.of(wsPath).github,
+  pinnedWorkspaces: pinnedPathsChecked,
+  restampRows: () => workspaceMgr?.restampLive(),
+  browserCookies: (domain) => session.fromPartition(BROWSER_PARTITION).cookies.get({ domain }),
+  accounts: {
+    ready: loginEnvReady,
+    picked: (root) => gitAccounts?.pickedAccount(root),
+    ghEnv: async (root) => gitAccounts?.ghEnv(root),
+    ghEnvForRepo: async (repo, pinned) => gitAccounts?.ghEnvForRepo(repo, pinned),
+    machineGh: async (root, args) => (await gitAccounts?.machineGh(root, args)) ?? null
+  },
+  ghOnThisMac: ghRead,
+  butlerSide,
+  workspaceOfTab: (tabId) => sessionBackends.workspaceOfTab(tabId),
+  pinnedPaths: () => workspaceMgr?.pinnedPathList() ?? []
 })
 
 registerTodoCommand(commands, {
@@ -3643,6 +3637,7 @@ app.whenReady().then(() => {
     machinePkg = null
     if (!passwordsOn()) secretAsks?.declineAll()
     followDiscordSwitch()
+    github.followSwitch()
     try {
       writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
       if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -3700,7 +3695,7 @@ app.whenReady().then(() => {
     progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
     accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
     picksChanged: () => {
-      void githubCounts?.sweep()
+      github.sweepNow()
       workspaceMgr?.restampLive()
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
@@ -4123,13 +4118,13 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
-    pluginData: (wsPath) => githubCountsData(githubCounts?.get(wsPath)),
+    pluginData: github.rowData,
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
-      void githubCounts?.sweep()
+      github.sweepNow()
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
@@ -4630,8 +4625,6 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
-  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
-    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
     workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,
@@ -4646,14 +4639,9 @@ app.whenReady().then(() => {
     },
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
-  githubCounts = new GithubCountsSweep({
-    workspaces: pinnedPathsChecked,
-    openCounts: (wsPath) => githubLookup(hosts.of(wsPath).github).openCounts(wsPath),
-    onChange: () => workspaceMgr?.restampLive()
-  })
   workspaceMgr.start()
   freshness.start()
-  githubCounts.start()
+  github.followSwitch()
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
@@ -6237,24 +6225,6 @@ const githubOptions: GithubReposOptions = {
   }
 }
 
-const githubLookup = githubLookups({
-  // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedAccount(root),
-  signedIn: async () => {
-    try {
-      const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
-        domain: 'github.com'
-      })
-      // PLATFORM§32
-      return jar.some(
-        (c) => (c.name === 'logged_in' && c.value === 'yes') || c.name === 'user_session'
-      )
-    } catch {
-      return false
-    }
-  }
-})
-
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
@@ -6935,7 +6905,7 @@ function registerIpc(): void {
     }
   })
   registerGithubChannels(pluginIpc, {
-    lookup: (root) => githubLookup(hosts.of(root).github),
+    lookup: github.lookup,
     prWorktree: async (root, pr, branch) => {
       if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
       const host = hosts.of(root)
