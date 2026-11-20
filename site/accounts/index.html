@@ -530,10 +530,11 @@
         <ul class="dash">
           <li>
             Its row, <code>Alfred · Butler</code>, sits at the top of the sessions list, under the
-            <a href="../sessions/#inbox">Inbox</a> row. Under the name is its Discord channel, or
-            <code>not on Discord</code>. Until it has a Discord channel, the row is grey and says
+            <a href="../sessions/#inbox">Inbox</a> row. While Discord is on, under the name is its
+            Discord channel, or <code>not on Discord</code>. The row is grey and says
             <code>Not set up — click to start</code> while you have no account, or while
-            <code>Skip permission prompts</code> is on and you have not yet said yes to it.
+            <code>Skip permission prompts</code> is on and you have not yet said yes to it, unless
+            Discord is on and has a channel.
           </li>
           <li>
             When no agent can run it, a red line under the row says why: the agent is turned off,
@@ -543,8 +544,9 @@
           </li>
           <li>
             Click the row to open it. Right-click it for <code>Open</code>, <code>Rename…</code>,
-            <code>Start a fresh conversation</code>, and <code>Bind Discord channel…</code> (or
-            <code>Change Discord channel…</code> and <code>Unbind Discord</code> once it has one).
+            <code>Start a fresh conversation</code>, and, while Discord is on,
+            <code>Bind Discord channel…</code> (or <code>Change Discord channel…</code> and
+            <code>Unbind Discord</code> once it has one).
           </li>
           <li>
             <code>Rename…</code> (or Settings ▸ Plugins ▸ Butler ▸ Name) changes the name in its
@@ -559,8 +561,11 @@
             conversation (on Muse, from its next start). <code>Start a fresh conversation</code> on
             the strip asks first; <code>Start fresh</code> ends this conversation and starts a new
             one that reads your instructions as they are now. A folder's sessions have
-            <a href="../sessions/#instructions">instructions of their own</a>, which your butler
-            does not get.
+            <a href="../sessions/#instructions">instructions of their own</a>, and there are
+            <a href="../sessions/#every-workspace">instructions for every workspace</a>; your butler
+            gets neither. Ask your butler to remember a rule and it can propose the line for its own
+            instructions, for one folder's, or for every workspace's, the
+            <a href="../sessions/#instructions-ask">same way a session does</a>.
           </li>
           <li>
             When the session tab you are looking at goes away (you close it, or its agent quits
