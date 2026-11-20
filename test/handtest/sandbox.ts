@@ -84,6 +84,7 @@ const DEFAULT_PORT = '9555'
 const WINDOW_OPEN_DEADLINE_MS = 30_000
 const QUIT_DEADLINE_MS = 20_000
 const POLL_MS = 500
+const WALL_CLOCK_CHECK_MS = 60_000
 const USAGE_PROBE_THAT_TEST_MODE_TURNS_OFF = 'https://api.anthropic.com'
 // CC§7
 const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
@@ -496,7 +497,11 @@ if (command === 'start') {
     discord: values.discord
   })
 } else if (command === 'stop' && home) {
-  if (values.at) await wait(Math.max(0, Number(values.at) - Date.now()))
+  if (values.at) {
+    const at = Number(values.at)
+    if (!Number.isFinite(at)) throw new Error(`--at takes a time in ms, not ${values.at}`)
+    while (Date.now() < at) await wait(Math.min(at - Date.now(), WALL_CLOCK_CHECK_MS))
+  }
   await stop(home)
 } else if (command === 'menu' && home && arg) {
   await clickMenuItem(home, arg)

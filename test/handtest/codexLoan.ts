@@ -4,7 +4,8 @@ import { codexHomeOf } from '../../src/main/codexAccounts'
 
 // CODEX§15
 const CODEX_REFRESHES_THIS_CLOSE_TO_EXPIRY_MS = 5 * 60_000
-export const LONGEST_SANDBOX_RUN_MS = 24 * 3_600_000
+const STOP_THIS_LONG_BEFORE_CODEX_COULD_REFRESH_MS = 30 * 60_000
+const LONGEST_SANDBOX_RUN_MS = 24 * 3_600_000
 
 export interface InstalledAccount {
   name: string
@@ -18,9 +19,13 @@ type Refresh = { never: true } | { at: number } | { unknown: true }
 
 function whenCodexRefreshes(auth: string): Refresh {
   try {
-    const { tokens } = JSON.parse(auth) as { tokens?: { access_token?: unknown } }
-    if (!tokens) return { never: true }
-    const token = String(tokens.access_token)
+    const login = JSON.parse(auth) as {
+      OPENAI_API_KEY?: unknown
+      tokens?: { access_token?: unknown } | null
+    }
+    if (!login.tokens && typeof login.OPENAI_API_KEY === 'string' && login.OPENAI_API_KEY)
+      return { never: true }
+    const token = String(login.tokens?.access_token)
     const { exp } = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as {
       exp?: unknown
     }
@@ -29,6 +34,14 @@ function whenCodexRefreshes(auth: string): Refresh {
       : { unknown: true }
   } catch {
     return { unknown: true }
+  }
+}
+
+function readOrNothing(file: string): string {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch {
+    return ''
   }
 }
 
@@ -42,7 +55,7 @@ export function codexLoan(
     .map((a) => ({ name: a.name, file: path.join(codexHomeOf(profile, a.name), 'auth.json') }))
     .filter((l) => fs.existsSync(l.file))
     .map((l) => {
-      const auth = fs.readFileSync(l.file, 'utf8')
+      const auth = readOrNothing(l.file)
       return { name: l.name, auth, refresh: whenCodexRefreshes(auth) }
     })
   if (logins.length === 0)
@@ -62,5 +75,9 @@ export function codexLoan(
         `and a refresh in the sandbox would sign the installed Koloft out of it; it is lent ` +
         `again once the installed Koloft has refreshed it`
     }
-  return { name: freshest.name, auth: freshest.auth, safeUntil: freshest.at }
+  return {
+    name: freshest.name,
+    auth: freshest.auth,
+    safeUntil: freshest.at - STOP_THIS_LONG_BEFORE_CODEX_COULD_REFRESH_MS
+  }
 }

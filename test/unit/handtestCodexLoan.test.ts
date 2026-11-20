@@ -54,10 +54,20 @@ describe('the hand-test sandbox lends a Codex login only while no refresh can co
     expect(loan).toMatchObject({ notLent: expect.stringContaining('2026-11-20T22:55:00.000Z') })
   })
 
-  it('says until when a lent login is safe: five minutes before its token expires', () => {
+  it('says until when a lent login is safe: well before Codex refreshes it, 5 minutes before expiry', () => {
     const profile = profileWith({ on: loginExpiringIn(48 * HOUR) })
-    expect(codexLoan(profile, [account('on')], NOW)).toMatchObject({
-      safeUntil: NOW + 48 * HOUR - 5 * 60_000
+    const loan = codexLoan(profile, [account('on')], NOW) as { safeUntil: number }
+    expect(loan.safeUntil).toBeLessThan(NOW + 48 * HOUR - 5 * 60_000)
+    expect(loan.safeUntil).toBeGreaterThan(NOW + 24 * HOUR)
+  })
+
+  it('does not take a signed-out login for an API key', () => {
+    const profile = profileWith({
+      out: JSON.stringify({ OPENAI_API_KEY: null, tokens: null }),
+      good: loginExpiringIn(48 * HOUR)
+    })
+    expect(codexLoan(profile, [account('out'), account('good')], NOW)).toMatchObject({
+      name: 'good'
     })
   })
 
