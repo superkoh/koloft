@@ -288,11 +288,11 @@ describe('CodexSessions', () => {
     bind()
     await sessions.stop(first.id)
     await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
-    const launches = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!.join(' '))
+    const launches = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
     expect(launches).toHaveLength(2)
     for (const argv of launches) {
-      expect(argv).toContain('-c features.tui_workspace=false')
-      expect(argv).toContain(`-c ${CODEX_ASKS_AND_WAITS}`)
+      expect(argv[argv.indexOf('features.tui_workspace=false') - 1]).toBe('-c')
+      expect(argv[argv.indexOf(CODEX_ASKS_AND_WAITS) - 1]).toBe('-c')
     }
   })
 

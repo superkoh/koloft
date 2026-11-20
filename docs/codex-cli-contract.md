@@ -2758,16 +2758,23 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   - No key was found that puts the highlight on a known row. So once the person pressed
     a key in a question since it was asked, Koloft leaves it to them and presses
     nothing.
-- **A `-c features.*` on the TUI's command line replaces the features the app-server
-  gives the thread, so the TUI must carry `default_mode_request_user_input=true` too.**
-  2026-11-20, codex-cli 0.170.0 and 0.171.0, the §35 setup (fake Responses server,
-  `codex --remote unix://<sock>` on an `app-server --listen unix://<sock> -c
-  features.default_mode_request_user_input=true`), 100×40. With only `-c
-  features.tui_workspace=false` added to the TUI, a model call to `request_user_input`
-  got back `request_user_input is unavailable in Default mode`, on a new thread and on
-  `resume <id>`; with `-c features.default_mode_request_user_input=true` on the TUI as
-  well, it drew "Question 1/1" and `2` sent `["Green"]`. Codex 0.161.0 starts with both flags on
-  its TUI and asks and takes the answer the same way.
+- **A `-c features.*` on the TUI's command line replaces the features the app-server's
+  own `-c` flags give the thread, so the TUI must carry
+  `default_mode_request_user_input=true` too; the app-server home's `config.toml`
+  `[features]` still hold.** 2026-11-20, codex-cli 0.170.0 and 0.171.0, the §35 setup
+  (fake Responses server, `codex --remote unix://<sock>` on an `app-server --listen
+  unix://<sock> -c features.default_mode_request_user_input=true`), 100×40. With only
+  `-c features.tui_workspace=false` added to the TUI, a model call to
+  `request_user_input` got back `request_user_input is unavailable in Default mode`, on
+  a new thread and on `resume <id>`; with `-c
+  features.default_mode_request_user_input=true` on the TUI as well, it drew "Question
+  1/1" and `2` sent `["Green"]`. With `[features] view_image = false` in the app-server
+  home's `config.toml`, the tools sent to the model lacked `view_image` with or without
+  both flags on the TUI, whether the TUI ran in that `CODEX_HOME` or in another one
+  holding no `[features]` (a remote tab's shape, §16: the TUI in the Mac's home, the
+  app-server in the machine's); without that line `view_image` was sent (0.171.0, 1 run
+  each; a real SSH machine not probed). Codex 0.161.0 starts with both flags on its TUI
+  and asks and takes the answer the same way (same setup, 2026-11-20, 1 run).
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
   an elicitation `mode` other than `form`.
 
@@ -3895,7 +3902,9 @@ a python pty with pyte at 100×40; a reply holding `[app.ts](<abs>/src/app.ts:42
 - With `-c features.tui_workspace=false` on the TUI (the app-server's own `-c` list is
   not enough), 0.171.0 draws `app.ts (src/app.ts:42:5)` again, a click opens nothing,
   and typed words land in the composer, on a new thread and on `resume <id>`. That flag
-  alone breaks the model's questions (§20).
+  alone breaks the model's questions (§20). A remote tab's TUI runs on the Mac with the
+  same flags (§16); one in another `CODEX_HOME` than its app-server's drew the same
+  (1 run); a real SSH machine was not probed.
 
 ## 36. The TUI holds fast keys back to tell a paste from typing (`disable_paste_burst`)
 
