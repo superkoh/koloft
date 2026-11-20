@@ -147,31 +147,6 @@ describe('where a workspace’s session defaults are kept', () => {
     expect(lookups).toEqual(['kept /work/notes', 'fresh /work/notes'])
   })
 
-  it('keeps using the repository it last found for a folder while its machine cannot be reached, so a workspace that leaves out the instructions for every workspace still does; once the machine answers that the folder has no repository, the folder is its own', async () => {
-    let answer: string | null = 'octo/app'
-    let reachable = true
-    let now = 0
-    const leftOut: SessionDefaults = { picks: {}, leavesOutEveryWorkspace: true }
-    const store = projectDefaults({
-      rootOf: (dir) => dir,
-      reachable: async () => {
-        if (!reachable) throw new Error('down')
-      },
-      repoOf: async () => answer,
-      saved: () => ({ 'octo/app': leftOut }),
-      save: () => {},
-      now: () => now
-    })
-    expect(await store.of('ssh://box/srv/app')).toEqual(leftOut)
-    answer = null
-    reachable = false
-    now = A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS
-    expect(await store.of('ssh://box/srv/app')).toEqual(leftOut)
-    reachable = true
-    now = 2 * A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS
-    expect(await store.of('ssh://box/srv/app')).toBeUndefined()
-  })
-
   it('asks nothing at all while no workspace has defaults', async () => {
     let lookups = 0
     const store = projectDefaults({
