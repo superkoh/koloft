@@ -21,6 +21,9 @@ it is done.
 - The shape of the manifest and of what a plugin registers through is pinned for format
   version 1. Changing it fails Koloft's typecheck until the change is pinned or the version
   goes up ([Format version](#format-version)).
+- A change that adds a registration (a moment, a slot, a UI entry, a command, a setting) or
+  changes a pinned shape updates this page, and the pin in `test/unit/pluginFormat.test.ts`,
+  in the same pull request; that test fails until it does.
 - A plugin imports only core, its own folder, and the `api.ts` or `windowApi.ts` of plugins it
   says it needs. Much code does not follow this rule yet; a check lists each case
   ([The import rule](#the-import-rule)).
