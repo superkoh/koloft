@@ -277,9 +277,14 @@ interface AgyRun extends StoredRun {
   countsTasks?: boolean
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
+  streamShowsRunning?: boolean
+  terminalState?: string
+  nextTurnNotOnStreamYet?: boolean
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
   transcript?: TranscriptFollower
 }
+
+const TERMINAL_TURN_ENDS = new Set(['done', 'error'])
 
 function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): ProgramStatus[] {
   let kept = held
@@ -2554,7 +2559,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       this.deps.pty.wakeReady(tabId)
       return
     }
-    for (const status of states) this.emitState(run, status)
+    for (const status of states) {
+      // AGY§16
+      if (status.state === 'working' && TERMINAL_TURN_ENDS.has(run.terminalState ?? ''))
+        run.nextTurnNotOnStreamYet = true
+      run.terminalState = status.state
+      this.emitState(run, status)
+    }
   }
 
   // AGY§8 AGY§10
@@ -2751,6 +2762,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!run.api || !id || run.stream?.conversationId === id) return
     run.stream?.close()
+    run.streamShowsRunning = undefined
     const stream = run.api.streamState(id, (message) => {
       if (
         this.runs.get(run.tabId) !== run ||
@@ -2778,6 +2790,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       } else if (update.activeHook !== CONTEXT_SUMMARY && run.compacting) this.endCompaction(run)
       const st = update.status ?? update.executorLoopStatus
       const idleNow = st === 'CASCADE_RUN_STATUS_IDLE'
+      // AGY§16
+      const endsAnEarlierTurn =
+        idleNow && !!run.nextTurnNotOnStreamYet && run.streamShowsRunning !== undefined
+      if (st && !idleNow && run.streamShowsRunning === false) run.nextTurnNotOnStreamYet = false
+      if (st) run.streamShowsRunning = !idleNow
       if (idleNow && !run.remote) {
         run.log.read()
         if (this.runs.get(run.tabId) !== run || run.info?.nativeSessionId !== id) return
@@ -2832,7 +2849,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             run.schedules?.delete(tid)
         this.syncWakeupPending(run)
         this.publishBackground(run)
-        if (!run.waiting?.plan) {
+        if (!run.waiting?.plan && !endsAnEarlierTurn) {
           const turn = this.deps.runtime.turn(run.tabId)
           if (turn === 'working' || turn === 'approval' || turn === 'input')
             this.deps.events(run.tabId, { type: 'stop' })
@@ -2853,7 +2870,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           run.unattributedBackground = true
           this.publishBackground(run)
         }
-        if (!run.waiting?.plan && (turn === 'working' || turn === 'approval' || turn === 'input'))
+        if (
+          !run.waiting?.plan &&
+          !endsAnEarlierTurn &&
+          (turn === 'working' || turn === 'approval' || turn === 'input')
+        )
           this.deps.events(run.tabId, { type: 'stop' })
       }
     })

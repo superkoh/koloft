@@ -1680,6 +1680,8 @@ const SCENARIOS = {
 async function runTurn(text, origin = {}) {
   turnRunning = true
   turnCancelled = false
+  // AGY§10
+  term.idleOnNextKey = false
   review = null
   const c = ensureConversation()
   const turn = { conv: c, invocation: 0, origin }
