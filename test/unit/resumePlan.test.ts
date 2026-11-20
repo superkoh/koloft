@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import path from 'path'
 import {
+  occupantName,
   planResume,
   worktreeHomeRoot,
   worktreeNameAround,
   type ResumeProbes
 } from '../../src/main/resumePlan'
-import type { SessionRow, WorktreeStateMeta } from '@shared/types'
+import { PLACEHOLDER_TITLES, type SessionRow, type WorktreeStateMeta } from '@shared/types'
 
 const REPO = '/repo'
 const WT = '/repo/.claude/worktrees/session-tab'
@@ -190,6 +191,15 @@ describe('worktreeHomeRoot', () => {
     expect(worktreeHomeRoot('/repo/src/thing')).toBeNull()
     expect(worktreeHomeRoot('/repo/.claude/worktrees/x/nested')).toBeNull()
     expect(worktreeHomeRoot('relative/.claude/worktrees/x')).toBeNull()
+  })
+})
+
+describe('occupantName', () => {
+  it('falls back to the session id for every backend placeholder title', () => {
+    for (const placeholder of Object.values(PLACEHOLDER_TITLES)) {
+      expect(occupantName({ title: placeholder, sessionId: 'sess-1' })).toBe('sess-1')
+    }
+    expect(occupantName({ title: 'Real title', sessionId: 'sess-1' })).toBe('Real title')
   })
 })
 

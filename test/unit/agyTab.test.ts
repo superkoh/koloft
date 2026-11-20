@@ -3,10 +3,17 @@ import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { AGY_LIST_JS, historyEntries, type SummaryRow } from '../../src/main/agyStore'
+import {
+  AGY_LIST_JS,
+  annotationFile,
+  historyEntries,
+  parseAnnotationTitle,
+  type SummaryRow
+} from '../../src/main/agyStore'
 import {
   AGY_BRAIN_FLAGS,
   AGY_LIST_FILE,
+  agyTitleCmd,
   listAgyCmd,
   parseAgyConfig,
   readAgyConfigCmd
@@ -59,6 +66,31 @@ describe('the command Koloft runs on a remote machine to list its Antigravity co
     expect(historyEntries(rows)).toEqual([
       expect.objectContaining({ id: 'c1', name: 'On the box', cwd: '/home/me/proj' })
     ])
+  })
+
+  it('reads one conversation title on the remote machine even when step_count is 0, falling back to its annotations pbtxt', () => {
+    const bin = path.join(home, '.koloft', 'node', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.symlinkSync(process.execPath, path.join(bin, 'node'))
+    const remoteGemini = path.join(home, '.gemini')
+    writeSummaries(remoteGemini, [
+      { conversation_id: 'c-zero', title: 'Zero step title', step_count: 0 },
+      { conversation_id: 'c-ann', title: '', step_count: 0 }
+    ])
+    const ann = annotationFile(remoteGemini, 'c-ann')
+    fs.mkdirSync(path.dirname(ann), { recursive: true })
+    fs.writeFileSync(ann, 'title:"Remote annotation title"\n')
+
+    const readTitle = (id: string): string | undefined => {
+      const parsed = JSON.parse(onMachine(agyTitleCmd(id)).stdout) as {
+        title?: string
+        pbtxt?: string
+      }
+      return parsed.title || (parsed.pbtxt ? parseAnnotationTitle(parsed.pbtxt) : undefined)
+    }
+    expect(readTitle('c-zero')).toBe('Zero step title')
+    expect(readTitle('c-ann')).toBe('Remote annotation title')
+    expect(readTitle('c-missing')).toBeUndefined()
   })
 })
 

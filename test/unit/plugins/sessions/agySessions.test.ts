@@ -13,7 +13,7 @@ import {
 } from '../../../../src/plugins/sessions/main/agySessions'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import { agySessionKey } from '../../../../src/plugins/sessions/main/sessionStore'
-import { agyTranscript, type SummaryRow } from '../../../../src/main/agyStore'
+import { agyTranscript, annotationFile, type SummaryRow } from '../../../../src/main/agyStore'
 import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/main/remote/agyTab'
 import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
 import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
@@ -74,6 +74,8 @@ let machine: {
   ended: string[]
   config: RemoteAgyConfig
   rows: unknown[]
+  titles: Record<string, string | undefined>
+  titleReads: number
   held: boolean
   alive: Set<string>
   attach: boolean
@@ -212,6 +214,8 @@ beforeEach(() => {
     ended: [],
     config: { ownersSettings: {}, ownersHooks: {}, ownSettings: {}, accountsSettings: [] },
     rows: [],
+    titles: {},
+    titleReads: 0,
     held: false,
     alive: new Set(),
     attach: false,
@@ -271,6 +275,15 @@ beforeEach(() => {
         },
         readAgyConfig: async () => machine.config,
         agyHeldElsewhere: async () => machine.held,
+        agyConversationTitle: async (id) => {
+          machine.titleReads++
+          return (
+            machine.titles[id] ??
+            (machine.rows as { conversation_id?: string; title?: string }[]).find(
+              (r) => r.conversation_id === id && r.title
+            )?.title
+          )
+        },
         agyConversations: async () => machine.rows as SummaryRow[],
         agySend: async () => false,
         endTmuxSession: async (name) => {
@@ -876,6 +889,77 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
       }
     ])
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'), {
+      timeout: 3000
+    })
+  })
+
+  it('picks up a title that lands more than a second into the first turn without waiting for the turn to end, even from annotations while step_count is still 0', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: '',
+        step_count: 0,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    const ann = annotationFile(gemini, A)
+    fs.mkdirSync(path.dirname(ann), { recursive: true })
+    fs.writeFileSync(ann, 'title:"First turn title"')
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('First turn title'), {
+      timeout: 3000
+    })
+    expect(sessions.rows(repo)[0].title).toBe('First turn title')
+  })
+
+  it('syncs a placeholder live title when refreshHistory reads a real title, without clobbering an already-known title with a preview', async () => {
+    await boundTab()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Refreshed title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('Refreshed title')
+    expect(sessions.list()[0].title).toBe('Refreshed title')
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: '',
+        preview: 'first prompt preview text',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('Refreshed title')
+    expect(sessions.list()[0].title).toBe('Refreshed title')
+  })
+
+  it('picks up a remote Antigravity conversation title mid-turn through agyConversationTitle and does not restart the working chase on repeat working state updates', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const log = path.join(mirror, `${id}.agy.jsonl`)
+    fs.writeFileSync(
+      log,
+      [
+        JSON.stringify({ conversation_id: A, agent_state: 'working' }),
+        JSON.stringify({ conversation_id: A, agent_state: 'working' })
+      ].join('\n') + '\n'
+    )
+    sessions.followMirrors('devbox')
+    expect(sessions.list()[0]?.nativeSessionId).toBe(A)
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    const readsBeforeTitle = machine.titleReads
+    expect(readsBeforeTitle).toBeGreaterThanOrEqual(1)
+    expect(readsBeforeTitle).toBeLessThanOrEqual(2)
+    machine.titles[A] = 'Remote first turn title'
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Remote first turn title'), {
       timeout: 3000
     })
   })
