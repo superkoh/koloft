@@ -190,7 +190,7 @@ interface PinnedFormats {
     promptContext: V1PromptContext
     composePrompt: (slot: string, context?: V1PromptContext) => string
     fillSlots: (text: string, context?: V1PromptContext) => string
-    pluginStateOf: (id: string) => { on: boolean; offBecause?: PluginManifest }
+    pluginStateOf: (id: string) => { on: boolean; offBecause?: V1Manifest }
     carries: {
       FILE_OPENED: { tabId: string; target: string; view?: 'render' | 'diff' | 'source' }
       SESSION_STARTING: { helper: boolean }
@@ -238,7 +238,13 @@ interface PinnedFormats {
 
 type Pinned = PinnedFormats[typeof PLUGIN_FORMAT_VERSION]
 
-type Flat<T> = { [K in keyof T]: T[K] extends object ? Flat<T[K]> : T[K] }
+type Flat<T> = {
+  [K in keyof T]: T[K] extends (...args: never[]) => unknown
+    ? T[K]
+    : T[K] extends object
+      ? Flat<T[K]>
+      : T[K]
+}
 
 type MomentsByExportName = typeof moments
 
@@ -313,26 +319,26 @@ describe('the plugin format', () => {
 
 const REFERENCE = fs
   .readFileSync(path.join(__dirname, '..', '..', 'docs', 'plugin-format.md'), 'utf8')
-  .replace(/^```[\s\S]*?^```$/gm, '')
+  .replace(/^[ \t]*```[\s\S]*?^[ \t]*```[ \t]*$/gm, '')
 
-const SECTIONS = new Map(
-  REFERENCE.split(/^#{2,3} /m).map((section) => {
-    const [title, ...body] = section.split('\n')
-    return [title.trim(), body.join('\n')] as const
-  })
-)
+const SECTIONS = new Map<string, string>()
+for (const section of REFERENCE.split(/^#{2,3} /m)) {
+  const [title, ...body] = section.split('\n')
+  if (SECTIONS.has(title.trim()))
+    throw new Error(`docs/plugin-format.md has two sections "${title.trim()}"`)
+  SECTIONS.set(title.trim(), body.join('\n'))
+}
 
 const ANY_NAME_AFTER = /^[a-z]+(?:-[a-z]+)*-…$/
 
 const unnamedIn = (titles: readonly string[], names: Iterable<string>): string[] => {
-  const text = titles
-    .map((title) => {
+  const named = new Set(
+    titles.flatMap((title) => {
       const body = SECTIONS.get(title)
       if (body === undefined) throw new Error(`docs/plugin-format.md has no section "${title}"`)
-      return body
+      return [...body.matchAll(/`([^`]+)`/g)].map((m) => m[1].replace(/\s+/g, ' '))
     })
-    .join('\n')
-  const named = new Set([...text.matchAll(/`([^`]+)`/g)].map((m) => m[1].replace(/\s+/g, ' ')))
+  )
   const prefixes = [...named].filter((n) => ANY_NAME_AFTER.test(n)).map((n) => n.slice(0, -1))
   return [...new Set(names)].filter(
     (name) => !named.has(name) && !prefixes.some((p) => name.startsWith(p))
@@ -352,7 +358,7 @@ describe('the plugin format reference names every registration a built-in plugin
   it('every plugin, with its commands and setting keys', () => {
     expect(
       unnamedIn(
-        ['The eleven plugins'],
+        ['The plugins'],
         PLUGINS.flatMap((p) => [
           p.id,
           ...(p.commands ?? []).map((c) => c.verb),

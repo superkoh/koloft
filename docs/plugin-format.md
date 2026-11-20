@@ -72,7 +72,7 @@ Code never goes into the manifest. A plugin's running code lives in its own `mai
 `preload/`, `renderer/` and `shared/` folders, where it registers itself. So Koloft can read
 what a plugin owns (for a settings page, help text or a switch) without running the plugin.
 
-## The eleven plugins
+## The plugins
 
 These are the plugins in `src/plugins/list.ts`, in its order. A plugin is listed after
 every plugin it needs. The order also decides the order of text blocks that fill the same
@@ -196,7 +196,7 @@ today.
 
 | Path | What it holds | Today |
 |---|---|---|
-| `plugin.ts` | the plugin's manifest | all eleven |
+| `plugin.ts` | the plugin's manifest | all |
 | `prompts/` | its text blocks for prompts | sessions, browser-control, butler, github, discord, todo |
 | `skill/` | its text blocks for `koloft help` and the `koloft` skill | all but butler and docs-writing |
 | `api.ts` | what other plugins may import | all but inbox and scheduled-tasks |
@@ -314,6 +314,8 @@ flowchart LR
 A mismatch is caught in one of three ways:
 
 - `Commands` and `Moments` throw when the main process starts and the plugins register.
+  `Moments` checks a moment that is announced only when it is announced, and does not check
+  which plugin announces it.
 - `registerSettings` throws when the settings code first loads, in the main process and in
   the window; `placeUi` throws when the window first places plugin UI. Either way the app
   does not run with the mistake.
@@ -432,7 +434,8 @@ commands.register({ cron: cronVerb(d) })
 ```
 
 - A handler is `(args, caller) => reply`. `args` are the words after the verb. `caller`
-  holds the session tab, its working folder and its session. The reply is `{ text, exit }`:
+  holds the session tab, its working folder and its session, and may hold `stillWaiting()`,
+  which says whether the agent still waits for the answer. The reply is `{ text, exit }`:
   `answered(text)` gives exit 0, `refused(text, exit = 1)` any other. `EXIT_USAGE` is 2.
   These live in `src/core/command.ts`.
 - `register` accepts only a verb some plugin's manifest lists, and never the same verb twice.
@@ -832,7 +835,7 @@ either:
 - **News for an old conversation.** The butler takes one `OldConversationNews`
   (`{ knownBy, text, on }`, from `butler/api.ts`). When an old butler conversation is resumed,
   `on()` holds and its key is not yet in the saved list named `knownBy`, the butler sends it
-  `text` once and adds the key; a new conversation is added when it binds, as it already
+  `text` once, after `(From Koloft:) `, and adds the key; a new conversation is added when it binds, as it already
   knows. The plugin that hands in the news names its own list, so the saved record keeps that
   name. `src/main/index.ts` hands in Todo's `TODO_NEWS` (`knownBy: 'knowsTodo'`).
 
@@ -858,11 +861,12 @@ shape of the manifest and its parts and of `eachAgent`; of `Commands.register`, 
 handler, `answered` and `refused`; of `MainIpc` and `PreloadIpc`; of `setting`, a setting key
 and `SettingKeys`; of `PluginUi`, `slot` and `fill`; of `Moments.listen` and `announce`, and
 of what each moment carries; of `composePrompt`, `fillSlots` and `pluginStateOf`; and the
-name of every moment. The pin holds its own copy of each shape these use, such as the agent
-ids and what a turn holds, so a change made elsewhere in the app trips it too; only the
-session a command's caller carries (`SessionInfo`) is pinned by name. A change to any of them
-fails Koloft's typecheck (`npm run typecheck`), or the unit test for a moment's name, until
-whoever made it does one of two things:
+name of every moment and whether a plugin that is off hears it. The pin holds its own copy of
+each shape these use, such as the agent ids and what a turn holds, so a change made elsewhere
+in the app trips it too. Only three types are pinned by name: the session a command's caller
+carries (`SessionInfo`), Electron's `IpcMainEvent` and React's `ComponentType`. A change to
+any of them fails Koloft's typecheck (`npm run typecheck`), or the unit test for the moments'
+names, until whoever made it does one of two things:
 
 - for a change the rule above lets through without a bump, adds it to the pin of the current
   version;
