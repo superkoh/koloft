@@ -71,6 +71,8 @@ describe('push-checks PreToolUse hook', () => {
     'git add -A && git commit -m "x" && git push',
     'GIT_TRACE=1 git push',
     'gh pr create --fill-first',
+    'gh -R owner/repo pr create',
+    'gh pr new --fill',
     'koloft gh pr create --title t'
   ])('runs format:check, check:comments and typecheck before `%s`', (command) => {
     const root = repo()

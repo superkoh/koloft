@@ -6,6 +6,7 @@ const CHECK_TIMEOUT_MS = 100_000
 const OUTPUT_TAIL_LINES = 30
 const NODE_CANNOT_LOAD_A_PACKAGE = /ERR_MODULE_NOT_FOUND|^Error: Cannot find (module|package)/m
 const GIT_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace'])
+const GH_OPTIONS_WITH_VALUE = new Set(['-R', '--repo'])
 
 const CHECKS = [
   {
@@ -30,11 +31,12 @@ function startsPushOrPr(segment) {
   let i = 0
   while (/^\w+=/.test(words[i] ?? '')) i++
   if (words[i] === 'koloft') i++
-  if (words[i] === 'gh') return words[i + 1] === 'pr' && words[i + 2] === 'create'
-  if (words[i] !== 'git') return false
-  i++
-  while (words[i]?.startsWith('-')) i += GIT_OPTIONS_WITH_VALUE.has(words[i]) ? 2 : 1
-  return words[i] === 'push'
+  const tool = words[i++]
+  if (tool !== 'git' && tool !== 'gh') return false
+  const takesValue = tool === 'git' ? GIT_OPTIONS_WITH_VALUE : GH_OPTIONS_WITH_VALUE
+  while (words[i]?.startsWith('-')) i += takesValue.has(words[i]) ? 2 : 1
+  if (tool === 'git') return words[i] === 'push'
+  return words[i] === 'pr' && (words[i + 1] === 'create' || words[i + 1] === 'new')
 }
 
 function isPushOrPr(command) {
@@ -46,7 +48,13 @@ function run(script, cwd) {
   return new Promise((resolve) => {
     let output = ''
     const child = spawn('npm', ['run', '--silent', script], { cwd, detached: true })
-    const timer = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), CHECK_TIMEOUT_MS)
+    const timer = setTimeout(() => {
+      try {
+        process.kill(-child.pid, 'SIGKILL')
+      } catch {
+        child.kill('SIGKILL')
+      }
+    }, CHECK_TIMEOUT_MS)
     child.stdout.on('data', (d) => (output += d))
     child.stderr.on('data', (d) => (output += d))
     child.on('error', (error) => {
@@ -102,7 +110,7 @@ for (const [i, r] of results.entries()) {
 }
 if (failures.length > 0) {
   console.error(
-    `Stopped before it reached GitHub, because CI would fail on this (the files on disk were checked, uncommitted ones too):\n\n${failures.join('\n\n')}`
+    `Stopped before it reached GitHub, because CI would fail on this (the files on disk were checked, uncommitted ones too):\n\n${[...failures, ...skipped].join('\n\n')}`
   )
   process.exit(2)
 }
