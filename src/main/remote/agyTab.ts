@@ -219,7 +219,7 @@ export function listAgyCmd(machineName: string): string {
   const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
   return remoteAnswerCommand(
     `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { echo "Koloft's files are not on this machine yet." >&2; exit 1; }
-exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations" "${REMOTE_GEMINI}/${AGY_APP_DIR}/brain"`,
+exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}" "$2"`,
     [machineName, TOP_LEVEL_ROWS]
   )
 }

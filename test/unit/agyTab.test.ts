@@ -64,16 +64,26 @@ describe('the command Koloft runs on a remote machine to list its Antigravity co
       },
       {
         conversation_id: 'c4',
-        title: 'Row never caught up',
         workspace_uris: JSON.stringify(['file:///home/me/proj']),
         step_count: 0
       }
     ])
-    appendTranscript(agyTranscript(path.join(home, '.gemini'), 'c4'), [{ type: 'USER_INPUT' }])
+    const gemini = path.join(home, '.gemini')
+    const c4 = agyTranscript(gemini, 'c4')
+    appendTranscript(c4, [{ type: 'USER_INPUT' }])
+    const usedAt = new Date(Date.UTC(2026, 10, 20, 7, 48, 48))
+    fs.utimesSync(c4, usedAt, usedAt)
+    fs.mkdirSync(path.dirname(annotationFile(gemini, 'c4')), { recursive: true })
+    fs.writeFileSync(annotationFile(gemini, 'c4'), 'title:"Caught up by hand"\n')
     const rows = JSON.parse(onMachine(cmd).stdout) as SummaryRow[]
     expect(historyEntries(rows)).toEqual([
       expect.objectContaining({ id: 'c1', name: 'On the box', cwd: '/home/me/proj' }),
-      expect.objectContaining({ id: 'c4', cwd: '/home/me/proj' })
+      expect.objectContaining({
+        id: 'c4',
+        name: 'Caught up by hand',
+        cwd: '/home/me/proj',
+        updatedAt: usedAt.getTime() / 1000
+      })
     ])
   })
 
