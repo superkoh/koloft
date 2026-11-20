@@ -1761,6 +1761,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     pickModel: (dlg: Locator) => Promise<void>
     launched: (env: E2EEnv) => { argv: string[]; cwd: string } | undefined
     flags: string[]
+    says?: string
     onTheMachine?: { read: (env: E2EEnv) => unknown; is: unknown }
     named: string
     rowTitle: string
@@ -1831,12 +1832,13 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Argon$/ }).click(),
+      pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Carbon$/ }).click(),
       launched: (env) => machineAgyCalls(env)[0],
-      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions'],
-      // AGY§8 AGY§16 AGY§31
+      flags: ['--model', 'gemini-4-neon', '--dangerously-skip-permissions'],
+      says: 'This account has no gemini-4-carbon model, so it runs on gemini-4-neon.',
+      // AGY§8 AGY§16 AGY§21 AGY§31
       named:
-        'no name, its /task typed in once agy is ready rather than given with -i, its row taking agy’s own title',
+        'no name, its /task typed in once agy is ready rather than given with -i, its Carbon on Neon as the account has no Carbon, its row taking agy’s own title',
       rowTitle: REMOTE_TASK
     }
   ]
@@ -1847,6 +1849,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     pickModel,
     launched,
     flags,
+    says,
     onTheMachine,
     named,
     rowTitle
@@ -1876,6 +1879,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         await dlg.locator('.modal-foot .btn-primary').click()
         await expect(dlg.locator('.fgrid')).toHaveCount(0)
         await clickRunNow(page, 'Remote report')
+        if (says) await expect(page.locator('.toast-msg', { hasText: says })).toBeVisible()
 
         await expect.poll(() => launched(env), { timeout: 120_000 }).toBeTruthy()
         const { argv, cwd } = launched(env)!

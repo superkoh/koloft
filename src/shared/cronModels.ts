@@ -3,6 +3,7 @@ import { CRON_EFFORTS, type BackendId, type CronEffort } from './types'
 export interface NamedModel {
   id: string
   label: string
+  notOnEveryAccount?: true
 }
 
 export const NAMED_MODELS: Record<BackendId, NamedModel[]> = {
@@ -21,6 +22,8 @@ export const NAMED_MODELS: Record<BackendId, NamedModel[]> = {
   muse: [],
   // AGY§21
   agy: [
+    { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', notOnEveryAccount: true },
+    { id: 'gemini-4-neon', label: 'Gemini 4 Neon', notOnEveryAccount: true },
     { id: 'gemini-4-argon', label: 'Gemini 4 Argon' },
     { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
     { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' }
@@ -35,6 +38,7 @@ const LOW_MEDIUM_HIGH: readonly CronEffort[] = ['low', 'medium', 'high']
 const LOW_TO_XHIGH: readonly CronEffort[] = [...LOW_MEDIUM_HIGH, 'xhigh']
 const AGY_EFFORTS_EVERY_MODEL_TAKES: readonly CronEffort[] = ['low', 'high']
 const AGY_EFFORTS_OF: ReadonlyMap<string, readonly CronEffort[]> = new Map([
+  ['gemini-4-carbon', LOW_MEDIUM_HIGH],
   ['gemini-4-neon', LOW_TO_XHIGH],
   ['gemini-4-argon', LOW_MEDIUM_HIGH],
   ['gemini-3.8-flash', LOW_MEDIUM_HIGH],

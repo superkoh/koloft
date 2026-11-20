@@ -94,7 +94,7 @@ export async function worktreeNameFor(
   return withSuffix(base, `-${randomBytes(2).toString('hex')}`)
 }
 
-export type LaunchResult = { ok: true; tabId: string } | { ok: false }
+export type LaunchResult = { ok: true; tabId: string; note?: string } | { ok: false }
 
 interface KeptTab {
   jobId: string
@@ -525,7 +525,7 @@ export class CronRunner {
         ...mark
       }
       this.live.set(res.tabId, run)
-      this.launched(job, run)
+      this.launched(job, run, res.note)
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -583,8 +583,8 @@ export class CronRunner {
     this.timers.delete(tabId)
   }
 
-  private launched(job: CronJob, run: LiveRun): void {
-    this.d.toast(`⏰ ${job.name} started`)
+  private launched(job: CronJob, run: LiveRun, note?: string): void {
+    this.d.toast(`⏰ ${job.name} started${note ? `. ${note}` : ''}`)
     this.armTimer(run.tabId, this.d.bindDeadlineMs, () => this.onDeadline(run.tabId))
   }
 
