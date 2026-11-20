@@ -8,6 +8,7 @@ import { CannotMakeChannels, type NewChannel } from './link'
 import { newerSnowflake } from '@plugins/discord/shared/channels'
 import { DISCORD_BOUND } from '@plugins/discord/api'
 import { errorText } from '@core/errorText'
+import { discordOn } from './switchOn'
 
 export interface DiscordBindingDeps {
   load(): DiscordSettings
@@ -28,11 +29,11 @@ export class DiscordBinding {
   }
 
   channel(): DiscordChannel | undefined {
-    return this.discord.channel
+    return discordOn() ? this.discord.channel : undefined
   }
 
   butlerRoleFacts(): string[] {
-    return this.discord.channel ? [DISCORD_BOUND] : []
+    return this.channel() ? [DISCORD_BOUND] : []
   }
 
   lastMessageId(): string | undefined {
@@ -62,11 +63,11 @@ export class DiscordBinding {
   }
 
   channelOfTab(tabId: string): string | undefined {
-    return this.d.isButlerTab(tabId) ? this.discord.channel?.channelId : undefined
+    return this.d.isButlerTab(tabId) ? this.channel()?.channelId : undefined
   }
 
   isButlerChannel(channelId: string): boolean {
-    return this.discord.channel?.channelId === channelId
+    return this.channel()?.channelId === channelId
   }
 
   setLastMessage(messageId: string): void {

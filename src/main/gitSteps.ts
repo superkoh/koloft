@@ -1,4 +1,4 @@
-import type { GitStepResult, PrWorktreeResult } from '@shared/types'
+import type { GitHead, GitReadiness, GitStepResult, PrWorktreeResult } from '@shared/types'
 import { pullErrorReason } from './gitFreshness'
 
 export interface GitRunResult {
@@ -48,7 +48,27 @@ export async function addPrWorktree(
   return added.code === 0 ? { ok: true, dir } : refused(added, 'worktree add')
 }
 
+const PUSH_REMOTE = 'origin'
+
 export async function pushBranch(run: GitRun): Promise<GitStepResult> {
-  const r = await run(['push', '-u', 'origin', 'HEAD'], true)
+  const r = await run(['push', '-u', PUSH_REMOTE, 'HEAD'], true)
   return r.code === 0 ? { ok: true } : refused(r, 'push')
+}
+
+const HEAD_IS_NOT_A_BRANCH = 1
+
+export async function readHead(run: GitRun): Promise<GitHead | null> {
+  const r = await run(['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (r.code === 0) return { branch: r.stdout.trim() }
+  return r.code === HEAD_IS_NOT_A_BRANCH ? { detached: true } : null
+}
+
+export async function readReadiness(run: GitRun): Promise<GitReadiness | null> {
+  const [head, status, origin] = await Promise.all([
+    readHead(run),
+    run(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=normal']),
+    run(['config', '--get', `remote.${PUSH_REMOTE}.url`])
+  ])
+  if (!head || status.code !== 0) return null
+  return { head, commitable: status.stdout.trim() !== '', hasPushRemote: origin.code === 0 }
 }

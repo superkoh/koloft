@@ -914,7 +914,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-29: the GitHub button on a remote session commits and pushes on the machine, while gh runs on this Mac and its failing checks reach claude on the machine as one unsent paste', async ({
+  test('E-RW-29: the branch button on a remote session commits and pushes on the machine, while gh runs on this Mac and its failing checks reach claude on the machine as one unsent paste', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -947,8 +947,9 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
 
       fs.writeFileSync(path.join(dir, 'rw29.txt'), 'new\n')
-      await page.locator('.wb-gh').click({ button: 'right' })
-      await page.locator('.wb-ghmenu .mi', { hasText: 'Commit…' }).click()
+      await expect(page.locator('.wb-git')).toHaveText('feature/login')
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Commit…' }).click()
       const dialog = page.locator('.modal', { hasText: 'Commit changes' })
       await dialog.getByLabel('Commit message').fill('E-RW-29 commit on the machine')
       await dialog.getByLabel('Commit message').press('Enter')
@@ -958,8 +959,8 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       expect(git(dir, 'log', '-1', '--format=%s')).toBe('E-RW-29 commit on the machine')
       expect(git(dir, 'show', '--name-only', '--format=', 'HEAD')).toContain('rw29.txt')
 
-      await page.locator('.wb-gh').click({ button: 'right' })
-      await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Push' }).click()
       await expect
         .poll(
           () => git(origin, 'for-each-ref', '--format=%(objectname)', 'refs/heads/feature/login'),

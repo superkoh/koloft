@@ -5,6 +5,7 @@ import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpe
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { startSessionIn, switchToRow, terminalText, waitForCalls } from './helpers/p1'
 import { guestByUrl } from './helpers/browser'
+import { closeSettings, openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
 import { OWNER_DECLINED, OWNER_FILLED } from '../../src/plugins/passwords/main/secretVerb'
 
@@ -76,6 +77,35 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         .poll(async () => unwrapped(await terminalText(page, tab)))
         .toContain(unwrapped(OWNER_DECLINED))
       await expect(page.locator(SUDO_BOX)).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('turning Passwords and sign-in off and on in Settings ▸ Plugins while a session shows leaves the window working, and the next sudo still asks in the box', async ({
+    env
+  }) => {
+    ownerAtTheMac(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      const windowErrors: string[] = []
+      page.on('pageerror', (error) => windowErrors.push(error.message))
+      const tab = await sessionTab(page, env)
+      for (const on of [false, true]) {
+        await openSettings(page)
+        await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+        await page
+          .getByRole('switch', { name: 'Passwords and sign-in', exact: true })
+          .setChecked(on)
+        await closeSettings(page)
+      }
+      await expect(page.locator(`.ws-tab[data-tab-id="${tab}"]`)).toBeVisible()
+      await askSudo(page, tab)
+      await page.keyboard.type('hunter2-after-flip')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => terminalText(page, tab)).toContain('hunter2-after-flip\ngot-it')
+      expect(windowErrors).toEqual([])
     } finally {
       await quitAndClose(app)
     }
