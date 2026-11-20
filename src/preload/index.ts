@@ -136,7 +136,8 @@ const api: KoloftApi = {
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
   git: {
     commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),
-    push: (root) => ipcRenderer.invoke(CH.git.push, root)
+    push: (root) => ipcRenderer.invoke(CH.git.push, root),
+    readiness: (root) => ipcRenderer.invoke(CH.git.readiness, root)
   },
   os: {
     open: (p) => ipcRenderer.send(CH.os.open, p),

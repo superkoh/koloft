@@ -31,6 +31,7 @@ import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
+import { useGitEntry } from './GitEntry'
 import { relOf } from './filesModel'
 import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { fileExists } from '../fileExists'
@@ -195,17 +196,25 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
-  const { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread } = useGitChangeSet(
-    treeRoot,
-    visible,
-    files.baseChoice,
-    files.refreshNonce
-  )
+  const { git, numstat, base, head, rootMissing, watchDead, firstReadFailed, reread } =
+    useGitChangeSet(treeRoot, visible, files.baseChoice, files.refreshNonce)
   const openWebHere = useRef<(url: string) => void>(() => {})
   const openWeb = useCallback((url: string): void => openWebHere.current(url), [])
-  const closeNewTabMenu = useCallback((): void => setNewMenuOpen(false), [])
-  const closeDownloads = useCallback((): void => setDlOpen(false), [])
-  const parts = fillsOf(WORKBENCH_PART).map((usePart) =>
+  const [gitSteps, bumpGitSteps] = useReducer((n: number) => n + 1, 0)
+  const closePartMenusHere = useRef<() => void>(() => {})
+  const closeOtherMenus = useCallback((): void => {
+    setNewMenuOpen(false)
+    setDlOpen(false)
+    closePartMenusHere.current()
+  }, [])
+  const gitEntry = useGitEntry({
+    treeRoot,
+    head,
+    reread,
+    onStepped: bumpGitSteps,
+    closeOtherMenus
+  })
+  const pluginParts = fillsOf(WORKBENCH_PART).map((usePart) =>
     usePart({
       visible,
       treeRoot,
@@ -213,16 +222,21 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       onReturnFocus,
       reread,
       openWeb,
-      closeNewTabMenu,
-      closeDownloads
+      closeOtherMenus,
+      gitSteps,
+      push: gitEntry.push
     })
   )
+  const parts = [gitEntry, ...pluginParts]
   const partMenuOpen = parts.some((p) => p.menuOpen)
   const partClosers = parts.map((p) => p.closeMenu)
   const closePartMenus = useCallback(
     (): void => partClosers.forEach((close) => close()),
     partClosers
   )
+  useLayoutEffect(() => {
+    closePartMenusHere.current = closePartMenus
+  }, [closePartMenus])
   const partButtons = parts.map((p) => p.button)
   const pinnedParts = useMemo(
     () => partButtons.map((button, i) => <Fragment key={i}>{button}</Fragment>),

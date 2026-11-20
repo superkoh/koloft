@@ -54,7 +54,8 @@ export const CH = {
   },
   git: {
     commit: 'github:commit',
-    push: 'github:push'
+    push: 'github:push',
+    readiness: 'git:readiness'
   },
   os: {
     open: 'preview:os-open',
