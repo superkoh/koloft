@@ -9,7 +9,9 @@ import {
   isKnownBy,
   type ButlerSession,
   type ButlerSetting,
-  type KnownBy
+  type KnownBy,
+  type PluginsOn,
+  type PluginsSeen
 } from './types'
 
 function sanitizeButler(raw: unknown): ButlerSetting {
@@ -29,12 +31,20 @@ function knownLists(records: readonly object[]): Record<KnownBy, string[]> {
   return Object.fromEntries(Object.entries(lists).filter(([, keys]) => keys.length))
 }
 
+function cleanPluginsSeen(raw: unknown): PluginsSeen | undefined {
+  if (!isRecord(raw) || typeof raw.key !== 'string' || !isRecord(raw.on)) return undefined
+  const on = Object.entries(raw.on).filter(([, value]) => typeof value === 'boolean')
+  return { key: raw.key, on: Object.fromEntries(on) as PluginsOn }
+}
+
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
   const carried = cleanOwnPick(raw.carried)
+  const pluginsSeen = cleanPluginsSeen(raw.pluginsSeen)
   return {
     sessionIds: stringsIn(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
+    ...(pluginsSeen ? { pluginsSeen } : {}),
     ...knownLists([raw]),
     ...(carried ? { carried } : {})
   }
@@ -42,9 +52,11 @@ function cleanSession(raw: Record<string, unknown>): ButlerSession {
 
 function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   const last = sessions.find((s) => s.lastSessionKey)
+  const pluginsSeen = sessions.find((s) => s.pluginsSeen)?.pluginsSeen
   return {
     sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
     ...(last?.lastSessionKey ? { lastSessionKey: last.lastSessionKey } : {}),
+    ...(pluginsSeen ? { pluginsSeen } : {}),
     ...knownLists(sessions),
     ...(last?.carried ? { carried: last.carried } : {})
   }

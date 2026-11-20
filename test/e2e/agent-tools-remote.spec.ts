@@ -193,6 +193,13 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
       await openSettings(page)
       await page.locator('.set-ni', { hasText: 'Plugins' }).click()
       await page.getByRole('switch', { name: 'Todo', exact: true }).uncheck()
+      await expect
+        .poll(() =>
+          koloftSkillsUnder(path.join(env.userData, 'agent-plugin')).some((s) =>
+            s.includes('gather what waits on the owner')
+          )
+        )
+        .toBe(false)
       await closeSettings(page)
 
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })

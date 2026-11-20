@@ -462,9 +462,11 @@ import {
   DIGEST_GATHERS_MS,
   helperRoleOf,
   OwnerAsleep,
+  pluginsChangedNews,
   quoteOf,
   THIS_MAC
 } from '@plugins/butler/api'
+import { pluginStateOf } from '@core/switches'
 import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
@@ -3629,6 +3631,7 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[koloft] could not rewrite what a plugin switch changed:', err)
     }
+    butler?.pluginsSwitched()
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -4202,6 +4205,14 @@ app.whenReady().then(() => {
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
     news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
+    pluginsOn: () =>
+      Object.fromEntries(
+        PLUGINS.filter((p) => !p.mandatory).map((p) => [p.id, pluginStateOf(p.id).on])
+      ),
+    pluginsNews: (changed) =>
+      `${FROM_KOLOFT}${pluginsChangedNews(
+        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] }))
+      )}`,
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })

@@ -7,7 +7,8 @@ import {
   isKnownBy,
   type ButlerSession,
   type ButlerSetting,
-  type OldConversationNews
+  type OldConversationNews,
+  type PluginsOn
 } from '../shared/types'
 import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
@@ -55,6 +56,8 @@ export interface ButlerDeps {
   toast(text: string): void
   notice(text: string): Promise<boolean>
   news: OldConversationNews
+  pluginsOn(): PluginsOn
+  pluginsNews(changed: PluginsOn): string
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
@@ -81,6 +84,8 @@ export class Butler {
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private waitingForWords: string | undefined
+  private telling = false
+  private tellAgain = false
 
   constructor(private d: ButlerDeps) {
     this.session = d.loadSession()
@@ -150,6 +155,7 @@ export class Butler {
     this.changeSession(() => ({
       sessionIds,
       ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
+      ...(keepLast && s.pluginsSeen ? { pluginsSeen: s.pluginsSeen } : {}),
       ...knownListsOnDisk(s, stillOnDisk),
       ...(keepLast && s.carried ? { carried: s.carried } : {})
     }))
@@ -227,7 +233,7 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      resumedOld = hasTranscript && !this.session[this.d.news.knownBy]?.includes(key)
+      resumedOld = hasTranscript
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
@@ -247,7 +253,7 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined && this.d.news.on()) this.tellTheNews(key)
+    if (resumedOld && key !== undefined) this.tellWhatChanged(key)
     this.resident = tabId
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
@@ -263,13 +269,48 @@ export class Butler {
     return true
   }
 
+  private whatToTell(key: string): string | undefined {
+    const seen = this.session.pluginsSeen
+    const { knownBy, on, text } = this.d.news
+    if (seen?.key !== key) return on() && !this.session[knownBy]?.includes(key) ? text : undefined
+    const changed = Object.fromEntries(
+      Object.entries(this.d.pluginsOn()).filter(([id, on]) => (seen.on[id] ?? on) !== on)
+    )
+    return Object.keys(changed).length > 0 ? this.d.pluginsNews(changed) : undefined
+  }
+
+  private knows(key: string, now: PluginsOn): void {
+    const { knownBy, on } = this.d.news
+    this.changeSession((s) => ({
+      ...s,
+      pluginsSeen: { key, on: now },
+      ...(on() && !s[knownBy]?.includes(key) && { [knownBy]: [...(s[knownBy] ?? []), key] })
+    }))
+  }
+
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  private tellTheNews(key: string): void {
-    const { knownBy, text } = this.d.news
-    void this.d.notice(text).then((told) => {
-      if (told && !this.session[knownBy]?.includes(key))
-        this.changeSession((s) => ({ ...s, [knownBy]: [...(s[knownBy] ?? []), key] }))
+  private tellWhatChanged(key: string): void {
+    if (this.telling) return void (this.tellAgain = true)
+    const now = this.d.pluginsOn()
+    const said = this.whatToTell(key)
+    if (said === undefined) {
+      if (this.session.pluginsSeen?.key !== key) this.knows(key, now)
+      return
+    }
+    this.telling = true
+    void this.d.notice(said).then((told) => {
+      this.telling = false
+      if (told) this.knows(key, now)
+      if (told && this.tellAgain) this.pluginsSwitched()
+      this.tellAgain = false
     })
+  }
+
+  pluginsSwitched(): void {
+    const tab = this.liveTab()
+    const key = this.session.lastSessionKey
+    if (!tab || this.deadlines.has(tab) || tab === this.waitingForWords || key === undefined) return
+    this.tellWhatChanged(key)
   }
 
   private armDeadline(tabId: string, title: string): void {
@@ -316,6 +357,7 @@ export class Butler {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
+            pluginsSeen: { key, on: this.d.pluginsOn() },
             ...(this.d.news.on() && {
               [this.d.news.knownBy]: [...(s[this.d.news.knownBy] ?? []), key]
             })
