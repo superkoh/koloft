@@ -2195,6 +2195,81 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       freshLaunches: (env) => machineAgyCalls(env).length
     }
   ]
+  const trustRemoteDirInClaude = (env: E2EEnv): void => {
+    gitInit(remoteDir(env))
+    // CC§9 ADR-0026
+    fs.writeFileSync(
+      path.join(machineHome(env), '.claude.json'),
+      JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+    )
+  }
+  const REMOTE_PROMPTS: {
+    agent?: JobSpec['agent']
+    backend: BackendId
+    setUp: (env: E2EEnv) => void
+    prompts: (env: E2EEnv) => unknown[]
+  }[] = [
+    {
+      backend: 'claude',
+      setUp: trustRemoteDirInClaude,
+      prompts: (env) => readCalls(env).flatMap((c) => c.argv)
+    },
+    { ...REMOTE_AGENTS[0], backend: 'codex', prompts: (env) => codexPromptsSent(machineWire(env)) },
+    {
+      ...REMOTE_AGENTS[1],
+      backend: 'muse',
+      prompts: (env) => machineMuseCalls(env).flatMap((c) => c.argv)
+    },
+    {
+      ...REMOTE_AGENTS[2],
+      backend: 'agy',
+      prompts: (env) => machineAgyCalls(env).flatMap((c) => c.argv)
+    }
+  ]
+  for (const { agent, backend, setUp, prompts } of REMOTE_PROMPTS) {
+    test(`in ${agent ?? 'Claude'} on a remote workspace: a run's first message opens with when the last run was due and its agent's own session id, then the task`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      try {
+        const first = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(first.page, env)
+          const dlg = await openCron(first.page, REMOTE_WS_NAME)
+          await createJob(first.page, dlg, { agent, name: 'Remote report', task: 'look around' })
+          await storedJobs(env, 1)
+        } finally {
+          await quitAndClose(first.app)
+        }
+        const store = readStore(env)!
+        const lastDue = new Date(2026, 10, 18, 5, 0).getTime()
+        store.jobs[0].history = [
+          { dueAt: lastDue, state: 'closed', sessionId: `${backend}:lab:s-last-run` }
+        ]
+        fs.writeFileSync(storePath(env), JSON.stringify(store))
+
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await openCron(page, REMOTE_WS_NAME)
+          await clickRunNow(page, 'Remote report')
+          await expect
+            .poll(() => prompts(env), { timeout: 120_000 })
+            .toContainEqual(
+              expect.stringMatching(
+                /^Last run of this task: 2026-11-18T05:00[+-]\d\d:\d\d, session s-last-run\.\n\nlook around$/
+              )
+            )
+        } finally {
+          await quitAndClose(app)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
+  }
+
   for (const { agent, setUp, freshLaunches } of REMOTE_AGENTS) {
     test(`BB-M08 in ${agent} on a remote workspace: a run left open at quit comes back as the open run, so Run now skips it`, async ({
       env
