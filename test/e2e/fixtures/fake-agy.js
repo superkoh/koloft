@@ -65,6 +65,12 @@ const FULL_CASCADE_CONFIG = {
 }
 const MODEL_FAMILIES = [
   {
+    base: 'gemini-4-neon',
+    label: 'Gemini 4 Neon',
+    efforts: ['high', 'xhigh', 'medium', 'low'],
+    fallback: 'medium'
+  },
+  {
     base: 'gemini-4-argon',
     label: 'Gemini 4 Argon',
     efforts: ['high', 'medium', 'low'],

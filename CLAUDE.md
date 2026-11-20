@@ -147,10 +147,10 @@ Working principles:
   `git push` or `gh pr create` waits for `format:check`, `check:comments` and
   typecheck (`scripts/push-checks.mjs`) and is stopped if one finds problems. Once the
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
-  in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
+  in the background: two reviews at once, up to about 15 minutes (ADR-0040). While it runs,
   run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
   edits until the reviews are in. Merge the reports, fix what is real (a run that failed
-  is rerun, or the what-ran table says how many of three came back). Once the fixes are
+  is rerun, or the what-ran table says how many of two came back). Once the fixes are
   committed, one second round may run on the new diff and its real findings are fixed
   too; there is never a third round — what is still open after two goes to `Out of
   scope`. Only then run the e2e flows, once — in a Workflow too, whose step agents run only the fast

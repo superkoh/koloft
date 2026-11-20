@@ -411,7 +411,7 @@ These are the slots, values and facts in use today:
 | slot | `owners-ai-itself-koloft` | Sessions core; sentences in the butler's prompt about the `koloft` command that only the butler itself gets (its helpers' prompt gives this slot the value `''`) |
 | slot | `owners-ai-folder-koloft` | Sessions core, Scheduled tasks, GitHub; sentences in the butler's prompt that hold for every session in its folder, so its helpers get them too |
 | slot | `owners-ai-koloft` | Sessions core, GitHub, Discord, Todo; sentences in the butler's prompt about the `koloft` command |
-| slot | `session-answered-by-keys` | Butler; half a sentence at the end of Sessions core's `koloft session answer` reply for a question Koloft cannot read, with the value `the-question` |
+| slot | `session-answered-by-keys` | Butler; half a sentence at the end of Sessions core's reply for a question Koloft cannot read, with the value `the-question`; left out where the butler itself reads the reply (its own `koloft session answer`, and its report of what Koloft answered while the owner slept) |
 | slot | `session-close-refused-for-the-owners-ai` | Butler; the end of Sessions core's `koloft session close` refusal for the butler |
 | slot | `handover-from-the-owners-ai` | Butler; the paragraph of Sessions core's handover note that a session the butler started reads first |
 | slot | `away-digest-more` | Todo; the end of the away digest's "And N more" sentence |
