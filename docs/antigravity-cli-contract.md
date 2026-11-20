@@ -772,6 +772,18 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   with task id: <conv>/task-N … logs at file://…/brain/<id>/.system_generated/tasks/task-N.log".
   `manage_task` handles these background tasks (`Action: "list" | "kill" | "status" | "send_input"`,
   `TaskId?`, `Input?`); it is not a to-do list.
+- **A `run_command` waits at most 10 s, then runs on as a background task for at least 11
+  minutes.** 2026-11-19, agy 1.5.10 Linux arm64 in Docker (`--network none`), `agy -p
+  --dangerously-skip-permissions` against a fake Gemini server whose model called
+  `run_command {CommandLine: "sleep 660; echo done-after-660", WaitMsBeforeAsync: 10000}`,
+  `ps` read every 15 s; one run. `WaitMsBeforeAsync` is required (a call without it
+  fails validation: "missing property 'WaitMsBeforeAsync'"), and the tool's description
+  bounds it to "500 to 10000". At 10 s the model got the background-task answer above;
+  the command ran its full 660 s, and at 660 s agy sent the model a new request whose
+  last part was a `<SYSTEM_MESSAGE>` "[Message] … sender=<conv>/task-2 …" (as §13's
+  `schedule` firings do). `-p` stayed up the whole time, printing "root agent idle;
+  waiting for 1 background task(s) to finish". Not probed: the TUI, and a task longer
+  than 11 minutes.
 - **Subagents, `/teamwork` and `swarm` (measured 2026-11-18, agy 1.5.11 on macOS, a real
   `/teamwork` TUI run and a `-p --input-format stream-json` `swarm` run against a fake
   Gemini server):**

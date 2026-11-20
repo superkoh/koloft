@@ -1,5 +1,6 @@
-import type { CronJob, HistoryLine, LiveRun } from '@shared/types'
-import { describeSchedule, describeWhen, nextRun, onceAt, stepMs } from '@shared/schedule'
+import type { BackendId, CronJob, HistoryLine, LiveRun } from '@shared/types'
+import { identityOf } from '@shared/sessionBackend'
+import { describeSchedule, describeWhen, localIso, nextRun, onceAt, stepMs } from '@shared/schedule'
 
 export function oncePassed(job: CronJob, now: Date): boolean {
   return job.schedule.kind === 'once' && onceAt(job.schedule).getTime() <= now.getTime()
@@ -55,10 +56,28 @@ export function histFolder(h: HistoryLine): string {
   return h.kept ? `folder kept: ${h.kept}` : ''
 }
 
+function histSpan(h: HistoryLine, when: (ms: number) => string): string {
+  const end = histEnd(h)
+  return end === h.dueAt ? when(h.dueAt) : `${when(h.dueAt)} → ${when(end)}`
+}
+
 export function histWhen(h: HistoryLine, now: Date): string {
-  const from = describeWhen(new Date(h.dueAt), now)
-  if (h.until === undefined || h.until <= h.dueAt) return from
-  return `${from} → ${describeWhen(new Date(h.until), now)}`
+  return histSpan(h, (ms) => describeWhen(new Date(ms), now))
+}
+
+export function histIso(h: HistoryLine): string {
+  return histSpan(h, localIso)
+}
+
+export function agentSessionId(key: string): string {
+  return identityOf(key).nativeSessionId
+}
+
+export function lastRunLine(history: HistoryLine[], backend: BackendId): string | null {
+  const last = history.find((h) => h.sessionId && identityOf(h.sessionId).backendId === backend)
+  return last?.sessionId
+    ? `Last run of this task: ${localIso(last.dueAt)}, session ${agentSessionId(last.sessionId)}.`
+    : null
 }
 
 export function histEnd(h: HistoryLine): number {

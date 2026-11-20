@@ -30,6 +30,7 @@ import {
   type SshLab
 } from '../e2e/helpers/docker'
 import { writeExec } from '../e2e/helpers/remote'
+import { attach, type Driver } from './driver'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { readLoginShell } from '../../src/main/loginShell'
 import { acceptClaudeTrust } from '../../src/main/claudeTrust'
@@ -44,11 +45,14 @@ const DEV_BOT_KEYCHAIN = 'koloft-dev-discord-bot'
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
   npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse] [--agy]
+  npm run handtest -- drive <home> <script.ts>
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
 
-start prints JSON: the debug address to drive it with (playwright-cli attach --cdp=<cdp>),
-its home, its workspaces, and the stop line. menu clicks an app-menu item (an id from
+start prints JSON: the debug address (cdp), its home, its workspaces, and the stop line.
+drive runs a script whose default export takes the Driver of test/handtest/driver.ts
+(start a session, type, wait for a row state, read a terminal, toasts, screenshots) and
+prints what it returns as JSON. menu clicks an app-menu item (an id from
 src/main/menu.ts, like command-palette), since the hidden window gets no real ⌘ keys.
 stop quits it and deletes the home.
   --account  the Claude account from the installed Koloft's Settings ▸ Accounts it runs on
@@ -429,6 +433,19 @@ async function clickMenuItem(home: string, id: string): Promise<void> {
   console.log(JSON.stringify(await evaluate(main.webSocketDebuggerUrl, clicked)))
 }
 
+async function drive(home: string, script: string): Promise<void> {
+  const state = readState(home)
+  if (!state) throw new Error(`no sandbox in ${home}`)
+  const driver = await attach(`http://127.0.0.1:${state.port}`)
+  const steps = (await import(path.resolve(script))) as {
+    default: (d: Driver) => Promise<unknown>
+  }
+  if (typeof steps.default !== 'function')
+    throw new Error(`${script} must default-export a function that takes the Driver`)
+  const result = JSON.stringify((await steps.default(driver)) ?? null, null, 2)
+  await new Promise((printed) => process.stdout.write(`${result}\n`, printed))
+}
+
 async function stop(home: string): Promise<void> {
   const state = readState(home)
   if (state) {
@@ -455,7 +472,7 @@ const { positionals, values } = parseArgs({
   }
 })
 
-const [command, home, menuItem] = positionals
+const [command, home, arg] = positionals
 if (command === 'start') {
   await start({
     account: values.account,
@@ -468,8 +485,11 @@ if (command === 'start') {
   })
 } else if (command === 'stop' && home) {
   await stop(home)
-} else if (command === 'menu' && home && menuItem) {
-  await clickMenuItem(home, menuItem)
+} else if (command === 'menu' && home && arg) {
+  await clickMenuItem(home, arg)
+} else if (command === 'drive' && home && arg) {
+  await drive(home, arg)
+  process.exit(0)
 } else {
   console.error(USAGE)
   process.exit(2)

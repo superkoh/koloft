@@ -14,7 +14,7 @@ export const answeredWith = (reply: string): string =>
   `✅ Answered: ${reply.length > ANSWER_SHOWN_UP_TO ? `${reply.slice(0, ANSWER_SHOWN_UP_TO)}…` : reply}`
 const ID_PREFIX = 'ask:'
 // PLATFORM§39
-const UPDATE_MESSAGE_LATER = 6
+export const UPDATE_MESSAGE_LATER = 6
 
 export interface PlacedAsk {
   channelId: string
