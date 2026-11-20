@@ -44,6 +44,24 @@ describe('focusOnceNoDialogIsOpen', () => {
     expect(document.activeElement).not.toBe(keep)
   })
 
+  it('takes the keys when closing the dialog puts them back on a terminal an ask box covers, where the owner cannot see them land', async () => {
+    const wrap = document.createElement('div')
+    wrap.className = 'term-wrap'
+    const terminalInput = document.createElement('textarea')
+    const askBox = document.createElement('div')
+    askBox.className = 'modal-backdrop in-session'
+    const field = document.createElement('input')
+    askBox.append(field)
+    wrap.append(terminalInput, askBox)
+    document.body.append(wrap)
+    const { backdrop } = dialogWithAField()
+    focusOnceNoDialogIsOpen(field)
+    backdrop.remove()
+    terminalInput.focus()
+    await domSettled()
+    expect(document.activeElement).toBe(field)
+  })
+
   it('leaves the keys where closing the dialog put them', async () => {
     const keep = button()
     const elsewhere = button()

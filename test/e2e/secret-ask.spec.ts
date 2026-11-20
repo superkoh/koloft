@@ -42,6 +42,14 @@ function type(page: Page, tab: string, line: string): Promise<void> {
 
 const unwrapped = (s: string): string => s.replace(/\s+/g, '')
 
+function servesALoginPage(server: Awaited<ReturnType<typeof startEchoServer>>): string {
+  server.page('/done', '<!doctype html><title>done</title>')
+  return server.page(
+    '/login',
+    '<!doctype html><title>login</title><form id="f" action="/done"><label for="pw">Password</label><input type="password" id="pw" name="pw"><button id="go">Sign in</button></form>'
+  )
+}
+
 async function askSudo(page: Page, tab: string): Promise<void> {
   await type(
     page,
@@ -213,11 +221,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
     const server = await startEchoServer()
     const app = await launchApp(env)
     try {
-      const login = server.page(
-        '/login',
-        '<!doctype html><title>login</title><form id="f" action="/done"><label for="pw">Password</label><input type="password" id="pw" name="pw"><button id="go">Sign in</button></form>'
-      )
-      server.page('/done', '<!doctype html><title>done</title>')
+      const login = servesALoginPage(server)
       const page = await app.firstWindow()
       const tab = await sessionTab(page, env)
       await type(page, tab, `/koloft open ${login}`)
@@ -248,11 +252,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
     const server = await startEchoServer()
     const app = await launchApp(env)
     try {
-      const login = server.page(
-        '/login',
-        '<!doctype html><title>login</title><form id="f" action="/done"><label for="pw">Password</label><input type="password" id="pw" name="pw"><button id="go">Sign in</button></form>'
-      )
-      server.page('/done', '<!doctype html><title>done</title>')
+      const login = servesALoginPage(server)
       const page = await app.firstWindow()
       const tab = await sessionTab(page, env)
       await type(page, tab, `/koloft open ${login}`)
@@ -266,7 +266,7 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await expect(guest.locator('#pw')).toHaveValue('')
 
       const dlg = page.getByRole('dialog', { name: 'Session defaults' })
-      await dlg.getByLabel('Close').click()
+      await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg).toHaveCount(0)
       await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
       await page.keyboard.type('typed-by-the-owner')
