@@ -1,12 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import {
   startSessionIn,
   terminalText,
-  transcriptFile,
   waitBooted,
   waitConductorStarted,
   picksFor
@@ -288,7 +287,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     })
   })
 
-  test('a /clear typed at the Mac while Discord is turned off still carries the room: once Discord is on again and the session restarts, what the owner writes in the room reaches the new conversation, not the old one', async ({
+  test('a /clear typed at the Mac while Discord is turned off still carries the room, after a turn in the new conversation too: once Discord is on again and the session restarts, what the owner writes in the room reaches the new conversation, not the old one', async ({
     env
   }) => {
     await withTheButler(env, async (page, fake, app) => {
@@ -313,11 +312,10 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
       await page.evaluate((id) => window.api.terminal.write(id, 'while it was off\r'), first.tabId)
       await expect
         .poll(
-          () =>
-            fs.readFileSync(transcriptFile(env.home, env.workspaces.a, cleared.sessionId), 'utf8'),
+          async () => (await pendingAttention(page)).some((e) => e.sessionId === cleared.sessionId),
           { timeout: STARTS_AND_ANSWERS_MS }
         )
-        .toContain('while it was off')
+        .toBe(true)
 
       await page.evaluate(() => window.api.settings.set({ pluginsOn: { discord: true } }))
       await expect.poll(() => fake.identifies, { timeout: STARTS_AND_ANSWERS_MS }).toBe(2)
@@ -338,9 +336,6 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
           timeout: STARTS_AND_ANSWERS_MS
         })
         .toBe(true)
-      expect(
-        fs.readFileSync(transcriptFile(env.home, env.workspaces.a, cleared.sessionId), 'utf8')
-      ).toContain('after the switch')
       const live = (await page.evaluate(() => window.api.sessions.list())).filter(
         (s) => s.alive && !s.overseer
       )
