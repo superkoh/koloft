@@ -38,9 +38,9 @@ export interface InstructionsVerbDeps {
   nameOf(session: SessionInfo): string
 }
 
-const WHICH = '[--workspace <workspace> | --every-workspace]'
-const USAGE = `koloft instructions: run it alone to read them, or: koloft instructions add ${WHICH} -- "<sentence>" | koloft instructions set ${WHICH} -- "<whole text>"`
 const EVERY_WORKSPACE_FLAG = '--every-workspace'
+const WHICH = `[--workspace <workspace> | ${EVERY_WORKSPACE_FLAG}]`
+const USAGE = `koloft instructions: run it alone to read them, or: koloft instructions add ${WHICH} -- "<sentence>" | koloft instructions set ${WHICH} -- "<whole text>"`
 const WORDS_AFTER_DASHES = (edit: AgentEdit): string =>
   edit === ADD_A_LINE
     ? 'koloft instructions add: put the sentence after --, like: koloft instructions add -- "Run npm test before you say a change is done."'
@@ -138,7 +138,7 @@ export function instructionsVerb(d: InstructionsVerbDeps): AgentVerb {
         what: block.name,
         before,
         after,
-        ...(block.forEveryWorkspace && { forEveryWorkspace: true })
+        forEveryWorkspace: block.forEveryWorkspace
       },
       caller.stillWaiting
     )

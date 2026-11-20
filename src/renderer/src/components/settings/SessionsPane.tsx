@@ -2,17 +2,15 @@ import { useCallback, useState, type JSX } from 'react'
 import { bytesLeft, instructionsBytes, textInUse } from '@core/ownerInstructions'
 import { EVERY_WORKSPACE_TEXT_MAX_BYTES } from '@plugins/sessions/shared/workspaceInstructions'
 import { useStore } from '../../store'
+import { plural } from '../../sessionRows'
 import { OwnerInstructionsEditor } from '../OwnerInstructionsEditor'
 import { SessionMethodsSection } from './SessionMethodsSection'
 import { useEscConsumer } from './escScope'
 
 const EVERY_WORKSPACE = 'Instructions for every workspace'
 
-const linesAndLeft = (text: string): string => {
-  const lines = text.split('\n').length
-  const left = bytesLeft(EVERY_WORKSPACE_TEXT_MAX_BYTES - instructionsBytes(text))
-  return `${lines.toLocaleString('en-US')} line${lines === 1 ? '' : 's'} · ${left}`
-}
+const linesAndLeft = (text: string): string =>
+  `${plural(text.split('\n').length, 'line')} · ${bytesLeft(EVERY_WORKSPACE_TEXT_MAX_BYTES - instructionsBytes(text))}`
 
 function EveryWorkspaceInstructions(): JSX.Element {
   const text = useStore((s) => textInUse(s.settings.everyWorkspaceInstructions))

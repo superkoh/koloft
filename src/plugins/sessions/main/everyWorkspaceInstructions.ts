@@ -15,7 +15,7 @@ import type { InstructionsBlock } from './instructionsVerb'
 import { workspaceInstructionsPart } from './workspaceInstructions'
 import { EVERY_WORKSPACE_TEXT_MAX_BYTES } from '../shared/workspaceInstructions'
 
-export const FOR_EVERY_WORKSPACE = 'the instructions for every workspace'
+const FOR_EVERY_WORKSPACE = 'the instructions for every workspace'
 
 export const everyWorkspacePart = (text: string): string =>
   composePrompt('every-workspace-owner-instructions', { values: { 'owner-instructions': text } })

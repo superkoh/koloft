@@ -57,6 +57,7 @@ export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
         if (found) lastFound.set(root, found)
         const unreachable =
           !found &&
+          lastFound.has(root) &&
           (await d.reachable(root).then(
             () => false,
             () => true

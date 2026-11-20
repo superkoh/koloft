@@ -31,4 +31,4 @@ export const CHANNELS = {
   worktrees: 'workspace:worktrees'
 } as const
 
-export type InstructionsSaveResult = { ok: true } | { ok: false; error: string; inUse?: string }
+export type { InstructionsSaveResult } from '@core/ownerInstructions'

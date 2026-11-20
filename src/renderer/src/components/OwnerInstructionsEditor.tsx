@@ -4,10 +4,13 @@ import { IconAiStart } from '../icons'
 import { useStore } from '../store'
 import { isComposing } from '../keys'
 import { InstructionsChangeLines } from './InstructionsChange'
-import { bytesLeft, cleanInstructions, instructionsBytes } from '@core/ownerInstructions'
+import {
+  bytesLeft,
+  cleanInstructions,
+  instructionsBytes,
+  type InstructionsSaveResult
+} from '@core/ownerInstructions'
 import '../commandPalette.css'
-
-export type OwnerInstructionsSaved = { ok: true } | { ok: false; error: string; inUse?: string }
 
 const COULD_NOT_SAVE = 'Koloft could not save the instructions.'
 
@@ -39,7 +42,7 @@ export function OwnerInstructionsEditor({
   status: string
   inUse: string
   maxBytes: number
-  save(text: string, opened: string): Promise<OwnerInstructionsSaved>
+  save(text: string, opened: string): Promise<InstructionsSaveResult>
   savedToast: string
   onClose(): void
 }): JSX.Element {
@@ -53,7 +56,7 @@ export function OwnerInstructionsEditor({
   const save = async (): Promise<void> => {
     if (left < 0) return
     setChanged(null)
-    const r = await saveText(text, opened).catch((): OwnerInstructionsSaved => ({
+    const r = await saveText(text, opened).catch((): InstructionsSaveResult => ({
       ok: false,
       error: COULD_NOT_SAVE
     }))
