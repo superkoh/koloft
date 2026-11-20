@@ -8,6 +8,7 @@ import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/
 import {
   MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
   sessionPromptsHandedOut,
+  agentPluginSays,
   docsSkillHandedOut,
   filesNamedUnder,
   koloftSkillsUnder
@@ -30,7 +31,7 @@ import {
   type ClaudeCall
 } from './helpers/p1'
 import { installOnTheMachine, koloftInSession, startRemoteTab } from './helpers/remoteTab'
-import { closeSettings, openSettings } from './helpers/extensions'
+import { switchPlugin } from './helpers/extensions'
 import {
   REMOTE_WS_NAME,
   killFakeRemote,
@@ -233,17 +234,10 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
       await startRemoteTab(page, env, 'claude')
       expect(koloftSkillHandedTo(readCalls(env)[0])).toContain('gather what waits on the owner')
 
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
-      await page.getByRole('switch', { name: 'Todo', exact: true }).uncheck()
+      await switchPlugin(page, 'Todo', false)
       await expect
-        .poll(() =>
-          koloftSkillsUnder(path.join(env.userData, 'agent-plugin')).some((s) =>
-            s.includes('gather what waits on the owner')
-          )
-        )
+        .poll(() => agentPluginSays(env.userData, 'gather what waits on the owner'))
         .toBe(false)
-      await closeSettings(page)
 
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       expect(readCalls(env)).toHaveLength(2)

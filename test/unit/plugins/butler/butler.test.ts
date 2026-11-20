@@ -99,7 +99,7 @@ function make(): Butler {
       await noticeLands
       return noticeArrives && !!butler.liveTab()
     },
-    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}`, on: () => todoOn },
+    news: { ...TODO_NEWS, on: () => todoOn },
     pluginsOn: () => ({ todo: todoOn, passwords: passwordsOn }),
     pluginsNews: (changed) =>
       pluginsChangedNews(

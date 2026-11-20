@@ -49,8 +49,13 @@ export interface HandOverDeps {
   modeOf(tab: string): ModeClass
 }
 
+interface Queued {
+  to: Recipient
+  words: Words
+}
+
 export class HandOver {
-  private queues = new Map<string, { to: Recipient; words: Words }[]>()
+  private queues = new Map<string, Queued[]>()
   private told = 0
 
   constructor(private d: HandOverDeps) {}
@@ -79,7 +84,7 @@ export class HandOver {
     return this.queues.has(key)
   }
 
-  private async pump(key: string, items: { to: Recipient; words: Words }[]): Promise<void> {
+  private async pump(key: string, items: Queued[]): Promise<void> {
     try {
       while (items.length) {
         const { to, words } = items[0]

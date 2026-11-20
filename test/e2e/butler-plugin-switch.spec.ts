@@ -7,11 +7,13 @@ import {
   butlerRow,
   butlerSessionOnDisk,
   centerTerm,
+  landsOnTheButler,
   runIn,
   terminalText,
   waitBooted
 } from './helpers/p1'
-import { closeSettings, openSettings } from './helpers/extensions'
+import { switchPlugin } from './helpers/extensions'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId } from '../../src/shared/types'
 
 const INSTALL: Record<BackendId, (env: E2EEnv) => void> = {
@@ -36,17 +38,10 @@ async function heardBy(page: Page, env: E2EEnv, tab: string): Promise<string> {
   ).replace(/\s+/g, '')
 }
 
-async function switchTodo(page: Page, on: boolean): Promise<void> {
-  await openSettings(page)
-  await page.locator('.set-ni', { hasText: 'Plugins' }).click()
-  await page.getByRole('switch', { name: 'Todo', exact: true }).setChecked(on)
-  await closeSettings(page)
-}
-
 test.describe('The butler while a plugin switch changes', () => {
-  for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
+  for (const backend of SESSION_BACKENDS)
     // CC§23 CODEX§17 MUSE§9 AGY§8
-    test(`a ${backend} butler that is open is told at once, in its own tab, that the owner turned Todo off in Settings ▸ Plugins`, async ({
+    test(`a ${backend} butler that is open is told, in its own tab, that the owner turned Todo off in Settings ▸ Plugins`, async ({
       env
     }) => {
       test.setTimeout(180_000)
@@ -57,7 +52,7 @@ test.describe('The butler while a plugin switch changes', () => {
         const page = await app.firstWindow()
         await waitBooted(page)
         await butlerRow(page).click()
-        await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+        await landsOnTheButler(page)
         const tab = (await butlerRow(page).getAttribute('data-tab-id'))!
         // AGY§8
         if (backend === 'agy') await runIn(page, centerTerm(page), 'hello')
@@ -66,7 +61,7 @@ test.describe('The butler while a plugin switch changes', () => {
           .toBe(1)
         await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
 
-        await switchTodo(page, false)
+        await switchPlugin(page, 'Todo', false)
         await expect
           .poll(() => heardBy(page, env, tab), { timeout: 60_000 })
           .toContain(TOLD_TODO_IS_OFF)

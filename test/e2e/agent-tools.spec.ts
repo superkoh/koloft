@@ -25,12 +25,13 @@ import { setupChangeFixture } from './helpers/filesFixture'
 import {
   MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
   sessionPromptsHandedOut,
+  agentPluginSays,
   docsSkillHandedOut,
   filesNamedUnder,
   koloftSkillsUnder
 } from './helpers/koloftSkills'
 import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
-import { closeSettings, openSettings } from './helpers/extensions'
+import { switchPlugin } from './helpers/extensions'
 import { WORKBENCH } from './helpers/workbench'
 import { guestByUrl, guestContents, newWebTab, typeInAddressBar } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -1407,11 +1408,8 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const holdsToDos = (): boolean =>
         koloftSkillsUnder(env.userData).some((s) => s.includes('gather what waits on the owner'))
       expect(holdsToDos()).toBe(true)
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
-      await page.getByRole('switch', { name: 'Todo', exact: true }).uncheck()
+      await switchPlugin(page, 'Todo', false)
       await expect.poll(holdsToDos).toBe(false)
-      await closeSettings(page)
 
       await startSessionIn(page, 'ws-a')
       expect(await koloftInSession(page, 'todo')).not.toBe('0')
@@ -1438,17 +1436,10 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       expect(museSkills()).toHaveLength(1)
       expect(museSkills()[0]).toContain('gather what waits on the owner')
 
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
-      await page.getByRole('switch', { name: 'Todo', exact: true }).uncheck()
+      await switchPlugin(page, 'Todo', false)
       await expect
-        .poll(() =>
-          koloftSkillsUnder(path.join(env.userData, 'agent-plugin')).some((s) =>
-            s.includes('gather what waits on the owner')
-          )
-        )
+        .poll(() => agentPluginSays(env.userData, 'gather what waits on the owner'))
         .toBe(false)
-      await closeSettings(page)
 
       await newSessionInWith(page, 'ws-a', 'Muse')
       await expect.poll(() => museCalls(env).length, { timeout: 60_000 }).toBe(2)
