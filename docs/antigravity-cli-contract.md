@@ -1414,6 +1414,13 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   conversation a default-model `-p` had started in the same folder: `num_turns` 2, and
   the answer named the earlier turn's word (same day and build). Which model the second
   turn ran on is not in the JSON; it took 3.9 s against the first turn's 9.7 s.
+- **Turn judgement on Neon** (2026-11-19, agy 1.5.13, same bench and route, three runs
+  each, four at a time): `gemini-4-argon` `medium` 83 / 82 / 82 right, 3 asks read as
+  news, mean 8.2 s, 0–2 of 65 calls over 15 s, one-tap replies on 27–28 of 33 asks;
+  `gemini-4-neon` `medium` 81 / 82 / 83, 1–3 asks read as news, mean 14.3 s, 25–27
+  over 15 s (about 1,000 thinking tokens a call); `gemini-4-neon` `low` 81 / 80 / 82,
+  2–3 asks read as news, mean 9.6 s, 2–4 over 15 s, one-tap replies on 22–24. So the
+  turn judgement stays on Argon at `medium` while Neon runs the normal session tier.
 
 ## §22 Errors and retries
 
