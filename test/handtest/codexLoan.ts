@@ -4,7 +4,7 @@ import { codexHomeOf } from '../../src/main/codexAccounts'
 
 // CODEX§15
 const CODEX_REFRESHES_THIS_CLOSE_TO_EXPIRY_MS = 5 * 60_000
-const LONGEST_SANDBOX_RUN_MS = 24 * 3_600_000
+export const LONGEST_SANDBOX_RUN_MS = 24 * 3_600_000
 
 export interface InstalledAccount {
   name: string
@@ -12,15 +12,24 @@ export interface InstalledAccount {
   enabled: boolean
 }
 
-export type CodexLoan = { name: string; auth: string } | { notLent: string }
+export type CodexLoan = { name: string; auth: string; safeUntil?: number } | { notLent: string }
 
-function accessTokenExpiry(auth: string): number | undefined {
-  const token = (JSON.parse(auth) as { tokens?: { access_token?: unknown } }).tokens?.access_token
-  if (typeof token !== 'string') return undefined
-  const { exp } = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as {
-    exp?: unknown
+type Refresh = { never: true } | { at: number } | { unknown: true }
+
+function whenCodexRefreshes(auth: string): Refresh {
+  try {
+    const { tokens } = JSON.parse(auth) as { tokens?: { access_token?: unknown } }
+    if (!tokens) return { never: true }
+    const token = String(tokens.access_token)
+    const { exp } = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as {
+      exp?: unknown
+    }
+    return typeof exp === 'number'
+      ? { at: exp * 1000 - CODEX_REFRESHES_THIS_CLOSE_TO_EXPIRY_MS }
+      : { unknown: true }
+  } catch {
+    return { unknown: true }
   }
-  return typeof exp === 'number' ? exp * 1000 : undefined
 }
 
 export function codexLoan(
@@ -34,21 +43,24 @@ export function codexLoan(
     .filter((l) => fs.existsSync(l.file))
     .map((l) => {
       const auth = fs.readFileSync(l.file, 'utf8')
-      return { name: l.name, auth, expiry: accessTokenExpiry(auth) }
+      return { name: l.name, auth, refresh: whenCodexRefreshes(auth) }
     })
-    .sort((a, b) => (b.expiry ?? 0) - (a.expiry ?? 0))
-  const [freshest] = logins
-  if (!freshest) return { notLent: 'the installed Koloft has no enabled Codex account signed in' }
-  if (freshest.expiry === undefined)
-    return { notLent: `the login of "${freshest.name}" has no access-token expiry to check` }
-  const lentUntil = now + LONGEST_SANDBOX_RUN_MS + CODEX_REFRESHES_THIS_CLOSE_TO_EXPIRY_MS
-  if (freshest.expiry <= lentUntil)
+  if (logins.length === 0)
+    return { notLent: 'the installed Koloft has no enabled Codex account signed in' }
+  const apiKey = logins.find((l) => 'never' in l.refresh)
+  if (apiKey) return { name: apiKey.name, auth: apiKey.auth }
+  const freshest = logins
+    .flatMap((l) => ('at' in l.refresh ? [{ ...l, at: l.refresh.at }] : []))
+    .sort((a, b) => b.at - a.at)[0]
+  if (!freshest)
+    return { notLent: `no enabled Codex login has an access-token expiry that can be read` }
+  if (freshest.at <= now + LONGEST_SANDBOX_RUN_MS)
     return {
       notLent:
-        `the login of "${freshest.name}" expires ${new Date(freshest.expiry).toISOString()}, ` +
-        `less than ${LONGEST_SANDBOX_RUN_MS / 3_600_000} h away, so Codex in the sandbox could ` +
-        `refresh it and sign the installed Koloft out of it; it is lent again once the ` +
-        `installed Koloft has refreshed it`
+        `Codex refreshes the freshest enabled login, "${freshest.name}", at ` +
+        `${new Date(freshest.at).toISOString()}, within ${LONGEST_SANDBOX_RUN_MS / 3_600_000} h, ` +
+        `and a refresh in the sandbox would sign the installed Koloft out of it; it is lent ` +
+        `again once the installed Koloft has refreshed it`
     }
-  return { name: freshest.name, auth: freshest.auth }
+  return { name: freshest.name, auth: freshest.auth, safeUntil: freshest.at }
 }

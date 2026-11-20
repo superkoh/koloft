@@ -46,12 +46,39 @@ describe('the hand-test sandbox lends a Codex login only while no refresh can co
     })
   })
 
-  it('refuses, naming the account and its expiry, when the token runs out within a day', () => {
+  it('refuses, naming the account and when Codex would refresh it, when that is within a day', () => {
     const profile = profileWith({ on: loginExpiringIn(20 * HOUR) })
     const loan = codexLoan(profile, [account('on')], NOW)
     expect(loan).not.toHaveProperty('auth')
     expect(loan).toMatchObject({ notLent: expect.stringContaining('"on"') })
-    expect(loan).toMatchObject({ notLent: expect.stringContaining('2026-11-20T23:00:00.000Z') })
+    expect(loan).toMatchObject({ notLent: expect.stringContaining('2026-11-20T22:55:00.000Z') })
+  })
+
+  it('says until when a lent login is safe: five minutes before its token expires', () => {
+    const profile = profileWith({ on: loginExpiringIn(48 * HOUR) })
+    expect(codexLoan(profile, [account('on')], NOW)).toMatchObject({
+      safeUntil: NOW + 48 * HOUR - 5 * 60_000
+    })
+  })
+
+  it('lends an API key, which never refreshes, with no time limit', () => {
+    const profile = profileWith({
+      key: JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'k' }),
+      soon: loginExpiringIn(1 * HOUR)
+    })
+    const loan = codexLoan(profile, [account('soon'), account('key')], NOW)
+    expect(loan).toMatchObject({ name: 'key' })
+    expect(loan).not.toHaveProperty('safeUntil')
+  })
+
+  it('passes over a login it cannot read for one it can', () => {
+    const profile = profileWith({
+      broken: '{"tokens": {"access_token": "opaque"',
+      good: loginExpiringIn(48 * HOUR)
+    })
+    expect(codexLoan(profile, [account('broken'), account('good')], NOW)).toMatchObject({
+      name: 'good'
+    })
   })
 
   it('refuses when no enabled account is signed in', () => {

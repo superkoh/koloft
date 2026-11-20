@@ -50,8 +50,10 @@ const USAGE = `Starts a hidden dev build of Koloft with the real claude and code
   npm run handtest -- stop <home>
 
 start prints JSON: the debug address (cdp), its home, its workspaces, the stop line, and
-codex: which enabled Codex account of the installed Koloft it lent, or why it lent none
-(a login whose access token runs out within a day is not lent, CODEX§15).
+codex: which enabled Codex account of the installed Koloft it lent, or why it lent none.
+Only an enabled account is lent (never ~/.codex), an API key always, a ChatGPT login only
+while Codex would not refresh it for a day; the sandbox then stops itself before that
+refresh, which would sign the installed Koloft out of it (CODEX§15).
 drive runs a script whose default export takes the Driver of test/handtest/driver.ts
 (start a session, type, wait for a row state, read a terminal, toasts, screenshots) and
 prints what it returns as JSON. menu clicks an app-menu item (an id from
@@ -75,6 +77,7 @@ Run npm run build first.`
 
 const REPO = path.resolve(__dirname, '..', '..')
 const MAIN_ENTRY = path.join(REPO, 'out', 'main', 'index.js')
+const RUN_SCRIPT = path.join(REPO, 'test', 'handtest', 'run.mjs')
 const INSTALLED_PROFILE = path.join(os.homedir(), 'Library', 'Application Support', 'koloft')
 const STATE_FILE = 'handtest.json'
 const DEFAULT_PORT = '9555'
@@ -158,11 +161,14 @@ async function useRealClaude(env: E2EEnv, account: string): Promise<string> {
 }
 
 // CODEX§15
-async function useRealCodex(env: E2EEnv, accounts: readonly InstalledAccount[]): Promise<string> {
+async function useRealCodex(
+  env: E2EEnv,
+  accounts: readonly InstalledAccount[]
+): Promise<{ codex: string; safeUntil?: number }> {
   const codex = await onLoginPath('codex')
-  if (!codex) return 'not lent: no codex on the login PATH'
+  if (!codex) return { codex: 'not lent: no codex on the login PATH' }
   const loan = codexLoan(INSTALLED_PROFILE, accounts, Date.now())
-  if ('notLent' in loan) return `not lent: ${loan.notLent}`
+  if ('notLent' in loan) return { codex: `not lent: ${loan.notLent}` }
   const wrapper = path.join(env.fakeBin, 'codex')
   writeExec(
     wrapper,
@@ -177,7 +183,21 @@ async function useRealCodex(env: E2EEnv, accounts: readonly InstalledAccount[]):
   for (const dir of Object.values(env.workspaces))
     acceptCodexTrust(codexConfigFile(env.launchEnv), dir)
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
-  return `lent: ${loan.name}`
+  return {
+    codex:
+      `lent: ${loan.name}` +
+      (loan.safeUntil
+        ? `; the sandbox stops itself at ${new Date(loan.safeUntil).toISOString()}, before Codex would refresh it`
+        : ''),
+    safeUntil: loan.safeUntil
+  }
+}
+
+function stopAt(home: string, at: number): void {
+  spawn(process.execPath, [RUN_SCRIPT, 'stop', home, `--at=${at}`], {
+    detached: true,
+    stdio: 'ignore'
+  }).unref()
 }
 
 async function installIntoTheSandbox(
@@ -318,7 +338,7 @@ async function start(opt: {
       accounts: [seededAccount(account, 'oauth')]
     })
     const claude = await useRealClaude(env, account)
-    const codex = await useRealCodex(env, installed.accounts ?? [])
+    const { codex, safeUntil } = await useRealCodex(env, installed.accounts ?? [])
     const muse = opt.muse ? await useRealMuse(env) : undefined
     if (opt.museAuth)
       addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
@@ -348,6 +368,7 @@ async function start(opt: {
     child.unref()
     const state: State = { pid: child.pid!, port: opt.port, lab }
     fs.writeFileSync(path.join(env.home, STATE_FILE), JSON.stringify(state))
+    if (safeUntil) stopAt(env.home, safeUntil)
     const deadline = Date.now() + WINDOW_OPEN_DEADLINE_MS
     while (!(await koloftPage(opt.port).catch(() => undefined))) {
       if (Date.now() > deadline) throw new Error(`Koloft did not open its window — see ${log}`)
@@ -458,7 +479,8 @@ const { positionals, values } = parseArgs({
     muse: { type: 'boolean', default: false },
     'muse-auth': { type: 'string' },
     agy: { type: 'boolean', default: false },
-    discord: { type: 'string' }
+    discord: { type: 'string' },
+    at: { type: 'string' }
   }
 })
 
@@ -474,6 +496,7 @@ if (command === 'start') {
     discord: values.discord
   })
 } else if (command === 'stop' && home) {
+  if (values.at) await wait(Math.max(0, Number(values.at) - Date.now()))
   await stop(home)
 } else if (command === 'menu' && home && arg) {
   await clickMenuItem(home, arg)

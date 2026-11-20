@@ -1937,7 +1937,7 @@ real account, Assist's argv (`exec --skip-git-repo-check --ephemeral --ignore-us
   refusal the same way is **not probed yet** (section 14).
 
 **A ChatGPT login refreshes only within 5 minutes of its access token's expiry, and a
-refresh token works once.** Read 2026-11-20 from the 0.169.0 source
+refresh token works once.** Read 2026-11-19 from the 0.169.0 source
 (`codex-rs/login/src/auth/manager.rs` at tag `rust-v0.169.0`): when the access token is a
 JWT with an `exp`, Codex refreshes it once `exp` is within
 `CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES = 5` of now (`ProactiveExpiry`); only a token
