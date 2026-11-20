@@ -354,8 +354,9 @@ first of these that can do it; only a step none of them can do goes to the owner
    Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
    it cannot reach OpenAI (CODEX§16). `--discord` puts it on the real Discord as the dev
    build's test bot, so the owner's only step is a press on the phone. Drive it with
-   `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
-   files and `<home>/koloft.log`.
+   `npm run handtest -- drive <home> <script.ts>`: the script, kept in your scratchpad,
+   default-exports a function of test/handtest/driver.ts's `Driver`, and what it returns
+   is printed. Check results in screenshots, transcripts, files and `<home>/koloft.log`.
 2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.
 3. The real binary in a temp HOME (claude, codex, gh) — a temp HOME does not hide the
    login Keychain, so a probe that signs in runs in Docker.

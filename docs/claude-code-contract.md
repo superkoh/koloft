@@ -2706,7 +2706,12 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   write of 63 bytes or more that ended in CR put a newline in the box instead of
   sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
   300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
-  2.1.286); the setup was not re-run here.
+  2.1.286); the setup was not re-run here. Still so on 2.1.329 (2026-11-19, the
+  hand-test sandbox, `window.api.terminal.write` on a Koloft tab, Sonnet 5.5): 352 bytes
+  and CR in one write stayed in the box, the screen noting `Removed 1 invisible character
+  from your prompt`, and a lone CR 0.8 s later sent it; 31- and 34-byte lines ending in
+  CR were sent by their one write, on the tab on screen and on one off screen, local and
+  over ssh into tmux.
 - **A line typed before claude starts lands in the input box unsent.** At zsh's
   `ESC[?2004h`, one write of the launch line (`exec claude …` CR) and `hello` CR — or
   `hello` LF — showed `❯ hello` in the box and sent nothing in 14 s (2.1.319 twice for
