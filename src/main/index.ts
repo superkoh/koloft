@@ -1220,7 +1220,7 @@ const ownerAsleep = new OwnerAsleep({
     const questions = questionsOf(claude).length
     return { question: questions > 0, questions, text: claudeDialog(claude).text }
   },
-  answer: answerSession,
+  answer: (tabId, reply) => answerSession(tabId, reply, true),
   titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
   changedSince: (since) => awayDigest?.changedSince(since) ?? [],
   report: (text) => void handOver?.tell(butlerRecipient(), text),
@@ -2387,9 +2387,7 @@ async function answerSession(
   reply: string,
   byTheOverseer = false
 ): Promise<string | undefined> {
-  return sessionAsks
-    ? sessionAsks.answerSession(tabId, reply, false, byTheOverseer)
-    : STILL_STARTING
+  return sessionAsks ? sessionAsks.answerSession(tabId, reply, { byTheOverseer }) : STILL_STARTING
 }
 
 const ownerAsks = {

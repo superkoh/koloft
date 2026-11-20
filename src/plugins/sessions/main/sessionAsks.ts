@@ -89,6 +89,11 @@ export interface AskListener {
   answerGoingIn?(tabId: string): void
 }
 
+export interface AnswerReader {
+  toItsCard?: boolean
+  byTheOverseer?: boolean
+}
+
 interface KeysTyped {
   at?: number
 }
@@ -279,8 +284,7 @@ export class SessionAsks {
   answerSession(
     tab: string,
     reply: string,
-    toItsCard = false,
-    byTheOverseer = false
+    { toItsCard = false, byTheOverseer = false }: AnswerReader = {}
   ): Promise<string | undefined> {
     return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard, byTheOverseer))
   }

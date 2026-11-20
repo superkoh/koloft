@@ -1903,7 +1903,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(inbox.lines).toEqual([])
   })
 
-  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys, worded for the butler when the butler is the one answering', async () => {
+  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys, and Koloft is told whether the butler is the one answering', async () => {
     const h = harness(
       live,
       {},
