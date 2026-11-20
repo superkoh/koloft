@@ -19,9 +19,17 @@ export interface OldConversationNews {
   on: () => boolean
 }
 
+export type PluginsOn = Readonly<Record<string, boolean>>
+
+export interface PluginsSeen {
+  key: string
+  on: PluginsOn
+}
+
 export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
+  pluginsSeen?: PluginsSeen
   [knownBy: KnownBy]: string[] | undefined
   // CC§3 CODEX§11
   carried?: OwnPick
