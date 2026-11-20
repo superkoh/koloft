@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { fillsOf } from './pluginUi'
 import { PART_HINT } from './slots'
 import { firedHints, selectorOf, type ActiveHint, type HintFire, type HintSnapshot } from './hints'
+import { tipNumber } from '@core/hints'
 import { panelIsOpen, panelTabId, useStore } from './store'
 import { updateSettings } from './components/settings/useSettingsUpdate'
+import { pluginStatesIn } from '@shared/pluginSwitches'
 
 const HINT_GAP_AFTER_DISMISS_MS = 2000
 
@@ -30,7 +32,12 @@ function snapOf(s: State): HintSnapshot {
 
 export function useHints(): ActiveHint | null {
   const [queue, setQueue] = useState<HintFire[]>([])
-  const [active, setActive] = useState<{ id: string; selector: string; n: number } | null>(null)
+  const [active, setActive] = useState<{
+    id: string
+    selector: string
+    n: number
+    of: number
+  } | null>(null)
   const [readyAt, setReadyAt] = useState(0)
   const panelShown = useStore(panelShownOf)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
@@ -66,9 +73,10 @@ export function useHints(): ActiveHint | null {
       if (!document.querySelector(selectorOf(next, panelShownOf(st), st.settings.sidebarHidden)))
         return
       const seen = st.settings.hintsSeen
+      const states = pluginStatesIn(st.settings)
       drop()
       updateSettings({ hintsSeen: [...seen, next.id] })
-      setActive({ ...next, n: seen.length + 1 })
+      setActive({ ...next, ...tipNumber(seen, (plugin) => states[plugin]?.on ?? true) })
     }
     const t = setTimeout(tryShow, Math.max(0, readyAt - Date.now()))
     const off = useStore.subscribe(tryShow)

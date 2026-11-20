@@ -13,6 +13,7 @@ import {
   openMenu,
   openWorktreeSession,
   readCalls,
+  sendShortcut,
   waitBooted,
   waitForCalls,
   type ClaudeCall
@@ -151,6 +152,51 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
         fs.realpathSync(path.join(env.workspaces.a, '.claude', 'worktrees', 'issue-218'))
       )
       expectIssueMessage(textAfterDashes(again))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('turning GitHub off in Settings ▸ Plugins while the New worktree session dialog shows its issues takes the list away and leaves the dialog working; opened again, it lists none and asks gh for none', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    feedGithub(env, env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      const windowErrors: string[] = []
+      page.on('pageerror', (error) => windowErrors.push(error.message))
+      await waitBooted(page)
+
+      let dlg = await openWorktreeSession(page, 'ws-a')
+      await expect(itemRow(dlg, 218)).toBeVisible({ timeout: 15_000 })
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+      await page.getByRole('switch', { name: 'GitHub', exact: true }).setChecked(false)
+      await expect(dlg).toHaveCount(1)
+      await page.locator('.set-x').click()
+      await expect(page.locator('.set-ni')).toHaveCount(0)
+      await expect(dlg.locator('.gh-items')).toHaveCount(0)
+      const createsWhatIsTyped = async (): Promise<void> => {
+        await dlg.getByRole('textbox').fill('g15-off')
+        await expect(dialogPrimary(dlg)).toBeEnabled({ timeout: 15_000 })
+      }
+      await createsWhatIsTyped()
+      await dlg.locator('.modal-foot button', { hasText: 'Cancel' }).click()
+      await expect(dlg).toHaveCount(0)
+
+      const ghCalls = path.join(env.home, 'fake-gh-calls.txt')
+      fs.rmSync(ghCalls, { force: true })
+      dlg = await openWorktreeSession(page, 'ws-a')
+      await createsWhatIsTyped()
+      await expect(dlg.getByText('Loading issues and pull requests…')).toHaveCount(0)
+      await expect(dlg.locator('.gh-items')).toHaveCount(0)
+      expect(fs.existsSync(ghCalls) ? fs.readFileSync(ghCalls, 'utf8') : '').not.toMatch(
+        /issue list|pr list/
+      )
+      expect(windowErrors).toEqual([])
     } finally {
       await quitAndClose(app)
     }

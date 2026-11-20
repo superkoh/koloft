@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { knowPluginStates, pluginStates } from '../../src/core/switches'
+import type { SavedSettings } from '../../src/core/settings'
+import { PLUGINS } from '../../src/plugins/list'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import {
   distinctName,
   parseRoute,
@@ -252,6 +256,34 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(parseRoute('I think app.', LIST)).toBeNull()
     expect(parseRoute(reply({ workspace: 9 }), LIST)).toBeNull()
     expect(parseRoute(reply({ workspace: '1' }), LIST)).toBeNull()
+  })
+})
+
+describe('with GitHub turned off', () => {
+  afterEach(() => knowPluginStates({}))
+
+  const githubOff = (): void =>
+    knowPluginStates(
+      pluginStates(
+        PLUGINS,
+        { ...DEFAULT_SETTINGS, pluginsOn: { github: false } } as unknown as SavedSettings,
+        DEFAULT_SETTINGS as unknown as SavedSettings
+      )
+    )
+
+  it('Assist is not offered an issue to start from, pinned', async () => {
+    githubOff()
+    const { system, prompt } = routeJob(LIST, 'fix the login bug')
+    expect(prompt).not.toContain('"issue"')
+    await expect(`${system}\n---\n${prompt}\n`).toMatchFileSnapshot(
+      './prompt-text/github-off/route.txt'
+    )
+  })
+
+  it('an issue answered anyway starts no issue worktree', () => {
+    githubOff()
+    const r = parseRoute(reply({ workspace: 1, worktree: { issue: 433 } }), LIST)
+    expect(r).toMatchObject({ kind: 'workspace', worktree: null })
   })
 })
 

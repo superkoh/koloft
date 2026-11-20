@@ -21,11 +21,26 @@ function same(a: WorkspaceGithub | undefined, b: WorkspaceGithub | undefined): b
 
 export class GithubCountsSweep {
   private cache = new Map<string, WorkspaceGithub>()
+  private timers: NodeJS.Timeout[] = []
+  private stopped = false
   constructor(private deps: GithubCountsDeps) {}
 
-  start(): void {
-    setTimeout(() => void this.sweep(), STARTUP_DELAY_MS).unref()
-    setInterval(() => void this.sweep(), RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS).unref()
+  start(delayMs = STARTUP_DELAY_MS): void {
+    if (this.timers.length > 0) return
+    this.stopped = false
+    this.timers = [
+      setTimeout(() => void this.sweep(), delayMs).unref(),
+      setInterval(() => void this.sweep(), RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS).unref()
+    ]
+  }
+
+  stop(): void {
+    this.stopped = true
+    for (const t of this.timers) clearTimeout(t)
+    this.timers = []
+    if (this.cache.size === 0) return
+    this.cache.clear()
+    this.deps.onChange()
   }
 
   get(wsPath: string): WorkspaceGithub | undefined {
@@ -33,6 +48,7 @@ export class GithubCountsSweep {
   }
 
   sweep(): Promise<void> {
+    if (this.stopped) return Promise.resolve()
     return coalesce(ONE_SWEEP_AT_A_TIME, () => this.sweepOnce())
   }
 
@@ -41,6 +57,7 @@ export class GithubCountsSweep {
     const answers = await Promise.all(
       live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
     )
+    if (this.stopped) return
     let changed = false
     live.forEach((ws, i) => {
       const next = answers[i] ?? undefined

@@ -6,6 +6,23 @@ import {
   wbTabSelector,
   type HintSnapshot
 } from '../../src/renderer/src/hints'
+import { HINT_IDS, tipNumber } from '../../src/core/hints'
+
+describe('tip n of N', () => {
+  const allOn = (): boolean => true
+  const githubOff = (plugin: string): boolean => plugin !== 'github'
+
+  it('counts every tip while every plugin is on', () => {
+    expect(tipNumber(['workbench', 'github'], allOn)).toEqual({ n: 3, of: HINT_IDS.length })
+  })
+
+  it('leaves a turned-off plugin tip out of both n and N, even one seen before', () => {
+    expect(tipNumber(['workbench', 'github'], githubOff)).toEqual({
+      n: 2,
+      of: HINT_IDS.length - 1
+    })
+  })
+})
 
 const empty: HintSnapshot = {
   activeTabId: null,

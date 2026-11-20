@@ -14,7 +14,7 @@ import {
 } from './slots'
 import type { Settings, WorkspaceRows } from '@shared/types'
 import type { PluginState } from '@core/switches'
-import { actingStatesIn } from '@shared/pluginSwitches'
+import { pluginStatesIn } from '@shared/pluginSwitches'
 
 let placedOnce: PlacedUi | undefined
 
@@ -42,7 +42,7 @@ let statesFor: ActingStates | undefined
 
 function actingStatesOf(settings: Settings): ActingStates {
   if (statesFor?.settings === settings) return statesFor
-  const states = actingStatesIn(settings)
+  const states = pluginStatesIn(settings)
   const onKey = Object.keys(states)
     .filter((id) => states[id].on)
     .join(' ')
@@ -68,12 +68,16 @@ export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
 
 const usePluginsOnKey = (): string => useStore((s) => actingStatesOf(s.settings).onKey)
 
-export function useFillsOf<T, R>(into: Slot<T>, use: (fill: T) => R): (R | undefined)[] {
+export function useFillsOf<T, R>(
+  into: Slot<T>,
+  use: (fill: T, on: boolean) => R
+): (R | undefined)[] {
   usePluginsOnKey()
-  const every = fillsOfOnOrOff(into)
-  const used = every.map(use)
   const on = new Set(fillsOf(into))
-  return used.map((result, i) => (on.has(every[i]) ? result : undefined))
+  return fillsOfOnOrOff(into).map((fill) => {
+    const result = use(fill, on.has(fill))
+    return on.has(fill) ? result : undefined
+  })
 }
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>

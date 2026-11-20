@@ -1396,6 +1396,42 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       }
     })
 
+  for (const backend of SESSION_BACKENDS)
+    test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session's koloft help and koloft skill say nothing of koloft gh or the to-dos, and koloft gh and koloft todo are refused with the reason`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { github: false } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'gh auth status')).not.toBe('0')
+        expect(await koloftInSession(page, 'todo')).not.toBe('0')
+        const said = await shownTermText(page, CENTER)
+        expect(said).toContain('koloft: GitHub is turned off in Settings ▸ Plugins.')
+        expect(said).toContain(
+          'koloft: Todo is off because GitHub is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        const help = await shownTermText(page, CENTER)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft gh <gh command>')
+        expect(help).not.toContain('koloft todo note')
+        const skills = koloftSkillsUnder(env.home)
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) {
+          expect(skill).not.toContain('koloft gh ')
+          expect(skill).not.toContain('gather what waits on the owner')
+        }
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
   test('turning Todo off in Settings ▸ Plugins while Koloft runs rewrites the koloft skill at once, and koloft todo in a session started afterwards is refused', async ({
     env
   }) => {

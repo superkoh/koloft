@@ -53,6 +53,38 @@ describe('GithubCountsSweep', () => {
     expect(s.pushes()).toBe(2)
   })
 
+  it('once stopped, the counts are gone from the rows and nothing asks gh until it starts again', async () => {
+    const s = sweepOver([{ path: '/a', missing: false }], { '/a': KOLOFT })
+    await s.sweep.sweep()
+    s.sweep.stop()
+    expect(s.sweep.get('/a')).toBeUndefined()
+    expect(s.pushes()).toBe(2)
+    await s.sweep.sweep()
+    expect(s.asked).toEqual(['/a'])
+    s.sweep.start()
+    await s.sweep.sweep()
+    s.sweep.stop()
+    expect(s.asked).toEqual(['/a', '/a'])
+  })
+
+  it('an answer that lands after it stopped is dropped', async () => {
+    let release = (): void => {}
+    const held = new Promise<void>((r) => (release = r))
+    const sweep = new GithubCountsSweep({
+      workspaces: async () => [{ path: '/a', missing: false }],
+      openCounts: async () => {
+        await held
+        return KOLOFT
+      },
+      onChange: () => {}
+    })
+    const out = sweep.sweep()
+    sweep.stop()
+    release()
+    await out
+    expect(sweep.get('/a')).toBeUndefined()
+  })
+
   it('a sweep asked for while one is still out runs again once that one ends, so a new account pick is not lost', async () => {
     let release = (): void => {}
     const firstAnswerHeld = new Promise<void>((r) => (release = r))

@@ -181,7 +181,7 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   if (typeof o.issue === 'number' && Number.isInteger(o.issue) && o.issue > 0)
-    return { kind: 'issue', number: o.issue }
+    return composePrompt(ROUTE_WORKTREE_PICKS) ? { kind: 'issue', number: o.issue } : null
   if (typeof o.new === 'string') {
     const name = o.new.trim()
     if (!isValidWorktreeName(name) || name.toLowerCase() === 'main') return null
