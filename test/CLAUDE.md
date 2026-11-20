@@ -136,7 +136,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
-    `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
+    `/bg-monitor` (`/bg-monitor 2.1.329` lists it in Stop as that version does),
+    `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
     the real one does, and writes `ESC[?2004h` as it starts (CC§12): Enter (`\r`) sends
     the line (a line sent before it binds waits for the bind), Shift+Enter (`\n`) adds a

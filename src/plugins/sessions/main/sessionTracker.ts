@@ -120,6 +120,8 @@ export function sessionEventFromHook(
 
 // CC§8
 const AGENT_TYPES = new Set(['subagent', 'workflow', 'mcp-task', 'cloud-session'])
+// CC§8
+const MONITOR_SCRIPT_ID_PREFIX = 'b'
 
 // CC§8
 function taskNotificationText(obj: TranscriptRecord): string | null {
@@ -754,11 +756,21 @@ export class SessionTracker extends SessionRuntime {
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
+    const parkMonitor = (task: ReportedTask): void => {
+      parked.push({
+        id: task.id,
+        kind: 'monitor',
+        label: t.ledger.labelOf(task.id) ?? task.id,
+        state: 'waiting'
+      })
+    }
     for (const task of t.reported) {
-      if (task.type === 'shell') {
+      if (task.type === 'monitor') {
+        if (task.id.startsWith(MONITOR_SCRIPT_ID_PREFIX)) parkMonitor(task)
+      } else if (task.type === 'shell') {
         const label = t.ledger.labelOf(task.id) ?? task.id
         if (t.ledger.isMonitor(task.id)) {
-          parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
+          parkMonitor(task)
         } else if (!procs) {
           trusted = true
           run(task, 'command', label)

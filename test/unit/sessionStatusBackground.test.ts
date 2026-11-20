@@ -244,11 +244,11 @@ function interruptRec(cwd: string, atMs = Date.now(), forToolUse = false): unkno
 }
 
 // CC§8
-function monitorAckRec(toolUseId: string, cwd: string): unknown {
+function monitorAckRec(toolUseId: string, cwd: string, taskId = 'm' + toolUseId): unknown {
   return {
     type: 'user',
     timestamp: new Date().toISOString(),
-    toolUseResult: { taskId: 'm' + toolUseId, timeoutMs: 900_000, persistent: false },
+    toolUseResult: { taskId, timeoutMs: 900_000, persistent: false },
     message: {
       role: 'user',
       content: [
@@ -1228,6 +1228,34 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   })
 
+  it('since 2.1.329 a Monitor script is reported as type monitor under its b id: parked with its label, the turn-end lands waiting', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabL1n', cwd, initialLines(cwd))
+    tracker.setStatus('tabL1n', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_mon2', cwd, 'tail -f /tmp/bot.log', 'Monitor'),
+      monitorAckRec('toolu_mon2', cwd, 'b8qhp2tne')
+    ])
+    await tracker.reportTurnEnd('tabL1n', [{ id: 'b8qhp2tne', type: 'monitor' }])
+    expect(status(tracker, 'tabL1n')).toBe('waiting')
+    expect(parked(tracker, 'tabL1n')).toEqual([
+      { id: 'b8qhp2tne', kind: 'monitor', label: 'tail -f /tmp/bot.log', state: 'waiting' }
+    ])
+  })
+
+  it('a type monitor under a b id is parked even when its spawn was never seen, labelled by its id', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabL1u', cwd, initialLines(cwd))
+    tracker.setStatus('tabL1u', 'working')
+    await tracker.reportTurnEnd('tabL1u', [{ id: 'b8qhp2tne', type: 'monitor' }])
+    expect(status(tracker, 'tabL1u')).toBe('waiting')
+    expect(parked(tracker, 'tabL1u')).toEqual([
+      { id: 'b8qhp2tne', kind: 'monitor', label: 'b8qhp2tne', state: 'waiting' }
+    ])
+  })
+
   it('a reported shell holds working and is listed as running while a tool shell holds its output file, and both clear once it is gone', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
@@ -1549,7 +1577,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
     await tracker.reportTurnEnd('tabL9', [
       { id: 'd1', type: 'dream' },
       { id: 's1', type: 'auto-mode-scan' },
-      { id: 'w1', type: 'monitor' }
+      { id: 'w1', type: 'monitor' },
+      { id: 'm2', type: 'monitor' },
+      { id: 's2', type: 'monitor' }
     ])
     expect(status(tracker, 'tabL9')).toBe('waiting')
     expect(parked(tracker, 'tabL9')).toBeUndefined()
