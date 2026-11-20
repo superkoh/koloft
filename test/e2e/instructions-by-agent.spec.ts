@@ -256,9 +256,12 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       const agreed = `${WRITTEN}\n${line}`
       await expect.poll(() => versionsOnDisk(env).at(-1)?.text).toBe(agreed)
 
+      await dlg.getByRole('textbox', { name: 'Instructions' }).scrollIntoViewIfNeeded()
       await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg.locator('.field-hint.bad')).toContainText('Save again')
+      await expect(dlg.locator('.field-hint.bad')).toBeInViewport()
       await expect(dlg.locator('.instr-change .idiff-add .idiff-code')).toHaveText([line])
+      await expect(dlg.locator('.instr-change')).toBeInViewport()
       expect(versionsOnDisk(env).at(-1)?.text).toBe(agreed)
       await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
       await expect(dlg).toHaveCount(0)

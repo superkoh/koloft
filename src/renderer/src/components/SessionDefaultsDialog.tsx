@@ -189,8 +189,7 @@ export function SessionDefaultsDialog({
           </span>
         </div>
         <div className="modal-body">
-          {error && <p className="field-hint bad">{error}</p>}
-          {changed && <InstructionsChangeLines {...changed} />}
+          {error && !changed && <p className="field-hint bad">{error}</p>}
           {familyEfforts && (
             <div className="fgrid">
               <span className="flabel">When you start one</span>
@@ -261,6 +260,8 @@ export function SessionDefaultsDialog({
                     {...focusProps('instructions')}
                   />
                 </div>
+                {changed && <p className="field-hint bad">{error}</p>}
+                {changed && <InstructionsChangeLines {...changed} />}
                 <p className={'field-hint' + (left < 0 ? ' bad' : '')}>
                   {`${bytesLeft(left)}. ${whenItCounts(butler)}`}
                 </p>
