@@ -465,7 +465,9 @@ keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
 `src/main/cliRuntime.ts`, pinned by `test/unit/codexRuntime.test.ts`) and warns on
-anything newer. A recheck on a newer Codex moves the tested line, not the minimum. The
+anything newer. A recheck on a newer Codex moves the tested line, not the minimum,
+unless it finds the new build breaking a Koloft tab: then the line stays until Koloft
+handles it (0.171.0, below). The
 owner raised the
 minimum from 0.153.4 to 0.161.0 on 2026-10-08 without redoing the live checks on 0.161;
 since then, on 0.162.0–0.162.1 (2026-10-09 to 2026-10-11, each entry dated where it
@@ -804,8 +806,17 @@ its final reply, and `thread/search/cancel` ended a pending search with `-32600 
 search cancelled"`), 25 and 37 (startup and exit bytes, one new startup question, there),
 27 (the same five `sessionFlags` hooks with the same `currentHash`, none running
 untrusted, then SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop in that
-order with the same stdin keys; no bundled hook listed) and 35 (file links, changed by
-`tui_workspace`, there). A real TUI on Koloft's resume line was not refused on either
+order with the same stdin keys; no bundled hook listed) and 35 (file links: with
+`tui_workspace` on, 0.171.0's default, a reply's `[app.ts](<abs>/src/app.ts:42:5)` is
+drawn as the bare label `app.ts`, where 0.170.0 draws `app.ts (src/app.ts:42:5)`, and a
+click on the label opens Codex's own file pane on the right, about a third of the width,
+which keeps the keyboard so typed keys scroll the file and never reach the composer;
+`-c features.tui_workspace=false` on the TUI's command line brings the path back and
+opens no pane, but alone it drops the app-server's `default_mode_request_user_input` for
+the thread, so a model's question fails with `request_user_input is unavailable in
+Default mode` — the same on 0.170.0 — unless that feature is given on the TUI's command
+line too; with both, 0.161.0 also started, ran a turn and answered a question; one run per
+size, 100×30 and 160×40). A real TUI on Koloft's resume line was not refused on either
 build (alive at 15 s, footer drawn, OSC 7501 `idle`; #62065 refuses only a `--remote`
 given at two levels that disagree); that it drew the thread's history was not seen. Not
 reached on 0.171.0: #61180 and #61195 (§11), the read-state broadcast #61852 (one
@@ -813,8 +824,8 @@ connection only), `bioPolicy` (schema only), the bundled Memory and App hooks (#
 #62080; none listed), two signals in a row, `exec --remote` (help only), a turn on Linux,
 mouse-wheel batching (#62146), subagent transcripts and image previews in the workspace
 pane. Sections 3, 4, 6, 9, 10, 12, 17, 19, 22, 26 and 28–36 but 35 stand on earlier
-measurements. `TESTED_CODEX_LINE` stays at 0.170 until Koloft's TUI launch turns
-`tui_workspace` off (§35).
+measurements. The file pane breaking Koloft's Codex tabs keeps `TESTED_CODEX_LINE` at
+0.170.
 
 Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
@@ -1193,8 +1204,10 @@ on start and resume — as long as the thread's last turn ran under that choice.
 bare resume always came back `workspace-write`, above) keeps `workspace-write` on
 0.163.0 while Koloft's row says bypass, and the old path cannot lift it (inferred from
 the three resume shapes measured; that thread was not built). The `-c` pair on a
-resume is dead weight on 0.163.0 and still the
-thing that sets the sandbox on 0.161–0.162. A resume that should *change* a thread's
+resume sets the sandbox on 0.161–0.162; on 0.163.0 it changed nothing in the shapes
+measured then, but on 0.170.0 and 0.171.0 its sandbox half does take for a thread
+started with explicit `on-request` / `workspace-write` params (the bullet above), so it
+is not dead weight there. A resume that should *change* a thread's
 permissions would have to go through the `thread/resume` params (the TUI sends that
 request; Koloft's relay would have to add them) — not needed today.
 
