@@ -174,7 +174,7 @@ the types a plugin registers with.
 | `src/core/assistModels.ts` | the `ModelAndEffort` type, the model tables Assist jobs share (such as `SMALL_AND_QUICK`), and the `AssistJob` and `Assist` types, so a plugin can take Assist as a function |
 | `src/core/presence.ts` | `OwnerPresence`: where the owner is. `where()` answers `at-the-mac`, `away` or `asleep`, and `listenToSleep` tells a plugin when the night starts and ends. A plugin asks it and never works this out itself |
 | `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks |
-| `src/core/ownerInstructions.ts` | the versions of the owner's Instructions and the edits an agent may propose to them |
+| `src/core/ownerInstructions.ts` | the versions of the owner's Instructions, the edits an agent may propose to them, and the one way a list of versions is saved under a byte limit, by the owner or by an agent the owner agreed with |
 | `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in |
 | `src/core/gh.ts` | what running `gh` gives back, for core and plugins alike: `GhResult`, `Gh`, `GH_SIGNED_OUT`, `slug`, `ghJsonArray`, and the shape of the GitHub fixture that Koloft's end-to-end tests use (`GithubFixture`) |
 | `src/core/worktree.ts` | `GitOut`, `branchExists` and `TidyResult`, for the worktree git helpers |
@@ -411,7 +411,7 @@ These are the slots, values and facts in use today:
 | slot | `owners-ai-itself-koloft` | Sessions core; sentences in the butler's prompt about the `koloft` command that only the butler itself gets (its helpers' prompt gives this slot the value `''`) |
 | slot | `owners-ai-folder-koloft` | Sessions core, Scheduled tasks, GitHub; sentences in the butler's prompt that hold for every session in its folder, so its helpers get them too |
 | slot | `owners-ai-koloft` | Sessions core, GitHub, Discord, Todo; sentences in the butler's prompt about the `koloft` command |
-| slot | `session-answered-by-keys` | Butler; half a sentence at the end of Sessions core's `koloft session answer` reply for a question Koloft cannot read, with the value `the-question` |
+| slot | `session-answered-by-keys` | Butler; half a sentence at the end of Sessions core's reply for a question Koloft cannot read, with the value `the-question`; left out where the butler itself reads the reply (its own `koloft session answer`, and its report of what Koloft answered while the owner slept) |
 | slot | `session-close-refused-for-the-owners-ai` | Butler; the end of Sessions core's `koloft session close` refusal for the butler |
 | slot | `handover-from-the-owners-ai` | Butler; the paragraph of Sessions core's handover note that a session the butler started reads first |
 | slot | `away-digest-more` | Todo; the end of the away digest's "And N more" sentence |

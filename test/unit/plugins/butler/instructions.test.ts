@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   INSTRUCTIONS_MAX_BYTES,
   instructionsOf,
-  savedByTheOwner,
-  savedInstructions
+  savedByTheOwner
 } from '../../../../src/plugins/butler/shared/instructions'
 import { instructionsBytes, OWNER } from '../../../../src/core/ownerInstructions'
 import { promptParts } from '../../../../src/main/launchPrompt'
@@ -14,7 +13,10 @@ import { sanitizeLoadedSettings } from '../../../../src/shared/settingsOps'
 import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { sessionStartContext } from '../../../../src/main/museHooks'
-import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import {
+  handoverPreamble,
+  withHandover
+} from '../../../../src/plugins/sessions/main/handoverPreamble'
 import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 
 const BUTLER: ButlerSetting = { name: 'Alfred', formerNames: [] }
@@ -33,6 +35,8 @@ const CLAUDE_START_HOOK_MAX_UNITS = 10_000
 const CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES = 22_438
 // AGY§12
 const AGY_START_MESSAGE_SEEN_WHOLE_BYTES = 300_000
+// MUSE§1
+const MUSE_FIRST_MESSAGE_SEEN_WHOLE_BYTES = 122_866
 
 describe('how long the owner’s instructions for the butler may be', () => {
   it.each([
@@ -42,13 +46,30 @@ describe('how long the owner’s instructions for the butler may be', () => {
     ['Chinese', '中'],
     ['emoji', '😀']
   ])(
-    'at the limit, written in %s, a Muse butler with the longest name and every fact still starts',
+    'at the limit, written in %s, fit a Muse start hook of their own, beside the one holding the role of a butler with the longest name and every fact',
     (_, unit) => {
       const text = textOfBytes(unit, INSTRUCTIONS_MAX_BYTES)
       expect(instructionsBytes(text)).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES)
-      expect(() => sessionStartContext(butlerPrompt(LONGEST_NAME, EVERY_FACT, text))).not.toThrow()
+      expect(() => sessionStartContext(ownerInstructionsPart(text))).not.toThrow()
+      expect(() => sessionStartContext(butlerRole(LONGEST_NAME, EVERY_FACT))).not.toThrow()
     }
   )
+
+  it('a Muse helper’s first message — its role with the owner’s text at the limit, the handover — stays within the length seen reaching the model whole', () => {
+    const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
+    const handover = handoverPreamble({
+      name: LONGEST_NAME,
+      id: 'muse:local:01a13795-6b09-7531-bdd6-84ce54f976ea',
+      label: 'Muse',
+      assist: true,
+      ownerWords: '中'.repeat(500)
+    })
+    const firstMessage = withHandover(
+      `${butlerHelperRole(LONGEST_NAME, text)}\n\n${handover}`,
+      'Sort the inbox.'
+    )
+    expect(Buffer.byteLength(firstMessage)).toBeLessThanOrEqual(MUSE_FIRST_MESSAGE_SEEN_WHOLE_BYTES)
+  })
 
   it('a Claude Code butler’s role, which goes through its start hook while the owner’s text goes beside it, stays under what that hook hands on whole', () => {
     expect(butlerRole(LONGEST_NAME, EVERY_FACT).length).toBeLessThanOrEqual(
@@ -96,44 +117,16 @@ describe('how long the owner’s instructions for the butler may be', () => {
 })
 
 describe('saving the owner’s instructions', () => {
-  it('keeps each change as a version, newest last, and the newest is the text in use', () => {
-    const first = savedInstructions(BUTLER, 'Answer in Chinese.', OWNER, 1)
-    if (!first.ok) throw new Error(first.error)
-    const second = savedInstructions(first.butler, 'Be brief.', OWNER, 2)
-    if (!second.ok) throw new Error(second.error)
-    expect(second.butler.instructions).toEqual([
-      { text: 'Answer in Chinese.', at: 1, by: OWNER },
-      { text: 'Be brief.', at: 2, by: OWNER }
-    ])
-    expect(instructionsOf(second.butler)).toBe('Be brief.')
-  })
-
-  it('records no change when the text is the same once cleaned', () => {
-    const first = savedInstructions(BUTLER, 'Be brief.', OWNER, 1)
-    if (!first.ok) throw new Error(first.error)
-    expect(savedInstructions(first.butler, '  Be brief.\r\n', OWNER, 2)).toEqual(first)
-  })
-
-  it('drops characters that cannot be seen, keeps line breaks and tabs, and trims the ends', () => {
-    const saved = savedInstructions(BUTLER, ' one\r\n\ttwo\u0007\u001b[0m ', OWNER, 1)
-    expect(saved.ok && instructionsOf(saved.butler)).toBe('one\n\ttwo[0m')
-  })
-
-  it('refuses text over the limit and says by how much', () => {
-    const saved = savedInstructions(BUTLER, 'a'.repeat(INSTRUCTIONS_MAX_BYTES + 12), OWNER, 1)
+  it('are held to the butler’s own limit', () => {
+    const saved = savedByTheOwner(BUTLER, 'a'.repeat(INSTRUCTIONS_MAX_BYTES + 12), '', 1)
     expect(saved).toEqual({ ok: false, error: 'The instructions are 12 over the limit.' })
   })
 
-  it('keeps the last twenty versions', () => {
-    let butler = BUTLER
-    for (let at = 1; at <= 25; at++) {
-      const saved = savedInstructions(butler, `rule ${at}`, OWNER, at)
-      if (!saved.ok) throw new Error(saved.error)
-      butler = saved.butler
-    }
-    expect(butler.instructions?.map((v) => v.at)).toEqual(
-      Array.from({ length: 20 }, (_, i) => i + 6)
-    )
+  it('keeps the owner’s text as a version by the owner, and changes nothing when the text is the same once cleaned', () => {
+    const saved = savedByTheOwner(BUTLER, ' Be brief.\r\n', '', 1)
+    if (!saved.ok) throw new Error(saved.error)
+    expect(saved.butler.instructions).toEqual([{ text: 'Be brief.', at: 1, by: OWNER }])
+    expect(savedByTheOwner(saved.butler, 'Be brief. ', 'Be brief.', 2)).toEqual(saved)
   })
 
   it('changed by an agent while the editor was open are kept when the owner saves the text as opened, and kept with the owner told when the owner typed; a second Save then puts the owner’s text in', () => {
@@ -152,7 +145,7 @@ describe('saving the owner’s instructions', () => {
   })
 
   it('survive renaming the butler and reading the settings back', () => {
-    const saved = savedInstructions(BUTLER, 'Be brief.', OWNER, 1)
+    const saved = savedByTheOwner(BUTLER, 'Be brief.', '', 1)
     if (!saved.ok) throw new Error(saved.error)
     expect(instructionsOf(renamedButler(saved.butler, 'Jeeves'))).toBe('Be brief.')
     const loaded = sanitizeLoadedSettings({ butler: saved.butler })

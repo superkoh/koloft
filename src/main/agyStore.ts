@@ -34,6 +34,106 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
 export const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
 
+// AGY§8
+export const annotationFile = (geminiDir: string, id: string): string =>
+  path.join(geminiDir, AGY_APP_DIR, 'annotations', `${id}.pbtxt`)
+
+const ANNOTATION_TITLE_RE = /^title:\s*"((?:[^"\\]|\\.)*)"/m
+
+const PBTXT_SIMPLE_ESCAPES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+  '\\': 0x5c,
+  "'": 0x27,
+  '"': 0x22,
+  '?': 0x3f
+}
+
+function decodePbtxtString(raw: string): string | undefined {
+  const bytes: number[] = []
+  for (let i = 0; i < raw.length;) {
+    if (raw[i] !== '\\') {
+      const cp = raw.codePointAt(i)!
+      const ch = String.fromCodePoint(cp)
+      for (const b of Buffer.from(ch, 'utf8')) bytes.push(b)
+      i += ch.length
+      continue
+    }
+    i++
+    if (i >= raw.length) return undefined
+    const esc = raw[i]
+    if (esc >= '0' && esc <= '7') {
+      const oct = raw.slice(i, i + 3).match(/^[0-7]{1,3}/)![0]
+      bytes.push(parseInt(oct, 8) & 0xff)
+      i += oct.length
+    } else if (esc === 'x' || esc === 'X') {
+      const hex = raw.slice(i + 1, i + 3).match(/^[0-9a-fA-F]{1,2}/)?.[0]
+      if (!hex) return undefined
+      bytes.push(parseInt(hex, 16))
+      i += 1 + hex.length
+    } else if (esc === 'u' || esc === 'U') {
+      const len = esc === 'u' ? 4 : 8
+      const hex = raw.slice(i + 1, i + 1 + len)
+      if (!new RegExp(`^[0-9a-fA-F]{${len}}$`).test(hex)) return undefined
+      const cp = parseInt(hex, 16)
+      if (cp > 0x10ffff) return undefined
+      for (const b of Buffer.from(String.fromCodePoint(cp), 'utf8')) bytes.push(b)
+      i += 1 + len
+    } else if (esc in PBTXT_SIMPLE_ESCAPES) {
+      bytes.push(PBTXT_SIMPLE_ESCAPES[esc])
+      i++
+    } else {
+      return undefined
+    }
+  }
+  return Buffer.from(bytes).toString('utf8')
+}
+
+// AGY§8
+export function parseAnnotationTitle(text: string): string | undefined {
+  const matched = ANNOTATION_TITLE_RE.exec(text)
+  if (!matched) return undefined
+  const decoded = decodePbtxtString(matched[1])
+  return decoded || undefined
+}
+
+// AGY§8
+function readAnnotationTitle(geminiDir: string, id: string): string | undefined {
+  try {
+    return parseAnnotationTitle(fs.readFileSync(annotationFile(geminiDir, id), 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+// AGY§8
+export async function readAgyConversationTitle(
+  geminiDir: string,
+  conversationId: string
+): Promise<string | undefined> {
+  const db = summariesDb(geminiDir)
+  if (fs.existsSync(db)) {
+    let sqlite: InstanceType<typeof import('node:sqlite').DatabaseSync> | undefined
+    try {
+      const { DatabaseSync } = await import('node:sqlite')
+      sqlite = new DatabaseSync(db, { readOnly: true })
+      const row = sqlite
+        .prepare('select title from conversation_summaries where conversation_id = ?')
+        .get(conversationId) as { title?: unknown } | undefined
+      if (typeof row?.title === 'string' && row.title) return row.title
+    } catch {
+    } finally {
+      sqlite?.close()
+    }
+  }
+  return readAnnotationTitle(geminiDir, conversationId)
+}
+
 export interface SummaryRow {
   conversation_id: unknown
   title: unknown

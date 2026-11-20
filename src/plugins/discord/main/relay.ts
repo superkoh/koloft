@@ -494,7 +494,7 @@ export class DiscordRelay {
       this.codexAsks.delete(tab)
       return undefined
     }
-    return this.d.asks.answerSession(tab, m.content, true)
+    return this.d.asks.answerSession(tab, m.content, { toItsCard: true })
   }
 
   forget(tab: string): void {

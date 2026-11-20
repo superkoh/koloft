@@ -136,7 +136,7 @@ function harness(
   pressed: { tabId: string; keys: string[] }[]
   resumed: string[]
   stopped: string[]
-  answers: { tabId: string; reply: string }[]
+  answers: { tabId: string; reply: string; byTheOverseer: boolean }[]
   commands: { callerTab: string; key: string; text: string }[]
   tells: ((said: string) => void)[]
   undelivered: { callerTab: string; name: string; why: string }[]
@@ -145,7 +145,7 @@ function harness(
   moveTab: (oldTabId: string, newTabId: string) => void
 } {
   const openTabs = new Set<string>()
-  const answers: { tabId: string; reply: string }[] = []
+  const answers: { tabId: string; reply: string; byTheOverseer: boolean }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
   const tells: ((said: string) => void)[] = []
   const undelivered: { callerTab: string; name: string; why: string }[] = []
@@ -241,8 +241,8 @@ function harness(
     stop: (tabId) => {
       stopped.push(tabId)
     },
-    answer: async (tabId, reply) => {
-      answers.push({ tabId, reply })
+    answer: async (tabId, reply, byTheOverseer) => {
+      answers.push({ tabId, reply, byTheOverseer })
       return conducting.answer?.(tabId, reply)
     },
     undelivered: (callerTab, target, why) => {
@@ -598,9 +598,18 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(unknown.text).toContain('Codex has no model "nova" for this account')
     expect(launched).toHaveLength(1)
+    const noAstra = await verb(
+      ['new', '--model', 'astra', '--effort', 'max', '--', 'go'],
+      from('me')
+    )
+    expect(noAstra.exit).toBe(0)
+    expect(launched[1]).toMatchObject({ model: 'gpt-6.1-sol', effort: 'high' })
+    expect(noAstra.text).toContain(
+      'This account has no astra model, so it runs on gpt-6.1-sol at high.'
+    )
   })
 
-  it('starts a very hard Antigravity task on argon, saying so, when the account lists no carbon', async () => {
+  it('starts a very hard Antigravity task on argon, saying so, when the account lists no carbon, and an xhigh neon task on argon at high', async () => {
     const hard = ['new', '--model', 'carbon', '--effort', 'high', '--', 'go']
     const argon = { id: 'gemini-4-argon', efforts: ['low', 'medium', 'high'] as const }
     const carbon = { id: 'gemini-4-carbon', efforts: ['low', 'medium', 'high'] as const }
@@ -621,6 +630,15 @@ describe('koloft session new: the starter picks the model and effort', () => {
     const reply = await lacks.verb(hard, from('me'))
     expect(lacks.launched[0]).toMatchObject({ model: 'gemini-4-argon', effort: 'high' })
     expect(reply.text).toContain('This account has no carbon model, so it runs on gemini-4-argon.')
+    const extraHigh = await lacks.verb(
+      ['new', '--model', 'neon', '--effort', 'xhigh', '--', 'go'],
+      from('me')
+    )
+    expect(extraHigh.exit).toBe(0)
+    expect(lacks.launched[1]).toMatchObject({ model: 'gemini-4-argon', effort: 'high' })
+    expect(extraHigh.text).toContain(
+      'This account has no neon model, so it runs on gemini-4-argon at high.'
+    )
   })
 
   it('falls back to the models Koloft last knew when the account’s list cannot be read', async () => {
@@ -658,6 +676,11 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(reply.exit).toBe(EXIT_USAGE)
     expect(reply.text).toContain("astra is one of Codex's models")
+    const argon = await verb(
+      ['new', '--model', 'argon', '--effort', 'medium', '--', 'go'],
+      from('me')
+    )
+    expect(argon.text).toContain("argon is one of Antigravity's models")
     expect(launched).toEqual([])
   })
 
@@ -1903,7 +1926,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(inbox.lines).toEqual([])
   })
 
-  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys', async () => {
+  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys, and Koloft is told whether the butler is the one answering', async () => {
     const h = harness(
       live,
       {},
@@ -1926,9 +1949,11 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(await h.verb(['answer', 'fix-login'], from('butler'))).toMatchObject({
       exit: EXIT_USAGE
     })
+    expect((await h.verb(['answer', CODEX_THREAD, 'no'], from('fix'))).exit).not.toBe(0)
     expect(h.answers).toEqual([
-      { tabId: 'fix', reply: '2' },
-      { tabId: 'cx', reply: 'yes' }
+      { tabId: 'fix', reply: '2', byTheOverseer: true },
+      { tabId: 'cx', reply: 'yes', byTheOverseer: true },
+      { tabId: 'cx', reply: 'no', byTheOverseer: false }
     ])
   })
 
@@ -2165,10 +2190,17 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       { ...live[0], tabId: 'butler-reopened' },
       { prompt: 'Sort the inbox.', ownerWords: 'sort it', backend: 'claude' }
     )
-    const [byNew, codexByNew, byPalette, byHelper, afterAReopen] = h.launched
+    await h.verb(['new', ...PICKED, '--backend', 'muse', '--', 'look into it'], from('butler'))
+    const [byNew, codexByNew, byPalette, byHelper, afterAReopen, museByNew] = h.launched
     expect(afterAReopen.trustFolder).toBe(true)
     expect(afterAReopen.firstPrompt?.startsWith(`${BUTLER_HELPER_ROLE}\n\n`)).toBe(true)
-    for (const told of [byNew.firstPrompt, codexByNew.role, byPalette.firstPrompt])
+    expect(museByNew.role).toBeUndefined()
+    for (const told of [
+      byNew.firstPrompt,
+      codexByNew.role,
+      byPalette.firstPrompt,
+      museByNew.firstPrompt
+    ])
       expect(
         told?.startsWith(
           `${BUTLER_HELPER_ROLE}\n\nKoloft started you because the session "Alfred" asked it to`
@@ -2532,7 +2564,7 @@ describe('a conductor given a session name with spaces and no quotes', () => {
     expect(h.queued).toEqual([
       { tabId: 'cx', text: ownerSays('check the links'), clientId: 'koloft-conductor-1' }
     ])
-    expect(h.answers).toEqual([{ tabId: 'fix', reply: '2' }])
+    expect(h.answers).toEqual([{ tabId: 'fix', reply: '2', byTheOverseer: true }])
     expect(h.commands).toEqual([{ callerTab: 'cond', key: 'fix-id', text: '/compact keep it' }])
     const keys = await h.verb(words('keys Check the docs Down Enter'), from('cond'))
     expect(keys.text).toBe(
