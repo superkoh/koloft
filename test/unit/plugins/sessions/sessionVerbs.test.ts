@@ -598,9 +598,18 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(unknown.text).toContain('Codex has no model "nova" for this account')
     expect(launched).toHaveLength(1)
+    const noAstra = await verb(
+      ['new', '--model', 'astra', '--effort', 'max', '--', 'go'],
+      from('me')
+    )
+    expect(noAstra.exit).toBe(0)
+    expect(launched[1]).toMatchObject({ model: 'gpt-6.1-sol', effort: 'high' })
+    expect(noAstra.text).toContain(
+      'This account has no astra model, so it runs on gpt-6.1-sol at high.'
+    )
   })
 
-  it('starts a very hard Antigravity task on argon, saying so, when the account lists no carbon', async () => {
+  it('starts a very hard Antigravity task on argon, saying so, when the account lists no carbon, and an xhigh neon task on argon at high', async () => {
     const hard = ['new', '--model', 'carbon', '--effort', 'high', '--', 'go']
     const argon = { id: 'gemini-4-argon', efforts: ['low', 'medium', 'high'] as const }
     const carbon = { id: 'gemini-4-carbon', efforts: ['low', 'medium', 'high'] as const }
@@ -621,6 +630,15 @@ describe('koloft session new: the starter picks the model and effort', () => {
     const reply = await lacks.verb(hard, from('me'))
     expect(lacks.launched[0]).toMatchObject({ model: 'gemini-4-argon', effort: 'high' })
     expect(reply.text).toContain('This account has no carbon model, so it runs on gemini-4-argon.')
+    const extraHigh = await lacks.verb(
+      ['new', '--model', 'neon', '--effort', 'xhigh', '--', 'go'],
+      from('me')
+    )
+    expect(extraHigh.exit).toBe(0)
+    expect(lacks.launched[1]).toMatchObject({ model: 'gemini-4-argon', effort: 'high' })
+    expect(extraHigh.text).toContain(
+      'This account has no neon model, so it runs on gemini-4-argon at high.'
+    )
   })
 
   it('falls back to the models Koloft last knew when the account’s list cannot be read', async () => {
@@ -2172,10 +2190,17 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       { ...live[0], tabId: 'butler-reopened' },
       { prompt: 'Sort the inbox.', ownerWords: 'sort it', backend: 'claude' }
     )
-    const [byNew, codexByNew, byPalette, byHelper, afterAReopen] = h.launched
+    await h.verb(['new', ...PICKED, '--backend', 'muse', '--', 'look into it'], from('butler'))
+    const [byNew, codexByNew, byPalette, byHelper, afterAReopen, museByNew] = h.launched
     expect(afterAReopen.trustFolder).toBe(true)
     expect(afterAReopen.firstPrompt?.startsWith(`${BUTLER_HELPER_ROLE}\n\n`)).toBe(true)
-    for (const told of [byNew.firstPrompt, codexByNew.role, byPalette.firstPrompt])
+    expect(museByNew.role).toBeUndefined()
+    for (const told of [
+      byNew.firstPrompt,
+      codexByNew.role,
+      byPalette.firstPrompt,
+      museByNew.firstPrompt
+    ])
       expect(
         told?.startsWith(
           `${BUTLER_HELPER_ROLE}\n\nKoloft started you because the session "Alfred" asked it to`

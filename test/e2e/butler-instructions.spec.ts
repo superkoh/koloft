@@ -146,7 +146,9 @@ test.describe('The butler’s Instructions: written by the owner, placed last in
   })
 
   // MUSE§12
-  test('Muse: the butler’s start hook text ends with the owner’s text', async ({ env }) => {
+  test('Muse: the butler’s last start hook holds the owner’s text, apart from its role', async ({
+    env
+  }) => {
     installMuse(env)
     const { app, page } = await launched(env, { ...WRITTEN, assist: { backend: 'muse' } })
     try {
@@ -155,10 +157,13 @@ test.describe('The butler’s Instructions: written by the owner, placed last in
       await expect(strip(page)).toBeVisible()
       await runIn(page, centerTerm(page), 'hello')
       const toldFile = path.join(env.home, 'fake-muse-told.jsonl')
-      await expect.poll(() => jsonLines(toldFile).length, { timeout: 30_000 }).toBeGreaterThan(0)
-      const [{ out }] = jsonLines(toldFile)
-      const context = JSON.parse(out as string).hookSpecificOutput.additionalContext as string
-      expect(context.endsWith(LAST_IN_THE_ROLE)).toBe(true)
+      await expect.poll(() => jsonLines(toldFile).length, { timeout: 30_000 }).toBe(2)
+      const [role, owners] = jsonLines(toldFile).map(
+        ({ out }) => JSON.parse(out as string).hookSpecificOutput.additionalContext as string
+      )
+      expect(role).toContain('Alfred')
+      expect(role).not.toContain(OWNER_PART)
+      expect(owners).toBe(OWNER_PART)
     } finally {
       await quitAndClose(app)
     }

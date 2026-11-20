@@ -67,11 +67,15 @@ describe('the model and thinking a session the owner starts runs on', () => {
     })
   })
 
-  it('starts Neon on Argon when the account has no Neon, and says so', () => {
+  it('starts Neon on Argon when the account has no Neon, at Argon’s highest level when it lacks the one asked, and says so', () => {
     const argonOnly = [{ id: 'gemini-4-argon', efforts: LMH }]
     expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, argonOnly)).toEqual({
       pick: { model: 'gemini-4-argon', effort: 'medium' },
       note: 'This account has no neon model, so it runs on gemini-4-argon.'
+    })
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, argonOnly)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'high' },
+      note: 'This account has no neon model, so it runs on gemini-4-argon at high.'
     })
     const both = [{ id: 'gemini-4-neon', efforts: [...LMH, 'xhigh'] as CronEffort[] }, ...argonOnly]
     expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, both)).toEqual({
@@ -83,6 +87,10 @@ describe('the model and thinking a session the owner starts runs on', () => {
     expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, undefined)).toEqual({
       pick: { model: 'gemini-4-argon', effort: 'medium' },
       note: "Koloft could not read this account's models, so it runs on gemini-4-argon."
+    })
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, undefined)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'high' },
+      note: "Koloft could not read this account's models, so it runs on gemini-4-argon at high."
     })
   })
 
@@ -147,10 +155,11 @@ describe('the model and thinking a session the owner starts runs on', () => {
         })
     })
 
-    it('drops a thinking level the model it falls back to does not take', () => {
-      expect(
-        resolveOwnPick('agy', { model: 'gemini-4-neon', effort: 'xhigh' }, [ARGON]).pick
-      ).toEqual({ model: 'gemini-4-argon' })
+    it('starts the model it falls back to at the highest thinking level it takes, and says which', () => {
+      expect(resolveOwnPick('agy', { model: 'gemini-4-neon', effort: 'xhigh' }, [ARGON])).toEqual({
+        pick: { model: 'gemini-4-argon', effort: 'high' },
+        note: 'This account has no gemini-4-neon model, so it runs on gemini-4-argon at high.'
+      })
     })
 
     it('leaves a button every account has, and so needs no list, as it is', () => {
