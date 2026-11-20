@@ -136,7 +136,7 @@ function harness(
   pressed: { tabId: string; keys: string[] }[]
   resumed: string[]
   stopped: string[]
-  answers: { tabId: string; reply: string }[]
+  answers: { tabId: string; reply: string; byTheOverseer: boolean }[]
   commands: { callerTab: string; key: string; text: string }[]
   tells: ((said: string) => void)[]
   undelivered: { callerTab: string; name: string; why: string }[]
@@ -145,7 +145,7 @@ function harness(
   moveTab: (oldTabId: string, newTabId: string) => void
 } {
   const openTabs = new Set<string>()
-  const answers: { tabId: string; reply: string }[] = []
+  const answers: { tabId: string; reply: string; byTheOverseer: boolean }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
   const tells: ((said: string) => void)[] = []
   const undelivered: { callerTab: string; name: string; why: string }[] = []
@@ -241,8 +241,8 @@ function harness(
     stop: (tabId) => {
       stopped.push(tabId)
     },
-    answer: async (tabId, reply) => {
-      answers.push({ tabId, reply })
+    answer: async (tabId, reply, byTheOverseer) => {
+      answers.push({ tabId, reply, byTheOverseer })
       return conducting.answer?.(tabId, reply)
     },
     undelivered: (callerTab, target, why) => {
@@ -658,6 +658,11 @@ describe('koloft session new: the starter picks the model and effort', () => {
     )
     expect(reply.exit).toBe(EXIT_USAGE)
     expect(reply.text).toContain("astra is one of Codex's models")
+    const argon = await verb(
+      ['new', '--model', 'argon', '--effort', 'medium', '--', 'go'],
+      from('me')
+    )
+    expect(argon.text).toContain("argon is one of Antigravity's models")
     expect(launched).toEqual([])
   })
 
@@ -1903,7 +1908,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(inbox.lines).toEqual([])
   })
 
-  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys', async () => {
+  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys, and Koloft is told whether the butler is the one answering', async () => {
     const h = harness(
       live,
       {},
@@ -1926,9 +1931,11 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(await h.verb(['answer', 'fix-login'], from('butler'))).toMatchObject({
       exit: EXIT_USAGE
     })
+    expect((await h.verb(['answer', CODEX_THREAD, 'no'], from('fix'))).exit).not.toBe(0)
     expect(h.answers).toEqual([
-      { tabId: 'fix', reply: '2' },
-      { tabId: 'cx', reply: 'yes' }
+      { tabId: 'fix', reply: '2', byTheOverseer: true },
+      { tabId: 'cx', reply: 'yes', byTheOverseer: true },
+      { tabId: 'cx', reply: 'no', byTheOverseer: false }
     ])
   })
 
@@ -2539,7 +2546,7 @@ describe('a conductor given a session name with spaces and no quotes', () => {
     expect(h.queued).toEqual([
       { tabId: 'cx', text: ownerSays('check the links'), clientId: 'koloft-conductor-1' }
     ])
-    expect(h.answers).toEqual([{ tabId: 'fix', reply: '2' }])
+    expect(h.answers).toEqual([{ tabId: 'fix', reply: '2', byTheOverseer: true }])
     expect(h.commands).toEqual([{ callerTab: 'cond', key: 'fix-id', text: '/compact keep it' }])
     const keys = await h.verb(words('keys Check the docs Down Enter'), from('cond'))
     expect(keys.text).toBe(

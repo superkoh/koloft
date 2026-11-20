@@ -4273,8 +4273,8 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   with `Fix:` and the change to make. 2.1.329 also rewrote the step that gathers the
   diff (`git diff origin/HEAD...HEAD` unless a target is named). No darwin-arm64 build
   from 2.1.302 to 2.1.327 changes the recipe text. So the catches, costs and times above
-  describe the recipe up to 2.1.327 only, and that `high` still gets `medium`'s steps
-  on 2.1.328 and later is not checked. The binary's text alone misleads here: its model
+  describe the recipe up to 2.1.327 only (`high` on 2.1.329: below). The binary's text
+  alone misleads here: its model
   table gives `claude-opus-5` an `o5-bmin` "minimal prompt" at `medium`, yet
   `claude-opus-5-5` is sent the inline recipe.
 - **On 2.1.329 three `medium` runs caught 1 of the 12, where 2.1.302's caught 2.3–3.0.**
@@ -4299,6 +4299,28 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   across the three runs. Over all 51 runs, before merging, there were 391 findings: 198
   marked `important`, 88 of those on the clean PRs, and 34 with no `severity` at all;
   so `important` does not mean a real bug.
+- **On 2.1.329 `high` catches more than `medium`; `xhigh` runs past 15 minutes.** The
+  request each level sends (captured as above): `high` gets `medium`'s recipe, word for
+  word, with effort `high`; `xhigh` gets `xhigh effort → 6 inline angles (bugs +
+  conventions) → dedup (no verify) → sweep → ≤15 findings` (5 correctness angles and 1
+  conventions angle, up to 8 each, then one more pass for gaps), with effort `xhigh`.
+  Measured 2026-11-19 like the bullet above, on the same 8 PRs and 12 bugs, by the same
+  judge reading `medium`'s, `high`'s and `xhigh`'s findings together (`medium` still
+  caught 1); `high` 3 runs per PR, `xhigh` 1. "×2" is every pair of the three runs.
+
+  | 2.1.329, PRs with bugs | bugs caught, of 12 | per PR, list price | median / slowest run |
+  |---|---|---|---|
+  | `medium` ×3 | 1 | $4.41 | 3.7 / 6.7 min |
+  | `high` ×1 | 2.3 | $2.46 | 6.1 / 13.4 min |
+  | `high` ×2 | 3.3 | $4.91 | 6.7 / 13.4 min |
+  | `high` ×3 | 4 | $7.37 | 6.8 / 13.4 min |
+  | `xhigh` ×1 | 4 | $7.16 | 20.7 / 29.2 min |
+
+  `high` ×3 and `xhigh` caught 4 each but only 2 in common: `high` found two bugs of
+  PR #85 that `xhigh` missed, `xhigh` one of PR #236 and the one of PR #441 that no
+  `high` run found; 6 of the 12 were caught by some run. 7 of the 8
+  `xhigh` runs took over 15 minutes. On 2 clean PRs, one `high` run cost $0.85 and took
+  5.5 minutes.
 - **`/security-review` puts the whole diff into its prompt, and a failed call fails
   loudly.** On 2.1.329 (same setup, the folder trusted and not) its expanded prompt holds
   the output of `git status`, `git diff --name-only origin/HEAD...`, `git log
