@@ -119,20 +119,19 @@ function InstructionsEditor(): JSX.Element {
             value={text}
             onChange={(e) => {
               setText(e.target.value)
-              setError('')
+              if (!changed) setError('')
             }}
             onKeyDown={onKeyDown}
           />
         </div>
+        {error && <div className="pal-status field-hint bad">{error}</div>}
         {changed && <InstructionsChangeLines {...changed} />}
         <div className="pal-status">
           {`${butler.name} and the helpers it starts follow this. ${whenItTakesEffect(butler.name)}`}
         </div>
         <div className="pal-bar">
           <span className="pal-tips">
-            {error ? (
-              <span className="field-hint bad">{error}</span>
-            ) : left >= 0 ? (
+            {left >= 0 ? (
               bytesLeft(left)
             ) : (
               <span className="field-hint bad">{bytesLeft(left)}</span>
