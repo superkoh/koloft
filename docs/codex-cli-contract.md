@@ -738,7 +738,9 @@ turn sent the same notifications in the same order on both; the rollout record t
 and counts and the `token_count` and `turn_context` keys the same), 11 (the three
 permission shapes Koloft starts — no flags, `on-request` / `workspace-write`, and `never`
 / `danger-full-access` — each resumed in a new app-server given Koloft's resume `-c`
-come back as they started, `turn_context` agreeing, the `-c` ignored; a sandbox asked
+come back as they started, `turn_context` agreeing, the `-c` ignored (a `-c` naming
+another sandbox does take for the explicit-params shape, measured on 0.170.0 and 0.171.0
+on 2026-11-20, §11); a sandbox asked
 for on a thread already loaded is ignored with a `WARN … thread/resume overrides
 ignored for loaded thread`; the same on both, at the app-server only — the TUI side of
 #60936 was not run), 13/14 (`model/list` with a ChatGPT login lists the new
