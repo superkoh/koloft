@@ -42,6 +42,7 @@ export type AssistBackendPick = {
   because?: string
   model?: string
   effort?: CronEffort
+  modelNote?: string
 }
 export type AssistBackendChoice = AssistBackendPick | { error: string }
 
@@ -249,15 +250,14 @@ export class Butler {
       sameAgent && ((!!carried?.model && !launch.model) || (!!carried?.effort && !launch.effort))
     const key = keepsWhatItNoLongerNames ? undefined : last
     const resumable = key !== undefined && sameAgent
-    if (keepsWhatItNoLongerNames)
-      this.d.toast(
-        `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model or thinking, so it starts a new conversation.`
-      )
-    else if (last !== undefined && !resumable)
-      this.d.toast(
-        `${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
-      )
-    else if (choice.because) this.d.toast(choice.because)
+    const says = keepsWhatItNoLongerNames
+      ? `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model or thinking, so it starts a new conversation.`
+      : last !== undefined && !resumable
+        ? `${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
+        : choice.because
+    const modelNote =
+      choice.modelNote && (says ? choice.modelNote : `${launch.title}: ${choice.modelNote}`)
+    if (says || modelNote) this.d.toast([says, modelNote].filter(Boolean).join(' '))
     let tabId: string | null
     let started = false
     const launchedWith = this.knownNow()
