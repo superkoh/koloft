@@ -15,7 +15,7 @@ export const TEXT: readonly TextBlock[] = [
   { slot: 'koloft-help-session-title', text: ' and Discord' },
   {
     slot: 'koloft-help-command-output',
-    text: "; for the butler on Discord, it posts that in the butler's Discord channel instead. Either way"
+    text: "; for the butler on Discord, it posts that in the butler's Discord channel instead. Either way, the"
   },
   {
     slot: 'koloft-help-passwords-away',

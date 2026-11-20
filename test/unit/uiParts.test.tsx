@@ -74,10 +74,10 @@ describe('UI parts a plugin registers', () => {
       uis
     )
     expect(placed.parts.dialog).toEqual([
-      { id: 'one', Part },
-      { id: 'three', Part }
+      { id: 'one', plugin: 'a', Part },
+      { id: 'three', plugin: 'b', Part }
     ])
-    expect(placed.parts['centre-page']).toEqual([{ id: 'two', Part: Other }])
+    expect(placed.parts['centre-page']).toEqual([{ id: 'two', plugin: 'b', Part: Other }])
   })
 
   it('gives a slot what each plugin fills it with, in the order of the list of plugins, and nothing another slot got', () => {
@@ -89,6 +89,7 @@ describe('UI parts a plugin registers', () => {
     })
     expect(placed.fillsOf(words)).toEqual(['from a', 'from b'])
     expect(placed.fillsOf(counts)).toEqual([2])
+    expect(placed.fillsOf(words, (plugin) => plugin !== 'b')).toEqual(['from a'])
   })
 
   it('every row a plugin adds menu entries and a line to is a sidebar row some plugin lists', () => {

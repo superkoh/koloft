@@ -1,5 +1,6 @@
 import type { MainIpc } from '@core/ipc'
 import { errorText } from '@core/errorText'
+import { ChangedWhileOpen } from '@core/ownerInstructions'
 import { backendIdOf } from '@shared/sessionBackend'
 import type {
   AttentionEvent,
@@ -134,7 +135,11 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.handle(CHANNELS.defaultsWrite, (workspacePath: string, raw: unknown) =>
     deps.writeDefaults(workspacePath, raw).then(
       () => ({ ok: true }),
-      (error: unknown) => ({ ok: false, error: errorText(error) })
+      (error: unknown) => ({
+        ok: false,
+        error: errorText(error),
+        ...(error instanceof ChangedWhileOpen && { inUse: error.inUse })
+      })
     )
   )
   ipc.handle(CHANNELS.instructionAsksList, () => deps.instructionAsks().views())

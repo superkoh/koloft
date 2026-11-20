@@ -27,12 +27,17 @@ export interface PluginUi {
 
 export interface PlacedPart {
   id: string
+  plugin: string
   Part: ComponentType
 }
 
+export type PluginOn = (plugin: string) => boolean
+
+const EVERY_PLUGIN: PluginOn = () => true
+
 export interface PlacedUi {
   parts: Readonly<Partial<Record<UiPlace, readonly PlacedPart[]>>>
-  fillsOf: <T>(into: Slot<T>) => readonly T[]
+  fillsOf: <T>(into: Slot<T>, on?: PluginOn) => readonly T[]
 }
 
 export function placeUi(
@@ -43,7 +48,7 @@ export function placeUi(
     if (!plugins.some((p) => p.id === id))
       throw new Error(`UI parts are given for "${id}", which is not on the list of plugins`)
   const placed: Partial<Record<UiPlace, PlacedPart[]>> = {}
-  const fills: SlotFill[] = []
+  const fills: (SlotFill & { plugin: string })[] = []
   const taken = new Set<string>()
   for (const plugin of plugins) {
     const parts = uis[plugin.id]?.parts ?? {}
@@ -57,14 +62,16 @@ export function placeUi(
       if (place === ACTION_PLACE) continue
       const Part = parts[id]
       if (!Part) throw new Error(`plugin ${plugin.id} lists "${id}" but registers no part for it`)
-      ;(placed[place] ??= []).push({ id, Part })
+      ;(placed[place] ??= []).push({ id, plugin: plugin.id, Part })
     }
-    fills.push(...(uis[plugin.id]?.fills ?? []))
+    fills.push(...(uis[plugin.id]?.fills ?? []).map((f) => ({ ...f, plugin: plugin.id })))
   }
-  const bySlot = new Map<Slot<unknown>, unknown[]>()
-  for (const f of fills) bySlot.set(f.slot, [...(bySlot.get(f.slot) ?? []), f.value])
+  const bySlot = new Map<Slot<unknown>, { plugin: string; value: unknown }[]>()
+  for (const { slot: into, plugin, value } of fills)
+    bySlot.set(into, [...(bySlot.get(into) ?? []), { plugin, value }])
   return {
     parts: placed,
-    fillsOf: <T>(into: Slot<T>) => (bySlot.get(into) ?? []) as T[]
+    fillsOf: <T>(into: Slot<T>, on: PluginOn = EVERY_PLUGIN) =>
+      (bySlot.get(into) ?? []).filter((f) => on(f.plugin)).map((f) => f.value as T)
   }
 }

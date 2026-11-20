@@ -12,7 +12,9 @@ import {
   WORKSPACE_GIT_PART,
   type WorkspaceGitPart
 } from './slots'
-import type { WorkspaceRows } from '@shared/types'
+import type { Settings, WorkspaceRows } from '@shared/types'
+import type { PluginState } from '@core/switches'
+import { actingStatesIn } from '@shared/pluginSwitches'
 
 let placedOnce: PlacedUi | undefined
 
@@ -30,9 +32,49 @@ export function placePluginUi(): void {
   placed()
 }
 
-export const fillsOf = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+interface ActingStates {
+  settings: Settings
+  states: Record<string, PluginState>
+  onKey: string
+}
 
-export const partsAt = (place: UiPlace): readonly PlacedPart[] => placed().parts[place] ?? []
+let statesFor: ActingStates | undefined
+
+function actingStatesOf(settings: Settings): ActingStates {
+  if (statesFor?.settings === settings) return statesFor
+  const states = actingStatesIn(settings)
+  const onKey = Object.keys(states)
+    .filter((id) => states[id].on)
+    .join(' ')
+  return (statesFor = { settings, states, onKey })
+}
+
+const onIn =
+  (settings: Settings) =>
+  (plugin: string): boolean =>
+    actingStatesOf(settings).states[plugin]?.on ?? true
+
+const onNow = (plugin: string): boolean => onIn(useStore.getState().settings)(plugin)
+
+export const fillsOf = <T,>(into: Slot<T>, settings?: Settings): readonly T[] =>
+  placed().fillsOf(into, settings ? onIn(settings) : onNow)
+
+export const fillsOfOnOrOff = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+
+const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])
+
+export const partsAt = (place: UiPlace): readonly PlacedPart[] =>
+  (placed().parts[place] ?? []).filter((p) => KEPT_WHILE_OFF.has(place) || onNow(p.plugin))
+
+const usePluginsOnKey = (): string => useStore((s) => actingStatesOf(s.settings).onKey)
+
+export function useFillsOf<T, R>(into: Slot<T>, use: (fill: T) => R): (R | undefined)[] {
+  usePluginsOnKey()
+  const every = fillsOfOnOrOff(into)
+  const used = every.map(use)
+  const on = new Set(fillsOf(into))
+  return used.map((result, i) => (on.has(every[i]) ? result : undefined))
+}
 
 export const gitPartsOf = (ws: WorkspaceRows['workspace']): readonly WorkspaceGitPart[] =>
   fillsOf(WORKSPACE_GIT_PART).filter((part) => part.shows(ws))
@@ -44,6 +86,7 @@ export function useShowsGlobalNote(tabId: string | null, rowId: string | null): 
 }
 
 export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
+  usePluginsOnKey()
   return (
     <>
       {partsAt(place).map(({ id, Part }) => (
@@ -54,6 +97,7 @@ export function PartsAt({ place }: { place: UiPlace }): JSX.Element {
 }
 
 export function OpenCentrePage(): JSX.Element | null {
+  usePluginsOnKey()
   const open = useStore((s) => s.centrePage)
   const page = partsAt('centre-page').find((p) => p.id === open)
   return page ? <page.Part /> : null

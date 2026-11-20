@@ -53,7 +53,7 @@ export interface SessionsBridge {
     write(
       workspacePath: string,
       defaults: SessionDefaultsDraft
-    ): Promise<{ ok: boolean; error?: string }>
+    ): Promise<{ ok: boolean; error?: string; inUse?: string }>
   }
   instructionAsks: {
     list(): Promise<InstructionAskView[]>

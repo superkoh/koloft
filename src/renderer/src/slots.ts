@@ -119,8 +119,9 @@ export interface WorkbenchPartContext {
   onReturnFocus: () => void
   reread: () => void
   openWeb: (url: string) => void
-  closeNewTabMenu: () => void
-  closeDownloads: () => void
+  closeOtherMenus: () => void
+  gitSteps: number
+  push: () => Promise<boolean>
 }
 
 export interface WorkbenchPartView {

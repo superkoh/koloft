@@ -329,6 +329,10 @@ export class DiscordLink {
     this.set('off')
   }
 
+  async quiet(withinMs: number): Promise<void> {
+    await this.rest?.quiet(withinMs)
+  }
+
   connect(): Promise<void> {
     this.starting = this.start()
     return this.starting
