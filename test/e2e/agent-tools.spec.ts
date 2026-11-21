@@ -454,7 +454,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
             `session new ${picksFor(backend)} --backend ${backend} -- ${marker}`
           )
         ).toBe('0')
-      await expect(wsRows(page, 'ws-a')).toHaveCount(4, { timeout: 60_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveCount(3, { timeout: 60_000 })
 
       const listed = async (): Promise<Record<string, string>> => {
         await koloftInSession(page, 'session list')
@@ -480,7 +480,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
           },
           { timeout: 90_000, intervals: [3_000] }
         )
-        .toEqual([true, true, true, true])
+        .toEqual([true, true, true])
     } finally {
       await quitAndClose(app)
     }

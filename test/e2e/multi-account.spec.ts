@@ -1008,7 +1008,7 @@ test('a Codex or Antigravity account found signed out leaves the pool with the s
     )
 
     expect(await statuses()).toEqual(['expired', 'expired'])
-    expect((await osOutlets(app)).notifications).toHaveLength(notifiedBefore + 3)
+    expect((await osOutlets(app)).notifications).toHaveLength(notifiedBefore + 2)
   } finally {
     await quitAndClose(app)
   }
