@@ -224,7 +224,9 @@ export function CommandPalette({
 
   const start = (backend: BackendId = choice.lead): void => {
     if (mode !== 'ask' || !startable) return
-    if (pin && !rows.some((w) => w.workspace.path === pin.wsPath && w.workspace.isGit)) {
+    const namesAWorktree = (w: (typeof rows)[number]): boolean =>
+      w.workspace.path === pin?.wsPath && w.workspace.isGit && !w.workspace.missing
+    if (pin && !rows.some(namesAWorktree)) {
       onRouted(typed, backend, pinnedRoute(pin.wsPath, null), pictures)
       return
     }

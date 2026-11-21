@@ -109,17 +109,32 @@ describe('the title behind koloft session new', () => {
     ['`Fix_Login_Bug`.', 'fix-login-bug'],
     ['The task asks to rename worktrees.\n\nworktree-names', 'worktree-names'],
     ['fix-login-bug\n\nDone.', 'fix-login-bug'],
+    ['Sure.\n\nfix-login-bug', 'fix-login-bug'],
+    ['**fix-login-bug**', 'fix-login-bug'],
+    ['- fix-login-bug', 'fix-login-bug'],
+    ['docs', 'docs'],
     ['', null],
     ['a-name-far-longer-than-thirty-characters-allows', 'a-name-far-longer-than-thirty'],
     ['{"workspace": 1, "worktree": "main"}', null],
     ['修侧栏标题', null],
     ['main', null]
   ])(
-    'a worktree name reply %j is taken as %j: the first line that is a bare name, kebab-cased and cut to 30 characters, else none',
+    'a worktree name reply %j is taken as %j: the first bare-name line with a hyphen, else the first bare-name line, kebab-cased and cut to 30 characters, else none',
     async (reply, name) => {
       expect(await worktreeNameForTask('修侧栏标题', async () => reply)).toBe(name)
     }
   )
+
+  it('naming a worktree never fails or outlasts its stop: an Assist that throws, or one still busy when the wait is stopped, gives no name', async () => {
+    const failing = async (): Promise<string | null> => {
+      throw new Error('no account')
+    }
+    expect(await worktreeNameForTask('修侧栏标题', failing)).toBeNull()
+    const stop = new AbortController()
+    const naming = worktreeNameForTask('修侧栏标题', () => new Promise(() => {}), stop.signal)
+    stop.abort()
+    expect(await naming).toBeNull()
+  })
 
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(

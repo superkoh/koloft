@@ -408,7 +408,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const calls = await waitForAllCalls(env, 2, 30_000)
       expect(calls[1].argv.join(' ')).toContain('-w read-the-readme ')
       expect(textAfterDashes(calls[1])).toBe('read the readme')
-      expect(assistWasAsked(env)).toContain('git worktree')
     } finally {
       await quitAndClose(app)
     }

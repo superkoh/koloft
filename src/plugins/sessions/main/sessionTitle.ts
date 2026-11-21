@@ -74,13 +74,11 @@ const worktreeNameInstructions =
   `at most ${NEW_WORKTREE_NAME_MAX_CHARS} characters, saying what the work is. ` +
   'Reply with the name alone.\n\nTask:\n'
 
-const NAME_LIKE_LINE = /^[`"'“‘]*([A-Za-z0-9][A-Za-z0-9_-]*)[`"'”’.]*$/
+const NAME_LIKE_LINE = /^(?:[-*#>]+\s+)?[*`"'“‘]*([A-Za-z0-9][A-Za-z0-9_-]*)[*`"'”’.]*$/
 
 function worktreeNameFromReply(reply: string): string | null {
-  const bare = nonEmptyLines(reply)
-    .map((line) => NAME_LIKE_LINE.exec(line)?.[1])
-    .find((name) => name !== undefined)
-  const name = (bare ?? '')
+  const bare = nonEmptyLines(reply).flatMap((line) => NAME_LIKE_LINE.exec(line)?.[1] ?? [])
+  const name = (bare.find((n) => n.includes('-')) ?? bare[0] ?? '')
     .toLowerCase()
     .replace(/_+/g, '-')
     .slice(0, NEW_WORKTREE_NAME_MAX_CHARS)
@@ -88,18 +86,25 @@ function worktreeNameFromReply(reply: string): string | null {
   return isUsableNewWorktreeName(name) ? name : null
 }
 
+const nullWhenAborted = (signal: AbortSignal): Promise<null> =>
+  new Promise((done) => signal.addEventListener('abort', () => done(null), { once: true }))
+
 export async function worktreeNameForTask(
   task: string,
   assist: Assist<SessionsAssistJobId>,
   signal?: AbortSignal
 ): Promise<string | null> {
   const waited = AbortSignal.timeout(WAIT_FOR_A_WORKTREE_NAME_BEFORE_THE_TIME_STAMP_MS)
-  const reply = await assist({
-    row: 'title',
-    system: WORKTREE_NAME_SYSTEM,
-    prompt: worktreeNameInstructions + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE),
-    signal: signal ? AbortSignal.any([signal, waited]) : waited
-  })
+  const stop = signal ? AbortSignal.any([signal, waited]) : waited
+  const reply = await Promise.race([
+    assist({
+      row: 'title',
+      system: WORKTREE_NAME_SYSTEM,
+      prompt: worktreeNameInstructions + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE),
+      signal: stop
+    }).catch(() => null),
+    nullWhenAborted(stop)
+  ])
   return reply ? worktreeNameFromReply(reply) : null
 }
 
