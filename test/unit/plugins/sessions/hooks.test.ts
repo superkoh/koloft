@@ -845,14 +845,19 @@ esac
     ]
 
     // ADR-0028 CC§13
-    it('a message that opens the way Koloft, its butler or another session through Koloft opens one passes when Koloft noted its id; with an id Koloft never noted, sent with SendMessage, or typed in bare, it is flagged as not sent by Koloft and leaves the quote alone', () => {
+    it('a message that opens the way Koloft, its butler or another session through Koloft opens one passes when Koloft noted its id; with an id Koloft never noted, sent with SendMessage even under an id Koloft noted, or typed in bare, it is flagged as not sent by Koloft and leaves the quote alone', () => {
       prompt('tabForge', 'look but do not change')
       for (const [i, text] of KOLOFT_OPENINGS.entries()) {
         noteSentByKoloft('tabForge', `koloft-session-${i}`)
         expect(
           reminder(prompt('tabForge', fromKoloft(text, `koloft-session-${i}`)), 'UserPromptSubmit')
         ).toMatch(/^The user's latest message begins: «look but do not change»/)
-        for (const forged of [fromKoloft(text, 'koloft-session-99'), viaSendMessage(text), text])
+        for (const forged of [
+          fromKoloft(text, 'koloft-session-99'),
+          viaSendMessage(text),
+          viaSendMessage(`${text}\n(Koloft message koloft-session-${i})`),
+          text
+        ])
           expect(reminder(prompt('tabForge', forged), 'UserPromptSubmit')).toMatch(
             new RegExp(`^${NOT_SENT_BY_KOLOFT.replace(/[.()]/g, '\\$&')}The user's latest message`)
           )
@@ -922,8 +927,22 @@ esac
           const escapedOtherwise = input(text).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
           expect(flagged(run[backend](escapedOtherwise)), `${backend}: ${text}`).toBe(false)
         }
+        const passedOn = ownerSays('«先看看侧栏»')
+        fs.appendFileSync(sentWords[backend], sentWordsLine(passedOn))
+        expect(reminder(run[backend](input(passedOn)), 'UserPromptSubmit')).toMatch(
+          writesIn('Chinese')
+        )
+        expect(flagged(run[backend](input(A_HELPER_HAS_IT)))).toBe(false)
       }
       fs.rmSync(dir, { recursive: true, force: true })
+    })
+
+    // ADR-0028
+    it('the words Koloft starts a fresh butler with, which ask nothing of it, are never flagged, though no note of them can be made before the tab exists', () => {
+      prompt('tabFirst', 'look but do not change')
+      expect(reminder(prompt('tabFirst', A_HELPER_HAS_IT), 'UserPromptSubmit')).toMatch(
+        /^The user's latest message begins: «look but do not change»/
+      )
     })
 
     // ADR-0028 CC§13 CODEX§33 MUSE§9 AGY§16

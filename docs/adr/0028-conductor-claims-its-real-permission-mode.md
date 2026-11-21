@@ -40,11 +40,15 @@ hands over a message it began with one of them, it notes it for that tab, and th
 `UserPromptSubmit` hook flags a prompt that begins with one and was not noted. Words a
 session wrote that Koloft only passes on as they are (the text of an Inbox card button)
 are never noted, so a card cannot pass as Koloft. A Claude tab gets the id of Koloft's
-line noted in `<tab>.discord-ids`; the opening is looked for right after the
+line noted in `<tab>.discord-ids`, and an id counts only inside Koloft's own envelope,
+whose one attribute is `from-mode`. The opening is looked for right after the
 `<cross-session-message …>` envelope, whatever attributes it carries, so a `SendMessage`
-from another session (`from="uds:…"`, CC§13) is checked too, and so is an opening typed
-into the tab with no envelope (`koloft session keys` can type into any tab), as Koloft
-never types one into Claude. Those files are readable by any program the same user
+from another session (`from="uds:…"`, CC§13) is flagged even when it copies a noted id
+(Koloft's ids are counters, easy to guess), and so is an opening typed into the tab with
+no envelope (`koloft session keys` can type into any tab), as Koloft never types one into
+Claude. The one exception is the fixed line a butler started fresh for a helper gets as
+its first prompt (`A_HELPER_HAS_IT`): it is handed at launch, before the tab exists to
+note it under, and it asks nothing, so a copy of it gains a forger nothing. Those files are readable by any program the same user
 runs, so the check only catches a session that writes such an opening by accident or
 because some text told it to; a program set on pretending to be the owner or the butler
 can read the file and copy a line, and nothing stops it.

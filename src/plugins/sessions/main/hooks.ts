@@ -5,7 +5,7 @@ import type { StatusLineSetting } from '../../../main/statusline'
 import type { KoloftHook } from '../../../main/codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handoverPreamble'
-import { FROM_A_SESSION, FROM_KOLOFT } from './crossSessionMessage'
+import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from './crossSessionMessage'
 import type { BackendId } from '@shared/types'
 import { BUTLER_SAYS_OPENING } from '@shared/agentGuide'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
@@ -59,6 +59,7 @@ export const NOT_SENT_BY_KOLOFT =
 const FROM_DISCORD = `${DISCORD_PREFIX} `
 export const OPENINGS_ONLY_KOLOFT_SENDS = [FROM_KOLOFT, FROM_A_SESSION, BUTLER_SAYS_OPENING]
 const opensLike = (openings: string[]): string => openings.map((o) => `${shq(o)}*`).join('|')
+const WORDS_THAT_ASK_NOTHING = shq(A_HELPER_HAS_IT)
 // ADR-0028
 export const SENT_WORDS_SUFFIX = '.discord-said'
 // ADR-0028
@@ -233,11 +234,18 @@ sent_by_koloft() {
 }
 flag=""
 case "$(prompt_body)" in
+  ${WORDS_THAT_ASK_NOTHING}) ;;
   ${opensLike([FROM_DISCORD])})
     if sent_by_koloft; then
       ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
     else
       flag=${shq(NOT_FROM_THE_RELAY)}
+    fi ;;
+  ${opensLike([BUTLER_SAYS_OPENING])})
+    if sent_by_koloft; then
+      ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
+    else
+      flag=${shq(NOT_SENT_BY_KOLOFT)}
     fi ;;
   ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) sent_by_koloft || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
@@ -543,8 +551,12 @@ case "$event" in
       flag=""
       id="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*\\\\n\\(Koloft message ([A-Za-z0-9-]+)\\)\\\\n<\\/cross-session-message>".*/\\1/p')"
       sent=""
-      [ -n "$id" ] && grep -qxF "$id" "$reg/$tab${SENT_IDS_SUFFIX}" 2>/dev/null && sent=1
+      case "$input" in
+        *'"prompt":"<cross-session-message from-mode=\\"'*)
+          [ -n "$id" ] && grep -qxF "$id" "$reg/$tab${SENT_IDS_SUFFIX}" 2>/dev/null && sent=1 ;;
+      esac
       case "$(prompt_body | LC_ALL=C sed -E 's/^<cross-session-message( [a-z-]+=\\\\"[^"\\\\]*\\\\")*>\\\\n//')" in
+        ${WORDS_THAT_ASK_NOTHING}) ;;
         ${opensLike([FROM_DISCORD])})
           if [ -n "$sent" ]; then save_quote; else flag=${shq(NOT_FROM_THE_RELAY)}; fi ;;
         ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) [ -n "$sent" ] || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
