@@ -1,4 +1,4 @@
-import { LOCAL_MACHINE, type SessionRoute } from '@shared/sessionRoute'
+import { LOCAL_MACHINE, type RouteWorktree, type SessionRoute } from '@shared/sessionRoute'
 import type { WorkspaceRows } from '@shared/types'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import {
@@ -14,16 +14,33 @@ import { ISSUE_LAUNCH } from './slots'
 
 let lastAsk = 0
 
-export function askRoute(message: string): {
+export interface RouteAsk {
   result: Promise<SessionRoute | null>
   cancel: () => void
-} {
-  const id = ++lastAsk
-  return {
-    result: window.api.assist.route(id, message).catch(() => null),
-    cancel: () => window.api.assist.cancel(id)
-  }
 }
+
+function cancellableAsk(ask: (id: number) => Promise<SessionRoute | null>): RouteAsk {
+  const id = ++lastAsk
+  return { result: ask(id).catch(() => null), cancel: () => window.api.assist.cancel(id) }
+}
+
+export const pinnedRoute = (path: string, worktree: RouteWorktree | null): SessionRoute => ({
+  title: '',
+  kind: 'workspace',
+  path,
+  worktree
+})
+
+export const askRoute = (message: string): RouteAsk =>
+  cancellableAsk((id) => window.api.assist.route(id, message))
+
+export const askPinnedRoute = (wsPath: string, message: string): RouteAsk =>
+  cancellableAsk((id) =>
+    window.api.assist
+      .nameWorktree(id, message)
+      .catch(() => null)
+      .then((name) => pinnedRoute(wsPath, name ? { kind: 'new', name } : null))
+  )
 
 export async function pendingOptions(
   ws: Pick<WorkspaceRows['workspace'], 'path' | 'isGit'>,

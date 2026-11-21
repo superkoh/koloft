@@ -613,6 +613,7 @@ import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSe
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
+import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
@@ -6314,20 +6315,32 @@ function registerIpc(): void {
   ipcMain.handle(CH.app.version, () => app.getVersion())
   ipcMain.handle(CH.settings.set, (_e, patch) => commitSettings(sanitizeSettingsPatch(patch)))
 
-  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
-    if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
-    const mgr = workspaceMgr
+  const cancellableAssist = async <T>(
+    id: number,
+    ask: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> => {
     const run = new AbortController()
     assistRuns.set(id, run)
     try {
-      return await routeSession(
-        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
-        message,
-        run.signal
-      )
+      return await ask(run.signal)
     } finally {
       assistRuns.delete(id)
     }
+  }
+  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
+    if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
+    const mgr = workspaceMgr
+    return cancellableAssist(id, (signal) =>
+      routeSession(
+        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
+        message,
+        signal
+      )
+    )
+  })
+  ipcMain.handle(CH.assist.nameWorktree, async (_e, id: unknown, task: unknown) => {
+    if (typeof id !== 'number' || typeof task !== 'string') return null
+    return cancellableAssist(id, (signal) => worktreeNameForTask(task, assist, signal))
   })
   ipcMain.on(CH.assist.cancel, (_e, id: unknown) => {
     if (typeof id === 'number') assistRuns.get(id)?.abort()
