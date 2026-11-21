@@ -184,6 +184,17 @@ describe('firedHints — worktree', () => {
     expect(firedHints(prev, next)).toEqual([{ id: 'worktree', selector: rowSelector('t2') }])
   })
 
+  it("stays quiet when the new session in that folder is a plugin's own, and does not count it as one already running", () => {
+    const own = { ...launch('pty-2'), pluginOwn: true as const }
+    const prev = snap({ rows: [ws('/a', [running('s1')])] })
+    const next = snap({ rows: [ws('/a', [running('s1'), own])] })
+    expect(firedHints(prev, next)).toEqual([])
+    const ownRunning = { ...running('s2'), pluginOwn: true as const }
+    const before = snap({ rows: [ws('/a', [ownRunning])] })
+    const after = snap({ rows: [ws('/a', [ownRunning, launch('pty-3')])] })
+    expect(firedHints(before, after)).toEqual([])
+  })
+
   it('stays quiet when the new session is a worktree one — that is the cure', () => {
     const prev = snap({ rows: [ws('/a', [running('s1')])] })
     const next = snap({

@@ -65,6 +65,7 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   isOverseerSession: (tabOrSessionId: string) => boolean = () => false
+  ownedByAPlugin: (sessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
@@ -210,7 +211,10 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.filter((r) => !this.isOverseerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
+    return rows
+      .filter((r) => !this.isOverseerSession(r.id))
+      .map((r) => (this.ownedByAPlugin(r.id) ? { ...r, pluginOwn: true as const } : r))
+      .sort((a, b) => b.mtime - a.mtime)
   }
 
   adopt(rows: readonly Pick<SessionRow, 'id' | 'backendId'>[]): void {

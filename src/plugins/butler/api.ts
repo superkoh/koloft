@@ -6,7 +6,8 @@ export {
   pluginsChangedNews
 } from './prompts/role'
 export { butlersFolderClaim, conductorFolder } from './main/folder'
-export { OwnerAsleep, OWNER_ASLEEP_PUSH, THIS_MAC } from './main/ownerAsleep'
+export { OwnerAsleep, OWNER_ASLEEP_PUSH, THIS_MAC, type MorningLines } from './main/ownerAsleep'
+export type { ButlerStarted } from './main/start'
 export { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './main/awayDigest'
 export type { OldConversationNews } from './shared/types'
 export { butlersBlock } from './main/instructionsBlock'

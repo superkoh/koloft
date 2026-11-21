@@ -15,7 +15,7 @@ export function useHistoryRows(wsPath: string, opts?: { quiet: boolean }): Sessi
     window.api.workspace
       .historyRows(wsPath, { quiet })
       .then((h) => {
-        if (live) setHistory(h)
+        if (live) setHistory(h.filter((r) => !r.pluginOwn))
       })
       .catch(() => {})
     return () => {

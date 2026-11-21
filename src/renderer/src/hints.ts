@@ -13,7 +13,13 @@ export interface HintSnapshot {
   }[]
   rows: {
     workspace: { path: string }
-    rows: { id: string; worktree: string; running: boolean; pending?: boolean }[]
+    rows: {
+      id: string
+      worktree: string
+      running: boolean
+      pending?: boolean
+      pluginOwn?: true
+    }[]
   }[]
 }
 
@@ -60,7 +66,7 @@ export function selectorOf(h: HintFire, panelShown: boolean, sidebarHidden: bool
 type Row = HintSnapshot['rows'][number]['rows'][number]
 
 function runsInMainFolder(r: Row): boolean {
-  return r.worktree === 'main' && (r.running || !!r.pending)
+  return r.worktree === 'main' && (r.running || !!r.pending) && !r.pluginOwn
 }
 
 function rowTabId(s: HintSnapshot, rowId: string): string {

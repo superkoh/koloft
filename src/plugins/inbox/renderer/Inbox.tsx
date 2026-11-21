@@ -106,7 +106,7 @@ function ordered(
   }
 }
 
-function openSessionRef(ref: string): void {
+async function openSessionRef(ref: string): Promise<void> {
   const st = useStore.getState()
   st.setCentrePage(null)
   if (st.tabs.some((t) => t.id === ref)) return visitTab(ref)
@@ -116,12 +116,14 @@ function openSessionRef(ref: string): void {
     const row = ws.rows.find((r) => r.id === ref)
     if (row) return openSessionRow(row, ws.workspace.path)
   }
+  const own = await window.api.workspace.pluginOwnRow(ref)
+  if (own) return openSessionRow(own.row, own.workspace)
   st.showToast('That session is not in the sidebar any more.')
 }
 
 function openLink(l: InboxLink): void {
   if (l.to.type === 'browser') window.api.browser.openExternal(l.to.url)
-  else openSessionRef(l.to.session)
+  else void openSessionRef(l.to.session)
 }
 
 function byText(card: InboxCard): string {
@@ -896,6 +898,11 @@ function Card({
             }}
           >
             More ▾
+          </button>
+        )}
+        {card.dismissButton && (
+          <button className="ibx-btn" onClick={() => window.api.inbox.dismiss(card.id)}>
+            Dismiss
           </button>
         )}
         {[...out].reverse().map(button)}

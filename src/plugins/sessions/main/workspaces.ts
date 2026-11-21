@@ -147,6 +147,7 @@ export interface WorkspaceManagerDeps {
   killRemoteSession?(host: string, sessionId: string): void
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
+  ownedByAPlugin?(rowId: string): true | undefined
   conductorsRoot?: string
   scratchRoots?: readonly string[]
   claimedFolder?: FolderClaim
@@ -379,11 +380,14 @@ export class WorkspaceManager {
   }
 
   private withParents(rows: SessionRow[]): SessionRow[] {
-    const parentOf = this.deps.parentOf
-    if (!parentOf) return rows
+    const { parentOf, ownedByAPlugin } = this.deps
+    if (!parentOf && !ownedByAPlugin) return rows
     return rows.map((r) => {
-      const parentId = parentOf(r.id)
-      return parentId ? { ...r, parentId } : r
+      const parentId = parentOf?.(r.id)
+      const pluginOwn = ownedByAPlugin?.(r.id)
+      return parentId || pluginOwn
+        ? { ...r, ...(parentId && { parentId }), ...(pluginOwn && { pluginOwn }) }
+        : r
     })
   }
 
