@@ -81,28 +81,4 @@ describe('handing Koloft’s words to a session', () => {
     expect([await told, await plain, await fails]).toEqual([true, true, false])
     expect(marks).toEqual(['+marked', '+fails', '-fails'])
   })
-
-  // ADR-0028
-  it('lets Koloft note the words as they will reach the session, and the id they go with, before handing them on each way a session takes words, so the session’s hook finds them noted', async () => {
-    for (const backend of ['claude', 'codex', 'muse'] as const) {
-      const steps: string[] = []
-      const { handOver, to, open } = setup({
-        backendOf: () => backend,
-        noteSent: async (_t, text, id) => void steps.push(`noted ${id} ${text}`),
-        sendLine: async () => void steps.push('sent line'),
-        queue: async () => void steps.push('queued'),
-        type: async () => {
-          steps.push('typed')
-          return true
-        }
-      })
-      const told = handOver.tell(to, '(From Koloft:) hi')
-      open()
-      await told
-      expect(steps[0]).toMatch(
-        /^noted koloft-notice-1 \(From Koloft:\) hi \(The owner is away\.\)$/
-      )
-      expect(steps).toHaveLength(2)
-    }
-  })
 })

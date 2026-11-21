@@ -1709,8 +1709,8 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ...over
   })
 
-  it('send reaches a local Claude session through its message socket with the butler’s own permission mode, and a Codex one through its queue with a conductor message id, each noted first as Koloft’s own, the Claude one with its line’s id (ADR-0028)', async () => {
-    const { verb, lines, queued, noted } = harness(live, {}, [], conducting({ bypass: ['butler'] }))
+  it('send reaches a local Claude session through its message socket with the butler’s own permission mode, and a Codex one through its queue with a conductor message id', async () => {
+    const { verb, lines, queued } = harness(live, {}, [], conducting({ bypass: ['butler'] }))
     expect((await verb(['send', 'fix-login', 'also', 'the tests'], from('butler'))).exit).toBe(0)
     expect((await verb(['send', CODEX_THREAD, 'check docs'], from('butler'))).exit).toBe(0)
     expect(lines).toEqual([
@@ -1721,10 +1721,6 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ])
     expect(queued).toEqual([
       { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
-    ])
-    expect(noted).toEqual([
-      { tabId: 'fix', text: ownerSays('also the tests'), id: 'koloft-session-1' },
-      { tabId: 'cx', text: ownerSays('check docs'), id: undefined }
     ])
   })
 

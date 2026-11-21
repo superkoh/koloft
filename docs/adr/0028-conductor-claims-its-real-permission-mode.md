@@ -46,7 +46,7 @@ whose one attribute is `from-mode`. The opening is looked for right after the
 from another session (`from="uds:…"`, CC§13) is flagged even when it copies a noted id
 (Koloft's ids are counters, easy to guess), and so is an opening typed into the tab with
 no envelope (`koloft session keys` can type into any tab), as Koloft never types one into
-Claude. The one exception is the fixed line a butler started fresh for a helper gets as
+Claude — the owner pasting such a line in is flagged too, the price of catching keys. The one exception is the fixed line a butler started fresh for a helper gets as
 its first prompt (`A_HELPER_HAS_IT`): it is handed at launch, before the tab exists to
 note it under, and it asks nothing, so a copy of it gains a forger nothing. Those files are readable by any program the same user
 runs, so the check only catches a session that writes such an opening by accident or
@@ -65,7 +65,9 @@ later CLI that escapes a sign Node does not cannot turn the owner's words into a
 (today both escape as Node does: CODEX§33, MUSE§9). The hook cannot tell typed text from
 a message, so an opening typed into those tabs is flagged too. For a tab on another
 machine Koloft writes the id or the words into that machine's hook folder over ssh before
-it hands the message over, which the remote Claude, Codex and Muse hooks read.
+it hands the message over, which the remote Claude, Codex and Muse hooks read. When that
+note cannot be written the message is not sent and its sender is told, rather than sent
+and flagged as forged.
 The two files keep the names they had when only `[Discord]` was checked: a remote tab
 that outlived a Koloft upgrade still runs the hook of the machine package it started
 with, which reads those names.
