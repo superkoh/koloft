@@ -26,6 +26,15 @@ describe('the list of plugins', () => {
     }
   })
 
+  it('the list of starts holds the start of every plugin with main-process code, and of no other', () => {
+    const starts = fs.readFileSync(path.join(PLUGIN_FOLDERS, 'starts.ts'), 'utf8')
+    const started = [...starts.matchAll(/from '\.\/([\w-]+)\/main\/start'/g)].map((m) => m[1])
+    const withMain = PLUGINS.map((p) => p.id).filter((id) =>
+      fs.existsSync(path.join(PLUGIN_FOLDERS, id, 'main'))
+    )
+    expect(started).toEqual(withMain)
+  })
+
   it('lists every plugin after all the plugins it needs, so none needs itself and going down the list never meets a missing one', () => {
     for (const p of PLUGINS)
       for (const need of p.needs)

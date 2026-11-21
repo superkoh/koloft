@@ -12,6 +12,7 @@ import type { SettingKey, SettingKeys, setting } from '@core/settings'
 import type { PluginUi, fill, slot } from '@core/ui'
 import type { PromptContext, composePrompt, fillSlots, fillsGained } from '@core/prompt'
 import type { pluginStateOf } from '@core/switches'
+import type { PluginCore, PluginStart } from '@core/pluginStart'
 import * as moments from '@core/moment'
 import type { Hears, Moment, Moments } from '@core/moment'
 import { PLUGINS } from '@plugins/list'
@@ -165,8 +166,24 @@ interface V1TabEnded {
 
 type V1RunState = 'working' | 'waiting' | 'approval' | 'idle'
 
+interface V1PluginCore {
+  commands: { register: (handlers: Readonly<Record<string, V1Verb>>) => void }
+  moments: {
+    listen: <T>(
+      pluginId: string,
+      moment: V1Moment<T>,
+      hear: (moment: T) => unknown,
+      afterPlugins?: readonly string[],
+      heardWhileOff?: boolean
+    ) => () => void
+    announce: <T>(moment: V1Moment<T>, m: T) => Promise<string[]>
+  }
+  ipc: V1MainIpc
+}
+
 interface PinnedFormats {
   1: {
+    start: (core: V1PluginCore, deps: Probe) => Probe
     manifest: V1Manifest
     eachAgent: (slot: string, textOf: (agent: V1Agent) => string) => V1TextBlock
     register: (handlers: Readonly<Record<string, V1Verb>>) => void
@@ -253,6 +270,20 @@ type Flat<T> = {
       : T[K]
 }
 
+type StartAsPinned =
+  PluginStart<Probe, Probe> extends (core: infer C extends PluginCore, deps: infer D) => infer R
+    ? (
+        core: {
+          [K in keyof C]: K extends 'commands'
+            ? { register: C['commands']['register'] }
+            : K extends 'moments'
+              ? { listen: C['moments']['listen']; announce: C['moments']['announce'] }
+              : C[K]
+        },
+        deps: D
+      ) => R
+    : never
+
 type MomentsByExportName = typeof moments
 
 type WhatEachMomentCarries = {
@@ -313,6 +344,7 @@ describe('the plugin format', () => {
       same<typeof fillsGained, Pinned['fillsGained']>(true)
       same<typeof pluginStateOf, Pinned['pluginStateOf']>(true)
       same<WhatEachMomentCarries, Flat<Pinned['carries']>>(true)
+      same<StartAsPinned, Pinned['start']>(true)
     }
     void typedOnly
   })

@@ -14,8 +14,10 @@ it is done.
   its manifest in `plugin.ts`.
 - A plugin's code registers its `koloft` commands, its IPC channels, its settings, its UI
   entries and the session moments it listens to with core
-  ([How a plugin plugs in](#how-a-plugin-plugs-in)). Each registration is checked against the
-  manifest: by the code that takes it, which throws an error, or by a unit test.
+  ([How a plugin plugs in](#how-a-plugin-plugs-in)). Its main-process registrations happen in
+  one start function, which the main process calls once at launch
+  ([Starting](#starting)). Each registration is checked against the manifest: by the code
+  that takes it, which throws an error, or by a unit test.
 - An optional plugin has a switch in Settings ▸ Plugins. Turning it off takes its text,
   commands, moments, UI and running parts away ([Switches](#switches)).
 - The shape of the manifest and of what a plugin registers through is pinned for format
@@ -118,20 +120,22 @@ on; the app hands its `koloft-docs` skill to agents only while it is.
 
 ## Where a plugin lives
 
-Each plugin is one folder under `src/plugins/`, named by its id. Four list files sit next to
+Each plugin is one folder under `src/plugins/`, named by its id. Five list files sit next to
 the folders. They are the only files outside the plugin folders that may import a plugin,
 and each imports one kind of file from each plugin. The picture shows who reads which list.
 
 ```mermaid
 flowchart LR
-  subgraph lists["src/plugins/ (the four lists)"]
+  subgraph lists["src/plugins/ (the five lists)"]
     list["list.ts<br/>every plugin.ts"]
     bridges["bridges.ts<br/>every preload/bridge.ts"]
     uis["uis.ts<br/>every renderer/ui.tsx"]
     settings["settings.ts<br/>every shared/settings.ts"]
+    starts["starts.ts<br/>every main/start.ts"]
   end
   prompt["core: prompt.ts, assistJobs.ts, hints.ts"] -->|import| list
   appMain["the app's main process<br/>(src/main/index.ts)"] -->|"passes list.ts to Commands and Moments"| list
+  appMain -->|"passes starts.ts and list.ts to startPlugins"| starts
   preload["the app's preload"] -->|spreads into window.api| bridges
   window["the app's window<br/>(pluginUi.tsx)"] -->|"passes uis.ts and list.ts to placeUi"| uis
   settingsOps["the app's settings code<br/>(settingsOps.ts)"] -->|"passes settings.ts and list.ts to registerSettings"| settings
@@ -144,7 +148,7 @@ flowchart LR
   manifest -->|imports| text
 ```
 
-### The four lists
+### The five lists
 
 | File | What it holds |
 |---|---|
@@ -152,10 +156,11 @@ flowchart LR
 | `src/plugins/bridges.ts` | `pluginBridges(ipc)`, which joins every plugin's part of `window.api`; `PluginBridges`, its type; and `KoloftApi = CoreApi & PluginBridges`, the type of `window.api` |
 | `src/plugins/uis.ts` | `PLUGIN_UIS`, each plugin's UI parts and slot fills, keyed by plugin id |
 | `src/plugins/settings.ts` | `PLUGIN_SETTINGS`, each plugin's setting keys, keyed by plugin id; the type of the plugins' settings comes from it |
+| `src/plugins/starts.ts` | `PLUGIN_STARTS`, each plugin's start function, keyed by plugin id in list order; `PluginStartDeps`, what the app hands each one; and `PluginsStarted`, what each one gives back ([Starting](#starting)) |
 
 ### Core
 
-These files in `src/core/` are what plugins build on. The first nine are the registries and
+These files in `src/core/` are what plugins build on. The first ten are the registries and
 the types a plugin registers with.
 
 | Path | What it holds |
@@ -169,6 +174,7 @@ the types a plugin registers with.
 | `src/core/ui.ts` | `slot`, `fill`, `PluginUi` and `placeUi` ([UI entries and slots](#ui-entries-and-slots)) |
 | `src/core/assistJobs.ts` | `ASSIST_JOBS`, every plugin's Assist jobs in list order, and `assistJobDefaults` ([Assist jobs](#assist-jobs)) |
 | `src/core/moment.ts` | the named session moments, the shape each carries, and `Moments`, the registry plugins listen through ([Moments](#moments)) |
+| `src/core/pluginStart.ts` | `PluginCore`, what a start function is handed; `PluginStart`, the type of a start function; and `startPlugins`, which calls them ([Starting](#starting)) |
 | `src/core/switches.ts` | `pluginStates`, `pluginStateOf` and `turnedOffLine`: which plugins are on ([Switches](#switches)) |
 | `src/core/hints.ts` | `HINT_IDS`, `hintOn` and `tipNumber`: the app's tips and the plugins' ([Tips](#tips)) |
 | `src/core/assistModels.ts` | the `ModelAndEffort` type, the model tables Assist jobs share (such as `SMALL_AND_QUICK`), and the `AssistJob` and `Assist` types, so a plugin can take Assist as a function |
@@ -204,14 +210,14 @@ today.
 | `skill/` | its text blocks for `koloft help` and the `koloft` skill | all but butler and docs-writing |
 | `api.ts` | what other plugins may import | all but inbox and scheduled-tasks |
 | `windowApi.ts` | what other plugins' window code may import: the part of its public surface with no main-process code and no text for agents. It may not import its own `main/` or `prompts/` | butler |
-| `main/` | code that runs in the main process | all but docs-writing |
+| `main/` | code that runs in the main process; `start.ts` there is its start function | all but docs-writing |
 | `preload/` | `bridge.ts`, its part of `window.api` | all but todo and docs-writing |
 | `renderer/` | code that runs in the window; `ui.tsx` there is its UI parts and slot fills | browser-control, butler, inbox, scheduled-tasks, github, discord, passwords |
 | `shared/` | code the main process and the window both use; `ipc.ts` there is its table of IPC channels, `settings.ts` its setting keys, `assistJobs.ts` its Assist jobs | all but docs-writing |
 
 Koloft has two type checks. The main-process one reads every plugin folder except
 `renderer/` folders and `src/plugins/uis.ts`. The window one reads every plugin folder except
-`main/` folders. Both read `preload/` and `shared/`. A `preload/` file imports no
+`main/` folders and `src/plugins/starts.ts`. Both read `preload/` and `shared/`. A `preload/` file imports no
 `electron`; it gets a `PreloadIpc`.
 
 ## The manifest
@@ -284,7 +290,8 @@ what reads the field today.
 
 The manifest says what a plugin owns. For commands, IPC channels, settings, UI entries and
 moments, the plugin's code then registers the matching pieces, and each is checked against
-the manifest. Text blocks, tips and Assist jobs live in the manifest itself, so core reads
+the manifest. Commands, IPC channels and moments are registered by the plugin's start
+function ([Starting](#starting)). Text blocks, tips and Assist jobs live in the manifest itself, so core reads
 them straight from it. The picture shows where each piece goes and what checks it.
 
 ```mermaid
@@ -302,6 +309,7 @@ flowchart LR
   subgraph win["window"]
     placeUi["placeUi<br/>core/ui.ts"]
   end
+  start["main/start.ts<br/>via src/plugins/starts.ts"] --> verb & hooks & channels
   verb["main/…Verb.ts"] -->|commands.register| commands
   hooks["main/sessionHooks.ts"] -->|moments.listen| moments
   channels["main/channels.ts"] -->|registerChannels| ipcMain
@@ -326,8 +334,8 @@ A mismatch is caught in one of three ways:
   job id a caller asks for is checked by the typecheck (`test/unit/assistJobIds.test.ts`),
   and no two jobs sharing an id by `test/unit/pluginList.test.ts`.
 
-The sections below take one kind of piece each, then switches and main-process parts, which
-have no registry of their own.
+The sections below take one kind of piece each, then switches, starting and main-process
+parts, which have no registry of their own.
 
 ### Text blocks
 
@@ -453,7 +461,7 @@ plugins list the same verb (`test/unit/commands.test.ts`).
 
 The code that answers a command is not in the manifest. It registers itself with the one
 `Commands` object in `src/core/commands.ts`, which the app makes at launch from the list of
-plugins. This is how Scheduled tasks registers `koloft cron`:
+plugins and hands each start function. This is how Scheduled tasks registers `koloft cron`:
 
 ```ts
 commands.register({ cron: cronVerb(d) })
@@ -478,8 +486,8 @@ commands.register({ cron: cronVerb(d) })
 - What `koloft help` prints is text blocks (slot `koloft-help`), not this list.
 
 GitHub's `koloft gh` handler is registered by GitHub's own main-process part,
-`startGithubMain` in `src/plugins/github/main/githubMain.ts`, which takes `Commands` as a dep
-([Main-process parts](#main-process-parts)).
+`startGithubMain` in `src/plugins/github/main/githubMain.ts`, which GitHub's start function
+builds with the `Commands` it is handed ([Main-process parts](#main-process-parts)).
 
 ### IPC channels
 
@@ -511,7 +519,8 @@ files. Scheduled tasks is the example.
    `d.push(CHANNELS.y, …)`. A plugin may export more than one `register…` function. `deps` is
    what the plugin needs from the app while that code still lives outside the plugin. It is a
    set of narrow interfaces typed with `@shared/types`, never a type from `src/main`;
-   `src/main/index.ts` passes it, and calls each `register…` function with its `pluginIpc`.
+   `src/main/index.ts` passes it in through the plugin's start function, which calls each
+   `register…` function with the `ipc` it is handed ([Starting](#starting)).
 4. `preload/bridge.ts` exports its bridge type and `bridge(ipc: PreloadIpc)`, which returns
    its part of `window.api`: `ipc.invoke(CHANNELS.x, …)` for a request, `ipc.send(CHANNELS.x,
    …)` for a one-way message, `ipc.sendSync(CHANNELS.x)` for a value the preload reads as it
@@ -522,8 +531,9 @@ files. Scheduled tasks is the example.
 Every call names its channel as `CHANNELS.<key>` on a parameter called `ipc`, or on `d.push`.
 The unit test `test/unit/ipcChannels.test.ts` finds the calls that way. It checks that each
 manifest lists exactly the channels its code uses, pairs each `invoke` with a `handle`, each
-`send` with an `on` and each `listen` with a `push`, and checks that the main process calls
-each plugin's `register…` functions and the preload spreads `pluginBridges`.
+`send` with an `on` and each `listen` with a `push`, and checks that each plugin's start
+function calls its `register…` functions, that the main process starts every plugin with its
+`MainIpc`, and that the preload spreads `pluginBridges`.
 
 A sandboxed preload (the one a Workbench web page gets, and the one for its extensions)
 cannot import plugin code, so it spells a plugin's channel as a string. That is the one place
@@ -739,8 +749,9 @@ fire, a queued one is dropped, and it is not counted in the tip card's "tip n of
 A moment is something that happens to a session, which one plugin announces and others
 listen to. Each moment has a name, exported from `src/core/moment.ts` with the shape it
 carries. A plugin's manifest lists the names it announces in `moments.announces` and those it
-hears in `moments.listens`. `src/main/index.ts` builds one `Moments` from `PLUGINS`. A
-plugin's `main/sessionHooks.ts` calls `moments.listen(plugin.id, MOMENT, hear)`, which throws
+hears in `moments.listens`. `src/main/index.ts` builds one `Moments` from `PLUGINS` and hands it
+to each start function. A plugin's `main/sessionHooks.ts`, called from its start function,
+calls `moments.listen(plugin.id, MOMENT, hear)`, which throws
 unless the plugin is on the list, its manifest lists that moment, and some manifest announces
 it. `listen` returns a function that stops listening. `announce` rejects a moment no manifest
 announces.
@@ -834,11 +845,50 @@ to the butler's prompt, and a sentence that comes to hold later (Discord's, once
 a bound channel) reaches the butler once in `butler-lines-came`. Sessions started afterwards
 get the new text; other sessions already running keep what they were given.
 
+### Starting
+
+A plugin with main-process code has one start function, exported as `start` from
+`main/start.ts`. It is the only place that plugin registers its commands, IPC channels and
+moment listeners. `src/plugins/starts.ts` lists every start in `PLUGIN_STARTS`, keyed by plugin
+id, and `src/main/index.ts` calls them all with one `startPlugins` call. This is Scheduled
+tasks' start:
+
+```ts
+export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments, ipc }, d) => {
+  registerCronCommand(commands, d.command)
+  followEachRun(moments, d.runner, pushRunStarted(ipc))
+  registerChannels(ipc, d.channels)
+}
+```
+
+- A start is a `PluginStart<Deps, Result>` from `src/core/pluginStart.ts`:
+  `(core, deps) => result`. `core` is a `PluginCore`: the app's one `commands`, `moments` and
+  `ipc`. `deps` is what the plugin needs from the app while that code still lives outside the
+  plugin ([Main-process parts](#main-process-parts)); its type is the plugin's own, and
+  `PluginStartDeps` in `src/plugins/starts.ts` collects them, so `src/main/index.ts` names no
+  plugin file to build them.
+- `startPlugins(PLUGINS, PLUGIN_STARTS, core, deps)` calls each start once, in the order of the
+  list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
+  GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
+  calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
+  when a turn ends.
+- The app calls `startPlugins` as its main module finishes loading, after every part a deps
+  object hands in exists, and before Electron is ready, so before any session runs, any
+  `koloft` command arrives or the window opens.
+- Inside one start, the order of its `moments.listen` calls is the order that plugin hears a
+  moment in ([Moments](#moments)). Across plugins the order of the starts does not matter.
+- Every plugin is started, on or off. What a plugin that is off loses is still taken away by
+  the registries ([Switches](#switches)). Nothing stops a started plugin.
+- The unit test `test/unit/pluginList.test.ts` checks that `src/plugins/starts.ts` holds the
+  start of every plugin that has a `main/` folder, and of no other, in list order.
+
 ### Main-process parts
 
 A plugin's main-process code is a set of parts. A part is a class or function in `main/`
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
-object, which `src/main/index.ts` builds and hands in. A part never imports another plugin
+object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
+function gets its deps through the start's `deps`; most parts are still built by
+`src/main/index.ts` itself, which imports them by name and hands them to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's
@@ -846,7 +896,8 @@ code answers. A part that sends to the window takes `push` as a dep
 ([IPC channels](#ipc-channels)).
 
 A part may own its plugin's command and follow its plugin's switch. GitHub's
-`startGithubMain` registers `koloft gh`, takes core's git-account calls as deps, and gets
+`startGithubMain`, built by GitHub's start, registers `koloft gh`, takes core's git-account
+calls as deps, and gets
 each workspace's repository and `gh` runner as a `RepoSource` from the app's `GithubRepos`
 (`src/main/githubRepos.ts`), which stays outside the plugin because closing a worktree needs
 its "is this branch merged" query. It has
@@ -854,8 +905,7 @@ its "is this branch merged" query. It has
 stops the sweep of issue and pull request counts. The counts reach the sidebar's workspace
 rows through the `pluginData` dep of Sessions core's workspaces, only while the sweep runs.
 Discord's bot follows its switch the same way, from `followDiscordSwitch` in
-`src/main/index.ts`. There is no general way yet to start or stop a plugin's main-process
-parts.
+`src/main/index.ts`. There is no general way yet to stop a plugin's main-process parts.
 
 Two hooks let one plugin hand another plugin's part what it needs, without core naming
 either:
@@ -895,7 +945,8 @@ version, would no longer mean the same thing:
 shape of the manifest and its parts and of `eachAgent`; of `Commands.register`, a command
 handler, `answered` and `refused`; of `MainIpc` and `PreloadIpc`; of `setting`, a setting key
 and `SettingKeys`; of `PluginUi`, `slot` and `fill`; of `Moments.listen` and `announce`, and
-of what each moment carries; of `composePrompt`, `fillSlots` and `pluginStateOf`; and the
+of what each moment carries; of `composePrompt`, `fillSlots` and `pluginStateOf`; of a start
+function and the `PluginCore` it is handed; and the
 name of every moment and whether a plugin that is off hears it. The pin holds its own copy of
 each shape these use, such as the agent ids and what a turn holds, so a change made elsewhere
 in the app trips it too. Only three types are pinned by name: the session a command's caller
@@ -925,26 +976,25 @@ A plugin imports only:
 A plugin's `windowApi.ts` may not import its own `main/` or `prompts/` folder, so the window
 never loads main-process code or text for agents through it.
 
-Outside `src/plugins/`, the app's source imports no plugin. Only the four lists do, each one
+Outside `src/plugins/`, the app's source imports no plugin. Only the five lists do, each one
 kind of file: `list.ts` each `plugin.ts`, `bridges.ts` each `preload/bridge.ts`, `uis.ts`
-each `renderer/ui.tsx`, and `settings.ts` each `shared/settings.ts`. Core imports only
-`list.ts`, never a plugin by name. The app's preload, window and settings code read the
-other three lists and hand them to core.
+each `renderer/ui.tsx`, `settings.ts` each `shared/settings.ts`, and `starts.ts` each
+`main/start.ts`. Core imports only `list.ts`, never a plugin by name. The app's preload,
+window, settings code and main process read the other four lists and hand them to core.
 
-One kind of import has no approved path yet. `src/main/index.ts` imports each plugin's
-`main/channels.ts` to call its `registerChannels` (`test/unit/ipcChannels.test.ts` requires
-it), the files that register `koloft` commands and moment listeners, and the main-process
-parts it builds ([Main-process parts](#main-process-parts)). The check lists these as
-breaking the rule ([Not built or not decided](#not-built-or-not-decided)).
+One kind of import has no approved path yet. `src/main/index.ts` imports the main-process
+parts it builds and hands to the starts as deps, and the types and helpers they use
+([Main-process parts](#main-process-parts)). The check lists these as breaking the rule
+([Not built or not decided](#not-built-or-not-decided)).
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 662 imports, in five kinds:
+page was last checked against, it listed 646 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
-| names a plugin outside the lists | 161 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
-| imports `src/shared/` | 267 | plugin code that imports `src/shared/`, which is not core |
+| names a plugin outside the lists | 144 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
+| imports `src/shared/` | 268 | plugin code that imports `src/shared/`, which is not core |
 | imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |
@@ -966,8 +1016,9 @@ These are not decided:
 
 - Who may add a text slot, a value or a fact, and whether these names, and the window's UI
   slots, are kept stable for plugins written outside Koloft.
-- How the app's main process starts and stops a plugin's main-process code (its channels,
-  commands, moment listeners and parts) without importing the plugin's files by name.
+- How the app's main process stops a plugin's main-process code, and how the parts
+  `src/main/index.ts` still builds and imports by name move behind their plugin's start
+  ([Starting](#starting)).
 - If A needs B and B needs C, whether A may import C's `api.ts` without listing C. The check
   allows only the plugins A lists itself.
 - Whether a plugin may import `src/shared/` directly. `src/shared/` holds code Koloft's main
