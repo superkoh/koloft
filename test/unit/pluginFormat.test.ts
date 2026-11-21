@@ -47,7 +47,6 @@ interface V1TextBlock {
   byAgent?: Partial<Record<V1Agent, string>>
   byModel?: Readonly<Record<string, string>>
   when?: string
-  whenOff?: string
 }
 
 interface V1Manifest {
