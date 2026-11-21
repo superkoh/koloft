@@ -63,6 +63,8 @@ export interface ChannelDeps {
   dirExists(dir: string): Promise<boolean>
 }
 
+const NO_SESSION_NAMED = 'Koloft was not told which session to close.'
+
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   const { backends } = deps
   // PLATFORM§21
@@ -96,7 +98,7 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     typeof id === 'string' && id && typeof tabId === 'string' && tabId ? [id, tabId] : null
   ipc.handle(CHANNELS.closingLoses, async (id: unknown, tabId: unknown): Promise<string[]> => {
     const both = ids(id, tabId)
-    return both ? deps.closingLoses(...both) : []
+    return both ? deps.closingLoses(...both) : [NO_SESSION_NAMED]
   })
   ipc.handle(CHANNELS.closeFully, async (id: unknown, tabId: unknown): Promise<void> => {
     const both = ids(id, tabId)

@@ -56,7 +56,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         uses: [
           {
             where: 'Conversation',
-            what: 'Closes the session for good: ends it, takes its row out of the list and deletes its worktree and branch. Always asks first, and offers only closing the tab when that would lose work. File ▸ Close Tab closes just the tab.'
+            what: 'Asks first, then closes the session for good: ends it, takes its row out of the list and deletes its worktree and branch if it has one. When that would lose work, offers only closing the tab. A tab with no session yet just closes. File ▸ Close Tab closes just the tab.'
           },
           { where: 'Workbench', what: 'Closes the active panel tab. The Files tab stays.' },
           { where: 'Note', what: 'Nothing.' }

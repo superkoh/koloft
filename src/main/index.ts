@@ -5267,7 +5267,7 @@ function closableInTab(sessionId: string, tabId: string): ClosableSession | stri
   const live = sessionOfTab(tabId)
   if (live?.sessionId && live.sessionId !== sessionId) return NO_SESSION_TO_CLOSE
   const found = live?.sessionId ? live : closableSessions().find((s) => s.sessionId === sessionId)
-  if (!found) return NO_SESSION_TO_CLOSE
+  if (!found || (found.tabId && found.tabId !== tabId)) return NO_SESSION_TO_CLOSE
   if (hostOfTab(tabId) === 'ssh' || isRemoteKey(found.treeRoot)) return ON_ANOTHER_MACHINE
   if (isButlerNow(tabId)) return THE_OWNERS_AI
   return { ...found, sessionId, tabId }
@@ -6682,8 +6682,17 @@ const startedPlugins: PluginsStarted = startPlugins(
         },
         closeFully: async (id, tabId) => {
           const found = closableInTab(id, tabId)
-          if (typeof found === 'string') tellTheOwner(found)
-          else await closeOrTell(found, tellTheOwner)
+          if (typeof found === 'string') return tellTheOwner(found)
+          const left = await whatClosingWouldLose(
+            found,
+            undefined,
+            Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+          )
+          if (left.length)
+            return tellTheOwner(
+              `Koloft did not close ${found.title}: closing it now would lose this.\n${left.join('\n')}`
+            )
+          await closeOrTell(found, tellTheOwner)
         },
         leftovers: () => leftovers,
         stopLeftover: async (sessionId, pid) => {

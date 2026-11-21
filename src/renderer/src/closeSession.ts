@@ -44,13 +44,20 @@ export interface FullCloseTarget {
 }
 
 export function fullCloseTarget(
-  tab: (Parameters<typeof closeTabIntent>[0] & { jobId?: string; sessionId?: string }) | undefined,
+  tab:
+    | (Parameters<typeof closeTabIntent>[0] & {
+        jobId?: string
+        sessionId?: string
+        resuming?: boolean
+        asleep?: true
+      })
+    | undefined,
   sessions: SessionInfo[]
 ): FullCloseTarget | null {
   if (!tab || !isSessionKind(tab.kind) || tab.ended || tab.jobId !== undefined) return null
   const bound = sessions.find((s) => s.tabId === tab.id)
   if (bound?.overseer) return null
-  const sessionId = bound?.sessionId || tab.sessionId
+  const sessionId = bound?.sessionId || ((tab.resuming || tab.asleep) && tab.sessionId)
   if (!sessionId) return null
   const intent = closeTabIntent(tab, sessions)
   return {
@@ -70,7 +77,7 @@ export function fullCloseBody(title: string, status?: BusyStatus): string {
 }
 
 export function fullCloseRefusedBody(title: string): string {
-  return `Koloft cannot close "${title}" for good yet. You can still close just its tab: the session stays in the list.`
+  return `Koloft cannot close "${title}" for good. You can still close just its tab: the session stays in the list.`
 }
 
 export const UNSAVED_TITLE = 'Unsaved changes'

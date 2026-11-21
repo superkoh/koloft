@@ -132,14 +132,22 @@ describe('fullCloseTarget (which tab ⌘W closes for good)', () => {
   })
 
   it('closes a sleeping or still-resuming tab for good by the session id the tab kept', () => {
-    expect(fullCloseTarget({ ...tab('t1'), sessionId: 'kept' }, [])).toEqual({
+    expect(fullCloseTarget({ ...tab('t1'), sessionId: 'kept', asleep: true }, [])).toEqual({
       tabId: 't1',
       sessionId: 'kept',
       title: 'Claude'
     })
     expect(
-      fullCloseTarget({ ...tab('t1'), sessionId: 'kept' }, [sess('t1', { sessionId: '' })])
+      fullCloseTarget({ ...tab('t1'), sessionId: 'kept', resuming: true }, [
+        sess('t1', { sessionId: '' })
+      ])
     ).toMatchObject({ tabId: 't1', sessionId: 'kept' })
+  })
+
+  it('leaves to a plain tab close a tab whose old session id may belong to a session it already left', () => {
+    expect(
+      fullCloseTarget({ ...tab('t1'), sessionId: 'old' }, [sess('t1', { sessionId: '' })])
+    ).toBeNull()
   })
 
   it('leaves to a plain tab close: no tab, a shell tab, a launch not bound yet, an ended tab, a scheduled run, the butler', () => {

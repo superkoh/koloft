@@ -114,7 +114,9 @@ export function CloseSessionDialog(): JSX.Element | null {
 }
 
 export function FullCloseDialog(): JSX.Element | null {
-  const shown = useStore((s) => s.fullClose)
+  const shown = useStore((s) =>
+    s.fullClose && s.tabs.some((t) => t.id === s.fullClose?.tabId) ? s.fullClose : null
+  )
   const cancelRef = useRef<HTMLButtonElement>(null)
   const goRef = useRef<HTMLButtonElement>(null)
   const opened = shown?.tabId
