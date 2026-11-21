@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { CronEffort, SessionDefaults } from '../../src/shared/types'
-import { cronPickFor, takesOwnDefaults } from '../../src/shared/sessionDefaults'
-import { familyEfforts, resolveOwnPick } from '../../src/shared/sessionPicks'
+import { cronPickFor, ownPickModels, takesOwnDefaults } from '../../src/shared/sessionDefaults'
+import {
+  familyEfforts,
+  needsTheAccountsModels,
+  resolveOwnPick
+} from '../../src/shared/sessionPicks'
 import {
   A_FOLDER_WITH_NO_REPOSITORY_IS_ASKED_AGAIN_AFTER_MS,
   projectDefaults,
@@ -63,16 +67,116 @@ describe('the model and thinking a session the owner starts runs on', () => {
     })
   })
 
+  it('starts Neon on Argon when the account has no Neon, at Argon’s highest level when it lacks the one asked, and says so', () => {
+    const argonOnly = [{ id: 'gemini-4-argon', efforts: LMH }]
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, argonOnly)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'medium' },
+      note: 'This account has no neon model, so it runs on gemini-4-argon.'
+    })
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, argonOnly)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'high' },
+      note: 'This account has no neon model, so it runs on gemini-4-argon at high.'
+    })
+    const both = [{ id: 'gemini-4-neon', efforts: [...LMH, 'xhigh'] as CronEffort[] }, ...argonOnly]
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, both)).toEqual({
+      pick: { model: 'gemini-4-neon', effort: 'xhigh' }
+    })
+  })
+
+  it('starts Neon on Argon when the account’s models cannot be read, as not every account has Neon', () => {
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'medium' }, undefined)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'medium' },
+      note: "Koloft could not read this account's models, so it runs on gemini-4-argon."
+    })
+    expect(resolveOwnPick('agy', { model: 'neon', effort: 'xhigh' }, undefined)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'high' },
+      note: "Koloft could not read this account's models, so it runs on gemini-4-argon at high."
+    })
+  })
+
+  it('keeps an Argon pick saved before Neon took the normal tier on Argon', () => {
+    const listed = [
+      { id: 'gemini-4-neon', efforts: LMH },
+      { id: 'gemini-4-argon', efforts: LMH }
+    ]
+    expect(resolveOwnPick('agy', { model: 'argon', effort: 'medium' }, listed)).toEqual({
+      pick: { model: 'gemini-4-argon', effort: 'medium' }
+    })
+    expect(ownPickModels('agy').map((m) => m.id)).toContain('argon')
+  })
+
   it('passes a full model name the owner typed straight through', () => {
     expect(resolveOwnPick('codex', { model: 'gpt-7-nova' }, [])).toEqual({
       pick: { model: 'gpt-7-nova' }
     })
   })
 
+  describe('a scheduled job’s or Assist’s Carbon or Neon button, which names the model in full', () => {
+    const NEON = { id: 'gemini-4-neon', efforts: [...LMH, 'xhigh'] as CronEffort[] }
+    const ARGON = { id: 'gemini-4-argon', efforts: LMH }
+    const CARBON = { id: 'gemini-4-carbon', efforts: LMH }
+
+    it('runs on that model when the account lists it', () => {
+      expect(
+        resolveOwnPick('agy', { model: 'gemini-4-carbon', effort: 'medium' }, [CARBON, NEON, ARGON])
+      ).toEqual({ pick: { model: 'gemini-4-carbon', effort: 'medium' } })
+    })
+
+    it('runs Carbon on Neon, then Argon, and Neon on Argon, when the account lacks it, and says so', () => {
+      expect(
+        resolveOwnPick('agy', { model: 'gemini-4-carbon', effort: 'high' }, [NEON, ARGON])
+      ).toEqual({
+        pick: { model: 'gemini-4-neon', effort: 'high' },
+        note: 'This account has no gemini-4-carbon model, so it runs on gemini-4-neon.'
+      })
+      expect(resolveOwnPick('agy', { model: 'gemini-4-carbon', effort: 'high' }, [ARGON])).toEqual({
+        pick: { model: 'gemini-4-argon', effort: 'high' },
+        note: 'This account has no gemini-4-carbon model, so it runs on gemini-4-argon.'
+      })
+      expect(resolveOwnPick('agy', { model: 'gemini-4-neon', effort: 'low' }, [ARGON])).toEqual({
+        pick: { model: 'gemini-4-argon', effort: 'low' },
+        note: 'This account has no gemini-4-neon model, so it runs on gemini-4-argon.'
+      })
+    })
+
+    it('says so too when the account only has a newer model of that family', () => {
+      const newer = { id: 'gemini-4.1-carbon', efforts: LMH }
+      expect(resolveOwnPick('agy', { model: 'gemini-4-carbon', effort: 'low' }, [newer])).toEqual({
+        pick: { model: 'gemini-4.1-carbon', effort: 'low' },
+        note: 'This account has no gemini-4-carbon model, so it runs on gemini-4.1-carbon.'
+      })
+    })
+
+    it('runs on Argon when the account’s models cannot be read, never on the Carbon or Neon it could not see', () => {
+      for (const model of ['gemini-4-carbon', 'gemini-4-neon'])
+        expect(resolveOwnPick('agy', { model, effort: 'medium' }, undefined)).toEqual({
+          pick: { model: 'gemini-4-argon', effort: 'medium' },
+          note: "Koloft could not read this account's models, so it runs on gemini-4-argon."
+        })
+    })
+
+    it('starts the model it falls back to at the highest thinking level it takes, and says which', () => {
+      expect(resolveOwnPick('agy', { model: 'gemini-4-neon', effort: 'xhigh' }, [ARGON])).toEqual({
+        pick: { model: 'gemini-4-argon', effort: 'high' },
+        note: 'This account has no gemini-4-neon model, so it runs on gemini-4-argon at high.'
+      })
+    })
+
+    it('leaves a button every account has, and so needs no list, as it is', () => {
+      expect(needsTheAccountsModels('agy', 'gemini-4-carbon')).toBe(true)
+      expect(needsTheAccountsModels('agy', 'gemini-4-argon')).toBe(false)
+      expect(needsTheAccountsModels('codex', 'gpt-6-astra')).toBe(false)
+      expect(resolveOwnPick('agy', { model: 'gemini-3.1-pro', effort: 'high' }, [ARGON])).toEqual({
+        pick: { model: 'gemini-3.1-pro', effort: 'high' }
+      })
+    })
+  })
+
   it('offers each Antigravity family the thinking levels of the model it would run on', () => {
     expect(familyEfforts('agy', [{ id: 'gemini-4-argon', efforts: LMH }])).toEqual({
-      argon: LMH,
-      carbon: LMH
+      neon: LMH,
+      carbon: LMH,
+      argon: LMH
     })
   })
 })

@@ -110,7 +110,20 @@ export class SecretCards {
     this.shown.delete(id)
     shown.ask = ask
     if (how !== 'answered-elsewhere') shown.footer = FOOTER_WHEN_ENDED[how]
-    if (shown.placed) this.editCard(shown)
+    if (shown.placed) void this.editCard(shown)
+  }
+
+  async endAll(footer: string): Promise<void> {
+    const shown = [...this.shown]
+    this.shown.clear()
+    await Promise.all(
+      shown.map(([id, s]) => {
+        this.d.asks.notShownElsewhere(id)
+        if (s.footer) return undefined
+        s.footer = footer
+        return s.placed ? this.editCard(s) : undefined
+      })
+    )
   }
 
   private waiting(id: string): boolean {
@@ -149,7 +162,7 @@ export class SecretCards {
     const placed = await this.d.place(tabId, card, files).catch(() => undefined)
     if (!placed) return false
     shown.placed = placed
-    if (shown.footer) this.editCard(shown)
+    if (shown.footer) void this.editCard(shown)
     return true
   }
 
@@ -296,9 +309,9 @@ export class SecretCards {
     await this.d.respond(i, privately(PASSED_ON))
   }
 
-  private editCard(shown: Shown): void {
+  private editCard(shown: Shown): Promise<void> {
     const placed = shown.placed!
-    void this.d
+    return this.d
       .edit(placed, cardOf(shown.ask, placed.name, `-# ${shown.footer}`))
       .catch(() => undefined)
   }

@@ -9,7 +9,7 @@ import {
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
-import { remoteDiscordSaidFile, remoteNoticeFile } from './hooks'
+import { remoteNoticeFile, remoteSentWordsFile } from '@plugins/sessions/main/hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 import { skillsFromMachineLine } from './remote/launch'
 import { MUSE_SANDBOX_CANNOT_START } from './museSandbox'
@@ -201,10 +201,26 @@ def bind(sid):
     put({'t': 'bound', 'sessionId': sid, 'forked': starts_as_a_fork(path)})
     name = 'k-' + sid
     write_whole(os.path.join(hook_dir, name + '${RUN_POINTER_SUFFIX}'), run_id)
-    write_whole(os.path.join(tabs, run_id + '.tmux'), name)
-    if in_tmux:
-        with open(os.devnull, 'w') as quiet:
-            subprocess.call(['tmux', 'rename-session', '-t', os.environ.get('TMUX_PANE', ''), name], stdout=quiet, stderr=quiet)
+    # ADR-0044 PLATFORM§35
+    name_file = os.path.join(tabs, run_id + '.tmux')
+    write_whole(name_file, name)
+    if not in_tmux:
+        return
+    pane = os.environ.get('TMUX_PANE', '')
+    with open(os.devnull, 'w') as quiet:
+        if subprocess.call(['tmux', 'rename-session', '-t', pane, name], stdout=quiet, stderr=quiet) == 0:
+            return
+        try:
+            now = subprocess.check_output(['tmux', 'display-message', '-p', '-t', pane, '#S'], stderr=quiet).decode('utf-8', 'replace').strip()
+        except (OSError, subprocess.CalledProcessError):
+            now = ''
+    if now:
+        write_whole(name_file, now)
+        return
+    try:
+        os.remove(name_file)
+    except OSError:
+        pass
 
 
 registry_seen = [None]
@@ -258,7 +274,7 @@ export const REMOTE_MUSE_HOOK_SH = museHookScript(
   `f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
 event="$2"
 said="$HOME/.koloft/tabs/$1.said"
-discord_said="${remoteDiscordSaidFile('$1')}"
+sent_words="${remoteSentWordsFile('$1')}"
 notice="${remoteNoticeFile('$1')}"`,
   `p="$(mktemp 2>/dev/null)" || exit 0
 printf '{"t":"hook","event":"%s","input":%s}\\n' "$event" "$input" > "$p" && cat "$p" >> "$f"

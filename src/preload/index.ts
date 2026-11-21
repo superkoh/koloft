@@ -136,7 +136,8 @@ const api: KoloftApi = {
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
   git: {
     commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),
-    push: (root) => ipcRenderer.invoke(CH.git.push, root)
+    push: (root) => ipcRenderer.invoke(CH.git.push, root),
+    readiness: (root) => ipcRenderer.invoke(CH.git.readiness, root)
   },
   os: {
     open: (p) => ipcRenderer.send(CH.os.open, p),
@@ -148,7 +149,6 @@ const api: KoloftApi = {
     remove: (p) => ipcRenderer.invoke(CH.workspace.remove, p),
     removeConfirmed: (p) => ipcRenderer.invoke(CH.workspace.removeConfirmed, p),
     move: (p, before) => ipcRenderer.invoke(CH.workspace.move, p, before),
-    worktrees: (p) => ipcRenderer.invoke(CH.workspace.worktrees, p),
     historyRows: (p, opts) => ipcRenderer.invoke(CH.workspace.historyRows, p, opts),
     rows: () => ipcRenderer.invoke(CH.workspace.rows),
     onRows: (cb) => {

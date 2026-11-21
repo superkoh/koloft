@@ -24,6 +24,7 @@ export interface AwayDigestDeps {
   marks(): AttentionEvent[]
   butlerSide(tabId: string): boolean
   inRoom(tabId: string): boolean
+  instructionsCard(tabId: string): 'posted' | 'posting' | undefined
   touchedBeforeLeaving(): string[]
   judging(tabId: string): boolean
   sessionOf(mark: AttentionEvent): Omit<DigestItem, 'kind' | 'reply'>
@@ -126,7 +127,8 @@ export class AwayDigest {
           !m.fyi &&
           !this.d.butlerSide(m.tabId) &&
           !(m.kind === 'turn-done' && this.handedOff.has(m.tabId)) &&
-          !(m.kind !== 'exited' && this.d.inRoom(m.tabId))
+          !(m.kind !== 'exited' && this.d.inRoom(m.tabId)) &&
+          !(m.kind === 'approval' && this.d.instructionsCard(m.tabId) === 'posted')
       )
     if (!fresh.length || !this.d.away() || !this.d.reachable()) {
       this.waitingSince = undefined
@@ -134,9 +136,13 @@ export class AwayDigest {
     }
     const now = this.d.now()
     this.waitingSince ??= now
-    const unjudged = fresh.some((m) => m.kind === 'turn-done' && this.d.judging(m.tabId))
+    const notSettled = fresh.some(
+      (m) =>
+        (m.kind === 'turn-done' && this.d.judging(m.tabId)) ||
+        (m.kind === 'approval' && this.d.instructionsCard(m.tabId) === 'posting')
+    )
     if (
-      (unjudged && now - this.waitingSince < VERDICT_WAITED_AT_MOST_MS) ||
+      (notSettled && now - this.waitingSince < VERDICT_WAITED_AT_MOST_MS) ||
       this.telling ||
       this.d.butlerBusy()
     )

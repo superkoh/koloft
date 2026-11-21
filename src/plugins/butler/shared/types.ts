@@ -15,13 +15,22 @@ export const isKnownBy = (key: string): key is KnownBy => key.startsWith('knows'
 
 export interface OldConversationNews {
   knownBy: KnownBy
-  text: string
+  text: () => string
   on: () => boolean
+}
+
+export type PluginsOn = Readonly<Record<string, boolean>>
+
+export interface PluginsSeen {
+  key: string
+  on: PluginsOn
+  facts?: readonly string[]
 }
 
 export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
+  pluginsSeen?: PluginsSeen
   [knownBy: KnownBy]: string[] | undefined
   // CC§3 CODEX§11
   carried?: OwnPick

@@ -30,11 +30,12 @@ import {
   type SshLab
 } from '../e2e/helpers/docker'
 import { writeExec } from '../e2e/helpers/remote'
+import { attach, type Driver } from './driver'
+import { codexLoan, type InstalledAccount } from './codexLoan'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { readLoginShell } from '../../src/main/loginShell'
 import { acceptClaudeTrust } from '../../src/main/claudeTrust'
 import { acceptCodexTrust, codexConfigFile } from '../../src/main/codexTrust'
-import { codexHomes } from '../../src/main/codexAccounts'
 import { AGY_INSTALLER_URL } from '../../src/main/toolInstall'
 import { keychainService } from '../../src/shared/types'
 import { DISCORD_API_URL } from '../../src/plugins/discord/main/link'
@@ -44,11 +45,18 @@ const DEV_BOT_KEYCHAIN = 'koloft-dev-discord-bot'
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
   npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse] [--agy]
+  npm run handtest -- drive <home> <script.ts>
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
 
-start prints JSON: the debug address to drive it with (playwright-cli attach --cdp=<cdp>),
-its home, its workspaces, and the stop line. menu clicks an app-menu item (an id from
+start prints JSON: the debug address (cdp), its home, its workspaces, the stop line, and
+codex: which enabled Codex account of the installed Koloft it lent, or why it lent none.
+Only an enabled account is lent (never ~/.codex), an API key always, a ChatGPT login only
+while Codex would not refresh it for a day; the sandbox then stops itself before that
+refresh, which would sign the installed Koloft out of it (CODEX§15).
+drive runs a script whose default export takes the Driver of test/handtest/driver.ts
+(start a session, type, wait for a row state, read a terminal, toasts, screenshots) and
+prints what it returns as JSON. menu clicks an app-menu item (an id from
 src/main/menu.ts, like command-palette), since the hidden window gets no real ⌘ keys.
 stop quits it and deletes the home.
   --account  the Claude account from the installed Koloft's Settings ▸ Accounts it runs on
@@ -69,12 +77,14 @@ Run npm run build first.`
 
 const REPO = path.resolve(__dirname, '..', '..')
 const MAIN_ENTRY = path.join(REPO, 'out', 'main', 'index.js')
+const RUN_SCRIPT = path.join(REPO, 'test', 'handtest', 'run.mjs')
 const INSTALLED_PROFILE = path.join(os.homedir(), 'Library', 'Application Support', 'koloft')
 const STATE_FILE = 'handtest.json'
 const DEFAULT_PORT = '9555'
 const WINDOW_OPEN_DEADLINE_MS = 30_000
 const QUIT_DEADLINE_MS = 20_000
 const POLL_MS = 500
+const WALL_CLOCK_CHECK_MS = 60_000
 const USAGE_PROBE_THAT_TEST_MODE_TURNS_OFF = 'https://api.anthropic.com'
 // CC§7
 const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
@@ -97,12 +107,6 @@ interface State {
   lab?: SshLab
 }
 
-interface InstalledAccount {
-  name: string
-  kind: string
-  enabled: boolean
-}
-
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 const mainInspectorPort = (port: string): number => Number(port) + 1
@@ -120,13 +124,6 @@ async function onLoginPath(name: string): Promise<string | undefined> {
     probes: [`command -v ${name}`]
   })
   return found ? fs.realpathSync(found) : undefined
-}
-
-function codexAuthOfTheInstalledApp(): string | undefined {
-  return [
-    ...codexHomes(INSTALLED_PROFILE).map((home) => path.join(home, 'auth.json')),
-    path.join(os.homedir(), '.codex', 'auth.json')
-  ].find((f) => fs.existsSync(f))
 }
 
 function portIsFree(port: number): Promise<boolean> {
@@ -165,10 +162,14 @@ async function useRealClaude(env: E2EEnv, account: string): Promise<string> {
 }
 
 // CODEX§15
-async function useRealCodex(env: E2EEnv): Promise<boolean> {
+async function useRealCodex(
+  env: E2EEnv,
+  accounts: readonly InstalledAccount[]
+): Promise<{ codex: string; safeUntil?: number }> {
   const codex = await onLoginPath('codex')
-  const auth = codexAuthOfTheInstalledApp()
-  if (!codex || !auth) return false
+  if (!codex) return { codex: 'not lent: no codex on the login PATH' }
+  const loan = codexLoan(INSTALLED_PROFILE, accounts, Date.now())
+  if ('notLent' in loan) return { codex: `not lent: ${loan.notLent}` }
   const wrapper = path.join(env.fakeBin, 'codex')
   writeExec(
     wrapper,
@@ -177,13 +178,27 @@ async function useRealCodex(env: E2EEnv): Promise<boolean> {
       `  shift\n  exec '${codex}' login --device-auth "$@"\nfi\n` +
       `exec '${codex}' "$@"\n`
   )
-  addCodexAccount(env, fs.readFileSync(auth, 'utf8'))
+  addCodexAccount(env, loan.auth)
   env.launchEnv.KOLOFT_CODEX_CMD = wrapper
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   for (const dir of Object.values(env.workspaces))
     acceptCodexTrust(codexConfigFile(env.launchEnv), dir)
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
-  return true
+  return {
+    codex:
+      `lent: ${loan.name}` +
+      (loan.safeUntil
+        ? `; the sandbox stops itself at ${new Date(loan.safeUntil).toISOString()}, before Codex would refresh it`
+        : ''),
+    safeUntil: loan.safeUntil
+  }
+}
+
+function stopAt(home: string, at: number): void {
+  spawn(process.execPath, [RUN_SCRIPT, 'stop', home, `--at=${at}`], {
+    detached: true,
+    stdio: 'ignore'
+  }).unref()
 }
 
 async function installIntoTheSandbox(
@@ -324,7 +339,7 @@ async function start(opt: {
       accounts: [seededAccount(account, 'oauth')]
     })
     const claude = await useRealClaude(env, account)
-    const codex = await useRealCodex(env)
+    const { codex, safeUntil } = await useRealCodex(env, installed.accounts ?? [])
     const muse = opt.muse ? await useRealMuse(env) : undefined
     if (opt.museAuth)
       addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
@@ -354,6 +369,7 @@ async function start(opt: {
     child.unref()
     const state: State = { pid: child.pid!, port: opt.port, lab }
     fs.writeFileSync(path.join(env.home, STATE_FILE), JSON.stringify(state))
+    if (safeUntil) stopAt(env.home, safeUntil)
     const deadline = Date.now() + WINDOW_OPEN_DEADLINE_MS
     while (!(await koloftPage(opt.port).catch(() => undefined))) {
       if (Date.now() > deadline) throw new Error(`Koloft did not open its window — see ${log}`)
@@ -429,6 +445,19 @@ async function clickMenuItem(home: string, id: string): Promise<void> {
   console.log(JSON.stringify(await evaluate(main.webSocketDebuggerUrl, clicked)))
 }
 
+async function drive(home: string, script: string): Promise<void> {
+  const state = readState(home)
+  if (!state) throw new Error(`no sandbox in ${home}`)
+  const driver = await attach(`http://127.0.0.1:${state.port}`)
+  const steps = (await import(path.resolve(script))) as {
+    default: (d: Driver) => Promise<unknown>
+  }
+  if (typeof steps.default !== 'function')
+    throw new Error(`${script} must default-export a function that takes the Driver`)
+  const result = JSON.stringify((await steps.default(driver)) ?? null, null, 2)
+  await new Promise((printed) => process.stdout.write(`${result}\n`, printed))
+}
+
 async function stop(home: string): Promise<void> {
   const state = readState(home)
   if (state) {
@@ -451,11 +480,12 @@ const { positionals, values } = parseArgs({
     muse: { type: 'boolean', default: false },
     'muse-auth': { type: 'string' },
     agy: { type: 'boolean', default: false },
-    discord: { type: 'string' }
+    discord: { type: 'string' },
+    at: { type: 'string' }
   }
 })
 
-const [command, home, menuItem] = positionals
+const [command, home, arg] = positionals
 if (command === 'start') {
   await start({
     account: values.account,
@@ -467,9 +497,17 @@ if (command === 'start') {
     discord: values.discord
   })
 } else if (command === 'stop' && home) {
+  if (values.at) {
+    const at = Number(values.at)
+    if (!Number.isFinite(at)) throw new Error(`--at takes a time in ms, not ${values.at}`)
+    while (Date.now() < at) await wait(Math.min(at - Date.now(), WALL_CLOCK_CHECK_MS))
+  }
   await stop(home)
-} else if (command === 'menu' && home && menuItem) {
-  await clickMenuItem(home, menuItem)
+} else if (command === 'menu' && home && arg) {
+  await clickMenuItem(home, arg)
+} else if (command === 'drive' && home && arg) {
+  await drive(home, arg)
+  process.exit(0)
 } else {
   console.error(USAGE)
   process.exit(2)

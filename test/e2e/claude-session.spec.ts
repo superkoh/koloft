@@ -6,6 +6,7 @@ import {
   boundSessionId,
   centerTerm,
   continuedInOf,
+  ERASED_BY_COMMAND_BACKSPACE,
   expectNoCodexWhileTheCheckIsOutNorAfter,
   FAKE_SESSION_TITLE,
   layoutOnDisk,
@@ -13,6 +14,8 @@ import {
   openPicker,
   readCalls,
   runIn,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   terminalText,
@@ -89,16 +92,16 @@ for (const remote of [false, true]) {
       await startSessionIn(page, workspace, { remote })
       const tabId = (await wsRows(page, workspace).first().getAttribute('data-tab-id'))!
 
-      await centerTerm(page).click()
-      await page.keyboard.type('dropped words')
-      await page.keyboard.press('Meta+Backspace')
-      await page.keyboard.type('/answer kept words')
-      await page.keyboard.press('Enter')
+      await sendALineErasedByCommandBackspaceThenAnother(
+        page,
+        centerTerm(page),
+        `/answer ${KEPT_AFTER_COMMAND_BACKSPACE}`
+      )
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
-        .toContain('[fake-claude] answered: kept words')
-      expect(await terminalText(page, tabId)).not.toContain('answered: dropped')
+        .toContain(`[fake-claude] answered: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(await terminalText(page, tabId)).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }

@@ -415,17 +415,50 @@
           </figcaption>
         </figure>
 
+        <h2>The branch button</h2>
+        <p>
+          In any git folder a button next to Files shows the branch you are on (or
+          <code>detached HEAD</code>). Click it for two things:
+        </p>
+        <ul class="dash">
+          <li>
+            Commit…
+            <span class="why"
+              >— a small box for your message; it commits every change not committed yet, new files
+              too. Greyed when there is nothing to commit</span
+            >
+          </li>
+          <li>
+            Push
+            <span class="why"
+              >— sends the branch to the same branch on <code>origin</code> and tracks it. Greyed
+              off a branch or with no <code>origin</code>; the button reads Pushing… meanwhile</span
+            >
+          </li>
+        </ul>
+        <p>
+          It is there with or without GitHub, on a folder's own Workbench too. On a
+          <a href="../remote/">remote folder</a> the commit and push run on the remote machine.
+        </p>
+
         <h2>The GitHub button</h2>
         <p>
-          In a GitHub project a GitHub button sits next to Files. Click it to open the branch's pull
-          request in a web tab, or the repo page when there is none yet. When the branch has a pull
-          request, the button shows its number and a dot: green, its checks passed; amber, still
-          running; red, one failed. Right-click it for more:
+          In a GitHub project a GitHub button sits next to the branch button. Click it to open the
+          branch's pull request in a web tab, or the repo page when there is none yet. When the
+          branch has a pull request, the button shows its number and a dot: green, its checks
+          passed; amber, still running; red, one failed. Right-click it for more:
         </p>
         <ul class="dash">
           <li>Open repository</li>
           <li>Open pull requests</li>
           <li>Open pull request #… <span class="why">(when there is one)</span></li>
+          <li>
+            Open pull request…
+            <span class="why"
+              >(when there is none yet) — pushes, then opens GitHub's compare page in a web
+              tab</span
+            >
+          </li>
           <li>Checks · N failing of M <span class="why">(or passed, or running)</span></li>
           <li>
             Send failing checks
@@ -435,21 +468,6 @@
               comment</span
             >
           </li>
-          <li>
-            Commit…
-            <span class="why"
-              >— a small box for your message; it commits every change not committed yet, new files
-              too</span
-            >
-          </li>
-          <li>Push</li>
-          <li>
-            Open pull request…
-            <span class="why"
-              >(when there is none yet) — pushes, then opens GitHub's compare page in a web
-              tab</span
-            >
-          </li>
           <li>Check again</li>
         </ul>
         <p>
@@ -457,8 +475,7 @@
           line says <code>Checks · install gh</code> or <code>Checks · run gh auth login</code>. In
           a folder picked for a <a href="../accounts/#git-accounts">git account</a>, gh reads them
           as that account instead. The same on a Codex session. On a
-          <a href="../remote/">remote folder</a> the commit and push run on the remote machine, and
-          <code>gh</code> runs on your Mac.
+          <a href="../remote/">remote folder</a> <code>gh</code> runs on your Mac.
         </p>
 
         <h2 id="folder-workbench">A folder's own Workbench</h2>

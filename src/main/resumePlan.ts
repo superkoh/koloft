@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { isPlaceholderSessionTitle } from '@shared/types'
 import { branchExists, type GitOut } from '@core/worktree'
 import type {
   BackendSessionRow,
@@ -49,7 +49,7 @@ export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupa
 }
 
 export function occupantName(s: { title: string; sessionId: string }): string {
-  if (s.title && s.title !== PLACEHOLDER_SESSION_TITLE) return s.title
+  if (s.title && !isPlaceholderSessionTitle(s.title)) return s.title
   return s.sessionId || 'a launching session'
 }
 

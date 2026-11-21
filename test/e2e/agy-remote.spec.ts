@@ -7,10 +7,15 @@ import {
   E2E_AGY_ACCOUNT,
   agyTranscriptOf,
   installAgy,
+  installAgyWithNoAccount,
+  seededAccount,
   seedSettings,
+  signInAgyWithGoogle,
+  writeAgyWeeklyUsage,
   type E2EEnv
 } from './helpers/env'
 import {
+  agyQuotaUsed,
   centerTerm,
   chooseBackend,
   closeActiveTab,
@@ -25,6 +30,9 @@ import {
   processAlive,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   sessionInRow,
   startSessionIn,
@@ -64,8 +72,8 @@ const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 
-const accountFolder = (env: E2EEnv): string =>
-  path.join(machineHome(env), '.koloft', 'agy', E2E_AGY_ACCOUNT)
+const accountFolder = (env: E2EEnv, name = E2E_AGY_ACCOUNT): string =>
+  path.join(machineHome(env), '.koloft', 'agy', name)
 
 function setUp(env: E2EEnv): void {
   installAgy(env)
@@ -253,6 +261,32 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§15 PLATFORM§35
+  test('⌘⌫ in a remote Antigravity tab reaches agy through ssh and tmux as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      const { id } = await boundRemoteSession(page, 'agy')
+      await expect
+        .poll(() => agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini')), {
+          timeout: 60_000
+        })
+        .toContain(`Answer to: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini'))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('an Antigravity worktree session in a remote workspace runs agy on the machine in a worktree made there, with the ignored files .worktreeinclude lists copied in there', async ({
     env
   }) => {
@@ -425,6 +459,57 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       )
       expect(fs.existsSync(outside)).toBe(false)
       expect(fs.existsSync(inside) ? fs.readFileSync(inside, 'utf8') : null).toBe(before)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§26 AGY§29
+  test('a file outside its workspace a remote Antigravity session asks to read shows the row as wanting to read it; Deny on the Inbox card declines it with a key that says no on that ask, so agy never reads it and the row leaves waiting for approval, and Allow lets the next ask read it, after which the row says it read that file', async ({
+    env
+  }) => {
+    setUp(env)
+    seedSettings(env, { skipPermissions: false })
+    const word = 'zebra-quilt-41'
+    fs.writeFileSync(path.join(remoteDir(env), '..', 'agy-outside.txt'), `${word}\n`)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.locator('.ibx-entry').click()
+      const button = (name: RegExp): Locator =>
+        page.locator('.inbox-page .ibx-item .ibx-btn', { hasText: name }).first()
+      for (const [verdict, allow] of [
+        [/^Deny$/, false],
+        [/^Allow$/, true]
+      ] as const) {
+        await page.evaluate(
+          (t) => window.api.terminal.write(t, '/read ../agy-outside.txt\r'),
+          tabId
+        )
+        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+        await expect(row.locator('.ws-tab-act')).toHaveText('Wants to read: agy-outside.txt')
+        await button(verdict).click()
+        await expect
+          .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+          .toContain(allow ? 'Read ../agy-outside.txt' : 'Interrupted')
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        expect((await terminalText(page, tabId)).includes(word)).toBe(allow)
+        if (!allow)
+          await expect(row.locator('.ws-tab-act', { hasText: /^Last: Read/ })).toHaveCount(0)
+      }
+      await expect(row.locator('.ws-tab-act')).toHaveText('Last: Read agy-outside.txt', {
+        timeout: 60_000
+      })
+      expect(machineAgyApiCalls(env).map((c) => c.method)).not.toContain(
+        'HandleCascadeUserInteraction'
+      )
     } finally {
       await quitAndClose(app)
     }
@@ -623,6 +708,42 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(liveTmuxSessions(env)).toContain(`k-${id}`)
       expect(machineAgyCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('after Koloft is reopened, the first remote Antigravity session started while no quota can be read runs on the machine in the account added since, not the one that was full when Koloft was last open', async ({
+    env
+  }) => {
+    installAgyWithNoAccount(env)
+    installFakeRemote(env)
+    installRemoteAgy(env)
+    seedRemoteWorkspace(env)
+    signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    const usage = writeAgyWeeklyUsage(env, 0)
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => agyQuotaUsed(page), { timeout: 30_000 }).toBe(1)
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    signInAgyWithGoogle(env, 'roomy')
+    seedSettings(env, {
+      accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home'), seededAccount('roomy', 'agy-home')]
+    })
+    fs.writeFileSync(usage, '{"groups":"unread"}')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      expect(machineAgyCalls(env)[0].argv[0]).toBe(`--gemini_dir=${accountFolder(env, 'roomy')}`)
     } finally {
       await quitAndClose(app)
     }

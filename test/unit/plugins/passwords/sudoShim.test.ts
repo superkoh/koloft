@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
+import { knowPluginStates } from '../../../../src/core/switches'
 import {
   ASKPASS_NAME,
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
@@ -105,6 +106,20 @@ describe("Koloft's sudo in a session", () => {
       'askpass= args=true',
       `askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`
     ])
+  })
+
+  it('with Passwords and sign-in off, Koloft’s sudo and its password helper leave the folder, so the real sudo is the one found, and come back once it is on', () => {
+    const shims = (): string[] =>
+      fs.readdirSync(shimDir).filter((n) => n === 'sudo' || n === ASKPASS_NAME)
+    knowPluginStates({ passwords: { on: false } })
+    try {
+      writeSudoShims(shimDir, SUDO_SHIM_FILES)
+      expect(shims()).toEqual([])
+    } finally {
+      knowPluginStates({})
+    }
+    writeSudoShims(shimDir, SUDO_SHIM_FILES)
+    expect(shims().sort()).toEqual([ASKPASS_NAME, 'sudo'].sort())
   })
 
   it('an option of the command itself is not taken for one of sudo’s', async () => {

@@ -5,9 +5,9 @@ import readline from 'readline'
 import { fileURLToPath } from 'url'
 import type { SaidLine, Turn } from '@shared/turns'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
-import { nonEmptyString, record } from './codexObservation'
+import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'
 import { readAppendedLines, type AppendCursor } from './appendedLines'
-import type { HistoryEntry } from './storedSessions'
+import type { HistoryEntry } from '@plugins/sessions/main/storedSessions'
 
 export const AGY_APP_DIR = 'antigravity-cli'
 
@@ -34,6 +34,106 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
 export const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
 
+// AGY§8
+export const annotationFile = (geminiDir: string, id: string): string =>
+  path.join(geminiDir, AGY_APP_DIR, 'annotations', `${id}.pbtxt`)
+
+const ANNOTATION_TITLE_RE = /^title:\s*"((?:[^"\\]|\\.)*)"/m
+
+const PBTXT_SIMPLE_ESCAPES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+  '\\': 0x5c,
+  "'": 0x27,
+  '"': 0x22,
+  '?': 0x3f
+}
+
+function decodePbtxtString(raw: string): string | undefined {
+  const bytes: number[] = []
+  for (let i = 0; i < raw.length;) {
+    if (raw[i] !== '\\') {
+      const cp = raw.codePointAt(i)!
+      const ch = String.fromCodePoint(cp)
+      for (const b of Buffer.from(ch, 'utf8')) bytes.push(b)
+      i += ch.length
+      continue
+    }
+    i++
+    if (i >= raw.length) return undefined
+    const esc = raw[i]
+    if (esc >= '0' && esc <= '7') {
+      const oct = raw.slice(i, i + 3).match(/^[0-7]{1,3}/)![0]
+      bytes.push(parseInt(oct, 8) & 0xff)
+      i += oct.length
+    } else if (esc === 'x' || esc === 'X') {
+      const hex = raw.slice(i + 1, i + 3).match(/^[0-9a-fA-F]{1,2}/)?.[0]
+      if (!hex) return undefined
+      bytes.push(parseInt(hex, 16))
+      i += 1 + hex.length
+    } else if (esc === 'u' || esc === 'U') {
+      const len = esc === 'u' ? 4 : 8
+      const hex = raw.slice(i + 1, i + 1 + len)
+      if (!new RegExp(`^[0-9a-fA-F]{${len}}$`).test(hex)) return undefined
+      const cp = parseInt(hex, 16)
+      if (cp > 0x10ffff) return undefined
+      for (const b of Buffer.from(String.fromCodePoint(cp), 'utf8')) bytes.push(b)
+      i += 1 + len
+    } else if (esc in PBTXT_SIMPLE_ESCAPES) {
+      bytes.push(PBTXT_SIMPLE_ESCAPES[esc])
+      i++
+    } else {
+      return undefined
+    }
+  }
+  return Buffer.from(bytes).toString('utf8')
+}
+
+// AGY§8
+export function parseAnnotationTitle(text: string): string | undefined {
+  const matched = ANNOTATION_TITLE_RE.exec(text)
+  if (!matched) return undefined
+  const decoded = decodePbtxtString(matched[1])
+  return decoded || undefined
+}
+
+// AGY§8
+function readAnnotationTitle(geminiDir: string, id: string): string | undefined {
+  try {
+    return parseAnnotationTitle(fs.readFileSync(annotationFile(geminiDir, id), 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+// AGY§8
+export async function readAgyConversationTitle(
+  geminiDir: string,
+  conversationId: string
+): Promise<string | undefined> {
+  const db = summariesDb(geminiDir)
+  if (fs.existsSync(db)) {
+    let sqlite: InstanceType<typeof import('node:sqlite').DatabaseSync> | undefined
+    try {
+      const { DatabaseSync } = await import('node:sqlite')
+      sqlite = new DatabaseSync(db, { readOnly: true })
+      const row = sqlite
+        .prepare('select title from conversation_summaries where conversation_id = ?')
+        .get(conversationId) as { title?: unknown } | undefined
+      if (typeof row?.title === 'string' && row.title) return row.title
+    } catch {
+    } finally {
+      sqlite?.close()
+    }
+  }
+  return readAnnotationTitle(geminiDir, conversationId)
+}
+
 export interface SummaryRow {
   conversation_id: unknown
   title: unknown
@@ -42,6 +142,8 @@ export interface SummaryRow {
   last_modified_time: unknown
   step_count: unknown
   born?: unknown
+  touched?: unknown
+  annotation?: unknown
 }
 
 const seconds = (ms: number): number => Math.floor(ms / 1000)
@@ -78,8 +180,7 @@ function firstFolder(uris: unknown): string | undefined {
 export const TOP_LEVEL_ROWS = `select conversation_id, title, preview, workspace_uris, last_modified_time, step_count
   from conversation_summaries
   where (parent_conversation_id is null or parent_conversation_id = '')
-    and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')
-    and step_count > 0`
+    and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')`
 
 const MAX_ANCESTOR_HOPS = 16
 
@@ -148,6 +249,14 @@ export async function ancestryOfAgyConversation(
   }
 }
 
+// AGY§8
+function readStepsWithoutSummary(row: SummaryRow, geminiDir: string, id: string): boolean {
+  const transcript = fs.statSync(agyTranscript(geminiDir, id), { throwIfNoEntry: false })
+  if (!transcript?.size) return false
+  row.touched = transcript.mtimeMs
+  return true
+}
+
 export async function listAgyConversations(geminiDir: string): Promise<HistoryEntry[]> {
   const db = summariesDb(geminiDir)
   if (!fs.existsSync(db)) return []
@@ -160,12 +269,14 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
     sqlite.close()
   }
   const kept = rows.filter((row) => {
-    if (typeof row.conversation_id !== 'string') return false
-    const st = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
-      throwIfNoEntry: false
-    })
-    if (st) row.born = st.birthtimeMs || st.ctimeMs
-    return !!st
+    const id = row.conversation_id
+    if (typeof id !== 'string') return false
+    const st = fs.statSync(conversationDb(geminiDir, id), { throwIfNoEntry: false })
+    if (!st) return false
+    if (!(Number(row.step_count) > 0) && !readStepsWithoutSummary(row, geminiDir, id)) return false
+    row.born = st.birthtimeMs || st.ctimeMs
+    if (!row.title) row.title = readAnnotationTitle(geminiDir, id)
+    return true
   })
   return historyEntries(kept)
 }
@@ -175,12 +286,15 @@ export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
     const id = row.conversation_id
     const cwd = firstFolder(row.workspace_uris)
     if (typeof id !== 'string' || !id || !cwd) return []
-    const updatedAt = timeOf(row.last_modified_time)
+    const touched = typeof row.touched === 'number' ? seconds(row.touched) : undefined
+    const updatedAt = timeOf(row.last_modified_time) ?? touched
     const born = typeof row.born === 'number' ? row.born : undefined
+    const annotated =
+      typeof row.annotation === 'string' ? parseAnnotationTitle(row.annotation) : undefined
     const entry: HistoryEntry = {
       id,
       cwd,
-      name: typeof row.title === 'string' && row.title ? row.title : null,
+      name: (typeof row.title === 'string' && row.title) || annotated || null,
       preview: typeof row.preview === 'string' ? row.preview : undefined,
       createdAt: born ? seconds(born) : updatedAt,
       updatedAt
@@ -192,7 +306,8 @@ export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
 // AGY§8
 export const AGY_LIST_JS = `import fs from 'fs'
 import { DatabaseSync } from 'node:sqlite'
-const [db, sql, conversations] = process.argv.slice(2)
+const [dir, sql] = process.argv.slice(2)
+const db = dir + '/conversation_summaries.db'
 let rows = []
 if (fs.existsSync(db)) {
   const sqlite = new DatabaseSync(db, { readOnly: true })
@@ -202,10 +317,23 @@ if (fs.existsSync(db)) {
     sqlite.close()
   }
 }
+const stepsWithoutSummary = (row) => {
+  const id = row.conversation_id
+  const transcript = fs.statSync(dir + '/brain/' + id + '/${AGY_LOGS_FOLDER}/logs/transcript.jsonl')
+  if (transcript.size === 0) return false
+  row.touched = transcript.mtimeMs
+  return true
+}
 rows = rows.filter((row) => {
   try {
-    const st = fs.statSync(conversations + '/' + row.conversation_id + '.db')
+    const st = fs.statSync(dir + '/conversations/' + row.conversation_id + '.db')
+    if (!(row.step_count > 0) && !stepsWithoutSummary(row)) return false
     row.born = st.birthtimeMs || st.ctimeMs
+    if (!row.title) {
+      try {
+        row.annotation = fs.readFileSync(dir + '/annotations/' + row.conversation_id + '.pbtxt', 'utf8')
+      } catch {}
+    }
     return true
   } catch {
     return false

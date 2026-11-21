@@ -84,6 +84,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
     const findFiles = (): Promise<void> => clickAppMenuItem(app, page, 'find-files')
     const searchInput = page.locator('.wb-panel .ft-search-input')
 
+    await waitBooted(page)
     await findFiles()
     await expect(searchInput).toBeFocused()
     await expect(page.locator(WELCOME_PAGE)).toBeVisible()

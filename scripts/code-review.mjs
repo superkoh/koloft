@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process'
 
 // ADR-0040
-const RUNS = 3
-const LEVEL = 'medium'
+const RUNS = 2
+const LEVEL = 'high'
 const MODEL = 'claude-opus-5-5'
-const RUN_TIME_LIMIT_MINUTES = 15
+const RUN_TIME_LIMIT_MINUTES = 25
 const PARENT_SESSION_VARS = [
   'CLAUDECODE',
   'CLAUDE_EFFORT',
@@ -22,6 +22,9 @@ function freshSessionEnv() {
   }
   return env
 }
+
+// CC§20
+const holdsTheFindingsBlock = (text) => text.includes('```json')
 
 // CC§20
 function review(n) {
@@ -56,14 +59,21 @@ function review(n) {
       try {
         result = JSON.parse(stdout.trim().split('\n').at(-1))
       } catch {}
-      if (typeof result?.result === 'string' && !result.is_error) {
-        console.log(`${head}\n\n${result.result}\n`)
+      const answer = typeof result?.result === 'string' ? result.result : ''
+      if (!result?.is_error && holdsTheFindingsBlock(answer)) {
+        console.log(`${head}\n\n${answer}\n`)
         return resolve(true)
       }
       const why = child.killed
         ? `stopped at the ${RUN_TIME_LIMIT_MINUTES}-minute limit`
-        : `exit ${code ?? signal}`
-      console.log(`${head} failed (${why})\n\n${(result?.result ?? (stderr || stdout)).trim()}\n`)
+        : code !== 0
+          ? `exit ${code ?? signal}`
+          : !result
+            ? 'no result line'
+            : result.is_error
+              ? 'claude reported an error'
+              : 'its answer holds no findings block'
+      console.log(`${head} failed (${why})\n\n${(answer || stderr || stdout).trim()}\n`)
       resolve(false)
     })
   })

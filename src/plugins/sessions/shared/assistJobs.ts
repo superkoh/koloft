@@ -1,7 +1,7 @@
 import type { PluginAssistJob } from '@core/plugin'
 import { SMALL_AND_QUICK } from '@core/assistModels'
 
-export const ASSIST_JOBS: readonly PluginAssistJob[] = [
+export const ASSIST_JOBS = [
   {
     id: 'title',
     name: 'Name a new session',
@@ -26,4 +26,6 @@ export const ASSIST_JOBS: readonly PluginAssistJob[] = [
       agy: { model: 'gemini-4-argon', effort: 'medium' }
     }
   }
-]
+] as const satisfies readonly PluginAssistJob[]
+
+export type SessionsAssistJobId = (typeof ASSIST_JOBS)[number]['id']

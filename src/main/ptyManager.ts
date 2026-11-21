@@ -10,6 +10,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
+import { MUSE_HOOKS_ENV } from './museHooks'
 import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
@@ -43,6 +44,7 @@ interface CreateArgs {
   argv?: string[]
   aboveItsTools?: boolean
   processEnv?: NodeJS.ProcessEnv
+  envSetForThisTab?: Record<string, string>
   koloftShim: false | { hookSettings(tabId: string): string | undefined }
   finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
@@ -233,10 +235,14 @@ export class PtyManager extends EventEmitter {
     ) {
       env.LANG = 'en_US.UTF-8'
     }
-    // CC§9 PLATFORM§2
+    // CC§9 AGY§9 AGY§25 PLATFORM§2
     for (const key of Object.keys(env)) {
       if (
         key.startsWith('CLAUDE_CODE_') ||
+        key.startsWith('ANTIGRAVITY_') ||
+        ((args.kind !== 'agy' || !args.processEnv) &&
+          (key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||
+        ((args.kind !== 'muse' || !args.processEnv) && key === MUSE_HOOKS_ENV) ||
         key === 'CLAUDECODE' ||
         key === 'CLAUDE_EFFORT' ||
         key === 'CLAUDE_JOB_DIR' ||
@@ -248,6 +254,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AUX_TITLE' ||
         key === 'KOLOFT_SESSION_DIR' ||
         key === 'KOLOFT_OPEN_DIR' ||
+        key === 'KOLOFT_PICK_DIR' ||
         key === 'KOLOFT_HOOK_SETTINGS' ||
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
@@ -259,6 +266,10 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_OWNER_TEXT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
+        key === 'KOLOFT_CODEX_SAID' ||
+        key === 'KOLOFT_CODEX_DISCORD_SAID' ||
+        key === 'KOLOFT_CODEX_REPLY_LANGUAGE' ||
+        key === 'KOLOFT_SHELL_WROTE' ||
         key === OWNING_TAB_ENV ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
@@ -298,6 +309,7 @@ export class PtyManager extends EventEmitter {
         if (v !== undefined) env[k] = v
       }
     }
+    if (args.envSetForThisTab) Object.assign(env, args.envSetForThisTab)
 
     if (args.finishEnv) {
       env = Object.fromEntries(

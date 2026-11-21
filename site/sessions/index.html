@@ -150,10 +150,15 @@
             and for a <a href="../scheduled/">scheduled job</a>, for each part it leaves on
             <code>Default</code> or <code>Same as usual</code>. A resume, a restart and a session an
             agent starts do not take it. If the model does not take that thinking level, the session
-            starts without it. The same box has a place for rules: how this folder's agents pick the
-            model and thinking of a session they start (see <a href="../agents/">agents</a>). Left
-            empty, they use Koloft's own pick. Every agent gets this, on your Mac and in a
-            <a href="../remote/">remote folder</a>.
+            starts without it. For Codex and Antigravity, your account may not have a model you
+            picked from the list. Then the session starts on the next model down (or on the agent's
+            own model), at the highest thinking level that model takes up to the one you picked (or
+            with none), and a short note says so, such as
+            <code>This account has no carbon model, so it runs on gemini-4-neon.</code> A model name
+            that is not in the list is not checked. The same box has a place for rules: how this
+            folder's agents pick the model and thinking of a session they start (see
+            <a href="../agents/">agents</a>). Left empty, they use Koloft's own pick. Every agent
+            gets this, on your Mac and in a <a href="../remote/">remote folder</a>.
           </li>
           <li id="instructions">
             Last in the <code>Session defaults…</code> box is <code>Instructions</code>: write what
@@ -166,6 +171,25 @@
             the text it started with. Where the project's own <code>AGENTS.md</code> or
             <code>CLAUDE.md</code> says otherwise, an agent may follow that file instead. The rules
             and the instructions share one limit of 10,000 bytes; the box shows how much is left.
+          </li>
+          <li id="every-workspace">
+            For a rule every project should follow, open Settings ▸ Sessions, find
+            <code>Instructions for every workspace</code> and click <code>Edit</code>. Each new
+            session in each folder gets these first, then that folder's own
+            <code>Instructions</code>. This holds for every agent, on your Mac and in a
+            <a href="../remote/">remote folder</a>, but not for your butler or the helpers it starts
+            in its own folder. To keep one folder out, open its <code>Session defaults…</code> and
+            pick <code>Leave them out</code> under <code>Instructions for every workspace</code>.
+          </li>
+          <li id="instructions-ask">
+            Tell a session to remember a rule ("from now on, always …") and its agent can propose
+            that line for its folder's instructions, or for every workspace's. A
+            <code>Change the instructions?</code> box opens over that session's terminal, showing
+            who wants the change and the lines it adds or removes. Nothing changes until you click
+            <code>Change them</code>; <code>Don't change</code> (or <kbd>Esc</kbd>) leaves the text
+            as it was. While you are away, the same question can come to
+            <a href="../discord/#instructions-card">Discord</a>. Every agent can do this, on your
+            Mac and in a remote folder.
           </li>
           <li>Click an old row to resume that session.</li>
           <li id="sleep">

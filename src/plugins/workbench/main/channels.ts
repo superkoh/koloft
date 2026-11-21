@@ -121,7 +121,7 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   ipc.handle(CHANNELS.gitChanges, (root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? files(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
-      : { base: null, status: {}, numstat: {}, missing: false }
+      : { base: null, head: null, status: {}, numstat: {}, missing: false }
   )
   // PLATFORM§30
   ipc.handle(CHANNELS.gitHeadLog, async (root: string) => {

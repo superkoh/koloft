@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BackendSessionInfo, BaseChoice, GitNumstatMap, GitStatusMap } from '@shared/types'
+import type {
+  BackendSessionInfo,
+  BaseChoice,
+  GitHead,
+  GitNumstatMap,
+  GitStatusMap
+} from '@shared/types'
 
 export interface GitChangeSet {
   git: GitStatusMap
   numstat: GitNumstatMap
   base: string | null | undefined
+  head: GitHead | null
   rootMissing: boolean
   watchDead: boolean
   firstReadFailed: boolean
@@ -58,6 +65,7 @@ export function useGitChangeSet(
   const [git, setGit] = useState<GitStatusMap>({})
   const [numstat, setNumstat] = useState<GitNumstatMap>({})
   const [base, setBase] = useState<string | null | undefined>(undefined)
+  const [head, setHead] = useState<GitHead | null>(null)
   const [rootMissing, setRootMissing] = useState(false)
   const [watchDead, setWatchDead] = useState(false)
   const [readFailed, setReadFailed] = useState(false)
@@ -72,6 +80,7 @@ export function useGitChangeSet(
     setGit({})
     setNumstat({})
     setBase(undefined)
+    setHead(null)
     setRootMissing(false)
     setWatchDead(false)
     setReadFailed(false)
@@ -82,6 +91,7 @@ export function useGitChangeSet(
     setGit({})
     setNumstat({})
     setBase(undefined)
+    setHead(null)
     setReadFailed(false)
   }, [active])
 
@@ -96,6 +106,7 @@ export function useGitChangeSet(
         .then((r) => {
           if (mine !== seq) return
           setBase(r.base)
+          setHead((prev) => (sameHead(prev, r.head) ? prev : r.head))
           setGit((prev) => (sameMap(prev, r.status, (x, y) => x === y) ? prev : r.status))
           setNumstat((prev) =>
             sameMap(prev, r.numstat, (x, y) => x.added === y.added && x.removed === y.removed)
@@ -157,5 +168,12 @@ export function useGitChangeSet(
   }, [active, headLogOfRoot])
 
   const firstReadFailed = readFailed && base === undefined
-  return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }
+  return { git, numstat, base, head, rootMissing, watchDead, firstReadFailed, reread }
+}
+
+export const branchOf = (head: GitHead | null): string | null =>
+  head && 'branch' in head ? head.branch : null
+
+function sameHead(a: GitHead | null, b: GitHead | null): boolean {
+  return a === b || (!!a && !!b && branchOf(a) === branchOf(b))
 }

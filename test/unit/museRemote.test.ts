@@ -11,7 +11,7 @@ import {
   OWNER_ASLEEP_FILE,
   ownerAsleepMarker,
   seedHandedOverOwnerWords
-} from '../../src/main/hooks'
+} from '../../src/plugins/sessions/main/hooks'
 import { OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/api'
 import {
   A_HELPER_HAS_IT,
@@ -181,6 +181,33 @@ describe.skipIf(!PYTHON_WITH_PTY)(
         `rename-session -t %7 k-${SID}\n`
       )
     }, 15_000)
+
+    // ADR-0044
+    it("puts the name the session still has in the tab's tmux name file when the rename fails, so a reconnect and a close reach this tab's session, not the one that has the new name", async () => {
+      const failingRename = (m: { bin: string }, sessionNamedNow: string): void =>
+        fs.writeFileSync(
+          path.join(m.bin, 'tmux'),
+          `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HOME/tmux-calls"\n[ "$1" = rename-session ] && exit 1\n[ "$1" = display-message ] && echo '${sessionNamedNow}'\nexit 0\n`,
+          { mode: 0o755 }
+        )
+      const nameFile = (m: { home: string }): string =>
+        path.join(m.home, '.koloft', 'tabs', 'pty-1.tmux')
+
+      const named = machine()
+      installFakeMuse(named)
+      failingRename(named, 'k-before')
+      await runWrapper(named, [])
+      expect(fs.readFileSync(path.join(named.home, 'tmux-calls'), 'utf8')).toContain(
+        `rename-session -t %7 k-${SID}\n`
+      )
+      expect(fs.readFileSync(nameFile(named), 'utf8')).toBe('k-before')
+
+      const unnamed = machine()
+      installFakeMuse(unnamed)
+      failingRename(unnamed, '')
+      await runWrapper(unnamed, [])
+      expect(fs.existsSync(nameFile(unnamed))).toBe(false)
+    }, 20_000)
 
     it("says a session it binds to is a /fork copy when the session's log starts with the record Muse writes for one", async () => {
       const m = machine()

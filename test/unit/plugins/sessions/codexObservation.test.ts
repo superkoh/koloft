@@ -1,0 +1,984 @@
+import { describe, expect, it } from 'vitest'
+import {
+  CodexObservation,
+  userThread,
+  type CodexEvent
+} from '../../../../src/plugins/sessions/main/codexObservation'
+import {
+  SessionRuntime,
+  turnOf,
+  type StatusEdge
+} from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { AttentionTracker } from '../../../../src/plugins/sessions/main/attention'
+import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../../../src/shared/types'
+
+const A = '11111111-1111-4111-8111-111111111111'
+const B = '22222222-2222-4222-8222-222222222222'
+const thread = (id = A) => ({ id, cwd: '/repo', status: { type: 'idle' }, source: 'cli' })
+
+const TAB = 'tab'
+
+function fixture() {
+  const runtime = new SessionRuntime()
+  const events: CodexEvent[] = []
+  const edges: StatusEdge[] = []
+  const raised: AttentionKind[] = []
+  const attention = new AttentionTracker((_pending, event) => {
+    if (event) raised.push(event.kind)
+  })
+  runtime.on('status', (edge: StatusEdge) => {
+    edges.push(edge)
+    attention.onStatusChange(edge.tabId, edge.prev, edge.next)
+  })
+  const observer = new CodexObservation((event) => {
+    events.push(event)
+    if (event.type === 'bound') return runtime.forget(TAB)
+    const turn = turnOf(event)
+    if (turn) runtime.recordTurn(TAB, turn)
+    else if (event.type === 'background-changed') runtime.setBackground(TAB, event.items)
+  })
+  const bound = () =>
+    events.flatMap((e) => (e.type === 'bound' ? [{ thread: e.thread, change: e.change }] : []))
+  const background = (): BackgroundItem[] | undefined =>
+    events.flatMap((e) => (e.type === 'background-changed' ? [e.items] : [])).at(-1)
+  const status = () => runtime.statusOf(TAB)
+  const files = () => events.flatMap((e) => (e.type === 'files-changed' ? [e] : [])).at(-1)
+  const turnDone = () => raised.filter((kind) => kind === 'turn-done').length
+  const bind = (id = A, requestId = 1, method = 'thread/start', cwd?: string) => {
+    observer.receive('client', { id: requestId, method, params: { cwd } })
+    observer.receive('server', { id: requestId, result: { thread: thread(id) } })
+  }
+  const server = (method: string, params: object, id?: number) =>
+    observer.receive('server', { id, method, params: { threadId: A, ...params } })
+  return {
+    events,
+    edges,
+    raised,
+    attention,
+    observer,
+    bind,
+    server,
+    bound,
+    background,
+    files,
+    status,
+    turnDone
+  }
+}
+
+// CODEX§17 CODEX§21
+describe('CodexObservation: messages Koloft queued', () => {
+  const userMessage = (clientId: string) => ({
+    item: { type: 'userMessage', id: `u-${clientId}`, clientId, content: [] }
+  })
+
+  it('are still queued through the idle moment between two queued turns, and gone once the last one is taken', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-a', 'a')
+    f.observer.queuedMessage('koloft-b', 'b')
+    f.server('turn/completed', { turn: { id: 't1' } })
+    expect(f.observer.queueDrained()).toBe(false)
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/started', userMessage('koloft-a'))
+    expect(f.observer.queueDrained()).toBe(false)
+    f.server('turn/started', { turn: { id: 't3' } })
+    f.server('item/started', userMessage('koloft-b'))
+    expect(f.observer.queueDrained()).toBe(true)
+  })
+
+  it('a refused one, or one left on a thread the session moved away from, does not hold the queue open', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-a', 'a')
+    f.observer.queueRefused('koloft-a')
+    expect(f.observer.queueDrained()).toBe(true)
+    f.observer.queuedMessage('koloft-b', 'b')
+    f.bind(B, 2)
+    expect(f.observer.queueDrained()).toBe(true)
+  })
+
+  // CODEX§34
+  it('once an app-server dies, only a message whose turn began and never ended is handed back to send again; one still in Codex queue, one whose turn ended, even interrupted, is not', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-done', 'answered')
+    f.observer.queuedMessage('koloft-stopped', 'stopped by the owner')
+    f.observer.queuedMessage('koloft-cut', 'the report')
+    f.observer.queuedMessage('koloft-waiting', 'still queued')
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-done'), turnId: 't1' })
+    f.server('turn/completed', { turn: { id: 't1', status: 'completed' } })
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/started', { ...userMessage('koloft-stopped'), turnId: 't2' })
+    f.server('turn/completed', { turn: { id: 't2', status: 'interrupted' } })
+    f.server('turn/started', { turn: { id: 't3' } })
+    f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't3' })
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+    f.observer.serverReplaced()
+    expect(f.observer.takeQueuedCutOffByAReplacedServer().map((cut) => cut.text)).toEqual([
+      'the report'
+    ])
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+    expect(f.observer.queueDrained()).toBe(false)
+  })
+
+  // CODEX§34
+  it('a message already sent again once comes back marked as such when that turn is cut off too', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-again', 'the report', true)
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-again'), turnId: 't1' })
+    f.observer.serverReplaced()
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([
+      expect.objectContaining({ text: 'the report', sentAgain: true })
+    ])
+  })
+
+  // CODEX§34
+  it('a message whose turn began on a thread the session then left is not sent again', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-cut', 'the report')
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't1' })
+    f.observer.serverReplaced()
+    f.bind(B, 2)
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+  })
+})
+
+// CODEX§34
+describe('CodexObservation: a TUI that reconnects', () => {
+  it('re-opening the thread it already shows keeps the running turn, so its end is still seen and what it said still counts', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/completed', {
+      item: { type: 'userMessage', id: 'u1', content: [{ type: 'text', text: 'hello' }] }
+    })
+    f.observer.receive('client', { id: 2, method: 'thread/resume', params: { threadId: A } })
+    f.observer.receive('server', {
+      id: 2,
+      result: { thread: { ...thread(), status: { type: 'active', activeFlags: [] }, turns: [] } }
+    })
+    expect(f.status()).toBe('working')
+    f.server('item/completed', { item: { type: 'agentMessage', id: 'a1', text: 'hi there' } })
+    f.server('thread/status/changed', { status: { type: 'idle' } })
+    f.server('turn/completed', { turn: { id: 't1', status: 'completed' } })
+    expect(f.status()).toBe('waiting')
+    const ended = f.events.flatMap((e) => (e.type === 'turn-ended' ? [e.turn] : []))
+    expect(ended.map((turn) => [turn.said.map((line) => line.text), turn.reply])).toEqual([
+      [['hello'], 'hi there']
+    ])
+  })
+
+  it('once a new app-server took over, the turn the old one was running no longer counts as working, even before the screen is back', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    expect(f.status()).toBe('working')
+    f.observer.serverReplaced()
+    expect(f.status()).toBe('waiting')
+  })
+})
+
+describe('CodexObservation', () => {
+  it('binds only foreground user threads with valid identities', () => {
+    for (const extra of [
+      { ephemeral: true },
+      { parentThreadId: B },
+      { threadSource: 'system' },
+      { canAcceptDirectInput: false },
+      { source: { subAgent: 'review' } },
+      { id: 'not-a-uuid' },
+      { cwd: 'relative' }
+    ]) {
+      expect(userThread({ ...thread(), ...extra })).toBeNull()
+    }
+    expect(userThread({ ...thread(), forkedFromId: B })).not.toBeNull()
+  })
+
+  it('distinguishes replacement from switching and uses the requested runtime cwd', () => {
+    const f = fixture()
+    f.bind()
+    f.bind(B, 2, 'thread/resume', '/chosen-checkout')
+    expect(f.bound().map((b) => b.change)).toEqual(['replace', 'switch'])
+    expect(f.bound().at(-1)?.thread.cwd).toBe('/chosen-checkout')
+  })
+
+  it('does not bind a delayed response over a newer foreground switch', () => {
+    const f = fixture()
+    f.observer.receive('client', { id: 1, method: 'thread/start' })
+    f.observer.receive('client', { id: 2, method: 'thread/resume' })
+    f.observer.receive('server', { id: 2, result: { thread: thread(B) } })
+    f.observer.receive('server', { id: 1, result: { thread: thread() } })
+    expect(f.bound()).toHaveLength(1)
+    expect(f.bound()[0].thread.id).toBe(B)
+  })
+
+  it('uses the effective server cwd and model rather than the stored thread metadata', () => {
+    const f = fixture()
+    f.observer.receive('client', { id: 1, method: 'thread/resume', params: { cwd: '/requested' } })
+    f.observer.receive('server', {
+      id: 1,
+      result: { cwd: '/effective', model: 'model-from-runtime', thread: thread() }
+    })
+    expect(f.bound().at(-1)?.thread).toMatchObject({
+      cwd: '/effective',
+      model: 'model-from-runtime'
+    })
+  })
+
+  it('requires successful current unsubscribe before recognizing native exit', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.receive('client', { id: 2, method: 'thread/unsubscribe', params: { threadId: A } })
+    expect(f.observer.unsubscribed).toBe(false)
+    f.observer.receive('server', { id: 2, error: { message: 'refused' } })
+    expect(f.observer.unsubscribed).toBe(false)
+    f.observer.receive('client', { id: 3, method: 'thread/unsubscribe', params: { threadId: A } })
+    f.observer.receive('server', { id: 3, result: { status: 'unsubscribed' } })
+    expect(f.observer.unsubscribed).toBe(true)
+    f.observer.receive('client', { id: 4, method: 'thread/resume' })
+    f.observer.receive('server', { id: 4, error: { message: 'failed' } })
+    expect(f.observer.unsubscribed).toBe(false)
+  })
+
+  it('ignores old turn completions after A to B to A without clearing current attention', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'old' } })
+    f.bind(B, 2, 'thread/resume')
+    f.bind(A, 3, 'thread/resume')
+    f.server('turn/started', { turn: { id: 'current' } })
+    f.server('item/commandExecution/requestApproval', {}, 50)
+    const edges = f.edges.length
+    f.server('turn/completed', { turn: { id: 'old', status: 'completed' } })
+    expect(f.edges).toHaveLength(edges)
+    expect(f.status()).toBe('approval')
+    expect(f.attention.list().map((e) => e.kind)).toEqual(['approval'])
+  })
+
+  it('a tool question holds across status updates and marks the row as needing you, as an approval or a Claude question does, until it is answered', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'turn' } })
+    f.server('item/tool/requestUserInput', {}, 50)
+    f.server('thread/status/changed', { status: { type: 'active' } })
+    expect(f.status()).toBe('approval')
+    expect(f.attention.list()).toHaveLength(1)
+    f.observer.receive('client', { id: 50, result: { answers: {} } })
+    expect(f.status()).toBe('working')
+  })
+
+  // CODEX§20
+  it('a tool question the TUI lets go with no answer stays marked as unanswered, through the end of that turn and a resume of the same thread, until the next turn starts or a later question is answered; an answered one or an error reply never is', () => {
+    const f = fixture()
+    f.bind()
+    const ask = (id: number) =>
+      f.server('item/tool/requestUserInput', { questions: [{ id: 'colour' }] }, id)
+    const reply = (id: number, frame: object) => f.observer.receive('client', { id, ...frame })
+    const green = { result: { answers: { colour: { answers: ['Green'] } } } }
+    f.server('turn/started', { turn: { id: 'asked' } })
+    ask(0)
+    reply(0, green)
+    ask(1)
+    reply(1, { error: { code: -1, message: 'failed' } })
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+
+    ask(2)
+    reply(2, { result: { answers: {} } })
+    f.server('turn/completed', { turn: { id: 'asked' } })
+    f.bind(A, 9, 'thread/resume')
+    expect(f.observer.questionWentUnanswered()).toBe(true)
+
+    f.server('turn/started', { turn: { id: 'owner wrote' } })
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+    ask(3)
+    reply(3, { result: { answers: {} } })
+    ask(4)
+    reply(4, green)
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+  })
+
+  // CODEX§20
+  it('holds an open question only in the shapes that were probed, questions with options or one enum field with options, until the TUI answers it', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'turn' } })
+    const colours = [
+      { label: 'Red', description: 'Choose red.' },
+      { label: 'Green', description: 'Choose green.' }
+    ]
+    const asked = { question: 'Which colour do you prefer?', options: colours }
+    f.server(
+      'item/tool/requestUserInput',
+      {
+        questions: [
+          {
+            id: 'colour',
+            header: 'Colour',
+            question: asked.question,
+            isOther: true,
+            options: colours
+          }
+        ]
+      },
+      0
+    )
+    expect(f.observer.openQuestion()).toEqual({ id: 0, questions: [{ ...asked, ownWords: true }] })
+    f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
+    expect(f.observer.openQuestion()).toBeUndefined()
+
+    const enumField = {
+      type: 'object',
+      properties: { colour: { type: 'string', enum: ['Red', 'Green'] } }
+    }
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'form', message: 'Which?', requestedSchema: enumField },
+      1
+    )
+    expect(f.observer.openQuestion()).toEqual({
+      id: 1,
+      questions: [{ question: 'Which?', options: [{ label: 'Red' }, { label: 'Green' }] }]
+    })
+    f.observer.receive('client', {
+      id: 1,
+      result: { action: 'accept', content: { colour: 'Red' } }
+    })
+
+    f.server(
+      'item/tool/requestUserInput',
+      {
+        questions: [
+          { id: 'a', question: 'A?', isOther: true, options: colours },
+          { id: 'b', question: 'B?', options: colours }
+        ]
+      },
+      2
+    )
+    expect(f.observer.openQuestion()).toEqual({
+      id: 2,
+      questions: [
+        { question: 'A?', options: colours, ownWords: true },
+        { question: 'B?', options: colours }
+      ]
+    })
+    f.observer.receive('client', {
+      id: 2,
+      result: { answers: { a: { answers: ['Red'] }, b: { answers: ['Green'] } } }
+    })
+    f.server(
+      'item/tool/requestUserInput',
+      { questions: [{ id: 'free', question: 'Name?', options: null }] },
+      3
+    )
+    const twoFields = {
+      type: 'object',
+      properties: { a: { type: 'string', enum: ['x'] }, b: { type: 'string' } }
+    }
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'form', message: 'Two?', requestedSchema: twoFields },
+      4
+    )
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'url', message: 'Open?', url: 'https://x' },
+      5
+    )
+    expect(f.observer.openQuestion()).toBeUndefined()
+    expect(f.status()).toBe('approval')
+  })
+
+  it('notifies once per live turn that ends, interrupted or completed, and never for a replayed completion', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'first' } })
+    f.server('turn/completed', { turn: { id: 'first', status: 'interrupted' } })
+    f.server('turn/started', { turn: { id: 'second' } })
+    f.server('turn/completed', { turn: { id: 'second', status: 'completed' } })
+    f.server('turn/completed', { turn: { id: 'second', status: 'completed' } })
+    expect(f.turnDone()).toBe(2)
+  })
+
+  // CODEX§13
+  it('counts cached input apart from fresh input, prices the tokens by model, and reports context as a ratio', () => {
+    const f = fixture()
+    const usage = () => f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : []))
+    f.observer.receive('client', { id: 1, method: 'thread/start', params: {} })
+    f.observer.receive('server', { id: 1, result: { thread: thread(), model: 'gpt-5' } })
+    f.server('thread/tokenUsage/updated', { tokenUsage: { total: {}, last: {} } })
+    expect(usage()).toEqual([])
+    f.server('thread/tokenUsage/updated', {
+      tokenUsage: {
+        total: { inputTokens: 1_000_000, outputTokens: 100_000, cachedInputTokens: 400_000 },
+        last: { totalTokens: 25 },
+        modelContextWindow: 100
+      }
+    })
+    const last = usage().at(-1)!
+    expect(last).toMatchObject({
+      inTok: 600_000,
+      cacheReadTok: 400_000,
+      ctxPct: 0.25,
+      cacheWriteTok: 0
+    })
+    expect(last.costUsd).toBeCloseTo(0.6 * 1.25 + 0.4 * 0.125 + 0.1 * 10)
+  })
+
+  // CODEX§13
+  it('prices each request above 272K input at the long-context price, counting a repeated frame once', () => {
+    const f = fixture()
+    const cost = () =>
+      f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : [])).at(-1)!.costUsd
+    f.observer.receive('client', { id: 1, method: 'thread/start', params: {} })
+    f.observer.receive('server', { id: 1, result: { thread: thread(), model: 'gpt-6.1-sol' } })
+    const short = { inputTokens: 100_000, cachedInputTokens: 0, outputTokens: 1000 }
+    f.server('thread/tokenUsage/updated', { tokenUsage: { total: short, last: short } })
+    expect(cost()).toBeCloseTo(0.1 * 2 + 0.001 * 10)
+    const long = { inputTokens: 300_000, cachedInputTokens: 100_000, outputTokens: 2000 }
+    const total = { inputTokens: 400_000, cachedInputTokens: 100_000, outputTokens: 3000 }
+    const frame = { tokenUsage: { total, last: long } }
+    f.server('thread/tokenUsage/updated', frame)
+    const shortTotal = 0.3 * 2 + 0.1 * 0.1 + 0.003 * 10
+    const surcharge = 0.2 * 4 + 0.1 * 0.2 + 0.002 * 15 - (0.2 * 2 + 0.1 * 0.1 + 0.002 * 10)
+    expect(cost()).toBeCloseTo(shortTotal + surcharge)
+    f.server('thread/tokenUsage/updated', frame)
+    expect(cost()).toBeCloseTo(shortTotal + surcharge)
+  })
+
+  it('leaves the cost out when the model has no known price', () => {
+    const f = fixture()
+    f.bind()
+    f.server('thread/tokenUsage/updated', {
+      tokenUsage: { total: { inputTokens: 50, outputTokens: 5, cachedInputTokens: 10 }, last: {} }
+    })
+    const last = f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : [])).at(-1)!
+    expect(last.inTok).toBe(40)
+    expect(last.costUsd).toBeUndefined()
+  })
+
+  // CODEX§4
+  it('keeps a main turn working until its spawned child finishes, without rebinding to the child', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('item/completed', {
+      item: {
+        type: 'collabAgentToolCall',
+        id: 'spawn',
+        tool: 'spawnAgent',
+        status: 'completed',
+        senderThreadId: A,
+        receiverThreadIds: [B],
+        agentsStates: { [B]: { status: 'pendingInit' } }
+      }
+    })
+    f.server('thread/status/changed', { threadId: B, status: { type: 'active', activeFlags: [] } })
+    f.server('turn/started', { threadId: B, turn: { id: 'child' } })
+    f.server('thread/status/changed', { status: { type: 'idle' } })
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    expect(f.status()).toBe('working')
+    expect(f.background()).toEqual([expect.objectContaining({ kind: 'agent', state: 'working' })])
+    expect(f.turnDone()).toBe(0)
+    f.server('thread/status/changed', { threadId: B, status: { type: 'idle' } })
+    f.server('turn/completed', { threadId: B, turn: { id: 'child', status: 'completed' } })
+    expect(f.status()).toBe('waiting')
+    expect(f.turnDone()).toBe(1)
+    expect(f.bound()).toHaveLength(1)
+  })
+
+  // CODEX§4
+  it('keeps a main turn working until a child announced as sub-agent activity finishes, in the order Codex sends it', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    const activity = (kind: string) => ({
+      item: { type: 'subAgentActivity', id: 'call', kind, agentThreadId: B, agentPath: '/root/x' }
+    })
+    f.server('item/started', activity('started'))
+    f.server('thread/status/changed', { threadId: B, status: { type: 'idle' } })
+    f.server('item/completed', activity('started'))
+    f.server('thread/status/changed', { threadId: B, status: { type: 'active', activeFlags: [] } })
+    f.server('turn/started', { threadId: B, turn: { id: 'child' } })
+    f.server('thread/status/changed', { status: { type: 'idle' } })
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    expect(f.status()).toBe('working')
+    expect(f.background()).toEqual([expect.objectContaining({ kind: 'agent', state: 'working' })])
+    expect(f.turnDone()).toBe(0)
+    f.server('item/started', activity('completed'))
+    f.server('thread/status/changed', { threadId: B, status: { type: 'idle' } })
+    f.server('turn/completed', { threadId: B, turn: { id: 'child', status: 'completed' } })
+    f.server('item/completed', activity('completed'))
+    expect(f.status()).toBe('waiting')
+    expect(f.background()).toEqual([])
+    expect(f.turnDone()).toBe(1)
+    expect(f.bound()).toHaveLength(1)
+  })
+
+  // CODEX§4
+  it('names a child announced as sub-agent activity by the last part of its agent path', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('item/started', {
+      item: {
+        type: 'subAgentActivity',
+        id: 'call',
+        kind: 'started',
+        agentThreadId: B,
+        agentPath: '/root/plan/lint_checker'
+      }
+    })
+    expect(f.background()).toEqual([expect.objectContaining({ label: 'lint_checker' })])
+  })
+
+  it('shows a surviving command as unclassified background while the turn itself lands waiting', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    const command = {
+      type: 'commandExecution',
+      id: 'command',
+      command: 'sleep 12',
+      processId: '66395',
+      source: 'unifiedExecStartup',
+      status: 'inProgress'
+    }
+    f.server('item/started', { item: command, turnId: 'main' })
+    expect(f.background()).toEqual([])
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    expect(f.status()).toBe('waiting')
+    expect(f.background()).toEqual([
+      expect.objectContaining({ kind: 'command', label: 'sleep 12', state: 'unknown' })
+    ])
+    expect(f.turnDone()).toBe(1)
+    f.server('item/completed', {
+      item: { ...command, status: 'completed', exitCode: 0 },
+      turnId: 'main'
+    })
+    expect(f.background()).toEqual([])
+    expect(f.status()).toBe('waiting')
+    expect(f.turnDone()).toBe(1)
+  })
+
+  it('does not import arbitrary system-thread activity as a child or block completion', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('thread/status/changed', { threadId: B, status: { type: 'active' } })
+    f.server('item/started', {
+      threadId: B,
+      item: { type: 'commandExecution', id: 'other', command: 'unrelated', status: 'inProgress' }
+    })
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    expect(f.background()).toEqual([])
+    expect(f.turnDone()).toBe(1)
+  })
+
+  it('keeps child permission request zero pending when the parent turn completes', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('item/completed', {
+      item: {
+        type: 'collabAgentToolCall',
+        id: 'spawn',
+        tool: 'spawnAgent',
+        status: 'completed',
+        senderThreadId: A,
+        receiverThreadIds: [B],
+        agentsStates: { [B]: { status: 'running' } }
+      }
+    })
+    f.server('item/commandExecution/requestApproval', { threadId: B }, 0)
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    expect(f.status()).toBe('approval')
+    expect(f.raised.at(-1)).toBe('approval')
+    f.observer.receive('client', { id: 0, result: { decision: 'accept' } })
+    expect(f.status()).toBe('working')
+    expect(f.turnDone()).toBe(0)
+  })
+
+  it('does not let old background activity change the new foreground session or replay completion on return', () => {
+    const f = fixture()
+    const child = '33333333-3333-4333-8333-333333333333'
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('item/completed', {
+      item: {
+        type: 'collabAgentToolCall',
+        id: 'spawn',
+        tool: 'spawnAgent',
+        status: 'completed',
+        senderThreadId: A,
+        receiverThreadIds: [child],
+        agentsStates: { [child]: { status: 'running' } }
+      }
+    })
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    f.bind(B, 2, 'thread/resume')
+    const edges = f.edges.length
+    const raised = f.raised.length
+    f.server('thread/status/changed', { threadId: child, status: { type: 'idle' } })
+    expect(f.edges).toHaveLength(edges)
+    expect(f.raised).toHaveLength(raised)
+    f.bind(A, 3, 'thread/resume')
+    expect(f.background()).toEqual([expect.objectContaining({ state: 'waiting' })])
+    expect(f.turnDone()).toBe(0)
+  })
+
+  it('does not misreport a snapshot waiting for user input as work in progress', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    f.server('thread/status/changed', {
+      status: { type: 'active', activeFlags: ['waitingOnUserInput'] }
+    })
+    expect(f.status()).toBe('approval')
+  })
+
+  const patch = (status: string, changes: object[]) => ({
+    item: { type: 'fileChange', id: 'patch', status, changes }
+  })
+  const command = (command: string, commandActions: object[]) => ({
+    item: {
+      type: 'commandExecution',
+      id: 'cmd-' + command,
+      status: 'completed',
+      command: `/bin/zsh -lc '${command}'`,
+      cwd: '/repo',
+      commandActions
+    }
+  })
+
+  it('lists the files a patch wrote, with line counts, and a file a command read, from the item shapes Codex sends', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('completed', [
+        { path: '/repo/added.txt', kind: { type: 'add' }, diff: 'hi\n' },
+        {
+          path: '/repo/notes.txt',
+          kind: { type: 'update', move_path: null },
+          diff: '@@ -1 +1 @@\n-old line\n+new line\n'
+        }
+      ])
+    )
+    f.server(
+      'item/completed',
+      command('cat docs/a.md', [
+        { type: 'read', command: 'cat docs/a.md', name: 'a.md', path: '/repo/docs/a.md' }
+      ])
+    )
+    expect(f.files()).toEqual({
+      type: 'files-changed',
+      files: [
+        {
+          src: '/repo/added.txt',
+          label: 'added.txt',
+          access: 'wrote',
+          added: 1,
+          wroteAt: expect.any(Number)
+        },
+        {
+          src: '/repo/notes.txt',
+          label: 'notes.txt',
+          access: 'wrote',
+          added: 1,
+          removed: 1,
+          wroteAt: expect.any(Number)
+        },
+        { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
+      ],
+      lastTouched: '/repo/docs/a.md',
+      lastWritten: '/repo/notes.txt',
+      liveWrites: 1
+    })
+  })
+
+  it('says on the row what the session itself last finished, a command that ran and exited non-zero too (a failed read as the command it ran), a ready plan until the next turn starts, and nothing declined, stopped from outside, failed to apply, still running or from another thread', () => {
+    const f = fixture()
+    const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
+    const ended = (status: string, exitCode: number | null, run: string, actions?: object[]) => ({
+      item: {
+        ...command(run, actions ?? [{ type: 'unknown', command: run }]).item,
+        status,
+        exitCode
+      }
+    })
+    f.bind()
+    f.server('item/started', { item: { ...command('npm test', []).item, status: 'inProgress' } })
+    expect(did()).toEqual([])
+    f.server('item/completed', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
+    f.server('item/completed', ended('failed', 1, 'npm run lint'))
+    f.server(
+      'item/completed',
+      ended('failed', 1, 'cat missing.md', [{ type: 'read', path: '/repo/missing.md' }])
+    )
+    f.server('item/completed', ended('failed', -1, 'python3 -m http.server 18799'))
+    f.server('item/completed', ended('declined', null, 'rm -rf /'))
+    f.server(
+      'item/completed',
+      patch('completed', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/src/bar.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      patch('failed', [{ path: '/repo/src/baz.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/completed', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
+    f.server(
+      'item/completed',
+      command('cat a.md && rm -rf build', [
+        { type: 'read', path: '/repo/a.md' },
+        { type: 'unknown', command: 'rm -rf build' }
+      ])
+    )
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: A, item: { type: 'plan', id: 't-plan', text: '1. a\n2. b' } }
+    })
+    expect(did()).toEqual([
+      'Ran npm test',
+      'Ran npm run lint',
+      'Ran cat missing.md',
+      'Edited foo.ts',
+      'Read a.md',
+      'Ran cat a.md && rm -rf build',
+      PLAN_READY
+    ])
+    f.server('turn/started', { turn: { id: 'next' } })
+    expect(did().at(-1)).toBeUndefined()
+    f.server('turn/started', { turn: { id: 'another' } })
+    expect(did()).toHaveLength(8)
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: B, item: command('ls', [{ type: 'unknown', command: 'ls' }]).item }
+    })
+    expect(did()).toHaveLength(8)
+  })
+
+  it('a patch Codex asks to apply names the file it would change', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/started',
+      patch('inProgress', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/fileChange/requestApproval', { itemId: 'patch', reason: 'outside' }, 7)
+    expect(f.observer.openApproval()).toEqual({
+      id: 7,
+      file: '/repo/src/foo.ts',
+      reason: 'outside'
+    })
+  })
+
+  it('ignores a declined patch and a shell command that only writes through the shell', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      command('echo hello > b.txt', [{ type: 'unknown', command: 'echo hello > b.txt' }])
+    )
+    expect(f.files()?.files).toEqual([])
+  })
+
+  it('starts a fresh file list when the foreground session changes, empty until the new session touches a file (/clear)', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('completed', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'a\n' }])
+    )
+    f.bind(B, 2, 'thread/start')
+    expect(f.files()?.files).toEqual([])
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: {
+        threadId: B,
+        ...patch('completed', [{ path: '/repo/b.txt', kind: { type: 'add' }, diff: 'b\n' }])
+      }
+    })
+    expect(f.files()?.files.map((file) => file.src)).toEqual(['/repo/b.txt'])
+  })
+
+  it('lists the files of a resumed session from the old turns in the resume reply, as history rather than live writes', () => {
+    const f = fixture()
+    f.observer.receive('client', { id: 1, method: 'thread/resume', params: {} })
+    f.observer.receive('server', {
+      id: 1,
+      result: {
+        thread: {
+          ...thread(),
+          turns: [
+            {
+              id: 'old-turn',
+              status: 'completed',
+              items: [
+                { type: 'userMessage', id: 'u' },
+                patch('completed', [{ path: '/repo/old.txt', kind: { type: 'add' }, diff: 'x\n' }])
+                  .item,
+                command('cat docs/a.md', [
+                  { type: 'read', command: 'cat docs/a.md', name: 'a.md', path: '/repo/docs/a.md' }
+                ]).item
+              ]
+            }
+          ]
+        }
+      }
+    })
+    expect(f.files()).toEqual({
+      type: 'files-changed',
+      files: [
+        {
+          src: '/repo/old.txt',
+          label: 'old.txt',
+          access: 'wrote',
+          added: 1,
+          wroteAt: expect.any(Number)
+        },
+        { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
+      ],
+      lastTouched: '/repo/docs/a.md',
+      lastWritten: '/repo/old.txt',
+      liveWrites: 0
+    })
+  })
+
+  it('turns an open command Codex ran into an open request, but only one with a single target, like the open shim', () => {
+    const f = fixture()
+    f.bind()
+    const ran = (line: string, status = 'completed') =>
+      f.server('item/completed', {
+        item: {
+          ...command(line, [{ type: 'unknown', command: line }]).item,
+          status
+        }
+      })
+    ran('open ./report.html')
+    ran("open 'docs/a b.md'", 'failed')
+    ran('open https://example.test/x')
+    ran('open -a Safari page.html')
+    ran('open one.html two.html')
+    ran('open ./declined.html', 'declined')
+    ran('echo open ./not-a-command.html')
+    expect(f.events.flatMap((e) => (e.type === 'open' ? [e.target] : []))).toEqual([
+      '/repo/report.html',
+      '/repo/docs/a b.md',
+      'https://example.test/x'
+    ])
+  })
+
+  it("leaves an open to Koloft's open shim when the shim says it already asked, and opens it from the frame when the shim was blocked or never ran", () => {
+    const f = fixture()
+    f.bind()
+    const ran = (line: string, aggregatedOutput: string) =>
+      f.server('item/completed', {
+        item: {
+          ...command(line, [{ type: 'unknown', command: line }]).item,
+          status: 'completed',
+          aggregatedOutput
+        }
+      })
+    ran('open ./sent.html', 'koloft-open:sent\n')
+    ran('open ./blocked.html', 'koloft-open:blocked\n')
+    ran('open ./no-shim.html', '')
+    expect(f.events.flatMap((e) => (e.type === 'open' ? [e.target] : []))).toEqual([
+      '/repo/blocked.html',
+      '/repo/no-shim.html'
+    ])
+  })
+})
+
+// CODEX§19
+describe('CodexObservation — what each turn said', () => {
+  const userMessage = (text: string) => ({
+    type: 'userMessage',
+    id: 'u1',
+    clientId: null,
+    content: [{ type: 'text', text, text_elements: [] }]
+  })
+  const agentMessage = (text: string, phase: string) => ({
+    type: 'agentMessage',
+    id: `m-${phase}`,
+    text,
+    phase
+  })
+  const ended = (f: ReturnType<typeof fixture>) =>
+    f.events.flatMap((e) =>
+      e.type === 'turn-ended'
+        ? [{ said: e.turn.said.map((l) => [l.who, l.text]), reply: e.turn.reply }]
+        : []
+    )
+
+  it('ends a turn with the owner’s message and every agent message of the thread, commentary included, and nothing from another thread', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { item: { ...agentMessage('', 'commentary') } })
+    f.server('item/completed', { item: userMessage('run ls then say DONE') })
+    f.server('item/completed', { item: agentMessage('I’ll list the files.\n', 'commentary') })
+    f.server('item/completed', {
+      item: { type: 'commandExecution', id: 'c1', status: 'completed', command: 'ls' }
+    })
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: B, item: agentMessage('A title', 'final_answer') }
+    })
+    f.server('item/completed', { item: agentMessage('DONE\nhello.txt', 'final_answer') })
+    f.server('turn/completed', {
+      turn: { id: 't1', items: [agentMessage('DONE\nhello.txt', 'final_answer')] }
+    })
+    f.server('turn/completed', { turn: { id: 't1' } })
+    expect(ended(f)).toEqual([
+      {
+        said: [['owner', 'run ls then say DONE']],
+        reply: 'I’ll list the files.\n\nDONE\nhello.txt'
+      }
+    ])
+  })
+
+  it('a resumed thread starts with the turns its resume reply carried', () => {
+    const f = fixture()
+    f.observer.receive('client', { id: 1, method: 'thread/resume' })
+    f.observer.receive('server', {
+      id: 1,
+      result: {
+        thread: {
+          ...thread(),
+          turns: [
+            {
+              id: 'old',
+              completedAt: 1791012578,
+              items: [userMessage('say MANGO'), agentMessage('MANGO', 'final_answer')]
+            }
+          ]
+        }
+      }
+    })
+    expect(f.observer.turns.last(5)).toEqual([
+      {
+        said: [{ who: 'owner', text: 'say MANGO', at: 1791012578000 }],
+        reply: 'MANGO',
+        at: 1791012578000
+      }
+    ])
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/completed', { item: agentMessage('woke up', 'final_answer') })
+    f.server('turn/completed', { turn: { id: 't2' } })
+    expect(ended(f)).toEqual([{ said: [], reply: 'woke up' }])
+  })
+})

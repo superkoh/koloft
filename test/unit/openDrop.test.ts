@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { openDropTarget } from '../../src/main/openDrop'
+import { openDropTarget } from '../../src/core/openDrop'
 
 describe('openDropTarget', () => {
   it('takes a url verbatim, never resolving it against the cwd', () => {

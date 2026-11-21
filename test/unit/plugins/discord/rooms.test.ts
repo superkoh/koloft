@@ -11,7 +11,7 @@ import {
 const LOBBY = { guildId: '1', channelId: '200', name: 'global' }
 const OWNER = '555'
 
-function setup(saved: SessionRoom[] = []) {
+function setup(saved: SessionRoom[] = [], on = (): boolean => true) {
   let stored = saved
   let next = 700
   const calls: string[] = []
@@ -29,6 +29,7 @@ function setup(saved: SessionRoom[] = []) {
       archiveThread: async (threadId) => void calls.push(`archive ${threadId}`),
       post: async (channelId, text) => void calls.push(`post ${channelId} ${text}`)
     },
+    on,
     owner: () => OWNER,
     lobby: () => LOBBY,
     rooms: () => stored,
@@ -86,6 +87,18 @@ describe('a session’s room on Discord', () => {
     await rooms.bound('tab-9', 'k1b', fresh)
     expect(calls).toEqual([])
     expect(rooms.carried('tab-9')).toBe('t701')
+  })
+
+  it('a /clear while Discord is off still carries the room to the new id, but posts nothing in it', async () => {
+    let on = true
+    const { rooms, calls, stored, show } = setup([], () => on)
+    await rooms.open(fix, show)
+    await rooms.bound('tab-1', 'k1', fresh)
+    calls.length = 0
+    on = false
+    await rooms.bound('tab-1', 'k1b', fresh)
+    expect(stored()[0].keys).toEqual(['k1', 'k1b'])
+    expect(calls).toEqual([])
   })
 
   it('a tab that resumes another session that already talked leaves the room behind with the session it belongs to', async () => {

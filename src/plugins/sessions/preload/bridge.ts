@@ -11,9 +11,11 @@ import type {
   SessionInfo,
   SessionResumeRequest,
   SessionResumeResult,
-  SessionSearchHits
+  SessionSearchHits,
+  WorktreeInfo
 } from '@shared/types'
-import { CHANNELS } from '../shared/ipc'
+import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
+import type { InstructionAskView } from '../shared/instructionAsks'
 
 export interface SessionsBridge {
   sessions: {
@@ -38,6 +40,7 @@ export interface SessionsBridge {
     ports(tabId: string): Promise<ListeningPort[] | null>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
+    worktrees(workspacePath: string): Promise<WorktreeInfo[]>
   }
   attention: {
     list(): Promise<AttentionEvent[]>
@@ -50,7 +53,13 @@ export interface SessionsBridge {
     write(
       workspacePath: string,
       defaults: SessionDefaultsDraft
-    ): Promise<{ ok: boolean; error?: string }>
+    ): Promise<{ ok: boolean; error?: string; inUse?: string }>
+    saveEveryWorkspace(text: string, opened: string): Promise<InstructionsSaveResult>
+  }
+  instructionAsks: {
+    list(): Promise<InstructionAskView[]>
+    onAsks(cb: (asks: InstructionAskView[]) => void): () => void
+    answer(id: string, agreed: boolean): void
   }
 }
 
@@ -75,7 +84,8 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
     stopLeftover: (sessionId, pid) => ipc.invoke(CHANNELS.stopLeftover, sessionId, pid),
     ports: (tabId) => ipc.invoke(CHANNELS.ports, tabId),
     search: (searchId, term) => ipc.send(CHANNELS.search, searchId, term),
-    onSearchHits: (cb) => ipc.listen(CHANNELS.searchHits, cb)
+    onSearchHits: (cb) => ipc.listen(CHANNELS.searchHits, cb),
+    worktrees: (workspacePath) => ipc.invoke(CHANNELS.worktrees, workspacePath)
   },
   attention: {
     list: () => ipc.invoke(CHANNELS.attentionList),
@@ -85,6 +95,12 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
   },
   sessionDefaults: {
     read: (workspacePath) => ipc.invoke(CHANNELS.defaultsRead, workspacePath),
-    write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults)
+    write: (workspacePath, defaults) => ipc.invoke(CHANNELS.defaultsWrite, workspacePath, defaults),
+    saveEveryWorkspace: (text, opened) => ipc.invoke(CHANNELS.everyWorkspaceSave, text, opened)
+  },
+  instructionAsks: {
+    list: () => ipc.invoke(CHANNELS.instructionAsksList),
+    onAsks: (cb) => ipc.listen(CHANNELS.instructionAsks, cb),
+    answer: (id, agreed) => ipc.send(CHANNELS.instructionAnswer, id, agreed)
   }
 })

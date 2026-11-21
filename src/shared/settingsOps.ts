@@ -11,6 +11,7 @@ import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
 import { stringsIn, textsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
+import { cleanVersions } from '@core/ownerInstructions'
 import { cleanSwitches } from '@core/switches'
 import { HINT_IDS } from '@core/hints'
 import { PLUGINS } from '@plugins/list'
@@ -35,7 +36,8 @@ const APP_KEPT_ON_RESET: readonly (keyof AppSettings)[] = [
   'gitPicks',
   'gitSuggestionsDismissed',
   'gitMachines',
-  'sessionDefaults'
+  'sessionDefaults',
+  'everyWorkspaceInstructions'
 ]
 
 const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
@@ -44,7 +46,8 @@ const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
   'gitPicks',
   'gitSuggestionsDismissed',
   'gitMachines',
-  'sessionDefaults'
+  'sessionDefaults',
+  'everyWorkspaceInstructions'
 ]
 
 const KEPT_ON_RESET = [...APP_KEPT_ON_RESET, ...PLUGIN_KEYS.keptOnReset]
@@ -78,6 +81,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   merged.newProjectFolders = textsIn(merged.newProjectFolders)
   merged.sessionDefaults = sanitizeSessionDefaults(merged.sessionDefaults)
+  merged.everyWorkspaceInstructions = cleanVersions(merged.everyWorkspaceInstructions)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth

@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
 import { IconPlus } from '@renderer/icons'
-import { butlerTitle } from '@plugins/butler/shared/names'
+import { butlerTitle } from '@plugins/butler/windowApi'
 import { channelLabel, setUpWith } from '../shared/channels'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '@renderer/store'
@@ -122,13 +122,15 @@ export function DiscordPane(): JSX.Element | null {
                   <div className="acct-main">
                     <span className="acct-name">{butlerTitle(name)}</span>
                     <span className="acct-note">{channelLabel(channel)}</span>
-                    <button
-                      className="acct-x"
-                      title="Unbind"
-                      onClick={() => void window.api.conductors.unbind()}
-                    >
-                      Unbind
-                    </button>
+                    {on && (
+                      <button
+                        className="acct-x"
+                        title="Unbind"
+                        onClick={() => void window.api.conductors.unbind()}
+                      >
+                        Unbind
+                      </button>
+                    )}
                   </div>
                   {status.failing[channel.channelId] && (
                     <div className="acct-login-state bad">
@@ -138,17 +140,19 @@ export function DiscordPane(): JSX.Element | null {
                 </div>
               )}
             </div>
-            <div className="acct-foot">
-              <button className="mini" onClick={() => openBinding(true)}>
-                {channel ? (
-                  'Change channel…'
-                ) : (
-                  <>
-                    <IconPlus size={14} /> Bind a channel…
-                  </>
-                )}
-              </button>
-            </div>
+            {on && (
+              <div className="acct-foot">
+                <button className="mini" onClick={() => openBinding(true)}>
+                  {channel ? (
+                    'Change channel…'
+                  ) : (
+                    <>
+                      <IconPlus size={14} /> Bind a channel…
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}

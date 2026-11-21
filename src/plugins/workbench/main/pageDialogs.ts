@@ -6,7 +6,7 @@ import {
   type BrowserDialogAnswer,
   type BrowserJsDialog
 } from '@shared/types'
-import { authPromptFor, certHostOf, certTrusted, jsDialogFor } from '../../../main/browserSecurity'
+import { authPromptFor, certHostOf, certTrusted, jsDialogFor } from './pageRules'
 import { CHANNELS } from '../shared/ipc'
 
 export interface PageDialogsDeps {

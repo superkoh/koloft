@@ -110,9 +110,16 @@ import {
 import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
-import { sudoAskOf, SudoDialog } from './components/SecretAsk'
-import { fillsOf, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
-import { PALETTE_HAND_OFF, PALETTE_ROUTE, PALETTE_RUN } from './slots'
+import { useOverTerminal, useWatchOwnerAsks } from './ownerAsks'
+import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
+import { fillsOf, fillsOfOnOrOff, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import {
+  PALETTE_HAND_OFF,
+  PALETTE_ROUTE,
+  PALETTE_RUN,
+  STARTED_BEFORE_EXIT,
+  WINDOW_FEED
+} from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -157,7 +164,7 @@ import {
   type CorePaletteAction,
   type PaletteFeature
 } from '@shared/paletteFeatures'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 
 const RECENT_MAX = 3
 const CENTER_TERMINAL_MAX_COLS = 140
@@ -296,7 +303,8 @@ export default function App(): JSX.Element {
   const keepAwake = useStore((s) => s.settings.keepAwake)
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
-  const secretAsks = useStore((s) => s.secretAsks)
+  const overTerminalOf = useOverTerminal()
+  const instructionAsks = useStore((s) => s.instructionAsks)
   const centrePage = useStore((s) => s.centrePage)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
@@ -952,22 +960,10 @@ export default function App(): JSX.Element {
         ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
     })
-    let pushed = false
-    const offState = window.api.cron.onState((s) => {
-      pushed = true
-      useStore.getState().setCron(s)
-    })
-    void adoptionSettled.then(() =>
-      window.api.cron
-        .list()
-        .then((s) => {
-          if (!pushed) useStore.getState().setCron(s)
-        })
-        .catch(() => {})
-    )
+    const offFeeds = fillsOf(WINDOW_FEED).map((feed) => feed(adoptionSettled))
     return () => {
       offSpawned()
-      offState()
+      for (const off of offFeeds) off()
     }
   }, [])
 
@@ -1011,15 +1007,20 @@ export default function App(): JSX.Element {
     return off
   }, [])
 
+  useWatchOwnerAsks()
+
   useEffect(() => {
-    const set = useStore.getState().setSecretAsks
-    const off = window.api.secret.onAsks(set)
-    void window.api.secret.list().then(set)
+    const set = useStore.getState().setInstructionAsks
+    const off = window.api.instructionAsks.onAsks(set)
+    void window.api.instructionAsks.list().then(set)
     return off
   }, [])
 
   useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
+      const runStarted = fillsOf(STARTED_BEFORE_EXIT)
+        .map((started) => started(e.id))
+        .some(Boolean)
       if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
       if (useStore.getState().terminalExited(e.id)) return
@@ -1028,7 +1029,7 @@ export default function App(): JSX.Element {
       const found = useStore.getState().tabs.find((t) => t.id === e.id)
       const tab = e.unexpected ? tabAsItsAgent(found) : found
       if (tab?.sessionId) releaseResume(tab.sessionId)
-      if (unexpectedExitWanted(tab, e)) {
+      if (unexpectedExitWanted(tab, e, runStarted)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
         useStore.getState().showToast(notice)
         if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
@@ -1181,7 +1182,7 @@ export default function App(): JSX.Element {
       })
       return
     }
-    const pluginRoute = route && fillsOf(PALETTE_ROUTE).find((r) => r.kind === route.kind)
+    const pluginRoute = route && fillsOfOnOrOff(PALETTE_ROUTE).find((r) => r.kind === route.kind)
     if (pluginRoute) {
       void pluginRoute.run(prompt).then((error) => {
         if (error) showToast(error)
@@ -1725,7 +1726,9 @@ export default function App(): JSX.Element {
               )}
               <div className="terminals">
                 {tabs.flatMap((t) => {
-                  const sudo = sudoAskOf(secretAsks, t.id)
+                  const overTerminal = overTerminalOf(t.id)
+                  const instructionAsk = instructionAskOf(instructionAsks, t.id)
+                  const asked = !!overTerminal || !!instructionAsk
                   return [
                     t.ghost && (
                       <div
@@ -1771,8 +1774,8 @@ export default function App(): JSX.Element {
                             ? () => window.api.sessions.noteActivity(t.id)
                             : undefined
                         }
-                        autoFocus={!sudo}
-                        focusSignal={sudo ? undefined : tuiFocus}
+                        autoFocus={!asked}
+                        focusSignal={asked ? undefined : tuiFocus}
                         onRepainted={() => {
                           if (t.id === activeTabId) setPaintedGen(switchGen)
                         }}
@@ -1784,7 +1787,14 @@ export default function App(): JSX.Element {
                       {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
                         <ResumingMask title={t.title} />
                       )}
-                      {sudo && <SudoDialog key={sudo.id} ask={sudo} shown={t.id === shown.id} />}
+                      {overTerminal?.(t.id === shown.id)}
+                      {!overTerminal && instructionAsk && (
+                        <InstructionsAskDialog
+                          key={instructionAsk.id}
+                          ask={instructionAsk}
+                          shown={t.id === shown.id}
+                        />
+                      )}
                     </div>
                   ]
                 })}

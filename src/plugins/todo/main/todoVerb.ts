@@ -26,7 +26,7 @@ import {
   type WorkLeft
 } from '@plugins/sessions/api'
 import type { TodoPull, TodoPulls } from './pulls'
-import { TODO_METHOD } from './method'
+import { todoMethod } from '../api'
 
 export const TODO_ONLY_FOR_THE_BUTLER =
   'koloft todo: only the butler and the helpers it starts in its own folder can use it.'
@@ -403,7 +403,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     groups.has(g) ? [`${GROUP_TITLES[g]}:`, ...(groups.get(g) ?? [])] : []
   )
   return [
-    TODO_METHOD,
+    todoMethod(),
     '',
     'WORKSPACES',
     '',

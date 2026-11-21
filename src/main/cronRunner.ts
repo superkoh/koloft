@@ -14,7 +14,7 @@ import {
   worktreeBase,
   worktreeHomeOf
 } from '@shared/cronNames'
-import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf, SKILL_PREFIX } from '@shared/sessionBackend'
 import {
   isStepKind,
   isValidSchedule,
@@ -23,7 +23,7 @@ import {
   parseHHMM,
   sameOnce
 } from '@shared/schedule'
-import { oncePassed } from '@shared/cronHistory'
+import { lastRunLine, oncePassed } from '@shared/cronHistory'
 import {
   endedRowNote,
   isCronEffort,
@@ -61,6 +61,13 @@ const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
   skipAll: 'bypass'
 }
 
+function firstPromptOf(job: CronJob): string {
+  const backend = cronBackend(job)
+  const opensWithACommand = ['/', SKILL_PREFIX[backend]].some((p) => job.task.startsWith(p))
+  const last = opensWithACommand ? null : lastRunLine(job.history, backend)
+  return last ? `${last}\n\n${job.task}` : job.task
+}
+
 function withSuffix(base: string, suffix: string): string {
   const over = base.length + suffix.length - MAX_WORKTREE_NAME
   if (over <= 0) return `${base}${suffix}`
@@ -87,7 +94,7 @@ export async function worktreeNameFor(
   return withSuffix(base, `-${randomBytes(2).toString('hex')}`)
 }
 
-export type LaunchResult = { ok: true; tabId: string } | { ok: false }
+export type LaunchResult = { ok: true; tabId: string; note?: string } | { ok: false }
 
 interface KeptTab {
   jobId: string
@@ -500,7 +507,7 @@ export class CronRunner {
         model: job.model,
         effort: takenEffort(backend, job.model, job.effort),
         permission: LAUNCH_PERMISSION[job.permission],
-        firstPrompt: job.task,
+        firstPrompt: firstPromptOf(job),
         name: job.name,
         manual
       })
@@ -518,7 +525,7 @@ export class CronRunner {
         ...mark
       }
       this.live.set(res.tabId, run)
-      this.launched(job, run)
+      this.launched(job, run, res.note)
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -576,8 +583,8 @@ export class CronRunner {
     this.timers.delete(tabId)
   }
 
-  private launched(job: CronJob, run: LiveRun): void {
-    this.d.toast(`⏰ ${job.name} started`)
+  private launched(job: CronJob, run: LiveRun, note?: string): void {
+    this.d.toast(`⏰ ${job.name} started${note ? `. ${note}` : ''}`)
     this.armTimer(run.tabId, this.d.bindDeadlineMs, () => this.onDeadline(run.tabId))
   }
 

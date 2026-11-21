@@ -11,7 +11,7 @@ import {
   encodeCwd,
   INTERRUPT_TEXTS,
   whoTyped
-} from './sessionTracker'
+} from '@plugins/sessions/main/sessionTracker'
 import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
 
 export interface Bucket {

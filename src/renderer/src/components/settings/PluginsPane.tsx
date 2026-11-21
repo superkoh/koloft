@@ -5,7 +5,7 @@ import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS_PAGES } from '@shared/paletteFeatures'
 import { PLUGINS_PANE_NAME } from '@shared/settingsPanes'
 import { IconChevronLeft, IconChevronRight } from '../../icons'
-import { fillsOf, partsAt } from '../../pluginUi'
+import { fillsOfOnOrOff, partsAt } from '../../pluginUi'
 import { setPluginOn, useDoes, useNeverSetUp, usePluginStates } from '../../pluginSwitches'
 import { PLUGIN_SET_UP, type PluginSetUp } from '../../slots'
 import { useStore } from '../../store'
@@ -83,7 +83,7 @@ function PluginRow({ plugin, state }: { plugin: PluginManifest; state: PluginSta
   const go = useSettingsGo()
   const does = useDoes(plugin)
   const neverSetUp = useNeverSetUp(plugin)
-  const setUp = fillsOf(PLUGIN_SET_UP).find((f) => f.plugin === plugin.id)
+  const setUp = fillsOfOnOrOff(PLUGIN_SET_UP).find((f) => f.plugin === plugin.id)
   const [error, setError] = useState('')
   return (
     <>

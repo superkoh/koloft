@@ -226,7 +226,11 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     ssh: ON_A_MACHINE
   },
   muse: {
-    local: OUTSIDE_LOCAL_CLAUDE,
+    local: {
+      ...OUTSIDE_LOCAL_CLAUDE,
+      // MUSE§9 MUSE§11
+      askHookWaitsForDiscord: PENDING
+    },
     ssh: ON_A_MACHINE
   },
   agy: {
