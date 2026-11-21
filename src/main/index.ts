@@ -628,6 +628,7 @@ import {
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
+import { PluginSessions } from '@plugins/sessions/main/pluginSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { HeldSteps } from '@plugins/sessions/main/heldSteps'
@@ -746,6 +747,9 @@ const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
 const shownUnder = new StartedSessions(() => path.join(app.getPath('userData'), 'shown-under.json'))
+const pluginSessions = new PluginSessions(() =>
+  path.join(app.getPath('userData'), 'plugin-sessions.json')
+)
 const readerDocs = new ReaderDocs({
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -766,6 +770,8 @@ const sessionBackends = new SessionBackends({
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
     shownUnder.bound(tabId, key)
+    pluginSessions.bound(tabId, key)
+    if (pluginSessions.own(tabId)) pluginTabStaysAwake()
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -781,6 +787,7 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
+sessionBackends.ownedByAPlugin = (id) => pluginSessions.own(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
@@ -971,6 +978,7 @@ attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
 attention.claim = (tabId, step) => heldSteps.reached(tabId, step)
+attention.ownedByAPlugin = (tabId) => pluginSessions.own(tabId)
 // ADR-0039
 attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
@@ -1142,6 +1150,12 @@ const presence = new OwnerPresence({
   }
 })
 const AWAY_CHECKED_EVERY_MS = 30_000
+const A_PLUGIN_SESSION_IS_LOOKED_FOR_MS = 10_000
+
+function pluginTabStaysAwake(): void {
+  ownerAsleep.awakeTabsChanged()
+  syncAnswerable()
+}
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
@@ -1161,7 +1175,7 @@ const ownerAsleep = new OwnerAsleep({
   },
   awakeTabs: () => {
     const tab = butler?.liveTab()
-    return tab ? [tab] : []
+    return [...(tab ? [tab] : []), ...agentTabIds().filter((t) => pluginSessions.own(t))]
   },
   askClaimed: (tabId) => heldSteps.askClaimed(tabId),
   tabs: agentTabIds,
@@ -2534,6 +2548,7 @@ const agentRequests = new AgentRequests({
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
     return !!backend && agentToolsFor(backend, hostOfTab(tabId))
   },
+  commandsOf: (tabId) => pluginSessions.of(tabId)?.commands,
   alive: pidAlive
 })
 
@@ -4117,6 +4132,7 @@ app.whenReady().then(() => {
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId) ?? shownUnder.parentOfRow(rowId),
+    ownedByAPlugin: (rowId) => pluginSessions.own(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     claimedFolder: butlersFolderClaim(userData),
@@ -5272,6 +5288,7 @@ function archiveSession(id: string): boolean {
     attention.clearSession(id)
     startedSessions.forget(id)
     shownUnder.forget(id)
+    pluginSessions.forget(id)
     readerDocs.forget(id)
   }
   return archived
@@ -6384,6 +6401,8 @@ function registerIpc(): void {
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
     shownUnder.moved(oldTabId, newTabId)
+    pluginSessions.moved(oldTabId, newTabId)
+    if (pluginSessions.own(newTabId)) pluginTabStaysAwake()
     if (answerableForAPlugin.delete(oldTabId)) {
       answerableForAPlugin.add(newTabId)
       syncAnswerable()
@@ -6645,6 +6664,23 @@ function registerIpc(): void {
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string, opts?: { quiet: boolean }) =>
     sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
   )
+  ipcMain.handle(CH.workspace.pluginOwnRow, async (_e, ref: string) => {
+    if (typeof ref !== 'string' || !pluginSessions.own(ref)) return null
+    const known = workspaceMgr?.workspaceOf(ref)
+    const workspaces = known ? [{ path: known }] : (workspaceMgr?.pinnedPaths() ?? [])
+    return Promise.any(
+      workspaces.map(async ({ path: workspace }) => {
+        const rows = await within(
+          sessionBackends.historyRows(workspace, () => {}, true),
+          A_PLUGIN_SESSION_IS_LOOKED_FOR_MS,
+          'its history did not come'
+        )
+        const row = rows.find((r) => r.id === ref)
+        if (!row) throw new Error('not in this workspace')
+        return { row, workspace }
+      })
+    ).catch(() => null)
+  })
 
   const usageCache = new UsageCache({
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
@@ -6914,18 +6950,22 @@ const startedPlugins: PluginsStarted = startPlugins(
           heldSteps.letGo(tabId)
           newsJudge.taken(tabId)
         },
-        startBeside: (tabId, spec) =>
-          startBeside(
+        startBeside: async (tabId, spec) => {
+          const started = await startBeside(
             {
               sessionOfTab: (tab) => sessionDeps.allSessions().find((s) => s.tabId === tab),
               launch: sessionDeps.launch,
               pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
               turnedOff: sessionDeps.turnedOff,
-              shownUnder
+              shownUnder,
+              keptForAPlugin: pluginSessions
             },
             tabId,
             spec
           )
+          if (started.ok && spec.own) pluginTabStaysAwake()
+          return started
+        }
       }
     },
     workbench: {
@@ -6999,9 +7039,11 @@ const startedPlugins: PluginsStarted = startPlugins(
         save: (butler) => {
           commitSettings({ butler })
         }
-      }
+      },
+      morning: ownerAsleep
     },
     inbox: {
+      sources: inbox,
       eachTurn: {
         inbox: koloftInbox,
         tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId)

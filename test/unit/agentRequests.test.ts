@@ -163,6 +163,26 @@ describe('koloft requests from a session', () => {
     expect(calls).toEqual([])
   })
 
+  it('a session a plugin gave a list of koloft commands runs only those, matched by their first words, from its Workbench shell too; a --help is the help command, which it gets only when the list has it', async () => {
+    const tabId = tabOf(process.pid, 1)
+    const shell = tabOf(process.pid, 2)
+    tabs.set(shell, { util: true, ownerTabId: tabId })
+    let allowed = ['echo read']
+    const limited = requests({ commandsOf: (id) => (id === tabId ? allowed : undefined) })
+    await limited.answer(dir, 'req-a.json', { tabId, argv: ['echo', 'read', '3'], cwd: '/w' })
+    await limited.answer(dir, 'req-b.json', { tabId: shell, argv: ['echo', 'read'], cwd: '/w' })
+    await limited.answer(dir, 'req-c.json', { tabId, argv: ['echo', 'send', 'x'], cwd: '/w' })
+    await limited.answer(dir, 'req-d.json', { tabId, argv: ['echo', 'readall'], cwd: '/w' })
+    await limited.answer(dir, 'req-e.json', { tabId, argv: ['echo', 'read', '--help'], cwd: '/w' })
+    expect(calls.map((c) => c.args)).toEqual([['read', '3'], ['read']])
+    for (const refused of ['c', 'd', 'e'])
+      expect(reply(refused)).toEqual({ exit: 1, text: expect.stringContaining('koloft echo read') })
+    allowed = ['echo read', 'help']
+    await limited.answer(dir, 'req-f.json', { tabId, argv: ['echo', 'read', '--help'], cwd: '/w' })
+    expect(reply('f')).toEqual({ exit: 0, text: expect.any(String) })
+    expect(calls).toHaveLength(2)
+  })
+
   it('refuses every command while agent tools are off', async () => {
     on = false
     const tabId = tabOf(process.pid, 1)
