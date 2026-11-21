@@ -464,6 +464,57 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§26 AGY§29
+  test('a file outside its workspace a remote Antigravity session asks to read shows the row as wanting to read it; Deny on the Inbox card declines it with a key that says no on that ask, so agy never reads it and the row leaves waiting for approval, and Allow lets the next ask read it, after which the row says it read that file', async ({
+    env
+  }) => {
+    setUp(env)
+    seedSettings(env, { skipPermissions: false })
+    const word = 'zebra-quilt-41'
+    fs.writeFileSync(path.join(remoteDir(env), '..', 'agy-outside.txt'), `${word}\n`)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.locator('.ibx-entry').click()
+      const button = (name: RegExp): Locator =>
+        page.locator('.inbox-page .ibx-item .ibx-btn', { hasText: name }).first()
+      for (const [verdict, allow] of [
+        [/^Deny$/, false],
+        [/^Allow$/, true]
+      ] as const) {
+        await page.evaluate(
+          (t) => window.api.terminal.write(t, '/read ../agy-outside.txt\r'),
+          tabId
+        )
+        await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+        await expect(row.locator('.ws-tab-act')).toHaveText('Wants to read: agy-outside.txt')
+        await button(verdict).click()
+        await expect
+          .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+          .toContain(allow ? 'Read ../agy-outside.txt' : 'Interrupted')
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        expect((await terminalText(page, tabId)).includes(word)).toBe(allow)
+        if (!allow)
+          await expect(row.locator('.ws-tab-act', { hasText: /^Last: Read/ })).toHaveCount(0)
+      }
+      await expect(row.locator('.ws-tab-act')).toHaveText('Last: Read agy-outside.txt', {
+        timeout: 60_000
+      })
+      expect(machineAgyApiCalls(env).map((c) => c.method)).not.toContain(
+        'HandleCascadeUserInteraction'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§29
   test('Esc in the middle of a turn in a remote Antigravity tab, which ends the turn with no Stop, takes its row off working at once, before any next turn', async ({
     env
