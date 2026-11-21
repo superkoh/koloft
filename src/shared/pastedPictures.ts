@@ -26,9 +26,15 @@ export function withoutPictures(text: string): string {
     .trim()
 }
 
-export function pictureFolderIn(prompt: string): string | undefined {
-  const line = prompt.split('\n').find((l) => l.startsWith(`${PICTURE_LINE}/`))
-  return line?.slice(PICTURE_LINE.length, line.lastIndexOf('/'))
+export function pictureFolderIn(
+  prompt: string,
+  isKoloftsOwn: (folder: string) => boolean
+): string | undefined {
+  return prompt
+    .split('\n')
+    .filter((l) => l.startsWith(`${PICTURE_LINE}/`))
+    .map((l) => l.slice(PICTURE_LINE.length, l.lastIndexOf('/')))
+    .find(isKoloftsOwn)
 }
 
 export function pastedPicturesIn(text: string, dir: string): string[] {

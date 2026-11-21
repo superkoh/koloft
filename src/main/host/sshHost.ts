@@ -42,6 +42,8 @@ import {
   renameSessionCmd,
   resizeStandInCmd,
   launchLine,
+  MACHINE_PICTURES_DIR,
+  MACHINE_PICTURES_DIR_TAIL,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
   tmuxSessionName,
@@ -168,12 +170,17 @@ function machinePermission(
   return skipPermissions ? 'bypass' : undefined
 }
 
+const picturesHandedTo = (spec: ClaudeLaunch): string | undefined =>
+  !spec.resumeSessionId && spec.firstPrompt
+    ? pictureFolderIn(spec.firstPrompt, (folder) => folder.endsWith(MACHINE_PICTURES_DIR_TAIL))
+    : undefined
+
 // CC§9
 export function machineClaudeArgs(
   spec: ClaudeLaunch,
   sessionId: string,
   skipPermissions: boolean
-): { ok: true; args: string[] } | { ok: false; code: 'invalid-args' } {
+): { ok: true; args: string[]; pictures?: string } | { ok: false; code: 'invalid-args' } {
   const argv = claudeArgv('claude', {
     resumeSessionId: spec.resumeSessionId,
     sessionId: spec.resumeSessionId ? undefined : sessionId,
@@ -184,9 +191,10 @@ export function machineClaudeArgs(
   })
   if (!argv.ok) return argv
   const fresh = !spec.resumeSessionId
-  const pictures = fresh && spec.firstPrompt ? pictureFolderIn(spec.firstPrompt) : undefined
+  const pictures = picturesHandedTo(spec)
   return {
     ok: true,
+    pictures,
     args: [
       ...argv.argv.slice(1),
       ...(fresh && spec.name ? ['--name', spec.name] : []),
@@ -602,7 +610,7 @@ const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
 cat > "$f.part" && mv -f "$f.part" "$f"`
 
-const SAVE_PICK = `d="$HOME/.koloft/element-picks"
+const SAVE_PICK = `d="${MACHINE_PICTURES_DIR}"
 mkdir -p "$d" && cd "$d" || exit 1
 find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
 cat > "$1.part" && mv -f "$1.part" "$1" && printf '%s/%s' "$(pwd -P)" "$1"`
@@ -1341,7 +1349,8 @@ exit ${CALLER_GONE_EXIT}`,
               projectPrompt,
               ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceParts),
               claudeArgs,
-              trustFolder: spec.trustFolder
+              trustFolder: spec.trustFolder,
+              pictureFolder: args.pictures
             }
           )
         )

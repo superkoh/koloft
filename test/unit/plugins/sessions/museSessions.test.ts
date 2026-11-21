@@ -769,7 +769,7 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
-  it('keeps the session counted as still working while a job muse scheduled for itself is due, until a one-time job fires or a job is deleted', async () => {
+  it('keeps the session counted as still working, and its row showing the schedule and prompt, while a job muse scheduled for itself is due, until a one-time job fires or a job is deleted', async () => {
     const id = await boundTab()
     logRecord(A, { payload_type: 'session.opened.observed', payload: {} })
     const create = (cron: string, recurring: boolean, job: string): string =>
@@ -782,6 +782,9 @@ describe('MuseSessions turns from hooks', () => {
     create('* * * * *', false, '73ded10e')
     hook(id, 'Stop', { session_id: A, last_assistant_message: 'scheduled', turn_id: 't1' })
     await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
+    expect(sessions.list()[0].background).toEqual([
+      { id: 'cron-73ded10e', kind: 'monitor', label: 'Once (* * * * *): check', state: 'waiting' }
+    ])
     logRecord(A, {
       payload_type: 'runtime.session',
       payload: {
@@ -790,8 +793,12 @@ describe('MuseSessions turns from hooks', () => {
     })
     hook(id, 'Stop', { session_id: A, last_assistant_message: 'checked', turn_id: 't2' })
     await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(false))
+    expect(sessions.list()[0].background).toBeUndefined()
     create('*/5 * * * *', true, '7a328cdd')
     await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
+    expect(sessions.list()[0].background).toEqual([
+      expect.objectContaining({ id: 'cron-7a328cdd', label: 'Cron (*/5 * * * *): check' })
+    ])
     hook(id, 'PostToolUse', {
       session_id: A,
       tool_name: 'cron_delete',
@@ -799,6 +806,7 @@ describe('MuseSessions turns from hooks', () => {
       tool_response: 'Deleted 7a328cdd'
     })
     await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(false))
+    expect(sessions.list()[0].background).toBeUndefined()
   })
 
   // MUSE§3

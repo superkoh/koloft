@@ -1742,6 +1742,13 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+  Read from the 2.1.328 binary (`strings`, darwin-arm64, 2026-11-19): the hook schema
+  describes `session_crons` as "Session-scoped cron tasks (CronCreate, ScheduleWakeup,
+  /loop) that will wake this session later. Empty array when none are scheduled", each
+  entry built as `{id, schedule: <cron expression>, recurring (false for a one-shot
+  wakeup whose cron encodes its single fire time), prompt}`, the prompt capped at 1000
+  characters with a `… [+N chars]` marker. No duration or next-fire time is in it. A
+  recurring `CronCreate` was not run live.
 - **A subagent's own background shell is in its `SubagentStop` list, not in the main
   session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
   both hooks saving their input): a subagent that started `sleep 120` with
@@ -3151,7 +3158,7 @@ sessions.
   skill is `<plugin>:<name>` on both builds, beside a same-named user skill (2026-10-23,
   `claude -p` init `skills` and `skill_listing` in a scratch `HOME`). It also opens that
   folder to the model's file tools. Koloft gives skills with `--plugin-dir`; its only
-  `--add-dir` is the picture folder of a first prompt (§18), always before `--`.
+  `--add-dir` is its own picture folder named in a first prompt (§18), always before `--`.
 - **A SessionStart hook's `hookSpecificOutput.additionalContext`** (given through a
   `--settings` file) reached the model.
 - **`--append-system-prompt-file <file>`** reached the model.
@@ -4332,14 +4339,33 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
     `Args from unknown skill: …`, with the `Picture:` line in that text.
   - The path is never turned into an image block; the title request holds it as text.
     Whether a real model opens a path that sits inside `<command-args>` was not run.
-- **`--add-dir` of a folder no trusted folder holds stops the start on a question.**
-  Same day and build: before any request the screen showed "Adding a new directory:
-  <pictures folder> … This session hasn't worked here before. Is this a directory you
-  created or one you trust?" with `❯ No, exit` / `Yes, add it`, with plain words too and
-  with `--dangerously-skip-permissions`. It did not show when the pictures folder, or a
-  folder above it (`HOME`, for `<HOME>/Library/Application Support/Koloft/
-  palette-pictures`), was trusted in `.claude.json`. Builds before 2.1.326 were not
-  checked.
+- **Since 2.1.326 (not on 2.1.325), `--add-dir <folder>` stops at startup
+  on a question when the folder is not trusted.** claude shows "Adding a new directory:
+  <folder> / This session hasn't worked here before. Is this a directory you created or
+  one you trust? / ❯ No, exit / Yes, add it" before anything else: the first prompt
+  given after `--` is not sent, no hook fires, and the only OSC 7501 traffic is claude's
+  `?` query at startup and a `state=clear` as it exits, never a state that asks
+  (Koloft's row shows nothing to answer).
+  Enter takes "No, exit" and claude quits. `--dangerously-skip-permissions` does not skip
+  it. "Yes, add it" lets this run go on and writes nothing to `.claude.json`, so the next
+  launch asks again. The folder counts as trusted, and the question does not show, when
+  `.claude.json`'s `projects` holds `hasTrustDialogAccepted: true` for the folder itself
+  or for a folder above it (the same entry §9's folder-trust question writes; here
+  `$HOME`, the scratch home, did). 2.1.325 asks nothing. Measured 2026-11-18, CC 2.1.325
+  and 2.1.327, a python `pty` with `pyte`, scratch `HOME` (`.claude.json` under it, no
+  `CLAUDE_CONFIG_DIR`), the launch folder trusted, an `apiKeyHelper`-less
+  `ANTHROPIC_API_KEY` against a local stand-in Messages API, haiku: on darwin-arm64,
+  `--add-dir <HOME>/Library/Application Support/Koloft/palette-pictures -- "hello from
+  first prompt"` with that folder untrusted (question, 1 run per build), with its exact
+  path trusted (no question, the turn ran, 1 run) and with only `<HOME>` trusted (the
+  same, 1 run); on linux-arm64 in a Docker test container, `--add-dir
+  /home/node/.koloft/element-picks` with Koloft's own first prompt shape (`Picture:` line),
+  with and without bypass, with and without `SSH_CONNECTION` set (question each time on
+  2.1.327, none on 2.1.325), and once more after Koloft's remote trust script ran in that
+  folder (no question, the turn ran). On 2.1.326, 2026-11-17 on this Mac, a scratch `HOME` and `CLAUDE_CONFIG_DIR`:
+  the same question before any request, with plain words and with
+  `--dangerously-skip-permissions`, and none when the pictures folder or a folder
+  above it was trusted.
 
 ## §19 The PostToolUse hook adds text after every tool result
 

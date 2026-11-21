@@ -321,6 +321,31 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
+  // MUSE§9
+  test('a job Muse on the machine scheduled for itself shows on the row as its schedule and prompt, and the badge goes once Muse deletes it', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteMuse(page, env)
+      const row = remoteRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await runIn(page, centerTerm(page), '/cron check the build')
+      const badge = row.locator('.ws-tab-parked')
+      await expect(badge).toHaveText('⏸ 1', { timeout: 30_000 })
+      await badge.click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText(
+        'monitor · Cron (*/5 * * * *): check the build'
+      )
+      await page.keyboard.press('Escape')
+      await runIn(page, centerTerm(page), '/cron-delete')
+      await expect(badge).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§17
   test('E-RM-18: ⌘⌫ in a remote Muse tab reaches Muse through ssh and tmux as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
     env

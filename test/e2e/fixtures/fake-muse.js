@@ -706,6 +706,26 @@ function tui() {
       inputBox()
       return
     }
+    // MUSE§9
+    if (text.startsWith('/cron ') || text === '/cron-delete') {
+      const turnId = turn(text)
+      const job = '7a328cdd'
+      if (text === '/cron-delete')
+        fire('PostToolUse', {
+          turn_id: turnId,
+          tool_name: 'cron_delete',
+          tool_input: { id: job },
+          tool_response: `Deleted ${job}`
+        })
+      else
+        fire('PostToolUse', {
+          turn_id: turnId,
+          tool_name: 'cron_create',
+          tool_input: { cron: '*/5 * * * *', prompt: text.slice('/cron '.length), recurring: true },
+          tool_response: `Scheduled ${job} (Every 5 minutes)`
+        })
+      return later(() => say(turnId, 'Done', text))
+    }
     if (text.startsWith('/rename ')) {
       logRecord(session.id, 'session.name.changed', {
         new_name: text.slice('/rename '.length).trim().toLowerCase(),

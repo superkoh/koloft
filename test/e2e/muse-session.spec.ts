@@ -722,6 +722,34 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§9
+  test('a job Muse scheduled for itself shows on the row as its schedule and prompt, and the badge goes once Muse deletes it', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startMuse(page, env)
+      const row = museRows(page)
+      await runIn(page, centerTerm(page), '/cron check the build')
+      const badge = row.locator('.ws-tab-parked')
+      await expect(badge).toHaveText('⏸ 1', { timeout: 15_000 })
+      await badge.click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText(
+        'monitor · Cron (*/5 * * * *): check the build'
+      )
+      await page.keyboard.press('Escape')
+      await runIn(page, centerTerm(page), '/cron-delete')
+      await expect(badge).toHaveCount(0, { timeout: 15_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§2 MUSE§5
   test('a name given in Muse with /rename survives a Koloft restart, and a /fork copy is listed in the same workspace although Muse gives it no folder', async ({
     env
