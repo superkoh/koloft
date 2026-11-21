@@ -36,9 +36,7 @@ type ListedBlock = (typeof BLOCKS_IN_LIST_ORDER)[number]
 const isOnIn = (state: PromptState, id: string): boolean => state.on[id] ?? pluginStateOf(id).on
 
 const holdsIn = (state: PromptState, { block, plugin }: ListedBlock): boolean =>
-  isOnIn(state, plugin) &&
-  (!block.when || state.facts.includes(block.when)) &&
-  (!block.whenOff || !isOnIn(state, block.whenOff))
+  isOnIn(state, plugin) && (!block.when || state.facts.includes(block.when))
 
 export function composePrompt(slot: string, context: PromptContext = {}): string {
   const now: PromptState = { on: {}, facts: context.facts ?? [] }
