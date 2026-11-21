@@ -344,7 +344,7 @@ describe('the butler', () => {
     ['muse', 'muse:local:old-thread'],
     ['agy', 'agy:local:old-conv']
   ] as const)(
-    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside nothing it already knew, even when it was told the sessions lines before the Todo and Discord ones joined them; one started since is told nothing',
+    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside no other news it already had; one told only the sessions lines, before the Todo and Discord ones joined them, is told the whole set again; one started since is told nothing',
     async (backend, oldKey) => {
       news = [{ ...TODO_NEWS, on: () => todoOn }, GUIDE_MOVED_NEWS]
       session = {
@@ -401,15 +401,11 @@ describe('the butler', () => {
     todoOn = true
     transcripts.add(NEW_CODEX)
     await fresh.open()
-    expect(notices).toEqual([
-      `${FROM_KOLOFT}${TODO_NEWS.text()} ${pluginsChangedNews(
-        [{ name: 'Todo', on: true }],
-        butlerLinesGained(
-          { on: { todo: false }, facts: [] },
-          { on: { todo: true }, facts: [] }
-        ).filter((line) => !TODO_NEWS.text().includes(line.trim()))
-      )}`
-    ])
+    expect(notices).toHaveLength(1)
+    expect(notices[0].startsWith(`${FROM_KOLOFT}${TODO_NEWS.text()} `)).toBe(true)
+    expect(notices[0]).toContain(': Todo is now on. ')
+    expect(notices[0]).toContain('koloft todo file <workspace> <file>')
+    expect(notices[0].split('run koloft todo and do what it prints')).toHaveLength(2)
   })
 
   it('an old conversation told the lines that left koloft help is not told them again when a plugin it saw off is now on', async () => {
@@ -689,7 +685,7 @@ describe('the butler', () => {
       sessionIds: [CLAUDE_KEY],
       lastSessionKey: CLAUDE_KEY,
       knowsTodo: [CLAUDE_KEY],
-      knowsItsOwnLines: [CLAUDE_KEY],
+      knowsAllItsOwnLines: [CLAUDE_KEY],
       pluginsSeen: { key: CLAUDE_KEY, on: { todo: true, passwords: true } }
     }
     transcripts.add(CLAUDE_KEY)
