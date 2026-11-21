@@ -80,7 +80,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   - flags: `-w <name>` makes a real `.claude/worktrees/<name>` on branch
     `worktree-<name>`; `-- <text>` types `<text>` first, in place of the canned
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
-    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
+    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`, its link OSC-8-wrapped
+    and split across two pty reads; a token of `none` prints the link and then waits
+    forever); `--version` prints a
     version above any minimum, so the shim's version check never updates it.
   - env: `KOLOFT_FAKE_PROGRAM_STATUS=1` makes it ask its terminal for OSC 7501 at start,
     as the real one does (CC§12), and, once answered, report `blocked` while a dialog
@@ -329,7 +331,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_TEST_TOOL_INSTALLER` (fixtures/fake-tool-installer.js), `KOLOFT_TEST_CLT`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
-  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_INSTRUCTIONS_ASK_MS` (how long an agent's
+  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_LOGIN_TIMEOUT_MS` (how long a Claude guided
+  sign-in waits for its token), `KOLOFT_INSTRUCTIONS_ASK_MS` (how long an agent's
   proposed change to the Instructions waits for the owner), `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
   (real-window layer), `KOLOFT_TEST_PRESENCE_FILE`
   (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;

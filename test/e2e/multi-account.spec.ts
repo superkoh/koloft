@@ -1107,6 +1107,37 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
   }
 })
 
+test('guided login: a sign-in that times out after setup-token printed its link reports failure with the link as plain text, without the terminal’s link codes', async ({
+  env
+}) => {
+  test.setTimeout(120_000)
+  const TIMEOUT_LONG_ENOUGH_FOR_THE_LINK_TO_PRINT_MS = 8_000
+  const AUTH_URL = 'https://example.invalid/oauth/authorize?state=no-token'
+  env.launchEnv.KOLOFT_FAKE_SETUP_URL = AUTH_URL
+  env.launchEnv.KOLOFT_FAKE_SETUP_TOKEN = 'none'
+  env.launchEnv.KOLOFT_LOGIN_TIMEOUT_MS = String(TIMEOUT_LONG_ENOUGH_FOR_THE_LINK_TO_PRINT_MS)
+  fs.writeFileSync(env.keychainFile, JSON.stringify({}))
+  seedNoClaudeAccountButStillSetUp(env)
+
+  const { app, page } = await launchConfigured(env)
+  try {
+    await openSettings(page)
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
+    await page.locator('.acct-add input[type="text"]').fill('bravo')
+    await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
+
+    const tail = page.locator('.acct-login-state.bad .acct-login-tail')
+    await expect(tail).toContainText('Sign-in timed out', {
+      timeout: 45_000
+    })
+    expect((await tail.textContent())?.split('\n').at(-1)).toBe(
+      `Browser didn't open? Visit: ${AUTH_URL}`
+    )
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
 test('guided login: a captured token the probe rejects as expired reports failure and is written to neither the Keychain nor the pool, and Show terminal opens the sign-in terminal with what it printed', async ({
   env
 }) => {

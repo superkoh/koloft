@@ -10,6 +10,8 @@ const VERSION_ABOVE_ANY_MINIMUM = '99.0.0'
 const FULL_LENGTH_108_CHAR_SETUP_TOKEN =
   'sk-ant-oat01-A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0K1L2M3N4O5P6Q7R'
 const BROWSER_ROUND_TRIP_OUTLASTING_OPEN_DELIVERY_MS = 1500
+const GAP_THAT_ENDS_A_PTY_READ_MS = 300
+const NO_TOKEN = 'none'
 const sleepBlockingMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
 // CC§9
@@ -68,13 +70,17 @@ if (argv[0] === 'setup-token') {
   const inkHardWrappedToken = tok.match(new RegExp(`.{1,${cols}}`, 'g')).join('\r\n')
   const authUrl = process.env.KOLOFT_FAKE_SETUP_URL
   if (authUrl) {
-    const osc8Link = `\x1b]8;;${authUrl}\x07${authUrl}\x1b]8;;\x07`
-    process.stdout.write(`\r\nBrowser didn't open? Visit: ${osc8Link}\r\n`)
+    const printed = `\r\nBrowser didn't open? Visit: \x1b]8;;${authUrl}\x07${authUrl}\x1b]8;;\x07\r\n`
+    const midLink = printed.indexOf(authUrl) + Math.floor(authUrl.length / 2)
+    process.stdout.write(printed.slice(0, midLink))
+    sleepBlockingMs(GAP_THAT_ENDS_A_PTY_READ_MS)
+    process.stdout.write(printed.slice(midLink))
     require('child_process').spawnSync('/bin/sh', ['-c', 'open "$0"', authUrl], {
       stdio: 'ignore'
     })
     sleepBlockingMs(BROWSER_ROUND_TRIP_OUTLASTING_OPEN_DELIVERY_MS)
   }
+  if (tok === NO_TOKEN) sleepBlockingMs(Infinity)
   process.stdout.write(
     `\r\nPaste this token into your environment:\r\n\r\n${inkHardWrappedToken}\r\n\r\n`
   )
