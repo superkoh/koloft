@@ -12,7 +12,8 @@ const LIST_ENTRY = {
   [PLUGIN_LIST]: 'plugin',
   'src/plugins/bridges': 'preload/bridge',
   'src/plugins/uis': 'renderer/ui',
-  'src/plugins/settings': 'shared/settings'
+  'src/plugins/settings': 'shared/settings',
+  'src/plugins/starts': 'main/start'
 }
 const ALIASES = {
   '@shared': 'src/shared',
@@ -26,7 +27,7 @@ const RULE =
   'A plugin imports only src/core, its own folder and the api.ts or windowApi.ts of a plugin in its needs; ' +
   'outside src/plugins, only the lists import a plugin: src/plugins/list.ts its plugin.ts, ' +
   'src/plugins/bridges.ts its preload/bridge.ts, src/plugins/uis.ts its renderer/ui.tsx, ' +
-  'src/plugins/settings.ts its shared/settings.ts (ADR-0051).'
+  'src/plugins/settings.ts its shared/settings.ts, src/plugins/starts.ts its main/start.ts (ADR-0051).'
 
 const withoutExtension = (p) => p.replace(SOURCE_FILE, '')
 
