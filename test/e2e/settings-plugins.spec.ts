@@ -44,7 +44,7 @@ const row = (main: Locator, name: string): Locator =>
 const pluginsOn = (env: E2EEnv): unknown => settingsOnDisk(env).pluginsOn
 
 test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optional one, and a page for each', () => {
-  test('after an upgrade by someone who never set up Discord: Plugins replaces Discord in the list of pages, the master gate is on top, the six mandatory plugins say Always on, every optional plugin is on but Discord, which offers Set up with Alfred, and Extensions keeps no switch of Koloft’s', async ({
+  test('after an upgrade by someone who never set up Discord: Plugins replaces Discord in the list of pages, the master gate is on top, the six mandatory plugins say Always on, every optional plugin is on but Discord, which offers Set up with Alfred and is not named in Settings ▸ Assist, and Extensions keeps no switch of Koloft’s', async ({
     env
   }) => {
     const { app, page } = await launched(env)
@@ -80,6 +80,11 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
         row(main, 'Discord').getByRole('button', { name: 'Set up with Alfred' })
       ).toBeVisible()
       expect(pluginsOn(env) ?? {}).toEqual({})
+
+      await page.locator('.set-ni', { hasText: 'Assist' }).click()
+      await expect(main.locator('.set-ph h3')).toHaveText('Assist')
+      await expect(main.locator('.set-row').last()).toContainText('Alfred')
+      await expect(main).not.toContainText('Discord')
 
       await page.locator('.set-ni', { hasText: 'Extensions' }).click()
       await expect(main.locator('.set-ph h3')).toHaveText('Extensions')
