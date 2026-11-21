@@ -18,14 +18,14 @@ export const workspaceInstructionsPart = (text: string): string =>
   composePrompt('workspace-owner-instructions', { values: { 'owner-instructions': text } })
 
 function versionsWith(
-  saved: SessionDefaults | undefined,
+  versions: readonly InstructionsVersion[] | undefined,
   rules: string,
   text: string,
   by: string,
   at: number
 ): InstructionsVersion[] | undefined {
   const result = savedVersions(
-    saved?.instructions,
+    versions,
     text,
     by,
     at,
@@ -52,7 +52,8 @@ export function savedFromTheDialog(
   const rules = kept.rules ?? ''
   const changed = rules !== (saved?.rules ?? '') || text !== textInUse(saved?.instructions)
   const instructions =
-    (changed ? versionsWith(saved, rules, text, OWNER, at) : undefined) ?? saved?.instructions
+    (changed ? versionsWith(saved?.instructions, rules, text, OWNER, at) : undefined) ??
+    saved?.instructions
   return sanitizeDefaults({ ...kept, instructions })
 }
 
@@ -73,14 +74,14 @@ export const workspaceBlock = (
   read: async () => textInUse((await defaults.read(workspace)).instructions),
   check: async (text) => {
     const saved = await defaults.read(workspace)
-    versionsWith(saved, saved.rules ?? '', text, '', now())
+    versionsWith(saved.instructions, saved.rules ?? '', text, '', now())
   },
   writeIfStill: async (before, after, by) => {
     let written = false
     await defaults.write(workspace, (saved) => {
       if (textInUse(saved?.instructions) !== before) return saved
       written = true
-      const instructions = versionsWith(saved, saved?.rules ?? '', after, by, now())
+      const instructions = versionsWith(saved?.instructions, saved?.rules ?? '', after, by, now())
       return instructions ? sanitizeDefaults({ ...saved, instructions }) : saved
     })
     return written
