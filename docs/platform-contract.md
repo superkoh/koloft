@@ -2952,6 +2952,19 @@ Gateway (the live connection that pushes events):
   `rename`; removing a folder gave `rename` for every file in it and for the folder. So a
   recursive watcher, too, must look at the file to tell a new or deleted one from an
   append.
+- **A directory watcher loses events while the same process opens or closes other
+  watchers.** Measured 2026-11-20 on macOS 27.2.1 (APFS) under Node 24.22.3 and under
+  Electron 43.8.7's own Node 24.22.1 (`ELECTRON_RUN_AS_NODE=1`): one `fs.watch` on a
+  folder, then 200 times, 20 ms apart, a new subfolder with a file in it. With nothing
+  else going on every subfolder was reported (0 of 600 missed over three runs); when
+  each step also opened an `fs.watch` on another folder and closed an older one, 1, 12, 4
+  and 2 of 200 were never reported. In Koloft's e2e app the projects-folder watcher
+  stayed silent for 15 s about a new folder made 57 ms after the first list was pushed,
+  while the app was opening its other watchers (1 run in 40, and 1 in 150). Why
+  (libuv's one shared FSEvents stream being restarted) is inferred, not checked. A
+  watcher that must not miss a new entry needs a second way to notice it: an
+  `fs.watchFile` on the folder sees its mtime change, and a fresh listing names the
+  entry.
 
 ## §41 What an Electron app's quit does to its children
 
