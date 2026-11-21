@@ -307,6 +307,82 @@ describe('claude shim (registration — unchanged behavior)', () => {
   })
 })
 
+// CC§29
+describe('claude shim (the Fable advisor)', () => {
+  const configDir = (settingsModel: string, transcript?: string[]): string => {
+    const dir = fs.mkdtempSync(path.join(base, 'cfg-'))
+    fs.writeFileSync(path.join(dir, 'settings.json'), `{\n  "model": "${settingsModel}"\n}\n`)
+    if (transcript) {
+      fs.mkdirSync(path.join(dir, 'projects', '-ws'), { recursive: true })
+      fs.writeFileSync(path.join(dir, 'projects', '-ws', 's9.jsonl'), transcript.join('\n') + '\n')
+    }
+    return dir
+  }
+  const modelRecord = (id: string): string =>
+    JSON.stringify({ attachment: { type: 'model', identity: { modelId: id } } })
+  const advisorRecord = JSON.stringify({
+    attachment: { type: 'advisor_tool', model: 'claude-fable-5-2' }
+  })
+  const advisorOff = (args: string[], cfg: string, extra: Record<string, string> = {}): string =>
+    runShim(args, { CLAUDE_CONFIG_DIR: cfg, ...extra }).realEnv?.CLAUDE_CODE_DISABLE_ADVISOR_TOOL ??
+    ''
+
+  it("turns the advisor off for a Fable launch — asked by --model, by the resumed session's last model, or by Claude's own default — and leaves it on for any other, even a claude a Fable session starts", () => {
+    const opus = configDir('opus')
+    expect(advisorOff(['--model', 'fable'], opus)).toBe('1')
+    expect(advisorOff(['--model', 'claude-fable-5-2'], opus)).toBe('1')
+    expect(advisorOff([], configDir('fable'))).toBe('1')
+    expect(advisorOff([], opus)).toBe('')
+    expect(
+      advisorOff(
+        ['--resume', 's9'],
+        configDir('opus', [
+          modelRecord('claude-opus-5-5'),
+          modelRecord('claude-fable-5-2'),
+          advisorRecord
+        ])
+      )
+    ).toBe('1')
+    expect(
+      advisorOff(
+        ['--resume', 's9'],
+        configDir('fable', [modelRecord('claude-opus-5-5'), advisorRecord])
+      )
+    ).toBe('')
+    expect(
+      advisorOff(['-p', '--model', 'opus', 'hi'], opus, {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1',
+        KOLOFT_ADVISOR_OFF: '1'
+      })
+    ).toBe('')
+  })
+
+  it("never turns the advisor back on for an owner who turned it off, and does not guess the model of a session `claude -c` continues from Claude's default", () => {
+    expect(
+      advisorOff(['--model', 'opus'], configDir('opus'), { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' })
+    ).toBe('1')
+    expect(advisorOff(['-c'], configDir('fable'))).toBe('')
+    const ownersSwitchInAFableTab = runShim(['--model', 'fable'], {
+      CLAUDE_CONFIG_DIR: configDir('opus'),
+      CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
+    }).realEnv
+    expect(ownersSwitchInAFableTab?.CLAUDE_CODE_DISABLE_ADVISOR_TOOL).toBe('1')
+    expect(ownersSwitchInAFableTab?.KOLOFT_ADVISOR_OFF).toBeUndefined()
+  })
+
+  it('reads the model of a resumed session from its replies when its transcript names none', () => {
+    const replies = (model: string): string =>
+      JSON.stringify({ type: 'assistant', message: { model, content: [] } })
+    expect(
+      advisorOff(
+        ['--resume', 's9'],
+        configDir('opus', [replies('claude-opus-5-5'), replies('claude-fable-5-2')])
+      )
+    ).toBe('1')
+  })
+})
+
 describe('claude shim (multi-account pick section — U5)', () => {
   const token = (name: string, tok: string): void => {
     fs.writeFileSync(path.join(fakeKeychainDir, name), tok)
