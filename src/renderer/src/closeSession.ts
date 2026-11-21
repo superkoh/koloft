@@ -38,6 +38,55 @@ export function closeConfirmBody(
   return `${lead}${files} The session stays in the list and can be resumed anytime.`
 }
 
+export interface FullCloseTarget {
+  sessionId: string
+  title: string
+  status?: 'working' | 'approval'
+}
+
+export function fullCloseTarget(
+  tab:
+    | {
+        id: string
+        kind: TabKind
+        title: string
+        ended?: unknown
+        jobId?: string
+        sessionId?: string
+      }
+    | undefined,
+  sessions: SessionInfo[]
+): FullCloseTarget | null {
+  if (!tab || !isSessionKind(tab.kind) || tab.ended || tab.jobId !== undefined) return null
+  const bound = sessions.find((s) => s.tabId === tab.id)
+  if (bound?.overseer) return null
+  const sessionId = bound?.sessionId || tab.sessionId
+  if (!sessionId) return null
+  const status = bound?.alive ? bound.status : undefined
+  return {
+    sessionId,
+    title: bound?.title || tab.title,
+    ...((status === 'working' || status === 'approval') && { status })
+  }
+}
+
+export const FULL_CLOSE_TITLE = 'Close session for good?'
+export const FULL_CLOSE_CHECKING = 'Checking what closing would lose…'
+
+export function fullCloseBody(title: string, status?: 'working' | 'approval'): string {
+  const busy =
+    status === 'approval'
+      ? ' It has a pending permission prompt, which closing discards.'
+      : status === 'working'
+        ? ' It is still working on a task, which closing interrupts.'
+        : ''
+  return `Closing "${title}" ends it, takes its row out of the list and deletes its git worktree and branch if it has one.${busy} It cannot be resumed from the list afterwards.`
+}
+
+export function fullCloseRefusedBody(title: string): string {
+  return `Koloft cannot clean up "${title}" yet, because closing it for good would lose this. You can still close just its tab: the session stays in the list.`
+}
+
 export const UNSAVED_TITLE = 'Unsaved changes'
 
 export function unsavedFilesPhrase(files: string[]): string {

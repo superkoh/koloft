@@ -463,13 +463,14 @@ describe.runIf(process.platform === 'darwin')('app menu: Settings… (⌘,)', ()
   })
 })
 
-describe('app menu: ⌘W belongs to Close Tab alone', () => {
-  it('binds ⌘W exactly once, to Close Tab, and builds no role-made File or Window menu that would bind it again', () => {
+describe('app menu: ⌘W belongs to Close Session… alone', () => {
+  it('binds ⌘W exactly once, to Close Session…, keeps Close Tab in the File menu with no key, and builds no role-made File or Window menu that would bind it again', () => {
     const all = flatten(buildMenu())
     const bound = all.filter(
       (i) => i.accelerator && normalizeAccel(i.accelerator) === 'cmdorctrl+w'
     )
-    expect(bound.map((i) => i.label)).toEqual(['Close Tab'])
+    expect(bound.map((i) => i.label)).toEqual(['Close Session…'])
+    expect(all.find((i) => i.id === 'close-tab')?.label).toBe('Close Tab')
     expect(all.some((i) => i.role === 'fileMenu' || i.role === 'windowMenu')).toBe(false)
   })
 

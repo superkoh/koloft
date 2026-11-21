@@ -307,6 +307,11 @@ const api: KoloftApi = {
       ipcRenderer.on(CH.shortcut.closeTab, handler)
       return () => ipcRenderer.removeListener(CH.shortcut.closeTab, handler)
     },
+    onCloseSession: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on(CH.shortcut.closeSession, handler)
+      return () => ipcRenderer.removeListener(CH.shortcut.closeSession, handler)
+    },
     onFind: (cb) => {
       const handler = (): void => cb()
       ipcRenderer.on(CH.shortcut.find, handler)

@@ -652,6 +652,26 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
   })
 })
 
+describe('WorkspaceManager: a session being closed for good', () => {
+  it('is out of the list from the moment closing starts, and back as soon as closing ends without archiving it', async () => {
+    writeJsonl(repo, 'going')
+    own('going')
+    bindings.set('going', 'tab-1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['going']))
+
+    await mgr.hideWhileClosing('going')
+    expect(latest(repo).rows).toEqual([])
+    bindings.delete('going')
+    mgr.onTrackerUpdate()
+    await mgr.whenScanned()
+    expect(latest(repo).rows).toEqual([])
+
+    mgr.closingEnded('going')
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['going']))
+  })
+})
+
 describe('WorkspaceManager: a session leaving its worktree', () => {
   async function leftItsWorktree(removed: boolean): Promise<void> {
     writeJsonl(repo, 'wt-1')

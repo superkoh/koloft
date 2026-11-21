@@ -85,7 +85,7 @@ import {
 import { beginLayoutDrag, endLayoutDrag } from './resizeGate'
 import { unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
 import { lastLinesOnceWritten, writeOnScreen } from './terminalScreens'
-import { requestCloseTab } from './closeFlow'
+import { requestCloseSession, requestCloseTab } from './closeFlow'
 import {
   allDirty,
   askAboutLeftEdits,
@@ -109,7 +109,7 @@ import {
 } from './resumeFlow'
 import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
-import { CloseSessionDialog } from './components/CloseSessionDialog'
+import { CloseSessionDialog, FullCloseDialog } from './components/CloseSessionDialog'
 import { useOverTerminal, useWatchOwnerAsks } from './ownerAsks'
 import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
 import { fillsOf, fillsOfOnOrOff, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
@@ -550,17 +550,20 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    const closeActive = (): void => {
+    const closeActive = (close: (tabId: string | null) => void): void => {
       if (document.activeElement?.closest(NOTES_ISLAND)) return
       if (focusedWorkbench()) {
         dispatchPanel('browser-close-tab')
         return
       }
-      requestCloseTab(useStore.getState().activeTabId)
+      close(useStore.getState().activeTabId)
     }
     const offNewSession = window.api.shortcuts.onNewSession(() => globalNew('main'))
     const offNewWorktree = window.api.shortcuts.onNewWorktreeSession(() => globalNew('worktree'))
-    const offClose = window.api.shortcuts.onCloseTab(closeActive)
+    const offClose = window.api.shortcuts.onCloseTab(() => closeActive(requestCloseTab))
+    const offCloseSession = window.api.shortcuts.onCloseSession(() =>
+      closeActive(requestCloseSession)
+    )
     const offRestart = window.api.shortcuts.onRestartSession(() =>
       useStore.getState().restartActiveSession()
     )
@@ -598,6 +601,7 @@ export default function App(): JSX.Element {
       offNewSession()
       offNewWorktree()
       offClose()
+      offCloseSession()
       offRestart()
       offNewTerminal()
     }
@@ -2055,6 +2059,7 @@ export default function App(): JSX.Element {
           )}
           <ResumeDialog />
           <CloseSessionDialog />
+          <FullCloseDialog />
           <SettingsModal />
           <UpdateModal />
           <PartsAt place="dialog" />

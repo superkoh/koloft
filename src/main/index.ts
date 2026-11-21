@@ -1361,6 +1361,7 @@ const MENU_SHORTCUT_CHANNEL: {
   'new-session': CH.shortcut.newSession,
   'new-worktree-session': CH.shortcut.newWorktreeSession,
   'close-tab': CH.shortcut.closeTab,
+  'close-session': CH.shortcut.closeSession,
   find: CH.shortcut.find,
   'find-files': CH.shortcut.findFiles,
   'check-update': CH.shortcut.checkUpdate,
@@ -4519,7 +4520,7 @@ app.whenReady().then(() => {
       if (
         pageRouting.keptBySignInWindow(
           from,
-          action === 'close-tab' ? 'closes-it' : 'acts-on-the-app'
+          action === 'close-tab' || action === 'close-session' ? 'closes-it' : 'acts-on-the-app'
         )
       )
         return
@@ -5180,10 +5181,15 @@ async function closeSessionFully(
   info?: ProjectInfo,
   tell = tellTheOwner
 ): Promise<boolean> {
-  await treeRemovals.settled(target.treeRoot)
-  const where = info ?? projectInfoFor(target.treeRoot)
-  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
-  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
+  await workspaceMgr?.hideWhileClosing(target.sessionId)
+  try {
+    await treeRemovals.settled(target.treeRoot)
+    const where = info ?? projectInfoFor(target.treeRoot)
+    const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+    return await (where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close())
+  } finally {
+    workspaceMgr?.closingEnded(target.sessionId)
+  }
 }
 
 async function endAndRemove(
@@ -5256,6 +5262,7 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+const NO_SESSION_TO_CLOSE = 'Koloft cannot find this session in the list.'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -6648,6 +6655,23 @@ const startedPlugins: PluginsStarted = startPlugins(
         archive: archiveSession,
         setResident: (id, on) => workspaceMgr?.setResident(id, on),
         killTab: (tabId) => killTabPty(tabId),
+        closingLoses: async (id) => {
+          const target = closableSessions().find((s) => s.sessionId === id)
+          if (!target) return [NO_SESSION_TO_CLOSE]
+          return whatClosingWouldLose(
+            target,
+            undefined,
+            Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+          )
+        },
+        closeFully: async (id) => {
+          const target = closableSessions().find((s) => s.sessionId === id)
+          if (!target) return false
+          return closeSessionFully(target).catch((error) => {
+            tellTheOwner(`${target.title}: ${String(error)}`)
+            return false
+          })
+        },
         leftovers: () => leftovers,
         stopLeftover: async (sessionId, pid) => {
           const stopped = await stopLeftover(sessionId, pid)

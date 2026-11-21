@@ -268,6 +268,7 @@ export class WorkspaceManager {
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
   private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
+  private closingForGood = new Set<string>()
   private rootWatchers = new Map<string, { close(): void }>()
   private slugsListedByLastScan = new Map<string, Set<string>>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
@@ -375,7 +376,11 @@ export class WorkspaceManager {
   }
 
   private hidden(id: string): boolean {
-    return this.leavingTheirWorktree.has(id) || (this.deps.hiddenRow?.(id) ?? false)
+    return (
+      this.leavingTheirWorktree.has(id) ||
+      this.closingForGood.has(id) ||
+      (this.deps.hiddenRow?.(id) ?? false)
+    )
   }
 
   private withParents(rows: SessionRow[]): SessionRow[] {
@@ -621,6 +626,15 @@ export class WorkspaceManager {
     leaving.tabEnded = true
     setTimeout(showAgain, A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS).unref()
     this.scheduleRescan()
+  }
+
+  hideWhileClosing(sessionId: string): Promise<void> {
+    this.closingForGood.add(sessionId)
+    return this.whenScanned()
+  }
+
+  closingEnded(sessionId: string): void {
+    if (this.closingForGood.delete(sessionId)) this.scheduleRescan()
   }
 
   launchEnded(tabId: string): void {

@@ -5,6 +5,7 @@ export type MenuShortcut =
   | 'new-session'
   | 'new-worktree-session'
   | 'close-tab'
+  | 'close-session'
   | 'find'
   | 'find-files'
   | 'check-update'
@@ -96,9 +97,14 @@ export function setupAppMenu(
       },
       { type: 'separator' },
       {
+        id: 'close-session',
+        label: 'Close Session…',
+        accelerator: 'CmdOrCtrl+W',
+        click: shortcut('close-session')
+      },
+      {
         id: 'close-tab',
         label: 'Close Tab',
-        accelerator: 'CmdOrCtrl+W',
         click: shortcut('close-tab')
       },
       { type: 'separator' },

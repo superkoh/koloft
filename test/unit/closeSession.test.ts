@@ -5,6 +5,7 @@ import {
   closeConfirmBody,
   closeTabIntent,
   CLOSE_CONFIRM_TITLE,
+  fullCloseTarget,
   unexpectedExitNotice,
   unexpectedExitWanted,
   unsavedBody,
@@ -112,6 +113,36 @@ describe('closeTabIntent (D3 ⌘W gate)', () => {
 
   it('does nothing with no active tab', () => {
     expect(closeTabIntent(undefined, [sess('t1', { status: 'working' })])).toEqual({ kind: 'none' })
+  })
+})
+
+describe('fullCloseTarget (which tab ⌘W closes for good)', () => {
+  it('closes a bound agent tab for good, naming it and saying when it is still busy', () => {
+    expect(fullCloseTarget(tab('t1'), [sess('t1', { status: 'working' })])).toEqual({
+      sessionId: 'sid-t1',
+      title: 'Refactor session management',
+      status: 'working'
+    })
+    expect(fullCloseTarget(tab('t1'), [sess('t1', { status: 'waiting' })])).toEqual({
+      sessionId: 'sid-t1',
+      title: 'Refactor session management'
+    })
+  })
+
+  it('closes a sleeping tab for good by the session id the tab kept', () => {
+    expect(fullCloseTarget({ ...tab('t1'), sessionId: 'kept' }, [])).toEqual({
+      sessionId: 'kept',
+      title: 'Claude'
+    })
+  })
+
+  it('leaves to a plain tab close: no tab, a shell tab, a launch not bound yet, an ended tab, a scheduled run, the butler', () => {
+    expect(fullCloseTarget(undefined, [sess('t1')])).toBeNull()
+    expect(fullCloseTarget(tab('t1', 'shell'), [sess('t1')])).toBeNull()
+    expect(fullCloseTarget(tab('t1'), [sess('t1', { sessionId: '' })])).toBeNull()
+    expect(fullCloseTarget({ ...tab('t1'), ended: { note: 'x' } }, [sess('t1')])).toBeNull()
+    expect(fullCloseTarget({ ...tab('t1'), jobId: 'j1' }, [sess('t1')])).toBeNull()
+    expect(fullCloseTarget(tab('t1'), [sess('t1', { overseer: true })])).toBeNull()
   })
 })
 

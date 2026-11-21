@@ -44,6 +44,8 @@ export interface ChannelDeps {
   archive(id: string): boolean
   setResident(id: string, on: boolean): void
   killTab(tabId: string): Promise<boolean>
+  closingLoses(sessionId: string): Promise<string[]>
+  closeFully(sessionId: string): Promise<boolean>
   leftovers(): Record<string, LeftoverProcess[]>
   stopLeftover(sessionId: string, pid: number): Promise<boolean>
   ports(tabId: string): Promise<ListeningPort[] | null>
@@ -90,6 +92,12 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     if (!tabId) return { ok: false }
     return { ok: await deps.killTab(tabId) }
   })
+  ipc.handle(CHANNELS.closingLoses, async (id: unknown): Promise<string[]> =>
+    typeof id === 'string' && id ? deps.closingLoses(id) : []
+  )
+  ipc.handle(CHANNELS.closeFully, async (id: unknown): Promise<boolean> =>
+    typeof id === 'string' && id ? deps.closeFully(id) : false
+  )
   // CC§2
   ipc.handle(CHANNELS.transcriptExists, (id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
