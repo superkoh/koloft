@@ -6,7 +6,7 @@ import { codexConfigFile } from './codexTrust'
 
 export interface HistoryStore {
   dir(env: NodeJS.ProcessEnv): string
-  holdsASession(rel: string, there: () => boolean): boolean
+  holdsASession(rel: string): boolean
   settleMs: number
 }
 
@@ -42,11 +42,8 @@ export function watchHistory(store: HistoryStore, dir: string, relist: () => voi
     settle = setTimeout(relist, store.settleMs)
   }
   const changed = (rel: string): void => {
-    let stat: fs.Stats | undefined | null = null
-    const now = (): fs.Stats | undefined =>
-      stat === null ? (stat = fs.statSync(path.join(dir, rel), { throwIfNoEntry: false })) : stat
-    if (!store.holdsASession(rel, () => !!now())) return
-    const found = now()
+    if (!store.holdsASession(rel)) return
+    const found = fs.statSync(path.join(dir, rel), { throwIfNoEntry: false })
     if (found) {
       if (seen.has(rel)) return
       seen.add(rel)

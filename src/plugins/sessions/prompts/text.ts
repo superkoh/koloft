@@ -1,6 +1,5 @@
 import { eachAgent, type TextBlock } from '@core/plugin'
 import type { BackendId } from '@shared/types'
-import { needsModel } from '@shared/cronModels'
 import { tiersOf } from '@shared/sessionPicks'
 import { SESSION_BACKENDS, kindsOf } from '@shared/sessionBackend'
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
@@ -12,14 +11,9 @@ const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =
 
 export const PICKED_FLAGS = '--model <model> --effort <effort>'
 
-const pickedFlagsOf = (backend: BackendId): string =>
-  needsModel(backend) ? PICKED_FLAGS : '--effort <effort>'
+const OWN_WORKTREE_RULE = `The work needs a git worktree or branch of its own (a parallel change, an experiment, a fix that lands as its own pull request): start a Koloft session in its own worktree with koloft session new -w <short-name> ${PICKED_FLAGS} -- "<task>". Do this instead of running git worktree add`
 
-const ownWorktreeRule = (backend: BackendId): string =>
-  `The work needs a git worktree or branch of its own (a parallel change, an experiment, a fix that lands as its own pull request): start a Koloft session in its own worktree with koloft session new -w <short-name> ${pickedFlagsOf(backend)} -- "<task>". Do this instead of running git worktree add`
-
-const watchedSessionRule = (backend: BackendId): string =>
-  `The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new ${pickedFlagsOf(backend)} -- "<task>".`
+const WATCHED_SESSION_RULE = `The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new ${PICKED_FLAGS} -- "<task>".`
 
 export const PICK_FOR_THE_TASK =
   "Sort the task first. Very simple: do as told, with nothing to decide (fix a typo, change a line of copy, rename something, run a command and report, read a few files and answer). Normal: ordinary work with a clear goal (a small feature, a bug that can be reproduced, tests, a few files). Very hard: work that needs judgment or has no clear shape (a plan or a design, a review, a bug with no known cause, a change that reaches many places, anything the owner will decide on). When unsure, take the harder one. Then use that kind's model and effort; pick another only when the owner or the project's instructions name one."
@@ -44,21 +38,21 @@ const ONE_SESSION_PER_PULL_REQUEST =
 
 const HELPER_RULES: Record<BackendId, string[]> = {
   claude: [
-    `${ownWorktreeRule('claude')}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    watchedSessionRule('claude'),
+    `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    WATCHED_SESSION_RULE,
     'Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.',
     'A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.',
     'Anything else: do it yourself, in this session.'
   ],
   codex: [
-    `${ownWorktreeRule('codex')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    watchedSessionRule('codex'),
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    WATCHED_SESSION_RULE,
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ],
   agy: [
-    `${ownWorktreeRule('agy')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    watchedSessionRule('agy'),
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
+    WATCHED_SESSION_RULE,
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (invoke_subagent) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ]

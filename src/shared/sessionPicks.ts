@@ -5,7 +5,7 @@ import { isValidModelName } from './cronNames'
 import { isRecord } from './workbenchState'
 
 export interface Pick {
-  model?: string
+  model: string
   effort: CronEffort
 }
 
@@ -36,8 +36,7 @@ const NORMAL_ON_EVERY_ACCOUNT: Partial<Record<BackendId, string>> = { agy: 'argo
 
 const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }
 
-export const pickFlags = (pick: Pick): string =>
-  `${pick.model ? `--model ${pick.model} ` : ''}--effort ${pick.effort}`
+export const pickFlags = (pick: Pick): string => `--model ${pick.model} --effort ${pick.effort}`
 
 export const familyNamesOf = (backend: BackendId): string[] => [
   ...new Set(
@@ -251,7 +250,6 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
           note: `No Claude account has ${hard.model} allowance left, so it runs on ${pickFlags(WITHOUT_FABLE)}.`
         }
       : { ok: true, pick: asked }
-  if (!asked.model) return { ok: true, pick: asked }
   const read = !!facts.listed?.length
   const listed = facts.listed?.length ? facts.listed : lastKnown(backend)
   // AGY§21

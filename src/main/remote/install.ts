@@ -125,7 +125,6 @@ install_pkg() {
 const installNode = (
   forWhat: string,
   without: string,
-  only = '',
   onlyOwnNodeWhen = ''
 ): string => `NODE_VERSION=${NODE_VERSION}
 node_ok() {${
@@ -161,7 +160,7 @@ install_node() {
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
 no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if ${only}! node_ok && [ ! -f "$no_build_runs" ]; then
+if ! node_ok && [ ! -f "$no_build_runs" ]; then
   say "installing node $NODE_VERSION for ${forWhat} (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
     rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: ${without}"
@@ -221,7 +220,7 @@ ${ENSURE_CLAUDE_MINIMUM_FN}
 ${ENSURE_AGY_MINIMUM_FN}
 official_install() {
   have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
-  say "installing $1 (official installer$3)"
+  say "installing $1 (official installer)"
   if have curl; then curl -fsSL "$2" | bash
   else wget -qO- "$2" | bash; fi
   have "$1" || { say "$1 did not install; see the output above"; exit 4; }
@@ -238,7 +237,7 @@ agy)
   ;;
 esac
 
-${installNode('the statusline', 'this machine gets no statusline', '', '[ "$program" = agy ]')}
+${installNode('the statusline', 'this machine gets no statusline', '[ "$program" = agy ]')}
 
 ${INSTALL_GH}
 
