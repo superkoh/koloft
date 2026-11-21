@@ -9,8 +9,16 @@ export interface ScheduledTasksStartDeps {
   channels: Parameters<typeof registerChannels>[1]
 }
 
-export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments, ipc }, d) => {
+export interface ScheduledRuns {
+  runStartedIn(tabId: string): boolean
+}
+
+export const start: PluginStart<ScheduledTasksStartDeps, ScheduledRuns> = (
+  { commands, moments, ipc },
+  d
+) => {
   registerCronCommand(commands, d.command)
   followEachRun(moments, d.runner, pushRunStarted(ipc))
   registerChannels(ipc, d.channels)
+  return { runStartedIn: (tabId) => !!d.runner()?.runStartedIn(tabId) }
 }
