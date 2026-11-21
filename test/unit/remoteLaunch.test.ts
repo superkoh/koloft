@@ -22,6 +22,7 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
+import { MACHINE_CLAUDE } from '../../src/main/advisorOnFable'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
@@ -434,6 +435,8 @@ function box(
   fs.mkdirSync(m, { recursive: true })
   fs.writeFileSync(path.join(m, 'tmux.conf'), TMUX_CONF)
   fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
+  fs.mkdirSync(path.join(m, 'claude-bin'))
+  fs.writeFileSync(path.join(m, 'claude-bin', 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
     `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
@@ -483,6 +486,7 @@ printf 'claude %s\\n' "$*" >> "$L/order"
 env > "$L/env"
 printf '%s\\n' "$@" > "$L/argv"
 [ -t 0 ] && : > "$L/tty"
+[ -f "$L/from-its-bash" ] && { a="$(cat "$L/from-its-bash")"; rm -f "$L/from-its-bash"; claude $a; }
 exit ${opts.claudeExit ?? 0}
 `,
     { mode: 0o755 }
@@ -760,6 +764,22 @@ describe('U-TAB-*: the tab script on the machine', () => {
       })
     ).toBe('')
     expect(advisorOff(['--session-id', 's1', '--model', 'opus'], fableDefault)).toBe('')
+  })
+
+  // CC§29
+  it("gives back the advisor to an Opus claude that a Fable tab's Bash starts on the machine, as the claude shim does on the Mac, and turns it off for a nested Fable one", () => {
+    const nested = (tabArgs: string[], itsBashRuns: string): string[] => {
+      const b = box(spec({ claudeArgs: tabArgs }))
+      fs.writeFileSync(path.join(b.logs, 'from-its-bash'), itsBashRuns)
+      expect(b.run().status).toBe(0)
+      expect(b.claudeCalls()).toHaveLength(2)
+      const env = b.envAt(2)
+      return [env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL ?? '', env.KOLOFT_ADVISOR_OFF ?? '']
+    }
+    expect(nested(['--model', 'fable'], '--model opus')).toEqual(['', ''])
+    expect(nested(['--model', 'fable'], '-p --model claude-sonnet-5-5 hi')).toEqual(['', ''])
+    expect(nested(['--model', 'fable'], '--model fable')).toEqual(['1', '1'])
+    expect(nested(['--model', 'opus'], '--model fable')).toEqual(['1', '1'])
   })
 
   it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {

@@ -4873,10 +4873,17 @@ turns it on (the binary checks the disable switch first).
   `"model":"claude-fable-5-2"` too, so `modelId` is the key that names the session's model.
 - **`-p --tools ''`** (an Assist one-shot) sends no tools at all, the advisor included,
   even with `--model fable`.
+- **The Bash tool hands the switch on**: 2026-11-21, CC 2.1.330 `-p` on macOS, the same
+  fake Messages API answering one Bash call. A session started with
+  `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` ran it with that variable (and Koloft's mark) still
+  set, so a `claude` the command starts has no advisor unless something on its way clears
+  it. With the machine's `claude-bin/claude` first on PATH, the nested `claude --model
+  opus` saw neither. Not run on Linux.
 
 Not probed: a real account (only the forced-on advisor with a fake key ran); the
 precedence of a project's `settings.json` `model`.
 
-Koloft dependents: the claude shim and the remote tab script turn the advisor off for a
-Fable launch, and read a resumed session's model from its transcript
+Koloft dependents: the claude shim on the Mac and the `claude-bin/claude` wrapper on a
+remote machine turn the advisor off for each Fable launch and back on for each other one,
+tab or nested, and read a resumed session's model from its transcript
 (`src/main/advisorOnFable.ts`).

@@ -38,3 +38,18 @@ export const ADVISOR_OFF_ON_FABLE_FN = `advisor_off_on_fable() {
       fi ;;
   esac
 }`
+
+// CC§29
+export const MACHINE_CLAUDE = `#!/bin/sh
+${ADVISOR_OFF_ON_FABLE_FN}
+advisor_off_on_fable "$@"
+self=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+set -f
+for d in $PATH; do
+  [ "\${d%/}" = "$self" ] && continue
+  [ -x "$d/claude" ] && exec "$d/claude" "$@"
+done
+echo "claude: not found" >&2
+exit 127
+`

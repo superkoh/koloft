@@ -137,6 +137,7 @@ import {
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
+import { MACHINE_CLAUDE } from './advisorOnFable'
 import {
   ENSURE_CODEX_SH,
   ENSURE_SH,
@@ -1448,6 +1449,7 @@ function machinePackage(): MachinePackage {
     [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
+    [`${CLAUDE_BIN_DIR}claude`]: MACHINE_CLAUDE,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
