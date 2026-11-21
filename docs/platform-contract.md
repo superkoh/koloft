@@ -1945,7 +1945,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   step: job 107036731098 (PR #3, `npm ci`) came back as 38 lines, 3,366 bytes, all
   `check\tRun npm ci\t…`, with `##[error]Process completed with exit code 1.` as the last
   line (that the step name decides this is inferred, not checked). **The first line's
-  time starts with a UTF-8 byte-order mark** (`﻿2026-09-23T03:47:43.4098300Z`).
+  time starts with a UTF-8 byte-order mark**
+  (`﻿2026-09-23T03:47:43.4098300Z`).
+- **GitHub no longer names the steps, so gh prints the whole job.** On 2026-11-17 the run
+  log archive (`gh api repos/o/r/actions/runs/<run>/logs`) held only `0_check.txt` and
+  `check/system.txt`, no per-step file, both for PR #3's run 35815732286 and for run
+  43818243996 of 2026-11-16. So `--log-failed` on job 107036731098 printed the whole job,
+  212 lines, 22.6 KB, every line `check\tUNKNOWN STEP\t…`, with gh 2.89.0 (an empty
+  `XDG_CACHE_HOME`, so a fresh download), 2.102.0 and 2.104.0 alike. In that text each
+  step opens with a `##[group]Run <step>` line, the failed step's last line is
+  `##[error]Process completed with exit code 1.`, and the cleanup after it opens with a
+  line `Post job cleanup.`. gh keeps the archive in `~/.cache/gh/run-log-<run>-<n>.zip`.
+- **gh 2.102.0 and 2.104.0 write ESC as the two characters `^[`**, so a colour code
+  reaches stdout as `^[[36;1m`; 2.89.0 wrote the ESC byte. Same job, output to a pipe or
+  file (2026-11-17).
 - **`gh pr checks` reads a closed pull request the same way**: PR #3 (closed) printed
   `check` as `fail` and `close` as `skipping` (workflow "Pull requests are not open yet"),
   exit 0, so Koloft's menu reads `Checks · 1 failing of 2`.
@@ -2305,6 +2318,10 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   for an id with no session prints an empty line and exits 0 from 3.2a on (1 in 2.6), so
   it cannot tell whether the id is alive. (2026-11-14, tmux 2.6, 3.2a, 3.3a, 3.4, 3.5a and
   3.8 in Docker, two detached sessions on one `-L` socket, 1 run each.)
+- **`rename-session` to a name another session has exits 1 (`duplicate session: <name>`)
+  and leaves both names as they were; a rename to the session's own name exits 0.**
+  (2026-11-16, tmux 2.6, 3.2a and 3.8 in Docker, two detached sessions on one `-L`
+  socket, 1 run each.)
 - **With no `default-shell`, tmux runs the new-session command through `$SHELL`**, the
   login shell — for a fish user, sh syntax is a syntax error.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
