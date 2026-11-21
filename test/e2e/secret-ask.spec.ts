@@ -101,6 +101,20 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       const page = await app.firstWindow()
       const tab = await sessionTab(page, env)
       await askSudo(page, tab)
+      const inSessionOpen = await page.evaluate(() => {
+        const backdrop = document.querySelector<HTMLElement>(
+          '.term-wrap > .modal-backdrop.in-session'
+        )!
+        const term = backdrop.parentElement!.querySelector<HTMLElement>(':scope > .term')!
+        return {
+          backdropFilter: getComputedStyle(backdrop).backdropFilter,
+          termFilter: getComputedStyle(term).filter,
+          termAnimation: getComputedStyle(term.firstElementChild ?? term).animationPlayState
+        }
+      })
+      expect(inSessionOpen.backdropFilter).toBe('none')
+      expect(inSessionOpen.termFilter).toMatch(/^blur\(/)
+      expect(inSessionOpen.termAnimation).toBe('paused')
       const row = page.locator(`.ws-tab[data-tab-id="${tab}"]`)
       await expect(row).toHaveClass(/\bst-approval\b/)
       await expect
@@ -114,6 +128,13 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
       await page.keyboard.type(typed)
       await page.keyboard.press('Enter')
       await expect(page.locator(SUDO_BOX)).toHaveCount(0)
+      const termFilterAfter = await page.evaluate(() => {
+        const term = document.querySelector<HTMLElement>(
+          '.term-wrap:not([style*="display: none"]) > .term'
+        )!
+        return getComputedStyle(term).filter
+      })
+      expect(termFilterAfter).toBe('none')
       await expect.poll(() => terminalText(page, tab)).toContain(`${typed}\ngot-it`)
       await expect(row).not.toHaveClass(/\bst-approval\b/)
       expect((await pendingAttention(page)).some((e) => e.kind === 'approval')).toBe(false)

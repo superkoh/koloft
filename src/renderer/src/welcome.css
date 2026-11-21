@@ -41,12 +41,12 @@
   color: var(--wl-ink);
   font-family: var(--wl-sans);
   animation: wlFadeIn 0.5s ease both;
+}
+.wl.leaving {
   transition:
     opacity 0.65s ease,
     transform 0.65s var(--wl-move),
     filter 0.65s ease;
-}
-.wl.leaving {
   opacity: 0;
   transform: scale(1.04);
   filter: blur(6px);

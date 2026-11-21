@@ -1519,7 +1519,7 @@ inferred, not checked.
   objects; the same text in a `hidden` element, the placeholder sized by row count, cost
   no task over 50 ms. A `hidden` element's text is still in the DOM, so a TreeWalker (DOM
   ⌘F) finds it, but its ranges have no box and copy leaves it out.
-- **Full-window `backdrop-filter: blur(...)` collapses macOS CoreAnimation overlays to one
+- **`backdrop-filter: blur(...)` collapses macOS CoreAnimation overlays to one
   full-window surface and repaints the whole window on every hover or background tick.**
   Measured 2026-11-21 (Electron 43.8.7, macOS 27.2.1 on a 160 Hz display, `contentTracing`
   with `viz` and `disabled-by-default-viz.debug.overlay_planes` on a 1200×800 window with
@@ -1528,6 +1528,9 @@ inferred, not checked.
   with `backdrop-filter: blur(6px)` on a `position: fixed; inset: 0` modal backdrop,
   `num_overlays` dropped to `1` and `FinishPaintRenderPass` hit `180–193/s` at 160 FPS
   (and `42/s` on 20 Hz modal button hover even with every background animation paused).
+  A 560×220 card with `backdrop-filter: blur(18px)` over an animating `.wl-blob` radial
+  gradient did the same (`num_overlays: 1`, `FinishPaintRenderPass: 161/s`; without
+  `backdrop-filter`, `num_overlays: 6`, `FinishPaintRenderPass: 0/s`).
   Blurring the sibling root container with `filter: blur(6px)` while pausing CSS
   animations under it kept `num_overlays: 6` (both with a WebGL canvas and with a
   `<webview>`), dropped idle swaps to `0` and kept `FinishPaintRenderPass` at `0` during

@@ -918,7 +918,8 @@ body {
 }
 /* PLATFORM§24 */
 body:has(> .modal-backdrop:not(.in-session)) > #root,
-body:has(> .modal-backdrop:not(.in-session)) > .wl {
+body:has(> .modal-backdrop:not(.in-session)) > .wl,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside {
   filter: blur(6px);
 }
 body:has(> .modal-backdrop:not(.in-session)) > #root *,
@@ -926,7 +927,10 @@ body:has(> .modal-backdrop:not(.in-session)) > #root *::before,
 body:has(> .modal-backdrop:not(.in-session)) > #root *::after,
 body:has(> .modal-backdrop:not(.in-session)) > .wl *,
 body:has(> .modal-backdrop:not(.in-session)) > .wl *::before,
-body:has(> .modal-backdrop:not(.in-session)) > .wl *::after {
+body:has(> .modal-backdrop:not(.in-session)) > .wl *::after,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *::before,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *::after {
   animation-play-state: paused !important;
 }
 .modal {
