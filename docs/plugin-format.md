@@ -873,10 +873,10 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
   `pagesInUse`, the `ReaderDocs` it builds, and the two ways it pushes to the window (an
-  open file request, and `pagePushes`), which the app's own code calls from then on. Browser control's gives back
-  the `CdpOps` it builds and the CDP relay's functions the app calls (`startRelay`,
-  `setRelayEnabled`, `writeRelayEnv`, `relayEndpoint`, `sessionDrivingGuest`, …). Todo's
-  gives back `TODO_NEWS`, which the app hands the butler.
+  open file request, and `pagePushes`), which the app's own code calls from then on.
+  Browser control's gives back the `CdpOps` it builds and the CDP relay's functions the app
+  calls (`startRelay`, `setRelayEnabled`, `writeRelayEnv`, `relayEndpoint`,
+  `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app hands the butler.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
