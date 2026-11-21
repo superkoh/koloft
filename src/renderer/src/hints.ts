@@ -96,16 +96,16 @@ export function firedHints(
   for (const { id, part, selector } of partHints)
     if (next.partsShown[part] && !prev.partsShown[part]) out.push({ id, selector })
 
-  const pluginOwn = new Set(
-    next.rows.flatMap((w) => w.rows.filter((r) => r.pluginOwn).map((r) => r.id))
-  )
+  const pluginOwn = (s: HintSnapshot['sessions'][number]): boolean =>
+    next.rows.some((w) =>
+      w.rows.some((r) => r.pluginOwn && (r.id === s.tabId || r.id === s.sessionId))
+    )
   const amber = next.sessions.find(
     (s) =>
       s.status === 'approval' &&
-      !pluginOwn.has(s.tabId) &&
-      !(s.sessionId && pluginOwn.has(s.sessionId)) &&
       s.tabId !== next.activeTabId &&
-      prev.sessions.find((p) => p.tabId === s.tabId)?.status !== 'approval'
+      prev.sessions.find((p) => p.tabId === s.tabId)?.status !== 'approval' &&
+      !pluginOwn(s)
   )
   if (amber) out.push({ id: 'approval', selector: rowSelector(amber.tabId) })
 

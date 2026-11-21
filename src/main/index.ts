@@ -4132,7 +4132,7 @@ app.whenReady().then(() => {
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId) ?? shownUnder.parentOfRow(rowId),
-    ownedByAPlugin: (rowId) => pluginSessions.of(rowId)?.own,
+    ownedByAPlugin: (rowId) => pluginSessions.own(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     claimedFolder: butlersFolderClaim(userData),
@@ -6558,14 +6558,7 @@ function registerIpc(): void {
     )
     for (const [id, error] of unread) historyPartlyUnread(id, error)
     sessionBackends.adopt(
-      lists.flatMap((l) =>
-        l.status === 'fulfilled'
-          ? rowsToAdopt(
-              l.value.filter((r) => !r.pluginOwn),
-              now
-            )
-          : []
-      )
+      lists.flatMap((l) => (l.status === 'fulfilled' ? rowsToAdopt(l.value, now) : []))
     )
     await workspaceMgr.whenScanned()
     if (lists.some((l) => l.status === 'rejected')) throw new Error('history unread')
@@ -6675,22 +6668,18 @@ function registerIpc(): void {
     if (typeof ref !== 'string' || !pluginSessions.own(ref)) return null
     const known = workspaceMgr?.workspaceOf(ref)
     const workspaces = known ? [{ path: known }] : (workspaceMgr?.pinnedPaths() ?? [])
-    return new Promise((resolve) => {
-      let left = workspaces.length
-      if (!left) return resolve(null)
-      for (const { path: workspace } of workspaces)
-        void within(
-          sessionBackends.historyRows(workspace, () => {}),
+    return Promise.any(
+      workspaces.map(async ({ path: workspace }) => {
+        const rows = await within(
+          sessionBackends.historyRows(workspace, () => {}, true),
           A_PLUGIN_SESSION_IS_LOOKED_FOR_MS,
           'its history did not come'
         )
-          .catch(() => [])
-          .then((rows) => {
-            const row = rows.find((r) => r.id === ref)
-            if (row) resolve({ row, workspace })
-            else if (--left === 0) resolve(null)
-          })
-    })
+        const row = rows.find((r) => r.id === ref)
+        if (!row) throw new Error('not in this workspace')
+        return { row, workspace }
+      })
+    ).catch(() => null)
   })
 
   const usageCache = new UsageCache({

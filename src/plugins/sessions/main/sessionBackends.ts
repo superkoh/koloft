@@ -196,7 +196,8 @@ export class SessionBackends {
 
   async historyRows(
     workspacePath: string,
-    partlyUnread: (backend: BackendId, error: unknown) => void
+    partlyUnread: (backend: BackendId, error: unknown) => void,
+    withPluginOwn = false
   ): Promise<SessionRow[]> {
     const backends = [...this.adapters.values()]
     const answers = await Promise.allSettled(backends.map((b) => b.historyRows(workspacePath)))
@@ -212,8 +213,7 @@ export class SessionBackends {
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
     return rows
-      .filter((r) => !this.isOverseerSession(r.id))
-      .map((r) => (this.ownedByAPlugin(r.id) ? { ...r, pluginOwn: true as const } : r))
+      .filter((r) => !this.isOverseerSession(r.id) && (withPluginOwn || !this.ownedByAPlugin(r.id)))
       .sort((a, b) => b.mtime - a.mtime)
   }
 

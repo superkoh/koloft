@@ -101,9 +101,6 @@ export async function startBeside(
     })
   if (!tab) return { ok: false, why }
   d.shownUnder.started(tab, beside.sessionId)
-  d.keptForAPlugin.started(tab, {
-    ...(spec.own && { own: spec.own }),
-    ...(spec.commands && { commands: spec.commands })
-  })
+  d.keptForAPlugin.started(tab, { own: spec.own, commands: spec.commands })
   return { ok: true, tabId: tab }
 }
