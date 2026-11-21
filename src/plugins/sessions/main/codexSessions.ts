@@ -67,13 +67,13 @@ import {
   type KoloftHook
 } from '../../../main/codexLaunchConfig'
 import {
-  CODEX_DISCORD_SAID_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
+  CODEX_SENT_WORDS_ENV,
   CODEX_SHELL_WRITES_HOOKS,
   CODEX_SHELL_WROTE_ENV,
-  discordSaidFile,
+  sentWordsFile,
   NOTICE_ENV,
   noticeFile,
   seedHandedOverOwnerWords,
@@ -960,7 +960,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           [CODEX_SAID_ENV]: said,
           ...(this.deps.hookRegDir && {
             [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId),
-            [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId),
+            [CODEX_SENT_WORDS_ENV]: sentWordsFile(this.deps.hookRegDir, tabId),
             [CODEX_SHELL_WROTE_ENV]: path.join(this.deps.hookRegDir, tabId + SHELL_WROTE_SUFFIX)
           })
         })

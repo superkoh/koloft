@@ -3,13 +3,13 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import {
-  discordSaidFile,
   LANGUAGE_FNS,
   noticeFile,
+  sentWordsFile,
   shellCall,
   SHELL_WRITES_FNS,
   QUOTE_PROMPT_FN,
-  QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
+  QUOTE_THE_OWNER_OR_FLAG_A_FORGERY,
   REMIND_REPLY_LANGUAGE_FN,
   seedHandedOverOwnerWords
 } from '@plugins/sessions/main/hooks'
@@ -58,7 +58,7 @@ ${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
   UserPromptSubmit)
-    ${QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD}
+    ${QUOTE_THE_OWNER_OR_FLAG_A_FORGERY}
     remind_reply_language UserPromptSubmit "$flag" ;;
   PostToolUse) remind_reply_language PostToolUse ;;
 esac
@@ -72,7 +72,7 @@ dir="$1"
 event="$2"
 said="$4"
 notice="$5"
-discord_said="$6"
+sent_words="$6"
 [ -d "$dir" ] || exit 0
 ${NEWID_FN}`,
   `id="$(newid)"
@@ -111,7 +111,7 @@ export function writeMuseHooks(
   relay?: MuseRelayFiles
 ): string {
   const notice = relay ? noticeFile(relay.regDir, relay.tabId) : ''
-  const discordSaid = relay ? discordSaidFile(relay.regDir, relay.tabId) : ''
+  const sentWords = relay ? sentWordsFile(relay.regDir, relay.tabId) : ''
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
   const contextFiles = contexts.map((text, i) => {
@@ -127,7 +127,7 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`,
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(sentWords)}`,
       contextFiles.slice(1).map((f) => `/bin/cat ${shq(f)}`)
     )
   )

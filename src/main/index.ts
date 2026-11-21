@@ -120,8 +120,8 @@ import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
   forgetAssistMarkers,
-  noteDiscordId,
-  noteDiscordSaid,
+  noteOfWhatKoloftSends,
+  noteSent,
   localNotice,
   markAnswerable,
   markOwnerAsleep,
@@ -2090,6 +2090,19 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   )
 }
 
+// ADR-0028
+async function noteSentByKoloft(
+  tabId: string,
+  text: string,
+  id: string | undefined
+): Promise<void> {
+  const note = noteOfWhatKoloftSends(backendIdOf(ptyMgr.get(tabId)?.kind), text, id)
+  if (!note) return
+  const host = machineOfTab(tabId)
+  if (host) return hosts.machine(host).noteSent(tabId, note)
+  if (hookRegDir) noteSent(hookRegDir, tabId, note)
+}
+
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
   return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
 }
@@ -2274,6 +2287,7 @@ const sessionDeps: SessionVerbDeps = {
     await ptyMgr.type(tabId, keys)
   },
   deliver: deliverViaOwner,
+  noteSent: noteSentByKoloft,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: answerSession,
@@ -4499,7 +4513,8 @@ app.whenReady().then(() => {
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId)
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
+    noteSent: noteSentByKoloft
   })
   handOver = handOverNow
   discordRelay = new DiscordRelay({
@@ -4547,16 +4562,6 @@ app.whenReady().then(() => {
     lobbyLink: () => {
       const lobby = bindingNow.channel()
       return lobby && roomLink(lobby.channelId)
-    },
-    noteDiscordId: async (tabId, id) => {
-      const host = machineOfTab(tabId)
-      if (host) return hosts.machine(host).noteDiscordId(tabId, id)
-      noteDiscordId(hookPaths.regDir, tabId, id)
-    },
-    noteDiscordSaid: async (tabId, text) => {
-      const host = machineOfTab(tabId)
-      if (host) return hosts.machine(host).noteDiscordSaid(tabId, text)
-      noteDiscordSaid(hookPaths.regDir, tabId, text)
     },
     inRoom: (tabId) => !!roomOfTab(tabId),
     helperTitle: (tabId) =>

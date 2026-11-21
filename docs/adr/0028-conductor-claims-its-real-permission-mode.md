@@ -32,31 +32,45 @@ Assist alone: any local session's message reaches it whatever class it claims. T
 acceptable because every session may already press keys in any other session with
 `koloft session keys`, so the hold would stop nothing a session could not do anyway.
 **Spoof check, and its limit**: the Assist's role tells it a message starting with
-`[Discord]` is the owner's own words. Koloft notes the id of every Discord message it
-sends in `<tab>.discord-ids`, and the Assist's `UserPromptSubmit` hook flags a
-`[Discord]` message whose id is not there. That file is readable by any program the same
-user runs, so the check only catches a session that writes `[Discord]` onto the Assist's
-socket by accident (a `koloft session send` is wrapped as "From the session …" and never
-starts with `[Discord]`); a program set on pretending to be the
-owner can read an id, and nothing stops it.
+`[Discord]` is the owner's own words, and Koloft's other openings tell a session who a
+message comes from: `(From Koloft:)`, `(From the session "…"` and the butler's `(From the
+butler, Koloft's AI, …`. Only Koloft writes those at the start of a message (a session's
+own `koloft session send` is always wrapped as "From the session …"), so before Koloft
+hands over a message it began with one of them, it notes it for that tab, and the tab's
+`UserPromptSubmit` hook flags a prompt that begins with one and was not noted. Words a
+session wrote that Koloft only passes on as they are (the text of an Inbox card button)
+are never noted, so a card cannot pass as Koloft. A Claude tab gets the id of Koloft's
+line noted in `<tab>.discord-ids`; the opening is looked for right after the
+`<cross-session-message …>` envelope, whatever attributes it carries, so a `SendMessage`
+from another session (`from="uds:…"`, CC§13) is checked too, and so is an opening typed
+into the tab with no envelope (`koloft session keys` can type into any tab), as Koloft
+never types one into Claude. Those files are readable by any program the same user
+runs, so the check only catches a session that writes such an opening by accident or
+because some text told it to; a program set on pretending to be the owner or the butler
+can read the file and copy a line, and nothing stops it.
 
-**Codex and Muse Assists, by the words instead of an id**: a message reaches them as plain
+**Codex and Muse, by the words instead of an id**: a message reaches them as plain
 text (queued for Codex, typed for Muse), with no id their hook can see (CODEX§33), while
 another program can reach them the same way — `codex queue` for Codex (CODEX§33); for
 Muse, another Muse session's `send_session_message` tool (MUSE§7, MUSE§9; that it lands
-as a prompt is inferred, not checked). So the relay writes the words of each `[Discord]`
-message it hands over to a Codex or Muse tab to `<tab>.discord-said`, and the Assist's
-`UserPromptSubmit` hook flags a `[Discord]`-first prompt whose words are not there. The
+as a prompt is inferred, not checked). So Koloft writes the words of each such message
+it hands to a Codex or Muse tab to `<tab>.discord-said`, and the hook flags a prompt
+with one of those openings whose words are not there. The
 words are compared with every JSON escape and every ASCII sign and space taken out, so a
 later CLI that escapes a sign Node does not cannot turn the owner's words into a flag
 (today both escape as Node does: CODEX§33, MUSE§9). The hook cannot tell typed text from
-a message, so `[Discord]` typed into those tabs is flagged too, where Claude takes it as
-typed. For a tab on another machine the relay writes the id or the words into that
-machine's hook folder over ssh before it hands the message over, which the remote Claude
-and Muse hooks read; a remote Codex tab runs no such hook, so nothing there checks.
-**Antigravity has no check**: only typing reaches it
-(AGY§16 — its local API needs a token no other program can read), and Claude does not
-flag typed text either.
+a message, so an opening typed into those tabs is flagged too. For a tab on another
+machine Koloft writes the id or the words into that machine's hook folder over ssh before
+it hands the message over, which the remote Claude, Codex and Muse hooks read.
+The two files keep the names they had when only `[Discord]` was checked: a remote tab
+that outlived a Koloft upgrade still runs the hook of the machine package it started
+with, which reads those names.
+**Antigravity has no check**: its hooks have no prompt event (AGY§12), and a check from
+`PreInvocation`, which sees `lastUserInput`, is not probed yet. It has no tool of its own
+for messaging another session, but another program can still reach it: by typing
+(`koloft session keys`), and through its local API with the token Koloft puts on agy's
+command line, which `ps` shows (AGY§16, measured on a Linux machine; on the Mac not
+probed yet).
 **Rejected**: putting Claude's `(Koloft message <id>)` line at the end of the Codex and
 Muse text too, so every backend checks an id. The model, Koloft's own transcript reading
 (the owner's words handed to a helper, a session's last prompt) and the owner would all
