@@ -870,7 +870,9 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends.
+  when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
+  `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`) and
+  `pagesInUse`, which the app's own code calls from then on.
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
@@ -888,8 +890,9 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
 A plugin's main-process code is a set of parts. A part is a class or function in `main/`
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
-function gets its deps through the start's `deps`; most parts are still built by
-`src/main/index.ts` itself, which imports them by name and hands them to the starts as deps. A part never imports another plugin
+function gets its deps through the start's `deps`, as Workbench's web-page parts do; most
+parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
+to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's
