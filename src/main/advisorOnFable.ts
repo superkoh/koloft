@@ -48,10 +48,11 @@ ${ADVISOR_OFF_ON_FABLE_FN}
 advisor_off_on_fable "$@"
 IFS=:
 set -f
+past_koloft=0
 for d in $PATH; do
-  [ -x "$d/claude" ] || continue
-  head -n 2 "$d/claude" 2>/dev/null | grep -q "${MACHINE_CLAUDE_MARK}" && continue
-  exec "$d/claude" "$@"
+  [ -f "$d/claude" ] && [ -x "$d/claude" ] || continue
+  if head -n 2 "$d/claude" 2>/dev/null | grep -q "${MACHINE_CLAUDE_MARK}"; then past_koloft=1; continue; fi
+  [ "$past_koloft" = 1 ] && exec "$d/claude" "$@"
 done
 echo "claude: not found" >&2
 exit 127

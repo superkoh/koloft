@@ -23,6 +23,7 @@ import {
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 import { MACHINE_CLAUDE } from '../../src/main/advisorOnFable'
+import { utilTerminalGuard } from '../../src/main/shim'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
@@ -782,19 +783,30 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(nested(['--model', 'opus'], '--model fable')).toEqual(['1', '1'])
   })
 
-  it("the machine's claude wrapper hands over to the real claude past any Koloft wrapper on PATH, an older package's or its own spelled with //", () => {
+  it("the machine's claude wrapper hands over to the real claude past any Koloft wrapper on PATH — an older package's, its own spelled with //, or the Workbench shell's guard in front of it", () => {
     const root = mkroot('wrappers')
-    const dirs = ['new', 'old', 'real'].map((n) => path.join(root, n))
-    for (const d of dirs) fs.mkdirSync(d)
-    for (const d of dirs.slice(0, 2))
-      fs.writeFileSync(path.join(d, 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
-    fs.writeFileSync(path.join(dirs[2], 'claude'), '#!/bin/sh\necho "real $*"\n', { mode: 0o755 })
-    const res = spawnSync(path.join(dirs[0], 'claude'), ['--model', 'opus'], {
-      encoding: 'utf8',
-      env: { PATH: [`${root}//new/`, dirs[1], dirs[0], dirs[2], '/usr/bin:/bin'].join(':') },
-      timeout: 10_000
-    })
-    expect(res.stdout).toBe('real --model opus\n')
+    const dir = (n: string, text: string): string => {
+      fs.mkdirSync(path.join(root, n), { recursive: true })
+      fs.writeFileSync(path.join(root, n, 'claude'), text, { mode: 0o755 })
+      return path.join(root, n)
+    }
+    const [util, fresh, old, real] = [
+      dir('util', utilTerminalGuard('claude')),
+      dir('new', MACHINE_CLAUDE),
+      dir('old', MACHINE_CLAUDE),
+      dir('real', '#!/bin/sh\necho "real $*"\n')
+    ]
+    fs.mkdirSync(path.join(real, 'claude-dir', 'claude'), { recursive: true })
+    const run = (first: string, PATH: string[]): string =>
+      spawnSync(path.join(first, 'claude'), ['-p', '--model', 'opus'], {
+        encoding: 'utf8',
+        env: { PATH: [...PATH, '/usr/bin:/bin'].join(':'), KOLOFT_UTIL: '1' },
+        timeout: 10_000
+      }).stdout
+    expect(run(fresh, [`${root}//new/`, old, fresh, path.join(real, 'claude-dir'), real])).toBe(
+      'real -p --model opus\n'
+    )
+    expect(run(util, [util, fresh, real])).toBe('real -p --model opus\n')
   })
 
   it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
