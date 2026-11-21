@@ -118,7 +118,7 @@ function wrapperScript(p: WrapperParts): string {
 ${p.head}
 # PLATFORM§36
 export NODE_COMPILE_CACHE=${p.cacheDir}
-pwd -P >/dev/null 2>&1 || cd / 2>/dev/null
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
 # CC§6 PLATFORM§36
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 # CC§6 PLATFORM§2 PLATFORM§36
@@ -231,7 +231,14 @@ try {
 } catch {}
 if (Number.isFinite(cost)) input.cost = { ...(input.cost || {}), total_cost_usd: cost }
 if (!input.effort) {
-  const effort = typeof input.model?.effort === 'string' ? input.model.effort.trim() : ''
+  const raw = typeof input.model?.effort === 'string' ? input.model.effort.trim() : ''
+  const name =
+    typeof input.model === 'object' ? input.model.display_name || input.model.id || '' : ''
+  const fromName =
+    typeof name === 'string'
+      ? /\\((low|medium|high|xhigh|max)\\)$/i.exec(name.trim())?.[1] || ''
+      : ''
+  const effort = /^(?=.*[a-z0-9])[a-z0-9-]{2,20}$/i.test(raw) ? raw : fromName
   input.effort = { level: effort || null }
 }
 Object.defineProperty(process, 'stdin', {
@@ -254,7 +261,7 @@ ${EXEC_MARKER}${process.execPath}
 export ELECTRON_RUN_AS_NODE=1
 # PLATFORM§36
 export NODE_COMPILE_CACHE=${shq(compileCacheIn(dir))}
-pwd -P >/dev/null 2>&1 || cd / 2>/dev/null
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 exec ${shq(process.execPath)} ${shq(script)} ${shq(bundlePath())} ${shq(paths.config)}
 `,

@@ -144,10 +144,31 @@ describe('built-in statusline', () => {
   }, 30_000)
 })
 
+function isolatedEnv(
+  home: string,
+  extra: Record<string, string> = {}
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    HOME: home,
+    ANT_ACCOUNT: '',
+    COLUMNS: '120',
+    ...extra
+  }
+  delete env.CLAUDE_CONFIG_DIR
+  return env
+}
+
+function seedClaudeEffort(home: string, effortLevel: string): void {
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ effortLevel }))
+}
+
 describe('Antigravity statusline', () => {
   it('renders agy’s status JSON through the vendored bundle with the cost Koloft priced and model effort mapped', () => {
     const command = setupAgyStatusline({ wrapper, config })
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-sl-'))
+    seedClaudeEffort(dir, 'low')
     const costFile = path.join(dir, 'agy-cost')
     fs.writeFileSync(costFile, '0.4321')
     try {
@@ -165,52 +186,82 @@ describe('Antigravity statusline', () => {
           product: 'antigravity'
         }),
         encoding: 'utf8',
-        env: { ...process.env, COLUMNS: '120', [AGY_COST_ENV]: costFile },
+        env: isolatedEnv(dir, { [AGY_COST_ENV]: costFile }),
         timeout: 25_000
       })
       expect(res.status).toBe(0)
       expect(res.stdout).toMatch(/Gemini.4.Neon/)
       expect(res.stdout).toContain('high')
+      expect(res.stdout).not.toContain('low')
       expect(res.stdout).toContain('$0.43')
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
   }, 30_000)
 
-  it('shows default instead of Claude Code’s effortLevel when an Antigravity model carries no effort', () => {
+  it('reads effort from the startup display name when model.effort is not yet populated', () => {
     const command = setupAgyStatusline({ wrapper, config })
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-no-effort-'))
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
-    fs.writeFileSync(
-      path.join(home, '.claude', 'settings.json'),
-      JSON.stringify({ effortLevel: 'max' })
-    )
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-startup-effort-'))
+    seedClaudeEffort(home, 'low')
     try {
       const res = spawnSync('/bin/sh', ['-c', command], {
         input: JSON.stringify({
           cwd: home,
-          session_id: 'agy-no-effort-unit',
-          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
+          session_id: '',
+          model: { id: 'Gemini 4 Neon (High)', display_name: 'Gemini 4 Neon (High)' },
           workspace: { current_dir: home, project_dir: home },
           version: '1.5.14',
           product: 'antigravity'
         }),
         encoding: 'utf8',
-        env: { ...process.env, HOME: home, COLUMNS: '120' },
+        env: isolatedEnv(home),
         timeout: 25_000
       })
       expect(res.status).toBe(0)
-      expect(res.stdout).toContain('default')
-      expect(res.stdout).not.toContain('max')
+      expect(res.stdout).toMatch(/Gemini.4.Neon/)
+      expect(res.stdout).toContain('high')
+      expect(res.stdout).not.toContain('low')
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
     }
   }, 30_000)
 
-  it('still renders with exit 0 when the session’s working directory was removed (e.g. a deleted worktree)', () => {
+  it('shows default instead of Claude Code’s effortLevel when an Antigravity model carries no normalizable effort', () => {
     const command = setupAgyStatusline({ wrapper, config })
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-no-effort-'))
+    seedClaudeEffort(home, 'max')
+    try {
+      for (const model of [
+        { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
+        { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro', effort: 'thinking_high' }
+      ]) {
+        const res = spawnSync('/bin/sh', ['-c', command], {
+          input: JSON.stringify({
+            cwd: home,
+            session_id: 'agy-no-effort-unit',
+            model,
+            workspace: { current_dir: home, project_dir: home },
+            version: '1.5.14',
+            product: 'antigravity'
+          }),
+          encoding: 'utf8',
+          env: isolatedEnv(home),
+          timeout: 25_000
+        })
+        expect(res.status).toBe(0)
+        expect(res.stdout).toContain('default')
+        expect(res.stdout).not.toContain('max')
+      }
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('still renders Antigravity’s statusline with exit 0 when the session’s working directory was removed', () => {
+    const command = setupAgyStatusline({ wrapper, config })
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-gone-home-'))
     const gone = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-gone-cwd-'))
-    const goneCc = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-cc-gone-cwd-'))
+    seedClaudeEffort(home, 'low')
     const payload = JSON.stringify({
       cwd: gone,
       session_id: 'agy-gone-cwd-unit',
@@ -226,33 +277,46 @@ describe('Antigravity statusline', () => {
         {
           input: payload,
           encoding: 'utf8',
-          env: { ...process.env, COLUMNS: '120' },
+          env: isolatedEnv(home),
           timeout: 25_000
         }
       )
       expect(agyRes.status).toBe(0)
       expect(agyRes.stdout).toMatch(/Gemini.4.Neon/)
       expect(agyRes.stdout).toContain('xhigh')
+      expect(agyRes.stdout).not.toContain('low')
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+      fs.rmSync(gone, { recursive: true, force: true })
+    }
+  }, 30_000)
 
+  it('still renders Claude Code’s statusline with exit 0 when the session’s working directory and input cwd were removed', () => {
+    const goneCc = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-cc-gone-cwd-'))
+    const payload = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      cwd: goneCc,
+      workspace: { current_dir: goneCc, project_dir: goneCc, added_dirs: [] }
+    })
+    try {
       const ccRes = spawnSync(
         '/bin/sh',
         ['-c', 'cd "$1" && rmdir "$1" && exec "$2"', '_', goneCc, wrapper],
         {
-          input: PAYLOAD,
+          input: payload,
           encoding: 'utf8',
           env: { ...process.env, COLUMNS: '120' },
           timeout: 25_000
         }
       )
       expect(ccRes.status).toBe(0)
-      expect(ccRes.stdout.length).toBeGreaterThan(0)
+      expect(ccRes.stdout).toMatch(/Opus.4\.8/)
     } finally {
-      fs.rmSync(gone, { recursive: true, force: true })
       fs.rmSync(goneCc, { recursive: true, force: true })
     }
   }, 30_000)
 
-  it('renders on a remote machine from the statusline folder Koloft ships there, on the node it installed', () => {
+  it('renders on a remote machine from the statusline folder Koloft ships there, both from an existing cwd and after cwd removal', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-remote-sl-'))
     const dir = path.join(home, 'statusline')
     const bundleDir = path.join(__dirname, '..', '..', 'node_modules', 'ccstatusline', 'dist')
@@ -267,32 +331,51 @@ describe('Antigravity statusline', () => {
     const costFile = path.join(home, 'agy-cost')
     fs.writeFileSync(costFile, '1.25')
     const gone = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-remote-gone-'))
+    const env = { HOME: home, PATH: '/usr/bin:/bin', COLUMNS: '120', [AGY_COST_ENV]: costFile }
     try {
-      const res = spawnSync(
+      const alive = spawnSync('/bin/sh', [path.join(dir, 'agy.sh')], {
+        input: JSON.stringify({
+          cwd: home,
+          session_id: 'agy-remote-statusline-unit',
+          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro', effort: 'medium' },
+          workspace: { current_dir: home, project_dir: home },
+          version: '1.4.7'
+        }),
+        cwd: home,
+        encoding: 'utf8',
+        env,
+        timeout: 25_000
+      })
+      expect(alive.status).toBe(0)
+      expect(alive.stdout).toMatch(/Gemini.3\.1.Pro/)
+      expect(alive.stdout).toContain('medium')
+      expect(alive.stdout).toContain('$1.25')
+
+      const removed = spawnSync(
         '/bin/sh',
         ['-c', 'cd "$1" && rmdir "$1" && exec /bin/sh "$2"', '_', gone, path.join(dir, 'agy.sh')],
         {
           input: JSON.stringify({
             cwd: gone,
-            session_id: 'agy-remote-statusline-unit',
-            model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro', effort: 'medium' },
+            session_id: 'agy-remote-statusline-gone',
+            model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro', effort: 'high' },
             workspace: { current_dir: gone, project_dir: gone },
             version: '1.4.7'
           }),
           encoding: 'utf8',
-          env: { HOME: home, PATH: '/usr/bin:/bin', COLUMNS: '120', [AGY_COST_ENV]: costFile },
+          env,
           timeout: 25_000
         }
       )
-      expect(res.status).toBe(0)
-      expect(res.stdout).toMatch(/Gemini.3\.1.Pro/)
-      expect(res.stdout).toContain('medium')
-      expect(res.stdout).toContain('$1.25')
+      expect(removed.status).toBe(0)
+      expect(removed.stdout).toMatch(/Gemini.3\.1.Pro/)
+      expect(removed.stdout).toContain('high')
+      expect(removed.stdout).toContain('$1.25')
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
       fs.rmSync(gone, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 60_000)
 })
 
 describe('U-SL-1: remote statusline wrapper, run for real — a machine without node must still start its session', () => {
