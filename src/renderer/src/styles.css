@@ -1218,6 +1218,14 @@ body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *::after {
 .unsaved-modal .modal-foot {
   flex-wrap: wrap;
 }
+.lifecycle-modal .close-left {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
 .ev-meta {
   display: flex;
   flex-direction: column;

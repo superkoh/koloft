@@ -1261,6 +1261,7 @@ export interface CoreApi {
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void
     onCloseTab(cb: () => void): () => void
+    onCloseSession(cb: () => void): () => void
     onFind(cb: () => void): () => void
     onCheckUpdate(cb: () => void): () => void
     onOpenSettings(cb: () => void): () => void
