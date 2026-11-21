@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { isPlaceholderSessionTitle } from '@shared/types'
+import { branchExists, type GitOut } from '@core/worktree'
 import type {
   BackendSessionRow,
   ResumeFailure,
@@ -40,23 +41,15 @@ export function dirExistsSync(p: string): boolean {
   }
 }
 
-export type GitOut = (
-  dir: string,
-  args: string[],
-  timeoutMs?: number,
-  onFailure?: (stderr: string) => void
-) => Promise<string | null>
-
 export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
   return {
-    branchExists: async (repoDir, branch) =>
-      (await git(repoDir, ['rev-parse', '--verify', 'refs/heads/' + branch])) !== null,
+    branchExists: (repoDir, branch) => branchExists(git, repoDir, branch),
     headAt: async (repoDir) => (await git(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
   }
 }
 
 export function occupantName(s: { title: string; sessionId: string }): string {
-  if (s.title && s.title !== PLACEHOLDER_SESSION_TITLE) return s.title
+  if (s.title && !isPlaceholderSessionTitle(s.title)) return s.title
   return s.sessionId || 'a launching session'
 }
 

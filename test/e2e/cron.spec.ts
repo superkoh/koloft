@@ -19,6 +19,7 @@ import {
 } from './helpers/remote'
 import {
   agyCalls,
+  agyTranscriptOf,
   installAgy,
   installCodex,
   installMuse,
@@ -53,7 +54,7 @@ import {
   wsRows,
   type ClaudeCall
 } from './helpers/p1'
-import type { CronFile, CronJob } from '../../src/shared/types'
+import type { BackendId, CronFile, CronJob } from '../../src/shared/types'
 
 const gitWhere = (slug: string): string =>
   `A new copy of the repo every time — .claude/worktrees/${slug}-<date>-<time>, ` +
@@ -280,6 +281,8 @@ function worktreeOf(call: ClaudeCall): string {
   const i = call.argv.indexOf('-w')
   return i >= 0 ? call.argv[i + 1] : ''
 }
+
+const TOLD_TO_CARRY_ON = 'Koloft restarted while this scheduled run was working'
 
 test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', () => {
   test.beforeEach(({ env }) => seedClaudeTrust(env, [env.workspaces.a, env.workspaces.b]))
@@ -1247,7 +1250,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
           timeout: 60_000
         })
-        .toContain('Koloft restarted while this scheduled run was working')
+        .toContain(TOLD_TO_CARRY_ON)
       await openCron(page, 'ws-a')
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
@@ -1261,41 +1264,42 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
   }
-  const agyTabLaunches = (env: E2EEnv): { pid: number }[] =>
+  const agyTabLaunches = (env: E2EEnv): { pid: number; argv: string[] }[] =>
     agyCalls(env).filter((c) => !c.argv.includes('-p') && !c.argv.includes('--version'))
+  type AgentLaunch = { pid: number; argv: string[] }
   const STORED_AGENTS: {
     agent: NonNullable<JobSpec['agent']>
+    backend: BackendId
     setUp: (env: E2EEnv) => void
-    launches: (env: E2EEnv) => number
-    lastPid: (env: E2EEnv) => number | undefined
+    tabLaunches: (env: E2EEnv) => AgentLaunch[]
   }[] = [
     {
       agent: 'Codex',
+      backend: 'codex',
       setUp: (env) => {
         installCodex(env)
         gitInit(env.workspaces.a)
       },
-      launches: (env) => codexCalls(env).length,
-      lastPid: (env) => codexCalls(env).at(-1)?.pid
+      tabLaunches: codexCalls
     },
     {
       agent: 'Muse',
+      backend: 'muse',
       setUp: (env) => {
         installMuse(env)
         trustInMuse(env, env.workspaces.a)
         gitInit(env.workspaces.a)
       },
-      launches: (env) => museCalls(env).length,
-      lastPid: (env) => museCalls(env).at(-1)?.pid
+      tabLaunches: museCalls
     },
     {
       agent: 'Antigravity',
+      backend: 'agy',
       setUp: agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree,
-      launches: (env) => agyTabLaunches(env).length,
-      lastPid: (env) => agyTabLaunches(env).at(-1)?.pid
+      tabLaunches: agyTabLaunches
     }
   ]
-  for (const { agent, setUp, lastPid } of STORED_AGENTS) {
+  for (const { agent, setUp, tabLaunches } of STORED_AGENTS) {
     test(`BB-M34 in ${agent}: a run whose agent dies after the run started keeps its tab and History reads Agent quit; a run folder it has stays until the tab is closed`, async ({
       env
     }) => {
@@ -1319,7 +1323,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         const [wt] = fs.existsSync(home) ? fs.readdirSync(home) : []
         const tree = wt ? runTree(env.workspaces.a, wt) : ''
 
-        killSession(lastPid(env)!, env)
+        killSession(tabLaunches(env).at(-1)!.pid, env)
         await expect(row.locator('.ws-tab-sub')).toContainText(/killed \(signal \d+\)/, {
           timeout: 30_000
         })
@@ -1340,7 +1344,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       }
     })
   }
-  for (const { agent, setUp, launches } of STORED_AGENTS) {
+  for (const { agent, setUp, tabLaunches } of STORED_AGENTS) {
+    const launches = (env: E2EEnv): number => tabLaunches(env).length
     test(`BB-M08 in ${agent}: a run left open at quit, whose process Koloft stops first, comes back as the open run, so Run now skips it`, async ({
       env
     }) => {
@@ -1378,6 +1383,53 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         expect(launches(env)).toBe(launchesWhileOpen)
       } finally {
         await app2.close().catch(() => {})
+      }
+    })
+  }
+
+  const EVERY_AGENT: (Omit<(typeof STORED_AGENTS)[number], 'agent'> & {
+    agent?: JobSpec['agent']
+  })[] = [
+    { backend: 'claude', setUp: (env) => gitInit(env.workspaces.a), tabLaunches: readCalls },
+    ...STORED_AGENTS
+  ]
+  for (const { agent, backend, setUp, tabLaunches } of EVERY_AGENT) {
+    test(`in ${agent ?? 'Claude'}: a run's first message opens with when the last run was due and its agent's own session id, then the task`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      setUp(env)
+      const app1 = await launchApp(env)
+      try {
+        const page = await app1.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await createJob(page, dlg, { agent, name: 'Nightly report', task: 'look around' })
+        await storedJobs(env, 1)
+      } finally {
+        await quitAndClose(app1)
+      }
+      const store = readStore(env)!
+      const lastDue = new Date(2026, 10, 18, 5, 0).getTime()
+      const sessionId = backend === 'claude' ? 's-last-run' : `${backend}:local:s-last-run`
+      store.jobs[0].history = [{ dueAt: lastDue, state: 'closed', sessionId }]
+      fs.writeFileSync(storePath(env), JSON.stringify(store))
+
+      const app2 = await launchApp(env)
+      try {
+        const page = await app2.firstWindow()
+        await waitBooted(page)
+        await openCron(page, 'ws-a')
+        await clickRunNow(page, 'Nightly report')
+        await expect
+          .poll(() => tabLaunches(env).flatMap((c) => c.argv), { timeout: 60_000 })
+          .toContainEqual(
+            expect.stringMatching(
+              /^Last run of this task: 2026-11-18T05:00[+-]\d\d:\d\d, session s-last-run\.\n\nlook around$/
+            )
+          )
+      } finally {
+        await quitAndClose(app2)
       }
     })
   }
@@ -1709,6 +1761,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     pickModel: (dlg: Locator) => Promise<void>
     launched: (env: E2EEnv) => { argv: string[]; cwd: string } | undefined
     flags: string[]
+    says?: string
     onTheMachine?: { read: (env: E2EEnv) => unknown; is: unknown }
     named: string
     rowTitle: string
@@ -1779,12 +1832,13 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Argon$/ }).click(),
+      pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Carbon$/ }).click(),
       launched: (env) => machineAgyCalls(env)[0],
-      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions'],
-      // AGY§8 AGY§16 AGY§31
+      flags: ['--model', 'gemini-4-neon', '--dangerously-skip-permissions'],
+      says: 'This account has no gemini-4-carbon model, so it runs on gemini-4-neon.',
+      // AGY§8 AGY§16 AGY§21 AGY§31
       named:
-        'no name, its /task typed in once agy is ready rather than given with -i, its row taking agy’s own title',
+        'no name, its /task typed in once agy is ready rather than given with -i, its Carbon on Neon as the account has no Carbon, its row taking agy’s own title',
       rowTitle: REMOTE_TASK
     }
   ]
@@ -1795,6 +1849,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     pickModel,
     launched,
     flags,
+    says,
     onTheMachine,
     named,
     rowTitle
@@ -1824,6 +1879,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         await dlg.locator('.modal-foot .btn-primary').click()
         await expect(dlg.locator('.fgrid')).toHaveCount(0)
         await clickRunNow(page, 'Remote report')
+        if (says) await expect(page.locator('.toast-msg', { hasText: says })).toBeVisible()
 
         await expect.poll(() => launched(env), { timeout: 120_000 }).toBeTruthy()
         const { argv, cwd } = launched(env)!
@@ -1864,6 +1920,127 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       }
     })
   }
+
+  const A_TURN_THAT_OUTLASTS_A_RESTART_MS = 120_000
+  const A_REOPENED_REMOTE_RUN_SHOWS_ITS_TURN_WITHIN_MS = 90_000
+  const museSessionsIn = (dir: string): string =>
+    fs.existsSync(dir)
+      ? fs
+          .readdirSync(dir)
+          .filter((n) => n.endsWith('.json'))
+          .map((n) => fs.readFileSync(path.join(dir, n), 'utf8'))
+          .join('\n')
+      : ''
+  const AGENTS_THAT_RUN_ON_IN_TMUX: {
+    agent: JobSpec['agent']
+    name: string
+    setUp: (env: E2EEnv) => void
+    task: string
+    heard: (env: E2EEnv) => string
+  }[] = [
+    {
+      agent: undefined,
+      name: 'Claude Code',
+      setUp: (env) => {
+        // CC§9 ADR-0026
+        fs.writeFileSync(
+          path.join(machineHome(env), '.claude.json'),
+          JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+        )
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-claude-busy-ms'),
+          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
+        )
+      },
+      task: '/busy',
+      heard: (env) => {
+        const peerLog = path.join(machineHome(env), 'fake-claude-peer.jsonl')
+        return fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''
+      }
+    },
+    {
+      agent: 'Muse',
+      name: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-muse-delay'),
+          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
+        )
+      },
+      task: 'write the nightly report',
+      heard: (env) =>
+        museSessionsIn(path.join(machineHome(env), '.local', 'share', 'muse', 'sessions', 'fake'))
+    },
+    {
+      agent: 'Antigravity',
+      name: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-agy-delay'),
+          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
+        )
+      },
+      task: 'write the nightly report',
+      heard: (env) => {
+        const gemini = path.join(machineHome(env), '.gemini')
+        const brain = path.join(gemini, 'antigravity-cli', 'brain')
+        return fs.existsSync(brain)
+          ? fs
+              .readdirSync(brain)
+              .map((id) => agyTranscriptOf(env, id, gemini))
+              .join('\n')
+          : ''
+      }
+    }
+  ]
+  for (const { agent, name, setUp, task, heard } of AGENTS_THAT_RUN_ON_IN_TMUX)
+    test(`a "Close it" run in ${name} on the machine that Koloft quit on in the middle of its turn is not told to carry on when the relaunch reopens it, as ${name} ran on in tmux there, and it closes for good once that turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(480_000)
+      installFakeRemote(env)
+      gitInit(remoteDir(env))
+      setUp(env)
+      try {
+        const first = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(first.page, env)
+          const dlg = await openCron(first.page, REMOTE_WS_NAME)
+          await dlg.locator('button.mini', { hasText: 'New job' }).click()
+          await fillForm(dlg, { agent, name: 'Remote report', task })
+          await dlg.locator('.chip', { hasText: 'Close it' }).click()
+          await dlg.locator('.modal-foot .btn-primary').click()
+          await expect(dlg.locator('.fgrid')).toHaveCount(0)
+          await clickRunNow(first.page, 'Remote report')
+          await expect(cronRows(first.page, REMOTE_WS_NAME)).toHaveClass(/\bst-working\b/, {
+            timeout: 120_000
+          })
+        } finally {
+          await quitAndClose(first.app)
+        }
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await expect(cronRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-working\b/, {
+            timeout: A_REOPENED_REMOTE_RUN_SHOWS_ITS_TURN_WITHIN_MS
+          })
+          await openCron(page, REMOTE_WS_NAME)
+          await expect
+            .poll(async () => (await histLines(page))[0]?.state, { timeout: 300_000 })
+            .toBe('Done — closed itself')
+          expect(heard(env)).not.toContain(TOLD_TO_CARRY_ON)
+        } finally {
+          await quitAndClose(app)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
 
   // AGY§5
   test('an Antigravity job in a remote git workspace agy trusts there starts in its new worktree on the machine without agy asking whether to trust that folder', async ({
@@ -2022,6 +2199,81 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       freshLaunches: (env) => machineAgyCalls(env).length
     }
   ]
+  const trustRemoteDirInClaude = (env: E2EEnv): void => {
+    gitInit(remoteDir(env))
+    // CC§9 ADR-0026
+    fs.writeFileSync(
+      path.join(machineHome(env), '.claude.json'),
+      JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+    )
+  }
+  const REMOTE_PROMPTS: {
+    agent?: JobSpec['agent']
+    backend: BackendId
+    setUp: (env: E2EEnv) => void
+    prompts: (env: E2EEnv) => unknown[]
+  }[] = [
+    {
+      backend: 'claude',
+      setUp: trustRemoteDirInClaude,
+      prompts: (env) => readCalls(env).flatMap((c) => c.argv)
+    },
+    { ...REMOTE_AGENTS[0], backend: 'codex', prompts: (env) => codexPromptsSent(machineWire(env)) },
+    {
+      ...REMOTE_AGENTS[1],
+      backend: 'muse',
+      prompts: (env) => machineMuseCalls(env).flatMap((c) => c.argv)
+    },
+    {
+      ...REMOTE_AGENTS[2],
+      backend: 'agy',
+      prompts: (env) => machineAgyCalls(env).flatMap((c) => c.argv)
+    }
+  ]
+  for (const { agent, backend, setUp, prompts } of REMOTE_PROMPTS) {
+    test(`in ${agent ?? 'Claude'} on a remote workspace: a run's first message opens with when the last run was due and its agent's own session id, then the task`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      try {
+        const first = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(first.page, env)
+          const dlg = await openCron(first.page, REMOTE_WS_NAME)
+          await createJob(first.page, dlg, { agent, name: 'Remote report', task: 'look around' })
+          await storedJobs(env, 1)
+        } finally {
+          await quitAndClose(first.app)
+        }
+        const store = readStore(env)!
+        const lastDue = new Date(2026, 10, 18, 5, 0).getTime()
+        store.jobs[0].history = [
+          { dueAt: lastDue, state: 'closed', sessionId: `${backend}:lab:s-last-run` }
+        ]
+        fs.writeFileSync(storePath(env), JSON.stringify(store))
+
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await openCron(page, REMOTE_WS_NAME)
+          await clickRunNow(page, 'Remote report')
+          await expect
+            .poll(() => prompts(env), { timeout: 120_000 })
+            .toContainEqual(
+              expect.stringMatching(
+                /^Last run of this task: 2026-11-18T05:00[+-]\d\d:\d\d, session s-last-run\.\n\nlook around$/
+              )
+            )
+        } finally {
+          await quitAndClose(app)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
+  }
+
   for (const { agent, setUp, freshLaunches } of REMOTE_AGENTS) {
     test(`BB-M08 in ${agent} on a remote workspace: a run left open at quit comes back as the open run, so Run now skips it`, async ({
       env

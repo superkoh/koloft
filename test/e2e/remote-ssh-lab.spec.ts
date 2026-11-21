@@ -173,6 +173,8 @@ const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
 ].join('\n')
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const KOLOFT_SEES_THE_WAITING_COMMAND_RUN_ON_THE_MACHINE_MS = 6000
+const A_STOPPED_COMMAND_CLOSES_ITS_ASK_MS = 20_000
 const ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS = 30_000
 const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
 const REAL_CODEX_AUTH = process.env.KOLOFT_SMOKE_CODEX_AUTH ?? ''
@@ -769,6 +771,25 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(centerTerm(page)).toContainText('koloft exit=0', {
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
+      }
+    })
+  })
+
+  test('E-SSH-53: koloft instructions add, run inside a session on the machine, asks the owner at the Mac; once that command stops waiting there, ended gently or killed outright, the ask closes', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const ask = page.getByRole('dialog', { name: 'Change the instructions?' })
+      for (const signal of ['TERM', 'KILL']) {
+        await runIn(page, centerTerm(page), `/koloft instructions add -- stopped by ${signal}`)
+        await expect(ask).toBeVisible({
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await page.waitForTimeout(KOLOFT_SEES_THE_WAITING_COMMAND_RUN_ON_THE_MACHINE_MS)
+        runOnTarget(lab, 'kuser', `pkill -${signal} -f '[k]oloft instructions add -- stopped by'`)
+        await expect(ask).toHaveCount(0, { timeout: A_STOPPED_COMMAND_CLOSES_ITS_ASK_MS })
       }
     })
   })
@@ -1768,7 +1789,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
-  test('E-SSH-12: the GitHub button on a session on the machine commits and pushes there with real git to an origin on the machine, and the failing checks the REAL gh reads on this Mac reach a REAL claude there through ssh and tmux as one paste that waits for the question typed after it (opt-in, spends real money)', async ({
+  test('E-SSH-12: the branch button on a session on the machine commits and pushes there with real git to an origin on the machine, and the failing checks the REAL gh reads on this Mac reach a REAL claude there through ssh and tmux as one paste that waits for the question typed after it (opt-in, spends real money)', async ({
     env
   }) => {
     test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
@@ -1796,8 +1817,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(ghButton.locator('.ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
 
         runOnTarget(lab, 'kuser', 'printf "new\\n" > proj/ssh12.txt')
-        await ghButton.click({ button: 'right' })
-        await page.locator('.wb-ghmenu .mi', { hasText: 'Commit…' }).click()
+        const gitButton = page.locator('.wb-git')
+        await expect(gitButton).toHaveText(branch)
+        await gitButton.click()
+        await page.locator('.wb-gitmenu .mi', { hasText: 'Commit…' }).click()
         const dialog = page.locator('.modal', { hasText: 'Commit changes' })
         await dialog.getByLabel('Commit message').fill(message)
         await dialog.getByLabel('Commit message').press('Enter')
@@ -1807,8 +1830,8 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           'ssh12.txt'
         )
 
-        await ghButton.click({ button: 'right' })
-        await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+        await gitButton.click()
+        await page.locator('.wb-gitmenu .mi', { hasText: 'Push' }).click()
         const head = runOnTarget(lab, 'kuser', 'git -C proj rev-parse HEAD').trim()
         await expect
           .poll(
@@ -2305,7 +2328,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await page.evaluate(() => {
         const w = window as unknown as { __toasts: string[] }
         w.__toasts = []
-        window.api.cron.onToast((text) => w.__toasts.push(text))
+        window.api.toast.onShow((text) => w.__toasts.push(text))
       })
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })

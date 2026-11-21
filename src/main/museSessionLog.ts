@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import readline from 'readline'
-import { record } from './codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

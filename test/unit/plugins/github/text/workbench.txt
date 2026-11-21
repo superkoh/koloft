@@ -1,0 +1,20 @@
+== a pull request whose checks fail
+button label: Open pull request #265 · checks failing · right-click for more
+button text: #265
+menu: Open repository
+menu: Open pull requests
+menu: Open pull request #265
+menu: Checks · 1 failing of 2
+menu: Send failing checks
+menu: Check again
+== no pull request
+button label: Open this repository on GitHub · right-click for more
+button text: 
+menu: Open repository
+menu: Open pull requests
+menu: Open pull request…
+menu: Check again
+send with nothing failing: No failing checks to send.
+check again, GitHub unreachable: Could not reach GitHub.
+check again, no pull request: No pull request found for feature/login.
+check again, detached: No pull request found for this checkout.

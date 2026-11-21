@@ -144,6 +144,13 @@ function p2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
+export function localIso(ms: number): string {
+  const d = new Date(ms)
+  const east = -d.getTimezoneOffset()
+  const zone = `${east < 0 ? '-' : '+'}${p2(Math.floor(Math.abs(east) / 60))}:${p2(Math.abs(east) % 60)}`
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}${zone}`
+}
+
 function speechTime(at: string): string {
   const hm = parseHHMM(at)
   if (!hm) return at

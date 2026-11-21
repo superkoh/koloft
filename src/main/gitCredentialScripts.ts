@@ -76,23 +76,23 @@ exit 0
 const GH_AUTH_SUBCOMMANDS = ['login', 'logout', 'switch', 'refresh', 'setup-git', 'token', 'status']
 
 // ADR-0029
-function inButlerFolderRunKoloftGh(butlerFolder: string): string {
-  return `butler="$(cd ${shq(butlerFolder)} 2>/dev/null && pwd -P)"
-if [ -n "$butler" ] && [ -x "$self/koloft" ]; then
-  case "$(pwd -P)/" in "$butler"/*) exec "$self/koloft" gh "$@" ;; esac
+function inFolderRunKoloftGh(koloftGhFolder: string): string {
+  return `folder="$(cd ${shq(koloftGhFolder)} 2>/dev/null && pwd -P)"
+if [ -n "$folder" ] && [ -x "$self/koloft" ]; then
+  case "$(pwd -P)/" in "$folder"/*) exec "$self/koloft" gh "$@" ;; esac
 fi
 `
 }
 
 // PLATFORM§49
-export function ghWrapperScript(requestDir: string, butlerFolder: string): string {
+export function ghWrapperScript(requestDir: string, koloftGhFolder: string): string {
   return ghWrapper(
     `proto=""
 host=""
 ${requestFns(requestDir)}
 ask gh-token "$acct"
 tok=${replyField('token')}`,
-    inButlerFolderRunKoloftGh(butlerFolder)
+    inFolderRunKoloftGh(koloftGhFolder)
   )
 }
 
@@ -131,6 +131,11 @@ if [ -z "$real" ]; then
   echo "gh: not found" >&2
   exit 127
 fi
+if [ "$KOLOFT_GH_HANDED_OFF_PID" = "$$" ] && [ "$KOLOFT_GH_HANDED_OFF_TO" = "$real" ]; then
+  echo "koloft: the gh wrapper came back to itself through $real; that gh runs this one again, so take it off PATH or let it run the real gh." >&2
+  exit 1
+fi
+export KOLOFT_GH_HANDED_OFF_PID="$$" KOLOFT_GH_HANDED_OFF_TO="$real"
 acct="$(git config --get koloft.account 2>/dev/null)"
 plat="$(git config --get koloft.platform 2>/dev/null)"
 case "$plat" in

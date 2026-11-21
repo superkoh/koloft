@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, type BackendId } from '../../src/shared/types'
+import type { BackendId } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { koloftAssist } from '../../src/main/assist'
 import {
   parseRoute,
@@ -108,7 +109,8 @@ for (const backend of ['claude', 'codex', 'muse'] as const) {
       accounts: []
     }),
     enabled: (b) => b === backend,
-    target: async () => (binary ? { binary, env: process.env } : null)
+    target: async () => (binary ? { binary, env: process.env } : null),
+    onThisAccount: async (_backend, asked) => asked
   })
 
   describe.skipIf(!binary)(

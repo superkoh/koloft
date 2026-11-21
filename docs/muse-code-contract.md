@@ -35,6 +35,19 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   first message. `muse resume <session-uuid-or-name>` reopens a session in the TUI.
   `muse exec [OPTIONS] [PROMPT]` runs one prompt headless (subcommand first, its flags
   after). Root options may sit on either side of `resume`.
+- **A first message given on the command line reaches the model whole, at least up to
+  122,866 bytes.** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker image
+  `koloft-probe-muse-agy` with `--network none` and `MUSE_NO_AUTO_UPDATE=1`, the TUI in a
+  python pty answering the terminal's queries, started as Koloft starts a local tab
+  (`--base-url <stand-in> --approval-judge off --sandbox-network enabled
+  --trust-workspace <prompt>`) against a stand-in model that saved each request. The
+  prompts were what Koloft hands a helper the butler starts (its role with the owner's
+  instructions at their 10,000-byte limit in plain letters, in Chinese, and in a mix of
+  line breaks, tabs, quotes, `$HOME`, backticks, `\`, `%s`, `!!`, Chinese and an emoji,
+  then the handover; 16,820–17,860 bytes), and 65,522 and 122,866 bytes of plain
+  letters, each between marker words. In 15 of 15 runs (3 each) the turn's main request
+  (the one with the tools and the longest instructions, as in §12) held the whole prompt
+  as one exact string. Longer prompts and a macOS muse were not run.
 - Options Koloft uses: `--model <id>`, `--reasoning-effort
   none|minimal|low|medium|high|xhigh|max|ultra`, `--trust-workspace` (§10), and the
   approval and sandbox flags of §15. `--model` is refused with `--provider echo`.
@@ -320,6 +333,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   <userData>/palette-pictures/<uuid>.png` in a fresh worktree. It printed "Read <path>"
   and answered `ZEBRA`, the file being outside the workspace. Muse made no title of its
   own, so Koloft's row was titled from the prompt's first characters.
+- **A first prompt that starts with `/` still loads its skill; the `Picture:` line rides
+  after the words.** Measured 2026-11-17, Muse Code 1.4.23 (`1.4.23-R8977.1`, Linux
+  arm64) in Docker `--network none`, a fake model server (`--base-url`,
+  `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`), `--trust-workspace "<prompt>"` in a
+  pty; 1 run each, with and without `\n\nPicture: <png>` (the PNG outside the
+  workspace). `/probe-skill say hi` (in `<ws>/.agents/skills/`) and the built-in `/plan
+  …` each showed "Loaded skill …" and sent the skill body, then the words, then the
+  `Picture:` line, in one user message; `$ARGUMENTS` in the body stays as written.
+  `/nosuch do X` went as plain text, the `Picture:` line after it, with no error. No
+  request held an image part. Inside tmux was not run.
 
 ## §6 tmux swallows OSC 7501
 
@@ -441,6 +464,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   file's name or fate once the command ends; whether a hook's input carries the
   `call_id`, or whether it is the `CLAUDE_CODE_TOOL_USE_ID` the command's environment
   carries (bullet above).
+- **A `bash` command waits 10 s in the foreground, then runs on for at least 11
+  minutes (Linux).** 2026-11-19, `Muse Code 1.4.23 (1.4.23-R8977.1)` in Docker (`--network none`,
+  `MUSE_NO_AUTO_UPDATE=1`), `muse exec --approval-mode never --disable-sandbox` against
+  a fake `/responses` model (its stream events need a `sequence_number`; the catalog at
+  `/muse-code/models` was `{"object":"list","data":[{"id":"fake-model",…}]}`), whose
+  model called `muse.bash` with only `{command: "sleep 660; echo done-after-660"}`; `ps`
+  read every 15 s; one run. The tools come as one `namespace` tool `muse` with nested
+  functions; `bash`'s parameters no longer include `timeout_ms`, and its description
+  says the runtime "waits at most 10 seconds in the foreground" unless `yield_time_ms`
+  (up to 300000) is given, and that a command still running then "remain[s] managed by
+  the runtime … final output arrives later as runtime context". At 10 s the tool result
+  was `execution_state: "background_running"`; the command ran its full 660 s; at 660 s
+  muse sent the model a new request carrying the finished call's output, and `muse exec`
+  stayed up the whole time. Not probed: the TUI, macOS, a command longer than 11
+  minutes.
 - **A `bash` command has no terminal unless the model asks for one, and the macOS
   sandbox refuses sudo itself.** 2026-11-05, `Muse Code 1.4.14 (1.4.14-R7309.1)` on macOS
   27 (official installer, a throwaway HOME, the TUI under `expect`) and `Muse Code 1.4.11
@@ -473,8 +511,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   tool calls, their `Stop`), `session_id` is that child's own id, the one
   `SubagentStart` names as `child_session_id` (fake model).
 - Events Koloft reads: `SessionStart {source: "startup"|"clear"}` at the first prompt
-  of a session (never at idle, never on `muse resume` or in-TUI `/resume`; `/new` says
-  `startup`); `UserPromptSubmit {prompt, turn_id}`; `Stop {last_assistant_message,
+  of a session (never at idle, never on in-TUI `/resume`; `/new` says `startup`; on
+  `muse resume <id>` none on 1.4.7 and 1.4.9, while 1.4.23 sends `{source: "resume"}` at
+  the first prompt typed after it, not at launch — 2026-11-17, `Muse Code 1.4.23
+  (1.4.23-R8977.1)`, Docker, read from Koloft's remote hook log: none 13 s after launch,
+  one after the prompt (that timing in one run; the event itself in 2 of 2), §12); `UserPromptSubmit {prompt, turn_id}`; `Stop {last_assistant_message,
   turn_id}`; `StopFailure {error, last_assistant_message}`; `PreToolUse` / `PostToolUse`
   `{tool_name, tool_input, tool_response}`; `PostToolUseFailure`;
   `SubagentStart` / `SubagentStop {subagent_id, child_session_id}`; `SessionEnd`.
@@ -803,8 +844,72 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - A `SessionStart` hook (§9) that prints
   `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"…"}}`
   puts that text into the developer message of the model request (fake model: read
-  from the request body). It fires again after `/clear`; after `muse resume` the text
-  comes back from the session log without the hook firing.
+  from the request body). It fires again after `/clear`.
+- **On `muse resume` the hook's new text replaces the old one.** 2026-11-17,
+  `Muse Code 1.4.23 (1.4.23-R8977.1)` in the e2e SSH lab image (Docker, Debian 12),
+  started through Koloft's remote tab script as in §17, a stand-in model at `--base-url`
+  saving each request body. A session started with a hook text holding `OLDTEXT-A1` and a
+  first prompt was ended by killing its tmux server once the turn was done; the tab was
+  started again with `resume <id>` (as Koloft resumes, no prompt on the command line) and
+  a hook text holding `NEWTEXT-B2`, and a second prompt was typed. That request held both
+  turns, and its first developer message (where the hook text goes) held `NEWTEXT-B2` and
+  no `OLDTEXT-A1`; the hook got `source: "resume"` (§9). 2 of 2 runs, each on a new
+  session. On 1.4.7 and 1.4.9 the old text came back from the session log and the hook
+  did not fire, so a machine still on an older Muse keeps the old text.
+- **A remote tab's hook text reaches the model whole.** Same day, version and lab:
+  Koloft's `museRunLines`, `remoteMuseHooks` and `sessionStartContext` (rendered from this
+  repo) with `koloftPrompt('muse')`, a blank line and a 7,232-byte block holding newlines,
+  tabs, `'`, `"`, backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, Chinese and an emoji
+  (10,846 bytes), run as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`
+  from the Mac; the packages went in with `docker cp` rather than Koloft's tar push, and
+  the model key, model name and `--base-url` were added by hand. The first
+  developer message of the turn's request held the whole text as one exact string
+  (SHA-256 matched).
+- **A `SessionStart` output of up to 16,384 bytes reaches the model; one byte more and
+  none of it does.** Same day, version and lab, the same remote tab with only its hook
+  file swapped: the hook printed a JSON output of exactly N bytes whose
+  `additionalContext` began and ended with marker words. At N = 16,000 and 16,384 both
+  markers were in the turn's request; at 16,385, 16,390, 16,500, 20,000 and 40,000
+  neither was (the text was dropped whole, not cut), and the turn still ran. The filler was
+  ASCII only, so whether the limit counts bytes or characters for Chinese text was not
+  told apart. Koloft's own Muse prompt makes a 3,717-byte output.
+- **That cap is per hook: several `SessionStart` hooks each reach the model whole, in the
+  order the hooks file lists them, and one over the cap is dropped alone.** 2026-11-19,
+  `Muse Code 1.4.23 (1.4.23-R8977.1)`, Docker image `koloft-probe-muse-agy` with
+  `--network none` and `MUSE_NO_AUTO_UPDATE=1`, `muse exec --base-url <stand-in>
+  --approval-mode never --disable-sandbox --trust-workspace`, the hooks file given by
+  `TBH_MANAGED_HOOKS_PATH`, each hook `cat`-ing a JSON output of an exact size whose
+  `additionalContext` began and ended with marker words; the markers were looked for in
+  the turn's main request (the one with the longest developer message, since Muse
+  sometimes sends a small request first). Both ways of listing the hooks were run, all
+  commands in one group and one group per command, 3 runs each: 2 × 12,000, 2 × 16,384,
+  3 × 12,000, 3 × 16,384 and 6 × 16,000 bytes (96,000 in all) each arrived whole and in
+  order; with 16,384 + 16,385 the first arrived and the second alone was dropped; one hook
+  of 16,383 or 16,384 arrived and 16,385 did not, as above. 43 runs in all, one without
+  hooks.
+- **In the TUI the hooks run again, each whole and in order, after `/clear` and on `muse
+  resume`, and each time they print the text as it is then.** 2026-11-20, the same version
+  and image, the TUI in tmux (a 200 × 50 pane, as on a remote tab) against a stand-in model
+  that streams a whole Responses reply, one group of three `cat` hooks printing 5,166,
+  12,094 and 12,094 bytes whose texts held Chinese, `"`, `$HOME`, backticks, `\`,
+  `{{x}}`, `'`, `%s`, `!!` and a tab. The files were rewritten with new markers before
+  `/clear` and again before the session was resumed with `muse --base-url <stand-in> …
+  resume <id>`: the first turn, the turn after `/clear` and the resumed turn each carried
+  all three texts of that moment whole and in order, and the resumed request also held
+  the earlier turn. 3 of 3 runs. On `Muse Code 1.4.9 (1.4.9-R6297.1)` (its own
+  `aarch64_linux` build from Meta's download manifest, checksum matched) the first turn
+  and the turn after `/clear` did the same, 1 run; its resume was not seen to start in
+  that harness, and 1.4.9 replays the old text on resume anyway (above).
+- **A remote tab with three start hooks gets all three, whole and in order, also after
+  `/clear` and on a resume.** 2026-11-20, 1.4.23 in the e2e SSH lab image, started
+  through Koloft's own `museRunLines`, `remoteMuseHooks` and `sessionStartContext`
+  rendered from this repo and run as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh"
+  start 120 40'`, its hooks file then given two more `cat` hooks for the other two files.
+  The texts were `koloftPrompt('muse', <rules at their limit>)` (13,909 bytes) and two
+  blocks of 9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it.
+  The first turn, a turn after `/clear` (files rewritten first) and a turn of the session
+  resumed through the tab script (files rewritten again) each held the three texts of
+  that moment as exact strings, in order. 1 run each.
 - The same shape with `"hookEventName":"UserPromptSubmit"` lands as a developer message
   in that turn's request, and with `"PostToolUse"` in the next request after the tool
   (1.4.9, fake model, Docker, 2026-10: read from the request body).
@@ -1303,7 +1408,7 @@ and `/tmp` compared before and after.
   choosing `add_memory` when told to remember.
 
 Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
-or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+or Antigravity one (`src/plugins/sessions/main/museSessions.ts`). The butler folder is the same for every
 agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
 butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.
 

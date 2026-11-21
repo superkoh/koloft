@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { knowPluginStates, pluginStates } from '../../src/core/switches'
+import type { SavedSettings } from '../../src/core/settings'
+import { PLUGINS } from '../../src/plugins/list'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import {
   distinctName,
   parseRoute,
@@ -39,6 +43,11 @@ const LIST: RouteWorkspace[] = [
 const reply = (o: object): string => `Sure:\n${JSON.stringify(o)}\n`
 
 describe('routeJob: what Koloft Assist is told', () => {
+  it('the full text Assist is given, pinned so that moving a part of it changes no character', async () => {
+    const { system, prompt } = routeJob(LIST, 'fix the login bug')
+    await expect(`${system}\n---\n${prompt}\n`).toMatchFileSnapshot('./sessionRoute-text/route.txt')
+  })
+
   it('names each workspace by its folder alone, never its full path, and names the machines', () => {
     const { prompt } = routeJob(LIST, 'fix the login bug')
     expect(prompt).not.toContain('/Users/me')
@@ -58,6 +67,38 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).toContain('settings-accounts | Settings ▸ Accounts | 账号, 账户, token')
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
+  })
+
+  it('lists every routable feature in one fixed order, each settings page in the order of the Settings window', () => {
+    const lines = routeJob(LIST, 'x')
+      .prompt.split('\n')
+      .filter((l) => /^[a-z-]+ \| /.test(l))
+    expect(lines).toMatchInlineSnapshot(`
+      [
+        "new-session | New session… | 新会话, 新建会话",
+        "new-worktree-session | New worktree session… | 新 worktree",
+        "add-workspace | Add workspace… | 添加工作区, 加工作区, 打开文件夹, open folder",
+        "add-remote | Add remote workspace… | 远程工作区, ssh",
+        "toggle-workbench | Toggle Workbench | 工作台, 右侧面板",
+        "toggle-sidebar | Toggle sidebar | 侧栏, 侧边栏",
+        "open-settings | Settings… | 设置, 偏好, preferences",
+        "check-update | Check for updates… | 检查更新, 更新, 升级, 新版本, upgrade",
+        "settings-welcome | Settings ▸ Welcome | 欢迎, 入门, getting started",
+        "settings-sessions | Settings ▸ Sessions | 会话设置",
+        "settings-accounts | Settings ▸ Accounts | 账号, 账户, token",
+        "settings-usage | Settings ▸ Usage | 用量, 花费, 费用, cost, spend",
+        "settings-appearance | Settings ▸ Appearance | 外观, 字号, 字体, 主题, 深色, font",
+        "settings-shortcuts | Settings ▸ Shortcuts | 快捷键, keyboard, hotkey",
+        "settings-assist | Settings ▸ Assist | 助手",
+        "settings-plugins | Settings ▸ Plugins | 插件, plugin, 功能开关",
+        "settings-browser-control | Settings ▸ Plugins ▸ Browser control | 网页控制, 浏览器控制",
+        "settings-butler | Settings ▸ Plugins ▸ Butler | 管家",
+        "settings-discord | Settings ▸ Plugins ▸ Discord | 机器人",
+        "settings-notifications | Settings ▸ Notifications | 通知, 提醒",
+        "settings-extensions | Settings ▸ Extensions | 扩展",
+        "settings-about | Settings ▸ About | 关于, 版本号, version",
+      ]
+    `)
   })
 })
 
@@ -215,6 +256,41 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(parseRoute('I think app.', LIST)).toBeNull()
     expect(parseRoute(reply({ workspace: 9 }), LIST)).toBeNull()
     expect(parseRoute(reply({ workspace: '1' }), LIST)).toBeNull()
+  })
+})
+
+describe('with GitHub turned off', () => {
+  afterEach(() => knowPluginStates({}))
+
+  const githubOff = (): void =>
+    knowPluginStates(
+      pluginStates(
+        PLUGINS,
+        { ...DEFAULT_SETTINGS, pluginsOn: { github: false } } as unknown as SavedSettings,
+        DEFAULT_SETTINGS as unknown as SavedSettings
+      )
+    )
+
+  it('Assist is not offered an issue to start from, pinned', async () => {
+    githubOff()
+    const { system, prompt } = routeJob(LIST, 'fix the login bug')
+    expect(prompt).not.toContain('"issue"')
+    await expect(`${system}\n---\n${prompt}\n`).toMatchFileSnapshot(
+      './prompt-text/github-off/route.txt'
+    )
+  })
+
+  it('an issue answered anyway starts no issue worktree, and a new name given beside it still counts', () => {
+    githubOff()
+    const tree = (worktree: unknown): unknown => {
+      const r = parseRoute(reply({ workspace: 1, worktree }), LIST)
+      return r?.kind === 'workspace' ? r.worktree : undefined
+    }
+    expect(tree({ issue: 433 })).toBeNull()
+    expect(tree({ issue: 433, new: 'fix-login-again' })).toEqual({
+      kind: 'new',
+      name: 'fix-login-again'
+    })
   })
 })
 

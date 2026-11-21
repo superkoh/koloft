@@ -1,16 +1,9 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendId } from '@shared/types'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import type { BackendId, McpServer } from '@shared/types'
 import { runsPlaywrightMcp } from './browserControlEnv'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import { realpathSafe } from './projectInfo'
-
-export interface McpServer {
-  name: string
-  backend: BackendId
-  onlyIn?: string
-}
 
 export interface ConfigText {
   text: string | null
@@ -131,32 +124,4 @@ export function codexServers(configToml: string | null): McpServer[] {
     return m && !TURNED_OFF.test(table) ? [m[1] ?? m[2]] : []
   })
   return [...new Set(names)].map((name) => ({ name, backend: 'codex' as const }))
-}
-
-function reachText(s: McpServer): string {
-  return `${BACKEND_LABEL[s.backend]} (${s.onlyIn ? `only in ${s.onlyIn}` : 'everywhere'})`
-}
-
-export function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): string[] {
-  if (!servers.length) return ['No agent has an MCP server set up.']
-  const names = [...new Set(servers.map((s) => s.name))].sort()
-  const reachOf = (name: string): string =>
-    [
-      ...new Set(
-        servers
-          .filter((s) => s.name === name)
-          .sort((a, b) => SESSION_BACKENDS.indexOf(a.backend) - SESSION_BACKENDS.indexOf(b.backend))
-          .map(reachText)
-      )
-    ].join(', ')
-  const lines = names.map((name) => `- ${name}: ${reachOf(name)}`)
-  const reachable = names.filter((name) =>
-    servers.some(
-      (s) => s.name === name && s.backend === mine && (!s.onlyIn || s.onlyIn === myFolder)
-    )
-  )
-  return [
-    ...lines,
-    `You and your helpers run on ${BACKEND_LABEL[mine]}, so you can use: ${reachable.join(', ') || 'none of them'}.`
-  ]
 }

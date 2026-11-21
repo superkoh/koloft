@@ -3,7 +3,15 @@ import path from 'path'
 import { execFileSync, spawn } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { E2E_MUSE_ACCOUNT, installMuse, museSaid, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  addMuseAccount,
+  E2E_MUSE_ACCOUNT,
+  installMuse,
+  MUSE_SIGNED_IN_WITH_META,
+  museSaid,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   addRemoteWorkspace,
   dropTmuxPassthrough,
@@ -17,6 +25,7 @@ import {
   remoteDir,
   remoteKey,
   REMOTE_WS_NAME,
+  seedRemoteWorkspace,
   sshCommands,
   tmuxName,
   type MachineMuseCall
@@ -31,12 +40,16 @@ import {
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
   killSession,
+  museLimitWindows,
   newSessionInWith,
   openMenu,
   openWorktreeSession,
   processAlive,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   switchToRow,
@@ -55,6 +68,7 @@ test.setTimeout(240_000)
 test.afterEach(({ env }) => killFakeRemote(env))
 
 const ON_THE_MACHINE_WITHIN_MS = 60_000
+const OUTLASTS_A_MUSE_USAGE_READ_MS = 30_000
 const A_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS = '5000'
 const APPROVE_KEY = 'y'
 const SKIPS_PERMISSION_PROMPTS_AS_SEEDED = ['--permission-profile', ':unrestricted']
@@ -246,6 +260,44 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
+  test('after Koloft is reopened, the first remote Muse session started while no quota can be read runs on the machine in the account added since, not the one that was full when Koloft was last open', async ({
+    env
+  }) => {
+    installMuse(env)
+    installFakeRemote(env)
+    installMuseOnMachine(env)
+    seedRemoteWorkspace(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      MUSE_SIGNED_IN_WITH_META
+    )
+    const quota = path.join(env.home, 'fake-muse-quota.json')
+    fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 100 }))
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(() => museLimitWindows(page), { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
+        .toBe(2)
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    addMuseAccount(env, 'roomy', MUSE_SIGNED_IN_WITH_META)
+    fs.writeFileSync(quota, JSON.stringify({ current: 'unread', weekly: 'unread' }))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const call = await startRemoteMuse(page, env)
+      expect(call.configHome).toBe(path.join(machineHome(env), '.koloft', 'muse-homes', 'roomy'))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§7 PLATFORM§35
   test('E-RM-11: ⇧⏎ in a remote Muse tab reaches Muse through ssh and tmux as a new line in the prompt, and ⏎ then sends both lines as one prompt', async ({
     env
@@ -263,6 +315,31 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
           timeout: ON_THE_MACHINE_WITHIN_MS
         })
         .toContain(`echo: ${TWO_LINE_PROMPT}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§17
+  test('E-RM-18: ⌘⌫ in a remote Muse tab reaches Muse through ssh and tmux as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const call = await startRemoteMuse(page, env)
+      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      await expect
+        .poll(() => museSaid(env, call.sessionId, machineHome(env)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toContain(`echo: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(JSON.stringify(museSaid(env, call.sessionId, machineHome(env)))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
     } finally {
       await quitAndClose(app)
     }

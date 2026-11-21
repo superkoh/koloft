@@ -21,5 +21,5 @@
     }
   },
   "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/**/*", "src/plugins/**/*"],
-  "exclude": ["src/plugins/*/main/**"]
+  "exclude": ["src/plugins/*/main/**", "src/plugins/starts.ts"]
 }

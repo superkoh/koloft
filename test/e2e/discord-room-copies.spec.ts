@@ -81,7 +81,7 @@ async function roomOfANewSession(
     .poll(
       async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
-        session = all.find((s) => s.alive && !s.butler && s.sessionId)
+        session = all.find((s) => s.alive && !s.overseer && s.sessionId)
         return !!session
       },
       { timeout: STARTS_AND_ANSWERS_MS }

@@ -6,23 +6,13 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import {
-  AGENT_SHIM_WAITS_MS,
-  CLAUDE_AGENT_SHIM,
-  REMOTE_AGENT_SHIM,
-  writeAgentShim
-} from '../../src/main/agentShim'
-import {
-  AgentRequests,
-  answered,
-  refused,
-  replyJson,
-  REQUEST_NAME,
-  type AgentVerbs
-} from '../../src/main/agentRequests'
+import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import { AGENT_SHIM_WAITS_MS, answered, refused } from '../../src/core/command'
+import { AgentRequests, replyJson, REQUEST_NAME } from '../../src/main/agentRequests'
+import { testCommands } from './helpers/testCommands'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
-import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
@@ -33,7 +23,7 @@ let agentDir: string
 let received: { argv: string[]; tabId: string }[]
 let watcher: fs.FSWatcher | null
 
-const verbs: AgentVerbs = {
+const commands = testCommands({
   echo: (args, caller) => {
     received.push({ argv: args, tabId: caller.tabId })
     return answered(args[0] ?? '')
@@ -43,7 +33,7 @@ const verbs: AgentVerbs = {
     await new Promise((r) => setTimeout(r, AGENT_SHIM_WAITS_MS + 500))
     return answered('Answered Fix login.')
   }
-}
+})
 
 const session = (tabId: string): SessionInfo => ({
   tabId,
@@ -59,7 +49,7 @@ const session = (tabId: string): SessionInfo => ({
 
 function listen(dir: string): void {
   watcher = new AgentRequests({
-    verbs,
+    commands,
     tab: () => ({ util: false }),
     session,
     enabled: () => true,
@@ -138,7 +128,7 @@ describe('koloft command in a Claude session', () => {
 
   it('an answer for a koloft command that already went away is never written, so a secret meant for it does not stay on disk', async () => {
     const requests = new AgentRequests({
-      verbs,
+      commands,
       tab: () => ({ util: false }),
       session,
       enabled: () => true,
@@ -240,7 +230,7 @@ describe('koloft command in a Codex session', () => {
 
   it('needs no Koloft variables: its request folder is written into the script', async () => {
     const tab = new AgentRequests({
-      verbs,
+      commands,
       tab: () => undefined,
       session,
       enabled: () => true,
@@ -266,7 +256,7 @@ describe('koloft command in a Codex session', () => {
     for (const args of [['help'], [], ['--help']]) {
       const guide = await run(path.join(shimDir, 'koloft'), args, {})
       expect(guide.status).toBe(0)
-      expect(guide.stdout).toBe(AGENT_GUIDE + '\n')
+      expect(guide.stdout).toBe(agentGuide() + '\n')
     }
   })
 

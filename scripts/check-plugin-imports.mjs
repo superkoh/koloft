@@ -8,15 +8,26 @@ const ROOT = process.cwd()
 const SOURCE_FILE = /\.tsx?$/
 const PLUGINS = 'src/plugins/'
 const PLUGIN_LIST = 'src/plugins/list'
+const LIST_ENTRY = {
+  [PLUGIN_LIST]: 'plugin',
+  'src/plugins/bridges': 'preload/bridge',
+  'src/plugins/uis': 'renderer/ui',
+  'src/plugins/settings': 'shared/settings',
+  'src/plugins/starts': 'main/start'
+}
 const ALIASES = {
   '@shared': 'src/shared',
   '@core': 'src/core',
   '@plugins': 'src/plugins',
   '@renderer': 'src/renderer/src'
 }
+const PUBLIC_SURFACES = new Set(['api', 'windowApi'])
+const WINDOW_UNSAFE = /^(main|prompts)\//
 const RULE =
-  'A plugin imports only src/core, its own folder and the api.ts of a plugin in its needs; ' +
-  'outside src/plugins, only src/plugins/list.ts imports a plugin, and only its plugin.ts (ADR-0051).'
+  'A plugin imports only src/core, its own folder and the api.ts or windowApi.ts of a plugin in its needs; ' +
+  'outside src/plugins, only the lists import a plugin: src/plugins/list.ts its plugin.ts, ' +
+  'src/plugins/bridges.ts its preload/bridge.ts, src/plugins/uis.ts its renderer/ui.tsx, ' +
+  'src/plugins/settings.ts its shared/settings.ts, src/plugins/starts.ts its main/start.ts (ADR-0051).'
 
 const withoutExtension = (p) => p.replace(SOURCE_FILE, '')
 
@@ -82,7 +93,7 @@ function target(fromRel, spec) {
 
 function pluginOf(file) {
   const rel = withoutExtension(file)
-  if (!rel.startsWith(PLUGINS) || rel === PLUGIN_LIST) return undefined
+  if (!rel.startsWith(PLUGINS) || Object.hasOwn(LIST_ENTRY, rel)) return undefined
   const [id, ...rest] = rel.slice(PLUGINS.length).split('/')
   return { id, inside: rest.join('/') }
 }
@@ -92,19 +103,23 @@ const inCore = (rel) => rel === 'src/core' || rel.startsWith('src/core/')
 function breach(fromRel, to, needs) {
   const from = pluginOf(fromRel)
   const into = pluginOf(to)
-  if (withoutExtension(fromRel) === PLUGIN_LIST)
-    return into && into.inside !== 'plugin'
-      ? `imports plugin ${into.id} past its plugin.ts`
+  const list = withoutExtension(fromRel)
+  const entry = Object.hasOwn(LIST_ENTRY, list) && LIST_ENTRY[list]
+  if (entry)
+    return into && into.inside !== entry
+      ? `imports plugin ${into.id} past its ${entry}.ts`
       : undefined
-  if (!from) return into && `names plugin ${into.id} outside the list of plugins`
+  if (!from) return into && `names plugin ${into.id} outside the lists of plugins`
+  if (from.inside === 'windowApi' && into?.id === from.id && WINDOW_UNSAFE.test(into.inside))
+    return `loads ${into.inside}.ts into the window from its windowApi.ts`
   if (into?.id === from.id || inCore(to)) return undefined
   if (into)
-    return into.inside !== 'api'
-      ? `imports plugin ${into.id} past its api.ts`
+    return !PUBLIC_SURFACES.has(into.inside)
+      ? `imports plugin ${into.id} past its api.ts and windowApi.ts`
       : needs.get(from.id)?.has(into.id)
         ? undefined
-        : `imports the api.ts of ${into.id}, which its manifest does not list in needs`
-  if (to === PLUGIN_LIST) return 'imports the list of plugins'
+        : `imports the ${into.inside}.ts of ${into.id}, which its manifest does not list in needs`
+  if (Object.hasOwn(LIST_ENTRY, to)) return 'imports a list of plugins'
   if (to.startsWith('src/shared/'))
     return 'imports src/shared, which is not core (whether it becomes core is not decided)'
   return 'imports app code outside src/core'

@@ -2,8 +2,8 @@ import * as pty from 'node-pty'
 import { Terminal } from '@xterm/headless'
 import type { CodexLimits, CodexLimitWindow } from '@shared/types'
 import { FIVE_HOUR_MINUTES, WEEK_MINUTES } from '@shared/accountUsage'
-import { museShowsItsInputBox } from './museSessions'
-import { typeKeys } from './typeKeys'
+import { museShowsItsInputBox } from '@plugins/sessions/main/museSessions'
+import { typeKeys } from '@core/typeKeys'
 import type { PtyManager } from './ptyManager'
 
 // MUSE§13

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
 import { clickTerminalLink } from './helpers/browser'
@@ -14,7 +15,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
-  addRemoteWorkspace,
+  killFakeRemote,
   launchWithRemote,
   type OtherAgentName,
   REMOTE_WS_NAME,
@@ -23,6 +24,7 @@ import {
   sshCalls,
   stateDir
 } from './helpers/remote'
+import { installOnTheMachine, startRemoteTab } from './helpers/remoteTab'
 import {
   auxIcon,
   centerTerm,
@@ -32,18 +34,41 @@ import {
   openWorktreeSession,
   runIn,
   startSessionIn,
+  switchToRow,
   waitBooted,
   waitForCalls,
   waitStartupTurnOver,
   writeTo,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH } from './helpers/workbench'
+import { WORKBENCH, layoutState } from './helpers/workbench'
 
 const ROOM_FOR_A_WRONG_OPEN_MS = 1500
 const ROWS_SWEPT = 12
 const RESTING_LONGER_THAN_THE_LOOKUP_WAITS_MS = 400
 const ROOM_FOR_MORE_LOOKUPS_TO_START_MS = 1500
+
+async function waitTerminalRefittedBesideTheOpenWorkbench(
+  page: Page,
+  tabId: string
+): Promise<void> {
+  await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const term = (
+            window as unknown as { __koloftTerms: Record<string, { element?: HTMLElement }> }
+          ).__koloftTerms[id]
+          const screen = term?.element?.querySelector('.xterm-screen')
+          const island = term?.element?.closest('.term-island')
+          if (!screen || !island) return false
+          return screen.getBoundingClientRect().right <= island.getBoundingClientRect().right
+        }, tabId),
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+}
 
 function numberedTs(tag: string): string {
   return Array.from({ length: 60 }, (_, i) => `export const l${i + 1} = '${tag}-${i + 1}'`).join(
@@ -219,7 +244,7 @@ function fileLookupsOnTheMachine(env: E2EEnv): {
   let mostAtOnce = 0
   for (const call of sshCalls(env)) {
     const sent = remoteCommandText(call.argv)
-    const file = /src\/v\d+\.ts/.exec(sent)?.[0]
+    const file = /src\/[\w-]+\.ts\b/.exec(sent)?.[0]
     if (!file || !sent.includes('test -f')) continue
     if (call.phase === 'start') {
       asked.push(file)
@@ -273,6 +298,8 @@ const LOCAL_OTHER_AGENTS: {
 ]
 
 test.describe('a file path an agent printed in its terminal opens in the Workbench on ⌘-click', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
+
   test('a path that exists becomes a link; a missing one, a label naming the path after it and the rest of a path broken at the row above do not; a plain click opens nothing, ⌘-click opens the file at its line', async ({
     page,
     env
@@ -362,6 +389,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       writeIn(env.workspaces.a, 'src/w.ts', numberedTs('tfmain'))
       writeIn(tree, 'src/w.ts', numberedTs('tftree'))
       const tabId = await shownTabId(page)
+      await waitTerminalRefittedBesideTheOpenWorkbench(page, tabId)
 
       await writeTo(page, tabId, '\r\ntfw-mark src/w.ts:30\r\n')
       await expect
@@ -410,30 +438,39 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
     }
   })
 
-  test('in a remote tab, the path is looked up and opened on the machine', async ({ env }) => {
-    test.setTimeout(300_000)
-    const { app, page } = await launchWithRemote(env)
-    try {
-      writeIn(remoteDir(env), 'src/r.ts', numberedTs('tfr'))
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await wsRows(page, REMOTE_WS_NAME).first().click()
-      const tabId = await shownTabId(page)
+  for (const backend of SESSION_BACKENDS)
+    test(`in a remote ${BACKEND_LABEL[backend]} tab, the path is looked up and opened on the machine`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installOnTheMachine(env, backend)
+      const { app, page } = await launchWithRemote(env)
+      try {
+        writeIn(remoteDir(env), 'src/r.ts', numberedTs('tfr'))
+        const tabId = await startRemoteTab(page, env, backend)
+        await switchToRow(page, wsRows(page, REMOTE_WS_NAME).first())
 
-      await writeTo(page, tabId, '\r\ntfr-mark src/r.ts:50 and src/gone.ts:1\r\n')
-      await expect
-        .poll(() => linkTextsOnLineWith(page, tabId, 'tfr-mark'), { timeout: 30_000 })
-        .toEqual(['src/r.ts:50'])
+        await writeTo(page, tabId, '\r\ntfr-mark src/r.ts:50 and src/gone.ts:1\r\n')
+        await expect
+          .poll(() => linkTextsOnLineWith(page, tabId, 'tfr-mark'), { timeout: 30_000 })
+          .toEqual(['src/r.ts:50'])
+        await expect
+          .poll(() => [...new Set(fileLookupsOnTheMachine(env).answered)].sort(), {
+            timeout: 30_000
+          })
+          .toEqual(['src/gone.ts', 'src/r.ts'])
 
-      await commandClick(page, 'src/r.ts:50')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('r.ts', { timeout: 30_000 })
-      await expect(page.locator(WORKBENCH.readingBody).getByText('tfr-50').first()).toBeInViewport({
-        timeout: 20_000
-      })
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+        await commandClick(page, 'src/r.ts:50')
+        await expect(page.locator(WORKBENCH.readingTitle)).toContainText('r.ts', {
+          timeout: 30_000
+        })
+        await expect(
+          page.locator(WORKBENCH.readingBody).getByText('tfr-50').first()
+        ).toBeInViewport({ timeout: 20_000 })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('in a remote tab, the mouse sweeping down rows of paths keeps one lookup on its way to the machine; the rows it passes meanwhile are never asked, and a row it then rests on waits for that lookup to come back', async ({
     env
@@ -447,10 +484,8 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
         (_, i) => `src/v${String(i + 1).padStart(2, '0')}.ts`
       )
       for (const file of files) writeIn(remoteDir(env), file, numberedTs('tfv'))
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await wsRows(page, REMOTE_WS_NAME).first().click()
-      const tabId = await shownTabId(page)
+      const tabId = await startRemoteTab(page, env, 'claude')
+      await switchToRow(page, wsRows(page, REMOTE_WS_NAME).first())
       await writeTo(page, tabId, `\r\n${files.map((f) => `tfv-row ${f}:1`).join('\r\n')}\r\n`)
       const points: { x: number; y: number }[] = []
       for (const file of files) points.push(await screenPointOf(page, tabId, `${file}:1`))

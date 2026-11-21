@@ -528,7 +528,11 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           error(id, 'History is unavailable')
           return
         }
-        result(id, { data: p.archived ? [] : savedThreads(), nextCursor: null })
+        const renamedElsewhere = read('fake-codex-renamed-elsewhere')
+        const listed = (p.archived ? [] : savedThreads()).map((thread) =>
+          renamedElsewhere ? { ...thread, name: renamedElsewhere } : thread
+        )
+        result(id, { data: listed, nextCursor: null })
         return
       }
       const said = (thread) =>
