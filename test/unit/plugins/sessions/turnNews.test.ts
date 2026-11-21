@@ -45,10 +45,14 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     const verdicts: ((v: Verdict) => void)[] = []
     const marked = new Set<string>()
     const fyi: string[] = []
+    const held = new Set<string>()
+    const holderHeard: string[] = []
     const j = new NewsJudge({
       judge: () => new Promise((resolve) => verdicts.push(resolve)),
       awaitingVerdict: (tabId) => marked.has(tabId),
-      markFyi: (tabId) => fyi.push(tabId)
+      markFyi: (tabId) => fyi.push(tabId),
+      holdsTurn: (tabId) => held.has(tabId),
+      judgedWhileHeld: (tabId, v) => holderHeard.push(`${tabId} ${v.news}`)
     })
     const heard: string[] = []
     j.onVerdict((tabId, v) => heard.push(`first ${tabId} ${v.news}`))
@@ -57,8 +61,24 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
       verdicts.shift()?.({ news })
       await Promise.resolve()
     }
-    return { j, marked, fyi, heard, verdicts, settle }
+    return { j, marked, fyi, heard, verdicts, settle, held, holderHeard }
   }
+
+  it('the verdict on a turn a plugin holds goes to that plugin first, and to the rest only once it lets the turn go', async () => {
+    const { j, marked, heard, settle, held, holderHeard } = judge()
+    for (const tab of ['tab-A', 'tab-B']) {
+      marked.add(tab)
+      held.add(tab)
+      j.turnEnded(tab, turn('Merge it?'))
+      await settle(false)
+    }
+    expect(holderHeard).toEqual(['tab-A false', 'tab-B false'])
+    expect(heard).toEqual([])
+    j.letGo('tab-A')
+    j.taken('tab-B')
+    j.letGo('tab-B')
+    expect(heard).toEqual(['first tab-A false', 'second tab-A false'])
+  })
 
   it('asks once the turn and its mark are both in, in either order, a flapping mark keeps the verdict, and every subscriber hears each verdict', async () => {
     const { j, marked, fyi, heard, verdicts, settle } = judge()

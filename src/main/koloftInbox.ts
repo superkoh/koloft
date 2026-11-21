@@ -169,6 +169,9 @@ function sayAfterStop(plan: boolean): (a: InboxAction) => InboxAction {
   }
 }
 
+const noteOf = (m: AttentionEvent): Pick<InboxCardInput, 'suggestion'> =>
+  m.note ? { suggestion: { text: m.note } } : {}
+
 export function askCard(
   m: AttentionEvent,
   s: AskedSession,
@@ -180,6 +183,7 @@ export function askCard(
     session: s.sessionId,
     where: where(s),
     happenedAt: m.at,
+    ...noteOf(m),
     links: [{ label: 'Open session', to: { type: 'session' as const, session: s.sessionId } }]
   }
   if (ask?.kind === 'question' && ask.questions.length) {
@@ -276,6 +280,7 @@ export function doneCard(
     session: s.sessionId,
     where: where(s),
     happenedAt: m.at,
+    ...noteOf(m),
     title: `“${s.title}” finished and waits for you`,
     blocks: [
       ...(said

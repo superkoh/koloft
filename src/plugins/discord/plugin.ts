@@ -5,6 +5,7 @@ import {
   SESSION_BOUND,
   SESSION_STARTED,
   STATE_CHANGED,
+  STEP_LET_GO,
   TAB_EXITED,
   TOOL_DONE,
   TURN_ENDED
@@ -41,7 +42,8 @@ export const plugin: PluginManifest = {
       SESSION_BOUND.name,
       STATE_CHANGED.name,
       TOOL_DONE.name,
-      DIALOG_CLOSED.name
+      DIALOG_CLOSED.name,
+      STEP_LET_GO.name
     ]
   }
 }

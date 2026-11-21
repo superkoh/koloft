@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AttentionTracker, type SavedMark } from '../../../../src/plugins/sessions/main/attention'
 import type { AttentionEvent } from '../../../../src/shared/types'
+import { HeldSteps } from '../../../../src/plugins/sessions/main/heldSteps'
+import { discordTakesTheTurnsItCarries } from '../../../../src/plugins/discord/main/sessionHooks'
 
 function makeTracker(lastRun?: SavedMark[]): {
   t: AttentionTracker
@@ -27,7 +29,9 @@ describe('attention — raising events from status transitions', () => {
 
   it('a finished turn someone else has taken raises no mark, and a question on that tab still does', () => {
     const { t, changes } = makeTracker()
-    t.turnTakenElsewhere = (tabId) => tabId === 'tab-A'
+    const steps = new HeldSteps()
+    discordTakesTheTurnsItCarries({ steps, carriedOnDiscord: (tabId) => tabId === 'tab-A' })
+    t.claim = (tabId, step) => steps.claim(tabId, step)
     t.onStatusChange('tab-A', 'working', 'waiting')
     expect(changes).toEqual([])
     t.onStatusChange('tab-B', 'working', 'waiting')
@@ -370,5 +374,66 @@ describe('attention — clearing', () => {
     const before = changes.length
     t.clear('tab-A')
     expect(changes.length).toBe(before)
+  })
+})
+
+describe('attention — a step a plugin holds', () => {
+  function holding(claim: 'hold' | 'take' | undefined = 'hold') {
+    const { t, changes } = makeTracker()
+    const judged: string[] = []
+    t.claim = () => claim
+    t.turnDone = (tabId) => judged.push(tabId)
+    return { t, changes, judged }
+  }
+
+  it('a held step raises no mark, and the held finished turn is judged all the same', () => {
+    const { t, changes, judged } = holding()
+    t.onStatusChange('tab-A', 'working', 'waiting', { title: 'A', sessionId: 's-A' })
+    t.onStatusChange('tab-B', 'working', 'approval')
+    expect(t.list()).toEqual([])
+    expect(changes).toEqual([])
+    expect(judged).toEqual(['tab-A'])
+    expect(t.awaitingVerdict('tab-A')).toBe(true)
+  })
+
+  it('letting a held step go raises its mark then, with the note the plugin gave', () => {
+    const { t, changes } = holding()
+    t.onStatusChange('tab-A', 'working', 'approval', { title: 'A', sessionId: 's-A' })
+    t.letGo('tab-A', 'It checked the tests')
+    expect(t.list()).toEqual([
+      expect.objectContaining({
+        tabId: 'tab-A',
+        kind: 'approval',
+        sessionId: 's-A',
+        note: 'It checked the tests'
+      })
+    ])
+    expect(changes.at(-1)?.event).toMatchObject({ kind: 'approval' })
+  })
+
+  it('a held turn judged only news goes up quiet when let go', () => {
+    const { t } = holding()
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.markFyi('tab-A')
+    t.letGo('tab-A')
+    expect(t.list()).toEqual([expect.objectContaining({ kind: 'turn-done', fyi: true })])
+  })
+
+  it('a taken step, or one whose session worked again, never raises its mark', () => {
+    const { t, changes } = holding()
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.take('tab-A')
+    t.letGo('tab-A')
+    t.onStatusChange('tab-B', 'working', 'approval')
+    t.onStatusChange('tab-B', 'approval', 'working')
+    t.letGo('tab-B')
+    expect(changes).toEqual([])
+  })
+
+  it('a step taken at once never holds a turn for judging', () => {
+    const { t, judged } = holding('take')
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    expect(judged).toEqual([])
+    expect(t.awaitingVerdict('tab-A')).toBe(false)
   })
 })

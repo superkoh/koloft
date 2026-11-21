@@ -19,6 +19,8 @@ export {
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
 export { ANSWER_NOT_TAKEN, type KoloftAsk } from './main/dialog'
 export type { BesideResult, BesideSpec, SessionTabs, TabPlace } from './main/sessionTabs'
+export type { HeldStep, StepClaim, StepHolder } from './main/heldSteps'
+export type { Verdict } from './main/turnNews'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {

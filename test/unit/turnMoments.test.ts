@@ -82,7 +82,8 @@ function wired(o: { handsOff?: boolean; asksMade?: boolean; butlerTab?: boolean 
     relay: () => ({
       turnEnded: (tabId) => say('relay.turnEnded')(tabId),
       stoppedAsking: () => {},
-      codexAsked: () => {}
+      codexAsked: () => {},
+      askLetGo: () => {}
     }),
     typing: () => ({ refresh: say('typing.refresh') }),
     rooms: () => ({
