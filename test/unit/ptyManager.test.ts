@@ -313,6 +313,32 @@ describe('PtyManager per-tab environment', () => {
     }
   })
 
+  it('passes the browser endpoint and account a backend sets for its own tab to the process, over the inherited ones it removes', () => {
+    const mine = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
+    new PtyManager().create({
+      kind: 'agy',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      executable: '/bin/agy',
+      processEnv: {
+        PATH: '/usr/bin',
+        KOLOFT_BROWSER_CDP: 'ws://127.0.0.1:9999/cdp/' + 'a'.repeat(32),
+        ANT_ACCOUNT: 'whoever-started-koloft'
+      },
+      envSetForThisTab: {
+        ANT_ACCOUNT: 'work',
+        KOLOFT_BROWSER_CDP: mine,
+        PLAYWRIGHT_MCP_CDP_ENDPOINT: mine,
+        PLAYWRIGHT_CLI_SESSION: 'koloft-pty-1'
+      }
+    })
+    const own = spawnedEnv()
+    expect(own.KOLOFT_BROWSER_CDP).toBe(mine)
+    expect(own.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(mine)
+    expect(own.PLAYWRIGHT_CLI_SESSION).toBe('koloft-pty-1')
+    expect(own.ANT_ACCOUNT).toBe('work')
+  })
+
   it('forces a UTF-8 locale when none is inherited', () => {
     const mgr = new PtyManager()
     mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })

@@ -17,7 +17,7 @@ export function museHomeOf(userData: string, name: string): string {
 
 // MUSE§21
 export const MUSE_PASSES_TO_PLAYWRIGHT = Object.keys(playwrightMcpEnv(''))
-const SET_THOUGH_THERE_IS_NO_WORKBENCH_BROWSER = Object.fromEntries(
+export const SET_THOUGH_THERE_IS_NO_WORKBENCH_BROWSER = Object.fromEntries(
   MUSE_PASSES_TO_PLAYWRIGHT.map((key) => [key, ''])
 )
 

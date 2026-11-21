@@ -7,6 +7,7 @@ import {
   TURN_ENDED,
   TURN_STARTED
 } from '../../src/core/moment'
+import { knowPluginStates } from '../../src/core/switches'
 import type { AskPayload } from '../../src/shared/sessionEvent'
 import type { Turn } from '../../src/shared/turns'
 import { PLUGINS } from '../../src/plugins/list'
@@ -186,5 +187,18 @@ describe('what each plugin does when a turn starts or ends, a question is asked 
     void moments.announce(SESSION_BOUND, { tabId: 't1', key: 'k1', idleCompaction: true })
     await settle()
     expect(calls).toContain('rooms.bound t1 false')
+  })
+
+  it('while Discord is off a bind still reaches its rooms, so a room follows a new conversation started then, but not its typing', async () => {
+    const { moments, calls, settle } = wired()
+    try {
+      knowPluginStates({ discord: { on: false } })
+      void moments.announce(SESSION_BOUND, { tabId: 't1', key: 'k1', idleCompaction: false })
+      await settle()
+    } finally {
+      knowPluginStates({})
+    }
+    expect(calls).toContain('rooms.bound t1 true')
+    expect(calls).not.toContain('typing.refresh t1')
   })
 })

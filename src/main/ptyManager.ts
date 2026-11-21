@@ -44,6 +44,7 @@ interface CreateArgs {
   argv?: string[]
   aboveItsTools?: boolean
   processEnv?: NodeJS.ProcessEnv
+  envSetForThisTab?: Record<string, string>
   koloftShim: false | { hookSettings(tabId: string): string | undefined }
   finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
@@ -308,6 +309,7 @@ export class PtyManager extends EventEmitter {
         if (v !== undefined) env[k] = v
       }
     }
+    if (args.envSetForThisTab) Object.assign(env, args.envSetForThisTab)
 
     if (args.finishEnv) {
       env = Object.fromEntries(

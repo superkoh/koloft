@@ -189,7 +189,8 @@ interface PinnedFormats {
       pluginId: string,
       moment: V1Moment<T>,
       hear: (moment: T) => unknown,
-      afterPlugins?: readonly string[]
+      afterPlugins?: readonly string[],
+      heardWhileOff?: boolean
     ) => () => void
     announce: <T>(moment: V1Moment<T>, m: T) => Promise<string[]>
     promptContext: V1PromptContext
