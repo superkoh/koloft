@@ -32,4 +32,15 @@ describe('HeldSteps — which plugin holds a step', () => {
     expect(heard).toEqual(['second tab-A'])
     expect(steps.askClaimed('tab-C')).toBe(true)
   })
+
+  it('a question claimed before its tab showed it is let go once, so what waited on it runs once, and one never claimed is not let go', () => {
+    const steps = new HeldSteps()
+    const h = holder('h', [])
+    steps.hold(h)
+    h.says = 'hold'
+    steps.askClaimed('tab-A')
+    h.says = undefined
+    steps.askClaimed('tab-B')
+    expect(['tab-A', 'tab-A', 'tab-B'].map((tab) => steps.letGo(tab))).toEqual([true, false, false])
+  })
 })

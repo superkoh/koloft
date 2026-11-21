@@ -6903,12 +6903,14 @@ const startedPlugins: PluginsStarted = startPlugins(
         tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
         holdSteps: (holder) => heldSteps.hold(holder),
         letGo: (tabId, note) => {
-          if (!attention.letGo(tabId, note)) return
-          newsJudge.letGo(tabId)
-          announceNow(STEP_LET_GO, tabId)
+          const markHeld = attention.letGo(tabId, note)
+          const askHeld = heldSteps.letGo(tabId)
+          if (markHeld) newsJudge.letGo(tabId)
+          if (markHeld || askHeld) announceNow(STEP_LET_GO, tabId)
         },
         take: (tabId) => {
           attention.take(tabId)
+          heldSteps.letGo(tabId)
           newsJudge.taken(tabId)
         },
         startBeside: (tabId, spec) =>

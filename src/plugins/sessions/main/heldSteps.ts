@@ -12,6 +12,7 @@ export interface StepHolder {
 export class HeldSteps {
   private holders: StepHolder[] = []
   private heldBy = new Map<string, StepHolder>()
+  private askWasClaimed = new Set<string>()
 
   hold(holder: StepHolder): void {
     this.holders.push(holder)
@@ -33,7 +34,13 @@ export class HeldSteps {
   }
 
   askClaimed(tabId: string): boolean {
-    return this.claimer(tabId, 'approval') !== undefined
+    const claimed = this.claimer(tabId, 'approval') !== undefined
+    if (claimed) this.askWasClaimed.add(tabId)
+    return claimed
+  }
+
+  letGo(tabId: string): boolean {
+    return this.askWasClaimed.delete(tabId)
   }
 
   judged(tabId: string, verdict: Verdict): void {
