@@ -61,7 +61,12 @@ let gemini: string
 let sessions: AgySessions
 let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
-let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
+let created: {
+  id: string
+  argv: string[]
+  env: NodeJS.ProcessEnv
+  setForTab: Record<string, string>
+}[]
 let agentTools: boolean
 let projectRules: string | undefined
 let browserEndpoint: string
@@ -134,7 +139,10 @@ const events = (type: SessionEvent['type']): SessionEvent[] =>
     .mock.calls.map(([, e]) => e)
     .filter((e) => e.type === type)
 
-const tabEnv = (tabId: string): NodeJS.ProcessEnv => created.find((c) => c.id === tabId)!.env
+const tabEnv = (tabId: string): NodeJS.ProcessEnv => {
+  const c = created.find((one) => one.id === tabId)!
+  return { ...c.env, ...c.setForTab }
+}
 const say = (tabId: string, data: string): void => {
   pty.emit('data', { id: tabId, data })
 }
@@ -226,10 +234,22 @@ beforeEach(() => {
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
-    create: vi.fn((args: { id: string; argv: string[]; processEnv: NodeJS.ProcessEnv }) => {
-      created.push({ id: args.id, argv: args.argv, env: args.processEnv })
-      return { id: args.id, startedAt: Date.now() }
-    }),
+    create: vi.fn(
+      (args: {
+        id: string
+        argv: string[]
+        processEnv: NodeJS.ProcessEnv
+        envSetForThisTab?: Record<string, string>
+      }) => {
+        created.push({
+          id: args.id,
+          argv: args.argv,
+          env: args.processEnv,
+          setForTab: args.envSetForThisTab ?? {}
+        })
+        return { id: args.id, startedAt: Date.now() }
+      }
+    ),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
     type: vi.fn(async () => undefined),
@@ -411,7 +431,7 @@ describe('AgySessions launch', () => {
 
   it("keeps playwright-cli's snapshots and screenshots in a folder of the tab under the temp folder, out of the workspace", async () => {
     await launch()
-    expect(created[0].env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+    expect(created[0].setForTab.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
       path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
     )
   })
@@ -636,7 +656,7 @@ describe('AgySessions launch', () => {
     browserEndpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(allowHere()).toEqual({ allow: ['mcp(pw/*)'] })
-    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
+    expect(created.at(-1)!.setForTab.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
     browserEndpoint = ''
     await launch()
     expect(allowHere()).toBeUndefined()
