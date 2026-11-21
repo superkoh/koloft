@@ -142,7 +142,7 @@ const OPEN_RAN = ['completed', 'failed']
 
 // CODEX§4 CODEX§12
 function itemFinished(item: Record<string, unknown>): boolean {
-  if (item.status === 'completed') return true
+  if (item.status === undefined || item.status === 'completed') return true
   return (
     item.type === 'commandExecution' &&
     item.status === 'failed' &&
