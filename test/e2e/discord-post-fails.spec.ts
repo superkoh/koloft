@@ -1,14 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   newSessionInWith,
@@ -182,13 +174,6 @@ test.describe('a session’s password ask that cannot reach the owner on Discord
 
   const OTHER_AGENTS_ON_THIS_MAC = [
     { label: 'Codex' as const, install: (env: E2EEnv) => installCodex(env) },
-    {
-      label: 'Muse' as const,
-      install: (env: E2EEnv) => {
-        installMuse(env)
-        trustInMuse(env, env.workspaces.a)
-      }
-    },
     {
       label: 'Antigravity' as const,
       install: (env: E2EEnv) => {

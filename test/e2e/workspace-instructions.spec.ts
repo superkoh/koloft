@@ -5,11 +5,9 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   installAgy,
   installCodex,
-  installMuse,
   seedSettings,
   setGithubFixture,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import {
@@ -137,15 +135,6 @@ function codexInstructions(log: LogLine[], cwd?: string): string[] {
     )
 }
 
-function museTold(log: LogLine[]): string[] {
-  const bySession = new Map<string, string[]>()
-  for (const { sessionId, out } of log) {
-    const told = JSON.parse(out as string).hookSpecificOutput.additionalContext as string
-    bySession.set(String(sessionId), [...(bySession.get(String(sessionId)) ?? []), told])
-  }
-  return [...bySession.values()].map((parts) => parts.join('\n\n'))
-}
-
 function agyStarts(log: LogLine[]): string[] {
   return log.filter((r) => r.event === 'SessionStart').map((r) => String(r.systemMessage))
 }
@@ -185,12 +174,8 @@ async function firstTurnIn(
 function installAll(env: E2EEnv): void {
   seedSettings(env, { hintsOff: true })
   installCodex(env)
-  installMuse(env)
   installAgy(env)
-  for (const ws of [env.workspaces.a, env.workspaces.b]) {
-    trustInMuse(env, ws)
-    trustInAgy(env, ws)
-  }
+  for (const ws of [env.workspaces.a, env.workspaces.b]) trustInAgy(env, ws)
 }
 
 test.describe("A workspace's Instructions: written by the owner in Session defaults, placed last in the prompt of every session started in that workspace, on each agent, and in no other workspace's", () => {
@@ -312,32 +297,6 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
     }
   })
 
-  // MUSE§12
-  test('Muse: the start hooks of a session in ws-a end with the instructions for every workspace and then the text, each from a hook of its own, and those of a session in ws-b, which leaves them out, hold neither', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installAll(env)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await writeInstructions(page, 'ws-a')
-      await writeEveryWorkspace(page)
-      await leaveOutEveryWorkspace(page, 'ws-b')
-      const log = (): LogLine[] => fakeCodexLog<LogLine>(env, 'fake-muse-told.jsonl')
-      const told = (): string[] => museTold(log())
-      await firstTurnIn(page, 'ws-a', 'Muse', told, 0)
-      await expect.poll(() => told()[0]?.endsWith(SHARED_THEN_OWN)).toBe(true)
-      expect(museTold(log().slice(-2))).toEqual([`${everyPart(EVERY)}${LAST}`])
-      const inB = await firstTurnIn(page, 'ws-b', 'Muse', told, 1)
-      expect(inB).not.toContain(HEADING)
-      expect(inB).not.toContain(EVERY_HEADING)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
   // AGY§8
   test('Antigravity: the start message of a session in ws-a ends with the instructions for every workspace and then the text, and that of a session in ws-b, which leaves them out, holds neither', async ({
     env
@@ -363,7 +322,7 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
     }
   })
 
-  test('on a remote workspace each of the four agents gets the instructions for every workspace and then the text, last; a session on this Mac gets only the ones for every workspace; once the remote workspace leaves them out, none of the four gets them', async ({
+  test('on a remote workspace each of the three agents gets the instructions for every workspace and then the text, last; a session on this Mac gets only the ones for every workspace; once the remote workspace leaves them out, none of the three gets them', async ({
     env
   }) => {
     test.setTimeout(480_000)
@@ -412,33 +371,17 @@ test.describe("A workspace's Instructions: written by the owner in Session defau
         codexInstructions(machineCodexLog<LogLine>(env, 'fake-codex-server-calls.jsonl'))
       const agy = (): string[] =>
         agyStarts(machineCodexLog<LogLine>(env, 'fake-agy-injected.jsonl'))
-      const muse = (): string[] => museTold(machineCodexLog<LogLine>(env, 'fake-muse-told.jsonl'))
-      const museTabs: string[] = []
-      const museHeard = async (index: number): Promise<string> => {
-        const museTab = (
-          await rows
-            .filter({ has: page.getByRole('img', { name: 'Muse', exact: true }) })
-            .evaluateAll((all) => all.map((r) => r.getAttribute('data-tab-id') ?? ''))
-        ).find((id) => id && !museTabs.includes(id))!
-        museTabs.push(museTab)
-        await typeUntilHeard(muse, index, () =>
-          page.evaluate((tab) => window.api.terminal.write(tab, 'first words\r'), museTab)
-        )
-        await expect.poll(() => muse()[index]?.endsWith(LAST)).toBe(true)
-        return muse()[index]
-      }
       await expect.poll(() => codex().length, { timeout: 60_000 }).toBe(1)
       expect(codex()[0].endsWith(SHARED_THEN_OWN)).toBe(true)
       expect(agy()).toHaveLength(1)
       expect(agy()[0].endsWith(SHARED_THEN_OWN)).toBe(true)
-      expect((await museHeard(0)).endsWith(SHARED_THEN_OWN)).toBe(true)
 
       await leaveOutEveryWorkspace(page, REMOTE_WS_NAME)
       expectInlineAfterThePromptFile((await claudeIn(env, page, REMOTE_WS_NAME)).argv)
-      await startTheOtherThree(5)
+      await startTheOtherThree(4)
       await expect.poll(() => codex().length, { timeout: 60_000 }).toBe(2)
       await expect.poll(() => agy().length, { timeout: 60_000 }).toBe(2)
-      for (const told of [codex()[1], agy()[1], await museHeard(1)]) {
+      for (const told of [codex()[1], agy()[1]]) {
         expect(told.endsWith(LAST)).toBe(true)
         expect(told).not.toContain(EVERY_HEADING)
       }

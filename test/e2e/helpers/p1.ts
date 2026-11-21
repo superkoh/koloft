@@ -589,7 +589,7 @@ export function dialogPrimary(dlg: Locator): Locator {
   return dlg.locator('.modal-foot .btn-primary:not([aria-haspopup])')
 }
 
-export type AgentName = 'Claude' | 'Codex' | 'Muse' | 'Antigravity'
+export type AgentName = 'Claude' | 'Codex' | 'Antigravity'
 
 export function agentRow(page: Page, method: AgentName): Locator {
   return page
@@ -831,12 +831,6 @@ export async function expectNoCodexWhileTheCheckIsOutNorAfter(
 export async function agyQuotaUsed(page: Page): Promise<number | undefined> {
   return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
     ?.quota?.[0]?.used
-}
-
-export async function museLimitWindows(page: Page): Promise<number | undefined> {
-  return (await page.evaluate(() => window.api.accounts.probe())).find(
-    (a) => a.kind === 'muse-home'
-  )?.limits?.windows.length
 }
 
 export async function codexAccountsWithLimits(page: Page): Promise<number> {

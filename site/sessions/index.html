@@ -107,12 +107,12 @@
 
         <h2>Where the list comes from</h2>
         <p>
-          Koloft runs four agents: Claude Code, Codex, Meta's Muse Code and Google's Antigravity CLI
+          Koloft runs three agents: Claude Code, Codex and Google's Antigravity CLI
           (<code>agy</code>, the one that took over from Gemini CLI; CLI means command-line tool).
           Each already keeps every session in its own files. Koloft reads the chats from there and
           keeps only a short list of which ones belong to Koloft. Add a folder with
           <kbd>⇧⌘O</kbd> and its sessions show up under it. Where this page says Claude and Codex,
-          what Muse and Antigravity do is on the <a href="../accounts/">accounts</a>,
+          what Antigravity does is on the <a href="../accounts/">accounts</a>,
           <a href="../remote/">remote</a> and <a href="../agents/">agents</a> pages.
         </p>
         <p>
@@ -216,7 +216,7 @@
             its tab stays open with its last screen. The branch line under the row's title ends with
             <code>· exited (code N)</code> or <code>· killed (signal N)</code>, and the row's tip
             reads <code>Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it</code>. If
-            it quits cleanly, as when you type <code>/exit</code>, the tab closes. All four agents
+            it quits cleanly, as when you type <code>/exit</code>, the tab closes. All three agents
             do this, on your Mac and on a <a href="../remote/">remote folder</a>. A tab that a
             <a href="../scheduled/">scheduled job</a> opened stays too once its run has started; if
             the agent quits before that, the tab closes.
@@ -291,8 +291,8 @@
           <li>when a Codex plan is ready: <code>Plan ready: implement it?</code></li>
         </ul>
         <p>
-          Before the agent has done or asked anything, there is no such line. Claude, Codex, Muse
-          and Antigravity all do this, on your Mac and on a <a href="../remote/">remote folder</a>.
+          Before the agent has done or asked anything, there is no such line. Claude, Codex and
+          Antigravity all do this, on your Mac and on a <a href="../remote/">remote folder</a>.
         </p>
 
         <h2 id="red-dots">Red dots</h2>
@@ -444,8 +444,8 @@
             <code>Show it again</code> for you (you have 5 seconds to <code>Undo</code>).
           </li>
           <li>
-            On a <a href="../remote/">remote folder</a>, Claude, Muse and Antigravity keep running
-            while Koloft is closed and still show their question, so once the tab is back, the card
+            On a <a href="../remote/">remote folder</a>, Claude and Antigravity keep running while
+            Koloft is closed and still show their question, so once the tab is back, the card
             answers it there as before. A remote Codex session stops with Koloft: once its tab is
             back, its card answers it with a message, as on your Mac.
           </li>
@@ -471,7 +471,7 @@
           </li>
         </ul>
         <p>
-          The Inbox works for Claude, Codex, Muse and Antigravity, on your Mac and on a
+          The Inbox works for Claude, Codex and Antigravity, on your Mac and on a
           <a href="../remote/">remote folder</a>. Besides what happens after Koloft is closed
           (above), one difference: a remote session's card has no <code>Close it for good</code>.
         </p>
@@ -581,15 +581,15 @@
           <li>
             When your words start a session, or go to a helper of your butler, they end with one
             <code class="nowrap">Picture: …</code> line per picture. The line names a copy Koloft
-            keeps on this Mac for about a week. Claude Code, Codex, Muse Code and Antigravity all
-            get these lines; Antigravity may ask you before it opens a picture. When a session
-            starts in a <a href="../remote/">remote folder</a>, Koloft first copies the picture to
-            that machine, and the line names the copy there. That copy can be deleted after about a
-            day, the same way as a <a href="../workbench/#pick">picked part of a page</a>. If the
-            copy fails, Koloft says <code>A pasted picture could not be copied to …</code>, and the
-            line names the file on this Mac. The picture is left behind when <kbd>⌘P</kbd> jumps to
-            a session or a workspace, does an action like "open settings", or sets up Discord.
-            Assist sees only your words, not the picture.
+            keeps on this Mac for about a week. Claude Code, Codex and Antigravity all get these
+            lines; Antigravity may ask you before it opens a picture. When a session starts in a
+            <a href="../remote/">remote folder</a>, Koloft first copies the picture to that machine,
+            and the line names the copy there. That copy can be deleted after about a day, the same
+            way as a <a href="../workbench/#pick">picked part of a page</a>. If the copy fails,
+            Koloft says <code>A pasted picture could not be copied to …</code>, and the line names
+            the file on this Mac. The picture is left behind when <kbd>⌘P</kbd> jumps to a session
+            or a workspace, does an action like "open settings", or sets up Discord. Assist sees
+            only your words, not the picture.
           </li>
           <li>
             When none of your accounts can run <a href="../accounts/#assist">Assist</a>, the button
@@ -664,8 +664,7 @@
             When the worktree cannot be made again, a box titled
             <code>Could not rebuild the worktree</code> offers
             <code>Resume in main without isolation</code>: the same session goes on in the folder
-            itself, so every file it touches lands there. Claude, Codex, Muse and Antigravity all do
-            this.
+            itself, so every file it touches lands there. Claude, Codex and Antigravity all do this.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in
@@ -692,9 +691,9 @@
           A new worktree has none of the files git ignores, such as <code>.env</code>. List the ones
           you want in a <code>.worktreeinclude</code> file at the root of the repo, and they are
           copied into each worktree. Claude Code copies them into the worktrees it makes. Koloft
-          copies them into every worktree it makes: for a Codex, Muse or Antigravity session, for a
-          pull request, and when it rebuilds the worktree of a resumed Claude session. This works on
-          a <a href="../remote/">remote folder</a> too.
+          copies them into every worktree it makes: for a Codex or Antigravity session, for a pull
+          request, and when it rebuilds the worktree of a resumed Claude session. This works on a
+          <a href="../remote/">remote folder</a> too.
         </p>
 
         <h2 id="session-tree">Sessions an agent starts</h2>
@@ -1026,8 +1025,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
-            Meta or Google.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI or
+            Google.
           </p>
         </div>
         <nav aria-label="Docs">

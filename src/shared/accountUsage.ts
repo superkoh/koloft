@@ -71,7 +71,6 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
     'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   codex:
     'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
-  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   agy: 'No Antigravity account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
 }
 

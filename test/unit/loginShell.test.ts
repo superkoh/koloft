@@ -82,7 +82,6 @@ describe('one login shell answers every agent lookup at startup', () => {
     expect(first.commandV).toEqual({
       claude: 'claude',
       codex: path.join(zdotdir, 'bin', 'codex'),
-      muse: '',
       agy: ''
     })
   })
@@ -91,7 +90,7 @@ describe('one login shell answers every agent lookup at startup', () => {
     fs.writeFileSync(path.join(zdotdir, '.zshrc'), 'setopt ERR_EXIT\n')
     const { shell } = countingZsh()
     const round = await agentsInLoginShell({ PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir }, shell)
-    expect(round.commandV.muse).toBe('')
+    expect(round.commandV.agy).toBe('')
     expect(round.env.PATH).toBeTruthy()
   })
 

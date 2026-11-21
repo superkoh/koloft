@@ -2,11 +2,10 @@ import { PROGRAM_STATUS_REPLY } from '../programStatus'
 
 export const STATUS_RELAY_FILE = 'status-relay.py'
 
-export const pyBytes = (s: string): string =>
+const pyBytes = (s: string): string =>
   "b'" + [...s].map((c) => (c === '\x1b' ? '\\x1b' : c === '\\' ? '\\\\' : c)).join('') + "'"
 
-// MUSE§3 MUSE§6 MUSE§17
-export const STATUS_RELAY_DEFS_PY = `STATUS_REPLY = ${pyBytes(PROGRAM_STATUS_REPLY)}
+const STATUS_RELAY_DEFS_PY = `STATUS_REPLY = ${pyBytes(PROGRAM_STATUS_REPLY)}
 OPEN = b'\\x1b]7501;'
 FRAME = re.compile(b'\\x1b\\\\]7501;([^\\x07\\x1b]*)(?:\\x07|\\x1b\\\\\\\\)')
 LONGEST_PARTIAL_FRAME = 4096
@@ -32,7 +31,7 @@ def held_back(chunk):
     return len(chunk)
 `
 
-export const CHILD_IN_A_PTY_PY = `pid, fd = pty.fork()
+const CHILD_IN_A_PTY_PY = `pid, fd = pty.fork()
 if pid == 0:
     try:
         os.execvp(args[0], args)
@@ -57,7 +56,7 @@ except Exception:
     saved_tty = None
 `
 
-export const RELAY_LOOP_PY = `reading = [0, fd]
+const RELAY_LOOP_PY = `reading = [0, fd]
 pending = b''
 next_poll = 0.0
 while True:

@@ -514,7 +514,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     seedSettings(env, {
       sessionMethods: {
         defaultBackend: 'codex',
-        enabled: { claude: false, codex: true, muse: true, agy: true }
+        enabled: { claude: false, codex: true, agy: true }
       }
     })
     edWriteStore(env, [{ name: JOB, schedule: { kind: 'daily', at: '03:00' } }])

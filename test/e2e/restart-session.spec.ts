@@ -8,11 +8,8 @@ import {
   E2E_CLAUDE_ACCOUNT,
   installAgentFor,
   installAgy,
-  installMuse,
-  museCalls,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   writeClaudeWrapper,
   type E2EEnv
 } from './helpers/env'
@@ -939,16 +936,6 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
     })
 
     const OTHER_LOCAL_AGENTS = [
-      {
-        backend: 'muse',
-        label: 'Muse',
-        install: (env: E2EEnv) => {
-          installMuse(env)
-          trustInMuse(env, env.workspaces.a)
-        },
-        ready: (page: Page) => expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/),
-        launches: museCalls
-      },
       {
         backend: 'agy',
         label: 'Antigravity',

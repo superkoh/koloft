@@ -51,7 +51,7 @@ describe("a project's own rules for picking a session's model and effort", () =>
 })
 
 describe('koloftPrompt questions', () => {
-  it.each(['codex', 'muse', 'agy'] as const)(
+  it.each(['codex', 'agy'] as const)(
     'names the question tool of a %s session under QUESTIONS',
     (backend) => {
       const prompt = koloftPrompt(backend)

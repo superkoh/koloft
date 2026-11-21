@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import { installAgy, installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   butlerRow,
   centerTerm,
@@ -88,7 +88,7 @@ test.describe('The butler’s Instructions: written by the owner, placed last in
       await page.keyboard.press('Meta+Enter')
       await expect(editor).toHaveCount(0)
       await expect(page.locator('.toast-msg')).toContainText(
-        'Alfred uses it from the next fresh conversation (on Muse, from the next start; on Claude Code, also from its next compaction).'
+        'Alfred uses it from the next fresh conversation (on Claude Code, also from its next compaction).'
       )
       await expect
         .poll(() => (settingsOnDisk(env).butler as ButlerSetting).instructions?.at(-1)?.text)
@@ -140,30 +140,6 @@ test.describe('The butler’s Instructions: written by the owner, placed last in
       )
       expect(told.length).toBeGreaterThan(0)
       for (const instructions of told) expect(instructions.endsWith(LAST_IN_THE_ROLE)).toBe(true)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
-  // MUSE§12
-  test('Muse: the butler’s last start hook holds the owner’s text, apart from its role', async ({
-    env
-  }) => {
-    installMuse(env)
-    const { app, page } = await launched(env, { ...WRITTEN, assist: { backend: 'muse' } })
-    try {
-      await butlerRow(page).click()
-      await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      await expect(strip(page)).toBeVisible()
-      await runIn(page, centerTerm(page), 'hello')
-      const toldFile = path.join(env.home, 'fake-muse-told.jsonl')
-      await expect.poll(() => jsonLines(toldFile).length, { timeout: 30_000 }).toBe(2)
-      const [role, owners] = jsonLines(toldFile).map(
-        ({ out }) => JSON.parse(out as string).hookSpecificOutput.additionalContext as string
-      )
-      expect(role).toContain('Alfred')
-      expect(role).not.toContain(OWNER_PART)
-      expect(owners).toBe(OWNER_PART)
     } finally {
       await quitAndClose(app)
     }

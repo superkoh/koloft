@@ -2,7 +2,6 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { keychainNamespace, keychainServiceSuffix } from '@shared/types'
-import { MUSE_PASSES_TO_PLAYWRIGHT, museAccountEnv } from './museAccounts'
 import { agyAccountEnv } from './agyAccounts'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
@@ -179,50 +178,6 @@ ${utilTerminalRefusal(label, hint)}
 fi`
 }
 
-// MUSE§1
-const MUSE_FLAGS_FOLLOWED_BY_A_VALUE = [
-  '-c',
-  '--config',
-  '--agents',
-  '--provider',
-  '--preset',
-  '--model',
-  '--contributor-mode',
-  '--reasoning-effort',
-  '--effort',
-  '--base-url',
-  '--image',
-  '--workspace',
-  '--worktree-base',
-  '--worktree-existing',
-  '--approval-mode',
-  '--permission-profile',
-  '--approval-judge',
-  '--echo-delay-ms'
-].join('|')
-
-// MUSE§1
-const MUSE_SUBCOMMANDS_WITHOUT_A_TUI = [
-  'exec',
-  'config',
-  'export',
-  'trace',
-  'model-profile',
-  'skills',
-  'voice',
-  'plugins',
-  'sandbox',
-  'schema',
-  'serve',
-  'session-message',
-  'mcp',
-  'auth',
-  'login',
-  'logout',
-  'init',
-  'help'
-].join('|')
-
 // AGY§1
 const AGY_FLAGS_FOLLOWED_BY_A_VALUE = [
   '--add-dir',
@@ -264,12 +219,6 @@ const UTIL_TERMINAL_REFUSAL = {
     CODEX_FLAGS_FOLLOWED_BY_A_VALUE,
     CODEX_SUBCOMMANDS_WITHOUT_A_TUI,
     'codex exec · --help · login · mcp'
-  ),
-  muse: utilTerminalRefusesInteractive(
-    'Muse',
-    MUSE_FLAGS_FOLLOWED_BY_A_VALUE,
-    MUSE_SUBCOMMANDS_WITHOUT_A_TUI,
-    'muse exec · --help · login'
   ),
   agy: utilTerminalRefusesInteractive(
     'Antigravity',
@@ -359,14 +308,6 @@ const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useI
     reachesTheModel: 'case "$sub" in exec|e|review|apply|a|app-server|mcp-server) pick=1 ;; esac',
     useIt: `unset CODEX_API_KEY OPENAI_API_KEY
     export CODEX_HOME="$phome"`
-  },
-  // MUSE§13 MUSE§21
-  muse: {
-    reachesTheModel: 'case "$sub" in exec|serve) pick=1 ;; esac',
-    useIt: exportsOf({
-      ...museAccountEnv('$phome'),
-      ...Object.fromEntries(MUSE_PASSES_TO_PLAYWRIGHT.map((key) => [key, `\${${key}-}`]))
-    })
   },
   // AGY§6 AGY§7
   agy: {
@@ -678,6 +619,7 @@ export function setupShim(gitAuthDir: string, koloftGhFolder: string): ShimPaths
     )
     fs.chmodSync(guardPath, 0o755)
   }
+  fs.rmSync(path.join(shimDir, 'muse'), { force: true })
 
   const agentShimPath = path.join(shimDir, 'koloft')
   fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })

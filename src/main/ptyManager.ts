@@ -10,7 +10,6 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
-import { MUSE_HOOKS_ENV } from './museHooks'
 import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
@@ -113,7 +112,7 @@ const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
 const CTRL_C = '\x03'
-// PLATFORM§2 PLATFORM§35 CC§12 CODEX§25 MUSE§11 AGY§27
+// PLATFORM§2 PLATFORM§35 CC§12 CODEX§25 AGY§27
 const BRACKETED_PASTE_SWITCH = /\x1b\[\?2004([hl])/g
 // CC§12 CC§18
 const A_KEY_SENT_ON_ITS_OWN = /(\x1b\[200~[\s\S]*?\x1b\[201~|(?<!\x1b)\r)/
@@ -125,7 +124,7 @@ interface LinesToType {
   programReads(): Promise<void>
 }
 
-// PLATFORM§2 CC§12 CODEX§25 MUSE§11
+// PLATFORM§2 CC§12 CODEX§25
 function typeOnceTheShellReads(write: (text: string) => void, text: string): LinesToType {
   if (text === '') return { shellSaid: () => {}, held: () => false, programReads: async () => {} }
   let tail = ''
@@ -242,7 +241,6 @@ export class PtyManager extends EventEmitter {
         key.startsWith('ANTIGRAVITY_') ||
         ((args.kind !== 'agy' || !args.processEnv) &&
           (key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||
-        ((args.kind !== 'muse' || !args.processEnv) && key === MUSE_HOOKS_ENV) ||
         key === 'CLAUDECODE' ||
         key === 'CLAUDE_EFFORT' ||
         key === 'CLAUDE_JOB_DIR' ||

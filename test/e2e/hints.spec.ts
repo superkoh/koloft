@@ -40,12 +40,11 @@ interface TabKind {
 const ASKS_FOR_APPROVAL: Record<AgentName, string> = {
   Claude: '/bash rm -rf build',
   Codex: 'approve',
-  Muse: '/approve',
   Antigravity: '/plan'
 }
 
 const TABS_BEYOND_LOCAL_CLAUDE: TabKind[] = [
-  ...(['Codex', 'Muse', 'Antigravity'] as const).map((agent) => ({
+  ...(['Codex', 'Antigravity'] as const).map((agent) => ({
     kind: `local ${agent}`,
     agent,
     remote: false,

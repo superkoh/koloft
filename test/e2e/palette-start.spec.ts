@@ -8,8 +8,6 @@ import {
   installAgy,
   installCodex,
   installFakeGh,
-  installMuse,
-  museCalls,
   setGithubFixture,
   type E2EEnv
 } from './helpers/env'
@@ -39,7 +37,6 @@ import {
   machineAgyCalls,
   machineCodexLog,
   machineHome,
-  machineMuseCalls,
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_HOST,
   REMOTE_WS_NAME,
@@ -103,7 +100,7 @@ function codexWireText(env: E2EEnv): string {
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
 }
 
-function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex' | 'muse'): string {
+function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex'): string {
   const claude = backend === 'claude'
   const root = path.join(env.userData, claude ? 'hook-sessions' : `${backend}-open`)
   if (!fs.existsSync(root)) return ''
@@ -151,7 +148,7 @@ async function makeDefaultAgent(page: Page, backend: BackendId): Promise<void> {
       window.api.settings.set({
         sessionMethods: {
           defaultBackend: b,
-          enabled: { claude: true, codex: true, muse: true, agy: true }
+          enabled: { claude: true, codex: true, agy: true }
         }
       }),
     backend
@@ -183,7 +180,7 @@ interface AgentStart {
 }
 
 const OTHER_AGENTS_HERE: ({
-  backend: 'codex' | 'muse' | 'agy'
+  backend: 'codex' | 'agy'
   install: (env: E2EEnv) => void
 } & AgentStart)[] = [
   {
@@ -194,7 +191,6 @@ const OTHER_AGENTS_HERE: ({
     titleSentToTheAgent: (env) =>
       codexNamesSet(fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
   },
-  { backend: 'muse', install: installMuse, launches: museCalls, firstPrompt: lastArgument },
   {
     backend: 'agy',
     install: installAgy,
@@ -211,11 +207,6 @@ const ON_THE_MACHINE: Record<OtherAgentName, { backend: BackendId } & AgentStart
     firstPrompt: lastArgument,
     titleSentToTheAgent: (env) =>
       codexNamesSet(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
-  },
-  Muse: {
-    backend: 'muse',
-    launches: (env) => machineMuseCalls(env).filter((c) => !c.argv.includes('resume')),
-    firstPrompt: lastArgument
   },
   Antigravity: {
     backend: 'agy',
@@ -603,16 +594,15 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
   })
 
   const keepsBusy: Record<
-    'claude' | 'codex' | 'muse' | 'agy',
+    'claude' | 'codex' | 'agy',
     { install: (env: E2EEnv) => void; busy: string }
   > = {
     claude: { install: () => {}, busy: '/busy' },
     codex: { install: installCodex, busy: 'hold this turn open' },
-    muse: { install: installMuse, busy: '/approve' },
     agy: { install: installAgy, busy: '/busy' }
   }
 
-  for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+  for (const backend of ['claude', 'codex', 'agy'] as const) {
     const { install, busy } = keepsBusy[backend]
     test(`a ${backend} butler: what ⌘P cannot do opens the butler when it is closed, on Koloft's note that a helper has it, which is never saved as the owner's words, and starts in a helper of the butler's, under its row, which the screen moves to; while the butler is busy the next one starts in a second helper`, async ({
       env
@@ -629,7 +619,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
               assist: { backend: b },
               sessionMethods: {
                 defaultBackend: b,
-                enabled: { claude: true, codex: true, muse: true, agy: true }
+                enabled: { claude: true, codex: true, agy: true }
               }
             }),
           backend

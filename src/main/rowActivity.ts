@@ -92,27 +92,6 @@ export function codexItemDid(item: Record<string, unknown>): string | undefined 
   return command && ran(SHELL_WRAPPED.exec(command)?.[1] ?? command)
 }
 
-// MUSE§9
-export function museToolDid(
-  name: string,
-  input: Record<string, unknown>,
-  response: Record<string, unknown>
-): string | undefined {
-  const file = str(response.filePath) ?? str(input.path)
-  const command = str(input.command)
-  switch (name) {
-    case 'bash':
-      return command && ran(command)
-    case 'edit_file':
-      return file && edited(file)
-    case 'write_file':
-      return file && wrote(file)
-    case 'read_file':
-      return file && read(file)
-  }
-  return name ? used(name) : undefined
-}
-
 // AGY§13
 export function agyToolDid(
   name: string,

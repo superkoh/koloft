@@ -15,7 +15,6 @@ import { useSettingsUpdate } from './useSettingsUpdate'
 const METHOD_NOTE: Record<BackendId, string> = {
   claude: 'Runs on a Claude account from Settings ▸ Accounts',
   codex: 'Runs on a Codex account from Settings ▸ Accounts',
-  muse: 'Runs on a Muse account from Settings ▸ Accounts',
   agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'
 }
 

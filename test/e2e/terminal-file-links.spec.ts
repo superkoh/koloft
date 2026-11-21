@@ -5,15 +5,7 @@ import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend
 import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
 import { clickTerminalLink } from './helpers/browser'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   killFakeRemote,
   launchWithRemote,
@@ -272,14 +264,6 @@ const LOCAL_OTHER_AGENTS: {
     label: 'Codex',
     install: (env) => installCodex(env),
     start: (page) => startSessionIn(page, 'ws-a', { method: 'Codex' })
-  },
-  {
-    label: 'Muse',
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    start: (page) => startSessionIn(page, 'ws-a', { method: 'Muse' })
   },
   {
     label: 'Antigravity',

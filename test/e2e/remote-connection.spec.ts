@@ -14,7 +14,6 @@ import {
   machineAgyCalls,
   machineCodexLog,
   machineHome,
-  machineMuseCalls,
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
   remoteDir,
@@ -132,13 +131,6 @@ const ON_THE_MACHINE: Record<
     runningThere: codexServersAliveThere,
     afterARestart: 'its thread resumed on one new app-server there, as the idle one ended at quit'
   },
-  Muse: {
-    longTurn: turnWithAReplyDelayedBy('fake-muse-delay'),
-    launches: (env) => machineMuseCalls(env).length,
-    launchesARestartAdds: 0,
-    runningThere: liveTmuxSessions,
-    afterARestart: 'attached to the same muse there, never a second one'
-  },
   Antigravity: {
     longTurn: turnWithAReplyDelayedBy('fake-agy-delay'),
     launches: (env) => machineAgyCalls(env).length,
@@ -151,7 +143,6 @@ const ON_THE_MACHINE: Record<
 const RUNS_A_COMMAND_IN_ITS_SESSION: Partial<Record<AgentName, (command: string) => string>> = {
   Claude: (command) => `/sh ${command}`,
   Codex: (command) => `/sh ${command}`,
-  Muse: (command) => `/sh ${command}`,
   Antigravity: (command) => `!${command}`
 }
 

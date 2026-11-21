@@ -2,15 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import { runGit } from './helpers/gitFixture'
 import {
   centerTerm,
@@ -28,7 +20,6 @@ import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
   installCodexOnFakeRemote,
-  installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
@@ -119,11 +110,6 @@ const codexHeard: Heard = (home) =>
     .map((r) => handedToTheModel(r.stdout))
     .join('\n')
 
-const museHeard: Heard = (home) =>
-  records(path.join(home, 'fake-muse-prompt-context.jsonl'))
-    .map((r) => handedToTheModel(r.out))
-    .join('\n')
-
 const agyHeard: Heard = (home) =>
   records(path.join(home, 'fake-agy-injected.jsonl'))
     .flatMap((r) =>
@@ -163,15 +149,7 @@ async function agyReady(page: Page, timeout: number): Promise<void> {
     .toBe(true)
 }
 
-async function museThenAgy(
-  page: Page,
-  ws: string,
-  bindsWithinMs: number,
-  beforeAgy = async () => {}
-): Promise<void> {
-  await newSessionInWith(page, ws, 'Muse')
-  await bound(page, 'muse', bindsWithinMs)
-  await beforeAgy()
+async function startAgy(page: Page, ws: string, bindsWithinMs: number): Promise<void> {
   await newSessionInWith(page, ws, 'Antigravity')
   await agyReady(page, bindsWithinMs)
   await runIn(page, centerTerm(page), 'look around')
@@ -265,8 +243,7 @@ async function busyIn(
   backends: BackendId[],
   agentsHome: string
 ): Promise<string[]> {
-  for (const slow of ['fake-muse-delay', 'fake-agy-delay'])
-    fs.writeFileSync(path.join(agentsHome, slow), String(SLOW_TURN_MS))
+  fs.writeFileSync(path.join(agentsHome, 'fake-agy-delay'), String(SLOW_TURN_MS))
   const tabs = await Promise.all(backends.map((b) => tabOf(page, b)))
   for (const [i, tab] of tabs.entries()) {
     const typed = ['claude', 'codex'].includes(backends[i]) ? '/busy' : 'work on it'
@@ -337,25 +314,23 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('a Muse session and an Antigravity session at work when origin/main moves are told before their turn ends, with nobody prompting them', async ({
+  test('an Antigravity session at work when origin/main moves is told before its turn ends, with nobody prompting it', async ({
     env
   }) => {
     test.setTimeout(180_000)
     const ws = env.workspaces.a
     const author = checkoutWithOrigin(ws, env.home)
-    installMuse(env)
     installAgy(env)
-    trustInMuse(env, ws)
     trustInAgy(env, ws)
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await museThenAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS)
+      await startAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS)
       await fetchNow(page, ws)
       await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
-      const tabs = await busyIn(page, 'ws-a', ['muse', 'agy'], env.home)
+      const tabs = await busyIn(page, 'ws-a', ['agy'], env.home)
 
       pushUpstream(author, 'fix: login keeps the session')
       await fetchNow(page, ws)
@@ -364,10 +339,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
         page,
         'ws-a',
         tabs,
-        [
-          { backendId: 'muse', heard: museHeard },
-          { backendId: 'agy', heard: agyHeard }
-        ],
+        [{ backendId: 'agy', heard: agyHeard }],
         { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
         NOTICE_ARRIVES_WITHIN_MS + 2 * SLOW_TURN_MS
       )
@@ -420,23 +392,21 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('on another machine over ssh, a Muse session and an Antigravity session at work when origin/main moves are told before their turn ends there, with nobody prompting them', async ({
+  test('on another machine over ssh, an Antigravity session at work when origin/main moves is told before its turn ends there, with nobody prompting it', async ({
     env
   }) => {
     test.setTimeout(300_000)
-    installMuse(env)
     installAgy(env)
-    installMuseOnMachine(env)
     installRemoteAgy(env)
     seedSettings(env, { hintsOff: true })
     const author = checkoutWithOrigin(remoteDir(env), machineHome(env))
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
-      await museThenAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
+      await startAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
       await fetchNow(page, remoteKey(env))
       await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
-      const tabs = await busyIn(page, REMOTE_WS_NAME, ['muse', 'agy'], machineHome(env))
+      const tabs = await busyIn(page, REMOTE_WS_NAME, ['agy'], machineHome(env))
 
       pushUpstream(author, 'fix: login keeps the session')
       await fetchNow(page, remoteKey(env))
@@ -445,10 +415,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
         page,
         REMOTE_WS_NAME,
         tabs,
-        [
-          { backendId: 'muse', heard: museHeard },
-          { backendId: 'agy', heard: agyHeard }
-        ],
+        [{ backendId: 'agy', heard: agyHeard }],
         {
           notices: path.join(machineHome(env), '.koloft', 'hook-sessions'),
           agents: machineHome(env)
@@ -529,22 +496,20 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('when origin/main moves, a Muse session and an Antigravity session open on a feature branch of that repository are each told which commits came in, with their next prompt; their red dots stay as they were and no turn starts for it', async ({
+  test('when origin/main moves, an Antigravity session open on a feature branch of that repository is told which commits came in, with its next prompt; its red dot stays as it was and no turn starts for it', async ({
     env
   }) => {
     test.setTimeout(180_000)
     const ws = env.workspaces.a
     const author = checkoutWithOrigin(ws, env.home)
-    installMuse(env)
     installAgy(env)
-    trustInMuse(env, ws)
     trustInAgy(env, ws)
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await museThenAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS)
+      await startAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS)
       await fetchNow(page, ws)
       const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
 
@@ -553,10 +518,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
 
       await heldThenHandedIn(
         page,
-        [
-          { backendId: 'muse', heard: museHeard },
-          { backendId: 'agy', heard: agyHeard }
-        ],
+        [{ backendId: 'agy', heard: agyHeard }],
         { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
         marks,
         told,
@@ -567,14 +529,12 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again: the waiting Muse session with its next prompt, its red dot as it was', async ({
+  test('when an Antigravity session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again: the waiting Claude session with its next prompt, its red dot as it was', async ({
     env
   }) => {
     test.setTimeout(180_000)
     checkoutWithOrigin(env.workspaces.a, env.home)
-    installMuse(env)
     installAgy(env)
-    trustInMuse(env, env.workspaces.a)
     trustInAgy(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })
     const shared = path.join(env.workspaces.a, 'shared.txt')
@@ -582,11 +542,10 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await museThenAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS, async () => {
-        await runIn(page, centerTerm(page), '/write shared.txt')
-        await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
-        await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
-      })
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      await waitStartupTurnOver(page, 'ws-a')
+      await writeSharedThenTurnDone(page, shared, 'claude', NOTICE_ARRIVES_WITHIN_MS)
+      await startAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS)
 
       await runIn(page, centerTerm(page), '/write shared.txt')
       const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
@@ -594,7 +553,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       await heldThenHandedIn(
         page,
         [
-          { backendId: 'muse', heard: museHeard },
+          { backendId: 'claude', heard: claudeHeard },
           { backendId: 'agy', heard: agyHeard, wroteJustNow: true }
         ],
         { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
@@ -650,20 +609,18 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('on another machine over ssh, a Muse session and an Antigravity session on a feature branch are told with their next prompt there, when origin/main moves on that machine; their red dots stay as they were', async ({
+  test('on another machine over ssh, an Antigravity session on a feature branch is told with its next prompt there, when origin/main moves on that machine; its red dot stays as it was', async ({
     env
   }) => {
     test.setTimeout(300_000)
-    installMuse(env)
     installAgy(env)
-    installMuseOnMachine(env)
     installRemoteAgy(env)
     seedSettings(env, { hintsOff: true })
     const author = checkoutWithOrigin(remoteDir(env), machineHome(env))
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
-      await museThenAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
+      await startAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
       await fetchNow(page, remoteKey(env))
       const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
 
@@ -672,10 +629,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
 
       await heldThenHandedIn(
         page,
-        [
-          { backendId: 'muse', heard: museHeard },
-          { backendId: 'agy', heard: agyHeard }
-        ],
+        [{ backendId: 'agy', heard: agyHeard }],
         {
           notices: path.join(machineHome(env), '.koloft', 'hook-sessions'),
           agents: machineHome(env)
@@ -733,13 +687,11 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('on another machine over ssh, when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again: the waiting Muse session with its next prompt, its red dot as it was', async ({
+  test('on another machine over ssh, when an Antigravity session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again: the waiting Claude session with its next prompt, its red dot as it was', async ({
     env
   }) => {
     test.setTimeout(300_000)
-    installMuse(env)
     installAgy(env)
-    installMuseOnMachine(env)
     installRemoteAgy(env)
     seedSettings(env, { hintsOff: true })
     checkoutWithOrigin(remoteDir(env), machineHome(env))
@@ -747,9 +699,12 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
-      await museThenAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS, () =>
-        writeSharedThenTurnDone(page, shared, 'muse', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
-      )
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true, method: 'Claude' })
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
+        timeout: 60_000
+      })
+      await writeSharedThenTurnDone(page, shared, 'claude', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+      await startAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
 
       await writeSharedThenTurnDone(page, shared, 'agy', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
       const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
@@ -757,7 +712,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       await heldThenHandedIn(
         page,
         [
-          { backendId: 'muse', heard: museHeard },
+          { backendId: 'claude', heard: claudeHeard },
           { backendId: 'agy', heard: agyHeard, wroteJustNow: true }
         ],
         {

@@ -5,12 +5,10 @@ import {
   AGY_USAGE_WORDS,
   CLAUDE_USAGE_WORDS,
   CODEX_USAGE_WORDS,
-  MUSE_USAGE_WORDS,
   protobufString,
   scanAgyLines,
   scanClaudeCalls,
   scanCodexLines,
-  scanMuseLines,
   topLevelTimestampOf
 } from './usageScan'
 import type { ScannedFile, UsageFile } from './usageCache'
@@ -65,10 +63,6 @@ async function scan(f: UsageFile): Promise<Omit<ScannedFile, 'file'>> {
     case 'claude': {
       const { text, bornAt } = await linesWithAny(f.file, CLAUDE_USAGE_WORDS, true)
       return { records: [], claudeCalls: scanClaudeCalls(text), bornAt }
-    }
-    case 'muse': {
-      const { text } = await linesWithAny(f.file, MUSE_USAGE_WORDS)
-      return { records: scanMuseLines(text, sessionId) }
     }
     case 'agy': {
       const { calls, configured } = await agyModels(f.db)

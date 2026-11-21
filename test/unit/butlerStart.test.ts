@@ -4,10 +4,10 @@ import { butlerStart } from '../../src/shared/butlerStart'
 import { backendsFrom } from '../../src/shared/sessionBackend'
 import { meta } from './helpers/accounts'
 
-const ALL_ON = { claude: true, codex: true, muse: true, agy: true }
+const ALL_ON = { claude: true, codex: true, agy: true }
 
 function installedOnly(...ids: BackendId[]): BackendAvailability[] {
-  return (['claude', 'codex', 'muse', 'agy'] as const).map((id) => ({
+  return (['claude', 'codex', 'agy'] as const).map((id) => ({
     id,
     available: ids.includes(id)
   }))
@@ -30,19 +30,19 @@ describe('butlerStart (which agent the butler starts on, or why it cannot)', () 
 
   it('when no agent can run, the toast says the preferred agent’s line, the link opens the pane that fixes it, and the full reason gives every agent’s line, the preferred first', () => {
     const start = butlerStart(
-      backendsFrom('muse'),
+      backendsFrom('codex'),
       {
         enabled: { ...ALL_ON, agy: false },
-        installed: installedOnly('claude', 'muse'),
+        installed: installedOnly('claude', 'codex'),
         accounts: [meta({ enabled: false })]
       },
       'Alfred'
     )
     expect(start).toEqual({
-      error: 'Alfred cannot start. No Muse account yet — add one in Settings ▸ Accounts.',
+      error: 'Alfred cannot start. No Codex account yet — add one in Settings ▸ Accounts.',
       inFull:
-        'Alfred cannot start. No Muse account yet — add one in Settings ▸ Accounts. No Claude account can be used — check Settings ▸ Accounts. Codex is not installed — add it in Settings ▸ Accounts. Antigravity is turned off in Settings ▸ Sessions.',
-      preferred: { lead: 'No Muse account yet — add one in ', fixedIn: 'accounts' }
+        'Alfred cannot start. No Codex account yet — add one in Settings ▸ Accounts. No Claude account can be used — check Settings ▸ Accounts. Antigravity is turned off in Settings ▸ Sessions.',
+      preferred: { lead: 'No Codex account yet — add one in ', fixedIn: 'accounts' }
     })
   })
 
@@ -54,7 +54,7 @@ describe('butlerStart (which agent the butler starts on, or why it cannot)', () 
       fixedIn: 'sessions'
     })
     expect('error' in start && start.inFull).toContain(
-      'No Claude account yet — add one in Settings ▸ Accounts. Muse is not installed'
+      'No Claude account yet — add one in Settings ▸ Accounts. Antigravity is not installed'
     )
   })
 })

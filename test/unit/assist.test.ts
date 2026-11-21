@@ -54,15 +54,6 @@ function assistWith(
   })
 }
 
-function museStream(answer: string): string {
-  return [
-    { payload_type: 'runtime.session', payload: { event: { kind: 'started' } } },
-    { payload_type: 'run.terminal.completed', payload: { terminal: 'completed', text: answer } }
-  ]
-    .map((r) => JSON.stringify(r))
-    .join('\n')
-}
-
 describe('Koloft Assist', () => {
   it('runs with nothing chosen, on whichever tool has an account', async () => {
     const codex = recordingBinary('codex', 'From Codex')
@@ -301,22 +292,5 @@ describe('Koloft Assist', () => {
       expect(await (await lateAssist(codex.bin))(JOB)).toBeNull()
       expect(codex.tries()).toBe(1)
     })
-  })
-
-  it('runs on the third tool when neither of the others can', async () => {
-    const muse = recordingBinary('muse', museStream('From Muse'))
-    const reply = await assistWith({ backend: 'claude' }, { muse: muse.bin })(JOB)
-    expect(reply).toBe('From Muse')
-  })
-
-  // MUSE§1
-  it('on Muse, runs one exec that leaves no session behind, and answers with the text of its finished record', async () => {
-    const muse = recordingBinary('muse', museStream('Fix Login Crash'))
-    const reply = await assistWith({ backend: 'muse' }, { muse: muse.bin })(JOB)
-    expect(reply).toBe('Fix Login Crash')
-    const argv = read(muse.log + '.argv')!.split('\n')
-    expect(argv[0]).toBe('exec')
-    expect(argv).toEqual(expect.arrayContaining(['--json', '--no-session-log']))
-    expect(argv.join('\n')).toContain(`${JOB.system}\n\n${JOB.prompt}`)
   })
 })

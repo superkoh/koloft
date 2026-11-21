@@ -8,7 +8,6 @@ import {
   scanAgyLines,
   scanClaudeCalls,
   scanCodexLines,
-  scanMuseLines,
   topLevelTimestampOf
 } from '../../src/main/usageScan'
 import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
@@ -278,44 +277,6 @@ describe('scanCodexLines', () => {
     )
     expect(scan?.sessionId).toBe(PARENT)
     expect(scan?.records.map((r) => r.sessionId)).toEqual([PARENT])
-  })
-})
-
-function museLine(kind: string, usage: Record<string, number>, model = 'muse-model'): string {
-  return JSON.stringify({
-    recorded_at: Date.parse(NOON) * 1000,
-    payload_type: 'runtime.session',
-    payload: { kind: 'run', run_id: 'run-1', event: { kind, model, usage } }
-  })
-}
-
-describe('scanMuseLines', () => {
-  const u = {
-    input_tokens: 1100,
-    cached_tokens: 100,
-    cache_read_tokens: 100,
-    cache_write_tokens: 7,
-    output_tokens: 11
-  }
-
-  it('books one model_completed record as one call and never its goal_usage_attribution copy', () => {
-    const records = scanMuseLines(
-      lines(museLine('model_completed', u), museLine('goal_usage_attribution', u)),
-      'm1'
-    )
-    expect(records).toEqual([
-      {
-        sessionId: 'm1',
-        day: '2026-10-15',
-        model: 'muse-model',
-        inTok: 1000,
-        cacheReadTok: 100,
-        cacheWriteTok: 7,
-        cacheWrite1hTok: 0,
-        outTok: 11,
-        surchargeUsd: 0
-      }
-    ])
   })
 })
 

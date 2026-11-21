@@ -871,10 +871,9 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
   const SHELL_LINE: Record<AgentName, string> = {
     Claude: '/run',
     Codex: '/sh',
-    Muse: '/sh',
     Antigravity: '/bash'
   }
-  for (const agent of ['Claude', 'Codex', 'Muse', 'Antigravity'] as const)
+  for (const agent of ['Claude', 'Codex', 'Antigravity'] as const)
     test(`a file a shell command in a ${agent} tab made shows under the Ownership filter's session choice, and a change the session did not make stays out`, async ({
       env
     }) => {
@@ -898,7 +897,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       }
     })
 
-  for (const agent of ['Claude', 'Codex', 'Muse', 'Antigravity'] as const)
+  for (const agent of ['Claude', 'Codex', 'Antigravity'] as const)
     test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes`, async ({
       env
     }) => {

@@ -36,7 +36,6 @@ const whoElseAnswers = (question: string, byTheOverseer: boolean): string =>
   byTheOverseer
     ? ''
     : composePrompt('session-answered-by-keys', { values: { 'the-question': question } })
-// MUSE§3
 export const asksWhatKoloftCannotSee = (byTheOverseer = false): string =>
   `It is waiting for an answer Koloft cannot read from here.${whoElseAnswers('it', byTheOverseer)}`
 export const inputNotProbed = (label: string, byTheOverseer = false): string =>
@@ -51,15 +50,6 @@ export const PICKS_MAY_STILL_BE_TICKED =
 export const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
   backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
 
-// MUSE§7 AGY§15
-const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
-  claude: true,
-  codex: true,
-  muse: false,
-  agy: true
-}
-const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
-  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 
@@ -112,7 +102,7 @@ export class SessionAsks {
   private asks = new Map<string, OpenClaudeAsk>()
   private askHooks = new Map<string, Set<string>>()
   private codexTyped = new Map<string, KeysTyped>()
-  private ticksPressed = new Map<string, { ticks: string; untickedOnce: boolean }>()
+  private ticksPressed = new Map<string, string>()
   private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
   private listeners: AskListener[] = []
 
@@ -142,7 +132,6 @@ export class SessionAsks {
       !!this.d.boundKey(tab) &&
       status !== undefined &&
       status !== 'approval' &&
-      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
       !this.hookWaits(tab)
     )
   }
@@ -255,7 +244,7 @@ export class SessionAsks {
     return this.d.type(tab, keys, stillWanted)
   }
 
-  // CODEX§20 MUSE§11 AGY§14
+  // CODEX§20 AGY§14
   private pressAnswer(tab: string, keys: string[]): Promise<boolean> {
     return this.press(tab, keys, () => !this.d.touchedSinceAsked(tab))
   }
@@ -289,7 +278,7 @@ export class SessionAsks {
     return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard, byTheOverseer))
   }
 
-  // CC§14 CODEX§3 MUSE§11 AGY§14
+  // CC§14 CODEX§3 AGY§14
   private async answerTaken(
     tab: string,
     send: () => Promise<SentAnswer>
@@ -350,22 +339,19 @@ export class SessionAsks {
         }
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
-      // CODEX§20 MUSE§11 AGY§14
+      // CODEX§20 AGY§14
       if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
       if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
-      // MUSE§11 AGY§14
+      // AGY§14
       const ticks = question.questions.some((q) => q.multiSelect)
         ? JSON.stringify(question.questions)
         : undefined
-      const before = ticks === undefined ? undefined : this.ticksPressed.get(tab)
-      const pressedBefore = before !== undefined && before.ticks === ticks
-      const untick =
-        pressedBefore && !before.untickedOnce ? answerKeysFor.untickAll?.(question) : undefined
-      if (pressedBefore && !untick) return { error: PICKS_MAY_STILL_BE_TICKED }
-      if (ticks !== undefined && (pressedBefore || answers.some((a) => 'picks' in a)))
-        this.ticksPressed.set(tab, { ticks, untickedOnce: pressedBefore })
+      if (ticks !== undefined && this.ticksPressed.get(tab) === ticks)
+        return { error: PICKS_MAY_STILL_BE_TICKED }
+      if (ticks !== undefined && answers.some((a) => 'picks' in a))
+        this.ticksPressed.set(tab, ticks)
       this.emit('answered', tab, reply)
-      const keys = [...(untick ?? []), ...answerKeys(answerKeysFor, question, answers)]
+      const keys = answerKeys(answerKeysFor, question, answers)
       if (await this.pressOnce(tab, () => this.pressAnswer(tab, keys))) return { watch: true }
       this.emit('answered', tab, NOT_ANSWERED_FROM_HERE)
       return { error: STARTED_IN_THE_TERMINAL }

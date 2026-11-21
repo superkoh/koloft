@@ -536,7 +536,7 @@ it('copies the extra folders two at a time beside the transcripts, the hooks onl
       started.push(remoteDir)
       return new Promise((done, fail) =>
         finish.set(remoteDir, () =>
-          remoteDir === '.muse/sessions' ? fail(new Error('EACCES: mkdir')) : done(ok(''))
+          remoteDir === '.extra/sessions' ? fail(new Error('EACCES: mkdir')) : done(ok(''))
         )
       )
     },
@@ -547,14 +547,14 @@ it('copies the extra folders two at a time beside the transcripts, the hooks onl
   })
   target.extraPulls = [
     { from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] },
-    { from: '.muse/sessions', to: '/ud/remote/devbox/muse', flags: [] },
+    { from: '.extra/sessions', to: '/ud/remote/devbox/extra', flags: [] },
     { from: '.codex/sessions', to: '/ud/remote/devbox/codex', flags: [] }
   ]
   sync.start()
   await tick(1)
-  expect(started).toEqual(['.claude/projects', '.gemini/brain', '.muse/sessions'])
+  expect(started).toEqual(['.claude/projects', '.gemini/brain', '.extra/sessions'])
 
-  finish.get('.muse/sessions')?.()
+  finish.get('.extra/sessions')?.()
   await tick(1)
   expect(started.at(-1)).toBe('.codex/sessions')
 
@@ -574,7 +574,7 @@ it('copies the extra folders two at a time beside the transcripts, the hooks onl
 
   const before = started.length
   await tick(2000)
-  expect(started.slice(before)).toEqual(['.muse/sessions'])
+  expect(started.slice(before)).toEqual(['.extra/sessions'])
 })
 
 it('once a copy is refused by a full ssh master, that machine copies one folder at a time from the next round on: the transcripts, then the hooks, then each extra folder', async () => {
@@ -618,7 +618,7 @@ it('once a copy is refused by a full ssh master, that machine copies one folder 
   })
   target.extraPulls = [
     { from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] },
-    { from: '.muse/sessions', to: '/ud/remote/devbox/muse', flags: [] }
+    { from: '.codex/sessions', to: '/ud/remote/devbox/codex', flags: [] }
   ]
   sync.start()
   await tick(500)
@@ -631,7 +631,7 @@ it('once a copy is refused by a full ssh master, that machine copies one folder 
     '.claude/projects',
     '.koloft/hook-sessions',
     '.gemini/brain',
-    '.muse/sessions'
+    '.codex/sessions'
   ])
   await tick(5000)
   expect(mostAtOnce).toBe(1)

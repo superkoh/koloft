@@ -2102,10 +2102,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   find the tool while its tab script added fixed folders only. (2026-11-11, OpenSSH_10.3p1
   on macOS 27 to the e2e Docker ssh lab image, Debian bookworm, plus zsh 5.9; a scratch
   Playwright spec driving a built Koloft.)
-- **The real Claude Code, Antigravity and Muse Code shell tools add nothing from the
+- **The real Claude Code and Antigravity shell tools add nothing from the
   user's rc files either**: started with that fixed-folder PATH and `SHELL=/bin/zsh`, each
-  missed a program only `~/.zshrc` puts on PATH (CC§3, AGY§25, MUSE§17), and each found it
-  once the `"$SHELL" -lic` PATH was appended. So the tab script of those three is handed
+  missed a program only `~/.zshrc` puts on PATH (CC§3, AGY§25), and each found it
+  once the `"$SHELL" -lic` PATH was appended. So the tab script of those two is handed
   that PATH too. When the ask gives none they run without it, not with the Codex
   script's own `bash -lc`: inside tmux nothing would stop that shell if the login files
   it reads hang (inferred from where it runs, not run).
@@ -2497,7 +2497,7 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   python pty answering as Koloft's terminal does (DA2 `ESC[>0;276;0c`, and no XTVERSION
   reply, since Koloft masks xterm's, CC§12), with agy 1.5.7 and muse 1.4.15 run directly
   in the pane (without Koloft's launcher script and status relay), each through start, trust question, a turn with a tool run, a resize,
-  `/clear` and exit (AGY§33, MUSE§23 list what each asked inside): those two were the
+  `/clear` and exit (AGY§33 lists what agy asked inside): those two were the
   only questions the outer terminal got, both in Koloft's off-screen pass-through list
   (2026-11-12, the `agy-a-img` and `koloft-muse-probe-1411` Docker images, Debian's tmux
   3.3a, 1 run each).
@@ -3708,7 +3708,7 @@ call twice on one home, the second time over the link the first one made.
   `claude` on `PATH` in all six. Measured 2026-11-11, this Mac's `/bin/zsh` and
   `/bin/bash`, a scratch `ZDOTDIR`; fish not run.
 
-Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
+Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex or
 Antigravity sign-in into the user's login shell with an account's environment,
 `MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaude` in
 `src/main/host/localHost.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
@@ -3914,9 +3914,8 @@ main thread; `fileWatch.ts` keeps a folder's watcher open after its last viewer 
 `fileEdit.ts` finds, reads, creates and flushes through `fs.promises`, and keeps only a
 save's last check and its rename together on the main thread; `signalLog`
 (`machineRoom.ts`) appends to and trims its log through `fs.promises`; `saveSettings`
-writes `settings.json` through `BackgroundFile`; `watchDir`, the GitHub-counts and
-git-freshness sweeps' "is the workspace folder still there" and the timed look at Muse's
-registry folders stat them through `fs.promises`.
+writes `settings.json` through `BackgroundFile`; `watchDir` and the GitHub-counts and
+git-freshness sweeps' "is the workspace folder still there" stat them through `fs.promises`.
 
 ## §70 Electron: the main process's JavaScript runs on the thread that takes the keys
 

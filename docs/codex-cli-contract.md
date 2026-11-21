@@ -322,7 +322,7 @@ login, 1 run.**
   http.server 18799'`, `inProgress`, `processId` `"71962"`; the turn completed with it
   still `inProgress`. `ps` then showed the server as a direct child of the app-server
   pid, its command line the interpreter's own file (`…/Python.app/Contents/MacOS/Python
-  -m http.server 18799`, as in MUSE§8).
+  -m http.server 18799`).
 - `thread/backgroundTerminals/list {threadId}` (an experimental method: it is in
   `codex app-server generate-json-schema --experimental` only, and `initialize` sent
   `capabilities.experimentalApi: true`) answered one entry `{itemId: "call_1", processId:
@@ -3971,7 +3971,7 @@ owner's login, `gpt-6.1-sol`, told to call no tool:
   `collaboration.followup_task` as sending a task to "an existing non-root target agent",
   never to the thread itself. A Codex wait therefore runs inside the turn, which stays
   open, so the tab reads as working; there is no wake-up to keep a finished tab for, the
-  way Claude Code's `/loop` (CC§8) or Muse's `cron_create` (MUSE§9) leave one.
+  way Claude Code's `/loop` (CC§8) leaves one.
 - `codex features list` on that build shows `sleep_tool` stable and on, and
   `in_app_local_automation` stable and on; the binary's only other traces of
   scheduling are thread-source labels ("Scheduled follow-ups", "Scheduled automations")

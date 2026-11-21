@@ -10,7 +10,7 @@ import {
   type WorkspaceRows,
   type WorktreeInfo
 } from '@shared/types'
-import { namedModel, needsModel } from '@shared/cronModels'
+import { namedModel } from '@shared/cronModels'
 import { familyModelOf, resolvePick, tiersOf, type PickFacts } from '@shared/sessionPicks'
 import { agentGuide } from '@shared/agentGuide'
 import { PICK_FOR_THE_TASK, withProjectRules } from '../prompts/text'
@@ -269,7 +269,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'
+  'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'
 
 function matchRef<T>(
   items: T[],
@@ -444,10 +444,9 @@ function modelAndEffortRefusal(
   backend: BackendId,
   args: NewSessionArgs
 ): ((rules: string | undefined) => string) | null {
-  const modelNeeded = needsModel(backend)
-  if ((modelNeeded && !args.model) || !args.effort)
+  if (!args.model || !args.effort)
     return (rules) =>
-      `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
+      `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs --model and --effort. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
   const owner = SESSION_BACKENDS.find(
     (b) => b !== backend && (namedModel(b, args.model) || familyModelOf(b, args.model))
   )
@@ -1328,11 +1327,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       const { workspace, conductorTab, helper } = place
       const { model, effort } = parsed.value
       const unpicked = modelAndEffortRefusal(backend, parsed.value)
-      if (unpicked || !effort)
+      if (unpicked || !model || !effort)
         return refused(
           unpicked
             ? unpicked(await d.projectRules(workspace))
-            : 'koloft session new: --effort is missing.',
+            : 'koloft session new: --model or --effort is missing.',
           EXIT_USAGE
         )
       const resolved = d.turnedOff(backend)

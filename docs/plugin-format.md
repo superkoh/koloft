@@ -34,7 +34,7 @@ it is done.
 
 ## Words used on this page
 
-- **Session**: one run of a coding agent (Claude Code, Codex, Muse or Antigravity) that
+- **Session**: one run of a coding agent (Claude Code, Codex or Antigravity) that
   Koloft starts in a terminal tab.
 - **Owner**: the person using Koloft.
 - **Butler**: a long-running session that watches the other sessions for the owner.
@@ -345,14 +345,12 @@ fills:
   reads it, so core never names a plugin.
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
-  `codex`, `muse` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
+  `codex` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
   builds a block that has its own text for every agent.
 - `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
   it yet, and nothing checks the key against a list of models.
 - `when`: optional; the name of a fact. The block is used only when the caller says that
   fact holds.
-- `whenOff`: optional; a plugin id. The block is used only while that plugin is off. Such a
-  block stands in for an off plugin's half-sentence, to end the sentence it leaves.
 
 Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
 
@@ -380,8 +378,8 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 
 1. It takes every block that fills the slot, from every plugin, in the order of
    `src/plugins/list.ts`, and within one plugin in the order of its `text` list.
-2. It drops each block of a plugin that is off, each block whose `when` names a fact not in
-   `facts`, and each block whose `whenOff` names a plugin that is on.
+2. It drops each block of a plugin that is off, and each block whose `when` names a fact not
+   in `facts`.
 3. For each block left, it takes `byAgent[agent]` when there is one, else `text`.
 4. It joins the texts with nothing between them, so a block starts with its own space or
    line break. A slot whose name ends in `-or-list` is joined as the end of a list instead:
@@ -450,8 +448,6 @@ These are the slots, values and facts in use today:
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
 | fact | `discord-bound` | Discord's code, when Discord has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
-
-No block uses `whenOff` today.
 
 ### Commands
 
@@ -686,7 +682,7 @@ An Assist job is a small AI task Koloft runs on its own. A plugin lists its jobs
   butler's own row.
 - `name`: the job's row title on its plugin's page in Settings ▸ Plugins.
 - `does`: the line under that title, saying what the job does.
-- `defaults`: for each agent (`claude`, `codex`, `muse`, `agy`), the model and thinking
+- `defaults`: for each agent (`claude`, `codex`, `agy`), the model and thinking
   (`{ model?, effort? }`) the job runs with while the owner has not picked one. An empty
   `{}` means that agent's own model and thinking.
 
@@ -703,7 +699,6 @@ export const ASSIST_JOBS = [
     defaults: {
       claude: { model: 'sonnet', effort: 'low' },
       codex: { model: 'gpt-6.1-sol', effort: 'low' },
-      muse: { effort: 'low' },
       agy: { model: 'gemini-3.8-flash', effort: 'low' }
     }
   }

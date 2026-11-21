@@ -14,7 +14,6 @@ const UNSEEN_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f]/g
 
 const encoder = new TextEncoder()
 
-// MUSE§12
 export const instructionsBytes = (text: string): number =>
   encoder.encode(JSON.stringify(text)).length - 2
 

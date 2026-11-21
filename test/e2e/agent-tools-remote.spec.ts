@@ -4,9 +4,8 @@ import type { Page } from '@playwright/test'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
-import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
+import { agyTranscriptOf, seedSettings, type E2EEnv } from './helpers/env'
 import {
-  MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
   sessionPromptsHandedOut,
   agentPluginSays,
   docsSkillHandedOut,
@@ -40,7 +39,6 @@ import {
   machineAgyCalls,
   machineCodexLog,
   machineHome,
-  machineMuseCalls,
   remoteDir,
   remoteKey
 } from './helpers/remote'
@@ -53,7 +51,6 @@ async function sessionOf(page: Page, tabId: string): Promise<SessionInfo | undef
 
 function machineProcessOf(env: E2EEnv, backend: BackendId, id: string): number | undefined {
   if (backend === 'claude') return readCalls(env).find((c) => c.sessionId === id)?.pid
-  if (backend === 'muse') return machineMuseCalls(env).find((c) => c.sessionId === id)?.pid
   if (backend === 'agy') return machineAgyCalls(env)[0]?.pid
   return undefined
 }
@@ -87,7 +84,6 @@ function reportReachedOnTheMachine(env: E2EEnv, backend: BackendId, parentId: st
     return fs.existsSync(transcript) ? fs.readFileSync(transcript, 'utf8') : ''
   }
   if (backend === 'codex') return codexFramesTo(env, 'thread/queue/add', parentId).join('\n')
-  if (backend === 'muse') return JSON.stringify(museSaid(env, parentId, machineHome(env)))
   return agyTranscriptOf(env, parentId, path.join(machineHome(env), '.gemini'))
 }
 
@@ -102,8 +98,6 @@ function parentStartedAgainOnTheMachine(
         c.argv[c.argv.indexOf('--resume') + 1] === parentId &&
         c.cwd === fs.realpathSync(remoteDir(env))
     )
-  if (backend === 'muse')
-    return machineMuseCalls(env).filter((c) => c.sessionId === parentId).length > 1
   if (backend === 'agy')
     return machineAgyCalls(env).some((c) => c.argv.includes(`--conversation=${parentId}`))
   return codexFramesTo(env, 'thread/resume', parentId).length > 0
@@ -186,10 +180,6 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
         const skills = koloftSkillsUnder(machineHome(env))
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toMatch(/discord/i)
-        await page.evaluate(
-          ([id, line]) => window.api.terminal.write(id, line + '\r'),
-          [tab, MUSE_IS_TOLD_ON_A_FIRST_MESSAGE]
-        )
         const prompts = (): string[] => sessionPromptsHandedOut(machineHome(env))[backend]
         await expect.poll(() => prompts().length).toBeGreaterThan(0)
         for (const prompt of prompts()) expect(prompt).not.toContain(DISCORD_PREFIX)

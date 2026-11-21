@@ -4,7 +4,6 @@ import path from 'path'
 import type { LeftoverProcess } from '@shared/types'
 import { makeExec, type Exec } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { museSessionKey, UUID } from '@plugins/sessions/main/sessionStore'
 
 const SCAN_DEADLINE_MS = 5000
 const defaultExec = makeExec(SCAN_DEADLINE_MS)
@@ -14,12 +13,9 @@ const ADOPTED_BY_LAUNCHD = 1
 const idIn = (commandWithEnv: string, name: string): string | undefined =>
   commandWithEnv.match(new RegExp(`(?:^|\\s)${name}=([0-9a-f-]{36})(?=\\s|$)`, 'm'))?.[1]
 
-// CC§9 MUSE§8
+// CC§9
 function sessionOf(commandWithEnv: string): string | undefined {
-  const claude = idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')
-  if (claude) return claude
-  const muse = idIn(commandWithEnv, 'MUSE_SESSION_ID')
-  return muse && UUID.test(muse) ? museSessionKey(muse) : undefined
+  return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')
 }
 
 function orphansByLaunchd(table: ProcessTable | null): Map<number, string> {

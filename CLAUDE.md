@@ -67,7 +67,7 @@ Working principles:
   line to 2 units. Commit the sheet next to the others, name its cells in
   `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
   `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.
-  Only brand marks (Claude, Codex, Meta, Discord, GitHub) come from `react-icons/bs`;
+  Only brand marks (Claude, Codex, Discord, GitHub) come from `react-icons/bs`;
   a brand it lacks (Antigravity) is that brand's own mark, its path copied from
   `@lobehub/icons-static-svg` (MIT) into react-icons' `GenIcon` — never a parent
   company's mark in its place.
@@ -84,7 +84,7 @@ Working principles:
   each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
-  - a marker: `// ADR-0007`, `// AGY§4`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may
+  - a marker: `// ADR-0007`, `// AGY§4`, `// CC§9`, `// CODEX§5`, `// PLATFORM§3` — several may
     share one line;
     in CSS `/* ADR-0007 */`, in JSX `{/* ADR-0007 */}`. Each must resolve to a
     `docs/adr/` file or a `##` section of that contract ledger.
@@ -95,8 +95,7 @@ Working principles:
   2. a test whose title states the rule;
   3. a measured fact about an external system → its contract ledger, cited from the
      code with a marker: Claude Code `docs/claude-code-contract.md` (`CC§`), Codex
-     `docs/codex-cli-contract.md` (`CODEX§`), Muse Code `docs/muse-code-contract.md`
-     (`MUSE§`), Antigravity CLI `docs/antigravity-cli-contract.md` (`AGY§`), anything else — Electron, Node, macOS,
+     `docs/codex-cli-contract.md` (`CODEX§`), Antigravity CLI `docs/antigravity-cli-contract.md` (`AGY§`), anything else — Electron, Node, macOS,
      git, GitHub — `docs/platform-contract.md` (`PLATFORM§`);
   4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when all
      four hold: it cannot be read from the code (names, types, tests); a smart

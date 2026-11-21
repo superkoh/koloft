@@ -4,9 +4,6 @@ import { AGY_INSTALLER_URL } from './toolInstall'
 export const MIN_CLAUDE_VERSION = '2.1.293'
 export const MIN_CODEX_VERSION = '0.161.0'
 export const TESTED_CODEX_LINE = '0.170'
-// MUSE§1
-export const MIN_MUSE_VERSION = '1.4.7'
-export const TESTED_MUSE_LINE = '1.4'
 // AGY§3
 export const MIN_AGY_VERSION = '1.4.0'
 export const TESTED_AGY_LINE = '1.4'
@@ -39,15 +36,6 @@ export const ENSURE_CLAUDE_MINIMUM_FN = ensureMinimumFn({
   min: MIN_CLAUDE_VERSION,
   update: '"$1" update',
   byHand: 'Run "claude update" yourself'
-})
-
-// MUSE§1 MUSE§14
-export const ENSURE_MUSE_MINIMUM_FN = ensureMinimumFn({
-  tool: 'muse',
-  product: 'Muse Code',
-  min: MIN_MUSE_VERSION,
-  update: 'MUSE_SYNC_UPDATE=1 "$1" --version >/dev/null 2>&1',
-  byHand: 'Run "muse --version" there with a working network'
 })
 
 export const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000

@@ -92,8 +92,8 @@
         <h2>Set up a job</h2>
         <p>
           Right-click a folder in the sidebar and pick Scheduled jobs… from the menu. Each job
-          starts a Claude Code, Codex, Muse Code or Antigravity session; the Runs in row lists the
-          agents you have on, and a remote folder gets the same list. For each one you choose:
+          starts a Claude Code, Codex or Antigravity session; the Runs in row lists the agents you
+          have on, and a remote folder gets the same list. For each one you choose:
         </p>
         <ul class="dash">
           <li>
@@ -109,11 +109,10 @@
             a day and time, or a set wait after each run (see <a href="#once-after">below</a>)
           </li>
           <li>
-            the model, and how hard it thinks. For Claude Code, Codex and Antigravity, pick a model
-            from a short list, or type another under <code>Other…</code>. For Muse, keep
-            <code>Default</code> or type a name under <code>Other…</code>. Antigravity shows only
-            the thinking levels its model takes. A model left on <code>Default</code>, or thinking
-            left on <code>Same as usual</code>, is what a new session in this folder would use (see
+            the model, and how hard it thinks. Pick a model from a short list, or type another under
+            <code>Other…</code>. Antigravity shows only the thinking levels its model takes. A model
+            left on <code>Default</code>, or thinking left on <code>Same as usual</code>, is what a
+            new session in this folder would use (see
             <a href="../sessions/#session-defaults">Session defaults…</a>).
           </li>
           <li>the permission it gets</li>
@@ -130,7 +129,7 @@
           <code>Last run of this task: &lt;date and time&gt;, session &lt;id&gt;.</code> The time is
           when that run was due. The id is that agent's own id for the session. A message that
           starts with <code>/</code> (or, for Codex, with <code>$</code> too) gets no such line, so
-          its command or skill still runs. This is the same for all four agents, on your Mac and in
+          its command or skill still runs. This is the same for all three agents, on your Mac and in
           a <a href="../remote/">remote folder</a>.
         </p>
 
@@ -438,12 +437,12 @@
             start again what was cut off, and finish it.</code
           >
           It goes on, then closes or stays open as its job says. If the message cannot reach it, the
-          run counts as finished. A Claude, Muse or Antigravity run in a
+          run counts as finished. A Claude or Antigravity run in a
           <a href="../remote/">remote folder</a> is not told: it kept working on the machine while
           Koloft was closed, comes back still working, and ends its turn on its own.
         </p>
         <p>
-          Close it works the same for a Claude, Codex or Muse job, on this Mac and in a
+          Close it works the same for a Claude or Codex job, on this Mac and in a
           <a href="../remote/">remote folder</a>. On a remote machine, Koloft cannot see programs
           the run left going in the background. The run's copy there goes once its session has left
           the machine; otherwise the line says <code>folder kept: machine unreachable</code> or
@@ -488,8 +487,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
-            Meta or Google.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI or
+            Google.
           </p>
         </div>
         <nav aria-label="Docs">

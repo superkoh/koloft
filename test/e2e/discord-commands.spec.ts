@@ -2,16 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  agySessionCalls,
-  installAgy,
-  installCodex,
-  installMuse,
-  museCalls,
-  seedSettings,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { agySessionCalls, installAgy, installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
   newSessionInWith,
@@ -217,37 +208,6 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  // MUSE§9 MUSE§19
-  test('D-CMD-1 with a Muse butler: /run /usage types it into the butler and posts its screen in its channel, since Muse draws a command’s output only there; /compact compacts it and posts Done.', async ({
-    env
-  }) => {
-    installMuse(env)
-    seedConductor(env)
-    seedSettings(env, { assist: { backend: 'muse' } })
-    const fake = await startFakeDiscord(env)
-    const { app } = await connected(env, fake)
-    try {
-      fake.interact(OWNER, 'run', { command: '/usage' })
-      await expect
-        .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([
-          expect.stringMatching(
-            /^⌨️ \*\*Alfred\*\* ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
-          )
-        ])
-      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
-
-      fake.interact(OWNER, 'compact', {})
-      await expect
-        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
-        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
-      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
-
   test('D-CMD-2: a message that starts with a slash runs in the conductor itself; its /clear gives the conductor a new conversation that it keeps on the next start', async ({
     env
   }) => {
@@ -298,34 +258,6 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect
         .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContainEqual(expect.stringMatching(/ran \/clear:\nIt is a new conversation now/))
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
-
-  // MUSE§11 MUSE§19
-  test('D-CMD-6: in a Muse session, the butler’s koloft session command types the command once its input box is empty and hands the butler its screen, since Muse draws a command’s output only there', async ({
-    env
-  }) => {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-    seedConductor(env)
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await newSessionInWith(page, 'ws-a', 'Muse')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
-      const museId = museCalls(env)[0].sessionId
-
-      fake.say(OWNER, `/koloft session command ${museId} /usage`)
-      await expect
-        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContainEqual(
-          expect.stringMatching(
-            /ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
-          )
-        )
     } finally {
       await quitAndClose(app)
       await fake.close()
