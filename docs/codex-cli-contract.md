@@ -2490,8 +2490,10 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
     held BETA and no ALPHA, manual and automatic, both providers, both versions.
   - A fresh thread compacted with no resume kept ALPHA. Every case ran twice, with the
     same result.
-  - A resume on a server with no `-c developer_instructions=` was not run: whether the
-    text is then gone after a compaction is not probed yet.
+  - Resumed on a server with no `-c developer_instructions=` at all (0.169.0, `openai`
+    provider, 2 runs, manual and automatic): ALPHA reached the model until the compaction
+    and the compaction request, and no request after it held ALPHA or any text in its
+    place.
 - **`$CODEX_HOME/AGENTS.md` reaches the model** as a `user` message
   `# AGENTS.md instructions\n\n<INSTRUCTIONS>…`: its codeword came back (same run).
   **Skills reach it only as a list**: a `developer` message `<skills_instructions>` holds
