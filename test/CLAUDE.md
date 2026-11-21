@@ -136,7 +136,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
-    `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
+    `/bg-monitor` (`/bg-monitor 2.1.329` lists it in Stop as that version does),
+    `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
     the real one does, and writes `ESC[?2004h` as it starts (CC§12): Enter (`\r`) sends
     the line (a line sent before it binds waits for the bind), Shift+Enter (`\n`) adds a
@@ -206,7 +207,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   installed whatever the developer's own login shell has. A Codex tab on the fake remote
   needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
   the machine and gives the Mac account a token; what the machine's app-server did lands
-  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
+  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`). While
+  `<home>/fake-codex-renamed-elsewhere` holds a name, `thread/list` alone lists every
+  thread under that name and no event reaches an open tab — a name only Koloft's listing
+  sees.
 - Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
   (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
   Muse reads as not installed. It asks Muse's trust question unless `trust.json` under
@@ -325,7 +329,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_TEST_TOOL_INSTALLER` (fixtures/fake-tool-installer.js), `KOLOFT_TEST_CLT`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
-  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
+  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_INSTRUCTIONS_ASK_MS` (how long an agent's
+  proposed change to the Instructions waits for the owner), `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
   (real-window layer), `KOLOFT_TEST_PRESENCE_FILE`
   (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;
   without it a test run counts the owner as away, so Discord posts as before),
@@ -350,12 +355,15 @@ first of these that can do it; only a step none of them can do goes to the owner
 1. The hand-test sandbox, `npm run handtest` (test/handtest/sandbox.ts; its usage text
    says how). It lends a Claude account from the installed Koloft: the token goes into
    a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
-   Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
+   Claude tabs run there; local Codex tabs only when `start`'s `codex` says `lent:` (a
+   Codex login is lent only while sharing it cannot sign the installed Koloft out,
+   CODEX§15); a remote Claude tab with `--remote`; a remote
    Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
    it cannot reach OpenAI (CODEX§16). `--discord` puts it on the real Discord as the dev
    build's test bot, so the owner's only step is a press on the phone. Drive it with
-   `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
-   files and `<home>/koloft.log`.
+   `npm run handtest -- drive <home> <script.ts>`: the script, kept in your scratchpad,
+   default-exports a function of test/handtest/driver.ts's `Driver`, and what it returns
+   is printed. Check results in screenshots, transcripts, files and `<home>/koloft.log`.
 2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.
 3. The real binary in a temp HOME (claude, codex, gh) — a temp HOME does not hide the
    login Keychain, so a probe that signs in runs in Docker.

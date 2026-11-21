@@ -24,6 +24,7 @@ function setup() {
     judging: new Set<string>(),
     butlerSide: new Set<string>(),
     inRoom: new Set<string>(),
+    instructionsCard: new Map<string, 'posted' | 'posting'>(),
     touched: [] as string[]
   }
   const told: string[] = []
@@ -35,6 +36,7 @@ function setup() {
     marks: () => state.marks,
     butlerSide: (tab) => state.butlerSide.has(tab),
     inRoom: (tab) => state.inRoom.has(tab),
+    instructionsCard: (tab) => state.instructionsCard.get(tab),
     touchedBeforeLeaving: () => state.touched,
     judging: (tab) => state.judging.has(tab),
     sessionOf: (m) => ({ title: m.title, sessionId: m.sessionId, workspace: 'koloft' }),
@@ -124,6 +126,30 @@ describe('AwayDigest — while the owner is away, what sessions did goes to the 
     expect(told[0]).toContain(
       '"roomed title" (session roomed-id, workspace koloft) stopped unexpectedly.'
     )
+  })
+
+  it('leaves out a session’s wait for an Instructions change whose card is already in the butler’s channel, waits for a card still on its way, and names the wait when no card got out', async () => {
+    const { state, told, mark, gathered } = setup()
+    state.instructionsCard.set('carded', 'posted')
+    mark('carded', 'approval')
+    await gathered()
+    expect(told).toEqual([])
+
+    state.instructionsCard.set('coming', 'posting')
+    mark('coming', 'approval')
+    await gathered()
+    expect(told).toEqual([])
+    state.instructionsCard.set('coming', 'posted')
+    await vi.advanceTimersByTimeAsync(BUTLER_CHECKED_AGAIN_MS)
+    expect(told).toEqual([])
+
+    mark('carded', 'turn-done')
+    mark('no-card', 'approval')
+    await gathered()
+    expect(told).toHaveLength(1)
+    expect(told[0]).toContain('"carded title"')
+    expect(told[0]).toContain('"no-card title" (session no-card-id, workspace koloft) waits')
+    expect(told[0]).not.toContain('"coming title"')
   })
 
   it('names the sessions the owner worked with at the Mac just before leaving, so the butler can bring those first', async () => {

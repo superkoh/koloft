@@ -9,11 +9,10 @@ import { agentGuide } from '../../src/shared/agentGuide'
 import {
   AGENT_TOOLS_OFF,
   AgentRequests,
-  answered,
-  type AgentCaller,
   type AgentRequestDeps,
   type TabFacts
 } from '../../src/main/agentRequests'
+import { answered, type AgentCaller } from '../../src/core/command'
 import { helpVerb } from '../../src/plugins/sessions/main/sessionVerbs'
 import type { SessionInfo } from '../../src/shared/types'
 import { testCommands } from './helpers/testCommands'

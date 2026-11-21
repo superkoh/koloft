@@ -17,10 +17,12 @@ process.emitWarning = function (warning, ...rest) {
 const { DatabaseSync } = require('node:sqlite')
 
 const VERSION = '1.4.0'
+const ASK_LATER_CHECKED_EVERY_MS = 200
 const ESC = '\x1b'
 const BEL = '\x07'
 const ENTER = '\r'
 const BACKSPACE = '\x7f'
+const CLEAR_THE_LINE = '\x15'
 const UP = '\u0000up'
 const DOWN = '\u0000down'
 const LEFT = '\u0000left'
@@ -64,6 +66,12 @@ const FULL_CASCADE_CONFIG = {
   toolConfig: { code: { applyEdits: true }, runCommand: { autoCommandConfig: {} } }
 }
 const MODEL_FAMILIES = [
+  {
+    base: 'gemini-4-neon',
+    label: 'Gemini 4 Neon',
+    efforts: ['high', 'xhigh', 'medium', 'low'],
+    fallback: 'medium'
+  },
   {
     base: 'gemini-4-argon',
     label: 'Gemini 4 Argon',
@@ -303,7 +311,8 @@ appendJsonl(sentinel('fake-agy-calls.jsonl'), {
             'AGY_CLI_OSC7501_MESSAGES',
             'AGY_CLI_DISABLE_AUTO_UPDATE',
             'GOOGLE_GEMINI_BASE_URL',
-            'TERM_PROGRAM'
+            'TERM_PROGRAM',
+            'ANT_ACCOUNT'
           ].includes(k)
       )
     ),
@@ -1256,12 +1265,37 @@ function fileAsk(turn, file, kind) {
       }
       return undefined
     },
-    fromApi: (interaction) =>
-      interaction.permission
-        ? interaction.permission.allow
-          ? { allow: true, fromApi: true }
-          : { allow: false, via: 'api' }
-        : undefined
+    fromApi: permissionFromApi
+  }
+}
+function permissionFromApi(interaction) {
+  if (!interaction.permission) return undefined
+  return interaction.permission.allow
+    ? { allow: true, fromApi: true }
+    : { allow: false, via: 'api' }
+}
+// AGY§26
+function readAsk(file) {
+  return {
+    needed: !skipPermissions && path.relative(process.cwd(), file).startsWith('..'),
+    stepType: 'CORTEX_STEP_TYPE_VIEW_FILE',
+    requestedInteraction: {
+      permission: {
+        resource: { action: 'read_file', target: file },
+        actionDescription: `Analyzing ${path.basename(file)}`,
+        triggerSource: { type: 'TYPE_DEFAULT_FALLBACK' }
+      }
+    },
+    frame: ['permission', `Approve ReadFile: Read: ${file}`],
+    screen: `File access\nRead: ${file}\nReason: outside workspace\nAllow access to this file?\n> 1. Yes, allow access\n  2. Yes, and always allow non-workspace access\n  3. No, deny access`,
+    deniedError: `user denied permission for read_file(${file})`,
+    onKey: (key) => {
+      if (key === '1' || key === ENTER) return { allow: true }
+      if (key === '3') return { allow: false, via: 'key' }
+      if (key === ESC) return { allow: false, via: 'esc' }
+      return undefined
+    },
+    fromApi: permissionFromApi
   }
 }
 function commandAsk(cmd) {
@@ -1409,6 +1443,21 @@ async function editScenario(turn, target) {
   })
   return endToolTurn(turn, result, `Edited ${shown}`, shown)
 }
+async function readScenario(turn, target) {
+  const shown = target || 'fake-agy.txt'
+  const file = path.resolve(process.cwd(), shown)
+  const result = await useTool(turn, {
+    name: 'read_file',
+    args: { Path: file },
+    ask: readAsk(file),
+    run: () => {
+      const text = fs.readFileSync(file, 'utf8')
+      say(text.replace(/\n$/, ''))
+      return { content: text }
+    }
+  })
+  return endToolTurn(turn, result, `Read ${shown}`, shown)
+}
 async function bashScenario(turn, command) {
   const c = turn.conv
   const cmd = command || 'echo hello'
@@ -1435,6 +1484,17 @@ async function bashScenario(turn, command) {
   return endToolTurn(turn, result, `Ran: ${cmd}`, cmd)
 }
 async function askScenario(turn, spec) {
+  const shownFirst = readSentinel('fake-agy-open-before-ask')
+  if (shownFirst) {
+    fs.unlinkSync(sentinel('fake-agy-open-before-ask'))
+    const quoted = `'${shownFirst.replace(/'/g, `'\\''`)}'`
+    const opened = await runShell(
+      modelShell(),
+      `koloft open ${quoted}`,
+      runCommandEnv(turn.conv, 0, null)
+    )
+    say(opened.output.replace(/\n$/, ''))
+  }
   const parts = (spec || '')
     .split('|')
     .map((s) => s.trim())
@@ -1661,6 +1721,7 @@ const ASKED_FOR_THE_PLAN_AGAIN = 'approve the same plan again'
 const SCENARIOS = {
   '/write': writeScenario,
   '/edit': editScenario,
+  '/read': readScenario,
   '/bash': bashScenario,
   '/ask': askScenario,
   '/bg': backgroundScenario,
@@ -1674,6 +1735,8 @@ const SCENARIOS = {
 async function runTurn(text, origin = {}) {
   turnRunning = true
   turnCancelled = false
+  // AGY§10
+  term.idleOnNextKey = false
   review = null
   const c = ensureConversation()
   const turn = { conv: c, invocation: 0, origin }
@@ -2111,8 +2174,10 @@ function onKey(key) {
     typed = ''
     return submit(line)
   }
-  if (key === BACKSPACE) typed = typed.slice(0, -1)
   // AGY§15
+  if (key === BACKSPACE) typed = typed.slice(0, -1)
+  else if (key === CLEAR_THE_LINE)
+    typed = typed.endsWith('\n') ? typed.slice(0, -1) : typed.slice(0, typed.lastIndexOf('\n') + 1)
   else if (key === '\n' || (key.length === 1 && key >= ' ')) typed += key
 }
 function feed(chunk) {
@@ -2577,8 +2642,14 @@ function main() {
     process.stderr.write(model.error + '\n')
     process.exit(1)
   }
-  if (printMode) headless().catch(crash)
-  else startTui().catch(crash)
+  if (printMode) return headless().catch(crash)
+  startTui().catch(crash)
+  setInterval(() => {
+    if (!fs.existsSync(sentinel('fake-agy-ask-later'))) return
+    fs.rmSync(sentinel('fake-agy-ask-later'), { force: true })
+    queue.push({ text: '/ask Ship it?|Yes|No', origin: {} })
+    drainQueue()
+  }, ASK_LATER_CHECKED_EVERY_MS).unref()
 }
 
 if (argv[0] === '--version') {

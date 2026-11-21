@@ -1,4 +1,5 @@
 import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 
 const NAME_MAX_CHARS = 40
 const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000
@@ -48,8 +49,10 @@ const looksLikeATitle = (line: string): boolean =>
 
 const firstLineName = (text: string): string => lineAsName(nonEmptyLines(text)[0])
 
+const HTML_TAG = /<\/?(?:br|p|div|span|b|i|u|em|strong|hr|code|h[1-6])\b[^<>]*>/gi
+
 function nameFromReply(reply: string): string {
-  const lines = nonEmptyLines(reply)
+  const lines = nonEmptyLines(reply.split(HTML_TAG).join(''))
   return lineAsName(lines.find(looksLikeATitle) ?? lines[0])
     .replace(/^["'“‘「『]+|["'”’」』。.!！]+$/g, '')
     .trim()
@@ -64,7 +67,7 @@ export function distinctTitle(name: string, taken: Set<string>): string {
 
 export async function titleForTask(
   task: string,
-  assist: Assist,
+  assist: Assist<SessionsAssistJobId>,
   ownerWords?: string
 ): Promise<string> {
   const reply = await assist({

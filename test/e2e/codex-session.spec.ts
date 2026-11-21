@@ -86,6 +86,9 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   settingsOnDisk,
   snap,
@@ -1381,6 +1384,24 @@ test.describe('Codex sessions through the real method chooser, process transport
       await startCodex(page, env)
       await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
       await expect.poll(() => codexPrompts(env)).toContain(TWO_LINE_PROMPT)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§25
+  test('⌘⌫ in a Codex tab reaches the TUI as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      await expect.poll(() => codexPrompts(env)).toContain(KEPT_AFTER_COMMAND_BACKSPACE)
+      expect(JSON.stringify(codexPrompts(env))).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }

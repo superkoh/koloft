@@ -177,30 +177,35 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
   })
 
   // CC§8
-  test('a Monitor left running is parked: the dot rests, and the row shows a ⏸ badge whose click opens its card, not the row menu', async ({
-    page
-  }) => {
-    test.setTimeout(120_000)
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
+  for (const [line, reportedAs] of [
+    ['/bg-monitor', 'a shell, as up to 2.1.328'],
+    ['/bg-monitor 2.1.329', 'a monitor, as since 2.1.329']
+  ]) {
+    test(`a Monitor left running, reported as ${reportedAs}, is parked: the dot rests, and the row shows a ⏸ badge whose click opens its card, not the row menu`, async ({
+      page
+    }) => {
+      test.setTimeout(120_000)
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
 
-    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
-    await runIn(page, centerTerm(page), '/bg-monitor')
-    const badge = page.locator('.ws .ws-tab .ws-tab-parked')
-    await expect(badge).toHaveText('⏸ 1', { timeout: 15_000 })
-    await badge.click()
-    const card = page.locator('.tbu-pop.parked')
-    await expect(card).toContainText('monitor · tail -f bot.log')
-    await expect(card).toContainText('ctrl+b')
-    await expect(page.locator('.menu')).toHaveCount(0)
-    await page.keyboard.press('Escape')
-    await expect(card).toHaveCount(0)
-    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
-    await expect
-      .poll(() => pendingAttention(page), { timeout: 10_000 })
-      .toMatchObject([{ kind: 'turn-done' }])
-  })
+      await runIn(page, centerTerm(page), line)
+      const badge = page.locator('.ws .ws-tab .ws-tab-parked')
+      await expect(badge).toHaveText('⏸ 1', { timeout: 15_000 })
+      await badge.click()
+      const card = page.locator('.tbu-pop.parked')
+      await expect(card).toContainText('monitor · tail -f bot.log')
+      await expect(card).toContainText('ctrl+b')
+      await expect(page.locator('.menu')).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(card).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
+      await expect
+        .poll(() => pendingAttention(page), { timeout: 10_000 })
+        .toMatchObject([{ kind: 'turn-done' }])
+    })
+  }
 
   // CC§8
   test('a wakeup Claude scheduled for itself (a /loop) is parked as its schedule and prompt, and the badge goes once a turn-end lists none', async ({

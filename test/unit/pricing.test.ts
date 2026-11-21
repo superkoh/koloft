@@ -116,6 +116,24 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     ],
     ['gpt-6.1-sol', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1 }],
     [
+      'gpt-6.2-sol',
+      {
+        inPerM: 2,
+        outPerM: 10,
+        cacheReadPerM: 0.1,
+        longContext: { aboveInputTokens: 272_000, inPerM: 4, cacheReadPerM: 0.2, outPerM: 15 }
+      }
+    ],
+    [
+      'gpt-6.2-astra',
+      {
+        inPerM: 8,
+        outPerM: 40,
+        cacheReadPerM: 0.4,
+        longContext: { aboveInputTokens: 272_000, inPerM: 16, cacheReadPerM: 0.8, outPerM: 60 }
+      }
+    ],
+    [
       'gpt-6.1-terra',
       {
         inPerM: 1,

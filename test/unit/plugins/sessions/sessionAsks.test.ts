@@ -339,7 +339,7 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
   })
 
   // CODEX§3 CODEX§20
-  it('a Codex approval is pressed y or Esc only while it is open; a one-question list is pressed the digit of the option named by number or label; any other question is refused as not probed', async () => {
+  it('a Codex approval is pressed y or Esc only while it is open; a one-question list is pressed the digit of the option named by number or label; any other question is refused as not probed, saying the butler can press its keys unless the butler is the one answering', async () => {
     let approval: { id: number } | undefined
     let question: CodexQuestion | undefined
     let input = false
@@ -352,6 +352,10 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
     expect(await asks.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
     input = true
     expect(await asks.answerSession(MANAGED, 'yes')).toBe(inputNotProbed('Codex'))
+    expect(inputNotProbed('Codex')).toContain('The butler can still answer')
+    expect(await asks.answerSession(MANAGED, 'yes', { byTheOverseer: true })).toBe(
+      'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list.'
+    )
     question = {
       id: 0,
       questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Green' }] }]

@@ -61,6 +61,9 @@ export function knowPluginStates(states: Readonly<Record<string, PluginState>>):
 
 export const pluginStateOf = (id: string): PluginState => known[id] ?? ON
 
+export const switchesThatAct = (): Record<string, boolean> =>
+  Object.fromEntries(Object.entries(known).map(([id, state]) => [id, state.on]))
+
 export function turnedOffLine(plugin: PluginManifest): string | undefined {
   const state = pluginStateOf(plugin.id)
   if (state.on) return undefined

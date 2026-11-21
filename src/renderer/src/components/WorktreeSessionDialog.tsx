@@ -36,8 +36,8 @@ import {
   type WtHot,
   type WorktreeItem
 } from '../newSession'
-import { fillsOf } from '../pluginUi'
-import { WORKTREE_ITEMS } from '../slots'
+import { useFillsOf } from '../pluginUi'
+import { WORKTREE_ITEMS, type WorktreeItemsView } from '../slots'
 import { ipcErrorText } from '../agentUi'
 import { shortenHome } from '../browseModel'
 import { busyInCheckout, pullToast } from '@shared/freshnessOps'
@@ -54,6 +54,8 @@ import {
   type SessionLaunchOptions,
   type StartSession
 } from './SessionLaunchButtons'
+
+const ITEMS_OF_A_PLUGIN_TURNED_OFF: WorktreeItemsView = { items: [], pickWhat: '', box: () => null }
 
 export function WorktreeSessionDialog({
   ws,
@@ -87,7 +89,7 @@ export function WorktreeSessionDialog({
 
   useEffect(() => {
     let live = true
-    void window.api.workspace.worktrees(wsPath).then(
+    void window.api.sessions.worktrees(wsPath).then(
       (w) => {
         if (live) {
           setWorktrees(w)
@@ -122,7 +124,9 @@ export function WorktreeSessionDialog({
     }
   }, [wsPath, isGit, gitAutoFetch])
 
-  const itemViews = fillsOf(WORKTREE_ITEMS).map((useItems) => useItems(wsPath, isGit))
+  const itemViews = useFillsOf(WORKTREE_ITEMS, (useItems, on) => useItems(wsPath, isGit && on)).map(
+    (view) => view ?? ITEMS_OF_A_PLUGIN_TURNED_OFF
+  )
 
   const listed = useMemo(() => sortWorktrees(worktrees, rowsAtOpen.current), [worktrees])
   const viewItems = itemViews.map((v) => v.items)

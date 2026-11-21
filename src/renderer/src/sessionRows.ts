@@ -9,7 +9,7 @@ import type {
   TabKind,
   WorkspaceRows
 } from '@shared/types'
-import { PLACEHOLDER_SESSION_TITLE, PLAN_READY } from '@shared/types'
+import { isPlaceholderSessionTitle, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
@@ -237,7 +237,7 @@ export function liveTabOf(
 }
 
 export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
-  return liveTitle && liveTitle !== PLACEHOLDER_SESSION_TITLE ? liveTitle : rowTitle
+  return liveTitle && !isPlaceholderSessionTitle(liveTitle) ? liveTitle : rowTitle
 }
 
 export function workspaceName(ws: WorkspaceRows['workspace']): string {

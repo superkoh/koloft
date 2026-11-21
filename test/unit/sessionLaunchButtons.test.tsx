@@ -30,15 +30,15 @@ beforeAll(() => {
       home: '/home',
       sessions: {
         backends: async () => SESSION_BACKENDS.map((id) => ({ id, available: true })),
-        onToolsChanged: () => () => {}
+        onToolsChanged: () => () => {},
+        worktrees: async () => []
       },
       workspace: {
         pull: () => new Promise<WorkspacePullResult>((resolve) => (answerPull = resolve)),
         createProject: () => {
           creates++
           return new Promise((resolve) => (answerCreate = resolve))
-        },
-        worktrees: async () => []
+        }
       },
       github: { openItems: async () => ({ state: 'failed' }) }
     }

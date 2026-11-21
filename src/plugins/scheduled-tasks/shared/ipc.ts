@@ -6,5 +6,11 @@ export const CHANNELS = {
   runNow: 'cron:runNow',
   skills: 'cron:skills',
   trusted: 'cron:trusted',
-  state: 'cron:state'
+  state: 'cron:state',
+  runStarted: 'cron:runStarted'
 } as const
+
+export interface RunStartedNews {
+  tabId: string
+  started: boolean
+}

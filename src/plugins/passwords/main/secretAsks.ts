@@ -99,6 +99,10 @@ export class SecretAsks<A extends SecretAsk = SecretAsk> {
     this.end(id, { ended: 'declined' }, 'declined-in-koloft')
   }
 
+  declineAll(): void {
+    for (const id of [...this.pending.keys()]) this.decline(id)
+  }
+
   answerFromElsewhere(id: string, answer: AnsweredElsewhere): void {
     this.end(id, answer, 'answered-elsewhere')
   }

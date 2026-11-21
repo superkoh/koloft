@@ -363,6 +363,7 @@ export interface AppSettings {
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
   sessionDefaults: Record<string, SessionDefaults>
+  everyWorkspaceInstructions: InstructionsVersion[]
 }
 
 export type Settings = AppSettings & PluginSettingValues
@@ -376,9 +377,13 @@ export interface SessionDefaults {
   picks: Partial<Record<BackendId, OwnPick>>
   rules?: string
   instructions?: InstructionsVersion[]
+  leavesOutEveryWorkspace?: true
 }
 
-export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & { instructions: string }
+export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & {
+  instructions: string
+  instructionsOpened: string
+}
 
 export type SessionDefaultsRead =
   | {
@@ -474,7 +479,8 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  sessionDefaults: {}
+  sessionDefaults: {},
+  everyWorkspaceInstructions: []
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
@@ -596,8 +602,11 @@ export type GitNumstatMap = Record<string, { added: number; removed: number }>
 
 export type BaseChoice = 'merge-base' | 'head'
 
+export type GitHead = { branch: string } | { detached: true }
+
 export interface GitChanges {
   base: string | null
+  head: GitHead | null
   status: GitStatusMap
   numstat: GitNumstatMap
   missing: boolean
@@ -758,6 +767,12 @@ export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
   agy: 'Antigravity session'
 }
 
+const PLACEHOLDER_TITLE_SET = new Set<string>(Object.values(PLACEHOLDER_TITLES))
+
+export function isPlaceholderSessionTitle(title: string | undefined): boolean {
+  return !!title && PLACEHOLDER_TITLE_SET.has(title)
+}
+
 export const PENDING_SESSION_TITLE = 'Starting…'
 
 export interface SessionSource {
@@ -897,6 +912,12 @@ export type PrChecks =
   { state: 'ok'; checks: PrCheck[] } | { state: 'no-gh' | 'signed-out' | 'no-pr' | 'failed' }
 
 export type GitStepResult = { ok: true } | { ok: false; reason: string }
+
+export interface GitReadiness {
+  head: GitHead
+  commitable: boolean
+  hasPushRemote: boolean
+}
 
 export interface GithubItem {
   kind: 'issue' | 'pr'
@@ -1056,7 +1077,6 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
-  runStarted?: true
   accountIssue?: string
 }
 
@@ -1138,6 +1158,7 @@ export interface CoreApi {
   git: {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
+    readiness(root: string): Promise<GitReadiness | null>
   }
   os: {
     open(path: string): void
@@ -1149,7 +1170,6 @@ export interface CoreApi {
     remove(path: string): Promise<WorkspaceRemoveResult>
     removeConfirmed(path: string): Promise<void>
     move(path: string, before: string | null): Promise<void>
-    worktrees(path: string): Promise<WorktreeInfo[]>
     historyRows(path: string, opts?: { quiet: boolean }): Promise<SessionRow[]>
     rows(): Promise<WorkspaceRows[]>
     onRows(cb: (rows: WorkspaceRows[]) => void): () => void

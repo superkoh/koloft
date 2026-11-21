@@ -1,7 +1,7 @@
 import { app, webContents, type WebContents } from 'electron'
 import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
 import { parseRemoteKey } from '@shared/remoteKey'
-import { gestureFresh } from '../../../main/browserSecurity'
+import { gestureFresh } from './pageRules'
 
 const A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS = 3000
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])

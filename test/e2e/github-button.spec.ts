@@ -30,6 +30,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { newWebTab, openBrowser } from './helpers/browser'
+import { closeSettings, openSettings } from './helpers/extensions'
 import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
@@ -80,7 +81,17 @@ function repoWithOrigin(env: E2EEnv, branch: string): string {
 async function startWithGithub(
   env: E2EEnv,
   ws = 'ws-a',
-  extra: Record<string, { owner: string; repo: string; branch?: string; pr?: number | null }> = {},
+  extra: Record<
+    string,
+    {
+      owner: string
+      repo: string
+      branch?: string
+      pr?: number | null
+      issues?: number
+      prs?: number
+    }
+  > = {},
   gh: Parameters<typeof installFakeGh>[1] = { checks: ONE_PASSING }
 ): Promise<{ app: ElectronApplication; page: Page }> {
   installFakeGh(env, gh)
@@ -112,20 +123,23 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     }
   })
 
-  test('G2: a GitHub project gets a button between Files and the divider', async ({ env }) => {
+  test('G2: a GitHub project gets a button between the branch button and the divider', async ({
+    env
+  }) => {
     test.setTimeout(240_000)
+    gitInit(env.workspaces.a)
     const { app: a, page } = await startWithGithub(env)
     try {
       const gh = ghButton(page)
       await expect(gh).toBeVisible({ timeout: 30_000 })
       await expect(gh).toHaveText('#265')
       await expect(gh).toHaveAttribute('aria-label', /Open pull request #265/)
+      await expect(page.locator('.wb-git')).toBeVisible({ timeout: 30_000 })
 
       const order = await page
         .locator(`${WORKBENCH.tabStrip} .wb-pin > *`)
         .evaluateAll((els) => els.map((e) => e.className.split(/\s+/)[0]))
-      expect(order[0]).toBe('wb-tab')
-      expect(order[1]).toBe('wb-gh')
+      expect(order.slice(0, 3)).toEqual(['wb-tab', 'wb-git', 'wb-gh'])
       await snap(page, 'G2-github-button')
     } finally {
       await a.close().catch(() => {})
@@ -154,7 +168,7 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     }
   })
 
-  test('G5: right-click offers the open items, the checks line and the git steps, and each open item opens its page', async ({
+  test('G5: right-click offers the open items and the checks line, no git steps, and each open item opens its page', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -171,8 +185,6 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
         'Open pull requests',
         'Open pull request #265',
         'Checks · 1 passed of 1',
-        'Commit…',
-        'Push',
         'Check again'
       ])
 
@@ -340,7 +352,7 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     }
   })
 
-  test('G11: Commit… commits every change, new files included, under the typed message, and Push sends the branch to origin', async ({
+  test("G11: with GitHub on, Commit… and Push sit in the branch button beside it: Commit… commits every change, new files included, and Push sends the branch to origin and re-reads the pull request's checks", async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -349,9 +361,9 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     const { app, page } = await startWithGithub(env)
     try {
       fs.writeFileSync(path.join(dir, 'G11-new.txt'), 'new\n')
-      await expect(ghButton(page)).toBeVisible({ timeout: 30_000 })
-      await ghButton(page).click({ button: 'right' })
-      await page.locator('.wb-ghmenu .mi', { hasText: 'Commit…' }).click()
+      await expect(ghButton(page).locator('.ci')).toHaveClass(/\bpass\b/, { timeout: 30_000 })
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Commit…' }).click()
 
       const dialog = page.locator('.modal', { hasText: 'Commit changes' })
       await expect(dialog).toBeVisible()
@@ -359,11 +371,18 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       await dialog.getByLabel('Commit message').fill('G11 add the new file')
       await dialog.locator('.btn-primary', { hasText: 'Commit' }).click()
       await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.locator('.toast-msg')).toHaveText('Committed.')
       expect(gitOut(dir, 'log', '-1', '--format=%s')).toBe('G11 add the new file')
       expect(gitOut(dir, 'show', '--name-only', '--format=', 'HEAD')).toContain('G11-new.txt')
 
-      await ghButton(page).click({ button: 'right' })
-      await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+      fs.writeFileSync(
+        path.join(env.home, 'fake-gh-checks.json'),
+        JSON.stringify([{ ...ONE_PASSING[0], bucket: 'pending' }])
+      )
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Push' }).click()
+      await expect(page.locator('.toast-msg')).toHaveText('Pushed.', { timeout: 30_000 })
+      await expect(ghButton(page).locator('.ci')).toHaveClass(/\bpending\b/, { timeout: 30_000 })
       await expect
         .poll(
           () =>
@@ -392,8 +411,6 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       expect(await ghMenuItems(page)).toEqual([
         'Open repository',
         'Open pull requests',
-        'Commit…',
-        'Push',
         'Open pull request…',
         'Check again'
       ])
@@ -404,6 +421,56 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       expect(gitOut(origin, 'rev-parse', 'refs/heads/feature/login')).toBe(
         gitOut(env.workspaces.a, 'rev-parse', 'HEAD')
       )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('G15: turning GitHub off in Settings ▸ Plugins while its button shows takes the button and the sidebar counts away, keeps the branch button whose Commit… and Push still work, and turning it on brings them back, the window working throughout', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const origin = repoWithOrigin(env, 'feature/login')
+    const dir = env.workspaces.a
+    const { app, page } = await startWithGithub(env, 'ws-a', {
+      [dir]: { ...REPO, issues: 4, prs: 2 }
+    })
+    const windowErrors: string[] = []
+    page.on('pageerror', (error) => windowErrors.push(error.message))
+    const counts = page.locator('.ws-gh')
+    const setGithub = async (on: boolean): Promise<void> => {
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+      await page.getByRole('switch', { name: 'GitHub', exact: true }).setChecked(on)
+      await closeSettings(page)
+    }
+    try {
+      await expect(ghButton(page)).toBeVisible({ timeout: 30_000 })
+      await expect(counts).toBeVisible({ timeout: 30_000 })
+
+      await setGithub(false)
+      await expect(ghButton(page)).toHaveCount(0)
+      await expect(counts).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.locator('.wb-git')).toBeVisible()
+
+      fs.writeFileSync(path.join(dir, 'G15-new.txt'), 'new\n')
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Commit…' }).click()
+      const dialog = page.locator('.modal', { hasText: 'Commit changes' })
+      await dialog.getByLabel('Commit message').fill('G15 commit with GitHub off')
+      await dialog.locator('.btn-primary', { hasText: 'Commit' }).click()
+      await expect(page.locator('.toast-msg')).toHaveText('Committed.', { timeout: 30_000 })
+      await page.locator('.wb-git').click()
+      await page.locator('.wb-gitmenu .mi', { hasText: 'Push' }).click()
+      await expect(page.locator('.toast-msg')).toHaveText('Pushed.', { timeout: 30_000 })
+      expect(
+        gitOut(origin, 'for-each-ref', '--format=%(objectname)', 'refs/heads/feature/login')
+      ).toBe(gitOut(dir, 'rev-parse', 'HEAD'))
+
+      await setGithub(true)
+      await expect(ghButton(page)).toBeVisible({ timeout: 30_000 })
+      await expect(counts).toBeVisible({ timeout: 30_000 })
+      expect(windowErrors).toEqual([])
     } finally {
       await app.close().catch(() => {})
     }
@@ -443,7 +510,8 @@ test.describe('Workbench · GitHub button against the REAL gh and GitHub: opt-in
       await test.info().attach('the-pasted-checks', { body: prompt })
       expect(prompt).toContain(`\n${PR_3_NPM_ERROR}\n`)
       expect(prompt).toContain(`\n${PR_3_FIRST_ERROR_LINE}\n\n`)
-      expect(prompt).not.toMatch(/\t\d{4}-\d\d-\d\dT|\x1b\[|﻿/)
+      expect(prompt).not.toMatch(/\t\d{4}-\d\d-\d\dT|\x1b\[|\^\[\[|﻿/)
+      expect(prompt).not.toContain('Post job cleanup.')
     } finally {
       await app.close().catch(() => {})
     }

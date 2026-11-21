@@ -17,6 +17,7 @@ import {
   ROW_SET_UP,
   PLUGIN_SET_UP,
   PART_HINT,
+  WORKSPACE_REMOVAL_LOSS,
   type PaletteRun,
   type PluginSetUp,
   type RowExtrasFill,
@@ -73,10 +74,10 @@ describe('UI parts a plugin registers', () => {
       uis
     )
     expect(placed.parts.dialog).toEqual([
-      { id: 'one', Part },
-      { id: 'three', Part }
+      { id: 'one', plugin: 'a', Part },
+      { id: 'three', plugin: 'b', Part }
     ])
-    expect(placed.parts['centre-page']).toEqual([{ id: 'two', Part: Other }])
+    expect(placed.parts['centre-page']).toEqual([{ id: 'two', plugin: 'b', Part: Other }])
   })
 
   it('gives a slot what each plugin fills it with, in the order of the list of plugins, and nothing another slot got', () => {
@@ -88,6 +89,7 @@ describe('UI parts a plugin registers', () => {
     })
     expect(placed.fillsOf(words)).toEqual(['from a', 'from b'])
     expect(placed.fillsOf(counts)).toEqual([2])
+    expect(placed.fillsOf(words, (plugin) => plugin !== 'b')).toEqual(['from a'])
   })
 
   it('every row a plugin adds menu entries and a line to is a sidebar row some plugin lists', () => {
@@ -142,6 +144,10 @@ describe('UI parts a plugin registers', () => {
     )
     expect(run.sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
     expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+  })
+
+  it('exactly one plugin says what removing a workspace deletes, since the remove confirm names only one such loss', () => {
+    expect(placeUi(PLUGINS, PLUGIN_UIS).fillsOf(WORKSPACE_REMOVAL_LOSS)).toHaveLength(1)
   })
 
   it('exactly one plugin takes the ⌘P words core cannot route itself, and each route kind core leaves to plugins has exactly one taker', () => {

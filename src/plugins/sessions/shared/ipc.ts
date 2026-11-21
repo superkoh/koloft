@@ -23,5 +23,12 @@ export const CHANNELS = {
   activateTab: 'attention:activate-tab',
   attentionChanged: 'attention:changed',
   defaultsRead: 'sessionDefaults:read',
-  defaultsWrite: 'sessionDefaults:write'
+  defaultsWrite: 'sessionDefaults:write',
+  everyWorkspaceSave: 'sessionDefaults:everyWorkspaceSave',
+  instructionAsks: 'instructions:asks',
+  instructionAsksList: 'instructions:list',
+  instructionAnswer: 'instructions:answer',
+  worktrees: 'workspace:worktrees'
 } as const
+
+export type { InstructionsSaveResult } from '@core/ownerInstructions'

@@ -11,7 +11,7 @@ import {
   type WorktreeInfo
 } from '@shared/types'
 import { namedModel, needsModel } from '@shared/cronModels'
-import { resolvePick, tierModelOf, tiersOf, type PickFacts } from '@shared/sessionPicks'
+import { familyModelOf, resolvePick, tiersOf, type PickFacts } from '@shared/sessionPicks'
 import { agentGuide } from '@shared/agentGuide'
 import { PICK_FOR_THE_TASK, withProjectRules } from '../prompts/text'
 import {
@@ -22,6 +22,7 @@ import {
   type PlacedRow
 } from './placedRows'
 import { RepliesOwed, type ReplyListener } from './repliesOwed'
+import { instructionsVerb, type InstructionsVerbDeps } from './instructionsVerb'
 import type { SendResult, StartResult, StartSpec } from './sendAndStart'
 import {
   BACKEND_LABEL,
@@ -36,7 +37,7 @@ import { isValidWorktreeName } from '@shared/worktreeName'
 import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
-import { scopeName } from '@shared/conductors'
+import { scopeName } from '@shared/scope'
 import { ageLabel } from '@shared/freshnessOps'
 import { MAX_READ_TURNS, type Turn } from '@shared/turns'
 import { MYSELF, slashCommandProblem } from '@shared/slashCommands'
@@ -52,6 +53,7 @@ import {
   type Parsed
 } from '@core/command'
 import { errorText } from '@core/errorText'
+import { composePrompt } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
@@ -71,8 +73,11 @@ import {
 } from './handoverPreamble'
 import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
+import type { SessionsAssistJobId } from '../shared/assistJobs'
 import { keysFor } from '@core/typeKeys'
 import type { StartedSessions } from './startedSessions'
+import { roleAndTask } from './sessionTabs'
+import { PLUGIN_OPENINGS } from '@core/openings'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 
 export const helpVerb =
@@ -358,7 +363,7 @@ export interface SessionVerbDeps {
   pickFacts(backend: BackendId): Promise<PickFacts>
   projectRules(workspace: string): Promise<string | undefined>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
-  assist: Assist
+  assist: Assist<SessionsAssistJobId>
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
@@ -381,9 +386,10 @@ export interface SessionVerbDeps {
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
   deliver(tabId: string, text: string): Promise<boolean>
+  noteSent(tabId: string, text: string, id: string | undefined): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
-  answer(tabId: string, reply: string): Promise<string | undefined>
+  answer(tabId: string, reply: string, byTheOverseer: boolean): Promise<string | undefined>
   undelivered(callerTab: string, target: Target, why: string): void
   command(
     callerTab: string,
@@ -445,7 +451,7 @@ function modelAndEffortRefusal(
     return (rules) =>
       `koloft session new: pick the model and effort that fit the task, so ${aSessionOf(backend)} needs ${modelNeeded ? '--model and --effort' : '--effort'}. ${withProjectRules(rules, `${PICK_FOR_THE_TASK} ${tiersOf(backend)}.`)}`
   const owner = SESSION_BACKENDS.find(
-    (b) => b !== backend && (namedModel(b, args.model) || tierModelOf(b, args.model))
+    (b) => b !== backend && (namedModel(b, args.model) || familyModelOf(b, args.model))
   )
   return owner
     ? (rules) =>
@@ -632,7 +638,6 @@ async function launchSibling(
   helper: boolean
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
-  const traits = PEER_TRAITS[backend]
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
     id: idToReach(me),
@@ -673,10 +678,7 @@ async function launchSibling(
       ownerWords,
       // ADR-0026
       trustFolder: !worktree && (helper || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-      // CODEX§17
-      ...(traits.handoverAsRole
-        ? { role: preamble, firstPrompt: args.prompt }
-        : { firstPrompt: withHandover(preamble, args.prompt) })
+      ...roleAndTask(backend, preamble, args.prompt)
     })
   } finally {
     if (held) names.launched(held, tabId)
@@ -827,7 +829,9 @@ async function sessionOnThisComputer(
   const target = d.closable().find((s) => s.sessionId === row.id)
   if (!target) return fail(`koloft session close: ${title} is gone.`)
   if (target.tabId && d.overseer.is(target.tabId))
-    return fail(`koloft session close: ${title} is the butler, which only closes itself.`)
+    return fail(
+      `koloft session close: ${title}${composePrompt('session-close-refused-for-the-owners-ai')}`
+    )
   return { ok: true, value: target }
 }
 
@@ -932,6 +936,11 @@ function readsItAfterTheQuestion(name: string): string {
   return `But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${arg} and pass it on to the owner.`
 }
 
+interface PeerLine {
+  line: string
+  id: string
+}
+
 const SESSION_SAYS_OPENING = `${FROM_A_SESSION}"`
 
 export function sessionSays(from: SessionInfo, text: string): string {
@@ -944,7 +953,8 @@ const KOLOFT_ENVELOPES = [
   SESSION_SAYS_OPENING,
   ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS,
   FROM_KOLOFT,
-  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
+  ...PLUGIN_OPENINGS
 ]
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
@@ -989,6 +999,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     permission: 'bypass' | 'default',
     onReply: ReplyListener
   ): Promise<StartResult>
+  tellAs(tabId: string, opening: string, text: string): Promise<boolean>
+  ownerWordsIn(tabId: string): Promise<string | undefined>
 } {
   const opening = new Map<string, Promise<string | null>>()
   const names = launchNames(d)
@@ -998,9 +1010,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     modeFor: (tab: string) => ModeClass,
     text: string,
     sender: string
-  ): ((tab: string) => string) => {
+  ): ((tab: string) => PeerLine) => {
     const id = `koloft-${sender}-${++lined}`
-    return (tab) => crossSessionLine(modeFor(tab), text, id)
+    return (tab) => ({ line: crossSessionLine(modeFor(tab), text, id), id })
   }
   const repliesOwed = new RepliesOwed()
   const messagedBy = new Map<string, Set<string>>()
@@ -1043,21 +1055,24 @@ export function sessionVerb(d: SessionVerbDeps): {
   const sendNow = async (
     t: Target,
     text: string,
-    lineFor: ((tab: string) => string) | undefined,
+    lineFor: ((tab: string) => PeerLine) | undefined,
     until: number,
     from: string,
+    wroteTheOpening: boolean,
     assist?: string
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
-    const line = lineFor?.(tab)
+    const peer = lineFor?.(tab)
     const owed = assist
       ? {
           owner: assist,
           asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
         }
       : undefined
-    const sent = await repliesOwed.owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    const sent = await repliesOwed.owing(tab, owed, () =>
+      sendInto(t, tab, text, peer, until, wroteTheOpening)
+    )
     messaged(tab, from)
     return sent
   }
@@ -1066,15 +1081,18 @@ export function sessionVerb(d: SessionVerbDeps): {
     t: Target,
     tab: string,
     text: string,
-    line: string | undefined,
-    until: number
+    peer: PeerLine | undefined,
+    until: number,
+    wroteTheOpening: boolean
   ): Promise<string> => {
+    // ADR-0028
+    if (wroteTheOpening) await d.noteSent(tab, text, peer?.id)
     if (messagingOf(t.backend, !!t.remote) === 'queue') {
       await d.queue(tab, text, `koloft-conductor-${++queued}`)
       return `Sent to ${t.name}.`
     }
-    if (line) {
-      await d.sendLine(tab, line, until - Date.now())
+    if (peer) {
+      await d.sendLine(tab, peer.line, until - Date.now())
       return `Sent to ${t.name}.`
     }
     if (await d.deliver(tab, text)) return `Sent to ${t.name}.`
@@ -1117,6 +1135,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         lineFor,
         Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS,
         caller.session.sessionId,
+        true,
         assist
       )
       return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
@@ -1127,6 +1146,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       lineFor,
       Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
       caller.session.sessionId,
+      true,
       assist
     ).catch((error: unknown) => d.undelivered(caller.tabId, t, errorText(error)))
     return answered(`Will deliver when ${t.name} is ready.`)
@@ -1163,21 +1183,31 @@ export function sessionVerb(d: SessionVerbDeps): {
       .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
       .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
 
-  const tellFromKoloft = async (tabId: string, text: string): Promise<boolean> => {
+  const tellWith = async (
+    opening: string,
+    sender: string,
+    tabId: string,
+    text: string,
+    undelivered: (to: Target, why: string) => void
+  ): Promise<boolean> => {
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return false
     const to = openTarget(session)
-    const said = `${FROM_KOLOFT}${text}`
-    const mode = messagingOf(to.backend, !!to.remote) === 'peerLine' ? d.modeOf(tabId) : undefined
-    const line = mode && peerLineFrom(() => mode, said, 'koloft')(tabId)
+    const said = `${opening}${text}`
+    const route = messagingOf(to.backend, !!to.remote)
+    if (route === 'peerLine' && !fitsACrossSessionMessage(said)) return false
+    const mode = route === 'peerLine' ? d.modeOf(tabId) : undefined
+    const peer = mode ? peerLineFrom(() => mode, said, sender)(tabId) : undefined
     try {
-      await sendInto(to, tabId, said, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS)
+      await sendInto(to, tabId, said, peer, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS, true)
       return true
     } catch (error) {
-      d.undelivered(tabId, to, errorText(error))
+      undelivered(to, errorText(error))
       return false
     }
   }
+  const tellFromKoloft = (tabId: string, text: string): Promise<boolean> =>
+    tellWith(FROM_KOLOFT, 'koloft', tabId, text, (to, why) => d.undelivered(tabId, to, why))
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
     const overseer = d.overseer.target(caller.session.sessionId)
@@ -1249,7 +1279,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const error = await repliesOwed.owing(
         tab,
         { owner: caller.session.sessionId },
-        () => d.answer(tab, text),
+        () => d.answer(tab, text, d.overseer.is(caller.tabId)),
         (e) => e !== undefined
       )
       return error
@@ -1454,7 +1484,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       Date.now() +
       (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
     try {
-      await sendNow(t, text, lineFor, until, sender)
+      await sendNow(t, text, lineFor, until, sender, false)
       return {
         ok: true,
         session: t.key,
@@ -1527,7 +1557,14 @@ export function sessionVerb(d: SessionVerbDeps): {
     tabMoved,
     sendFrom,
     tellFromKoloft,
-    startForReply
+    startForReply,
+    tellAs: async (tabId, opening, text) =>
+      PLUGIN_OPENINGS.includes(opening) &&
+      tellWith(opening, 'plugin', tabId, text, () => undefined),
+    ownerWordsIn: async (tabId) => {
+      const s = d.allSessions().find((s) => s.tabId === tabId)
+      return s?.sessionId ? ownerWordsOf(s) : undefined
+    }
   }
 }
 
@@ -1539,13 +1576,15 @@ export interface SessionCommandsDeps {
   rulesOfTab(tabId: string): Promise<string | undefined>
   session: AgentVerb
   workspace: WorkspaceVerbDeps
+  instructions: InstructionsVerbDeps
 }
 
 export function registerSessionCommands(commands: Commands, d: SessionCommandsDeps): void {
   commands.register({
     help: helpVerb(d.rulesOfTab),
     session: d.session,
-    workspace: workspaceVerb(d.workspace)
+    workspace: workspaceVerb(d.workspace),
+    instructions: instructionsVerb(d.instructions)
   })
 }
 

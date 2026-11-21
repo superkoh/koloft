@@ -215,7 +215,7 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
     }
   })
 
-  test('Discord already set up starts on with no Set up button; its page shows the bot and the channel, and once turned off its status reads Off while the bot and channel stay', async ({
+  test('Discord already set up starts on with no Set up button; its page shows the bot and the channel, and once turned off its status reads Off while the bot and channel stay, with no way to change the channel until it is on again', async ({
     env
   }) => {
     const { app, page } = await launched(env, { discord: DISCORD_SET_UP })
@@ -234,8 +234,12 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
       await main.getByRole('switch', { name: 'Turn on Discord' }).uncheck()
       await expect(status).toHaveText('Off')
       await expect(main).toContainText('You are owner')
-      await expect(main.getByRole('button', { name: 'Change channel…' })).toBeVisible()
+      await expect(main).toContainText('#koloft')
+      await expect(main.getByRole('button', { name: 'Change channel…' })).toHaveCount(0)
+      await expect(main.getByRole('button', { name: 'Unbind' })).toHaveCount(0)
       await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
+      await main.getByRole('switch', { name: 'Turn on Discord' }).check()
+      await expect(main.getByRole('button', { name: 'Change channel…' })).toBeVisible()
     } finally {
       await quitAndClose(app)
     }

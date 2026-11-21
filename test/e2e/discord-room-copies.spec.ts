@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import { terminalText, waitBooted, waitConductorStarted, picksFor } from './helpers/p1'
 import {
   OPEN_A_FORM,
@@ -13,14 +13,18 @@ import {
 } from './helpers/fakeDiscord'
 import {
   addRemoteWorkspace,
+  installCodexOnFakeRemote,
   installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
+  machineHome,
   remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { runGit } from './helpers/gitFixture'
 import { startEchoServer } from './helpers/fixtureServer'
-import type { SessionInfo } from '../../src/shared/types'
+import type { BackendId, SessionInfo } from '../../src/shared/types'
 
 test.setTimeout(240_000)
 
@@ -67,9 +71,13 @@ async function connected(
 async function roomOfANewSession(
   page: Page,
   fake: FakeDiscord,
-  workspace: string
+  workspace: string,
+  backend: BackendId = 'claude'
 ): Promise<{ room: FakeThread; session: SessionInfo }> {
-  fake.say(OWNER, `/koloft session new ${picksFor('claude')} --workspace ${workspace} -- warm up`)
+  fake.say(
+    OWNER,
+    `/koloft session new ${picksFor(backend)} --workspace ${workspace} --backend ${backend} -- warm up`
+  )
   await expect
     .poll(() => fake.threads.filter((t) => t.parent_id === CHANNEL).length, {
       timeout: STARTS_AND_ANSWERS_MS
@@ -81,7 +89,7 @@ async function roomOfANewSession(
     .poll(
       async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
-        session = all.find((s) => s.alive && !s.overseer && s.sessionId)
+        session = all.find((s) => s.alive && !s.overseer && s.backendId === backend && s.sessionId)
         return !!session
       },
       { timeout: STARTS_AND_ANSWERS_MS }
@@ -119,6 +127,101 @@ async function onePictureThenTheCard(fake: FakeDiscord, room: FakeThread): Promi
   expect(uploads).toHaveLength(1)
   expect(isPng(uploads[0].files[0].data)).toBe(true)
   expect(inRoom().indexOf(uploads[0])).toBeLessThan(cardAt())
+}
+
+const LOCAL: { backend: BackendId; install: (env: E2EEnv) => void }[] = [
+  { backend: 'claude', install: () => {} },
+  { backend: 'codex', install: installCodex },
+  { backend: 'muse', install: installMuse },
+  { backend: 'agy', install: installAgy }
+]
+
+const REMOTE: { backend: BackendId; install: (env: E2EEnv) => void; tuiOnTheMac?: true }[] = [
+  { backend: 'claude', install: () => {} },
+  { backend: 'codex', install: installCodexOnFakeRemote, tuiOnTheMac: true },
+  {
+    backend: 'muse',
+    install: (env) => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    }
+  },
+  {
+    backend: 'agy',
+    install: (env) => {
+      installAgy(env)
+      installRemoteAgy(env)
+    }
+  }
+]
+
+async function withPresence(
+  env: E2EEnv,
+  body: (page: Page, fake: FakeDiscord, presence: string) => Promise<void>
+): Promise<void> {
+  seedButler(env)
+  const presence = path.join(env.home, 'presence.txt')
+  env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
+  const fake = await startFakeDiscord(env)
+  const { app, page } = await connected(env, fake)
+  try {
+    await body(page, fake, presence)
+  } finally {
+    await quitAndClose(app)
+    await fake.close()
+  }
+}
+
+async function shownAtTheMacThenAsked(
+  page: Page,
+  fake: FakeDiscord,
+  presence: string,
+  backend: BackendId,
+  workspace: string,
+  agentHome: string,
+  tuiHome: string,
+  dir: string
+): Promise<void> {
+  const { room, session } = await roomOfANewSession(page, fake, workspace, backend)
+  const said = (): Promise<string> => terminalText(page, session.tabId)
+  if (backend === 'claude') {
+    fake.say(OWNER, '/later /ask Ship it?|Yes|No', { channelId: room.id })
+    await expect.poll(said, { timeout: STARTS_AND_ANSWERS_MS }).toContain('armed /ask')
+  }
+  fake.say(OWNER, 'hello there', { channelId: room.id })
+  await expect
+    .poll(
+      () => fake.posted.some((p) => p.channelId === room.id && p.content.includes('hello there')),
+      { timeout: STARTS_AND_ANSWERS_MS }
+    )
+    .toBe(true)
+
+  fs.writeFileSync(presence, 'active')
+  fs.writeFileSync(
+    path.join(agentHome, `fake-${backend}-open-before-ask`),
+    path.join(dir, 'plan.html')
+  )
+  fs.writeFileSync(
+    path.join(tuiHome, backend === 'claude' ? 'go-later' : `fake-${backend}-ask-later`),
+    ''
+  )
+  await expect
+    .poll(async () => unwrapped(await said()), { timeout: STARTS_AND_ANSWERS_MS })
+    .toContain(unwrapped("in this session's Workbench."))
+  expect(await said()).not.toContain('Sent')
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.tabId === session.tabId
+        )?.status,
+      { timeout: STARTS_AND_ANSWERS_MS }
+    )
+    .toBe('approval')
+  expect(fake.posted.some((p) => p.channelId === room.id && p.files.length)).toBe(false)
+
+  fs.writeFileSync(presence, 'idle')
+  await onePictureThenTheCard(fake, room)
 }
 
 function fixtureFiles(dir: string): void {
@@ -200,49 +303,17 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
     }
   })
 
-  test('a picture a session shows while the owner is at the Mac, in the turn that asks them, reaches its room once, just before the question card that goes out after the owner left', async ({
-    env
-  }) => {
-    seedButler(env)
-    const presence = path.join(env.home, 'presence.txt')
-    env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
-    const dir = path.join(env.home, 'shown')
-    fixtureFiles(dir)
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      const { room, session } = await roomOfANewSession(page, fake, 'ws-a')
-      const said = (): Promise<string> => terminalText(page, session.tabId)
-      fake.say(OWNER, '/later /ask Ship it?|Yes|No', { channelId: room.id })
-      await expect.poll(said, { timeout: STARTS_AND_ANSWERS_MS }).toContain('armed /ask')
-      fake.say(OWNER, 'hello there', { channelId: room.id })
-      await expect
-        .poll(
-          () =>
-            fake.posted.some((p) => p.channelId === room.id && p.content.includes('hello there')),
-          { timeout: STARTS_AND_ANSWERS_MS }
-        )
-        .toBe(true)
-
-      fs.writeFileSync(presence, 'active')
-      fs.writeFileSync(
-        path.join(env.home, 'fake-claude-open-before-ask'),
-        path.join(dir, 'plan.html')
+  for (const { backend, install } of LOCAL)
+    test(`a picture a local ${backend} session shows while the owner is at the Mac, in the turn that asks them, reaches its room once, just before the question card that goes out after the owner left`, async ({
+      env
+    }) => {
+      install(env)
+      const dir = path.join(env.home, 'shown')
+      fixtureFiles(dir)
+      await withPresence(env, (page, fake, presence) =>
+        shownAtTheMacThenAsked(page, fake, presence, backend, 'ws-a', env.home, env.home, dir)
       )
-      fs.writeFileSync(path.join(env.home, 'go-later'), '')
-      await expect
-        .poll(said, { timeout: STARTS_AND_ANSWERS_MS })
-        .toContain('asking: AskUserQuestion')
-      expect(unwrapped(await said())).toContain(unwrapped("in this session's Workbench."))
-      expect(await said()).not.toContain('Sent')
-
-      fs.writeFileSync(presence, 'idle')
-      await onePictureThenTheCard(fake, room)
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
+    })
 
   test('a page whose picture takes longer than koloft open waits, shown in the turn that asks the owner away, reaches its room before the question card', async ({
     env
@@ -269,6 +340,34 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
       await site.close()
     }
   })
+
+  for (const { backend, install, tuiOnTheMac } of REMOTE)
+    test(`a picture a ${backend} session on another machine shows while the owner is at the Mac, in the turn that asks them, reaches its room once, just before the question card that goes out after the owner left`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      install(env)
+      const dir = remoteDir(env)
+      fixtureFiles(dir)
+      try {
+        await withPresence(env, async (page, fake, presence) => {
+          await addRemoteWorkspace(page, env)
+          await shownAtTheMacThenAsked(
+            page,
+            fake,
+            presence,
+            backend,
+            REMOTE_WS_NAME,
+            machineHome(env),
+            tuiOnTheMac ? env.home : machineHome(env),
+            dir
+          )
+        })
+      } finally {
+        killFakeRemote(env)
+      }
+    })
 
   test('in the room of a session on another machine, its files are pulled from there and sent, and an HTML file there goes as a picture of the whole page, as from a session on this Mac', async ({
     env

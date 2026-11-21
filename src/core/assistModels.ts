@@ -5,14 +5,16 @@ export interface ModelAndEffort {
   effort?: CronEffort
 }
 
-export interface AssistJob {
-  row: AssistRowId
+export interface AssistJob<Id extends AssistRowId = AssistRowId> {
+  row: Id
   system: string
   prompt: string
   signal?: AbortSignal
 }
 
-export type Assist = (job: AssistJob) => Promise<string | null>
+export type Assist<Id extends AssistRowId = AssistRowId> = (
+  job: AssistJob<Id>
+) => Promise<string | null>
 
 // CC§9 CODEX§15
 export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {

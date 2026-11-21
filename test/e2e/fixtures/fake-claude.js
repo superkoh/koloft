@@ -1478,9 +1478,11 @@ function handleLine(line) {
     return
   }
   // CC§8
-  if (text === '/bg-monitor') {
+  if (text === '/bg-monitor' || text === '/bg-monitor 2.1.329') {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     const monToolUseId = 'toolu_monitor_e2e'
+    const reportedAsMonitor = text.endsWith('2.1.329')
+    const monTaskId = reportedAsMonitor ? 'bmon_e2e' : 'mon_e2e'
     const meta = usageMeta()
     append([
       { type: 'user', message: { role: 'user', content: text }, cwd },
@@ -1508,14 +1510,14 @@ function handleLine(line) {
       {
         type: 'user',
         timestamp: new Date().toISOString(),
-        toolUseResult: { taskId: 'mon_e2e', timeoutMs: 0, persistent: true },
+        toolUseResult: { taskId: monTaskId, timeoutMs: 0, persistent: true },
         message: {
           role: 'user',
           content: [
             {
               type: 'tool_result',
               tool_use_id: monToolUseId,
-              content: 'Monitor started (task mon_e2e).'
+              content: `Monitor started (task ${monTaskId}).`
             }
           ]
         },
@@ -1525,7 +1527,12 @@ function handleLine(line) {
     fireHook('stop', {
       hook_event_name: 'Stop',
       background_tasks: [
-        { id: 'mon_e2e', type: 'shell', status: 'running', description: 'tail -f bot.log' }
+        {
+          id: monTaskId,
+          type: reportedAsMonitor ? 'monitor' : 'shell',
+          status: 'running',
+          description: 'tail -f bot.log'
+        }
       ]
     })
     process.stdout.write('[fake-claude] bg-monitor parked\r\n> ')

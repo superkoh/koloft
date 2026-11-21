@@ -11,6 +11,7 @@ import {
 } from './helpers/app'
 import {
   E2E_CLAUDE_ACCOUNT,
+  agySessionCalls,
   installAgy,
   installCodex,
   installMuse,
@@ -51,7 +52,7 @@ import {
   picksFor
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
-import { openSettings } from './helpers/extensions'
+import { closeSettings, openSettings } from './helpers/extensions'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -60,7 +61,7 @@ import {
   remoteDir,
   seedRemoteWorkspace
 } from './helpers/remote'
-import { GLOBAL_SCOPE } from '../../src/shared/conductors'
+import { GLOBAL_SCOPE } from '../../src/shared/scope'
 
 test.setTimeout(120_000)
 
@@ -597,6 +598,33 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
+  // AGY§21
+  test('an Antigravity butler set to Gemini 4 Carbon starts on Neon when the account has no Carbon, and says so under its name', async ({
+    env
+  }) => {
+    installAgy(env)
+    const { page, close } = await launched(env, {
+      assist: {
+        backend: 'agy',
+        rows: { butler: { backend: 'agy', model: 'gemini-4-carbon', effort: 'high' } }
+      }
+    })
+    try {
+      await butlerRow(page).click()
+      await expect(
+        page.locator('.toast-msg', {
+          hasText: 'Alfred: This account has no gemini-4-carbon model, so it runs on gemini-4-neon.'
+        })
+      ).toBeVisible({ timeout: 60_000 })
+      await expect.poll(() => agySessionCalls(env).length, { timeout: 60_000 }).toBe(1)
+      const { argv } = agySessionCalls(env)[0]
+      expect(argv[argv.indexOf('--model') + 1]).toBe('gemini-4-neon')
+      expect(argv[argv.indexOf('--effort') + 1]).toBe('high')
+    } finally {
+      await close()
+    }
+  })
+
   // AGY§5 AGY§8
   test('an Antigravity butler opened from the sidebar that is stuck on a setup screen is closed at the start deadline as "did not start", with nothing said to it', async ({
     env
@@ -919,6 +947,42 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+    } finally {
+      await close()
+    }
+  })
+})
+
+test.describe('The butler row while Discord is switched in Settings ▸ Plugins', () => {
+  async function switchDiscord(page: Page, on: boolean): Promise<void> {
+    await openSettings(page)
+    await page.locator('.set-ni', { hasText: 'Plugins' }).click()
+    await page.getByRole('switch', { name: 'Discord', exact: true }).setChecked(on)
+    await closeSettings(page)
+  }
+
+  test('turning Discord off while the butler row shows takes its channel line and its Discord menu entries away, and turning it on brings them back, the row working all along', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env, {
+      discord: { channel: { guildId: '111', channelId: '222', name: CHANNEL_A } }
+    })
+    try {
+      const where = butlerRow(page).locator('.ws-tab-sub')
+      await expect(where).toHaveText(`#${CHANNEL_A}`)
+      const plainMenu = ['Open↩', 'Rename…', 'Start a fresh conversation']
+      await switchDiscord(page, false)
+      await expect(where).toHaveText('')
+      expect(await butlerMenu(page)).toEqual(plainMenu)
+      await expect(page.locator('.menu .sep')).toHaveCount(0)
+      await closeMenu(page)
+      await switchDiscord(page, true)
+      await expect(where).toHaveText(`#${CHANNEL_A}`)
+      expect(await butlerMenu(page)).toEqual([
+        ...plainMenu,
+        'Change Discord channel…',
+        'Unbind Discord'
+      ])
     } finally {
       await close()
     }
