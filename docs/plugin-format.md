@@ -877,6 +877,9 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   Browser control's gives back the `CdpOps` it builds and the CDP relay's functions the app
   calls (`startRelay`, `setRelayEnabled`, `writeRelayEnv`, `relayEndpoint`,
   `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app hands the butler.
+  The Inbox's gives back the `KoloftInbox` it builds, which the app tells when a turn's
+  verdict comes in, a session is deleted or a tab is rebound, and `flushInbox`, which the
+  app calls as it quits.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
@@ -898,8 +901,8 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
 A plugin's main-process code is a set of parts. A part is a class or function in `main/`
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
-function gets its deps through the start's `deps`, as Workbench's web-page parts and
-Browser control's `CdpOps` do; most
+function gets its deps through the start's `deps`, as Workbench's web-page parts,
+Browser control's `CdpOps` and the Inbox's `Inbox` and `KoloftInbox` do; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
 to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
