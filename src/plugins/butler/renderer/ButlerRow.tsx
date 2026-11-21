@@ -15,7 +15,7 @@ import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from '@renderer/components/menuPlace'
 import { SessionRowsOfContext } from '@renderer/components/sidebarRows'
-import { useFillsOf } from '@renderer/pluginUi'
+import { useFillsOf, useOwnerReach } from '@renderer/pluginUi'
 import { ROW_EXTRAS, type RowExtras } from '@renderer/slots'
 import { BUTLER_ROW_PART } from '../plugin'
 import { butlerSetUp, butlerTabOf, isButlersWorkspace } from './butlerTabs'
@@ -191,6 +191,7 @@ export function RenameButlerDialog(): JSX.Element | null {
 function RenameForm(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const [typed, setTyped] = useState(butler.name)
+  const ownerReach = useOwnerReach()
   const name = butlerName(typed)
   const close = (): void => renameButler(false)
   const submit = (): void => {
@@ -222,7 +223,8 @@ function RenameForm(): JSX.Element {
             />
           </label>
           <div className="field-hint">
-            Shown as “{butlerTitle(name)}” in the sidebar and in Discord. Other sessions reach it by
+            Shown as “{butlerTitle(name)}” in the sidebar
+            {ownerReach.map((where) => ` and in ${where}`).join('')}. Other sessions reach it by
             this name.
           </div>
         </div>

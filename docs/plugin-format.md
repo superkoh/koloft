@@ -654,6 +654,7 @@ These are the slots core's window offers, in `src/renderer/src/slots.ts`:
 | `row-extras` | `{ row, useExtras }`: menu items and a status line for another plugin's sidebar row, named by that row's `ui` id | Discord, for `butler-row` |
 | `row-set-up` | `{ row, setUp(settings) }`: whether another plugin's sidebar row counts as set up | Discord, for `butler-row` |
 | `plugin-set-up` | `{ plugin, useLabel, run }`: a "Set up" button on the plugin's own row in Settings ▸ Plugins, shown while it was never set up | Discord ("Set up with Alfred") |
+| `owner-reach` | the name of a place outside this window where the owner talks to the butler. Settings ▸ Assist, the butler's row in Settings and its rename dialog name it while its plugin is on; the Welcome page's phone invites the owner to connect it unless the owner turned its plugin off | Discord ("Discord") |
 | `row-mark` | `{ at, useMarkOf, Mark }`: a mark at the start of a session row's title (`at: 'title'`) or second line (`at: 'sub'`) | Scheduled tasks (title), Butler (sub: "started by …") |
 | `owner-asks` | `{ useWatch, useAsked, useOverTerminal, usePageAsk, useHeldGuests }`: asks that hold a session tab until the owner answers. `useWatch` is called once from the app; a tab in `useAsked` shows its row as waiting on the owner; `useOverTerminal` gives the box drawn over that tab's terminal; `usePageAsk` gives the bar above a Workbench page; the pages in `useHeldGuests` stay loaded | Passwords and sign-in |
 | `workspace-line` | `{ useWatch, Line }`: a line under a workspace's head, above its rows | Scheduled tasks |
@@ -820,11 +821,15 @@ This is what a plugin that is off loses, and where that happens:
 | Main-process parts | stopped by the part itself | [Main-process parts](#main-process-parts) |
 | Settings and data | kept on disk; turning it on again finds them | — |
 
-The window reads slots in three ways, in `src/renderer/src/pluginUi.tsx`:
+The window reads slots in four ways, in `src/renderer/src/pluginUi.tsx`:
 
 - `fillsOf(slot)` gives only the fills of plugins that are on.
 - `fillsOfOnOrOff(slot)` gives every fill. A `plugin-set-up` fill and a `palette-route` fill
   are read this way, so they stay while their plugin is off.
+- `fillsOfNotTurnedOff(slot, settings)` also gives the fills of a plugin that is off only
+  because it was never set up, and leaves out one the owner turned off, or that is off
+  because a plugin it needs is. The Welcome page reads `owner-reach` this way, so its
+  invitation to connect Discord reaches someone who has not set it up yet.
 - `useFillsOf(slot, (fill, on) => …)` is for a slot whose fills are React hooks and that an
   optional plugin fills: `row-extras`, `owner-asks`, `worktree-items` and `workbench-part`.
   It calls every fill's hook on each draw, so a switch never changes how many hooks run. For
