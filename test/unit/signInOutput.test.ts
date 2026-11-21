@@ -27,4 +27,11 @@ describe('the text a sign-in tab shows back in Settings ▸ Accounts', () => {
     )
     expect(out.tail()).toBe('Failed: help')
   })
+
+  it('keeps a line the terminal ended with \\r\\r\\n, as a pty does to a CLI that already wrote \\r\\n', () => {
+    const out = new SignInOutput()
+    out.feed(printedMark)
+    out.feed('Visit: \x1b]8;;https://x\x07https://x\x1b]8;;\x07\r\r\n')
+    expect(out.tail()).toBe('Visit: https://x')
+  })
 })
