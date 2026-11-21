@@ -14,7 +14,10 @@ import {
 } from '../../../../src/plugins/sessions/main/instructionAsks'
 import { everyWorkspaceBlock, workspaceBlock } from '../../../../src/plugins/sessions/api'
 import { butlersBlock } from '../../../../src/plugins/butler/api'
-import { WORKSPACE_TEXT_MAX_BYTES } from '../../../../src/plugins/sessions/shared/workspaceInstructions'
+import {
+  WORKSPACE_TEXT_MAX_BYTES,
+  workspaceTextBytes
+} from '../../../../src/plugins/sessions/shared/workspaceInstructions'
 import type { InstructionAskView } from '../../../../src/plugins/sessions/shared/instructionAsks'
 import type { ButlerSetting } from '../../../../src/plugins/butler/shared/types'
 
@@ -144,6 +147,17 @@ describe('koloft instructions asks the owner before anything changes', () => {
     await expect(
       w.run('tab-a', ['set', '--', 'a'.repeat(WORKSPACE_TEXT_MAX_BYTES + 1)])
     ).rejects.toThrow('The rules and instructions together are 1 over the limit.')
+    expect(w.asked).toEqual([])
+  })
+
+  it("counts the workspace's rules for picking a model toward the limit, so text that fits alone is refused beside them", async () => {
+    const w = world()
+    const rules = 'Docs: sonnet.'
+    w.defaults.set(WS_A, { ...w.defaults.get(WS_A)!, rules })
+    const fitsAlone = 'a'.repeat(WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules, '') + 3)
+    await expect(w.run('tab-a', ['set', '--', fitsAlone])).rejects.toThrow(
+      'The rules and instructions together are 3 over the limit.'
+    )
     expect(w.asked).toEqual([])
   })
 

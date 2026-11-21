@@ -65,11 +65,12 @@ export function savedVersions(
   raw: string,
   by: string,
   at: number,
-  maxBytes: number
+  maxBytes: number,
+  overBy: (over: number) => string = overTheLimit
 ): VersionsSaved {
   const text = cleanInstructions(raw)
   const over = instructionsBytes(text) - maxBytes
-  if (over > 0) return { ok: false, error: overTheLimit(over) }
+  if (over > 0) return { ok: false, error: overBy(over) }
   return { ok: true, versions: withNewVersion(versions, text, by, at) }
 }
 

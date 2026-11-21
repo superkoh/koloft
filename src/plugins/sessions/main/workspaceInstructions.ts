@@ -2,27 +2,38 @@ import { composePrompt } from '@core/prompt'
 import {
   OWNER,
   cleanInstructions,
+  savedVersions,
   textInUse,
   textTheOwnerChose,
-  withNewVersion
+  type InstructionsVersion
 } from '@core/ownerInstructions'
 import type { SessionDefaults } from '@shared/types'
 import { sanitizeDefaults } from '@shared/sessionDefaults'
 import { isRecord } from '@shared/workbenchState'
 import type { InstructionsBlock } from './instructionsVerb'
 import { basename } from '@shared/preview'
-import {
-  WORKSPACE_TEXT_MAX_BYTES,
-  rulesAndInstructionsOver,
-  workspaceTextBytes
-} from '../shared/workspaceInstructions'
+import { roomForInstructions, rulesAndInstructionsOver } from '../shared/workspaceInstructions'
 
 export const workspaceInstructionsPart = (text: string): string =>
   composePrompt('workspace-owner-instructions', { values: { 'owner-instructions': text } })
 
-function checkTheLimit(rules: string, text: string): void {
-  const over = workspaceTextBytes(rules, text) - WORKSPACE_TEXT_MAX_BYTES
-  if (over > 0) throw new Error(rulesAndInstructionsOver(over))
+function versionsWith(
+  saved: SessionDefaults | undefined,
+  rules: string,
+  text: string,
+  by: string,
+  at: number
+): InstructionsVersion[] | undefined {
+  const result = savedVersions(
+    saved?.instructions,
+    text,
+    by,
+    at,
+    roomForInstructions(rules),
+    rulesAndInstructionsOver
+  )
+  if (!result.ok) throw new Error(result.error)
+  return result.versions
 }
 
 export function savedFromTheDialog(
@@ -39,24 +50,10 @@ export function savedFromTheDialog(
     cleaned(draft.instructions)
   )
   const rules = kept.rules ?? ''
-  if (rules !== (saved?.rules ?? '') || text !== textInUse(saved?.instructions))
-    checkTheLimit(rules, text)
-  const instructions = withNewVersion(saved?.instructions, text, OWNER, at) ?? saved?.instructions
+  const changed = rules !== (saved?.rules ?? '') || text !== textInUse(saved?.instructions)
+  const instructions =
+    (changed ? versionsWith(saved, rules, text, OWNER, at) : undefined) ?? saved?.instructions
   return sanitizeDefaults({ ...kept, instructions })
-}
-
-export function savedByAnAgent(
-  saved: SessionDefaults | undefined,
-  text: string,
-  by: string,
-  at: number
-): SessionDefaults | undefined {
-  if (text === textInUse(saved?.instructions)) return saved
-  checkTheLimit(saved?.rules ?? '', text)
-  return sanitizeDefaults({
-    ...saved,
-    instructions: withNewVersion(saved?.instructions, text, by, at)
-  })
 }
 
 export interface DefaultsOfWorkspaces {
@@ -74,13 +71,17 @@ export const workspaceBlock = (
 ): InstructionsBlock => ({
   name: `the instructions of workspace ${basename(workspace)}`,
   read: async () => textInUse((await defaults.read(workspace)).instructions),
-  check: async (text) => checkTheLimit((await defaults.read(workspace)).rules ?? '', text),
+  check: async (text) => {
+    const saved = await defaults.read(workspace)
+    versionsWith(saved, saved.rules ?? '', text, '', now())
+  },
   writeIfStill: async (before, after, by) => {
     let written = false
     await defaults.write(workspace, (saved) => {
       if (textInUse(saved?.instructions) !== before) return saved
       written = true
-      return savedByAnAgent(saved, after, by, now())
+      const instructions = versionsWith(saved, saved?.rules ?? '', after, by, now())
+      return instructions ? sanitizeDefaults({ ...saved, instructions }) : saved
     })
     return written
   }
