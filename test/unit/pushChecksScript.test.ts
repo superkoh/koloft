@@ -206,7 +206,7 @@ describe('push-checks PreToolUse hook', () => {
         fs.writeFileSync(path.join(gitDir, 'worktree-deps.lock'), String(deadPid()))
     ],
     [
-      'an install older than any install takes, its pid now another process',
+      'a lock its install stopped refreshing long ago, its pid now another process',
       (gitDir: string) => {
         const lock = path.join(gitDir, 'worktree-deps.lock')
         fs.writeFileSync(lock, String(process.pid))

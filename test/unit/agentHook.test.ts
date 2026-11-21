@@ -97,6 +97,12 @@ function hook(
 const callsIn = (file: string): string[] =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n') : []
 
+const codexRun = (root: string, command: string) => ({
+  cwd: root,
+  tool_name: 'Bash',
+  tool_input: { command }
+})
+
 const agyRun = (root: string, command: string) => ({
   cwd: root,
   hookEventName: 'PreToolUse',
@@ -107,17 +113,7 @@ describe('agent-hook.mjs: Codex and Antigravity hooks run the repo checks', () =
   it('runs no check for a shell command that cannot push', () => {
     const root = fixtureRepo()
     const { bin, calls } = fakeTools()
-    const codex = hook(
-      root,
-      'codex',
-      'before-shell-command',
-      {
-        cwd: root,
-        tool_name: 'Bash',
-        tool_input: { command: 'ls -la' }
-      },
-      bin
-    )
+    const codex = hook(root, 'codex', 'before-shell-command', codexRun(root, 'ls -la'), bin)
     const agy = hook(root, 'agy', 'before-shell-command', agyRun(root, 'ls -la'), bin)
     expect([codex.status, codex.stdout, agy.status, agy.stdout]).toEqual([0, '', 0, ''])
     expect(callsIn(calls)).toEqual([])
@@ -156,11 +152,7 @@ describe('agent-hook.mjs: Codex and Antigravity hooks run the repo checks', () =
       root,
       'codex',
       'before-shell-command',
-      {
-        cwd: root,
-        tool_name: 'Bash',
-        tool_input: { command: 'git push -u origin HEAD' }
-      },
+      codexRun(root, 'git push -u origin HEAD'),
       bin
     )
     expect(r.status).toBe(2)

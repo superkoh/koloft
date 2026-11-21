@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { depsState, failureNote, worktreeOf } from './worktree-deps-state.mjs'
 
 const CHECK_TIMEOUT_MS = 100_000
@@ -83,12 +83,9 @@ const UNTIL_INSTALLED = "until this worktree's node_modules is installed"
 const input = JSON.parse(fs.readFileSync(0, 'utf8'))
 if (!isPushOrPr(input.tool_input?.command ?? '')) pass()
 
-const checkout = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: input.cwd,
-  encoding: 'utf8'
-}).stdout?.trim()
+const worktree = worktreeOf(input.cwd ?? process.cwd())
+const checkout = worktree.root
 if (!checkout || !fs.existsSync(path.join(checkout, 'scripts', 'push-checks.mjs'))) pass()
-const worktree = worktreeOf(checkout)
 const deps = depsState(worktree)
 if (deps === 'installing')
   stop(UNTIL_INSTALLED, [

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { depsState, worktreeOf } from './worktree-deps-state.mjs'
+import { needsInstall, worktreeOf } from './worktree-deps-state.mjs'
 
 // ADR-0052 CODEX§27 AGY§12
 
@@ -35,8 +35,7 @@ function systemMessageIn(stdout) {
 
 function sessionStart() {
   const worktree = worktreeOf(cwd)
-  if (!worktree.linked) return
-  if (depsState(worktree) === 'ready' && fs.existsSync(worktree.nodeModules)) return
+  if (!needsInstall(worktree)) return
   spawn(process.execPath, [path.join(ROOT, 'scripts', 'worktree-deps.mjs'), '--here'], {
     cwd: worktree.root,
     detached: true,
@@ -113,5 +112,4 @@ try {
   CHECKS[check]?.()
 } catch (e) {
   console.error(`agent-hook: ${e.message}`)
-  process.exit(0)
 }
