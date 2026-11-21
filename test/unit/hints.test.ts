@@ -136,26 +136,6 @@ describe('firedHints — approval', () => {
     expect(firedHints(prev, next)).toEqual([{ id: 'approval', selector: rowSelector('t2') }])
   })
 
-  it("stays quiet when the amber row is a plugin's own session, whether its row is still its tab or already its session", () => {
-    const sessions = [{ tabId: 't1' }, { tabId: 't2', sessionId: 's2' }, { tabId: 't3' }]
-    const prev = snap({ activeTabId: 't1', sessions })
-    const next = snap({
-      activeTabId: 't1',
-      sessions: [
-        { tabId: 't1' },
-        { tabId: 't2', sessionId: 's2', status: 'approval' },
-        { tabId: 't3', status: 'approval' }
-      ],
-      rows: [
-        ws('/a', [
-          { ...running('s2'), pluginOwn: true },
-          { ...launch('t3'), pluginOwn: true }
-        ])
-      ]
-    })
-    expect(firedHints(prev, next)).toEqual([])
-  })
-
   it('stays quiet when the amber row IS the one on screen', () => {
     const prev = snap({ activeTabId: 't2', sessions: [{ tabId: 't2' }] })
     const next = snap({ activeTabId: 't2', sessions: [{ tabId: 't2', status: 'approval' }] })
@@ -202,17 +182,6 @@ describe('firedHints — worktree', () => {
     const prev = snap({ sessions, rows: [ws('/a', [running('s1'), cold('s2')])] })
     const next = snap({ sessions, rows: [ws('/a', [running('s1'), running('s2')])] })
     expect(firedHints(prev, next)).toEqual([{ id: 'worktree', selector: rowSelector('t2') }])
-  })
-
-  it("stays quiet when the new session in that folder is a plugin's own, and does not count it as one already running", () => {
-    const own = { ...launch('pty-2'), pluginOwn: true as const }
-    const prev = snap({ rows: [ws('/a', [running('s1')])] })
-    const next = snap({ rows: [ws('/a', [running('s1'), own])] })
-    expect(firedHints(prev, next)).toEqual([])
-    const ownRunning = { ...running('s2'), pluginOwn: true as const }
-    const before = snap({ rows: [ws('/a', [ownRunning])] })
-    const after = snap({ rows: [ws('/a', [ownRunning, launch('pty-3')])] })
-    expect(firedHints(before, after)).toEqual([])
   })
 
   it('stays quiet when the new session is a worktree one — that is the cure', () => {

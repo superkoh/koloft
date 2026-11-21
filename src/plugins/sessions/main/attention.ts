@@ -25,7 +25,6 @@ export class AttentionTracker {
   turnDone: (tabId: string) => void = () => {}
   outlivesKoloft: (tabId: string) => boolean = () => false
   claim: (tabId: string, step: HeldStep) => StepClaim = () => undefined
-  ownedByAPlugin: (tabId: string) => boolean = () => false
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
@@ -85,7 +84,7 @@ export class AttentionTracker {
       else this.askKeptThroughWorking.add(tabId)
       return
     }
-    if (!kind || this.ownedByAPlugin(tabId)) return
+    if (!kind) return
     const claim = this.claim(tabId, kind)
     if (claim === 'take') return
     if (claim === 'hold') return this.hold(tabId, kind, subject)
@@ -122,7 +121,6 @@ export class AttentionTracker {
 
   onExited(tabId: string, subject: AttentionSubject = {}): void {
     this.held.delete(tabId)
-    if (this.ownedByAPlugin(tabId)) return
     this.raise(tabId, 'exited', subject)
   }
 

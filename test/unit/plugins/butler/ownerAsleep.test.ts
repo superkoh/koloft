@@ -318,26 +318,6 @@ describe('owner asleep', () => {
     expect(quiet.reports).toEqual([])
   })
 
-  it("a plugin's lines, read when the owner wakes from the time they fell asleep, end the morning report and make one on a night with nothing else", async () => {
-    const t = setup()
-    const askedFrom: number[] = []
-    t.asleep.addToMorningReport((sleptAt) => {
-      askedFrom.push(sleptAt)
-      return ['Alfred answered "Fix login" for the owner.']
-    })
-    await t.fallAsleep()
-    await t.wakeAfter(HOUR_MS)
-    expect(askedFrom).toEqual([0])
-    expect(t.reports).toHaveLength(1)
-    expect(t.reports[0]).toMatch(/is back now\..* Alfred answered "Fix login" for the owner\.$/)
-
-    const nothing = setup()
-    nothing.asleep.addToMorningReport(() => [])
-    await nothing.fallAsleep()
-    await nothing.wakeAfter(HOUR_MS)
-    expect(nothing.reports).toEqual([])
-  })
-
   it('what Koloft answered before a restart in the night is still in the morning report, and the next night starts with none', async () => {
     const t = setup()
     await t.fallAsleep()

@@ -6,7 +6,6 @@ import type { StepHolder } from './heldSteps'
 import { errorText } from '@core/errorText'
 import { withHandover } from './handoverPreamble'
 import type { StartedSessions } from './startedSessions'
-import type { PluginSessions } from './pluginSessions'
 
 export interface TabPlace {
   workspace: string
@@ -22,8 +21,6 @@ export interface BesideSpec {
   model?: CreateTabOptions['model']
   effort?: CreateTabOptions['effort']
   name?: string
-  own?: true
-  commands?: readonly string[]
 }
 
 export type BesideResult = { ok: true; tabId: string } | { ok: false; why: string }
@@ -51,7 +48,6 @@ export interface BesideDeps {
   pinnedWorkspaces(): { path: string }[]
   turnedOff(backend: BackendId): string | null
   shownUnder: Pick<StartedSessions, 'started'>
-  keptForAPlugin: Pick<PluginSessions, 'started'>
 }
 
 export const folderOf = (s: SessionInfo): string =>
@@ -101,6 +97,5 @@ export async function startBeside(
     })
   if (!tab) return { ok: false, why }
   d.shownUnder.started(tab, beside.sessionId)
-  d.keptForAPlugin.started(tab, { own: spec.own, commands: spec.commands })
   return { ok: true, tabId: tab }
 }

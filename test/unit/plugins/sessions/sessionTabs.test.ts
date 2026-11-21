@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { BackendId, CreateTabOptions, SessionInfo } from '../../../../src/shared/types'
 import { formatRemoteKey } from '../../../../src/shared/remoteKey'
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
-import { PluginSessions } from '../../../../src/plugins/sessions/main/pluginSessions'
 import {
   startBeside,
   type BesideDeps,
@@ -16,7 +15,6 @@ type Launched = CreateTabOptions & { kind: BackendId }
 
 let directory: string
 let shownUnder: StartedSessions
-let pluginSessions: PluginSessions
 let launched: Launched[]
 
 const session = (over: Partial<SessionInfo> = {}): SessionInfo =>
@@ -49,17 +47,13 @@ function deps(s: SessionInfo | undefined, pinned: string[] = []): BesideDeps {
     },
     pinnedWorkspaces: () => pinned.map((p) => ({ path: p })),
     turnedOff: (backend) => (backend === 'muse' ? 'Muse is turned off in Settings' : null),
-    shownUnder,
-    keptForAPlugin: pluginSessions
+    shownUnder
   }
 }
-
-const pluginSessionsFile = (): string => path.join(directory, 'plugin-sessions.json')
 
 beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-beside-'))
   shownUnder = new StartedSessions(() => path.join(directory, 'shown-under.json'))
-  pluginSessions = new PluginSessions(pluginSessionsFile)
   launched = []
 })
 
@@ -112,27 +106,6 @@ describe('startBeside', () => {
     expect(shownUnder.parentOfRow('tab-helper')).toBe('watched')
     shownUnder.bound('tab-helper', 'helper-session')
     expect(shownUnder.parentOfRow('helper-session')).toBe('watched')
-  })
-
-  it('a session a plugin keeps as its own, with its koloft commands, stays so from its tab to its session, through a /clear in that tab and a restart of Koloft, until it is deleted', async () => {
-    const commands = ['watch decide', 'session read']
-    await startBeside(deps(session()), 'tab-watched', { ...spec, own: true, commands })
-    expect(pluginSessions.of('tab-helper')).toEqual({ own: true, commands })
-    pluginSessions.moved('tab-helper', 'tab-helper-2')
-    pluginSessions.bound('tab-helper-2', 'helper-session')
-    pluginSessions.bound('tab-helper-2', 'helper-after-clear')
-    const afterRestart = new PluginSessions(pluginSessionsFile)
-    expect(afterRestart.own('helper-session')).toBe(true)
-    expect(afterRestart.of('helper-after-clear')).toEqual({ own: true, commands })
-    afterRestart.forget('helper-session')
-    expect(new PluginSessions(pluginSessionsFile).own('helper-session')).toBe(false)
-  })
-
-  it('a session started beside another without own or commands is kept for no plugin', async () => {
-    await startBeside(deps(session()), 'tab-watched', spec)
-    pluginSessions.bound('tab-helper', 'helper-session')
-    expect(pluginSessions.of('helper-session')).toBeUndefined()
-    expect(fs.existsSync(pluginSessionsFile())).toBe(false)
   })
 
   it('starts nothing beside a tab with no open session', async () => {

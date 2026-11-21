@@ -65,16 +65,8 @@ export interface AgentRequestDeps {
   tab(tabId: string): TabFacts | undefined
   session(tabId: string): SessionInfo | undefined
   enabled(tabId: string): boolean
-  commandsOf?(tabId: string): readonly string[] | undefined
   alive(pid: number): boolean
 }
-
-function commandAllowed(words: readonly string[], allowed: readonly string[]): boolean {
-  return allowed.some((command) => command.split(' ').every((word, i) => words[i] === word))
-}
-
-const onlyTheseCommands = (allowed: readonly string[]): string =>
-  `koloft: this session may run only these koloft commands: ${allowed.map((c) => `koloft ${c}`).join(', ') || 'none'}.`
 
 export const REQUEST_NAME = /^req-([A-Za-z0-9-]+)\.json$/
 export const AGENT_DROP_NAME = /^(req|res)-[A-Za-z0-9-]+\.json$/
@@ -144,9 +136,6 @@ export class AgentRequests {
     const session = this.deps.session(tabId)
     if (!session) return refused(UNKNOWN_TAB)
     const [verb = 'help', ...args] = asksForHelp(req.argv) ? ['help'] : req.argv
-    const allowed = this.deps.commandsOf?.(tabId)
-    if (allowed && !commandAllowed([verb, ...args], allowed))
-      return refused(onlyTheseCommands(allowed))
     return this.deps.commands.dispatch(verb, args, {
       tabId,
       cwd: req.cwd,

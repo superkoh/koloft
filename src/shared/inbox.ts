@@ -110,7 +110,6 @@ export interface InboxCardBody {
   suggestion: { text: string; action?: string } | null
   actions: InboxAction[]
   links: InboxLink[]
-  dismissButton?: true
 }
 
 export type InboxCardInput = Partial<Omit<InboxCardBody, 'title' | 'level'>> & {
@@ -313,8 +312,7 @@ export function checkCardBody(input: InboxCardInput, warn: string[]): InboxCardB
         }
       : null,
     actions,
-    links: links.map((l) => ({ ...l, label: cut(l.label, INBOX_LIMIT.label, warn, 'link label') })),
-    dismissButton: input.dismissButton === true || undefined
+    links: links.map((l) => ({ ...l, label: cut(l.label, INBOX_LIMIT.label, warn, 'link label') }))
   }
 }
 

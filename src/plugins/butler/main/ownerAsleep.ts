@@ -82,10 +82,9 @@ function answeredLine(a: AnsweredForOwner, n: number): string {
 export function morningReport(
   sleptMs: number,
   changed: DigestItem[],
-  answered: AnsweredForOwner[],
-  fromPlugins: readonly string[] = []
+  answered: AnsweredForOwner[]
 ): string | undefined {
-  if (!changed.length && !answered.length && !fromPlugins.length) return undefined
+  if (!changed.length && !answered.length) return undefined
   const parts = [
     `${FROM_KOLOFT}The owner was asleep for ${howLong(sleptMs)} and is back now. Tell them in a few short sentences, in their language: what the sessions below got done, which are stuck and what each needs from them, and what Koloft answered for them while they slept.`
   ]
@@ -97,7 +96,7 @@ export function morningReport(
     parts.push(
       `Koloft answered for the owner: ${answered.map((a, i) => answeredLine(a, i + 1)).join(' ')}`
     )
-  return [...parts, ...fromPlugins].join(' ')
+  return parts.join(' ')
 }
 
 function repliesTo(asked: AskedOwner): string[] {
@@ -106,11 +105,8 @@ function repliesTo(asked: AskedOwner): string[] {
   return [each(OWNER_ASLEEP_ANSWER), each(FIRST_OPTION)]
 }
 
-export type MorningLines = (sleptAt: number) => readonly string[]
-
 export class OwnerAsleep {
   private answered: AnsweredForOwner[]
-  private morningLines: MorningLines[] = []
   private settled = new Set<string>()
   private everMarked = new Set<string>()
   private generation = 0
@@ -149,23 +145,12 @@ export class OwnerAsleep {
       const text = morningReport(
         this.d.now() - sleptAt,
         this.d.changedSince(sleptAt),
-        this.answered,
-        this.morningLines.flatMap((lines) => {
-          try {
-            return lines(sleptAt)
-          } catch {
-            return []
-          }
-        })
+        this.answered
       )
       this.keepAnswered([])
       if (text) this.d.report(text)
     }
     this.awakeTabsChanged()
-  }
-
-  addToMorningReport(lines: MorningLines): void {
-    this.morningLines.push(lines)
   }
 
   awakeTabsChanged(): void {

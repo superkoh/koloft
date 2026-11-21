@@ -13,13 +13,7 @@ export interface HintSnapshot {
   }[]
   rows: {
     workspace: { path: string }
-    rows: {
-      id: string
-      worktree: string
-      running: boolean
-      pending?: boolean
-      pluginOwn?: true
-    }[]
+    rows: { id: string; worktree: string; running: boolean; pending?: boolean }[]
   }[]
 }
 
@@ -66,7 +60,7 @@ export function selectorOf(h: HintFire, panelShown: boolean, sidebarHidden: bool
 type Row = HintSnapshot['rows'][number]['rows'][number]
 
 function runsInMainFolder(r: Row): boolean {
-  return r.worktree === 'main' && (r.running || !!r.pending) && !r.pluginOwn
+  return r.worktree === 'main' && (r.running || !!r.pending)
 }
 
 function rowTabId(s: HintSnapshot, rowId: string): string {
@@ -96,16 +90,11 @@ export function firedHints(
   for (const { id, part, selector } of partHints)
     if (next.partsShown[part] && !prev.partsShown[part]) out.push({ id, selector })
 
-  const pluginOwn = (s: HintSnapshot['sessions'][number]): boolean =>
-    next.rows.some((w) =>
-      w.rows.some((r) => r.pluginOwn && (r.id === s.tabId || r.id === s.sessionId))
-    )
   const amber = next.sessions.find(
     (s) =>
       s.status === 'approval' &&
       s.tabId !== next.activeTabId &&
-      prev.sessions.find((p) => p.tabId === s.tabId)?.status !== 'approval' &&
-      !pluginOwn(s)
+      prev.sessions.find((p) => p.tabId === s.tabId)?.status !== 'approval'
   )
   if (amber) out.push({ id: 'approval', selector: rowSelector(amber.tabId) })
 

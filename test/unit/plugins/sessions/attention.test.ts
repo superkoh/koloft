@@ -474,29 +474,3 @@ describe('attention — a step a plugin holds', () => {
     expect(t.awaitingVerdict('tab-A')).toBe(false)
   })
 })
-
-describe("attention — a plugin's own session", () => {
-  it('its finished turns, its questions and its exit raise no mark and go to no holder or judge, while its Koloft asks still do', () => {
-    const { t, changes } = makeTracker()
-    const asked: string[] = []
-    const judged: string[] = []
-    t.ownedByAPlugin = (tabId) => tabId === 'tab-own'
-    t.claim = (tabId) => {
-      asked.push(tabId)
-      return undefined
-    }
-    t.turnDone = (tabId) => judged.push(tabId)
-    t.onStatusChange('tab-own', 'working', 'waiting')
-    t.onStatusChange('tab-own', 'working', 'approval')
-    t.onExited('tab-own')
-    expect(changes).toEqual([])
-    expect(asked).toEqual([])
-    expect(judged).toEqual([])
-    t.waitsOnTheOwner('tab-own', { title: 'Check' })
-    t.onStatusChange('tab-B', 'working', 'waiting')
-    expect(t.list().map((e) => [e.tabId, e.kind])).toEqual([
-      ['tab-own', 'approval'],
-      ['tab-B', 'turn-done']
-    ])
-  })
-})
