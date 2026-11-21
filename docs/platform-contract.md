@@ -1519,6 +1519,21 @@ inferred, not checked.
   objects; the same text in a `hidden` element, the placeholder sized by row count, cost
   no task over 50 ms. A `hidden` element's text is still in the DOM, so a TreeWalker (DOM
   ⌘F) finds it, but its ranges have no box and copy leaves it out.
+- **Full-window `backdrop-filter: blur(...)` collapses macOS CoreAnimation overlays to one
+  full-window surface and repaints the whole window on every hover or background tick.**
+  Measured 2026-11-21 (Electron 43.8.7, macOS 27.2.1 on a 160 Hz display, `contentTracing`
+  with `viz` and `disabled-by-default-viz.debug.overlay_planes` on a 1200×800 window with
+  an animating sidebar bar, a WebGL canvas and a `<webview>`): with no modal,
+  `ScheduleOverlays()` stayed at `num_overlays: 5` and `FinishPaintRenderPass` was `0`;
+  with `backdrop-filter: blur(6px)` on a `position: fixed; inset: 0` modal backdrop,
+  `num_overlays` dropped to `1` and `FinishPaintRenderPass` hit `180–193/s` at 160 FPS
+  (and `42/s` on 20 Hz modal button hover even with every background animation paused).
+  Blurring the sibling root container with `filter: blur(6px)` while pausing CSS
+  animations under it kept `num_overlays: 6` (both with a WebGL canvas and with a
+  `<webview>`), dropped idle swaps to `0` and kept `FinishPaintRenderPass` at `0` during
+  modal hovers while looking the same. In macOS Screen Sharing (RFB over TCP 5900),
+  collapsing overlays plus full-window 120–160 Hz repaints made the remote pointer flicker
+  and vanish whenever a blurred modal was open.
 
 ## §25 React and zustand
 

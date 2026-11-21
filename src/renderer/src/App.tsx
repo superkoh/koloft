@@ -1548,19 +1548,6 @@ export default function App(): JSX.Element {
 
   return (
     <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
-      {toast && (
-        <div
-          className={'toast' + (toastReveal ? ' link' : '')}
-          onClick={() => {
-            if (!toastReveal) return
-            window.api.os.reveal(toastReveal)
-            dismissToast()
-          }}
-        >
-          <span className="toast-msg">{toast}</span>
-        </div>
-      )}
-
       <div className="side" ref={sideRef} style={{ width: sidebarWidth }}>
         <div className="titlebar">
           {overlay && (
@@ -2066,20 +2053,32 @@ export default function App(): JSX.Element {
             />
           )}
           <UnsavedDialog />
+          {toast && (
+            <div
+              className={'toast' + (toastReveal ? ' link' : '')}
+              onClick={() => {
+                if (!toastReveal) return
+                window.api.os.reveal(toastReveal)
+                dismissToast()
+              }}
+            >
+              <span className="toast-msg">{toast}</span>
+            </div>
+          )}
+          {extAsks[0] && (
+            <ExtensionConfirm
+              key={extAsks[0].id}
+              request={extAsks[0]}
+              onAnswer={(id, granted) => {
+                setExtAsks((q) => q.filter((r) => r.id !== id))
+                window.api.extensions.answerPermissionRequest(id, granted)
+              }}
+            />
+          )}
         </>,
         document.body
       )}
       {overlay?.open && <BrowserOverlay url={overlay.url} onClose={closeOverlay} />}
-      {extAsks[0] && (
-        <ExtensionConfirm
-          key={extAsks[0].id}
-          request={extAsks[0]}
-          onAnswer={(id, granted) => {
-            setExtAsks((q) => q.filter((r) => r.id !== id))
-            window.api.extensions.answerPermissionRequest(id, granted)
-          }}
-        />
-      )}
       {hint && <Hint {...hint} />}
     </div>
   )
