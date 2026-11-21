@@ -119,6 +119,8 @@ export interface NewsJudgeDeps {
   judge(turn: Turn): Promise<Verdict>
   awaitingVerdict(tabId: string): boolean
   markFyi(tabId: string): void
+  holdsTurn(tabId: string): boolean
+  judgedWhileHeld(tabId: string, verdict: Verdict): void
 }
 
 type VerdictListener = (tabId: string, verdict: Verdict) => void
@@ -127,6 +129,7 @@ export class NewsJudge {
   private round = new Map<string, number>()
   private unjudged = new Map<string, Turn>()
   private beingJudged = new Map<string, number>()
+  private keptWhileHeld = new Map<string, Verdict>()
   private listeners: VerdictListener[] = []
 
   constructor(private readonly d: NewsJudgeDeps) {}
@@ -149,6 +152,23 @@ export class NewsJudge {
     this.nextRound(tabId)
     this.unjudged.delete(tabId)
     this.beingJudged.delete(tabId)
+    this.keptWhileHeld.delete(tabId)
+  }
+
+  letGo(tabId: string): void {
+    const verdict = this.keptWhileHeld.get(tabId)
+    if (!verdict) return
+    this.keptWhileHeld.delete(tabId)
+    this.tell(tabId, verdict)
+  }
+
+  taken(tabId: string): void {
+    this.keptWhileHeld.delete(tabId)
+    this.beingJudged.delete(tabId)
+  }
+
+  private tell(tabId: string, verdict: Verdict): void {
+    for (const listener of this.listeners) listener(tabId, verdict)
   }
 
   marked(tabId: string): void {
@@ -164,11 +184,14 @@ export class NewsJudge {
         if (verdict.news && this.round.get(tabId) === round) this.d.markFyi(tabId)
         if (this.beingJudged.get(tabId) !== round) return
         this.beingJudged.delete(tabId)
-        for (const listener of this.listeners) listener(tabId, verdict)
+        if (!this.d.holdsTurn(tabId)) return this.tell(tabId, verdict)
+        this.keptWhileHeld.set(tabId, verdict)
+        this.d.judgedWhileHeld(tabId, verdict)
       })
   }
 
   private nextRound(tabId: string): void {
     this.round.set(tabId, (this.round.get(tabId) ?? 0) + 1)
+    this.keptWhileHeld.delete(tabId)
   }
 }

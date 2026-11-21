@@ -4,6 +4,7 @@ import {
   DIALOG_CLOSED,
   Moments,
   STATE_CHANGED,
+  STEP_LET_GO,
   TOOL_DONE,
   TURN_OVER,
   type StateChanged
@@ -62,7 +63,8 @@ function wired(o: { onDiscord?: boolean; pendingAsk?: string } = {}): {
     relay: () => ({
       turnEnded: () => {},
       stoppedAsking: say('relay.stoppedAsking'),
-      codexAsked: say('relay.codexAsked')
+      codexAsked: say('relay.codexAsked'),
+      askLetGo: say('relay.askLetGo')
     }),
     typing: () => ({ refresh: say('typing.refresh') }),
     rooms: () => null,
@@ -134,5 +136,11 @@ describe('what each plugin does when a session changes state, finishes a tool, e
     void moments.announce(TURN_OVER, { tabId: 't1', over: true })
     void moments.announce(ATTENTION_CHANGED, [])
     expect(calls).toEqual(['slash.turnOver t1 true', 'digest.marked', 'inbox.sync'])
+  })
+
+  it('a step a plugin lets go wakes the asleep watch, then Discord shows the question it held', () => {
+    const { moments, calls } = wired()
+    void moments.announce(STEP_LET_GO, 't1')
+    expect(calls).toEqual(['asleep.asks t1', 'relay.askLetGo t1'])
   })
 })

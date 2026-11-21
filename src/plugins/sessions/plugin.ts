@@ -7,6 +7,7 @@ import {
   SESSION_STARTED,
   SESSION_STARTING,
   STATE_CHANGED,
+  STEP_LET_GO,
   TAB_EXITED,
   TAB_FORGOTTEN,
   TAB_STOPPING,
@@ -53,7 +54,8 @@ export const plugin: PluginManifest = {
       TURN_OVER.name,
       ATTENTION_CHANGED.name,
       TAB_STOPPING.name,
-      DIALOG_CLOSED.name
+      DIALOG_CLOSED.name,
+      STEP_LET_GO.name
     ],
     listens: [
       TAB_EXITED.name,

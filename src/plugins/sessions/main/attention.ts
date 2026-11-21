@@ -1,4 +1,5 @@
 import type { AttentionEvent, AttentionKind, AttentionSubject, SessionStatus } from '@shared/types'
+import type { HeldStep, StepClaim } from './heldSteps'
 
 export type SavedMark = AttentionEvent & { sessionId: string }
 
@@ -17,12 +18,13 @@ export function edgeAttention(
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
   private askKeptThroughWorking = new Set<string>()
+  private held = new Map<string, AttentionEvent & { kind: HeldStep }>()
   asleep: (tabId: string) => boolean = () => false
   waitsOnAnother: (tabId: string) => boolean = () => false
   watching: () => string | null = () => null
   turnDone: (tabId: string) => void = () => {}
   outlivesKoloft: (tabId: string) => boolean = () => false
-  turnTakenElsewhere: (tabId: string) => boolean = () => false
+  claim: (tabId: string, step: HeldStep) => StepClaim = () => undefined
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
@@ -73,6 +75,8 @@ export class AttentionTracker {
     next: SessionStatus,
     subject: AttentionSubject = {}
   ): void {
+    const kind = edgeAttention(prev, next)
+    if (next === 'working' || kind) this.held.delete(tabId)
     if (next === 'working') {
       const cur = this.pending.get(tabId)
       const mayAskAgain = cur?.wasAsking && !cur.stoppedByRestart && this.outlivesKoloft(tabId)
@@ -80,12 +84,43 @@ export class AttentionTracker {
       else this.askKeptThroughWorking.add(tabId)
       return
     }
-    const kind = edgeAttention(prev, next)
-    if (!kind || (kind === 'turn-done' && this.turnTakenElsewhere(tabId))) return
+    if (!kind) return
+    const claim = this.claim(tabId, kind)
+    if (claim === 'take') return
+    if (claim === 'hold') return this.hold(tabId, kind, subject)
     this.raise(tabId, kind, subject, true)
   }
 
+  private hold(tabId: string, kind: HeldStep, subject: AttentionSubject): void {
+    if (kind === 'turn-done' && this.pending.get(tabId)?.kind === 'approval') return
+    const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
+    this.held.set(tabId, { ...subject, tabId, kind, at: Date.now(), ...(fyi && { fyi }) })
+    if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
+  }
+
+  letGo(tabId: string, note?: string): boolean {
+    const held = this.held.get(tabId)
+    if (!held) return false
+    this.held.delete(tabId)
+    const { title, sessionId, at, fyi } = held
+    this.raise(tabId, held.kind, { title, sessionId, ...(note && { note }) }, true, { at, fyi })
+    return true
+  }
+
+  heldMarks(): AttentionEvent[] {
+    return [...this.held.values()].filter((e) => !this.pending.has(e.tabId))
+  }
+
+  take(tabId: string): void {
+    this.held.delete(tabId)
+  }
+
+  holdsTurn(tabId: string): boolean {
+    return this.held.get(tabId)?.kind === 'turn-done'
+  }
+
   onExited(tabId: string, subject: AttentionSubject = {}): void {
+    this.held.delete(tabId)
     this.raise(tabId, 'exited', subject)
   }
 
@@ -102,11 +137,13 @@ export class AttentionTracker {
   }
 
   awaitingVerdict(tabId: string): boolean {
-    const cur = this.pending.get(tabId)
+    const cur = this.held.get(tabId) ?? this.pending.get(tabId)
     return cur?.kind === 'turn-done' && !cur.fyi
   }
 
   markFyi(tabId: string): void {
+    const held = this.held.get(tabId)
+    if (held?.kind === 'turn-done') return void this.held.set(tabId, { ...held, fyi: true })
     const cur = this.pending.get(tabId)
     if (cur?.kind !== 'turn-done' || cur.fyi) return
     if (this.watching() === tabId) return this.drop(tabId)
@@ -119,7 +156,9 @@ export class AttentionTracker {
   }
 
   clear(tabId: string): void {
-    if (!this.asleep(tabId)) this.drop(tabId)
+    if (this.asleep(tabId)) return
+    this.held.delete(tabId)
+    this.drop(tabId)
   }
 
   private drop(tabId: string): void {
@@ -131,6 +170,7 @@ export class AttentionTracker {
   }
 
   tabStopping(tabId: string, restarting: boolean): void {
+    this.held.delete(tabId)
     const cur = this.pending.get(tabId)
     const asking = cur?.kind === 'approval' || cur?.wasAsking
     const parked = tabId + PARKED_WHILE_ITS_TAB_RESTARTS
@@ -142,6 +182,7 @@ export class AttentionTracker {
   }
 
   clearSession(sessionId: string): void {
+    for (const e of this.held.values()) if (e.sessionId === sessionId) this.held.delete(e.tabId)
     const stale = this.list().filter((e) => e.sessionId === sessionId)
     for (const e of stale) this.pending.delete(e.tabId)
     if (stale.length) this.onChange(this.list(), null)
@@ -154,14 +195,15 @@ export class AttentionTracker {
   private raise(
     tabId: string,
     kind: AttentionKind,
-    subject: AttentionSubject,
-    sameAsk = false
+    subject: AttentionSubject & Pick<AttentionEvent, 'note'>,
+    sameAsk = false,
+    held?: Pick<AttentionEvent, 'at' | 'fyi'>
   ): void {
-    const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
+    const fyi = (kind === 'turn-done' && this.waitsOnAnother(tabId)) || !!held?.fyi
     const cur = this.pending.get(tabId)
     const sameAskAsBefore =
       kind === 'approval' && sameAsk && cur?.wasAsking && !cur.stoppedByRestart
-    const at = sameAskAsBefore ? cur.at : Date.now()
+    const at = sameAskAsBefore ? cur.at : (held?.at ?? Date.now())
     const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)

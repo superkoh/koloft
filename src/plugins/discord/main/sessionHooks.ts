@@ -3,6 +3,7 @@ import {
   SESSION_BOUND,
   SESSION_STARTED,
   STATE_CHANGED,
+  STEP_LET_GO,
   TAB_EXITED,
   TOOL_DONE,
   TURN_ENDED,
@@ -50,6 +51,7 @@ export function discordFollowsEachTurn<Ask>(
       turnEnded(tabId: string, turn: Turn): void
       stoppedAsking(tabId: string): void
       codexAsked(tabId: string, ask: Ask): void
+      askLetGo(tabId: string): void
     }>
     typing: MadeLater<{ refresh(tabId: string): void }>
     rooms: MadeLater<{
@@ -85,6 +87,17 @@ export function discordFollowsEachTurn<Ask>(
   })
   moments.listen(plugin.id, TOOL_DONE, ({ tabId }) => void d.buttons()?.check(tabId))
   moments.listen(plugin.id, DIALOG_CLOSED, (tabId) => void d.buttons()?.check(tabId))
+  moments.listen(plugin.id, STEP_LET_GO, (tabId) => d.relay()?.askLetGo(tabId))
+}
+
+export function discordTakesTheTurnsItCarries(d: {
+  steps: { hold(holder: { claims(tabId: string, step: string): 'take' | undefined }): void }
+  carriedOnDiscord(tabId: string): boolean
+}): void {
+  d.steps.hold({
+    claims: (tabId, step) =>
+      step === 'turn-done' && d.carriedOnDiscord(tabId) ? 'take' : undefined
+  })
 }
 
 export function closeRoomsOfEndedTabs(moments: Moments, d: EndedTabParts): void {

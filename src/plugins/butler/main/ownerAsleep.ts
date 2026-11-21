@@ -34,6 +34,7 @@ export interface OwnerAsleepDeps {
   machines(): string[]
   mark(machine: string, awakeTabs: string[] | null): Promise<boolean>
   awakeTabs(): string[]
+  askClaimed(tabId: string): boolean
   tabs(): string[]
   asked(tabId: string): Promise<AskedOwner | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -182,7 +183,7 @@ export class OwnerAsleep {
   }
 
   async asks(tabId: string): Promise<void> {
-    if (!this.answersFor(tabId)) return
+    if (!this.answersFor(tabId) || this.d.askClaimed(tabId)) return
     const answering = this.answering.get(tabId)
     if (answering) return void (answering.askedAgain = true)
     const run = { askedAgain: false }
@@ -192,7 +193,7 @@ export class OwnerAsleep {
       do {
         run.askedAgain = false
         answeredText = await this.answerShowing(tabId, answeredText)
-      } while (run.askedAgain && this.answersFor(tabId))
+      } while (run.askedAgain && this.answersFor(tabId) && !this.d.askClaimed(tabId))
     } finally {
       this.answering.delete(tabId)
     }
