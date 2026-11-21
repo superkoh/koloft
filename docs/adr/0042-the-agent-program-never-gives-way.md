@@ -14,13 +14,13 @@ lowered after the `exec`. This Mac sits at memory pressure "warning" about 7% of
 time, mostly at night, when every scheduled run and helper session is a tab nobody looks
 at and nobody is there to lift one; "critical" showed twice in 15 days of the log.
 **Decision**: Koloft starts every agent program that runs on this Mac through
-`taskpolicy -a` — `claude`, `muse`, `agy`, and the Codex screen of a tab here or on
+`taskpolicy -a` — `claude`, `agy`, and the Codex screen of a tab here or on
 another machine — so it sits above whatever it starts. On another machine the agent
-program there — `claude`, `muse`, `agy` — starts the same way when
+program there — `claude`, `agy` — starts the same way when
 that machine has `/usr/sbin/taskpolicy`; a Linux machine lets its user lift nothing, and
 only lower a tool for good (PLATFORM§72), so there both start as they are, and nothing
 there is ever lowered. What only carries the keys and the screen on the machine — sshd,
-tmux, the status relay, Muse's wrapper, the Codex server and its proxy, as the Codex
+tmux, the status relay, the Codex server and its proxy, as the Codex
 server on this Mac is — is left as it starts: a short
 reply from a process at normal priority beside 40 busy ones took 37 ms (PLATFORM§59),
 while the agent's own work is what stalls. Only while memory pressure reads

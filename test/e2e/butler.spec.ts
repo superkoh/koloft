@@ -14,8 +14,6 @@ import {
   agySessionCalls,
   installAgy,
   installCodex,
-  installMuse,
-  museCalls,
   seedSettings,
   type E2EEnv
 } from './helpers/env'
@@ -209,7 +207,7 @@ const AGY_EVERYWHERE = {
   assist: { backend: 'agy' },
   sessionMethods: {
     defaultBackend: 'agy',
-    enabled: { claude: true, codex: true, muse: true, agy: true }
+    enabled: { claude: true, codex: true, agy: true }
   }
 }
 
@@ -489,31 +487,6 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(tui.cwd).toBe(butlerFolder(env))
       expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('danger-full-access')
       expect(tui.argv[tui.argv.indexOf('-a') + 1]).toBe('never')
-      expect(readAllCalls(env)).toEqual([])
-      await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
-      await expect(wsRows(page, 'ws-a')).toHaveCount(0)
-    } finally {
-      await close()
-    }
-  })
-
-  // ADR-0029 MUSE§12
-  test('a Muse butler is told its role when its session starts, runs in its own folder with the owner’s skip-permissions setting like any tab, and its session stays out of the workspace rows', async ({
-    env
-  }) => {
-    installMuse(env)
-    const { page, close } = await launched(env, { assist: { backend: 'muse' } })
-    try {
-      await openButler(page)
-      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
-      const [call] = museCalls(env)
-      expect(call.cwd).toBe(butlerFolder(env))
-      expect(call.argv).toEqual(['--permission-profile', ':unrestricted'])
-      const tabId = await butlerTabId(page, env)
-      await page.evaluate((id) => window.api.terminal.write(id, 'hello\r'), tabId)
-      const toldFile = path.join(env.home, 'fake-muse-told.jsonl')
-      await expect.poll(() => fs.existsSync(toldFile), { timeout: 30_000 }).toBe(true)
-      expect(fs.readFileSync(toldFile, 'utf8')).toContain(BUTLER_ROLE_OPENS)
       expect(readAllCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
@@ -1037,7 +1010,7 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
       assist: { backend: 'claude' },
       sessionMethods: {
         defaultBackend: 'claude',
-        enabled: { claude: true, codex: true, muse: true, agy: true }
+        enabled: { claude: true, codex: true, agy: true }
       }
     })
     const toggleClaudeAccount = (on: boolean): Promise<unknown> =>
@@ -1052,7 +1025,7 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
       const line = (await why.textContent()) ?? ''
       const inFull = (await why.getAttribute('title')) ?? ''
       expect(inFull).toContain(line)
-      for (const other of ['Codex', 'Muse', 'Antigravity']) expect(inFull).toContain(other)
+      for (const other of ['Codex', 'Antigravity']) expect(inFull).toContain(other)
 
       await butlerRow(page).locator('.ws-tab-main').click()
       await expect(page.locator('.toast-msg')).toContainText(line)

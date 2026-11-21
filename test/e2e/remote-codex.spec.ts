@@ -949,7 +949,6 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await methodSwitch('Claude').uncheck()
       await expect(defaultMethod).toHaveText('Codex')
       await expect.poll(() => settingsOnDisk(env).assist).toEqual({ backend: 'codex' })
-      await methodSwitch('Muse').uncheck()
       await expect(methodSwitch('Codex')).toBeEnabled()
       await methodSwitch('Antigravity').uncheck()
       await expect(methodSwitch('Codex')).toBeChecked()

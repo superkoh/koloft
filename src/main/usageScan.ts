@@ -7,7 +7,6 @@ import {
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
 import { stepOf } from './agyStore'
-import { logRecord, runEvent } from './museSessionLog'
 
 interface CodexScan {
   sessionId: string
@@ -17,7 +16,6 @@ interface CodexScan {
 
 export const CLAUDE_USAGE_WORDS = ['"usage"']
 export const CODEX_USAGE_WORDS = ['session_meta', 'turn_context', 'token_usage_record']
-export const MUSE_USAGE_WORDS = ['model_completed']
 export const AGY_USAGE_WORDS = ['PLANNER_RESPONSE']
 
 function num(x: unknown): number {
@@ -204,26 +202,6 @@ export function scanCodexLines(text: string): CodexScan | null {
   }
   if (!meta || !sessionId) return null
   return { sessionId, cwd: typeof meta.cwd === 'string' ? meta.cwd : '', records: out.list() }
-}
-
-// MUSE§2
-export function scanMuseLines(text: string, sessionId: string): UsageRecord[] {
-  const out = new RecordsByDayAndModel()
-  for (const line of text.split('\n')) {
-    const r = logRecord(line)
-    const event = r && runEvent(r, 'model_completed')
-    const u = event?.usage as Record<string, unknown> | undefined
-    const day = localDayKey(r?.atMs)
-    if (!u || typeof u !== 'object' || !day) continue
-    out.add(sessionId, day, typeof event?.model === 'string' ? event.model : '', {
-      inTok: Math.max(0, num(u.input_tokens) - num(u.cache_read_tokens)),
-      outTok: num(u.output_tokens),
-      cacheReadTok: num(u.cache_read_tokens),
-      cacheWriteTok: num(u.cache_write_tokens),
-      cacheWrite1hTok: 0
-    })
-  }
-  return out.list()
 }
 
 // AGY§8

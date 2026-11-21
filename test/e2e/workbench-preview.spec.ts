@@ -91,7 +91,7 @@ function recordedTermFrames(page: Page): Promise<string[]> {
 
 const WRITTEN_DOC = 'plan.md'
 
-const OTHER_AGENTS: OtherAgentName[] = ['Codex', 'Muse', 'Antigravity']
+const OTHER_AGENTS: OtherAgentName[] = ['Codex', 'Antigravity']
 
 const A_TURN_THAT_ENDS_BEFORE_ITS_WRITE_ARRIVES_GOES_UNJUDGED_MS = 15_000
 const VERDICT_POLL_MS = 250
@@ -136,7 +136,6 @@ async function launchCollapsed(env: E2EEnv) {
 const BINDS_LATE_FILE: Record<AgentName, string> = {
   Claude: 'fake-claude-delay',
   Codex: 'fake-codex-delay',
-  Muse: 'fake-muse-bind-delay',
   Antigravity: 'fake-agy-open-ms'
 }
 

@@ -29,13 +29,10 @@ import {
   agyTranscriptOf,
   installAgy,
   installFakeGh,
-  installMuse,
-  museSaid,
   ownersGemini,
   seedSettings,
   setGithubFixture,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import {
@@ -69,23 +66,10 @@ import {
 test.setTimeout(120_000)
 
 interface Agent {
-  label: 'Muse' | 'Antigravity'
+  label: 'Antigravity'
   install: (env: E2EEnv) => void
   prompts: (env: E2EEnv) => string[]
   bound: (page: Page) => Promise<unknown>
-}
-
-const MUSE_ECHO = 'echo: '
-
-function musePrompts(env: E2EEnv, home = env.home): string[] {
-  const dir = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake')
-  if (!fs.existsSync(dir)) return []
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .flatMap((f) => museSaid(env, path.basename(f, '.json'), home))
-    .filter((said) => said.startsWith(MUSE_ECHO))
-    .map((said) => said.slice(MUSE_ECHO.length))
 }
 
 // AGY§2
@@ -107,18 +91,6 @@ function agyPrompts(env: E2EEnv, gemini = ownersGemini(env)): string[] {
 }
 
 const AGENTS: Agent[] = [
-  {
-    label: 'Muse',
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    prompts: (env) => musePrompts(env),
-    bound: (page) =>
-      expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveClass(/st-waiting/, {
-        timeout: 30_000
-      })
-  },
   {
     label: 'Antigravity',
     install: (env) => {
@@ -236,7 +208,7 @@ for (const agent of AGENTS) {
       }
     })
 
-    // MUSE§7 AGY§15
+    // AGY§15
     test(`failing checks sent while a ✎ comment and its note still wait in the ${agent.label} input box start on lines of their own, and one Enter sends both as one message`, async ({
       env
     }) => {
@@ -277,7 +249,6 @@ const PROMPTS_ON_THE_MACHINE: Record<OtherAgentName, (env: E2EEnv) => string[]> 
     codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')).filter(
       (p): p is string => typeof p === 'string'
     ),
-  Muse: (env) => musePrompts(env, machineHome(env)),
   Antigravity: (env) => agyPrompts(env, path.join(machineHome(env), '.gemini'))
 }
 

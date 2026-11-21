@@ -6,7 +6,7 @@
     <title>Several accounts, one pool — Koloft</title>
     <meta
       name="description"
-      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
     />
     <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/accounts/" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Several accounts, one pool — Koloft" />
     <meta
       property="og:description"
-      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
     />
     <meta property="og:url" content="__SITE_URL__/accounts/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -32,7 +32,7 @@
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
     <meta
       name="twitter:description"
-      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link rel="stylesheet" href="../style.css" />
@@ -87,38 +87,38 @@
           new session starts on <mark class="hl">the one that has used the least</mark>.
         </p>
         <p>
-          Every session in Koloft runs on a Claude, Codex, Muse or Antigravity account you add here,
-          never on the login this Mac already has. So the first time Koloft opens, it asks you to
-          sign in to one of them (the welcome screen "One sign-in. Koloft does the rest."). It picks
-          the agent you used last. If you never used one, it picks your default agent, or, when that
-          one is not on this Mac, the first switched-on agent that is. A row of buttons, one for
-          each agent switched on in Settings ▸ Sessions, lets you pick another. The account is named
+          Every session in Koloft runs on a Claude, Codex or Antigravity account you add here, never
+          on the login this Mac already has. So the first time Koloft opens, it asks you to sign in
+          to one of them (the welcome screen "One sign-in. Koloft does the rest."). It picks the
+          agent you used last. If you never used one, it picks your default agent, or, when that one
+          is not on this Mac, the first switched-on agent that is. A row of buttons, one for each
+          agent switched on in Settings ▸ Sessions, lets you pick another. The account is named
           after the agent, like
           <code>Codex</code>. An account that needs signing in again is signed in again, not added
           twice. Claude's Sign in installs Claude Code first when this Mac has none, then opens your
-          browser. Sign in to Codex, Sign in to Muse and Antigravity's Sign in with Google install
-          the tool first when this Mac has none: the dialog says so, and the same terminal tab runs
-          the official installer, then signs in. For these three, the sign-in tab closes itself when
-          the tool ends (in Antigravity, type <code>/exit</code> once you are signed in). If Koloft
-          then finds you are not signed in (you pressed Cancel above the sign-in terminal, say), it
-          says <code>Sign-in did not complete.</code> with the last lines the tool printed and a
+          browser. Sign in to Codex and Antigravity's Sign in with Google install the tool first
+          when this Mac has none: the dialog says so, and the same terminal tab runs the official
+          installer, then signs in. For these two, the sign-in tab closes itself when the tool ends
+          (in Antigravity, type <code>/exit</code> once you are signed in). If Koloft then finds you
+          are not signed in (you pressed Cancel above the sign-in terminal, say), it says
+          <code>Sign-in did not complete.</code> with the last lines the tool printed and a
           <code>Try again</code> button, and takes a new account off the list.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 904; --ar-phone: 764 / 1168">
+        <figure class="shot" style="--ar: 1324 / 894; --ar-phone: 764 / 1150">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/h-settings-accounts-phone7.webp"
+                srcset="../img/h-settings-accounts-phone8.webp"
                 width="764"
-                height="1168"
+                height="1150"
               />
               <img
-                src="../img/h-settings-accounts-pane7.webp"
-                width="1322"
-                height="904"
-                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions; an Account usage row with a Refresh usage button; then the Claude part: the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in and Paste token buttons"
+                src="../img/h-settings-accounts-pane8.webp"
+                width="1324"
+                height="894"
+                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity and new Codex sessions; an Account usage row with a Refresh usage button; then the Claude part: the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in and Paste token buttons"
               />
             </picture>
           </div>
@@ -127,15 +127,15 @@
           </figcaption>
         </figure>
         <p>
-          At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Muse
-          session Koloft starts, and a Claude Code or Antigravity session it starts on one of your
-          accounts, runs without asking for permission, here or on a machine. So does a new Codex
-          session. It starts with <code class="nowrap">-a never -s danger-full-access</code>: it
-          never asks for permission (Codex's own trust question for a folder it has not seen still
-          comes first), and it runs outside Codex's sandbox (the box Codex runs commands in), so it
-          may write anywhere and use the network. With the switch off, a Codex session follows
-          Codex's own approval settings. A Codex session you resume keeps what it started with. A
-          permission setting given to one launch (a scheduled job's, say) still wins.
+          At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Claude
+          Code or Antigravity session Koloft starts on one of your accounts runs without asking for
+          permission, here or on a machine. So does a new Codex session. It starts with
+          <code class="nowrap">-a never -s danger-full-access</code>: it never asks for permission
+          (Codex's own trust question for a folder it has not seen still comes first), and it runs
+          outside Codex's sandbox (the box Codex runs commands in), so it may write anywhere and use
+          the network. With the switch off, a Codex session follows Codex's own approval settings. A
+          Codex session you resume keeps what it started with. A permission setting given to one
+          launch (a scheduled job's, say) still wins.
         </p>
 
         <h2>Claude</h2>
@@ -195,8 +195,8 @@
           <li>
             sessions you open one after another spread over your accounts, instead of piling onto
             one: an account that already has a session open and not idle, or one still starting, is
-            passed over unless it has clearly more room left. Claude, Codex, Muse and Antigravity
-            sessions all pick this way
+            passed over unless it has clearly more room left. Claude, Codex and Antigravity sessions
+            all pick this way
           </li>
           <li>
             an account Koloft has no reading for yet waits while another one has a reading; if no
@@ -215,18 +215,18 @@
         <ul class="dash">
           <li>tokens and keys are kept in the macOS Keychain</li>
           <li>
-            the little bars at the bottom of the sidebar show how much room your Claude, Codex, Muse
-            and Antigravity (signed in with Google) accounts have left. Hover them for the
-            <code>Account usage</code> panel: one part per tool, each with its accounts; Claude,
-            Codex and Muse get a Pool row with two or more accounts
+            the little bars at the bottom of the sidebar show how much room your Claude, Codex and
+            Antigravity (signed in with Google) accounts have left. Hover them for the
+            <code>Account usage</code> panel: one part per tool, each with its accounts; Claude and
+            Codex get a Pool row with two or more accounts
           </li>
           <li id="no-account">
             with no account that can be used, the New session button is greyed out, and a line under
-            it says why (the same for Codex, Muse and Antigravity). That agent's New session in a
-            folder's right-click menu is greyed out too, and a scheduled job does not start either.
-            Resuming or restarting (<kbd>⇧⌘R</kbd>) a session of that agent shows the same words in
-            a short message, and a session that is already running keeps running. For Claude the
-            line is one of:
+            it says why (the same for Codex and Antigravity). That agent's New session in a folder's
+            right-click menu is greyed out too, and a scheduled job does not start either. Resuming
+            or restarting (<kbd>⇧⌘R</kbd>) a session of that agent shows the same words in a short
+            message, and a session that is already running keeps running. For Claude the line is one
+            of:
             <ul class="dash">
               <li>
                 <code>No Claude account yet — add one in Settings ▸ Accounts.</code> when none is
@@ -272,17 +272,6 @@
           reset, a <code>Use a reset</code> button is there too: say yes, and Koloft spends one
           reset and reads the account's limits again.
         </p>
-        <h2>Muse</h2>
-        <p>
-          Muse Code is Meta's agent. <code>Sign in to Muse</code> runs <code>muse login</code> in a
-          terminal tab; each sign-in becomes its own account, with its own sign-in folder. Your Muse
-          settings and trusted folders are shared by every account. Or <code>Paste API key</code>:
-          Koloft hands the key to <code>muse</code>, which keeps it in that account's folder. An
-          account signed in with Meta shows how much of its <code>5h</code> and
-          <code>7d</code> allowance is used, in Settings and in the
-          <code>Account usage</code> panel. New Muse sessions pick their account the way Codex
-          sessions do, and an API key account is the same <a href="#api-keys">backup</a>.
-        </p>
 
         <h2>Antigravity</h2>
         <p>
@@ -307,12 +296,12 @@
 
         <h2 id="api-keys">API keys</h2>
         <p>
-          An API key is paid for each use, so Koloft keeps it as a backup. A Codex, Muse or
-          Antigravity account made from a pasted key wears an <code>API KEY</code> badge and the
-          note <code>Metered — used only when every subscription is rate-limited</code>. A new
-          session uses it only when that agent has no sign-in Koloft can use, or when Koloft has
-          read every sign-in and all are at their limit. A sign-in Koloft has not read yet still
-          goes first. A key gets no bar at the bottom of the sidebar.
+          An API key is paid for each use, so Koloft keeps it as a backup. A Codex or Antigravity
+          account made from a pasted key wears an <code>API KEY</code> badge and the note
+          <code>Metered — used only when every subscription is rate-limited</code>. A new session
+          uses it only when that agent has no sign-in Koloft can use, or when Koloft has read every
+          sign-in and all are at their limit. A sign-in Koloft has not read yet still goes first. A
+          key gets no bar at the bottom of the sidebar.
         </p>
 
         <h2 id="usage">What your sessions cost</h2>
@@ -352,24 +341,23 @@
           </li>
           <li>
             Below the bars, a list by <code>Day</code>, <code>Session</code>,
-            <code>Workspace</code> or <code>Model</code>. A Codex, Muse or Antigravity row wears a
-            <code>CODEX</code>, <code>MUSE</code> or <code>ANTIGRAVITY</code> badge (Session and
-            Model lists). A row from another machine wears <code>SSH</code> (Session and Workspace
-            lists).
+            <code>Workspace</code> or <code>Model</code>. A Codex or Antigravity row wears a
+            <code>CODEX</code> or <code>ANTIGRAVITY</code> badge (Session and Model lists). A row
+            from another machine wears <code>SSH</code> (Session and Workspace lists).
           </li>
           <li>
-            It counts Claude Code, Codex, Muse and Antigravity sessions, on this Mac and in your
+            It counts Claude Code, Codex and Antigravity sessions, on this Mac and in your
             <a href="../remote/">remote folders</a>, from the files each agent already keeps, so
             days from before you updated Koloft count too. A Claude Code session counts only in a
             folder that is in Koloft's sidebar.
           </li>
           <li>
-            A model Koloft has no price for, such as Muse's, shows its tokens and
+            A model Koloft has no price for shows its tokens and
             <code>no price</code>.
           </li>
           <li>
-            A Codex, Muse or Antigravity session in a folder that is not in the sidebar still
-            counts, under its project's name when Koloft knows where it ran, and under
+            A Codex or Antigravity session in a folder that is not in the sidebar still counts,
+            under its project's name when Koloft knows where it ran, and under
             <code>Other</code> when it does not.
           </li>
         </ul>
@@ -378,8 +366,8 @@
         <p>
           <mark class="hl">Assist</mark> is Koloft's own AI. It does small jobs for Koloft, and it
           is always on. Your butler, the AI you talk to, runs on it too. It runs on your accounts.
-          Until you pick an agent for it, it uses the agent (Claude, Codex, Muse or Antigravity) of
-          the first account you added that still works and whose agent is on in Settings ▸ Sessions.
+          Until you pick an agent for it, it uses the agent (Claude, Codex or Antigravity) of the
+          first account you added that still works and whose agent is on in Settings ▸ Sessions.
           Each Assist job costs a little of the plan or API balance of the account it runs on: about
           a cent or less.
         </p>
@@ -457,12 +445,6 @@
                 <td>GPT-6-Luna, Low</td>
                 <td>GPT-6.1-Sol, Medium</td>
                 <td>GPT-6.1-Sol, Low</td>
-              </tr>
-              <tr>
-                <td>Muse</td>
-                <td>its own model, Low</td>
-                <td>its own model, Medium</td>
-                <td>its own model, Low</td>
               </tr>
               <tr>
                 <td>Antigravity</td>
@@ -558,9 +540,9 @@
             <code>Instructions</code>. Click <code>Instructions</code> and write what your butler
             should always know or do, one rule a line, then <code>Save</code> (<kbd>⌘⏎</kbd>). Your
             butler and the helpers it starts follow it. Your butler uses it from its next fresh
-            conversation (on Muse, from its next start). <code>Start a fresh conversation</code> on
-            the strip asks first; <code>Start fresh</code> ends this conversation and starts a new
-            one that reads your instructions as they are now. A folder's sessions have
+            conversation. <code>Start a fresh conversation</code> on the strip asks first;
+            <code>Start fresh</code> ends this conversation and starts a new one that reads your
+            instructions as they are now. A folder's sessions have
             <a href="../sessions/#instructions">instructions of their own</a>, and there are
             <a href="../sessions/#every-workspace">instructions for every workspace</a>; your butler
             gets neither. Ask your butler to remember a rule and it can propose the line for its own
@@ -674,10 +656,9 @@
             programs use to talk to it). A message sent while it is working waits until its turn
             ends. If the API does not take it, Koloft types it in once the turn is over.
           </li>
-          <li>Muse gets it typed in once its turn is over.</li>
           <li>
-            While a Muse or Antigravity session is busy, the butler is told the message will arrive
-            when that session is ready.
+            While an Antigravity session is busy, the butler is told the message will arrive when
+            that session is ready.
           </li>
         </ul>
 
@@ -833,8 +814,7 @@
         <h2>Your own accounts</h2>
         <p>
           The pool is for <mark class="hl">your own accounts</mark>. Please check that the way you
-          use them fits Anthropic's, OpenAI's, Meta's and Google's terms. That is between you and
-          them.
+          use them fits Anthropic's, OpenAI's and Google's terms. That is between you and them.
         </p>
 
         <p class="next">Next page → <a href="../remote/">Remote folders</a></p>
@@ -848,8 +828,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
-            Meta or Google.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI or
+            Google.
           </p>
         </div>
         <nav aria-label="Docs">

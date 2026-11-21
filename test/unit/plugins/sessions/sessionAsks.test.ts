@@ -226,13 +226,13 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
     expect(answered.at(-1)).toEqual({ tab: MANAGED, reply: '' })
   })
 
-  // CODEX§20 MUSE§11 AGY§14
-  it('a Codex, Muse or Antigravity question the owner already pressed keys in is left to the owner: Koloft presses nothing and says so', async () => {
+  // CODEX§20 AGY§14
+  it('a Codex or Antigravity question the owner already pressed keys in is left to the owner: Koloft presses nothing and says so', async () => {
     const question: CodexQuestion = {
       id: 0,
       questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Green' }] }]
     }
-    for (const backend of ['codex', 'muse', 'agy'] as const) {
+    for (const backend of ['codex', 'agy'] as const) {
       const { asks, writes } = setup({
         backendOf: () => backend,
         pendingQuestion: () => question,
@@ -371,30 +371,6 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
     expect(writes.map((w) => w.data)).toEqual(['2', '2', 'y', '\x1b'])
   })
 
-  // MUSE§11
-  it('a Muse question is pressed its digit then Enter, and an approval y or Esc, each only once Muse is ready to take keys', async () => {
-    let approval: { id: string } | undefined
-    let question: CodexQuestion | undefined = {
-      id: 'u1',
-      questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Blue' }] }]
-    }
-    const ready: string[] = []
-    const { asks, writes } = setup({
-      backendOf: () => 'muse',
-      pendingApproval: () => approval,
-      pendingQuestion: () => question,
-      answerable: async () => void ready.push('ready')
-    })
-    expect(await asks.answerSession(MANAGED, 'blue')).toBeUndefined()
-    expect(writes.map((w) => w.data)).toEqual(['2', '\r'])
-    question = undefined
-    approval = { id: 'a1' }
-    expect(await asks.answerSession(MANAGED, 'maybe')).toBe('a Muse approval takes yes or no.')
-    expect(await asks.answerSession(MANAGED, 'yes')).toBeUndefined()
-    expect(writes.map((w) => w.data)).toEqual(['2', '\r', 'y'])
-    expect(ready).toEqual(['ready', 'ready'])
-  })
-
   // CODEX§20
   it('a Codex dialog of several questions takes one line per question, each pressed as its digit or as a note under "None of the above"; a reply of any other line count is refused and presses nothing', async () => {
     const colours = [{ label: 'Red' }, { label: 'Green' }]
@@ -416,35 +392,8 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
     expect(writes.map((w) => w.data)).toEqual(['\x1b[B', '\x1b[B', '\t', 'Purple', '\r', '2'])
   })
 
-  // MUSE§11
-  it('a Muse question takes the owner’s own words as a note under "None of the above", a reply of several lines typed as one, and its review page shows when more than one question or any note was given, so Koloft presses one more Enter then', async () => {
-    const colours = [{ label: 'Red' }, { label: 'Blue' }]
-    const one = { question: 'Which colour?', options: colours, ownWords: true as const }
-    let question: CodexQuestion = { id: 'u1', questions: [one] }
-    const { asks, writes } = setup({
-      backendOf: () => 'muse',
-      pendingQuestion: () => question
-    })
-    const pressed = async (reply: string): Promise<string[]> => {
-      writes.length = 0
-      expect(await asks.answerSession(MANAGED, reply)).toBeUndefined()
-      return writes.map((w) => w.data)
-    }
-    expect(await pressed('2')).toEqual(['2', '\r'])
-    expect(await pressed('A ripe\nmango')).toEqual([
-      '\x1b[B',
-      '\x1b[B',
-      '\t',
-      'A ripe mango',
-      '\r',
-      '\r'
-    ])
-    question = { id: 'u2', questions: [one, one] }
-    expect(await pressed('2\n1')).toEqual(['2', '\r', '1', '\r', '\r'])
-  })
-
-  // MUSE§11 AGY§14
-  it('a Muse or Antigravity question that takes several picks takes their numbers or names split by commas, gets no buttons, and is pressed as each agent ticks: Muse a digit and Space for each, then its Submit row and review page; Antigravity each digit, then Enter; own words go in as for one pick; a whole line naming one option counts though the name holds a comma, and more or fewer picks than the question takes are refused with its limits', async () => {
+  // AGY§14
+  it('an Antigravity question that takes several picks takes their numbers or names split by commas, gets no buttons, and is pressed as each digit then Enter; own words go in as for one pick; a whole line naming one option counts though the name holds a comma, and more or fewer picks than the question takes are refused with its limits', async () => {
     const fruits = {
       question: 'Which fruits?',
       options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
@@ -456,10 +405,9 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
       options: [{ label: 'Red' }, { label: 'Blue' }],
       ownWords: true as const
     }
-    let backend: 'muse' | 'agy' = 'muse'
-    let question: CodexQuestion = { id: 'u1', questions: [fruits] }
+    let question: CodexQuestion = { id: 'hook:1', questions: [fruits] }
     const { asks, writes } = setup({
-      backendOf: () => backend,
+      backendOf: () => 'agy',
       pendingQuestion: () => question
     })
     const pressed = async (reply: string): Promise<string[]> => {
@@ -468,39 +416,24 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
       return writes.map((w) => w.data)
     }
     expect(codexDialog(question).choices).toEqual([])
-    expect(await pressed('cherry, 1')).toEqual(['1', ' ', '3', ' ', '5', '\r', '\r'])
-    expect(await pressed('A ripe mango')).toEqual([
-      '\x1b[B',
-      '\x1b[B',
-      '\x1b[B',
-      '\t',
-      'A ripe mango',
-      '\r',
-      '\r'
-    ])
-    question = { id: 'u2', questions: [fruits, colour] }
+    expect(await pressed('cherry, 1')).toEqual(['1', '3', '\r'])
+    expect(await pressed('A ripe mango')).toEqual(['4', 'A ripe mango', '\r'])
+    question = { id: 'hook:2', questions: [fruits, colour] }
     expect(await asks.answerSession(MANAGED, '1, 3')).toBe(
       'Reply with one line per question: a number (or several, split by commas, where it takes more than one) or your own answer.'
     )
-    expect(await pressed('1, 3\n2')).toEqual(['1', ' ', '3', ' ', '5', '\r', '2', '\r', '\r'])
+    expect(await pressed('1, 3\n2')).toEqual(['1', '3', '\r', '2'])
 
-    question = { id: 'u3', questions: [{ ...fruits, fewest: 2, most: 2 }] }
+    question = { id: 'hook:3', questions: [{ ...fruits, fewest: 2, most: 2 }] }
     expect(await asks.answerSession(MANAGED, '1')).toBe(
       'Reply with the numbers of the options you pick, split by commas, or your own answer. “Which fruits?” takes 2 to 2 picks.'
     )
     expect(await asks.answerSession(MANAGED, '1, 2, 3')).toContain('takes 2 to 2 picks')
     question = {
-      id: 'u4',
+      id: 'hook:4',
       questions: [{ ...fruits, options: [{ label: 'Red, dark' }, { label: 'Blue' }] }]
     }
-    expect(await pressed('red, dark')).toEqual(['1', ' ', '4', '\r', '\r'])
-
-    backend = 'agy'
-    question = { id: 'hook:1', questions: [fruits] }
-    expect(await pressed('cherry, 1')).toEqual(['1', '3', '\r'])
-    expect(await pressed('A ripe mango')).toEqual(['4', 'A ripe mango', '\r'])
-    question = { id: 'hook:2', questions: [fruits, colour] }
-    expect(await pressed('1, 3\n2')).toEqual(['1', '3', '\r', '2'])
+    expect(await pressed('red, dark')).toEqual(['1', '\r'])
   })
 })
 
@@ -544,7 +477,7 @@ describe('SessionAsks: an answer typed as keys counts only once the session show
     expect(await answered).toBeUndefined()
   })
 
-  for (const backend of ['codex', 'muse', 'agy'] as const)
+  for (const backend of ['codex', 'agy'] as const)
     for (const [what, approval] of [
       ['question', undefined],
       ['approval', { id: 7 }]
@@ -569,7 +502,7 @@ describe('SessionAsks: an answer typed as keys counts only once the session show
         expect(await asks.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
         await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS / 2)
         expect(await asks.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
-        const firstKeys = approval ? ['y'] : backend === 'muse' ? ['1', '\r'] : ['1']
+        const firstKeys = approval ? ['y'] : ['1']
         expect(writes.map((w) => w.data)).toEqual(firstKeys)
         expect(inPlaceTries).toBe(1)
         await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
@@ -578,107 +511,50 @@ describe('SessionAsks: an answer typed as keys counts only once the session show
         expect(inPlaceTries).toBe(2)
       })
 
-  // MUSE§11 AGY§14
+  // AGY§14
   const FRUITS_TAKING_SEVERAL = {
     question: 'Which fruits?',
     options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
     multiSelect: true as const
   }
 
-  const leftToTheOwner: [string, 'agy' | 'muse', CodexQuestion['questions'], string, string][] = [
-    ['an Antigravity question', 'agy', [], '1, 3', '2'],
-    [
-      'a Muse dialog with a second question after it',
-      'muse',
-      [{ question: 'Which size?', options: [{ label: 'Small' }, { label: 'Large' }] }],
-      '1, 3\n2',
-      '2\n1'
-    ]
-  ]
-  for (const [what, backend, after, first, again] of leftToTheOwner)
-    it(`${what} that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual`, async () => {
-      const several = (question: string, id: string): CodexQuestion => ({
-        id,
-        questions: [{ ...FRUITS_TAKING_SEVERAL, question }, ...after]
-      })
-      let asked = several('Which fruits?', 'hook:1')
-      const { asks, writes, session } = codexAsking({
-        backendOf: () => backend,
-        pendingQuestion: () => asked
-      })
-      const answering = asks.answerSession(TAB, first)
-      await vi.advanceTimersByTimeAsync(0)
-      expect(await asks.answerSession(TAB, again)).toBe(ANSWER_ON_ITS_WAY)
-      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
-      expect(await answering).toBe(ANSWER_NOT_TAKEN)
-      const pressedOnce = writes.length
-      expect(pressedOnce).toBeGreaterThan(0)
-
-      asked = several('Which fruits?', 'traj:4')
-      expect(await asks.answerSession(TAB, first)).toBe(PICKS_MAY_STILL_BE_TICKED)
-      expect(await asks.answerSession(TAB, again)).toBe(PICKS_MAY_STILL_BE_TICKED)
-      expect(writes).toHaveLength(pressedOnce)
-
-      session.takesKeys = true
-      const taken = async (): Promise<string | undefined> => {
-        const answered = asks.answerSession(TAB, again)
-        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-        return answered
-      }
-      asked = several('Which pies?', 'hook:2')
-      expect(await taken()).toBeUndefined()
-      const pressedTwice = writes.length
-      expect(pressedTwice).toBeGreaterThan(pressedOnce)
-
-      asked = several('Which fruits?', 'hook:3')
-      expect(await taken()).toBeUndefined()
-      expect(writes.length).toBeGreaterThan(pressedTwice)
+  it("an Antigravity question that takes several picks, whose ticks Koloft pressed but the session did not take, is left to the owner: a later answer presses nothing, so it cannot untick them, though the dialog's id changed meanwhile; another several-pick question, and the same one asked again once its dialog is gone, are answered as usual", async () => {
+    const several = (question: string, id: string): CodexQuestion => ({
+      id,
+      questions: [{ ...FRUITS_TAKING_SEVERAL, question }]
     })
+    let asked = several('Which fruits?', 'hook:1')
+    const { asks, writes, session } = codexAsking({
+      backendOf: () => 'agy',
+      pendingQuestion: () => asked
+    })
+    const answering = asks.answerSession(TAB, '1, 3')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await asks.answerSession(TAB, '2')).toBe(ANSWER_ON_ITS_WAY)
+    await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
+    expect(await answering).toBe(ANSWER_NOT_TAKEN)
+    const pressedOnce = writes.length
+    expect(pressedOnce).toBeGreaterThan(0)
 
-  // MUSE§11
-  describe('a Muse question that takes several picks, alone in its dialog, whose ticks Koloft pressed but the session did not take', () => {
-    const tick = (n: string): string[] => [n, ' ']
-    const submitThenReview = ['5', '\r', '\r']
-    const untickAll = ['5', '\x1b[B', '\x1b[B', '\r', ...tick('4'), '1']
+    asked = several('Which fruits?', 'traj:4')
+    expect(await asks.answerSession(TAB, '1, 3')).toBe(PICKS_MAY_STILL_BE_TICKED)
+    expect(await asks.answerSession(TAB, '2')).toBe(PICKS_MAY_STILL_BE_TICKED)
+    expect(writes).toHaveLength(pressedOnce)
 
-    function museAsking() {
-      const s = codexAsking({
-        backendOf: () => 'muse',
-        pendingQuestion: () => ({
-          id: 'hook:1',
-          questions: [{ ...FRUITS_TAKING_SEVERAL, ownWords: true }]
-        })
-      })
-      const pressed = (): string[] => s.writes.splice(0).map((w) => w.data)
-      const answer = async (reply: string): Promise<string | undefined> => {
-        const answered = s.asks.answerSession(TAB, reply)
-        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
-        return answered
-      }
-      return { ...s, pressed, answer }
+    session.takesKeys = true
+    const taken = async (): Promise<string | undefined> => {
+      const answered = asks.answerSession(TAB, '2')
+      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+      return answered
     }
+    asked = several('Which pies?', 'hook:2')
+    expect(await taken()).toBeUndefined()
+    const pressedTwice = writes.length
+    expect(pressedTwice).toBeGreaterThan(pressedOnce)
 
-    it('is answered again by first unticking every option through its None of the above row, once: if that is not taken either, a third answer is left to the owner', async () => {
-      const { answer, pressed } = museAsking()
-      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
-      expect(pressed()).toEqual([...tick('1'), ...tick('3'), ...submitThenReview])
-      expect(await answer('2')).toBe(ANSWER_NOT_TAKEN)
-      expect(pressed()).toEqual([...untickAll, ...tick('2'), ...submitThenReview])
-      expect(await answer('2')).toBe(PICKS_MAY_STILL_BE_TICKED)
-      expect(pressed()).toEqual([])
-    })
-
-    it('is answered again in the owner’s own words after the same unticking', async () => {
-      const { answer, pressed, session } = museAsking()
-      expect(await answer('1, 3')).toBe(ANSWER_NOT_TAKEN)
-      pressed()
-      session.takesKeys = true
-      expect(await answer('Mango')).toBeUndefined()
-      expect(pressed()).toEqual([
-        ...untickAll,
-        ...['\x1b[B', '\x1b[B', '\x1b[B', '\t', 'Mango', '\r', '\r']
-      ])
-    })
+    asked = several('Which fruits?', 'hook:3')
+    expect(await taken()).toBeUndefined()
+    expect(writes.length).toBeGreaterThan(pressedTwice)
   })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {

@@ -1,7 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, ConductorOpenResult, CronEffort } from '@shared/types'
-import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  backendIdOf,
+  conversationAtFirstPrompt,
+  identityOf
+} from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '../shared/names'
 import {
   isKnownBy,
@@ -243,7 +248,10 @@ export class Butler {
       ...(choice.effort && { effort: choice.effort })
     }
     const last = this.session.lastSessionKey
-    const sameAgent = last !== undefined && identityOf(last).backendId === launch.backend
+    const sameAgent =
+      last !== undefined &&
+      (!last.includes(':') || backendIdOf(last.split(':')[0]) !== undefined) &&
+      identityOf(last).backendId === launch.backend
     // CC§3 CODEX§11
     const carried = this.session.carried
     const keepsWhatItNoLongerNames =
@@ -314,7 +322,7 @@ export class Butler {
     return { on: this.d.pluginsOn(), facts: this.d.roleFacts() }
   }
 
-  // CC§23 CODEX§17 MUSE§9 AGY§8
+  // CC§23 CODEX§17 AGY§8
   private tellWhatChanged(key: string): void {
     const seen = this.session.pluginsSeen?.key === key ? this.session.pluginsSeen : undefined
     const now = this.knownNow()

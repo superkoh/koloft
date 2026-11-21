@@ -33,12 +33,11 @@ import { GIT_TIMEOUT_MS, gitOps, numstatFrom, statusFrom, type GitOps } from '..
 import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
-import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
+import { FINGERPRINT, remoteAnswerCommand } from '../remote/install'
 import { TRUSTED_JS } from '../remote/claudeTrustJs'
 import {
   claudeTabSpec,
   killSessionCmd,
-  machineToolProgram,
   renameSessionCmd,
   resizeStandInCmd,
   launchLine,
@@ -61,7 +60,6 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
-  backgroundOptions,
   ensureControlDir,
   machineOutOfReach,
   needsSignIn,
@@ -70,8 +68,6 @@ import {
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
-import { MACHINE_CONFIG_HOME, MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
-import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import {
   NOTICE_THIS_TURN,
   noticeLine,
@@ -123,29 +119,6 @@ export interface MachineClaudeDeps {
   noAccountMessage(): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
   loginPath(): Promise<string>
-}
-
-export interface MuseMachineLaunch {
-  cwd: string
-  fallbackCwd?: string
-  resumeSessionId?: string
-  account: { name: string; auth(): string }
-  banner?: string
-  args: string[]
-  sandboxed: boolean
-  trust: string[]
-  trustIf?: string
-  contexts?: string[]
-  koloftSkill: boolean
-  portOffset?: number
-  ownerWords?: string
-}
-
-export interface MuseMachinePlan {
-  attach: boolean
-  tmuxName(tabId: string): string
-  launchCommand(tabId: string): string
-  resized(tabId: string, cols: number, rows: number): void
 }
 
 export interface SshHostDeps {
@@ -214,7 +187,7 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
 const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
-  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
+  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'
 const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
 const WHOLE_FILE_READ_MS = 120_000
 const WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
@@ -490,15 +463,14 @@ function parseChanges(stdout: Buffer): GitChanges | null {
   }
 }
 
-const ON_THE_MACHINE: SkillPlaces = { workspace: '$1', home: '$HOME', configHome: '$X' }
+const ON_THE_MACHINE: SkillPlaces = { workspace: '$1', home: '$HOME' }
 
 function skillFilesScript(backend: BackendId): string {
   const folders = Object.values(skillFolders(backend, ON_THE_MACHINE))
   const skills = folders.flatMap((f) => f.skills)
   const commands = folders.flatMap((f) => f.commands ?? [])
   return [
-    `X="${MACHINE_CONFIG_HOME}"`,
-    `printf '%s\\0%s\\0' "$HOME" "$X"`,
+    `printf '%s\\0' "$HOME"`,
     ...skills.map(
       (d) =>
         `for f in "${d}"/*/SKILL.md; do [ -f "$f" ] && { printf '%s\\0' "$f"; cat "$f"; printf '\\0'; }; done`
@@ -1081,67 +1053,6 @@ exit ${CALLER_GONE_EXIT}`,
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
-  // MUSE§17
-  async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
-    const d = this.deps.claude
-    await this.sshReady()
-    const asked = this.loginPath()
-    const sid = spec.resumeSessionId
-    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
-    const loginPath = attach ? '' : await asked
-    const auth = attach ? undefined : spec.account.auth()
-    const tmuxName = (tabId: string): string =>
-      sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
-    const pkg = d.machinePackage()
-    const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
-    const bareOrNot = (p?: string): string | undefined => (p ? this.bare(p) : undefined)
-    return {
-      attach,
-      tmuxName,
-      launchCommand: (tabId) => {
-        const tabDir = tabPackageDir(d.userData, tabId)
-        const contextName = (i: number): string => `${tabId}.ctx${i === 0 ? '' : i + 1}.json`
-        const contexts = spec.contexts ?? []
-        const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(
-            hookScript,
-            tabId,
-            contexts.map((_, i) => `$HOME/.koloft/tabs/${contextName(i)}`)
-          )
-        }
-        contexts.forEach((text, i) => (files[contextName(i)] = sessionStartContext(text)))
-        if (auth !== undefined) files[`${tabId}.auth.json`] = auth
-        writeTabPackage(tabDir, {
-          tabId,
-          tmuxName: tmuxName(tabId),
-          machineName: pkg.name,
-          cwd: this.bare(spec.cwd),
-          fallbackCwd: bareOrNot(spec.fallbackCwd),
-          banner: '',
-          portOffset: spec.portOffset,
-          ownerWords: spec.ownerWords,
-          loginPath,
-          program: machineToolProgram(
-            'muse',
-            museRunLines({
-              tabId,
-              account: spec.account.name,
-              banner: spec.banner,
-              args: spec.args,
-              sandboxed: spec.sandboxed,
-              trust: spec.trust.map((p) => this.bare(p)),
-              trustIf: bareOrNot(spec.trustIf),
-              koloftSkill: spec.koloftSkill
-            }),
-            files
-          )
-        })
-        return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
-      },
-      resized: this.resized
-    }
-  }
-
   private async sshReady(): Promise<void> {
     await this.deps.sshEnvReady?.()
     ensureControlDir(this.deps.claude.controlDir)
@@ -1182,39 +1093,20 @@ exit ${CALLER_GONE_EXIT}`,
     })
   }
 
-  // MUSE§10
-  async museTrusts(dir: string): Promise<boolean> {
-    return (await this.sh(MUSE_TRUSTED_SH, [this.bare(dir)])).code === 0
-  }
-
   async runScript(script: string, args: string[]): Promise<string | null> {
     const r = await this.sh(script, args, { timeoutMs: GIT_TIMEOUT_MS })
     return r.code === 0 ? r.stdout.toString('utf8') : null
-  }
-
-  // MUSE§5 MUSE§17
-  museServe(args: string[]): { binary: string; args: string[] } {
-    const d = this.deps.claude
-    ensureControlDir(d.controlDir)
-    return {
-      binary: 'ssh',
-      args: [
-        ...backgroundOptions(this.machine, d.controlDir),
-        this.machine,
-        remoteShCommand('MUSE_NO_AUTO_UPDATE=1 exec muse serve "$@"', args)
-      ]
-    }
   }
 
   async listSkills(root: string, backend: BackendId): Promise<SkillSuggestion[]> {
     const workspace = this.bare(root)
     const r = await this.sh(skillFilesScript(backend), [workspace])
     if (r.code !== 0) return []
-    const [home, configHome, ...rest] = r.stdout.toString('utf8').split('\0')
+    const [home, ...rest] = r.stdout.toString('utf8').split('\0')
     const files = new Map<string, string>()
     for (let i = 0; i + 1 < rest.length; i += 2)
       files.set(path.posix.normalize(rest[i]), rest[i + 1])
-    return listSkills(skillFsOf(files), backend, { workspace, home, configHome })
+    return listSkills(skillFsOf(files), backend, { workspace, home })
   }
 
   async readAgyConfig(account: string): Promise<RemoteAgyConfig> {

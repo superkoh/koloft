@@ -2,15 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   newSessionInWith,
@@ -27,7 +19,6 @@ import {
   addRemoteWorkspace,
   installCodexOnFakeRemote,
   installFakeRemote,
-  installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
   machineHome,
@@ -47,7 +38,6 @@ const ONE_DAY_MINUTES = 1440
 const AGENT_NAME: Record<BackendId, AgentName> = {
   claude: 'Claude',
   codex: 'Codex',
-  muse: 'Muse',
   agy: 'Antigravity'
 }
 
@@ -183,20 +173,12 @@ async function withTheButlerAndARemoteWorkspace(
 const LOCAL: { backend: BackendId; install: (env: E2EEnv) => void }[] = [
   { backend: 'claude', install: () => {} },
   { backend: 'codex', install: installCodex },
-  { backend: 'muse', install: installMuse },
   { backend: 'agy', install: installAgy }
 ]
 
 const REMOTE: { backend: BackendId; install: (env: E2EEnv) => void }[] = [
   { backend: 'claude', install: () => {} },
   { backend: 'codex', install: installCodexOnFakeRemote },
-  {
-    backend: 'muse',
-    install: (env) => {
-      installMuse(env)
-      installMuseOnMachine(env)
-    }
-  },
   {
     backend: 'agy',
     install: (env) => {
@@ -227,10 +209,6 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
           if (backend === 'claude')
             expect(fs.readFileSync(`${marks}.discord-ids`, 'utf8')).toContain(
               `koloft-discord-${messageId}`
-            )
-          if (backend === 'muse')
-            expect(fs.readFileSync(`${marks}.discord-said`, 'utf8')).toContain(
-              '[Discord] how is the room'
             )
         })
       )
@@ -319,7 +297,6 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
         : title,
       async ({ env }) => {
         install(env)
-        if (!remote && backend === 'muse') trustInMuse(env, env.workspaces.a)
         if (!remote && backend === 'agy') trustInAgy(env, env.workspaces.a)
         const ws = remote ? REMOTE_WS_NAME : 'ws-a'
         await (remote ? withTheButlerAndARemoteWorkspace : withTheButler)(

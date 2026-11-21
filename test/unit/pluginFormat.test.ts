@@ -27,7 +27,7 @@ interface Probe {
   probe: true
 }
 
-type V1Agent = 'claude' | 'codex' | 'muse' | 'agy'
+type V1Agent = 'claude' | 'codex' | 'agy'
 
 type V1Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
@@ -47,7 +47,6 @@ interface V1TextBlock {
   byAgent?: Partial<Record<V1Agent, string>>
   byModel?: Readonly<Record<string, string>>
   when?: string
-  whenOff?: string
 }
 
 interface V1Manifest {

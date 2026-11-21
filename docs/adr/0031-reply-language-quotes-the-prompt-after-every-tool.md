@@ -166,9 +166,8 @@ shipped script against the same script naming the description (in the line about
 last note too): Bash descriptions in Chinese 0 / 32 against 28 / 28; notes English
 11 / 36 against 13 / 34. The notes got no better and, at 0–75% and 0–67% English per
 run, no measurably worse either: judge the next wording change on both numbers. The other
-tabs keep the plain words: Muse's `bash` tool has a `description` (MUSE§8) and
-Antigravity's tools a `toolSummary` (AGY§13), but whether their screens show them, and
-whether they drift, is not probed; whether a Codex command has a title at all is not probed.
+tabs keep the plain words: Antigravity's tools have a `toolSummary` (AGY§13), but whether their screens show it, and
+whether it drifts, is not probed; whether a Codex command has a title at all is not probed.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language alone ("Reply in Chinese") — 13 / 16 above, no better than
 the quote; it is used only with the check of the last note, and only where the

@@ -6,11 +6,8 @@ import {
   agyCalls,
   installAgy,
   installCodex,
-  installMuse,
-  museCalls,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import { codexCalls } from './helpers/codex'
@@ -36,8 +33,7 @@ import {
   killFakeRemote,
   launchWithRemote,
   machineAgyCalls,
-  machineHome,
-  machineMuseCalls
+  machineHome
 } from './helpers/remote'
 
 test.afterEach(({ env }) => killFakeRemote(env))
@@ -53,7 +49,6 @@ interface Pick {
 const OWN_PICKS: Pick[] = [
   { agent: 'Claude', model: 'Opus', thinking: 'High' },
   { agent: 'Codex', model: 'Sol', thinking: 'High' },
-  { agent: 'Muse', thinking: 'Low' },
   { agent: 'Antigravity', model: 'Carbon', thinking: 'High' }
 ]
 
@@ -85,7 +80,7 @@ async function setDefaults(page: Page, wsName: string): Promise<void> {
     if (pick.thinking) await dlg.locator('.chip', { hasText: exact(pick.thinking) }).click()
   }
   await expect(dlg.locator('.field-hint').first()).toHaveText(
-    'Set now: Claude · Opus · High; Codex · Sol · High; Muse · Low; Antigravity · Carbon · High.'
+    'Set now: Claude · Opus · High; Codex · Sol · High; Antigravity · Carbon · High.'
   )
   await dlg.getByRole('textbox', { name: 'How agents pick' }).fill(RULES)
   await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
@@ -125,14 +120,12 @@ async function shInTab(page: Page, env: E2EEnv, tabId: string, cmd: string): Pro
 function installAll(env: E2EEnv): void {
   seedSettings(env, { hintsOff: true })
   installCodex(env)
-  installMuse(env)
-  trustInMuse(env, env.workspaces.a)
   installAgy(env)
   trustInAgy(env, env.workspaces.a)
 }
 
 test.describe("a workspace's session defaults: the model and thinking its own sessions start on, and the rules its agents pick by", () => {
-  test('set in the dialog, they reach Claude from the + button, Codex from ⌘N, Muse from ⌘P and Antigravity from the menu — Carbon on Neon with a note — while a resume and a session an agent starts keep their own, and the rules reach the prompt, koloft help and a refusal', async ({
+  test('set in the dialog, they reach Claude from the + button, Codex from ⌘N, and Antigravity from ⌘P — Carbon on Neon with a note — while a resume and a session an agent starts keep their own, and the rules reach the prompt, koloft help and a refusal', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -163,12 +156,7 @@ test.describe("a workspace's session defaults: the model and thinking its own se
       expect(flagAfter(codex, '-m')).toBe('gpt-6.1-sol')
       expect(codex).toContain('model_reasoning_effort="high"')
 
-      await askMuse(app, page, '@ws-a tidy the readme')
-      await expect.poll(() => museCalls(env).length, { timeout: 60_000 }).toBe(1)
-      expect(flagAfter(museCalls(env)[0].argv, '--reasoning-effort')).toBe('low')
-      expect(museCalls(env)[0].argv).not.toContain('--model')
-
-      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await askAgy(app, page, '@ws-a tidy the readme')
       await expect(page.locator('.toast-msg')).toContainText(
         'This account has no carbon model, so it runs on gemini-4-neon.'
       )
@@ -286,7 +274,7 @@ test.describe("a workspace's session defaults: the model and thinking its own se
     }
   })
 
-  test('on a remote workspace each of the four agents starts on what was set there, and remote Claude gets the rules in a prompt file of its tab on the machine', async ({
+  test('on a remote workspace each of the three agents starts on what was set there, and remote Claude gets the rules in a prompt file of its tab on the machine', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -318,8 +306,6 @@ test.describe("a workspace's session defaults: the model and thinking its own se
       const codex = codexCalls(env)[0].argv
       expect(flagAfter(codex, '-m')).toBe('gpt-6.1-sol')
       expect(codex).toContain('model_reasoning_effort="high"')
-      await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(1)
-      expect(flagAfter(machineMuseCalls(env)[0].argv, '--reasoning-effort')).toBe('low')
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 60_000 }).toBe(1)
       expect(flagAfter(machineAgyCalls(env)[0].argv, '--model')).toBe('gemini-4-neon')
       expect(flagAfter(machineAgyCalls(env)[0].argv, '--effort')).toBe('high')
@@ -335,12 +321,12 @@ function agySessions(env: E2EEnv): { argv: string[] }[] {
   )
 }
 
-async function askMuse(app: ElectronApplication, page: Page, text: string): Promise<void> {
+async function askAgy(app: ElectronApplication, page: Page, text: string): Promise<void> {
   await page.evaluate(() =>
     window.api.settings.set({
       sessionMethods: {
-        defaultBackend: 'muse',
-        enabled: { claude: true, codex: true, muse: true, agy: true }
+        defaultBackend: 'agy',
+        enabled: { claude: true, codex: true, agy: true }
       }
     })
   )

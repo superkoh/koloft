@@ -61,20 +61,11 @@ describe('Settings ▸ Assist small jobs', () => {
       }).join(', ')
     ])
     expect(table).toEqual([
-      ['title', 'claude: haiku -, codex: gpt-6-luna low, muse: - low, agy: gemini-3.8-flash low'],
-      [
-        'handover',
-        'claude: haiku -, codex: gpt-6-luna low, muse: - low, agy: gemini-3.8-flash low'
-      ],
-      [
-        'turn',
-        'claude: haiku -, codex: gpt-6.1-sol medium, muse: - medium, agy: gemini-4-argon medium'
-      ],
-      ['docs', 'claude: haiku -, codex: gpt-6-luna low, muse: - low, agy: gemini-3.8-flash low'],
-      [
-        'route',
-        'claude: sonnet low, codex: gpt-6.1-sol low, muse: - low, agy: gemini-3.8-flash low'
-      ]
+      ['title', 'claude: haiku -, codex: gpt-6-luna low, agy: gemini-3.8-flash low'],
+      ['handover', 'claude: haiku -, codex: gpt-6-luna low, agy: gemini-3.8-flash low'],
+      ['turn', 'claude: haiku -, codex: gpt-6.1-sol medium, agy: gemini-4-argon medium'],
+      ['docs', 'claude: haiku -, codex: gpt-6-luna low, agy: gemini-3.8-flash low'],
+      ['route', 'claude: sonnet low, codex: gpt-6.1-sol low, agy: gemini-3.8-flash low']
     ])
   })
 })

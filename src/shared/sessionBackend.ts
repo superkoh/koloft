@@ -12,14 +12,12 @@ import { settingsPaneName } from './settingsPanes'
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
   codex: 'Codex',
-  muse: 'Muse',
   agy: 'Antigravity'
 }
 
 export const BACKEND_PRODUCT: Record<BackendId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  muse: 'Muse Code',
   agy: 'Antigravity CLI'
 }
 
@@ -32,11 +30,10 @@ export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => 
     : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
 }
 
-// CC§9 CODEX§17 MUSE§16 AGY§31
+// CC§9 CODEX§17 AGY§31
 export const SKILL_PREFIX: Record<BackendId, string> = {
   claude: '/',
   codex: '$',
-  muse: '/',
   agy: '/'
 }
 
@@ -103,8 +100,6 @@ const MESSAGING: Record<BackendId, Record<HostId, Messaging>> = {
   claude: { local: 'peerLine', ssh: 'peerLine' },
   // CODEX§17
   codex: { local: 'queue', ssh: 'queue' },
-  // MUSE§7
-  muse: { local: 'typed', ssh: 'typed' },
   // AGY§15 AGY§16
   agy: { local: 'typed', ssh: 'typed' }
 }
@@ -133,10 +128,6 @@ export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
     handoverAsRole: true,
     quotesOwnerWordsInHooks: false
   },
-  muse: {
-    handoverAsRole: false,
-    quotesOwnerWordsInHooks: false
-  },
   agy: {
     handoverAsRole: false,
     quotesOwnerWordsInHooks: false
@@ -146,8 +137,6 @@ export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
 const CONVERSATION_AT_FIRST_PROMPT: Record<BackendId, boolean> = {
   claude: false,
   codex: false,
-  // MUSE§4
-  muse: false,
   // AGY§8
   agy: true
 }
@@ -159,8 +148,6 @@ export function conversationAtFirstPrompt(backend: BackendId): boolean {
 const PASTE_KEEPS_ITS_LAST_LINE_FEEDS: Record<BackendId, boolean> = {
   claude: true,
   codex: true,
-  // MUSE§7
-  muse: true,
   // AGY§15
   agy: false
 }
@@ -223,14 +210,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   codex: {
     local: OUTSIDE_LOCAL_CLAUDE,
     // CODEX§16
-    ssh: ON_A_MACHINE
-  },
-  muse: {
-    local: {
-      ...OUTSIDE_LOCAL_CLAUDE,
-      // MUSE§9 MUSE§11
-      askHookWaitsForDiscord: PENDING
-    },
     ssh: ON_A_MACHINE
   },
   agy: {

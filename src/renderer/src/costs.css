@@ -185,7 +185,6 @@
   background: var(--fable-soft);
 }
 .acct-badge.ssh,
-.acct-badge.muse,
 .acct-badge.agy {
   color: var(--fg-dim);
   border-color: var(--line-2);

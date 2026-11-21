@@ -2,15 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
   agyReady,
@@ -96,20 +88,12 @@ async function boundSession(page: Page, backend: BackendId, remote: boolean): Pr
 const BACKEND_OF: Record<AgentName, BackendId> = {
   Claude: 'claude',
   Codex: 'codex',
-  Muse: 'muse',
   Antigravity: 'agy'
 }
 
 const EVERY_AGENT_ON_THIS_MAC: { label: AgentName; install?: (env: E2EEnv) => void }[] = [
   { label: 'Claude' },
   { label: 'Codex', install: (env) => installCodex(env) },
-  {
-    label: 'Muse',
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    }
-  },
   {
     label: 'Antigravity',
     install: (env) => {

@@ -26,7 +26,7 @@ const shift = true
 
 describe('which agent ⏎ and ⇧⏎ start in a new-session dialog', () => {
   it('⏎ always starts the agent the button names', () => {
-    expect(enterMethod(plain, choice(['claude', 'codex', 'muse'], 'codex'))).toBe('codex')
+    expect(enterMethod(plain, choice(['claude', 'codex', 'agy'], 'codex'))).toBe('codex')
   })
 
   it('with two agents listed, ⇧⏎ starts the other one straight away', () => {
@@ -41,7 +41,7 @@ describe('which agent ⏎ and ⇧⏎ start in a new-session dialog', () => {
   })
 
   it('with three or more agents listed, ⇧⏎ opens the list', () => {
-    expect(enterMethod(shift, choice(['claude', 'codex', 'muse'], 'claude'))).toBe('list')
+    expect(enterMethod(shift, choice(['claude', 'codex', 'agy'], 'claude'))).toBe('list')
   })
 
   it('with one agent listed, ⇧⏎ starts it like ⏎', () => {
@@ -50,7 +50,7 @@ describe('which agent ⏎ and ⇧⏎ start in a new-session dialog', () => {
 
   it('the hint names what ⇧⏎ does, and says nothing with one agent', () => {
     expect(enterHint(choice(['claude', 'codex'], 'claude'))).toBe('⏎ Claude · ⇧⏎ Codex')
-    expect(enterHint(choice(['claude', 'codex', 'muse'], 'claude'))).toBe(
+    expect(enterHint(choice(['claude', 'codex', 'agy'], 'claude'))).toBe(
       '⏎ Claude · ⇧⏎ other agent'
     )
     expect(enterHint(choice(['claude'], 'claude'))).toBe('')
@@ -59,8 +59,8 @@ describe('which agent ⏎ and ⇧⏎ start in a new-session dialog', () => {
 
 describe('the row the agent list opens on', () => {
   it('is the first usable agent the button does not already name', () => {
-    expect(firstHot(choice(['claude', 'codex', 'muse'], 'claude'))).toBe(1)
-    expect(firstHot(choice(['claude', 'codex', 'muse'], 'claude', { codex: 'No account' }))).toBe(2)
+    expect(firstHot(choice(['claude', 'codex', 'agy'], 'claude'))).toBe(1)
+    expect(firstHot(choice(['claude', 'codex', 'agy'], 'claude', { codex: 'No account' }))).toBe(2)
   })
 
   it('is the first usable agent when the named one cannot start', () => {

@@ -87,25 +87,6 @@ describe('the session list of an agent Koloft does not run asks it again when it
     await w.listed()
   })
 
-  it("Muse: a new session's session.jsonl is listed, its bookkeeping files and subagents are not, and removing its folder lists again", async () => {
-    const w = await watching(HISTORY_STORES.muse, (n) =>
-      path.join('2026', '10', '26', `warm-${n}`, 'session.jsonl')
-    )
-    const folder = path.join('2026', '10', '27', '01a17db8-7cda-7722-8212-7f60790ea9c8')
-    write(w.dir, path.join(folder, '.session.lock'))
-    write(w.dir, path.join(folder, 'cron.db'))
-    write(w.dir, path.join(folder, 'cli-c22072e2.log'))
-    write(w.dir, path.join(folder, 'subagent', 'child', 'session.jsonl'))
-    write(w.dir, path.join('.msp-view-g6', '01a17db8', 'HEAD.json'))
-    write(w.dir, '.msp-maintenance-owner.lock')
-    await quiet()
-    expect(w.lists()).toBe(0)
-    write(w.dir, path.join(folder, 'session.jsonl'))
-    await w.listed()
-    fs.rmSync(path.join(w.dir, folder), { recursive: true })
-    await w.listed()
-  })
-
   it("Antigravity: a new conversation's .db is listed, its sqlite side files are not, and deleting it lists again", async () => {
     const w = await watching(HISTORY_STORES.agy, (n) => `warm-${n}.db`)
     write(w.dir, 'c1.db-wal')
@@ -129,17 +110,17 @@ describe('the session list of an agent Koloft does not run asks it again when it
   })
 
   it('a store folder two levels short of existing, as for someone who never ran the agent, is listed when the agent makes it and watched from then on', async () => {
-    const dir = path.join(tempDir(), 'muse', 'sessions')
+    const dir = path.join(tempDir(), 'agy', 'conversations')
     let count = 0
     closers.push(
-      watchHistory({ ...HISTORY_STORES.muse, settleMs: SETTLE_MS }, dir, () => void count++)
+      watchHistory({ ...HISTORY_STORES.agy, settleMs: SETTLE_MS }, dir, () => void count++)
     )
     await quiet()
     expect(count).toBe(0)
     fs.mkdirSync(dir, { recursive: true })
     await vi.waitFor(() => expect(count).toBe(1), { timeout: 3000 })
     await quiet()
-    write(dir, path.join('2026', '10', '27', 'id1', 'session.jsonl'))
+    write(dir, 'id1.db')
     await vi.waitFor(() => expect(count).toBe(2), { timeout: 3000 })
   })
 })

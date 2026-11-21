@@ -153,7 +153,6 @@ async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void
 
 const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
   Codex: 'E-RW-38',
-  Muse: 'E-RW-39',
   Antigravity: 'E-RW-40'
 }
 
@@ -165,11 +164,6 @@ const CHANGES_MID_TURN: Record<
   { caseId: string; writeLandsLate: string; turnHoldsAfterTheWrite?: string }
 > = {
   Codex: { caseId: 'E-RW-53', writeLandsLate: 'fake-codex-write-at-ms' },
-  Muse: {
-    caseId: 'E-RW-54',
-    writeLandsLate: 'fake-muse-write-at-ms',
-    turnHoldsAfterTheWrite: 'fake-muse-delay'
-  },
   Antigravity: {
     caseId: 'E-RW-55',
     writeLandsLate: 'fake-agy-write-at-ms',

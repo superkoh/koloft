@@ -28,8 +28,8 @@ the owner's "skip permission prompts" setting — with it on, Claude gets
   accounts there.
 **Rejected**: the gate the butler used to have — a PreToolUse hook that let a Claude
 butler run only reading tools and one plain `koloft` command, a Codex butler with
-approvals off inside the `workspace-write` sandbox, and the same hook for Muse and
-Antigravity. The owner reversed it: it made the butler start sessions even for a
+approvals off inside the `workspace-write` sandbox, and the same hook for Antigravity.
+The owner reversed it: it made the butler start sessions even for a
 question it could answer from a file, and a Codex hook Codex would not trust kept the
 butler off Codex entirely. Also rejected: running the butler in a workspace, where the
 repository's own instructions would load and relative paths would point into that

@@ -31,11 +31,8 @@ import { SIGN_IN_FOLDER_OF, type SignInBackend } from '../../src/shared/types'
 
 const NAME_GIVEN_OUTSIDE_KOLOFT = 'renamed outside Koloft'
 
-const MUSE_OWN_NAME_FOR_A_SESSION_WITH_NO_PROMPT = 'fake-name'
-
 const START: Record<SignInBackend, (page: Page, wsName: string) => Promise<void>> = {
   codex: (page, wsName) => newSessionInWith(page, wsName, 'Codex'),
-  muse: (page, wsName) => newSessionInWith(page, wsName, 'Muse'),
   agy: async (page, wsName) => {
     await newSessionInWith(page, wsName, 'Antigravity')
     await agyReady(page)
@@ -72,13 +69,11 @@ const NAMED_BY_THE_AGENT: Record<SignInBackend, AgentsOwnName> = {
         NAME_GIVEN_OUTSIDE_KOLOFT
       )
   },
-  muse: { name: MUSE_OWN_NAME_FOR_A_SESSION_WITH_NO_PROMPT },
   agy: { name: NAME_GIVEN_OUTSIDE_KOLOFT, renameWhileKoloftIsClosed: renameEveryAgyConversation }
 }
 
 const COMMAND_ENV: Record<SignInBackend, string> = {
   codex: 'KOLOFT_CODEX_CMD',
-  muse: 'KOLOFT_MUSE_CMD',
   agy: 'KOLOFT_AGY_CMD'
 }
 

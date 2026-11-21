@@ -49,11 +49,10 @@ const A_ROW_TURNS_WITHIN_MS = 60_000
 const ASKS_FOR_AN_APPROVAL: Record<AgentName, string> = {
   Claude: '/bash rm -rf build\r',
   Codex: 'approve\r',
-  Muse: '/approve\r',
   Antigravity: '/bash echo declined\r'
 }
 
-// CC§2 CODEX§3 MUSE§11 AGY§14 AGY§29
+// CC§2 CODEX§3 AGY§14 AGY§29
 const ESC_DECLINES = '\x1b'
 
 interface OpenTab {

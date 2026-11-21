@@ -8,13 +8,8 @@ import {
   installAgy,
   installCodex,
   installGhForWorkspaceA,
-  installMuse,
   trustInAgy,
-  museCalls,
-  museSaid,
-  museTyped,
   seedSettings,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import {
@@ -50,7 +45,6 @@ import {
   boundRemoteSession,
   installCodexOnFakeRemote,
   installFakeRemote,
-  installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
   machineCodexLog,
@@ -82,7 +76,6 @@ const CHANNEL = '222'
 const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const REMOTE_ANSWER_CASE_MS = 240_000
-const A_REMOTE_MUSE_TURN_END_REACHES_THE_ROW_LATE_MS = 4000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
 const WAITING_TO_IDLE_MS = 1000
@@ -114,10 +107,6 @@ function seedConductor(
 
 function installLocalAgents(env: E2EEnv, backends: BackendId[]): void {
   if (backends.includes('codex')) installCodex(env)
-  if (backends.includes('muse')) {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-  }
   if (backends.includes('agy')) {
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
@@ -414,18 +403,15 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  const AGENT_NAME = { claude: 'Claude', codex: 'Codex', muse: 'Muse', agy: 'Antigravity' } as const
+  const AGENT_NAME = { claude: 'Claude', codex: 'Codex', agy: 'Antigravity' } as const
   for (const [conductor, reported, remote] of [
     ['claude', 'claude', false],
     ['codex', 'claude', false],
-    ['muse', 'claude', false],
     ['agy', 'claude', false],
     ['claude', 'codex', false],
-    ['claude', 'muse', false],
     ['claude', 'agy', false],
     ['claude', 'claude', true],
     ['claude', 'codex', true],
-    ['claude', 'muse', true],
     ['claude', 'agy', true]
   ] as const)
     test(`while the owner is away, a ${remote ? 'remote' : 'local'} ${reported} session that finishes its turn is told to a ${conductor} butler in one quiet message that names it; the butler’s answer to that message is not posted to Discord, its answer to the owner still is`, async ({
@@ -437,11 +423,6 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       if (used.has('codex')) {
         if (remote) installCodexOnFakeRemote(env)
         else installCodex(env)
-      }
-      if (used.has('muse')) {
-        installMuse(env)
-        if (remote) installMuseOnMachine(env)
-        else trustInMuse(env, env.workspaces.a)
       }
       if (used.has('agy')) {
         installAgy(env)
@@ -471,8 +452,6 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
         if (reported === 'agy') await agyReady(page)
         else await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
-        if (reported === 'muse')
-          await expect(wsRows(page, workspace)).toHaveClass(/st-waiting/, { timeout: 60_000 })
         const postedBefore = said(fake).length
         await runIn(page, centerTerm(page), 'hello')
         // AGY§9
@@ -484,25 +463,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           const butlerId = identityOf(butlerKey()).nativeSessionId
           if (conductor === 'agy') return butlerKey() ? agyPrompts(env, butlerId) : ''
           if (conductor === 'claude') return peerMessages(env).join('\n')
-          if (conductor === 'codex')
-            return codexQueued(env)
-              .map(([, text]) => text ?? '')
-              .join('\n')
-          const file = path.join(
-            env.home,
-            '.local',
-            'share',
-            'muse',
-            'sessions',
-            'fake',
-            `${butlerId}.json`
-          )
-          const s = JSON.parse(fileText(file) || '{"items":[]}') as {
-            items: { kind: string; text: string }[]
-          }
-          return s.items
-            .filter((i) => i.kind === 'userMessage')
-            .map((i) => i.text)
+          return codexQueued(env)
+            .map(([, text]) => text ?? '')
             .join('\n')
         }
         await expect
@@ -1018,54 +980,6 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the conductor types a message into a Muse session once it is idle, and the reply that ends that turn is handed to the conductor', async ({
-    env
-  }) => {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-    seedConductor(env, 'claude')
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await newSessionInWith(page, 'ws-a', 'Muse')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const museId = museCalls(env)[0].sessionId
-      const said = (): string[] => {
-        const file = path.join(
-          env.home,
-          '.local',
-          'share',
-          'muse',
-          'sessions',
-          'fake',
-          `${museId}.json`
-        )
-        const session = JSON.parse(fileText(file) || '{"items":[]}') as {
-          items: { kind: string; text: string }[]
-        }
-        return session.items.filter((i) => i.kind === 'userMessage').map((i) => i.text)
-      }
-
-      fake.say(OWNER, `/koloft session send ${museId} check the docs`)
-      await expect
-        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([ownerSays('check the docs')])
-      await expect
-        .poll(
-          () =>
-            peerMessages(env).some((m) => m.includes(`, id ${museId}:) `) && m.includes('echo: ')),
-          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
-        )
-        .toBe(true)
-      expect(fileText(path.join(env.home, 'fake-muse-prompt-context.jsonl'))).not.toContain(
-        NOT_SENT_BY_KOLOFT
-      )
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
-
   test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Plugins ▸ Discord', async ({
     env
   }) => {
@@ -1386,55 +1300,6 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  // MUSE§5 MUSE§11
-  test('the butler answers a Muse session’s approval, its one-question list and a question that takes several picks with koloft session answer; each presses its keys in the terminal', async ({
-    env
-  }) => {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-    seedConductor(env, 'claude')
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await newSessionInWith(page, 'ws-a', 'Muse')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const museId = museCalls(env)[0].sessionId
-      const museTab = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.backendId === 'muse'
-      )!.tabId
-      const said = (): string[] => museSaid(env, museId)
-      await page.evaluate((id) => window.api.terminal.write(id, '/approve\r'), museTab)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
-        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-      })
-      fake.say(OWNER, `/koloft session answer ${museId} yes`)
-      await expect.poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toContain('Ran: ls -la')
-
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
-      await page.evaluate((id) => window.api.terminal.write(id, '/ask\r'), museTab)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
-        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-      })
-      fake.say(OWNER, `/koloft session answer ${museId} Blue`)
-      await expect
-        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('Picked: Blue')
-
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
-      await page.evaluate((id) => window.api.terminal.write(id, '/ask-several\r'), museTab)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
-        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-      })
-      fake.say(OWNER, `/koloft session answer ${museId} cherry, 1`)
-      await expect
-        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('Picked: Apple, Cherry')
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
-
   test('the butler answers a remote Codex session’s approval with koloft session answer yes, and the key reaches the app-server on the machine, which finishes the turn; its one-question list is answered by an option’s name and then in the butler’s own words, which reach it as a note', async ({
     env
   }) => {
@@ -1500,57 +1365,6 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         fake.say(OWNER, `/koloft session answer ${codex.id} ${reply}`)
         expected.push({ answers: { colour: { answers: answer } } })
         await expect.poll(answers, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toEqual(expected)
-        await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-      }
-    })
-  })
-
-  // MUSE§11 MUSE§17
-  test('the butler answers a remote Muse session’s approval with koloft session answer yes, and the key reaches muse on the machine through ssh and tmux, which runs the command; its one-question list and a question that takes several picks are answered there the same way', async ({
-    env
-  }) => {
-    test.setTimeout(REMOTE_ANSWER_CASE_MS)
-    const install = (): void => {
-      installMuse(env)
-      installMuseOnMachine(env)
-    }
-    await withTheButlerAndARemoteWorkspace(env, install, async (page, fake) => {
-      await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
-      const row = wsRows(page, REMOTE_WS_NAME)
-      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-      const muse = await boundRemoteSession(page, 'muse')
-      await runIn(page, centerTerm(page), '/approve')
-      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-      await expect(row.locator('.ws-tab-act')).toHaveText('Wants to run: ls -la')
-
-      fake.say(OWNER, `/koloft session answer ${muse.id} yes`)
-      const saved = path.join(
-        machineHome(env),
-        '.local',
-        'share',
-        'muse',
-        'sessions',
-        'fake',
-        `${muse.id}.json`
-      )
-      await expect
-        .poll(() => fileText(saved), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('Ran: ls -la')
-      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-
-      for (const [line, reply, picked] of [
-        ['/ask', 'Blue', 'Picked: Blue'],
-        ['/ask-several', 'cherry, 1', 'Picked: Apple, Cherry']
-      ] as const) {
-        await page.waitForTimeout(A_REMOTE_MUSE_TURN_END_REACHES_THE_ROW_LATE_MS)
-        await runIn(page, centerTerm(page), line)
-        await expect(row).toHaveClass(/\bst-approval\b/, {
-          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-        })
-        fake.say(OWNER, `/koloft session answer ${muse.id} ${reply}`)
-        await expect
-          .poll(() => fileText(saved), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-          .toContain(picked)
         await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       }
     })
@@ -1683,11 +1497,11 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   for (const [conductor, child] of [
     ['claude', 'claude'],
     ['claude', 'codex'],
+    ['claude', 'agy'],
     ['codex', 'claude'],
     ['codex', 'codex'],
-    ['muse', 'agy'],
-    ['agy', 'muse'],
-    ['codex', 'muse']
+    ['codex', 'agy'],
+    ['agy', 'claude']
   ] as const)
     test(`a ${child} session a ${conductor} conductor started reports back to it after the conductor’s tab was closed: its first message names the conductor’s id for koloft session send, which opens the conductor again and delivers the report marked with who sent it`, async ({
       env
@@ -1721,7 +1535,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           ).toBe(true)
         else
           expect(
-            (child === 'muse' ? museCalls(env) : agySessionCalls(env)).some(
+            agySessionCalls(env).some(
               (c) => !inButlerFolder(c.cwd) && c.argv.some((a) => a.includes(handover))
             )
           ).toBe(true)
@@ -1729,7 +1543,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         const conductorPid = (): number | undefined =>
           (conductor === 'agy'
             ? agySessionCalls(env).filter((c) => inButlerFolder(c.cwd))
-            : { claude: readAllCalls, codex: codexCalls, muse: museCalls }
+            : { claude: readAllCalls, codex: codexCalls }
                 [conductor](env)
                 .filter((c) => c.sessionId === conductorId)
           ).at(-1)?.pid
@@ -1766,7 +1580,6 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         const conductorGot = (): string[] => {
           if (conductor === 'claude') return peerMessages(env)
           if (conductor === 'codex') return codexQueued(env).map(([, text]) => text ?? '')
-          if (conductor === 'muse') return museTyped(env, conductorId)
           return [agyPrompts(env, conductorId)]
         }
         await expect

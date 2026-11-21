@@ -45,7 +45,7 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
-// MUSE§5 CODEX§2 AGY§8
+// CODEX§2 AGY§8
 const NEW_SESSION_LIST_LAG_MS = 30_000
 
 const binaryGone = (error: unknown): boolean =>
@@ -229,7 +229,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     })
   }
 
-  protected readonly keepsItsOwnTitle: boolean = false
   protected abstract readonly cli: {
     product: string
     minVersion: string
@@ -469,7 +468,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
   private titleOf(key: string, t: H, member = this.store.getMember(key)): string {
     return (
-      this.store.nameOfLeftMember(key) ||
       t.name ||
       (member?.title && !isPlaceholderSessionTitle(member.title) ? member.title : '') ||
       t.preview?.slice(0, 100) ||
@@ -485,7 +483,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const titles = new Map<string, string>()
     for (const m of this.store.listMembers()) {
       const t = this.history.get(m.key)
-      if (!t || m.updatedAt >= listingStartedAt || (this.keepsItsOwnTitle && m.named)) continue
+      if (!t || m.updatedAt >= listingStartedAt) continue
       if (machine !== undefined && hostOfKey(m.key) !== machine) continue
       if (!t.name && !isPlaceholderSessionTitle(m.title)) continue
       const title = this.titleOf(m.key, t, m)
@@ -559,8 +557,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         invalidCwd: seenMissing(m.cwd),
         mtime: m.updatedAt
       }
-      // MUSE§2
-      if (this.keepsItsOwnTitle && m.named) r.title = m.title
       r.cwd = m.cwd
       r.invalidCwd = seenMissing(m.cwd)
       r.nativeSessionId = m.id
@@ -701,7 +697,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return !this.refreshing && this.gone(key, this.store.getMember(key)?.updatedAt ?? 0)
   }
 
-  // CODEX§15 MUSE§5 AGY§8
+  // CODEX§15 AGY§8
   private gone(key: string, boundAt: number): boolean {
     if (this.history.has(key)) return false
     const listedAt = this.listedAt.get(hostOfKey(key))
@@ -926,7 +922,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
     }
     const m = this.store.getMember(key),
-      leftName = m ? undefined : this.store.nameOfLeftMember(key),
       now = Date.now()
     if (old && old !== key) this.lastRunAt.set(old, now)
     try {
@@ -937,8 +932,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         cwd: run.cwd,
         title:
           run.launchName ||
-          (this.keepsItsOwnTitle && m?.title !== PLACEHOLDER_TITLES[this.id] ? m?.title : '') ||
-          leftName ||
           entry.name ||
           entry.preview?.slice(0, 100) ||
           m?.title ||
@@ -946,10 +939,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         createdAt: m?.createdAt ?? (entry.createdAt ? entry.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
-        ...(run.permission !== 'default' ? { permission: run.permission } : {}),
-        ...(this.keepsItsOwnTitle && (run.launchName || m?.named || leftName)
-          ? { named: true as const }
-          : {})
+        ...(run.permission !== 'default' ? { permission: run.permission } : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
