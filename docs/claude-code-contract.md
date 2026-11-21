@@ -245,8 +245,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   reason, session_id, transcript_path`, then SessionStart `source: "clear"` with a new
   id, and `/exit` gave `prompt_input_exit`, the same on both builds), and on 2.1.330,
   darwin-arm64 (`strings` beside 2.1.329, 2026-11-21: the same 33 names; no
-  `CLAUDE_CODE_*` or `ANTHROPIC_*` name gone, 12 `CLAUDE_CODE_*` names new; one slash
-  command, `/access`, and one flag, `--start-dir`, new, none gone).
+  `CLAUDE_CODE_*` or `ANTHROPIC_*` name gone; new are `CLAUDE_CODE_FULL_SIGN_IN_LINK`
+  (§7) and 10 others none of which `src/` spells; one slash command, `/access`, new and
+  none gone; the one new flag, `--start-dir <owner>/<repo>=<folder>`, is parsed only
+  beside the self-hosted runner's own flags such as `--confine-repo-settings`, not by a
+  session's argv scanner).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -924,8 +927,9 @@ python pty: a transcript cut after its last assistant record, that record's `tim
 deleted, then `claude --resume <id>` and one prompt. 2.1.329 printed `No conversation
 found with session ID: <id>` and exited (the same file with the field kept opened);
 2.1.330 showed the old turns and answered, in the same file, its first record unchanged,
-no file renamed or added, SessionStart `"source":"resume"`. With the field missing, that
-SessionStart lacks `seconds_since_last_response` and `context_tokens` on both builds.
+no file renamed or added, SessionStart `"source":"resume"`. On 2.1.330 that SessionStart
+lacks `seconds_since_last_response` and `context_tokens`, which the resume of the same
+file with the field kept carries on both builds.
 
 ## §4 Worktree session exit
 
@@ -968,7 +972,8 @@ SessionStart lacks `seconds_since_last_response` and `context_tokens` on both bu
   2.1.259 for Keep, Remove and dirty-Remove).
 - **A clean exit UNLOCKS the worktree.** CC locks every worktree it runs in (§3), but
   after a Keep or a Remove the lock is gone (also when 2.1.330 keeps it for another
-  session, below), so a later `git worktree remove` needs no `unlock` first. A worktree whose session was killed instead stays locked.
+  session, below), so a later `git worktree remove` needs no `unlock`
+  first. A worktree whose session was killed instead stays locked.
 - **The transcript SURVIVES either choice — it is moved to the ROOT checkout's slug**
   (the `relocateSessionTranscript` rename of §5): full content, the `custom-title`
   record intact, while the worktree's own slug directory is left behind **empty**. A
@@ -1101,10 +1106,11 @@ SessionStart lacks `seconds_since_last_response` and `context_tokens` on both bu
   Uncommitted changes were discarded.` (dirty, `2`) or `Worktree removed (no changes)`.
   With a second plain `claude` running in that folder (one turn done), the exit page is
   the same and does not name the other session, and the same title, hint and `Removing
-  worktree…` come, but the result line is `Worktree kept at “<path>”: another Claude Code
+  worktree…` come, but the result line is ``Worktree kept at “<path>”: another Claude Code
   session (process <pid>) is running in it, though it may be idle. Once that session has
   ended, if the worktree is still there, you can remove it with `git worktree remove` and
-  that path. `--force` also deletes its uncommitted files.` (curly quotes; dirty with
+  that path. `--force` also deletes its uncommitted files.`` (curly quotes, the inner
+  backticks printed as they are, one line with no hard wrap at 120 columns; dirty with
   `2` and clean alike). The folder, its uncommitted file and the branch stay, the lock is
   gone, the process exits 0 about 0.23 s after the `2` with SessionEnd
   `prompt_input_exit`, and the transcript is still moved to the root checkout's slug with
@@ -1117,7 +1123,10 @@ SessionStart lacks `seconds_since_last_response` and `context_tokens` on both bu
   `null` `worktree-state` is written; 2.1.329 removed it. The 2.1.330 changelog: "Fixed
   `ExitWorktree` and the worktree exit dialog deleting a worktree that another running
   Claude Code session was working in". Not probed: Keep on 2.1.330, a second session
-  started with `-w` or `-p`, a remote (Linux, tmux) tab.
+  started with `-w` or `-p`, a remote (Linux, tmux) tab. Koloft dependent:
+  `src/main/claudeWorktreeExit.ts` reads the kept line as a removal that did not happen
+  (the row comes back, the line shows in the "did not remove" toast), but the removal it
+  finishes after Koloft quits does not check for another session (issue #2343).
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -1836,8 +1845,9 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   echo done"}` on 2.1.328 and `{"id":"b8qhp2tne","type":"monitor",…}` on 2.1.329.
   The 2.1.329 changelog: "Changed Stop and SubagentStop hooks to list a Monitor's
   script as monitor, not shell, in background_tasks". Not probed on 2.1.329: a
-  plugin's `monitors.json` monitor. Still so on 2.1.330 (2026-11-21, the same probe
-  beside 2.1.329): `{"id":"bfvrobm6z","type":"monitor","status":"running",…}` with
+  plugin's `monitors.json` monitor. A Monitor is still listed as `type: "monitor"` on
+  2.1.330 (2026-11-21, the same probe beside 2.1.329):
+  `{"id":"bfvrobm6z","type":"monitor","status":"running",…}` with
   the same fields, the ack's `taskId` the same `b…` id, and a background Bash beside it
   still `type: "shell"`. Not probed on 2.1.330: the Stop of a turn a Monitor event woke,
   and a plugin's monitor.
@@ -2790,9 +2800,14 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   wrapped every frame; the versions between were not read. While a window is open, a
   terminal resize can land inside it (PLATFORM§21). Still so on 2.1.330 (2026-11-21):
   `CLAUDE_CODE_FORCE_SYNC_OUTPUT` and `Apple_Terminal` appear as often in its `strings`
-  as in 2.1.329's (6 and 33), and in a hidden Koloft window a resumed 600-turn
-  fullscreen session scrolled by the wheel drew 0 torn frames in 37 synchronized ones;
-  with Koloft's switch taken out of the launch, the same run drew 6 torn frames.
+  as in 2.1.329's (6 and 33). Measured the same day in a hidden Koloft window at 72×49:
+  a resumed 600-turn fullscreen session, scrolled 3 times each by wheel reports in one
+  tab, by trackpad-speed reports in one tab, and by wheel reports in one of 14 tabs while
+  the others flood output; a paint counts as torn when the rows xterm shows have a gap
+  in their line numbers. With Koloft's launch as it ships, 0 of 226 paints tore and
+  claude opened a median 37 synchronized frames per one-tab wheel run; with
+  `CLAUDE_CODE_FORCE_SYNC_OUTPUT` taken out of the launch, 32 tore (wheel 6 of 110,
+  trackpad 19 of 73, 14 tabs 7 of 110) and none came synchronized.
 - **Up to 2.1.325 the cheap scroll (a scroll region, `ESC[<top>;<bottom>r`, and
   `ESC[<n>S`/`T`, then only the rows that came into view) needs synchronized output on,
   no tmux, zellij or JetBrains terminal, and `CLAUDE_CODE_DECSTBM` set or the remote flag
