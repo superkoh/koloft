@@ -276,7 +276,7 @@ Working principles:
   - A path no tool printed is a guess: grep -rl 'word' src.
   - No gh api -o or --comments with --json; strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c, then slice.
-  - {0,N} spans: only /usr/bin/grep -o -E, N ≤ 255; grep (ugrep) fails.
+  - {0,N} spans: /usr/bin/grep -o -E, never bare grep (ugrep); N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
