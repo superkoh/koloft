@@ -432,7 +432,7 @@ describe('what each of the four kinds of session tab is handed for each launch f
 })
 
 // CC§23
-it("hands a Claude Code butler resumed on this Mac the owner's instructions of today, which its next compaction puts in place of those it started with", async () => {
+it("hands a Claude Code butler resumed on this Mac the owner's instructions of today", async () => {
   const resumed = await claudeTab(repo, { resumeSessionId: 's1' }, true, {
     role: 'ROLE-TEXT',
     ownerText: 'TODAYS-OWNER-TEXT'

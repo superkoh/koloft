@@ -4694,10 +4694,13 @@ conversation (`src/plugins/butler/main/butler.ts`), since a resume shows the old
 conversation its old system prompt until a compaction. The owner's instructions for a
 Claude Code butler on this Mac go on every launch, a resume too
 (`src/main/host/localHost.ts`): a resume sends the instructions it started with, and
-from its next compaction on the ones of the latest launch. The same holds for the
-workspace's instructions and Koloft's prompt file, which every Claude Code launch hands
-too; the workspace instructions dialog says so
-(`src/renderer/src/components/SessionDefaultsDialog.tsx`).
+from its next compaction on the ones of the launch it compacts in, kept until the
+compaction after that. The butler's instructions editor says so
+(`src/plugins/butler/renderer/InstructionsStrip.tsx`). The same holds for the
+workspace's and every workspace's instructions, which every Claude Code launch hands
+too, and for Koloft's prompt file, which every launch but the butler's hands; the two
+instructions editors say so (`src/renderer/src/components/SessionDefaultsDialog.tsx`,
+`src/renderer/src/components/settings/SessionsPane.tsx`).
 
 ## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
 

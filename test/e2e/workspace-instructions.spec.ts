@@ -466,7 +466,7 @@ test.describe('The instructions for every workspace: written once in Settings â–
       const editor = page.getByRole('dialog', { name: 'Instructions', exact: true })
       await expect(editor.locator('.pal-count')).toHaveText(`${EVERY_ROW} Â· written by you`)
       await expect(editor.locator('.pal-status')).toHaveText(
-        'Every session started from now on follows this, in every workspace that does not leave it out. A resumed conversation keeps the text it started with. Alfred does not get it.'
+        'Every session started from now on follows this, in every workspace that does not leave it out. A resumed conversation keeps the text it started with; in Claude Code, only until it next compacts. Alfred does not get it.'
       )
       await page.keyboard.press('Escape')
       await expect(editor).toHaveCount(0)
