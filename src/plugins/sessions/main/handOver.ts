@@ -33,7 +33,6 @@ export interface Words extends Partial<HandingMarks> {
   text(): Promise<string>
   typeAsCommand?(tab: string, command: string): Promise<void>
   saysWhereOwnerIs?: boolean
-  beforeHanding?(tab: string, text: string, asPeerLine: boolean): Promise<void>
   settle(failed?: string): void
 }
 
@@ -47,6 +46,7 @@ export interface HandOverDeps {
   queue(tab: string, text: string, clientId: string): Promise<void>
   sendLine(tab: string, line: string, ms: number): Promise<void>
   modeOf(tab: string): ModeClass
+  noteSent(tab: string, text: string, id: string): Promise<void>
 }
 
 interface Queued {
@@ -119,22 +119,19 @@ export class HandOver {
     if (words.typeAsCommand) return words.typeAsCommand(tab, text)
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
-    if (route === 'peerLine') return this.sendAsPeer(tab, words, text)
-    await words.beforeHanding?.(tab, text, false)
+    if (route === 'peerLine' && !fitsACrossSessionMessage(text))
+      throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
+    // ADR-0028
+    await this.d.noteSent(tab, text, words.clientId)
+    // CC§13
+    if (route === 'peerLine')
+      return this.d.sendLine(
+        tab,
+        crossSessionLine(this.d.modeOf(tab), text, words.clientId),
+        MESSAGE_SOCKET_SHOWS_WITHIN_MS
+      )
     if (route === 'queue') return this.d.queue(tab, text, words.clientId)
     await this.d.type(tab, [text, '\r'])
-  }
-
-  // CC§13 ADR-0028
-  private async sendAsPeer(tab: string, words: Words, text: string): Promise<void> {
-    if (!fitsACrossSessionMessage(text))
-      throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
-    await words.beforeHanding?.(tab, text, true)
-    await this.d.sendLine(
-      tab,
-      crossSessionLine(this.d.modeOf(tab), text, words.clientId),
-      MESSAGE_SOCKET_SHOWS_WITHIN_MS
-    )
   }
 
   private async readyTab(to: Recipient): Promise<string> {

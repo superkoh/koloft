@@ -28,12 +28,13 @@ import { HandOver, type HandOverDeps } from '../../../../src/plugins/sessions/ma
 import { typeKeys } from '../../../../src/core/typeKeys'
 import { waitingForAnswer } from '../../../../src/shared/slashCommands'
 import {
-  CODEX_DISCORD_SAID_ENV,
   CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,
-  discordSaidFile,
+  CODEX_SENT_WORDS_ENV,
   NOT_FROM_THE_RELAY,
-  noteDiscordSaid
+  noteOfWhatKoloftSends,
+  noteSent,
+  sentWordsFile
 } from '../../../../src/plugins/sessions/main/hooks'
 import { writeMuseHooks } from '../../../../src/main/museHooks'
 
@@ -107,9 +108,10 @@ function setup(
     replyChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
     askChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
     lobbyLink: () => `<#${CHANNEL}>`,
-    noteDiscordId: async (tab, id) =>
-      fs.appendFileSync(path.join(dir, `${tab}.discord-ids`), `${id}\n`),
-    noteDiscordSaid: async (tab, text) => noteDiscordSaid(dir, tab, text),
+    noteSent: async (tab, text, id) => {
+      const note = noteOfWhatKoloftSends(deps.backendOf(tab), text, id)
+      if (note) noteSent(dir, tab, note)
+    },
     inRoom: () => false,
     helperTitle: () => undefined,
     withButtons: (_t, view, card) => ({
@@ -516,7 +518,7 @@ describe('DiscordRelay: an owner message to a Codex or Muse butler', () => {
     fs.writeFileSync(script, CODEX_REPLY_LANGUAGE_SCRIPT)
     const env = hookEnv({
       [CODEX_SAID_ENV]: path.join(dir, 'codex.said'),
-      [CODEX_DISCORD_SAID_ENV]: discordSaidFile(dir, TAB)
+      [CODEX_SENT_WORDS_ENV]: sentWordsFile(dir, TAB)
     })
     return (input) => spawnSync('bash', [script, 'prompt'], { input, env, encoding: 'utf8' }).stdout
   }
