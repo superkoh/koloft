@@ -3791,10 +3791,13 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   are read**, listed as `source: "project"`; with both, both load and a warning asks for
   one. They load only once the folder is trusted (`[projects."<realpath>"] trust_level =
   "trusted"`); otherwise `hooks/list` is empty and a turn gets a `configWarning`.
-- **A linked worktree uses the main checkout's `.codex`, never its own**, from a sibling
-  folder or one inside the repo (`.claude/worktrees/<n>`): the key is
-  `<main checkout>/.codex/config.toml:<event>:<group>:<hook>`. With `.codex` only in the
-  worktree, nothing loads. Trust of either folder lists the main checkout's hooks.
+- **A linked worktree runs the main checkout's `.codex` hooks, and only when its own
+  checkout has `.codex/config.toml` too**, from a sibling folder or one inside the repo
+  (`.claude/worktrees/<n>`): the key and the command are
+  `<main checkout>/.codex/config.toml:<event>:<group>:<hook>`'s, even when the worktree's
+  copy says otherwise. A worktree whose branch has no `.codex/config.toml` loads no hook
+  at all; with `.codex` only in the worktree, nothing loads either. Trust of either
+  folder lists the main checkout's hooks.
 - **The hook runs in the session's folder** (stdin `cwd`, the worktree's own path in a
   worktree): a relative `node scripts/x.mjs` ran the worktree's copy, failed from a
   subfolder (`hook exited with code 1`, and the command ran anyway), and

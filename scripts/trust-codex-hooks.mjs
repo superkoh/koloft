@@ -63,7 +63,7 @@ function configFile() {
       : fs.existsSync(remoteHome)
         ? path.join(remoteHome, 'config.toml')
         : path.join(os.homedir(), '.codex', 'config.toml'))
-  return fs.existsSync(file) ? fs.realpathSync(file) : path.resolve(file)
+  return path.resolve(file)
 }
 
 const tableHeader = (kind, key) => `[${kind}.${JSON.stringify(key)}]`
@@ -153,7 +153,9 @@ function listProjectHooks(codex, codexHome, repo) {
 
 const repo = mainCheckout()
 const codex = findCodex()
-const config = configFile()
+const homeConfig = configFile()
+const codexHome = path.dirname(homeConfig)
+const config = fs.existsSync(homeConfig) ? fs.realpathSync(homeConfig) : homeConfig
 const before = fs.existsSync(config) ? fs.readFileSync(config, 'utf8') : ''
 const level = folderTrustLevel(before, repo)
 if (level !== undefined && level !== 'trusted')
@@ -178,7 +180,7 @@ if (level !== 'trusted')
     )
   )
 
-const hooks = await listProjectHooks(codex, path.dirname(config), repo)
+const hooks = await listProjectHooks(codex, codexHome, repo)
 if (hooks.length === 0) fail(`codex lists no hooks from ${repo}/.codex`)
 save(
   hooks.reduce(
@@ -193,7 +195,7 @@ save(
   )
 )
 
-const after = await listProjectHooks(codex, path.dirname(config), repo)
+const after = await listProjectHooks(codex, codexHome, repo)
 const untrusted = after.filter((hook) => hook.trustStatus !== 'trusted')
 if (untrusted.length > 0)
   fail(`still untrusted after writing ${config}: ${untrusted.map((h) => h.key).join(', ')}`)
