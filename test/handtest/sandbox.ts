@@ -9,7 +9,6 @@ import type { ReadableStream as WebReadableStream } from 'stream/web'
 import { parseArgs } from 'util'
 import {
   addCodexAccount,
-  addMuseAccount,
   addKeychainEntry,
   killEveryProcessNaming,
   processesNaming,
@@ -44,7 +43,7 @@ const DEV_BOT_KEYCHAIN = 'koloft-dev-discord-bot'
 
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
-  npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse] [--agy]
+  npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--agy]
   npm run handtest -- drive <home> <script.ts>
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
@@ -63,10 +62,6 @@ stop quits it and deletes the home.
              (the first enabled one when left out)
   --remote   also start the Docker SSH lab with the real claude on it, as a remote workspace
              (a Linux claude from KOLOFT_SMOKE_CLAUDE_LINUX, or downloaded to match the local one)
-  --muse     also install the real muse with its official installer, into the sandbox home;
-             sign in to Muse from the sandbox's Settings ▸ Accounts
-  --muse-auth <file>  with --muse, start with a Muse account "meta" signed in by this
-             auth.json, kept from an earlier sandbox's muse-homes/meta/muse (never printed)
   --agy      also install the real agy with its official installer, into the sandbox home;
              sign in to Antigravity from the sandbox's Settings ▸ Accounts
   --discord <file>  connect to the real Discord as the dev build's test bot (its token from
@@ -95,8 +90,6 @@ const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
 // CC§16
 const LINUX_CLAUDE_RELEASES = 'https://downloads.claude.ai/claude-code-releases'
 const LINUX_ARCH: Record<string, string> = { aarch64: 'arm64', x86_64: 'x64' }
-const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
-const MUSE_SIGNED_IN_ACCOUNT = 'meta'
 const LAB_USER = 'kuser'
 const LAB_ALIAS = 'kt-key'
 const LAB_GIT_ID = '-c user.email=handtest@koloft.test -c user.name=handtest'
@@ -220,15 +213,6 @@ async function installIntoTheSandbox(
   return binary
 }
 
-// MUSE§1
-async function useRealMuse(env: E2EEnv): Promise<string> {
-  const muse = await installIntoTheSandbox(env, 'muse', MUSE_INSTALLER, {
-    MUSE_NO_MODIFY_PATH: '1'
-  })
-  env.launchEnv.KOLOFT_MUSE_CMD = muse
-  return muse
-}
-
 // AGY§3
 async function useRealAgy(env: E2EEnv): Promise<string> {
   const agy = await installIntoTheSandbox(env, 'agy', AGY_INSTALLER_URL)
@@ -315,8 +299,6 @@ async function start(opt: {
   account?: string
   port: string
   remote: boolean
-  muse: boolean
-  museAuth?: string
   agy: boolean
   discord?: string
 }): Promise<void> {
@@ -340,9 +322,6 @@ async function start(opt: {
     })
     const claude = await useRealClaude(env, account)
     const { codex, safeUntil } = await useRealCodex(env, installed.accounts ?? [])
-    const muse = opt.muse ? await useRealMuse(env) : undefined
-    if (opt.museAuth)
-      addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
     const agy = opt.agy ? await useRealAgy(env) : undefined
     if (opt.discord) useRealDiscord(env, opt.discord)
     if (opt.remote) lab = await startRemote(env, claude)
@@ -382,7 +361,6 @@ async function start(opt: {
           home: env.home,
           account,
           codex,
-          muse,
           agy,
           workspaces: { ...env.workspaces, ...(remote ? { remote } : {}) },
           log,
@@ -477,8 +455,6 @@ const { positionals, values } = parseArgs({
     account: { type: 'string' },
     port: { type: 'string', default: DEFAULT_PORT },
     remote: { type: 'boolean', default: false },
-    muse: { type: 'boolean', default: false },
-    'muse-auth': { type: 'string' },
     agy: { type: 'boolean', default: false },
     discord: { type: 'string' },
     at: { type: 'string' }
@@ -491,8 +467,6 @@ if (command === 'start') {
     account: values.account,
     port: values.port,
     remote: values.remote,
-    muse: values.muse,
-    museAuth: values['muse-auth'],
     agy: values.agy,
     discord: values.discord
   })

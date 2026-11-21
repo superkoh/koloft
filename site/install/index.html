@@ -113,21 +113,20 @@
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
           <li>
-            one of the agents: Claude Code, the Codex CLI (command-line tool), Meta's Muse Code or
-            Google's Antigravity CLI. The first screen of the welcome says which ones are on this
-            Mac. For one that is not, press its Install button and a terminal tab runs the tool's
-            official installer. Signing in on the welcome also installs the tool first when it is
-            missing. Settings ▸ Welcome ▸ Show welcome again brings the welcome back. Later, Sign in
-            to Codex, Sign in to Muse or Antigravity's Sign in with Google in Settings ▸ Accounts
-            does the same for a tool the Mac still lacks. While this Mac has none of the four, the
-            start page of a folder on this Mac shows an install card for each, in place of the New
-            session button. Each Koloft version says how old each agent may be, and updates an older
-            one for you (see
+            one of the agents: Claude Code, the Codex CLI (command-line tool) or Google's
+            Antigravity CLI. The first screen of the welcome says which ones are on this Mac. For
+            one that is not, press its Install button and a terminal tab runs the tool's official
+            installer. Signing in on the welcome also installs the tool first when it is missing.
+            Settings ▸ Welcome ▸ Show welcome again brings the welcome back. Later, Sign in to Codex
+            or Antigravity's Sign in with Google in Settings ▸ Accounts does the same for a tool the
+            Mac still lacks. While this Mac has none of the three, the start page of a folder on
+            this Mac shows an install card for each, in place of the New session button. Each Koloft
+            version says how old each agent may be, and updates an older one for you (see
             <a href="#updates">Updates</a> below).
           </li>
           <li>
-            a Claude, Codex, Muse or Antigravity login to add to Koloft: every session runs on one
-            (see <a href="../accounts/">accounts</a>)
+            a Claude, Codex or Antigravity login to add to Koloft: every session runs on one (see
+            <a href="../accounts/">accounts</a>)
           </li>
           <li>
             git and <code>gh</code> (GitHub's own command-line tool)
@@ -153,9 +152,8 @@
           Koloft also keeps the agents new enough. If yours is older than this version works with,
           Koloft runs the tool's own update for you, such as <code>claude update</code> or
           <code>codex update</code>. For Claude, this runs in the tab each time a session starts.
-          For Codex, Muse Code and Antigravity CLI, it runs once each time Koloft opens, with a
-          small message. If that does not bring it up to date, Koloft asks you to run the update
-          yourself.
+          For Codex and Antigravity CLI, it runs once each time Koloft opens, with a small message.
+          If that does not bring it up to date, Koloft asks you to run the update yourself.
         </p>
 
         <h2 id="what-it-talks-to">What it talks to</h2>
@@ -219,29 +217,29 @@
               <tr>
                 <td>
                   <code>claude.ai,</code><br /><code>chatgpt.com,</code><br /><code
-                    >dev.meta.ai,</code
-                  ><br /><code>antigravity.google</code>
+                    >antigravity.google</code
+                  >
                 </td>
                 <td>
-                  the official installers of <code>claude</code>, <code>codex</code>,
-                  <code>muse</code> and <code>agy</code>, only when you ask for a tool this Mac
-                  lacks: its Install button on the welcome, its "Click to install." card (when you
-                  set up Assist, or on the start page of a folder on this Mac while this Mac has
-                  none of the four), or signing in to it (on the welcome or in Settings ▸ Accounts)
+                  the official installers of <code>claude</code>, <code>codex</code> and
+                  <code>agy</code>, only when you ask for a tool this Mac lacks: its Install button
+                  on the welcome, its "Click to install." card (when you set up Assist, or on the
+                  start page of a folder on this Mac while this Mac has none of the three), or
+                  signing in to it (on the welcome or in Settings ▸ Accounts)
                 </td>
               </tr>
               <tr>
                 <td>
-                  <code>claude.ai,</code><br /><code>dev.meta.ai,</code><br /><code
-                    >antigravity.google,</code
-                  ><br /><code>nodejs.org,</code><br /><code>unofficial-builds.nodejs.org</code>
+                  <code>claude.ai,</code><br /><code>antigravity.google,</code><br /><code
+                    >nodejs.org,</code
+                  ><br /><code>unofficial-builds.nodejs.org</code>
                 </td>
                 <td>
-                  only to put <code>claude</code>, <code>muse</code>, <code>agy</code> and Node on a
-                  remote folder's machine (<code>unofficial-builds.nodejs.org</code> only on an old
-                  Linux); <code>codex</code> and, for Claude Code sessions,
-                  <code>playwright-cli</code> come from <code>npm</code> (Node's package tool),
-                  which fetches them from npm's own site
+                  only to put <code>claude</code>, <code>agy</code> and Node on a remote folder's
+                  machine (<code>unofficial-builds.nodejs.org</code> only on an old Linux);
+                  <code>codex</code> and, for Claude Code sessions, <code>playwright-cli</code> come
+                  from <code>npm</code> (Node's package tool), which fetches them from npm's own
+                  site
                 </td>
               </tr>
               <tr>
@@ -278,11 +276,11 @@
             the status line under each session asks <code>gh</code> about the branch's pull request
           </li>
           <li>
-            an <a href="../accounts/#assist">Assist</a> job on Codex, Muse or Antigravity goes
-            through that tool to OpenAI, Meta or Google, like a session does
+            an <a href="../accounts/#assist">Assist</a> job on Codex or Antigravity goes through
+            that tool to OpenAI or Google, like a session does
           </li>
           <li>
-            a Muse or Antigravity account's allowance is read by running <code>muse</code> or
+            an Antigravity account's allowance is read by running
             <code>agy</code> itself; that call is the tool's own, like Codex's
           </li>
           <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
@@ -291,9 +289,9 @@
             tool fetches its own update, from the place it was installed from
           </li>
           <li>
-            for a remote folder, <code>bash</code>, <code>tmux</code>, <code>rsync</code> and
-            <code>python3</code> (for Muse) come from that machine's own package manager, which may
-            ask for its sudo password (the admin password)
+            for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code>
+            come from that machine's own package manager, which may ask for its sudo password (the
+            admin password)
           </li>
           <li>
             the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions
@@ -313,19 +311,19 @@
           that copies files).
         </p>
         <p>
-          Claude Code talks to Anthropic, Codex to OpenAI, Muse Code to Meta and Antigravity to
-          Google by themselves, when you log in and every time you send a message. That traffic is
-          theirs, not Koloft's, and this list does not cover it. Koloft also asks Codex how much of
-          each account's limit is left. Codex makes that call itself, through
+          Claude Code talks to Anthropic, Codex to OpenAI and Antigravity to Google by themselves,
+          when you log in and every time you send a message. That traffic is theirs, not Koloft's,
+          and this list does not cover it. Koloft also asks Codex how much of each account's limit
+          is left. Codex makes that call itself, through
           <code>codex app-server</code>.
         </p>
 
         <h2>Questions</h2>
         <dl class="qa">
-          <dt><span>Does Koloft replace Claude Code, Codex, Muse Code or Antigravity?</span></dt>
+          <dt><span>Does Koloft replace Claude Code, Codex or Antigravity?</span></dt>
           <dd>
             <span
-              >No. It runs the real <code>claude</code>, <code>codex</code>, <code>muse</code> and
+              >No. It runs the real <code>claude</code>, <code>codex</code> and
               <code>agy</code> tools you already have, and shows their own screen, untouched. Koloft
               adds the list, the Workbench and the note around it.</span
             >
@@ -333,8 +331,8 @@
           <dt><span>Does it cost anything?</span></dt>
           <dd>
             <span
-              >Koloft is free. The agents use your own Anthropic, OpenAI, Meta or Google account,
-              just as they do without Koloft.</span
+              >Koloft is free. The agents use your own Anthropic, OpenAI or Google account, just as
+              they do without Koloft.</span
             >
           </dd>
           <dt><span>Is there a version for Intel Macs, Windows or Linux?</span></dt>
@@ -381,8 +379,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
-            Meta or Google.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI or
+            Google.
           </p>
         </div>
         <nav aria-label="Docs">

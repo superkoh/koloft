@@ -218,12 +218,12 @@ describe('the butler', () => {
     )
   })
 
-  it('the owner’s instructions go beside its role, both when it starts and when Codex, Muse or Antigravity resume it; with none written, nothing is added', async () => {
+  it('the owner’s instructions go beside its role, both when it starts and when Codex or Antigravity resume it; with none written, nothing is added', async () => {
     instructions = [
       { text: 'Old words.', at: 1, by: 'owner' },
       { text: 'Answer in Chinese.', at: 2, by: 'owner' }
     ]
-    const others = ['codex:local:t1', 'muse:local:t2', 'agy:local:t3']
+    const others = ['codex:local:t1', 'agy:local:t3']
     session = { sessionIds: others }
     const c = make()
     await opened(c)
@@ -295,7 +295,7 @@ describe('the butler', () => {
     expect(resumed).toEqual(['s2'])
   })
 
-  // CC§23 CODEX§17 MUSE§9 AGY§8
+  // CC§23 CODEX§17 AGY§8
   it('a conversation from before koloft todo, which keeps the role it started with, is told of it when resumed until the notice gets through, then never again, on Claude too; one started since is told nothing', async () => {
     const OLD_CODEX = 'codex:local:old-thread'
     const NEW_CODEX = 'codex:local:new-thread'
@@ -337,11 +337,10 @@ describe('the butler', () => {
     expect(notices).toHaveLength(3)
   })
 
-  // CC§23 CODEX§17 MUSE§9 AGY§8
+  // CC§23 CODEX§17 AGY§8
   it.each([
     ['claude', 'old-claude'],
     ['codex', 'codex:local:old-thread'],
-    ['muse', 'muse:local:old-thread'],
     ['agy', 'agy:local:old-conv']
   ] as const)(
     'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside no other news it already had; one told only the sessions lines, before the Todo and Discord ones joined them, is told the whole set again; one started since is told nothing',
@@ -458,7 +457,7 @@ describe('the butler', () => {
       ])
     ).toMatchFileSnapshot('../../prompt-text/butler/plugins-changed.txt'))
 
-  // CC§23 CODEX§17 MUSE§9 AGY§8
+  // CC§23 CODEX§17 AGY§8
   it('running, it is told at once in one message every plugin a switch change turned on or off, and nothing when its conversation already knows; not running, it is not started for it, and is told when its conversation is resumed', async () => {
     const c = make()
     const tab = await opened(c)

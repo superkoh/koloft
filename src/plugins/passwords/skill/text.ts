@@ -14,7 +14,7 @@ PASSWORDS, CODES, SIGN-INS AND ROBOT CHECKS
 When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's tab in Koloft (a web page or sign-in in this session's Workbench){{koloft-help-passwords-away}}. Koloft passes it on itself: you never see it. Never ask the owner to write a password or code in a message.
 
 sudo
-    In a command with no terminal, Koloft's sudo asks the owner for the password. In a Codex, Muse or Antigravity session, and in any session on another machine, it asks also when the command has a terminal of its own.{{koloft-help-sudo-away}} Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all. In a Muse session, sudo failing with "Operation not permitted" means the Muse sandbox stopped it: run the command again with sandbox_permissions "require_escalated"; the owner allows that first, then Koloft asks for the password.
+    In a command with no terminal, Koloft's sudo asks the owner for the password. In a Codex or Antigravity session, and in any session on another machine, it asks also when the command has a terminal of its own.{{koloft-help-sudo-away}} Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all.
     Example: sudo brew services restart nginx && sudo launchctl kickstart -k system/com.example
 
 koloft secret page <css selector>

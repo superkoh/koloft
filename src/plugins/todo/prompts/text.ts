@@ -1,6 +1,5 @@
 import type { TextBlock } from '@core/plugin'
 
-// MUSE§12
 const SORT_OUT_THE_TO_DOS =
   'When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints.'
 

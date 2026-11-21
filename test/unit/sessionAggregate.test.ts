@@ -617,7 +617,7 @@ describe('extractJsonlMeta', () => {
     { name: 'Fix login\n\nthen deploy', id: 'p2', label: 'Claude' },
     { name: 'planner', id: 'p3', label: 'Claude', ownerWords: '侧栏为什么\n\n这么慢 «急»' },
     { id: '019a-codex-thread', label: 'Codex', ownerWords: 'サイドバーが遅い' },
-    { id: '019a-muse-session', label: 'Muse', ownerWords: 'サイドバーが遅い' }
+    { id: '019a-agy-session', label: 'Antigravity', ownerWords: 'サイドバーが遅い' }
   ])(
     'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it, in English or in the owner’s language',
     async (caller) => {

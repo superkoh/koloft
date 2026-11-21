@@ -2962,7 +2962,7 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   to background and exit / 3. Stay`) on both builds, which 2.1.327 reports only as
   `working:msg=<"1 shell still running">`, with no `blocked`.
 - **Behind tmux claude sends no reports until something between them answers its query;
-  a pty wrapper that does so gets every frame out, as remote Muse's does (MUSE§17).**
+  a pty wrapper that does so gets every frame out.**
   2026-11-05, CC 2.1.319 (the `claude-code-linux-arm64` npm build) in Docker (the e2e
   `sshd` image: tmux 3.3a, python3, `--network none`, the `node` user), started inside
   tmux with Koloft's `tmux.conf` (`allow-passthrough on`) from an outer python pty that

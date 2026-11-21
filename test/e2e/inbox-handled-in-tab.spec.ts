@@ -77,7 +77,6 @@ const ASKERS: Record<BackendId, Asker> = {
     keys: ['2'],
     pick: 'Green'
   },
-  muse: { askLine: '/ask', keys: ['2', '\r'], pick: 'Blue' },
   agy: { askLine: '/ask Which colour?|Red|Green', keys: ['2'], pick: 'Green' }
 }
 

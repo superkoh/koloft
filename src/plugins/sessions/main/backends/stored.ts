@@ -2,13 +2,12 @@ import type { ResumePlan } from '@shared/types'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
-import type { MuseSessions } from '../museSessions'
 import type { AgySessions } from '../agySessions'
 import { planResume, ResumeRefused, type ResumeProbes } from '../../../../main/resumePlan'
 import { errorText } from '@core/errorText'
 
 export function storedBackend(
-  sessions: CodexSessions | MuseSessions | AgySessions,
+  sessions: CodexSessions | AgySessions,
   resumeProbes: ResumeProbes,
   own: Pick<
     SessionBackend,

@@ -60,7 +60,7 @@ function labelNamingThePathRightAfterIt(ref: Ref, next: Ref | undefined, text: s
   )
 }
 
-// CC§12 CODEX§35 MUSE§1 AGY§27
+// CC§12 CODEX§35 AGY§27
 function restOfAPathBrokenAtTheRowAbove(
   term: Terminal,
   y: number,
@@ -74,7 +74,7 @@ function restOfAPathBrokenAtTheRowAbove(
   return /[/-]$/.test(lastWord) || above.length >= term.cols
 }
 
-// CC§12 MUSE§1
+// CC§12
 function cutAtTheRowEnd(term: Terminal, ref: Ref, colOf: number[], widthAt: number[]): boolean {
   const last = colOf[ref.end - 1]
   return last + widthAt[last] >= term.cols

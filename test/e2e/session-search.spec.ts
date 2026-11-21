@@ -4,14 +4,7 @@ import { randomUUID } from 'crypto'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { codexCalls } from './helpers/codex'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  museSaid,
-  seedSettings,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   readCalls,
   resumedId,
@@ -32,13 +25,11 @@ import {
   boundRemoteSession,
   installCodexOnFakeRemote,
   installFakeRemote,
-  installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
   liveTmuxSessions,
   machineAgyCalls,
   machineHome,
-  machineMuseCalls,
   mirrorProjectDir,
   REMOTE_HOST,
   REMOTE_WS_NAME,
@@ -371,53 +362,6 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         const last = calls[calls.length - 1]
         expect(resumedId(last)).toBe(remote)
         expect(last.cwd).toBe(remoteDir(env))
-      } finally {
-        await quitAndClose(app)
-      }
-    })
-
-    test('a cold Muse session on an ssh machine is found by words said after its title, read from its log on the machine, named with its host, and resumes there', async ({
-      env
-    }) => {
-      test.setTimeout(240_000)
-      installMuse(env)
-      installFakeRemote(env)
-      installMuseOnMachine(env)
-      seedRemoteWorkspace(env)
-      seedSettings(env, { hintsOff: true })
-      const app = await launchApp(env)
-      try {
-        const page = await app.firstWindow()
-        await waitBooted(page)
-        await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
-        await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(1)
-        const [{ sessionId }] = machineMuseCalls(env)
-        await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting/, { timeout: 60_000 })
-        await runIn(page, centerTerm(page), 'Muse plans on the build machine')
-        const row = wsRows(page, REMOTE_WS_NAME).filter({
-          hasText: 'Muse plans on the build machine'
-        })
-        await expect(row).toHaveCount(1)
-        await runIn(page, centerTerm(page), 'where is the wolf-needle-6')
-        await expect
-          .poll(() => museSaid(env, sessionId, machineHome(env)).join('\n'), { timeout: 30_000 })
-          .toContain('where is the wolf-needle-6')
-        await closeActiveTab(app, page)
-        await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
-        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
-
-        const found = await remoteHit(
-          app,
-          page,
-          'wolf-NEEDLE-6',
-          'Muse plans on the build machine',
-          'Muse'
-        )
-        await expect(found.locator('.restore-snippet b')).toHaveText('wolf-needle-6')
-        await found.click()
-
-        await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(2)
-        expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', sessionId])
       } finally {
         await quitAndClose(app)
       }

@@ -1,7 +1,7 @@
 # Antigravity CLI contract ledger
 
 Measured facts about Google's Antigravity CLI (`agy`) that Koloft depends on and that
-**reading Koloft's own code cannot reveal**. Claude Code, Codex, Muse Code and the
+**reading Koloft's own code cannot reveal**. Claude Code, Codex and the
 platforms have their own ledgers. Each entry says how it was established; a disproven
 entry is corrected in place, never kept for history. Code cites a section with an
 `// AGY§N` marker.
@@ -543,8 +543,8 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
 
 ## §10 Status: OSC 7501
 
-- agy speaks the terminal "program status" protocol, OSC 7501, as Claude Code and Muse
-  do. At start it writes `ESC ] 7501 ; ? BEL` and sends states only after the exact
+- agy speaks the terminal "program status" protocol, OSC 7501, as Claude Code
+  does. At start it writes `ESC ] 7501 ; ? BEL` and sends states only after the exact
   answer `ESC ] 7501 ; ? : states=idle,working,done,blocked,error :
   kinds=permission,question,auth ESC \`.
 - `AGY_CLI_OSC7501=on`: no query, states sent without an answer. `=off`: no 7501
@@ -1023,7 +1023,7 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   Delete, Tab, ←, →, Home, `0` and Ctrl+A changed nothing; `4` opened "Your answer:"
   with the ticks kept and Esc went back to the list with them still kept; `1` unticked
   Apple only and Enter then sent `A1: Cherry`. The options have no "none" row that
-  unticks the rest, as Muse's has (MUSE§11), and Esc on the list skips the question. With
+  unticks the rest, and Esc on the list skips the question. With
   the same two ticked on screen, `HandleCascadeUserInteraction` with `selectedOptionIds:
   ["2"]` sent `A1: Banana`.
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
@@ -1093,7 +1093,7 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
     brought back question 1's list from every state tried (15 runs, each answered as
     asked) — but only when every question has the same number of options, since a digit
     above `N+1` opens nothing and the Esc then skips. Koloft does the same as for Codex
-    and Muse instead: once the person pressed a key in a question since it was asked, it
+    instead: once the person pressed a key in a question since it was asked, it
     leaves it to them and presses nothing.
 - **A question or command ask open when agy is killed does not come back on
   `--conversation`.** agy 1.5.3 (build `1.5.3-6604829099950080`, Linux arm64) and 1.3.6,

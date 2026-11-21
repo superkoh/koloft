@@ -40,13 +40,12 @@ const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
 export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
 export const E2E_CODEX_ACCOUNT = 'e2e-codex'
-export const E2E_MUSE_ACCOUNT = 'e2e-muse'
 export const E2E_AGY_ACCOUNT = 'e2e-agy'
 export const UNPACKAGED_BUILD_AGY_SVC = 'koloft-dev-agy-home'
 
 export function seededAccount(
   name: string,
-  kind: 'oauth' | 'apikey' | 'codex-home' | 'muse-home' | 'agy-home' = 'oauth'
+  kind: 'oauth' | 'apikey' | 'codex-home' | 'agy-home' = 'oauth'
 ): Record<string, unknown> {
   return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
 }
@@ -175,7 +174,6 @@ export function setupE2EEnv(): E2EEnv {
         !key.startsWith('ANTIGRAVITY_') &&
         !key.startsWith('CLAUDE_CODE_') &&
         !key.startsWith('CODEX_') &&
-        !key.startsWith('TBH_') &&
         !key.startsWith('PLAYWRIGHT_') &&
         !key.startsWith('PWTEST_') &&
         !key.startsWith('GIT_CONFIG_') &&
@@ -198,7 +196,6 @@ export function setupE2EEnv(): E2EEnv {
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
     KOLOFT_CODEX_CMD: 'codex-not-installed',
-    KOLOFT_MUSE_CMD: 'muse-not-installed',
     KOLOFT_AGY_CMD: 'agy-not-installed',
     KOLOFT_KEYCHAIN_FILE: keychainFile,
     // CC§2
@@ -319,34 +316,6 @@ export function installCodex(env: E2EEnv, authJson = '{}'): void {
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
   addCodexAccount(env, authJson)
-}
-
-export function installMuse(env: E2EEnv): void {
-  const binary = path.join(env.fakeBin, 'muse')
-  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), binary)
-  env.launchEnv.KOLOFT_MUSE_CMD = binary
-  addMuseAccount(env)
-}
-
-export const MUSE_SIGNED_IN_WITH_META = JSON.stringify({
-  schema_version: 1,
-  providers: { meta: { access_token: 'fake' } }
-})
-
-// MUSE§13
-export function addMuseAccount(
-  env: E2EEnv,
-  name = E2E_MUSE_ACCOUNT,
-  authJson = JSON.stringify({ schema_version: 1, providers: { meta: { api_key: 'fake' } } })
-): void {
-  const config = path.join(env.userData, 'muse-homes', name, 'muse')
-  fs.mkdirSync(config, { recursive: true })
-  fs.writeFileSync(path.join(config, 'auth.json'), authJson, { mode: 0o600 })
-  const file = path.join(env.userData, 'settings.json')
-  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
-  seedSettings(env, {
-    accounts: [...(current.accounts ?? []), seededAccount(name, 'muse-home')]
-  })
 }
 
 export function installAgyWithNoAccount(env: E2EEnv): void {
@@ -494,66 +463,8 @@ export function trustInAgy(env: E2EEnv, dir: string): void {
   )
 }
 
-export interface MuseCall {
-  pid: number
-  argv: string[]
-  cwd: string
-  sessionId: string
-  cols: number | null
-  pathHead: string
-  configHome: string | null
-  credentials: string | null
-}
-
-export function museCalls(env: E2EEnv): MuseCall[] {
-  const file = path.join(env.home, 'fake-muse-calls.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as MuseCall)
-}
-
-function museItems(sessionId: string, home: string, kind: string): string[] {
-  const file = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake', `${sessionId}.json`)
-  try {
-    const s = JSON.parse(fs.readFileSync(file, 'utf8')) as {
-      items: { kind: string; text: string }[]
-    }
-    return s.items.filter((i) => i.kind === kind).map((i) => i.text)
-  } catch {
-    return []
-  }
-}
-
-export function museSaid(env: E2EEnv, sessionId: string, home = env.home): string[] {
-  return museItems(sessionId, home, 'agentMessage')
-}
-
-export function museTyped(env: E2EEnv, sessionId: string): string[] {
-  return museItems(sessionId, env.home, 'userMessage')
-}
-
-// MUSE§10
-export function trustInMuse(env: E2EEnv, dir: string): void {
-  const config = path.join(env.home, '.config', 'muse')
-  fs.mkdirSync(config, { recursive: true })
-  fs.writeFileSync(
-    path.join(config, 'trust.json'),
-    JSON.stringify({
-      schema_version: 1,
-      projects: { [fs.realpathSync(dir)]: { decision: 'trusted' } }
-    })
-  )
-}
-
 export function installAgentFor(env: E2EEnv, agent: AgentName, ws: string): void {
   if (agent === 'Codex') installCodex(env)
-  if (agent === 'Muse') {
-    installMuse(env)
-    trustInMuse(env, ws)
-  }
   if (agent === 'Antigravity') {
     installAgy(env)
     trustInAgy(env, ws)

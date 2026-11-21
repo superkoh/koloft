@@ -3,19 +3,18 @@
 **Constraint**: `claude -w <name>` in a repo Claude has never been trusted in does not
 ask the trust question — it prints an error and exits at once (`CC§9`). In a folder it
 has never been trusted in, every agent's TUI first asks whether to trust it (`CC§9`,
-`CODEX§11`, `MUSE§10`, `AGY§5`), and a session nobody is watching sits on that question
+`CODEX§11`, `AGY§5`), and a session nobody is watching sits on that question
 for good.
 **Decision**: Koloft writes the agent's own trust entry for the folder (Claude
 `hasTrustDialogAccepted: true` in `~/.claude.json`, Codex `trust_level = "trusted"` in
-`config.toml`, Muse `trust.json`, Antigravity `trustedWorkspaces`) when:
+`config.toml`, Antigravity `trustedWorkspaces`) when:
 - the person starts a new worktree session — that click counts as their yes; it covers
-  the workspace folder and, for Codex, Muse and Antigravity, the new worktree's own
+  the workspace folder and, for Codex and Antigravity, the new worktree's own
   folder too (Codex 0.159.3 stopped counting the workspace's entry for it);
 - a scheduled run makes its new worktree inside a workspace folder the agent already
   trusts: the yes the person gave that folder covers the worktree Koloft makes in it,
   and Codex and agy ask again in a worktree under a trusted folder (`CODEX§11`, `AGY§5`).
-  Muse gets the same outcome without writing, from `--trust-workspace`; Claude needs
-  nothing, as `-w` runs from the trusted folder itself;
+  Claude needs nothing, as `-w` runs from the trusted folder itself;
 - an agent starts a main session with `koloft session new` — the butler from Discord,
   or any session, a scheduled run's too — in a workspace the owner added to the
   sidebar, or in the butler's own folder: adding the folder is the owner's yes, and
@@ -25,8 +24,7 @@ for good.
 - the person opens an Antigravity session in a worktree Koloft made — a recovered one, a
   resumed one — whose workspace agy already trusts: that earlier yes covers it, but agy
   does not carry a folder's trust down to its subfolders and has no flag that trusts for
-  one run (`AGY§5`), so the worktree folder is written as well. Muse gets the same outcome
-  without writing, from `--trust-workspace` for that run. A git worktree the person made
+  one run (`AGY§5`), so the worktree folder is written as well. A git worktree the person made
   themselves is not Koloft's and gets agy's own question.
 - an Antigravity resume lands on another Koloft account than one whose home already
   trusts the folder (the first is at its limit, say): agy keeps trust per account home

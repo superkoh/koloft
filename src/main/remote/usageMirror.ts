@@ -2,7 +2,7 @@ import path from 'path'
 import { AGY_APP_DIR } from '../agyStore'
 import { CODEX_ROLLOUT_FOLDERS, type UsageHome } from '../usageCache'
 import { REMOTE_CODEX_HOME } from './codexMachine'
-import { mirrorAgyGemini, mirrorCodexHome, mirrorMuseHome } from './paths'
+import { mirrorAgyGemini, mirrorCodexHome } from './paths'
 import type { ExtraPull } from './sync'
 
 const IN_HOME = /^\$HOME\//
@@ -23,7 +23,6 @@ export function machineUsageDirs(userData: string, host: string): UsageHome {
   return {
     host,
     codexHome: mirrorCodexHome(userData, host),
-    museHome: mirrorMuseHome(userData, host),
     geminiDir: mirrorAgyGemini(userData, host)
   }
 }
@@ -31,7 +30,7 @@ export function machineUsageDirs(userData: string, host: string): UsageHome {
 export function usagePulls(
   userData: string,
   host: string,
-  uses: { codex: boolean; muse: boolean; agy: boolean }
+  uses: { codex: boolean; agy: boolean }
 ): ExtraPull[] {
   const dirs = machineUsageDirs(userData, host)
   const codexHome = REMOTE_CODEX_HOME.replace(IN_HOME, '')
@@ -43,16 +42,6 @@ export function usagePulls(
           // CODEX§13 CODEX§16
           flags: filesNamed('rollout-*.jsonl')
         }))
-      : []),
-    ...(uses.muse
-      ? [
-          {
-            from: '.local/share/muse/sessions',
-            to: path.join(dirs.museHome, 'sessions'),
-            // MUSE§2
-            flags: filesNamed('session.jsonl')
-          }
-        ]
       : []),
     ...(uses.agy
       ? [

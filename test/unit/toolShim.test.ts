@@ -41,7 +41,7 @@ function folderWatchThatReportsOnlyWhatItIsTold(): (name: string) => void {
 }
 
 describe('startToolShim', () => {
-  it.each(['codex', 'muse', 'agy'] as const)(
+  it.each(['codex', 'agy'] as const)(
     'a %s tab starting removes both tool folders of each tab a Koloft run that has ended left behind, and keeps a live run’s and a stranger’s',
     (backend) => {
       const openShimRoot = path.join(base, `${backend}-open`)
@@ -76,7 +76,7 @@ describe('startToolShim', () => {
 
   // PLATFORM§28
   it(
-    'a koloft request the folder watch never reports is still answered, and only once though it stays in the folder, so a Codex, Muse or Antigravity tab never waits out its time on a lost event',
+    'a koloft request the folder watch never reports is still answered, and only once though it stays in the folder, so a Codex or Antigravity tab never waits out its time on a lost event',
     async () => {
       folderWatchThatReportsOnlyWhatItIsTold()
       const agent = vi.fn()

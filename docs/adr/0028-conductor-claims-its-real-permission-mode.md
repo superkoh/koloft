@@ -53,19 +53,17 @@ runs, so the check only catches a session that writes such an opening by acciden
 because some text told it to; a program set on pretending to be the owner or the butler
 can read the file and copy a line, and nothing stops it.
 
-**Codex and Muse, by the words instead of an id**: a message reaches them as plain
-text (queued for Codex, typed for Muse), with no id their hook can see (CODEX§33), while
-another program can reach them the same way — `codex queue` for Codex (CODEX§33); for
-Muse, another Muse session's `send_session_message` tool (MUSE§7, MUSE§9; that it lands
-as a prompt is inferred, not checked). So Koloft writes the words of each such message
-it hands to a Codex or Muse tab to `<tab>.discord-said`, and the hook flags a prompt
+**Codex, by the words instead of an id**: a message reaches it as plain
+text (queued for Codex), with no id its hook can see (CODEX§33), while
+another program can reach it the same way — `codex queue` for Codex (CODEX§33). So Koloft writes the words of each such message
+it hands to a Codex tab to `<tab>.discord-said`, and the hook flags a prompt
 with one of those openings whose words are not there. The
 words are compared with every JSON escape and every ASCII sign and space taken out, so a
 later CLI that escapes a sign Node does not cannot turn the owner's words into a flag
-(today both escape as Node does: CODEX§33, MUSE§9). The hook cannot tell typed text from
-a message, so an opening typed into those tabs is flagged too. For a tab on another
+(today Codex escapes as Node does: CODEX§33). The hook cannot tell typed text from
+a message, so an opening typed into a Codex tab is flagged too. For a tab on another
 machine Koloft writes the id or the words into that machine's hook folder over ssh before
-it hands the message over, which the remote Claude, Codex and Muse hooks read. When that
+it hands the message over, which the remote Claude and Codex hooks read. When that
 note cannot be written the message is not sent and its sender is told, rather than sent
 and flagged as forged.
 The two files keep the names they had when only `[Discord]` was checked: a remote tab
@@ -77,8 +75,8 @@ for messaging another session, but another program can still reach it: by typing
 (`koloft session keys`), and through its local API with the token Koloft puts on agy's
 command line, which `ps` shows (AGY§16, measured on a Linux machine; on the Mac not
 probed yet).
-**Rejected**: putting Claude's `(Koloft message <id>)` line at the end of the Codex and
-Muse text too, so every backend checks an id. The model, Koloft's own transcript reading
+**Rejected**: putting Claude's `(Koloft message <id>)` line at the end of the Codex
+text too, so every backend checks an id. The model, Koloft's own transcript reading
 (the owner's words handed to a helper, a session's last prompt) and the owner would all
 see that line, and each reader would need it cut off; the words file changes nothing
 anyone sees.

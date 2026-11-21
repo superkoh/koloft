@@ -24,7 +24,7 @@ describe('which tool Assist runs on when the owner never chose one', () => {
       meta({ name: 'late', kind: 'oauth', addedAt: 30 }),
       meta({ name: 'early', kind: 'codex-home', addedAt: 10 }),
       meta({ name: 'gone', kind: 'agy-home', addedAt: 1, status: 'expired' }),
-      meta({ name: 'off', kind: 'muse-home', addedAt: 2, enabled: false })
+      meta({ name: 'off', kind: 'oauth', addedAt: 2, enabled: false })
     ]
     expect(assistRunsOn(withAccounts({}, ...codexFirst))).toBe('codex')
     expect(assistRunsOn(withAccounts({}))).toBe(METHODS.defaultBackend)
@@ -36,11 +36,11 @@ describe('which tool Assist runs on when the owner never chose one', () => {
       sessionMethods: { ...METHODS, enabled: { ...METHODS.enabled, agy: false } },
       accounts: [
         meta({ name: 'x', kind: 'agy-home', addedAt: 0 }),
-        meta({ name: 'y', kind: 'muse-home', addedAt: 0 }),
+        meta({ name: 'y', kind: 'codex-home', addedAt: 0 }),
         meta({ name: 'z', kind: 'oauth', addedAt: 0 })
       ]
     }
-    expect(assistRunsOn(s)).toBe('muse')
+    expect(assistRunsOn(s)).toBe('codex')
   })
 
   it('is the owner’s choice once there is one, and a job with its own tool tries that first, then that choice, then the rest by account age', () => {
@@ -50,8 +50,8 @@ describe('which tool Assist runs on when the owner never chose one', () => {
       meta({ kind: 'oauth', addedAt: 2 })
     )
     expect(assistRunsOn(s)).toBe('claude')
-    expect(assistBackendsFor('route', s)).toEqual(['agy', 'claude', 'codex', 'muse'])
-    expect(assistBackendsFor('title', s)).toEqual(['claude', 'codex', 'muse', 'agy'])
+    expect(assistBackendsFor('route', s)).toEqual(['agy', 'claude', 'codex'])
+    expect(assistBackendsFor('title', s)).toEqual(['claude', 'codex', 'agy'])
   })
 })
 

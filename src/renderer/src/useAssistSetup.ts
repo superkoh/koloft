@@ -20,7 +20,6 @@ export function useAssistSetup(): AssistSetupState {
   const accountsLoaded = useStore((s) => s.accounts !== null)
   const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))
   const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))
-  const muse = useStore((s) => hasUsableAccount(s.accounts ?? [], 'muse'))
   const agy = useStore((s) => hasUsableAccount(s.accounts ?? [], 'agy'))
   const { installed } = useInstalledBackends()
 
@@ -30,7 +29,7 @@ export function useAssistSetup(): AssistSetupState {
     tools,
     toolsKnown: installed !== null,
     noTool: tools.length === 0,
-    usable: { claude, codex, muse, agy },
+    usable: { claude, codex, agy },
     askBypass,
     loaded: accountsLoaded
   }

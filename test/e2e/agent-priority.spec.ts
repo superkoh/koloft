@@ -1,14 +1,5 @@
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  agySessionCalls,
-  installAgy,
-  installCodex,
-  installMuse,
-  museCalls,
-  seedSettings,
-  trustInAgy,
-  trustInMuse
-} from './helpers/env'
+import { agySessionCalls, installAgy, installCodex, seedSettings, trustInAgy } from './helpers/env'
 import { codexCalls, fakeCodexLog, startCodex } from './helpers/codex'
 import {
   addRemoteWorkspace,
@@ -32,13 +23,11 @@ test.setTimeout(180_000)
 const ABOVE_ITS_TOOLS = 46
 const WHAT_ANY_OTHER_PROGRAM_GETS = 31
 
-test('the program of every kind of agent tab on this Mac — Claude Code, Codex, Muse, Antigravity — runs above the priority its tools get, and the Codex server behind a tab is left where it was', async ({
+test('the program of every kind of agent tab on this Mac — Claude Code, Codex, Antigravity — runs above the priority its tools get, and the Codex server behind a tab is left where it was', async ({
   env
 }) => {
   installCodex(env)
-  installMuse(env)
   installAgy(env)
-  trustInMuse(env, env.workspaces.a)
   trustInAgy(env, env.workspaces.a)
   seedSettings(env, { hintsOff: true })
   const app = await launchApp(env)
@@ -51,20 +40,16 @@ test('the program of every kind of agent tab on this Mac — Claude Code, Codex,
       env,
       'fake-codex-server-calls.jsonl'
     ).findLast((server) => server.tabId)!
-    await newSessionInWith(page, 'ws-a', 'Muse')
-    await expect.poll(() => museCalls(env).length).toBe(1)
     await newSessionInWith(page, 'ws-a', 'Antigravity')
     await expect.poll(() => agySessionCalls(env).length).toBe(1)
     expect({
       claude: mainThreadPriority(readCalls(env)[0].pid),
       codex: mainThreadPriority(codex.pid),
-      muse: mainThreadPriority(museCalls(env)[0].pid),
       agy: mainThreadPriority(agySessionCalls(env)[0].pid),
       codexServer: mainThreadPriority(serverOfItsTab.pid)
     }).toEqual({
       claude: ABOVE_ITS_TOOLS,
       codex: ABOVE_ITS_TOOLS,
-      muse: ABOVE_ITS_TOOLS,
       agy: ABOVE_ITS_TOOLS,
       codexServer: WHAT_ANY_OTHER_PROGRAM_GETS
     })

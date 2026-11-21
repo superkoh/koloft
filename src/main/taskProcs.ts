@@ -61,38 +61,6 @@ async function listeningPids(pids: number[], exec: Exec): Promise<Set<number>> {
   )
 }
 
-// MUSE§8
-function runsCommand(line: string, command: string): boolean {
-  if (line === command || line.endsWith(` ${command}`)) return true
-  const [program, ...args] = command.split(' ')
-  const [binary, ...lineArgs] = line.split(' ')
-  return (
-    args.length > 0 &&
-    args.join(' ') === lineArgs.join(' ') &&
-    program.toLowerCase().startsWith(path.basename(binary).toLowerCase())
-  )
-}
-
-// MUSE§8
-export async function museServersAmong(
-  table: ProcessTable | null,
-  rootPid: number,
-  commands: Map<string, string>,
-  exec: Exec = defaultExec
-): Promise<Set<string>> {
-  if (!table) return new Set()
-  const trees = new Map<string, number[]>()
-  for (const child of table.childrenOf.get(rootPid) ?? []) {
-    const line = table.byPid.get(child)?.command ?? ''
-    for (const [id, command] of commands)
-      if (runsCommand(line, command)) trees.set(id, descendants(table, child))
-  }
-  const listening = await listeningPids([...trees.values()].flat(), exec)
-  return new Set(
-    [...trees].filter(([, pids]) => pids.some((p) => listening.has(p))).map(([id]) => id)
-  )
-}
-
 interface ClaudeShells {
   outputOf: Map<number, string>
   listening: Set<number>

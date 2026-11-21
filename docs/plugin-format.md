@@ -34,7 +34,7 @@ it is done.
 
 ## Words used on this page
 
-- **Session**: one run of a coding agent (Claude Code, Codex, Muse or Antigravity) that
+- **Session**: one run of a coding agent (Claude Code, Codex or Antigravity) that
   Koloft starts in a terminal tab.
 - **Owner**: the person using Koloft.
 - **Butler**: a long-running session that watches the other sessions for the owner.
@@ -345,7 +345,7 @@ fills:
   reads it, so core never names a plugin.
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
-  `codex`, `muse` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
+  `codex` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
   builds a block that has its own text for every agent.
 - `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
   it yet, and nothing checks the key against a list of models.
@@ -682,7 +682,7 @@ An Assist job is a small AI task Koloft runs on its own. A plugin lists its jobs
   butler's own row.
 - `name`: the job's row title on its plugin's page in Settings ▸ Plugins.
 - `does`: the line under that title, saying what the job does.
-- `defaults`: for each agent (`claude`, `codex`, `muse`, `agy`), the model and thinking
+- `defaults`: for each agent (`claude`, `codex`, `agy`), the model and thinking
   (`{ model?, effort? }`) the job runs with while the owner has not picked one. An empty
   `{}` means that agent's own model and thinking.
 
@@ -699,7 +699,6 @@ export const ASSIST_JOBS = [
     defaults: {
       claude: { model: 'sonnet', effort: 'low' },
       codex: { model: 'gpt-6.1-sol', effort: 'low' },
-      muse: { effort: 'low' },
       agy: { model: 'gemini-3.8-flash', effort: 'low' }
     }
   }

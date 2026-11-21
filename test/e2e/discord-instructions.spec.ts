@@ -2,15 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   closeActiveTab,
   picksFor,
@@ -191,25 +183,23 @@ const withOneSession = (env: E2EEnv, body: Body): Promise<void> =>
   })
 
 test.describe('Discord: the owner agrees on the phone to an agent’s proposed change to the Instructions', () => {
-  test('on this Mac, a Claude Code, Codex, Muse and Antigravity session with no room each post their change to the butler’s channel, naming the session and its workspace; Don’t change writes nothing, Change them writes the line, and the box at the Mac goes either way', async ({
+  test('on this Mac, a Claude Code, Codex and Antigravity session with no room each post their change to the butler’s channel, naming the session and its workspace; Don’t change writes nothing, Change them writes the line, and the box at the Mac goes either way', async ({
     env
   }) => {
     seedBinding(env)
     installCodex(env)
-    installMuse(env)
     installAgy(env)
-    trustInMuse(env, env.workspaces.a)
     trustInAgy(env, env.workspaces.a)
     await withDiscord(env, async (page, fake) => {
       await ownerWrites(page, 'ws-a', WRITTEN)
-      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+      for (const backend of ['claude', 'codex', 'agy'] as const) {
         await startIn(page, 'ws-a', backend)
         await phoneDeclinesThenAgrees(page, env, fake, 'ws-a', backend)
       }
     })
   })
 
-  test('on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each post their change the same way, and Change them writes that workspace’s own instructions', async ({
+  test('on a remote workspace, a Claude Code, Codex and Antigravity session each post their change the same way, and Change them writes that workspace’s own instructions', async ({
     env
   }) => {
     seedBinding(env)
@@ -219,7 +209,7 @@ test.describe('Discord: the owner agrees on the phone to an agent’s proposed c
       async (page, fake) => {
         await addRemoteWorkspace(page, env)
         await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
-        for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+        for (const backend of ['claude', 'codex', 'agy'] as const) {
           await startIn(page, REMOTE_WS_NAME, backend)
           await phoneDeclinesThenAgrees(page, env, fake, REMOTE_WS_NAME, backend)
         }

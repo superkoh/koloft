@@ -4,15 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ATTENTION_REASON } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import { codexRows, startCodex } from './helpers/codex'
 import {
   REMOTE_WS_NAME,
@@ -147,18 +139,6 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
     install: (env) => installCodex(env),
     start: async (page) => {
       await newSessionInWith(page, 'ws-a', 'Codex')
-      return activeTabOnceBound(page)
-    }
-  },
-  {
-    kind: 'local Muse',
-    remote: false,
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    start: async (page) => {
-      await newSessionInWith(page, 'ws-a', 'Muse')
       return activeTabOnceBound(page)
     }
   },

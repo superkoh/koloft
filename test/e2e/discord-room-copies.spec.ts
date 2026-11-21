@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import { installAgy, installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { terminalText, waitBooted, waitConductorStarted, picksFor } from './helpers/p1'
 import {
   OPEN_A_FORM,
@@ -15,7 +15,6 @@ import {
   addRemoteWorkspace,
   installCodexOnFakeRemote,
   installFakeRemote,
-  installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
   machineHome,
@@ -132,20 +131,12 @@ async function onePictureThenTheCard(fake: FakeDiscord, room: FakeThread): Promi
 const LOCAL: { backend: BackendId; install: (env: E2EEnv) => void }[] = [
   { backend: 'claude', install: () => {} },
   { backend: 'codex', install: installCodex },
-  { backend: 'muse', install: installMuse },
   { backend: 'agy', install: installAgy }
 ]
 
 const REMOTE: { backend: BackendId; install: (env: E2EEnv) => void; tuiOnTheMac?: true }[] = [
   { backend: 'claude', install: () => {} },
   { backend: 'codex', install: installCodexOnFakeRemote, tuiOnTheMac: true },
-  {
-    backend: 'muse',
-    install: (env) => {
-      installMuse(env)
-      installMuseOnMachine(env)
-    }
-  },
   {
     backend: 'agy',
     install: (env) => {

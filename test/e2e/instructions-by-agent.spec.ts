@@ -4,15 +4,7 @@ import path from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { guestByUrl, newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   butlerRow,
   centerTerm,
@@ -42,10 +34,9 @@ import type { BackendId } from '../../src/shared/types'
 test.afterEach(({ env }) => killFakeRemote(env))
 
 const WRITTEN = 'Answer in Chinese.'
-const AGENT_LABEL: Record<BackendId, 'Claude' | 'Codex' | 'Muse' | 'Antigravity'> = {
+const AGENT_LABEL: Record<BackendId, 'Claude' | 'Codex' | 'Antigravity'> = {
   claude: 'Claude',
   codex: 'Codex',
-  muse: 'Muse',
   agy: 'Antigravity'
 }
 const AN_ASK_SHOWS_WITHIN_MS = 20_000
@@ -239,22 +230,20 @@ async function agreedWhileTheEditorIsOpen(page: Page): Promise<void> {
 }
 
 test.describe('koloft instructions: an agent proposes a line for the owner’s instructions, the owner is asked in that session’s own tab, and only what the owner agrees to is kept', () => {
-  test('on this Mac, a Claude Code, Codex, Muse and Antigravity session each propose a line for their own workspace, then one for every workspace; the ask shows in the session’s tab, which waits on the owner, and names the block; declined changes nothing, agreed adds the line to that block only', async ({
+  test('on this Mac, a Claude Code, Codex and Antigravity session each propose a line for their own workspace, then one for every workspace; the ask shows in the session’s tab, which waits on the owner, and names the block; declined changes nothing, agreed adds the line to that block only', async ({
     env
   }) => {
     test.setTimeout(300_000)
     seedSettings(env, { hintsOff: true })
     installCodex(env)
-    installMuse(env)
     installAgy(env)
-    trustInMuse(env, env.workspaces.a)
     trustInAgy(env, env.workspaces.a)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
       await ownerWrites(page, 'ws-a', WRITTEN)
-      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+      for (const backend of ['claude', 'codex', 'agy'] as const) {
         const tab = await startIn(page, 'ws-a', backend)
         await ownerDeclinesThenAgrees(page, env, 'ws-a', tab, backend)
         await proposesForEveryWorkspace(page, env, 'ws-a', tab, backend)
@@ -264,7 +253,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
     }
   })
 
-  test("on a remote workspace, a Claude Code, Codex, Muse and Antigravity session each propose a line for that workspace's own instructions, then one for every workspace, asked in its tab", async ({
+  test("on a remote workspace, a Claude Code, Codex and Antigravity session each propose a line for that workspace's own instructions, then one for every workspace, asked in its tab", async ({
     env
   }) => {
     test.setTimeout(400_000)
@@ -274,7 +263,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
     try {
       await addRemoteWorkspace(page, env)
       await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
-      for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+      for (const backend of ['claude', 'codex', 'agy'] as const) {
         const tab = await startIn(page, REMOTE_WS_NAME, backend)
         await ownerDeclinesThenAgrees(page, env, REMOTE_WS_NAME, tab, backend)
         await proposesForEveryWorkspace(page, env, REMOTE_WS_NAME, tab, backend)
@@ -287,7 +276,7 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
     }
   })
 
-  test("on a remote workspace, when a Claude Code, Codex, Muse or Antigravity session's koloft command stops waiting, ended gently or killed outright, its ask closes, its tab stops waiting on the owner, and nothing is written", async ({
+  test("on a remote workspace, when a Claude Code, Codex or Antigravity session's koloft command stops waiting, ended gently or killed outright, its ask closes, its tab stops waiting on the owner, and nothing is written", async ({
     env
   }) => {
     test.setTimeout(400_000)
@@ -300,7 +289,6 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       const stops: [BackendId, NodeJS.Signals][] = [
         ['claude', 'SIGTERM'],
         ['codex', 'SIGKILL'],
-        ['muse', 'SIGTERM'],
         ['agy', 'SIGKILL']
       ]
       for (const [backend, signal] of stops) {

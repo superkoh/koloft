@@ -22,9 +22,7 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
-import { museRunLines } from '../../src/main/museRemote'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
-import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
@@ -555,7 +553,7 @@ function putSkillsInMachinePackage(machineDir: string): void {
   }
 }
 
-describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on the machine", () => {
+describe("Koloft's skills a Codex or Antigravity tab keeps in its home on the machine", () => {
   it('keeps the koloft-docs skill folder the same as the machine package every time, and the koloft skill only while agent tools are on: an older copy is swapped for a whole new one with nothing left over, and a copy already the same is left in place, so a running agent never finds it gone', () => {
     const root = mkroot('skill')
     const machineDir = path.join(root, 'm-1')
@@ -798,146 +796,6 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const handed = b.env().PATH.split(':')
     expect(handed.slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(handed.slice(-2)).toEqual(['/opt/rc only/bin', "/home/u/it's/bin"])
-  })
-
-  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
-    const s = spec({
-      tmuxName: 'm-T',
-      program: machineToolProgram(
-        'muse',
-        museRunLines({
-          tabId: 'T',
-          account: "o'brien",
-          args: ['--approval-judge', 'off', 'say hi'],
-          sandboxed: false,
-          trust: [],
-          koloftSkill: false
-        }),
-        { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
-      )
-    })
-    const b = box(s)
-    const own = path.join(b.home, '.config', 'muse')
-    fs.mkdirSync(own, { recursive: true })
-    fs.writeFileSync(path.join(own, 'settings.json'), '{"schema_version":1}')
-    const accountMuse = path.join(b.home, '.koloft', 'muse-homes', "o'brien", 'muse')
-    fs.mkdirSync(accountMuse, { recursive: true })
-    fs.symlinkSync(path.join(own, 'AGENTS.md'), path.join(accountMuse, 'AGENTS.md'))
-    fs.writeFileSync(
-      path.join(b.home, '.local', 'bin', 'python3'),
-      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
-      { mode: 0o755 }
-    )
-    expect(b.run().status).toBe(0)
-    expect(b.tmux().join(' ')).toContain('new-session -A -D -s m-T')
-    const m = path.join(b.home, '.koloft', 'm-0000000000000000')
-    expect(b.argv()).toEqual([
-      `${m}/muse-wrap.py`,
-      `${b.home}/.koloft/hook-sessions`,
-      'T',
-      '--',
-      ...(TASKPOLICY_HERE ? [TASKPOLICY, '-a'] : []),
-      'muse',
-      '--approval-judge',
-      'off',
-      'say hi'
-    ])
-    const account = path.join(b.home, '.koloft', 'muse-homes', "o'brien")
-    expect(b.env()).toMatchObject({
-      XDG_CONFIG_HOME: account,
-      TBH_CREDENTIAL_BACKEND: 'file',
-      TBH_MANAGED_HOOKS_PATH: `${b.home}/.koloft/tabs/T.hooks.json`
-    })
-    expect(b.env().PATH).not.toContain('claude-bin')
-    expect(fs.readFileSync(path.join(account, 'muse', 'auth.json'), 'utf8')).toBe(
-      '{"providers":{}}'
-    )
-    expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
-    expect(fs.existsSync(path.join(b.tabs, 'T.auth.json'))).toBe(false)
-    expect(fs.readlinkSync(path.join(account, 'muse', 'settings.json'))).toBe(
-      path.join(own, 'settings.json')
-    )
-    expect(fs.readlinkSync(path.join(account, 'muse', 'trust.json'))).toBe(
-      path.join(own, 'trust.json')
-    )
-    expect(fs.lstatSync(path.join(account, 'muse', 'AGENTS.md'), { throwIfNoEntry: false })).toBe(
-      undefined
-    )
-    fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
-    b.run('attach')
-    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
-  })
-
-  // MUSE§16
-  it("a Muse tab copies Koloft's skills from the machine package into its account's own skills folder, where a same-named skill of the machine user's never takes their place while the user's other skills are still linked in: koloft-docs every time, koloft only while agent tools are on", () => {
-    const muse = (koloftSkill: boolean): TabSpec =>
-      spec({
-        tmuxName: 'm-T',
-        program: machineToolProgram(
-          'muse',
-          museRunLines({
-            tabId: 'T',
-            account: 'a',
-            args: [],
-            sandboxed: false,
-            trust: [],
-            koloftSkill
-          }),
-          { 'T.hooks.json': '{"hooks":{}}' }
-        )
-      })
-    const b = box(muse(true))
-    putSkillsInMachinePackage(path.join(b.home, '.koloft', 'm-0000000000000000'))
-    const owners = path.join(b.home, '.config', 'muse', 'skills')
-    for (const skill of ['review', 'koloft-docs'])
-      fs.mkdirSync(path.join(owners, skill), { recursive: true })
-    fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\n', { mode: 0o755 })
-    const skills = path.join(b.home, '.koloft', 'muse-homes', 'a', 'muse', 'skills')
-    expect(b.run().status).toBe(0)
-    expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toBe('NEW')
-    writeTabPackage(b.tabs, muse(false))
-    expect(b.run().status).toBe(0)
-    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
-    expect(fs.lstatSync(path.join(skills, 'koloft-docs')).isSymbolicLink()).toBe(false)
-    expect(fs.readFileSync(path.join(skills, 'koloft-docs', 'references', 'core.md'), 'utf8')).toBe(
-      'NEW CORE'
-    )
-    expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(path.join(owners, 'review'))
-  })
-
-  // MUSE§17
-  it('a Muse tab on a machine where no user namespace can be made says why its sandbox cannot start only when Muse runs with its sandbox, not when permission prompts are skipped', () => {
-    const said = (sandboxed: boolean): string => {
-      const b = box(
-        spec({
-          tmuxName: 'm-T',
-          program: machineToolProgram(
-            'muse',
-            museRunLines({
-              tabId: 'T',
-              account: 'a',
-              args: [],
-              sandboxed,
-              trust: [],
-              koloftSkill: false
-            }),
-            {}
-          )
-        })
-      )
-      for (const [name, text] of [
-        ['unshare', 'exit 1'],
-        ['python3', 'exit 0']
-      ])
-        fs.writeFileSync(path.join(b.home, '.local', 'bin', name), `#!/bin/sh\n${text}\n`, {
-          mode: 0o755
-        })
-      const res = b.run()
-      expect(res.status).toBe(0)
-      return res.stdout
-    }
-    expect(said(true)).toContain(MUSE_SANDBOX_CANNOT_START)
-    expect(said(false)).not.toContain(MUSE_SANDBOX_CANNOT_START)
   })
 
   it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, with its status frames off since no one on the Mac reads them, and a reconnect attaches by the name agy's title script gave the tmux session", () => {

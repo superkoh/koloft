@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import { installAgy, installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   butlerHelperRows,
   butlerRow,
@@ -25,7 +25,6 @@ import type { BackendId } from '../../src/shared/types'
 const INSTALL: Record<BackendId, (env: E2EEnv) => void> = {
   claude: () => {},
   codex: installCodex,
-  muse: installMuse,
   agy: installAgy
 }
 
@@ -63,7 +62,7 @@ async function heardBy(page: Page, env: E2EEnv, tab: string): Promise<string> {
 
 test.describe('The butler while a plugin switch changes', () => {
   for (const backend of SESSION_BACKENDS)
-    // CC§23 CODEX§17 MUSE§9 AGY§8
+    // CC§23 CODEX§17 AGY§8
     test(`a ${backend} butler that is open is told, in its own tab, that the owner turned Todo off in Settings ▸ Plugins`, async ({
       env
     }) => {
@@ -94,7 +93,7 @@ test.describe('The butler while a plugin switch changes', () => {
     })
 
   for (const backend of SESSION_BACKENDS)
-    // CC§23 CODEX§17 MUSE§9 AGY§8
+    // CC§23 CODEX§17 AGY§8
     test(`a ${backend} butler resumed on a conversation from before koloft help stopped carrying the lines only for it is told them in its own tab`, async ({
       env
     }) => {
@@ -140,7 +139,7 @@ test.describe('The butler while a plugin switch changes', () => {
     })
 
   for (const backend of SESSION_BACKENDS)
-    // CC§23 CODEX§17 MUSE§9 AGY§8
+    // CC§23 CODEX§17 AGY§8
     test(`a ${backend} butler that began while GitHub was off and Discord had no channel is told GitHub’s sentences for its prompt when GitHub is turned on, and Discord’s once a channel is bound`, async ({
       env
     }) => {
