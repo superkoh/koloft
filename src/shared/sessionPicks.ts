@@ -24,11 +24,6 @@ export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = {
     normal: { model: 'sol', effort: 'medium' },
     'very hard': { model: 'astra', effort: 'high' }
   },
-  muse: {
-    'very simple': { effort: 'low' },
-    normal: { effort: 'medium' },
-    'very hard': { effort: 'high' }
-  },
   agy: {
     'very simple': { model: 'flash', effort: 'low' },
     normal: { model: 'neon', effort: 'medium' },
@@ -256,7 +251,7 @@ export function resolvePick(backend: BackendId, asked: Pick, facts: PickFacts): 
           note: `No Claude account has ${hard.model} allowance left, so it runs on ${pickFlags(WITHOUT_FABLE)}.`
         }
       : { ok: true, pick: asked }
-  if (backend === 'muse' || !asked.model) return { ok: true, pick: asked }
+  if (!asked.model) return { ok: true, pick: asked }
   const read = !!facts.listed?.length
   const listed = facts.listed?.length ? facts.listed : lastKnown(backend)
   // AGY§21

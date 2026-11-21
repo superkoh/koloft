@@ -56,12 +56,6 @@ const HELPER_RULES: Record<BackendId, string[]> = {
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ],
-  muse: [
-    `${ownWorktreeRule('muse')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    watchedSessionRule('muse'),
-    'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (subagent_spawn) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
-    'Anything else: do it yourself, in this session.'
-  ],
   agy: [
     `${ownWorktreeRule('agy')}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
     watchedSessionRule('agy'),
@@ -70,11 +64,10 @@ const HELPER_RULES: Record<BackendId, string[]> = {
   ]
 }
 
-// MUSE§11 AGY§13 AGY§14
+// AGY§13 AGY§14
 export const WAITING_QUESTION_TOOL: Record<BackendId, string> = {
   claude: 'AskUserQuestion',
   codex: 'request_user_input',
-  muse: 'request_user_input',
   agy: 'ask_question'
 }
 
@@ -86,16 +79,12 @@ QUESTIONS
 When the owner has to choose or answer something, ask with ${askWith}: it shows the owner a box with choices and waits for the answer.${after ? ` ${after}` : ''}`
 }
 
-// MUSE§11 AGY§14
+// AGY§14
 const QUESTION_RULE: Record<BackendId, string> = {
   claude: '',
   codex: questionRule(
     `${WAITING_QUESTION_TOOL.codex}, called as a tool of its own (not inside exec)`,
     `Never use ${WAITING_QUESTION_TOOL.codex}_async, which does not wait, and never sleep or poll while you wait.`
-  ),
-  muse: questionRule(
-    WAITING_QUESTION_TOOL.muse,
-    'Leave out auto_resolution_ms, which ends the question by itself.'
   ),
   agy: questionRule(WAITING_QUESTION_TOOL.agy)
 }

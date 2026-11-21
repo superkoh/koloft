@@ -15,7 +15,6 @@ import {
   savedFromTheDialog,
   workspaceInstructionsPart
 } from '../../../../src/plugins/sessions/api'
-import { sessionStartContext } from '../../../../src/main/museHooks'
 import { sanitizeLoadedSettings } from '../../../../src/shared/settingsOps'
 
 // CODEX§17
@@ -31,26 +30,10 @@ function rulesOfAbout(unit: string, bytes: number): string {
   return rules
 }
 
-const sessionPrompt = (backend: 'codex' | 'muse', rules: string, text: string): string =>
+const sessionPrompt = (backend: 'codex', rules: string, text: string): string =>
   [koloftPrompt(backend, rules), workspaceInstructionsPart(text)].join('\n\n')
 
 describe('how long a workspace’s instructions may be, together with its rules for picking a model', () => {
-  it.each([
-    ['plain letters', 'a'],
-    ['line breaks, which a Muse hook doubles', '\n'],
-    ['quotes, which a Muse hook doubles', '"'],
-    ['Chinese', '中'],
-    ['emoji', '😀']
-  ])(
-    'at the limit, written in %s with rules taking half of it, a Muse session on this Mac or a machine still starts',
-    (_, unit) => {
-      const rules = rulesOfAbout(unit, WORKSPACE_TEXT_MAX_BYTES / 2)
-      const text = textOfBytes(unit, WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules, ''))
-      expect(workspaceTextBytes(rules, text)).toBeLessThanOrEqual(WORKSPACE_TEXT_MAX_BYTES)
-      expect(() => sessionStartContext(sessionPrompt('muse', rules, text))).not.toThrow()
-    }
-  )
-
   it('a Codex session’s developer instructions at the limit stay within the length seen reaching the model whole', () => {
     const rules = rulesOfAbout('中', WORKSPACE_TEXT_MAX_BYTES / 2)
     const text = textOfBytes('中', WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes(rules, ''))

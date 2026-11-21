@@ -314,7 +314,7 @@ export class Butler {
     return { on: this.d.pluginsOn(), facts: this.d.roleFacts() }
   }
 
-  // CC§23 CODEX§17 MUSE§9 AGY§8
+  // CC§23 CODEX§17 AGY§8
   private tellWhatChanged(key: string): void {
     const seen = this.session.pluginsSeen?.key === key ? this.session.pluginsSeen : undefined
     const now = this.knownNow()

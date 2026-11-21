@@ -9,10 +9,8 @@ import {
   E2E_AGY_ACCOUNT,
   E2E_CLAUDE_ACCOUNT,
   E2E_CODEX_ACCOUNT,
-  E2E_MUSE_ACCOUNT,
   installAgy,
   installCodex,
-  installMuse,
   seededAccount as acct,
   seedNoClaudeAccountButStillSetUp,
   seedSettings,
@@ -965,11 +963,10 @@ test('E11: an expired account recovers in place via “Sign in again”, keeping
   }
 })
 
-test('a Codex, Muse or Antigravity account found signed out leaves the pool with the same OS notification an expired Claude account gets, once', async ({
+test('a Codex or Antigravity account found signed out leaves the pool with the same OS notification an expired Claude account gets, once', async ({
   env
 }) => {
   installCodex(env)
-  installMuse(env)
   installAgy(env)
   const app = await launchApp(env)
   try {
@@ -977,18 +974,14 @@ test('a Codex, Muse or Antigravity account found signed out leaves the pool with
     await waitBooted(page)
     const statuses = async (): Promise<(string | undefined)[]> => {
       const views = await page.evaluate(() => window.api.accounts.probe())
-      return [E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT, E2E_AGY_ACCOUNT].map(
+      return [E2E_CODEX_ACCOUNT, E2E_AGY_ACCOUNT].map(
         (name) => views.find((a) => a.name === name)?.status
       )
     }
-    expect(await statuses()).toEqual(['ok', 'ok', 'ok'])
+    expect(await statuses()).toEqual(['ok', 'ok'])
     const notifiedBefore = (await osOutlets(app)).notifications.length
 
     fs.rmSync(path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT, 'auth.json'))
-    fs.writeFileSync(
-      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-      '{}'
-    )
     fs.rmSync(
       path.join(
         env.userData,
@@ -999,14 +992,13 @@ test('a Codex, Muse or Antigravity account found signed out leaves the pool with
         'onboarding.json'
       )
     )
-    expect(await statuses()).toEqual(['expired', 'expired', 'expired'])
+    expect(await statuses()).toEqual(['expired', 'expired'])
     const notified = (await osOutlets(app)).notifications.slice(notifiedBefore)
-    expect(notified).toHaveLength(3)
+    expect(notified).toHaveLength(2)
     expect(notified).toEqual(
       expect.arrayContaining(
         [
           ['Codex', E2E_CODEX_ACCOUNT],
-          ['Muse', E2E_MUSE_ACCOUNT],
           ['Antigravity', E2E_AGY_ACCOUNT]
         ].map(([label, name]) => ({
           title: `${label} account expired`,
@@ -1015,7 +1007,7 @@ test('a Codex, Muse or Antigravity account found signed out leaves the pool with
       )
     )
 
-    expect(await statuses()).toEqual(['expired', 'expired', 'expired'])
+    expect(await statuses()).toEqual(['expired', 'expired'])
     expect((await osOutlets(app)).notifications).toHaveLength(notifiedBefore + 3)
   } finally {
     await quitAndClose(app)

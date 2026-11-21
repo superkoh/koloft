@@ -401,7 +401,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ])
     })
 
-    it("offers a Codex, Muse or Antigravity task the machine's own folders for that agent, read on the machine (#675)", async () => {
+    it("offers a Codex or Antigravity task the machine's own folders for that agent, read on the machine (#675)", async () => {
       const put = (file: string, text = '---\ndescription: d\n---'): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })
         fs.writeFileSync(file, text)
@@ -411,24 +411,11 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       put(path.join(repo, '.codex', 'skills', 'codex-only', 'SKILL.md'))
       put(path.join(repo, '.claude', 'skills', 'claude-only', 'SKILL.md'))
       put(path.join(home, '.agents', 'skills', 'mine', 'SKILL.md'))
-      put(path.join(home, '.config', 'muse', 'skills', 'muse-mine', 'SKILL.md'))
 
-      const names = async (backend: 'codex' | 'muse' | 'agy'): Promise<string[]> =>
+      const names = async (backend: 'codex' | 'agy'): Promise<string[]> =>
         (await machine().listSkills(keyed(repo), backend)).map((s) => s.name)
       expect(await names('codex')).toEqual(['$codex-only', '$shared', '$mine'])
-      expect(await names('muse')).toEqual(['/claude-only', '/shared', '/mine', '/muse-mine'])
       expect(await names('agy')).toEqual(['/agy-only'])
-    })
-
-    it("finds a Muse task's skills under the machine's XDG_CONFIG_HOME even when it ends in a slash", async () => {
-      const config = path.join(home, 'cfg')
-      fs.mkdirSync(path.join(config, 'muse', 'skills', 'mine'), { recursive: true })
-      fs.writeFileSync(path.join(config, 'muse', 'skills', 'mine', 'SKILL.md'), '---\n---')
-      const withConfigHome = (cmd: string, opts?: { input?: Buffer }): Promise<BytesResult> =>
-        runOnMachine(`env XDG_CONFIG_HOME='${config}/' ${cmd}`, opts)
-
-      const skills = await machine(withConfigHome).listSkills(keyed(repo), 'muse')
-      expect(skills.map((s) => s.name)).toEqual(['/mine'])
     })
 
     it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {
@@ -623,7 +610,7 @@ describe('a remote Workbench while the ssh link is down', () => {
     await expect(machine().reachOrThrow()).resolves.toBeUndefined()
   })
 
-  it('the folder check before a Codex, Muse or Antigravity start lets through what a Claude start lets through — a machine that only needs someone to sign in, which the session tab asks for, or ssh merely slow — but still refuses one out of reach and a folder the machine says is gone', async () => {
+  it('the folder check before a Codex or Antigravity start lets through what a Claude start lets through — a machine that only needs someone to sign in, which the session tab asks for, or ssh merely slow — but still refuses one out of reach and a folder the machine says is gone', async () => {
     const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
     const newHostKey = sshFails(255, 'Host key verification failed.')
     expect(await machine(needsPassword).sessionDirThere(keyed(repo))).toBe(true)
@@ -852,7 +839,7 @@ describe('accounts for remote launches started together', () => {
   })
 
   // PLATFORM§33
-  it("writes the machine's login-shell PATH into the script of a Claude Code, Muse or Antigravity tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
+  it("writes the machine's login-shell PATH into the script of a Claude Code or Antigravity tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
     const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
     const host = machine(runOnMachine, {
       loginPath: async () => '/opt/rc-only/bin',
@@ -860,24 +847,15 @@ describe('accounts for remote launches started together', () => {
     })
     const scriptOf = (tabId: string): string =>
       fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
-    const muse = {
-      cwd: keyed('/w'),
-      account: { name: 'a', auth: () => '{}' },
-      args: [],
-      sandboxed: false,
-      trust: [],
-      koloftSkill: false
-    }
     const program = machineToolProgram('agy', '  exec agy\n', {})
     const scripts = async (resume?: string): Promise<string[]> => {
       const tag = resume ? 'again' : 'new'
       const claude = await host.launch({ root: keyed('/w'), resumeSessionId: resume })
       if (!claude.ok) throw new Error('launch refused')
       claude.launchCommand(`claude-${tag}`)
-      ;(await host.launchMuse({ ...muse, resumeSessionId: resume })).launchCommand(`muse-${tag}`)
       const agy = { tabId: `agy-${tag}`, cwd: keyed('/w'), env: {}, program, resumeId: resume }
       ;(await host.launchAgy(agy)).launchCommand()
-      return ['claude', 'muse', 'agy'].map((kind) => scriptOf(`${kind}-${tag}`))
+      return ['claude', 'agy'].map((kind) => scriptOf(`${kind}-${tag}`))
     }
     const handed = `PATH="$PATH":'/opt/rc-only/bin'`
     for (const started of await scripts()) expect(started).toContain(handed)

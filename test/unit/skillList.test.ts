@@ -4,9 +4,8 @@ import { listSkills, type SkillFs, type SkillPlaces } from '../../src/main/skill
 
 const WS = '/ws-a'
 const HOME = '/home/me'
-const CONFIG = '/home/me/.config'
 const CODEX_HOME = '/home/me/.codex'
-const AT: SkillPlaces = { workspace: WS, home: HOME, configHome: CONFIG, codexHome: CODEX_HOME }
+const AT: SkillPlaces = { workspace: WS, home: HOME, codexHome: CODEX_HOME }
 
 function fakeFs(disk: Record<string, string | string[]>): SkillFs {
   return {
@@ -89,7 +88,6 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
     skillAt(`${WS}/.agent/skills`, 'agent-project')
     skillAt(`${CODEX_HOME}/skills`, 'codex-home')
     skillAt(`${HOME}/.agents/skills`, 'agents-home')
-    skillAt(`${CONFIG}/muse/skills`, 'muse-home')
     const names = (backend: BackendId, at: SkillPlaces = AT): string[] =>
       listSkills(fakeFs(disk), backend, at).map((s) => s.name)
 
@@ -111,17 +109,6 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
         '$agents-project',
         '$codex-project',
         '$agents-home'
-      ])
-    })
-
-    it("Muse Code: .agents and .claude skills in the project, then its own, ~/.agents, ~/.claude and ~/.codex skills, as /name — never Claude's commands", () => {
-      expect(names('muse')).toEqual([
-        '/agents-project',
-        '/cc-project',
-        '/agents-home',
-        '/cc-home',
-        '/codex-home',
-        '/muse-home'
       ])
     })
 

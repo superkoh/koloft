@@ -19,7 +19,7 @@ function clipboardTextOfOsc52(data: string): string {
   }
 }
 
-// PLATFORM§21 PLATFORM§35 CC§12 CODEX§16 MUSE§17 AGY§7
+// PLATFORM§21 PLATFORM§35 CC§12 CODEX§16 AGY§7
 export function copyOsc52ToClipboard(term: Terminal, write: (text: string) => void): void {
   term.parser.registerOscHandler(OSC_SET_CLIPBOARD, (data) => {
     const text = clipboardTextOfOsc52(data)

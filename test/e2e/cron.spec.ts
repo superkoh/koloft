@@ -6,14 +6,12 @@ import {
   addRemoteWorkspace,
   installCodexOnFakeRemote,
   installFakeRemote,
-  installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineAgyCalls,
   machineCodexLog,
   machineHome,
-  machineMuseCalls,
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
@@ -22,13 +20,10 @@ import {
   agyTranscriptOf,
   installAgy,
   installCodex,
-  installMuse,
-  museCalls,
   ownersGemini,
   seedClaudeTrust,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import { codexCalls, codexPromptsSent, type CodexWireLine } from './helpers/codex'
@@ -96,7 +91,7 @@ type WhenSpec =
   | { kind: 'after'; n: number; unit: 'minutes' | 'hours' }
 
 interface JobSpec {
-  agent?: 'Codex' | 'Muse' | 'Antigravity'
+  agent?: 'Codex' | 'Antigravity'
   name: string
   task: string
   when?: WhenSpec
@@ -1340,16 +1335,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       tabLaunches: codexCalls
     },
     {
-      agent: 'Muse',
-      backend: 'muse',
-      setUp: (env) => {
-        installMuse(env)
-        trustInMuse(env, env.workspaces.a)
-        gitInit(env.workspaces.a)
-      },
-      tabLaunches: museCalls
-    },
-    {
       agent: 'Antigravity',
       backend: 'agy',
       setUp: agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree,
@@ -1507,14 +1492,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       runPid: (env) => firstLaunchPid(() => codexCalls(env))
     },
     {
-      agent: 'Muse',
-      setUp: (env) => {
-        installMuse(env)
-        trustInMuse(env, env.workspaces.a)
-      },
-      runPid: (env) => firstLaunchPid(() => museCalls(env))
-    },
-    {
       agent: 'Antigravity',
       setUp: (env) => {
         installAgy(env)
@@ -1574,14 +1551,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
   const setUpOf = (agent: NonNullable<JobSpec['agent']>): ((env: E2EEnv) => void) =>
     STORED_AGENTS.find((a) => a.agent === agent)!.setUp
-  const museSessionsIn = (dir: string): string =>
-    fs.existsSync(dir)
-      ? fs
-          .readdirSync(dir)
-          .filter((n) => n.endsWith('.json'))
-          .map((n) => fs.readFileSync(path.join(dir, n), 'utf8'))
-          .join('\n')
-      : ''
   const AGENTS_IN_A_GIT_WORKSPACE: {
     agent: NonNullable<JobSpec['agent']>
     setUp: (env: E2EEnv) => void
@@ -1596,14 +1565,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       shell: '/sh',
       busyFile: 'fake-codex-busy-ms',
       heard: (env) => readIfThere(path.join(env.home, 'fake-codex-wire.jsonl'))
-    },
-    {
-      agent: 'Muse',
-      setUp: setUpOf('Muse'),
-      shell: '/sh',
-      busyFile: 'fake-muse-busy-ms',
-      heard: (env) =>
-        museSessionsIn(path.join(env.home, '.local', 'share', 'muse', 'sessions', 'fake'))
     },
     {
       agent: 'Antigravity',
@@ -1985,30 +1946,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       rowTitle: 'Remote report'
     },
     {
-      agent: 'Muse',
-      repo: true,
-      setUp: (env) => {
-        installMuse(env)
-        installMuseOnMachine(env)
-      },
-      pickModel: async (dlg) => {
-        await dlg.locator('.chip', { hasText: 'Other…' }).click()
-        await dlg.locator('input[aria-label="Model name"]').fill('muse-large')
-      },
-      launched: (env) => machineMuseCalls(env).find((c) => !c.argv.includes('resume')),
-      flags: [
-        '--trust-workspace',
-        '--model',
-        'muse-large',
-        '--permission-profile',
-        ':unrestricted',
-        REMOTE_TASK
-      ],
-      // MUSE§2
-      named: 'its name on its row, as Muse takes no name',
-      rowTitle: 'Remote report'
-    },
-    {
       agent: 'Antigravity',
       repo: true,
       setUp: (env) => {
@@ -2128,21 +2065,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         const peerLog = path.join(machineHome(env), 'fake-claude-peer.jsonl')
         return fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''
       }
-    },
-    {
-      agent: 'Muse',
-      name: 'Muse',
-      setUp: (env) => {
-        installMuse(env)
-        installMuseOnMachine(env)
-        fs.writeFileSync(
-          path.join(machineHome(env), 'fake-muse-delay'),
-          String(A_TURN_THAT_OUTLASTS_A_RESTART_MS)
-        )
-      },
-      task: 'write the nightly report',
-      heard: (env) =>
-        museSessionsIn(path.join(machineHome(env), '.local', 'share', 'muse', 'sessions', 'fake'))
     },
     {
       agent: 'Antigravity',
@@ -2345,15 +2267,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       freshLaunches: (env) => codexCalls(env).filter((c) => c.method === 'thread/start').length
     },
     {
-      agent: 'Muse',
-      setUp: (env) => {
-        installMuse(env)
-        installMuseOnMachine(env)
-        gitInit(remoteDir(env))
-      },
-      freshLaunches: (env) => machineMuseCalls(env).filter((c) => !c.argv.includes('resume')).length
-    },
-    {
       agent: 'Antigravity',
       setUp: (env) => {
         installAgy(env)
@@ -2380,11 +2293,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     { ...REMOTE_AGENTS[0], backend: 'codex', prompts: (env) => codexPromptsSent(machineWire(env)) },
     {
       ...REMOTE_AGENTS[1],
-      backend: 'muse',
-      prompts: (env) => machineMuseCalls(env).flatMap((c) => c.argv)
-    },
-    {
-      ...REMOTE_AGENTS[2],
       backend: 'agy',
       prompts: (env) => machineAgyCalls(env).flatMap((c) => c.argv)
     }
@@ -2537,18 +2445,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
           .map((c) => c.effectiveCwd)
     },
     {
-      agent: 'Muse',
-      setUp: (env) => {
-        installMuse(env)
-        installMuseOnMachine(env)
-        gitInit(remoteDir(env))
-      },
-      ranIn: (env) =>
-        machineMuseCalls(env)
-          .filter((c) => !c.argv.includes('resume'))
-          .map((c) => c.cwd)
-    },
-    {
       agent: 'Antigravity',
       setUp: (env) => {
         installAgy(env)
@@ -2616,14 +2512,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   }[] = [
     { setUp: trustClaudeOnTheMachine, shell: '/run' },
     { agent: 'Codex', setUp: installCodexOnFakeRemote, shell: '/sh' },
-    {
-      agent: 'Muse',
-      setUp: (env) => {
-        installMuse(env)
-        installMuseOnMachine(env)
-      },
-      shell: '/sh'
-    },
     {
       agent: 'Antigravity',
       setUp: (env) => {

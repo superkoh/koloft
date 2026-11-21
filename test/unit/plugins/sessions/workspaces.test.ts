@@ -1458,7 +1458,7 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
     ])
   })
 
-  it('offers the folders Codex, Muse and Antigravity used too, counted with Claude’s and per agent, a worktree under its repo even once removed', async () => {
+  it('offers the folders Codex and Antigravity used too, counted with Claude’s and per agent, a worktree under its repo even once removed', async () => {
     const a = path.join(root, 'a')
     fs.mkdirSync(path.join(a, '.git'), { recursive: true })
     writeJsonl(a, 'a-1')
@@ -1472,7 +1472,7 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
         {
           path: path.join(a, '.claude', 'worktrees', 'gone'),
           ...use(500_000),
-          agents: { muse: use(500_000) }
+          agents: { agy: use(500_000) }
         },
         { path: x, ...use(2000_000), agents: { agy: use(2000_000) } }
       ]
@@ -1483,7 +1483,7 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
         path: a,
         sessions: 3,
         mtime: 3000_000,
-        agents: { claude: use(1000_000), codex: use(3000_000), muse: use(500_000) }
+        agents: { claude: use(1000_000), codex: use(3000_000), agy: use(500_000) }
       },
       { path: x, sessions: 1, mtime: 2000_000, agents: { agy: use(2000_000) } }
     ])

@@ -90,7 +90,7 @@
 
         <h2>The koloft command</h2>
         <p>
-          Every session Koloft starts gets a <code>koloft</code> command: Claude, Codex, Muse or
+          Every session Koloft starts gets a <code>koloft</code> command: Claude, Codex or
           Antigravity, on this Mac and on a <a href="../remote/">remote folder</a>'s machine. It is
           on by default. The switch is "Let agents use Koloft", at the top of Settings ▸ Plugins.
           Turning it on reaches sessions you start after that. Turning it off stops the command in
@@ -127,12 +127,11 @@
           <li>
             <code>sudo</code> (the admin command) — when the agent runs <code>sudo</code> and it
             needs your password, a <code>Sudo password</code> box opens over that session's
-            terminal, with the command it runs. In Codex, Muse and Antigravity this is so even when
-            the command got a terminal of its own. Type the password and press <code>Pass on</code>
-            <span class="why">(Koloft types it into sudo itself)</span>. Codex's sandbox, and Muse's
-            sandbox on the Mac, still block <code>sudo</code>. Codex gets the box only for a command
-            that runs outside its sandbox, as with Skip permission prompts on. Muse gets it only for
-            a command it marks as needing more rights. A <code>sudo</code> you type in a shell tab
+            terminal, with the command it runs. In Codex and Antigravity this is so even when the
+            command got a terminal of its own. Type the password and press <code>Pass on</code>
+            <span class="why">(Koloft types it into sudo itself)</span>. Codex's sandbox still
+            blocks <code>sudo</code>. Codex gets the box only for a command that runs outside its
+            sandbox, as with Skip permission prompts on. A <code>sudo</code> you type in a shell tab
             asks in that tab
           </li>
           <li>
@@ -465,7 +464,7 @@
         <h3>playwright-cli, for every agent</h3>
         <p>
           <code>playwright-cli</code> (a command that controls a browser: open a page, click, type,
-          read it) <mark class="hl">comes with Koloft</mark>. Every Claude Code, Codex, Muse or
+          read it) <mark class="hl">comes with Koloft</mark>. Every Claude Code, Codex or
           Antigravity session on this Mac can run it by name, with nothing to install. With "Let
           agents drive this Browser" on, it opens its pages as new web tabs of that session, marked
           as driven by the agent. With it off, it starts a hidden browser of its own. A session's
@@ -521,19 +520,6 @@
           still ask. If your own Antigravity permissions name that server, Koloft adds nothing and
           your rules decide. In a remote folder, Koloft adds none of this.
         </p>
-        <h3>Muse</h3>
-        <p>
-          In a Muse session on this Mac, a Playwright MCP entry in your Muse settings
-          (<code>~/.config/muse/settings.json</code>) gets the session's address too, so its tools
-          open tabs in Koloft. Its tools that change a page run without asking first. Your other MCP
-          servers still ask. An "Always allow" or a refusal you saved for one of its tools stays. To
-          do this, Koloft gives each account its own copy of your settings file, and starts Muse on
-          this Mac on that copy. A setting you change inside such a session (with
-          <code>/theme</code> or <code>/permissions</code>, say) is copied back into your file the
-          next time Muse starts on that account. A change you make to your file by hand reaches
-          those sessions the next time they start. In a remote folder, Koloft adds none of this, and
-          Muse uses your settings file there as it is.
-        </p>
 
         <h3>What to expect</h3>
         <div class="typed-table">
@@ -549,7 +535,7 @@
                 <td>it connects</td>
                 <td>
                   It just drives. Koloft asks nothing; the switch is its one control. On this Mac,
-                  the Playwright MCP tools of Claude Code, Codex, Antigravity and Muse sessions run
+                  the Playwright MCP tools of Claude Code, Codex and Antigravity sessions run
                   without asking (see above); any other question about allowing a tool is the
                   agent's own.
                 </td>
@@ -636,7 +622,7 @@
         <h2>Not there yet</h2>
         <ul class="dash">
           <li>
-            <s class="struck">the browser for Codex, Muse and Antigravity in remote folders</s>
+            <s class="struck">the browser for Codex and Antigravity in remote folders</s>
             <span class="why"
               >(they have the koloft command there, but cannot drive the web tabs yet)</span
             >

@@ -14,23 +14,12 @@ import {
   type AgentName,
   type ClaudeCall
 } from './helpers/p1'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  museCalls,
-  museSaid,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   agyReady,
   killFakeRemote,
   launchWithRemote,
   machineHome,
-  machineMuseCalls,
   remoteDir
 } from './helpers/remote'
 import { installOnTheMachine, startRemoteTab } from './helpers/remoteTab'
@@ -90,10 +79,6 @@ interface TabKind {
 
 const LOCAL_TRUST: Record<OtherBackend, (env: E2EEnv) => void> = {
   codex: (env) => installCodex(env),
-  muse: (env) => {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-  },
   agy: (env) => {
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
@@ -119,12 +104,6 @@ const ASKS: Record<BackendId, Omit<TabKind, 'backend' | 'remote'>> = {
     }),
     ranTheCommand: '"decision":"accept"'
   },
-  muse: {
-    question: '/ask',
-    command: '/approve',
-    saidAfterTheQuestion: THE_FAKE_TAKES_ANY_TYPED_WORDS_AS_ITS_FIRST_OPTION,
-    ranTheCommand: 'Ran: ls -la'
-  },
   agy: {
     question: '/ask Which colour?|Red|Green',
     command: '/bash echo asleep-ran',
@@ -135,7 +114,7 @@ const ASKS: Record<BackendId, Omit<TabKind, 'backend' | 'remote'>> = {
 
 const TAB_KINDS: TabKind[] = [
   { backend: 'claude' as const, remote: true, ...ASKS.claude },
-  ...(['codex', 'muse', 'agy'] as const).flatMap((backend) =>
+  ...(['codex', 'agy'] as const).flatMap((backend) =>
     [false, true].map((remote) => ({ backend, remote, ...ASKS[backend] }))
   )
 ].map((kind) =>
@@ -222,14 +201,6 @@ async function whatItSaid(
       return {
         text: [fileText(path.join(home, 'fake-codex-wire.jsonl')), ...replies].join('\n'),
         pushes: mostPushesInARow(replies)
-      }
-    }
-    case 'muse': {
-      const calls = kind.remote ? machineMuseCalls(env) : museCalls(env)
-      const said = museSaid(env, calls[0].sessionId, home)
-      return {
-        text: said.map((s) => JSON.stringify(s)).join('\n'),
-        pushes: mostPushesInARow(said)
       }
     }
     case 'agy': {

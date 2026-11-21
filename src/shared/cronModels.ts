@@ -18,8 +18,6 @@ export const NAMED_MODELS: Record<BackendId, NamedModel[]> = {
     { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
     { id: 'gpt-6-luna', label: 'GPT-6-Luna' }
   ],
-  // MUSE§1
-  muse: [],
   // AGY§21
   agy: [
     { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', notOnEveryAccount: true },

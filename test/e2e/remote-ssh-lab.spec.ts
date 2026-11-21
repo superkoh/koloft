@@ -11,7 +11,6 @@ import {
   addCodexAccount,
   installAgy,
   installCodex,
-  installMuse,
   installRealGhThatOnlyReads,
   seedSettings,
   setGithubFixture,
@@ -91,15 +90,11 @@ import {
 } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
-  HAVE_LINUX_MUSE,
   NEEDS_LINUX_CLAUDE,
-  NEEDS_LINUX_MUSE,
   dockerAvailable,
   FAKE_RESPONSES_PORT,
   installCurlOnTarget,
   installFakeCodexOnTarget,
-  installFakeMuseOnTarget,
-  installRealMuseOnTheMachine,
   installLabSsh,
   startFakeResponsesOnTarget,
   LAB_PASSWORD,
@@ -514,38 +509,30 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  for (const agent of ['Codex', 'Muse'] as const)
-    test(`E-SSH-37 (${agent}): a ${agent} session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list`, async ({
-      env
-    }) => {
-      seedSettings(env, { hintsOff: true })
-      installCodexSignedInForTheLab(env)
-      installMuse(env)
-      await withLab(
-        env,
-        async ({ page }) => {
-          for (const { alias, user, asks, answer } of MACHINES_THAT_ASK_TO_SIGN_IN) {
-            await addMachine(page, alias, user)
-            await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
-              timeout: BACKGROUND_CONNECT_MS
-            })
-            await newSessionInWith(page, alias, agent)
-            await answerInTheTab(page, asks, answer)
-            await expect(wsRows(page, alias)).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
-            await connectsListsAndReads(page, alias, user)
-          }
-        },
-        (lab) => {
-          installFakeCodexOnTarget(lab)
-          installFakeMuseOnTarget(
-            lab,
-            MACHINES_THAT_ASK_TO_SIGN_IN.map((m) => m.user)
-          )
+  test('E-SSH-37 (Codex): a Codex session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installCodexSignedInForTheLab(env)
+    await withLab(
+      env,
+      async ({ page }) => {
+        for (const { alias, user, asks, answer } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+          await addMachine(page, alias, user)
+          await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+            timeout: BACKGROUND_CONNECT_MS
+          })
+          await newSessionInWith(page, alias, 'Codex')
+          await answerInTheTab(page, asks, answer)
+          await expect(wsRows(page, alias)).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+          await connectsListsAndReads(page, alias, user)
         }
-      )
-    })
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
 
-  test('E-SSH-38: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code, Codex or Muse tab there first, and opens no tab', async ({
+  test('E-SSH-38: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code or Codex tab there first, and opens no tab', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -558,7 +545,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         })
         await newSessionInWith(page, alias, 'Antigravity')
         await expect(
-          page.locator('.toast-msg', { hasText: /Claude Code, Codex or Muse session there/ })
+          page.locator('.toast-msg', { hasText: /Claude Code or Codex session there/ })
         ).toBeVisible({ timeout: 30_000 })
         await expect(wsRows(page, alias)).toHaveCount(0)
       }
@@ -1401,7 +1388,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   }) => {
     seedSettings(env, { hintsOff: true })
     installCodex(env, JSON.stringify({ tokens: { access_token: 'mac-token', account_id: 'lab' } }))
-    installMuse(env)
     installAgy(env)
     await withLab(env, async ({ page, lab }) => {
       await addMachine(page, 'kt-key', 'kuser')
@@ -1927,65 +1913,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         expect(onTheMachine()).toBe('again\n')
       }
     })
-  })
-
-  // PLATFORM§34
-  test('E-SSH-22: a REAL muse 1.4.9 on the echo model (no account) on a Linux machine, inside real tmux through the wrapper and real hooks: the session binds, its light and title follow its turn, /clear follows the new session, and closing the tab ends it there', async ({
-    env
-  }) => {
-    test.skip(!HAVE_LINUX_MUSE, NEEDS_LINUX_MUSE)
-    installMuse(env)
-    const tmuxThere = (lab: SshLab): string =>
-      runOnTarget(lab, 'kuser', 'tmux -L koloft ls -F "#S" 2>/dev/null; true').trim()
-    const boundMuse = async (page: Page): Promise<string> =>
-      (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.backendId === 'muse' && s.nativeSessionId
-      )?.nativeSessionId ?? ''
-    await withLab(
-      env,
-      async ({ app, page, lab }) => {
-        await addMachine(page, 'kt-key', 'kuser')
-        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        await newSessionInWith(page, 'kt-key', 'Muse')
-        const rows = wsRows(page, 'kt-key')
-        await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 180_000 })
-        await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe('')
-        const first = await boundMuse(page)
-        expect(tmuxThere(lab)).toBe(`k-${first}`)
-        const tabId = (await rows.getAttribute('data-tab-id'))!
-        const write = (data: string): Promise<void> =>
-          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
-        const mirrorLines = (mark: string): number =>
-          runOnTarget(lab, 'kuser', 'cat .koloft/hook-sessions/*.muse.jsonl; true')
-            .split('\n')
-            .filter((l) => l.includes(mark)).length
-        const submit = async (text: string, mark: string): Promise<void> => {
-          const before = mirrorLines(mark)
-          await write(text)
-          for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && mirrorLines(mark) === before; i++) {
-            await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
-            await write('\r')
-            await expect
-              .poll(() => mirrorLines(mark), {
-                timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
-              })
-              .toBeGreaterThan(before)
-              .catch(() => undefined)
-          }
-        }
-        await submit('hello from the lab', '"event":"UserPromptSubmit"')
-        await expect(rows).toContainText('hello from the lab', { timeout: 60_000 })
-        await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-        await submit('/clear', '"t":"bound"')
-        await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe(first)
-        const second = await boundMuse(page)
-        await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe(`k-${second}`)
-        await page.locator('.ws .ws-tab.active').first().click()
-        await sendShortcut(app, 'shortcut:close-tab')
-        await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe('')
-      },
-      (lab) => installRealMuseOnTheMachine(lab, 'kuser')
-    )
   })
 
   // ADR-0039 CODEX§16

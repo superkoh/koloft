@@ -5,11 +5,8 @@ import {
   agySessionCalls,
   installAgy,
   installCodex,
-  installMuse,
-  museCalls,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import { codexCalls } from './helpers/codex'
@@ -58,14 +55,6 @@ const AGENT = {
     install: installCodex,
     calls: (env: E2EEnv): number => codexCalls(env).length
   },
-  muse: {
-    label: 'Muse',
-    install: (env: E2EEnv): void => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    calls: (env: E2EEnv): number => museCalls(env).length
-  },
   agy: {
     label: 'Antigravity',
     install: (env: E2EEnv): void => {
@@ -80,7 +69,7 @@ const startupExitFile = (env: E2EEnv, backend: keyof typeof AGENT): string =>
   path.join(env.home, `fake-${backend}-exit`)
 
 test.describe('an agent that exits on its own keeps its tab: the row says so, the last screen stays, ⇧⌘R starts it again', () => {
-  for (const backend of ['codex', 'muse', 'agy'] as const)
+  for (const backend of ['codex', 'agy'] as const)
     test(`when ${AGENT[backend].label} dies before its session starts, the tab keeps its row and last screen, logs that screen, and ⇧⌘R starts it again in the same tab`, async ({
       env
     }) => {
@@ -211,7 +200,7 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
     }
   })
 
-  for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
+  for (const backend of ['claude', 'codex', 'agy'] as const)
     test(`when ${AGENT[backend].label} that koloft session new started dies before it starts, its row stays; ⇧⌘R starts it again in the same tab, still listed under the session that started it`, async ({
       env
     }) => {
@@ -291,7 +280,7 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
   })
 })
 
-test.describe('Antigravity quit with /exit leaves the list for Restore session, as Claude, Codex and Muse do', () => {
+test.describe('Antigravity quit with /exit leaves the list for Restore session, as Claude and Codex do', () => {
   // AGY§1
   test('/exit typed inside Antigravity ends it, its row leaves the list, and Restore session brings the same conversation back', async ({
     env

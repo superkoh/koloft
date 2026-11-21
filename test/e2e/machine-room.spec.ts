@@ -7,13 +7,10 @@ import {
   agySessionCalls,
   installAgy,
   installCodex,
-  installMuse,
   koloftReadMemoryPressure,
   memoryPressure,
-  museCalls,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import { fakeCodexLog, startCodex } from './helpers/codex'
@@ -184,13 +181,11 @@ test('at warning nothing is slowed; once memory stays critical the tools of the 
   }
 })
 
-test('the tools of a Codex, a Muse and an Antigravity session nobody looks at give way too, their agent programs and the Codex server do not, and all are lifted when memory leaves critical', async ({
+test('the tools of a Codex and an Antigravity session nobody looks at give way too, their agent programs and the Codex server do not, and all are lifted when memory leaves critical', async ({
   env
 }) => {
   installCodex(env)
-  installMuse(env)
   installAgy(env)
-  trustInMuse(env, env.workspaces.a)
   trustInAgy(env, env.workspaces.a)
   seedSettings(env, { hintsOff: true })
   const app = await launchApp(env)
@@ -207,13 +202,6 @@ test('the tools of a Codex, a Muse and an Antigravity session nobody looks at gi
     const codexTool = aSleepNoOtherTestRuns()
     await runIn(page, centerTerm(page), `/sh sleep ${codexTool}`)
 
-    await newSessionInWith(page, 'ws-a', 'Muse')
-    await expect.poll(() => museCalls(env).length).toBe(1)
-    await expect(page.locator('.ws-tab.active')).toHaveClass(/st-waiting/, { timeout: 30_000 })
-    const museTab = await tabIdOfTheRowOnScreen(page)
-    const museTool = aSleepNoOtherTestRuns()
-    await runIn(page, centerTerm(page), `/sh sleep ${museTool}`)
-
     await newSessionInWith(page, 'ws-a', 'Antigravity')
     await expect.poll(() => agySessionCalls(env).length).toBe(1)
     await runIn(page, centerTerm(page), 'hello')
@@ -222,26 +210,24 @@ test('the tools of a Codex, a Muse and an Antigravity session nobody looks at gi
     const agyTool = aSleepNoOtherTestRuns()
     await runIn(page, centerTerm(page), `!sleep ${agyTool}`)
 
-    const tools = [codexTool, museTool, agyTool]
+    const tools = [codexTool, agyTool]
     await expect
       .poll(() => tools.map(priorityOfSleep))
       .toEqual(tools.map(() => WHAT_ANY_OTHER_PROGRAM_GETS))
 
     await startSessionIn(page, 'ws-b', { method: 'Claude' })
     memoryPressure(env, 4)
-    for (const tab of [codexTab, museTab, agyTab])
+    for (const tab of [codexTab, agyTab])
       await expect(slowedMark(rowOf(page, tab))).toBeVisible({
         timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS
       })
     expect(tools.map(priorityOfSleep)).toEqual(tools.map(() => GIVING_WAY))
     expect({
       codex: mainThreadPriority(codex.pid),
-      muse: mainThreadPriority(museCalls(env)[0].pid),
       agy: mainThreadPriority(agySessionCalls(env)[0].pid),
       codexServer: mainThreadPriority(codexServer.pid)
     }).toEqual({
       codex: ABOVE_ITS_TOOLS,
-      muse: ABOVE_ITS_TOOLS,
       agy: ABOVE_ITS_TOOLS,
       codexServer: WHAT_ANY_OTHER_PROGRAM_GETS
     })

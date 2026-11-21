@@ -1,7 +1,7 @@
 import { textInUse, versionsSavedByTheOwner, type VersionsSaved } from '@core/ownerInstructions'
 import type { ButlerSetting } from './types'
 
-// CC§13 MUSE§12
+// CC§13
 export const INSTRUCTIONS_MAX_BYTES = 10_000
 
 export const instructionsOf = (butler: ButlerSetting): string => textInUse(butler.instructions)

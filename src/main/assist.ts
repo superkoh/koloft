@@ -9,7 +9,6 @@ import {
   type ModelAndEffort
 } from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
-import { lastCompletedText } from './museSessionLog'
 import { envMs } from '@plugins/sessions/main/sessionRuntime'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
@@ -46,17 +45,6 @@ const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [
   '-C',
   os.tmpdir(),
   '-'
-]
-
-// MUSE§1
-const MUSE_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
-  'exec',
-  '--json',
-  '--no-session-log',
-  '--disable-reminders',
-  ...(launch.model ? ['--model', launch.model] : []),
-  ...(launch.effort ? ['--reasoning-effort', launch.effort] : []),
-  task
 ]
 
 // AGY§20 AGY§21
@@ -107,11 +95,6 @@ const ONE_SHOT: Record<
     answer: (out) => out,
     secondTryWhenLate: true,
     saysItHasNoSuchModel: /model is not supported/
-  },
-  muse: {
-    argv: (job, launch) => MUSE_ONE_SHOT(withSystemFirst(job), launch),
-    stdin: () => '',
-    answer: lastCompletedText
   },
   agy: {
     argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),

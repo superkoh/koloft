@@ -3,7 +3,6 @@ import { OscBodies } from './oscCwd'
 
 const PROGRAM_STATUS = '7501;'
 
-// MUSE§3
 export const PROGRAM_STATUS_REPLY =
   '\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\'
 
@@ -57,7 +56,6 @@ export class ProgramStatusParser {
   }
 }
 
-// MUSE§3
 export function statusEvent({ state, kind }: ProgramStatus): SessionEvent | undefined {
   switch (state) {
     case 'working':

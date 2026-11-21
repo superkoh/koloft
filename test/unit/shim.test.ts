@@ -34,7 +34,7 @@ beforeAll(() => {
   ))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  for (const bin of ['claude', 'codex', 'muse', 'agy']) {
+  for (const bin of ['claude', 'codex', 'agy']) {
     fs.writeFileSync(
       path.join(realBin, bin),
       '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
@@ -144,7 +144,7 @@ const NO_ACCOUNT_PICKED_YET = { KOLOFT_ACCOUNT_PICKED: '', CLAUDE_CODE_OAUTH_TOK
 function runShim(
   args: string[],
   extraEnv: Record<string, string> = {},
-  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
+  bin: 'claude' | 'codex' | 'agy' = 'claude'
 ): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -165,7 +165,7 @@ function runShimPick(
   args: string[],
   answer: Record<string, unknown>,
   extraEnv: Record<string, string> = {},
-  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
+  bin: 'claude' | 'codex' | 'agy' = 'claude'
 ): Promise<ShimRun> {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -849,7 +849,7 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
 })
 
 // ADR-0030
-describe('codex, muse and agy in a Koloft terminal run on an account from Settings ▸ Accounts, never on the Mac’s own login', () => {
+describe('codex and agy in a Koloft terminal run on an account from Settings ▸ Accounts, never on the Mac’s own login', () => {
   const UTIL = { KOLOFT_UTIL: '1' }
 
   it.each([
@@ -879,7 +879,6 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
 
   it.each([
     ['codex', ['exec', '--help']],
-    ['muse', ['exec', '-h']],
     ['agy', ['-p', '--help']],
     ['agy', ['mcp', 'add', 'srv', '--', 'npx', 'tool', '-p', '3000']],
     ['agy', ['--model', '-p', 'mcp', 'list']]
@@ -909,7 +908,6 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
 
   it.each([
     ['codex', ['exec', 'say hi']],
-    ['muse', ['exec', 'say hi']],
     ['agy', ['-p', 'say hi']]
   ] as const)('%s with no usable account is refused and never starts', async (bin, args) => {
     const r = await runShimPick([...args], { account: null }, UTIL, bin)
@@ -923,24 +921,6 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
     expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
     expect(r.stderr).toContain('codex runs here only inside a Koloft tab')
     expect(r.realArgs).toBeNull()
-  })
-
-  // MUSE§21
-  it('muse exec gets the picked account’s config folder and file sign-in, and the Workbench browser’s address set, empty when the terminal has none, so the owner’s Playwright MCP still starts', async () => {
-    const pick = { account: 'm1', home: '/koloft/muse-homes/m1', banner: 'koloft: → m1' }
-    const r = await runShimPick(['exec', 'say hi'], pick, UTIL, 'muse')
-    expect(r.status).toBe(0)
-    expect(r.realArgs).toEqual(['exec', 'say hi'])
-    expect(r.realEnv?.XDG_CONFIG_HOME).toBe('/koloft/muse-homes/m1')
-    expect(r.realEnv?.TBH_CREDENTIAL_BACKEND).toBe('file')
-    expect(r.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
-    const withBrowser = await runShimPick(
-      ['exec', 'say hi'],
-      pick,
-      { ...UTIL, PLAYWRIGHT_MCP_CDP_ENDPOINT: 'ws://127.0.0.1:9/cdp/x' },
-      'muse'
-    )
-    expect(withBrowser.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('ws://127.0.0.1:9/cdp/x')
   })
 
   it('agy -p on a Google account runs in that account’s folder, with the sign-in kept in it and no key, not even one the shell exported', async () => {
@@ -989,30 +969,7 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
   })
 })
 
-describe('muse guard (Koloft terminal hard block — the same funnel as claude and codex, MUSE§1)', () => {
-  const UTIL = { KOLOFT_UTIL: '1' }
-
-  it.each([[[]], [['fix the bug']], [['--approval-mode', 'never', 'resume', 'abc']]])(
-    'an interactive form %j in a Koloft terminal is refused before the real muse runs',
-    (args) => {
-      const r = runShim(args, UTIL, 'muse')
-      expect(r.status).toBe(1)
-      expect(r.stderr).toContain("Start interactive Muse from the sidebar's ＋ (⌘N).")
-      expect(r.realArgs).toBeNull()
-    }
-  )
-
-  it.each([[['--model', 'x', 'config']], [['login']], [['--version']]])(
-    'a form that opens no TUI %j passes through untouched',
-    (args) => {
-      const r = runShim(args, UTIL, 'muse')
-      expect(r.status).toBe(0)
-      expect(r.realArgs).toEqual(args)
-    }
-  )
-})
-
-describe('agy guard (Koloft terminal hard block — the same funnel as claude, codex and muse, AGY§1)', () => {
+describe('agy guard (Koloft terminal hard block — the same funnel as claude and codex, AGY§1)', () => {
   const UTIL = { KOLOFT_UTIL: '1' }
 
   it.each([

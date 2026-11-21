@@ -53,7 +53,6 @@ import {
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../../src/main/remote/paths'
 import { machineHookSettings } from '../../../../src/plugins/sessions/main/backends/claude'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../../../src/plugins/sessions/main/agyHooks'
-import { museHookScript, writeMuseHooks } from '../../../../src/main/museHooks'
 
 let hookScript: string
 let codexReplyLanguage: string
@@ -737,17 +736,13 @@ esac
     })
 
     // ADR-0031
-    it('only a Claude tab’s reminder asks for each Bash command’s description in the owner’s language, quoted or named, at the prompt and after every tool; Codex, Muse and Antigravity tabs are not told of it', () => {
+    it('only a Claude tab’s reminder asks for each Bash command’s description in the owner’s language, quoted or named, at the prompt and after every tool; Codex and Antigravity tabs are not told of it', () => {
       const titles = 'the description of each Bash command'
       for (const said of ['look at the failing test', '先别改代码']) {
         expect(reminder(prompt('tabLangTitles', said), 'UserPromptSubmit')).toContain(titles)
         expect(reminder(tool('tabLangTitles'), 'PostToolUse')).toContain(titles)
       }
-      for (const script of [
-        fs.readFileSync(codexReplyLanguage, 'utf8'),
-        AGY_HOOK_SCRIPT,
-        museHookScript('', '')
-      ])
+      for (const script of [fs.readFileSync(codexReplyLanguage, 'utf8'), AGY_HOOK_SCRIPT])
         expect(script).not.toContain('Bash command')
     })
 
@@ -930,53 +925,34 @@ esac
         )
     })
 
-    // ADR-0028 CODEX§33 MUSE§9
-    it('a Codex or Muse prompt that opens the way Koloft, its butler, another session through Koloft or a plugin under the opening it registered opens one passes when Koloft noted its words, however the agent escapes them, and is flagged as not sent by Koloft when it did not', () => {
+    // ADR-0028 CODEX§33
+    it('a Codex prompt that opens the way Koloft, its butler, another session through Koloft or a plugin under the opening it registered opens one passes when Koloft noted its words, however the agent escapes them, and is flagged as not sent by Koloft when it did not', () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sent-words-'))
-      const shim = fs.mkdtempSync(path.join(dir, 'muse-'))
-      const museCommand: string = JSON.parse(
-        fs.readFileSync(
-          writeMuseHooks(shim, shim, undefined, undefined, { regDir: dir, tabId: 'tabM' }),
-          'utf8'
-        )
-      ).hooks.UserPromptSubmit[0].hooks[0].command
-      const sentWords = {
-        codex: path.join(dir, 'tabC.discord-said'),
-        muse: path.join(dir, 'tabM.discord-said')
+      const sentWords = path.join(dir, 'tabC.discord-said')
+      const run = (input: string): string =>
+        spawnSync('bash', [codexReplyLanguage, 'prompt'], {
+          input,
+          encoding: 'utf8',
+          env: hookEnv({
+            KOLOFT_CODEX_SAID: path.join(dir, 'codex.said'),
+            [CODEX_SENT_WORDS_ENV]: sentWords
+          })
+        }).stdout
+      const input = (text: string): string =>
+        JSON.stringify({ session_id: 's1', hook_event_name: 'UserPromptSubmit', prompt: text })
+      const flagged = (out: string): boolean =>
+        out !== '' && reminder(out, 'UserPromptSubmit').startsWith(NOT_SENT_BY_KOLOFT)
+      run(input('look but do not change'))
+      for (const text of KOLOFT_OPENINGS) {
+        expect(flagged(run(input(text))), text).toBe(true)
+        fs.appendFileSync(sentWords, sentWordsLine(text))
+        const escapedOtherwise = input(text).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
+        expect(flagged(run(escapedOtherwise)), text).toBe(false)
       }
-      const run = {
-        codex: (input: string): string =>
-          spawnSync('bash', [codexReplyLanguage, 'prompt'], {
-            input,
-            encoding: 'utf8',
-            env: hookEnv({
-              KOLOFT_CODEX_SAID: path.join(dir, 'codex.said'),
-              [CODEX_SENT_WORDS_ENV]: sentWords.codex
-            })
-          }).stdout,
-        muse: (input: string): string =>
-          spawnSync('/bin/sh', ['-c', museCommand], { input, encoding: 'utf8', env: hookEnv() })
-            .stdout
-      }
-      for (const backend of ['codex', 'muse'] as const) {
-        const input = (text: string): string =>
-          JSON.stringify({ session_id: 's1', hook_event_name: 'UserPromptSubmit', prompt: text })
-        const flagged = (out: string): boolean =>
-          out !== '' && reminder(out, 'UserPromptSubmit').startsWith(NOT_SENT_BY_KOLOFT)
-        run[backend](input('look but do not change'))
-        for (const text of KOLOFT_OPENINGS) {
-          expect(flagged(run[backend](input(text))), `${backend}: ${text}`).toBe(true)
-          fs.appendFileSync(sentWords[backend], sentWordsLine(text))
-          const escapedOtherwise = input(text).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
-          expect(flagged(run[backend](escapedOtherwise)), `${backend}: ${text}`).toBe(false)
-        }
-        const passedOn = ownerSays('«先看看侧栏»')
-        fs.appendFileSync(sentWords[backend], sentWordsLine(passedOn))
-        expect(reminder(run[backend](input(passedOn)), 'UserPromptSubmit')).toMatch(
-          writesIn('Chinese')
-        )
-        expect(flagged(run[backend](input(A_HELPER_HAS_IT)))).toBe(false)
-      }
+      const passedOn = ownerSays('«先看看侧栏»')
+      fs.appendFileSync(sentWords, sentWordsLine(passedOn))
+      expect(reminder(run(input(passedOn)), 'UserPromptSubmit')).toMatch(writesIn('Chinese'))
+      expect(flagged(run(input(A_HELPER_HAS_IT)))).toBe(false)
       fs.rmSync(dir, { recursive: true, force: true })
     })
 
@@ -988,17 +964,16 @@ esac
       )
     })
 
-    // ADR-0028 CC§13 CODEX§33 MUSE§9 AGY§16
-    it('Koloft notes the id of a message it hands a Claude tab and the words of one it hands a Codex or Muse tab, only when the message opens the way only Koloft opens one; an Antigravity tab, whose hook checks nothing, gets no note', () => {
+    // ADR-0028 CC§13 CODEX§33 AGY§16
+    it('Koloft notes the id of a message it hands a Claude tab and the words of one it hands a Codex tab, only when the message opens the way only Koloft opens one; an Antigravity tab, whose hook checks nothing, gets no note', () => {
       for (const text of [...KOLOFT_OPENINGS, '[Discord] hi']) {
         expect(noteOfWhatKoloftSends('claude', text, 'koloft-session-1')).toEqual({
           id: 'koloft-session-1'
         })
         expect(noteOfWhatKoloftSends('codex', text, 'koloft-conductor-1')).toEqual({ words: text })
-        expect(noteOfWhatKoloftSends('muse', text, undefined)).toEqual({ words: text })
         expect(noteOfWhatKoloftSends('agy', text, undefined)).toBeUndefined()
       }
-      for (const backend of ['claude', 'codex', 'muse'] as const)
+      for (const backend of ['claude', 'codex'] as const)
         expect(noteOfWhatKoloftSends(backend, 'merge it', 'koloft-session-1')).toBeUndefined()
     })
 

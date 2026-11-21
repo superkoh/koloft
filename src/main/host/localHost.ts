@@ -102,7 +102,7 @@ export interface LocalClaudeDeps {
   agentPlugin(): string | undefined
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
-  agentHomes(): { codexHome: string; configHome: string }
+  agentHomes(): { codexHome: string }
   pastedPicturesDir(): string
 }
 

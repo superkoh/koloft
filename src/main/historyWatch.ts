@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendAvailability, BackendId } from '@shared/types'
-import { museHome } from './museSessionLog'
 import { AGY_APP_DIR, ownersGeminiDir } from './agyStore'
 import { codexConfigFile } from './codexTrust'
 
@@ -13,14 +12,8 @@ export interface HistoryStore {
 
 // CODEX§15
 const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000
-// MUSE§5
-const MUSE_LISTS_A_NEW_SESSION_WITHIN_MS = 6000
 // AGY§8
 const AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS = 1500
-const MUSE_SESSION_FOLDER_DEPTH = 4
-
-// MUSE§2 MUSE§5
-const museBookkeeping = (part: string): boolean => part.startsWith('.') || part === 'subagent'
 
 export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> = {
   // CODEX§15
@@ -28,17 +21,6 @@ export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> 
     dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),
     holdsASession: () => true,
     settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS
-  },
-  muse: {
-    dir: (env) => path.join(museHome(env), 'sessions'),
-    holdsASession: (rel, there) => {
-      const parts = rel.split(path.sep)
-      if (parts.some(museBookkeeping)) return false
-      return (
-        parts.at(-1) === 'session.jsonl' || (parts.length <= MUSE_SESSION_FOLDER_DEPTH && !there())
-      )
-    },
-    settleMs: MUSE_LISTS_A_NEW_SESSION_WITHIN_MS
   },
   // AGY§8
   agy: {

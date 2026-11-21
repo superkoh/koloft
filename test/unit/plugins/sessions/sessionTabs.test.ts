@@ -48,7 +48,7 @@ function deps(s: SessionInfo | undefined, pinned: string[] = []): BesideDeps {
       return 'tab-helper'
     },
     pinnedWorkspaces: () => pinned.map((p) => ({ path: p })),
-    turnedOff: (backend) => (backend === 'muse' ? 'Muse is turned off in Settings' : null),
+    turnedOff: (backend) => (backend === 'agy' ? 'Antigravity is turned off in Settings' : null),
     shownUnder,
     keptForAPlugin: pluginSessions
   }
@@ -86,7 +86,7 @@ describe('startBeside', () => {
 
   it('on another machine, starts on that machine in the same folder', async () => {
     const remote = session({ remote: { host: 'lab' }, backendId: 'agy' })
-    await startBeside(deps(remote), 'tab-watched', spec)
+    await startBeside({ ...deps(remote), turnedOff: () => null }, 'tab-watched', spec)
     expect(launched[0]).toMatchObject({
       kind: 'agy',
       cwd: formatRemoteKey('lab', '/work/app/.claude/worktrees/fix-login'),
@@ -143,9 +143,10 @@ describe('startBeside', () => {
   })
 
   it('starts no agent the owner turned off, and says why', async () => {
-    expect(await startBeside(deps(session()), 'tab-watched', { ...spec, backend: 'muse' })).toEqual(
-      { ok: false, why: 'Muse is turned off in Settings' }
-    )
+    expect(await startBeside(deps(session()), 'tab-watched', { ...spec, backend: 'agy' })).toEqual({
+      ok: false,
+      why: 'Antigravity is turned off in Settings'
+    })
     expect(launched).toEqual([])
   })
 

@@ -10,16 +10,7 @@ import {
   quitAndClose,
   triggerRestart
 } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  museCalls,
-  museSaid,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   killSession,
@@ -37,7 +28,6 @@ import {
   addRemoteWorkspace,
   agyReady,
   installFakeRemote,
-  installMuseOnMachine,
   killFakeRemote,
   launchWithRemote,
   machineAgyApiCalls,
@@ -477,37 +467,6 @@ test('a command a Codex session wants to run is a card in the Inbox, and Allow t
   }
 })
 
-// MUSE§5
-test('a command a Muse session wants to run is a card in the Inbox; Allow there runs it and moves the card to Done as Answered', async ({
-  env
-}) => {
-  installMuse(env)
-  trustInMuse(env, env.workspaces.a)
-  const app = await launchApp(env)
-  try {
-    const page = await app.firstWindow()
-    await waitBooted(page)
-    await newSessionInWith(page, 'ws-a', 'Muse')
-    await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-    const museId = museCalls(env)[0].sessionId
-    const museTab = (await page.evaluate(() => window.api.sessions.list())).find(
-      (s) => s.backendId === 'muse'
-    )!.tabId as string
-    await typeInto(page, museTab, '/approve')
-    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
-    await openInbox(page)
-    await inboxCard(page, 'wants to run a command')
-      .locator('.ibx-btn', { hasText: 'Allow' })
-      .click()
-    await expect
-      .poll(() => museSaid(env, museId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
-      .toContain('Ran: ls -la')
-    await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered')
-  } finally {
-    await quitAndClose(app)
-  }
-})
-
 // AGY§19
 test('a plan an Antigravity session waits on is a card quoting the whole plan; Approve there tells agy the plan is approved and moves the card to Done as Answered', async ({
   env
@@ -668,50 +627,6 @@ test('a session that ends its turn waiting on the owner is a card with its last 
 })
 
 const A_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS = '5000'
-
-for (const remote of [false, true]) {
-  test(`a turn of a ${remote ? 'remote ' : ''}Muse session that ends without a word is still a card that finished and waits for you, with no quote, and a reply typed on it reaches the session`, async ({
-    env
-  }) => {
-    test.setTimeout(150_000)
-    installMuse(env)
-    if (remote) {
-      installFakeRemote(env)
-      installMuseOnMachine(env)
-    } else trustInMuse(env, env.workspaces.a)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      if (remote) await addRemoteWorkspace(page, env)
-      const ws = remote ? REMOTE_WS_NAME : 'ws-a'
-      await newSessionInWith(page, ws, 'Muse')
-      const row = wsRows(page, ws).first()
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const tabId = (await row.getAttribute('data-tab-id')) as string
-      if (remote)
-        fs.writeFileSync(
-          path.join(machineHome(env), 'fake-muse-delay'),
-          A_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS
-        )
-      await typeInto(page, tabId, '/silent')
-      await openInbox(page)
-      const card = inboxCard(page, 'finished and waits for you')
-      await expect(card).toBeVisible({ timeout: 30_000 })
-      await expect(card.locator('.ibx-quote')).toHaveCount(0)
-      await card.locator('.ibx-input').fill('carry on please')
-      await card.locator('.ibx-btn', { hasText: 'Send' }).click()
-      await expect
-        .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
-        .toContain('«carry on please»')
-      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
-    } finally {
-      await quitAndClose(app)
-      if (remote) killFakeRemote(env)
-    }
-  })
-}
-
 const ASSIST_OFFERS_REPLIES = 'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
 
 const A_CARD_SHOWS_WITHIN_MS = 30_000
@@ -772,21 +687,6 @@ const OTHER_AGENTS = [
     messageAfterRestart: ALLOW_AFTER_STOP,
     said: /Codex fixture answered: Shall I merge PR #12\?/,
     got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-codex-wire.jsonl'))
-  },
-  {
-    name: 'Muse',
-    backend: 'muse',
-    install: (env: E2EEnv) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    startsOnFirstLine: false,
-    askLine: '/approve',
-    askTitle: 'wants to run a command',
-    answerAfterRestart: allowOn,
-    messageAfterRestart: ALLOW_AFTER_STOP,
-    said: /echo: Shall I merge PR #12\?/,
-    got: async (env: E2EEnv, page: Page, tabId: string) => terminalText(page, tabId)
   },
   {
     name: 'Antigravity',
@@ -969,9 +869,8 @@ for (const agent of OTHER_AGENTS) {
       await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 60_000 })
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
       await agent.answerAfterRestart(card).click()
-      const tabId = await tabOf(page, agent)
       await expect
-        .poll(async () => (await agent.got(env, page, tabId)).replace(/\s+/g, ''), {
+        .poll(async () => (await agent.got(env)).replace(/\s+/g, ''), {
           timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
         })
         .toContain(agent.messageAfterRestart.replace(/\s+/g, ''))
@@ -1050,9 +949,8 @@ for (const agent of OTHER_AGENTS) {
         const card = inboxCard(page, agent.askTitle)
         await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, { timeout: 15_000 })
         await agent.answerAfterRestart(card).click()
-        const tabId = await tabOf(page, agent)
         await expect
-          .poll(async () => (await agent.got(env, page, tabId)).replace(/\s+/g, ''), {
+          .poll(async () => (await agent.got(env)).replace(/\s+/g, ''), {
             timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
           })
           .toContain(agent.messageAfterRestart.replace(/\s+/g, ''))
@@ -1086,9 +984,8 @@ for (const agent of OTHER_AGENTS) {
       await newSessionInWith(page, 'ws-a', agent.name)
       await sayToTheAgent(page, agent, 'Shall I merge PR #12?')
       await pickNotYet(page, agent.said)
-      const tabId = await tabOf(page, agent)
       await expect
-        .poll(() => agent.got(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .poll(() => agent.got(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
         .toContain('Merge PR #12? «Not yet»')
       await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
     } finally {
@@ -1134,13 +1031,6 @@ const ASKS: Record<
       ),
     got: async (env) => JSON.stringify(machineCodexClientFrames(env)),
     questionOutlivesKoloft: false
-  },
-  Muse: {
-    askLine: '/ask',
-    pick: 'Blue',
-    answered: pickedInItsTerminal('Blue'),
-    got: async (_env, page, tabId) => terminalText(page, tabId),
-    turnHold: 'fake-muse-delay'
   },
   Antigravity: {
     askLine: '/ask Which colour?|Red|Green',

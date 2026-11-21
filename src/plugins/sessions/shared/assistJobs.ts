@@ -18,11 +18,10 @@ export const ASSIST_JOBS = [
     id: 'turn',
     name: 'After each turn',
     does: 'Decides whether a reply needs you or is only news, and offers one-click answers.',
-    // CC§9 CODEX§15 MUSE§1 AGY§21
+    // CC§9 CODEX§15 AGY§21
     defaults: {
       claude: { model: 'haiku' },
       codex: { model: 'gpt-6.1-sol', effort: 'medium' },
-      muse: { effort: 'medium' },
       agy: { model: 'gemini-4-argon', effort: 'medium' }
     }
   }

@@ -134,15 +134,11 @@ export function TopbarUsage(): JSX.Element | null {
 
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
   const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
-  const muse = accounts.filter((a) => a.kind === 'muse-home' && a.enabled)
   const agyRows = accounts.filter(
     (a) => a.kind === 'agy-home' && a.enabled && (a.quota || a.apiKey)
   )
   const agy = agyRows.filter((a) => a.quota)
-  const homePools = [
-    { label: 'Codex', accounts: codex },
-    { label: 'Muse', accounts: muse }
-  ]
+  const homePools = [{ label: 'Codex', accounts: codex }]
     .map((h) => ({ ...h, subscriptions: h.accounts.filter((a) => !a.apiKey) }))
     .filter((h) => h.subscriptions.length > 0)
     .map((h) => {

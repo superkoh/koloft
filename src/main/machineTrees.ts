@@ -14,7 +14,7 @@ export interface TaggedProcess {
 const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d{1,2}\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.*)$/
 const TAB_TAG = /(?:^|\s)KOLOFT_TAB_ID=(\S+)/
 export const AGENT_PROGRAM =
-  /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|muse|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|muse|agy)(?:\s|$))/
+  /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|agy)(?:\s|$))/
 const PS_DEADLINE_MS = 5_000
 
 export function parseTaggedTable(stdout: string): TaggedProcess[] {

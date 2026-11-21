@@ -32,7 +32,7 @@ function folder(
 }
 
 function installed(...ids: BackendAvailability['id'][]): BackendAvailability[] {
-  return (['claude', 'codex', 'muse', 'agy'] as const).map((id) => ({
+  return (['claude', 'codex', 'agy'] as const).map((id) => ({
     id,
     available: ids.includes(id)
   }))
@@ -85,7 +85,7 @@ describe('welcome: which agent it starts with', () => {
   ]
   const allOn: SessionMethods = {
     defaultBackend: 'claude',
-    enabled: { claude: true, codex: true, muse: true, agy: true }
+    enabled: { claude: true, codex: true, agy: true }
   }
 
   it('is the installed agent used most recently, not the one used most', () => {
@@ -97,13 +97,13 @@ describe('welcome: which agent it starts with', () => {
   })
 
   it('with no history it is the first installed agent, and Claude Code on an empty Mac', () => {
-    expect(defaultAgent({}, installed('muse', 'agy'), allOn)).toBe('muse')
+    expect(defaultAgent({}, installed('codex', 'agy'), allOn)).toBe('codex')
     expect(defaultAgent({}, installed(), allOn)).toBe('claude')
   })
 
   it('with no history it is the default agent set in Settings ▸ Sessions when that one is installed', () => {
-    const museFirst = { ...allOn, defaultBackend: 'muse' as const }
-    expect(defaultAgent({}, installed('claude', 'muse'), museFirst)).toBe('muse')
+    const agyFirst = { ...allOn, defaultBackend: 'agy' as const }
+    expect(defaultAgent({}, installed('claude', 'agy'), agyFirst)).toBe('agy')
   })
 
   it('leaves out an agent switched off in Settings ▸ Sessions: never the default, never marked last used, and Tab walks past it', () => {
@@ -111,8 +111,8 @@ describe('welcome: which agent it starts with', () => {
     const tally = tallyAgents(found)
     expect(defaultAgent(tally, installed('claude', 'codex'), codexOff)).toBe('claude')
     expect(lastUsedAgent(tally, installed('claude', 'codex'), codexOff)).toBe('claude')
-    expect(defaultAgent({}, installed('codex', 'muse'), codexOff)).toBe('muse')
-    expect(nextAgent('claude', codexOff)).toBe('muse')
+    expect(defaultAgent({}, installed('codex', 'agy'), codexOff)).toBe('agy')
+    expect(nextAgent('claude', codexOff)).toBe('agy')
     expect(nextAgent('agy', codexOff)).toBe('claude')
   })
 
@@ -131,7 +131,7 @@ describe('welcome: the account name nobody has to type', () => {
       defaultAccountName('codex', [
         { name: 'Codex', kind: 'codex-home' },
         { name: 'Codex-2', kind: 'codex-home' },
-        { name: 'Muse', kind: 'oauth' }
+        { name: 'Claude', kind: 'oauth' }
       ])
     ).toBe('Codex-3')
     expect(defaultAccountName('agy', [{ name: 'Codex', kind: 'codex-home' }])).toBe('Antigravity')

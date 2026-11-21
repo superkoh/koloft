@@ -10,21 +10,19 @@ export interface ProjectInfo {
 }
 
 // CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home' | 'agy-home'
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'agy-home'
 
 export const ACCOUNT_KINDS: readonly AccountKind[] = [
   'oauth',
   'apikey',
   'custom',
   'codex-home',
-  'muse-home',
   'agy-home'
 ]
 
-// CODEX§15 MUSE§13 AGY§5
+// CODEX§15 AGY§5
 export const SIGN_IN_FOLDER_OF = {
   codex: 'codex-home',
-  muse: 'muse-home',
   agy: 'agy-home'
 } as const satisfies Partial<Record<BackendId, AccountKind>>
 
@@ -441,7 +439,7 @@ export const SIDEBAR_MIN = 240
 export const APP_DEFAULT_SETTINGS: AppSettings = {
   sessionMethods: {
     defaultBackend: 'claude',
-    enabled: { claude: true, codex: true, muse: true, agy: true }
+    enabled: { claude: true, codex: true, agy: true }
   },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
@@ -483,7 +481,7 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   everyWorkspaceInstructions: []
 }
 
-export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
+export type BackendId = 'claude' | 'codex' | 'agy'
 export type HostId = 'local' | 'ssh'
 
 export interface UsageRecord extends TokenCounts {
@@ -764,7 +762,6 @@ export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
 export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
   claude: PLACEHOLDER_SESSION_TITLE,
   codex: 'Codex session',
-  muse: 'Muse session',
   agy: 'Antigravity session'
 }
 
@@ -1211,7 +1208,7 @@ export interface CoreApi {
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
-    // CODEX§15 MUSE§13
+    // CODEX§15
     signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
     signInFailure(): Promise<SignInFailure | null>
     dismissSignInFailure(): void

@@ -11,12 +11,8 @@ import {
   installAgy,
   installCodex,
   installFakeGh,
-  installMuse,
-  museCalls,
-  museSaid,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
@@ -24,7 +20,6 @@ import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/git
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
-  MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
   sessionPromptsHandedOut,
   agentPluginSays,
   docsSkillHandedOut,
@@ -117,9 +112,7 @@ function shownTermText(page: Page, box: string): Promise<string> {
 
 async function koloftExits(page: Page): Promise<string[]> {
   const text = await shownTermText(page, CENTER)
-  return [...text.matchAll(/\[fake-(?:claude|codex|muse|agy)\] koloft exit=(\d+)/g)].map(
-    (m) => m[1]
-  )
+  return [...text.matchAll(/\[fake-(?:claude|codex|agy)\] koloft exit=(\d+)/g)].map((m) => m[1])
 }
 
 async function koloftInSession(page: Page, args: string): Promise<string> {
@@ -143,10 +136,6 @@ async function openCron(page: Page, wsName: string): Promise<Locator> {
 
 function installAgent(env: E2EEnv, backend: BackendId): void {
   if (backend === 'codex') installCodex(env)
-  if (backend === 'muse') {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-  }
   if (backend === 'agy') {
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
@@ -159,11 +148,6 @@ async function startAgentTab(page: Page, env: E2EEnv, backend: BackendId): Promi
     return
   }
   const row = wsRows(page, 'ws-a')
-  if (backend === 'muse') {
-    await newSessionInWith(page, 'ws-a', 'Muse')
-    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-    return
-  }
   await newSessionInWith(page, 'ws-a', 'Antigravity')
   await expect.poll(() => agySessionCalls(env).length, { timeout: 60_000 }).toBe(1)
   await runIn(page, centerTerm(page), 'warm up')
@@ -173,7 +157,6 @@ async function startAgentTab(page: Page, env: E2EEnv, backend: BackendId): Promi
 
 function processOf(env: E2EEnv, backend: BackendId, sessionId: string): number | undefined {
   if (backend === 'claude') return readCalls(env).find((c) => c.sessionId === sessionId)?.pid
-  if (backend === 'muse') return museCalls(env).find((c) => c.sessionId === sessionId)?.pid
   return agySessionCalls(env)[0]?.pid
 }
 
@@ -184,12 +167,10 @@ function reportReached(env: E2EEnv, backend: BackendId, parentId: string): strin
   }
   if (backend === 'claude') return file('fake-claude-peer.jsonl')
   if (backend === 'codex') return file('fake-codex-wire.jsonl')
-  if (backend === 'muse') return JSON.stringify(museSaid(env, parentId))
   return agyTranscriptOf(env, parentId)
 }
 
 function parentStartedAgain(env: E2EEnv, backend: BackendId, parentId: string): boolean {
-  if (backend === 'muse') return museCalls(env).filter((c) => c.sessionId === parentId).length > 1
   if (backend === 'agy')
     return agySessionCalls(env).some((c) => c.argv.includes(`--conversation=${parentId}`))
   return true
@@ -204,7 +185,7 @@ async function aChildWhoseParentTabWasClosed(
   const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
   const sessionOf = async (tab: string): Promise<SessionInfo | undefined> =>
     (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tab)
-  if (backend === 'muse' || backend === 'agy')
+  if (backend === 'agy')
     await expect.poll(async () => (await sessionOf(parentTab))?.nativeSessionId).toBeTruthy()
   const parent = (await sessionOf(parentTab))!
   const parentId = parent.nativeSessionId ?? parent.sessionId
@@ -449,14 +430,12 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     expect(names.sort()).toEqual(['hello (titled)', 'hello (titled) 2'])
   })
 
-  test('koloft session list gives every open session’s transcript, Claude, Codex, Muse and Antigravity alike, as a file on this Mac that holds what the session was asked', async ({
+  test('koloft session list gives every open session’s transcript, Claude, Codex and Antigravity alike, as a file on this Mac that holds what the session was asked', async ({
     env
   }) => {
     test.setTimeout(180_000)
     installCodex(env)
-    installMuse(env)
     installAgy(env)
-    trustInMuse(env, env.workspaces.a)
     trustInAgy(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
@@ -466,7 +445,6 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const children = [
         { label: 'Codex', backend: 'codex', marker: 'codex-marker' },
-        { label: 'Muse', backend: 'muse', marker: 'muse-marker' },
         { label: 'Antigravity', backend: 'agy', marker: 'agy-marker' }
       ] as const
       for (const { backend, marker } of children)
@@ -484,7 +462,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         const lastList = text.slice(text.lastIndexOf('(you) · Claude'))
         const found: Record<string, string> = {}
         for (const m of lastList.matchAll(
-          /· (Claude|Codex|Muse|Antigravity) · .*· transcript: (\S+)$/gm
+          /· (Claude|Codex|Antigravity) · .*· transcript: (\S+)$/gm
         ))
           found[m[1]] = m[2]
         return found
@@ -517,7 +495,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       hintsOff: true,
       sessionMethods: {
         defaultBackend: 'claude',
-        enabled: { claude: true, codex: false, muse: true, agy: true }
+        enabled: { claude: true, codex: false, agy: true }
       }
     })
     const app = await launchApp(env)
@@ -731,34 +709,32 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
-  for (const backend of ['muse', 'agy'] as const)
-    test(`a ${backend} session that koloft session new starts in a folder ${backend} never trusted gets past ${backend}’s trust question with nobody at its terminal`, async ({
-      env
-    }) => {
-      test.setTimeout(120_000)
-      if (backend === 'muse') installMuse(env)
-      else installAgy(env)
-      seedSettings(env, { hintsOff: true })
-      const app = await launchApp(env)
-      try {
-        const page = await app.firstWindow()
-        await waitBooted(page)
-        await startSessionIn(page, 'ws-a', { method: 'Claude' })
+  test('an agy session that koloft session new starts in a folder agy never trusted gets past agy’s trust question with nobody at its terminal', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
 
-        expect(
-          await koloftInSession(
-            page,
-            `session new ${picksFor(backend)} --workspace ws-b --backend ${backend} -- hello`
-          )
-        ).toBe('0')
+      expect(
+        await koloftInSession(
+          page,
+          `session new ${picksFor('agy')} --workspace ws-b --backend agy -- hello`
+        )
+      ).toBe('0')
 
-        await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bst-waiting\b/, {
-          timeout: 60_000
-        })
-      } finally {
-        await quitAndClose(app)
-      }
-    })
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bst-waiting\b/, {
+        timeout: 60_000
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   test('koloft session new --workspace starts the sibling in another sidebar workspace, as a top-level row there', async ({
     page,
@@ -1336,7 +1312,6 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         const skills = koloftSkillsUnder(env.home)
         expect(skills.length).toBeGreaterThan(0)
         for (const skill of skills) expect(skill).not.toMatch(/discord/i)
-        await runIn(page, centerTerm(page), MUSE_IS_TOLD_ON_A_FIRST_MESSAGE)
         const prompts = (): string[] => sessionPromptsHandedOut(env.home)[backend]
         await expect.poll(() => prompts().length).toBeGreaterThan(0)
         for (const prompt of prompts()) expect(prompt).not.toContain(DISCORD_PREFIX)
@@ -1473,33 +1448,6 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       expect(await shownTermText(page, CENTER)).toContain(
         'koloft: Passwords and sign-in is turned off in Settings ▸ Plugins.'
       )
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
-  test("turning Passwords and sign-in off in Settings ▸ Plugins while Koloft runs takes passwords out of the koloft skill in the Muse account's skills folder at the next Muse launch, though an earlier Muse session there already had it written", async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    installAgent(env, 'muse')
-    seedSettings(env, { hintsOff: true })
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      const museSkills = (): string[] => koloftSkillsUnder(path.join(env.userData, 'muse-homes'))
-      await startAgentTab(page, env, 'muse')
-      expect(museSkills()).toHaveLength(1)
-      expect(museSkills()[0]).toContain(PASSWORDS_IN_THE_SKILL)
-
-      await switchPlugin(page, 'Passwords and sign-in', false)
-      await expect.poll(() => agentPluginSays(env.userData, PASSWORDS_IN_THE_SKILL)).toBe(false)
-
-      await newSessionInWith(page, 'ws-a', 'Muse')
-      await expect.poll(() => museCalls(env).length, { timeout: 60_000 }).toBe(2)
-      expect(museSkills()).toHaveLength(1)
-      expect(museSkills()[0]).not.toContain(PASSWORDS_IN_THE_SKILL)
     } finally {
       await quitAndClose(app)
     }

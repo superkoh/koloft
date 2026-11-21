@@ -184,7 +184,6 @@ const LONG_TURN_ON_THE_MACHINE: Record<
 > = {
   claude: { line: '/hold', endKey: '\x1b' },
   codex: { line: '/busy', lengthFile: 'fake-codex-busy-ms' },
-  muse: { line: 'a long turn', lengthFile: 'fake-muse-delay' },
   agy: { line: 'a long turn', lengthFile: 'fake-agy-delay' }
 }
 

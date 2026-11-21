@@ -426,7 +426,7 @@ export class KoloftInbox {
     return !!c.session && this.d.liveTabOf(c.session)?.backend === 'codex'
   }
 
-  // CC§3 CODEX§34 MUSE§11 AGY§14
+  // CC§3 CODEX§34 AGY§14
   private answerByMessage(c: InboxCard): void {
     if (!c.actions.length || answeredByMessage(c)) return
     try {

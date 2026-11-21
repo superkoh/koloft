@@ -21,7 +21,7 @@ const write = (file: string, value: unknown): void => {
 }
 
 describe('telling a pasted API-key account from a sign-in by its own folder, before any probe has run', () => {
-  it('reads a Codex key from auth.json, a Muse key from its stored api_key, and a Gemini key from the gemini model provider; a sign-in or an empty folder is not a key', () => {
+  it('reads a Codex key from auth.json and a Gemini key from the gemini model provider; a sign-in or an empty folder is not a key', () => {
     write(path.join(userData, 'codex-homes', 'key', 'auth.json'), {
       auth_mode: 'apikey',
       OPENAI_API_KEY: 'sk-made-up'
@@ -34,14 +34,6 @@ describe('telling a pasted API-key account from a sign-in by its own folder, bef
     expect(homeKeyOnDisk['codex-home'](userData, 'key')).toBe(true)
     expect(homeKeyOnDisk['codex-home'](userData, 'chatgpt')).toBe(false)
     expect(homeKeyOnDisk['codex-home'](userData, 'missing')).toBe(false)
-
-    const museAuth = (name: string): string =>
-      path.join(userData, 'muse-homes', name, 'muse', 'auth.json')
-    write(museAuth('key'), { schema_version: 1, providers: { meta: { api_key: 'k' } } })
-    write(museAuth('meta'), { schema_version: 1, providers: { meta: { access_token: 't' } } })
-    expect(homeKeyOnDisk['muse-home'](userData, 'key')).toBe(true)
-    expect(homeKeyOnDisk['muse-home'](userData, 'meta')).toBe(false)
-    expect(homeKeyOnDisk['muse-home'](userData, 'missing')).toBe(false)
 
     setAgyApiKeyRoute(agyHomeOf(userData, 'gemini'), true)
     expect(homeKeyOnDisk['agy-home'](userData, 'gemini')).toBe(true)

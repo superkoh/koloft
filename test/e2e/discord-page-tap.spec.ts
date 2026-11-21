@@ -2,15 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  installAgy,
-  installCodex,
-  installMuse,
-  seedSettings,
-  trustInAgy,
-  trustInMuse,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   newSessionInWith,
@@ -323,13 +315,6 @@ test.describe('koloft page tap: the owner taps a part of a web page from Discord
     {
       label: 'Codex' as const,
       install: (env: E2EEnv) => installCodex(env)
-    },
-    {
-      label: 'Muse' as const,
-      install: (env: E2EEnv) => {
-        installMuse(env)
-        trustInMuse(env, env.workspaces.a)
-      }
     },
     {
       label: 'Antigravity' as const,

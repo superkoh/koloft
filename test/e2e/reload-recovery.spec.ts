@@ -1,13 +1,7 @@
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  agySessionCalls,
-  installAgentFor,
-  museCalls,
-  seedSettings,
-  type E2EEnv
-} from './helpers/env'
+import { agySessionCalls, installAgentFor, seedSettings, type E2EEnv } from './helpers/env'
 import {
   type AgentName,
   type ClaudeCall,
@@ -35,7 +29,6 @@ import {
   machineAgyCalls,
   machineCodexLog,
   machineHome,
-  machineMuseCalls,
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
   sshCommands,
@@ -404,55 +397,6 @@ const TAB_KINDS: TabKind[] = [
           const last = codexCalls(env).at(-1)!
           return last.method === 'thread/resume' && last.sessionId === tui.sessionId
         }
-      }
-    }
-  },
-  {
-    agent: 'Muse',
-    remote: false,
-    replyPrefix: 'echo: ',
-    start: async (page, env, ws) => {
-      await newSessionInWith(page, ws, 'Muse')
-      await expect.poll(() => museCalls(env).length).toBe(1)
-      await expect(wsRows(page, ws).first()).toHaveClass(/st-waiting/)
-      const [first] = museCalls(env)
-      const tabId = await tabOf(page, ws)
-      return {
-        tabId,
-        launches: () => museCalls(env).length,
-        holders: () => [first.pid],
-        answers: onScreen(page, tabId),
-        asleep: () => !stillThisTestsProcess(env, first.pid),
-        lastLaunchResumesIt: () =>
-          museCalls(env).at(-1)!.argv.slice(-2).join(' ') === `resume ${first.sessionId}`
-      }
-    }
-  },
-  {
-    agent: 'Muse',
-    remote: true,
-    replyPrefix: 'echo: ',
-    start: async (page, env, ws) => {
-      await newSessionInWith(page, ws, 'Muse')
-      await expect
-        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
-        .toBe(1)
-      const [first] = machineMuseCalls(env)
-      await expect
-        .poll(() => liveTmuxSessions(env), { timeout: ON_THE_MACHINE_WITHIN_MS })
-        .toContain(tmuxName(first.sessionId))
-      await expect(wsRows(page, ws).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
-        timeout: ON_THE_MACHINE_WITHIN_MS
-      })
-      const tabId = await tabOf(page, ws)
-      return {
-        tabId,
-        launches: () => machineMuseCalls(env).length,
-        holders: () => [first.pid],
-        answers: onScreen(page, tabId),
-        asleep: () => tmuxTabGone(env, first.sessionId),
-        lastLaunchResumesIt: () =>
-          machineMuseCalls(env).at(-1)!.argv.slice(-2).join(' ') === `resume ${first.sessionId}`
       }
     }
   },

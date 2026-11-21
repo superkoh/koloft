@@ -209,7 +209,7 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Asked to show it again' })
   })
 
-  it('an ask of a remote Claude Code, Muse or Antigravity session, whose agent lives on in tmux through a Koloft restart, keeps its live buttons, and pressing one before the session is back leaves the card waiting', async () => {
+  it('an ask of a remote Claude Code or Antigravity session, whose agent lives on in tmux through a Koloft restart, keeps its live buttons, and pressing one before the session is back leaves the card waiting', async () => {
     const { w, setLive } = sessionWorld(aPlan, { machine: 'build-box' })
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))

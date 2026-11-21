@@ -48,13 +48,6 @@ describe('hasUsableAccount (whether a Claude or Codex session may start at all)'
     expect(hasUsableAccount([meta({ status: 'expired' })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'unverified' })], 'claude')).toBe(false)
   })
-
-  it('lets Muse, like Codex, start only on a Muse account in Koloft, never on the sign-in muse has on this Mac', () => {
-    expect(hasUsableAccount([], 'muse')).toBe(false)
-    expect(noUsableAccountLead([], 'muse')).toBe('No Muse account yet — add one in ')
-    expect(hasUsableAccount([meta({ kind: 'muse-home' })], 'muse')).toBe(true)
-    expect(hasUsableAccount([meta({ kind: 'muse-home' })], 'codex')).toBe(false)
-  })
 })
 
 // ADR-0030
@@ -305,14 +298,14 @@ describe('capsuleGlyph — the fable layer', () => {
   })
 })
 
-describe('launchLine — the account line a Muse or Antigravity tab prints before its program starts, in the Claude shim’s words', () => {
+describe('launchLine — the account line a Codex or Antigravity tab prints before its program starts, in the Claude shim’s words', () => {
   it('names the account and each limit window, flags a reading older than STALE_MS, and is the name alone when there is no reading', () => {
     const windows = [
       { minutes: 300, used: 0.104, resetsAt: 0 },
       { minutes: 10080, used: 0.52, resetsAt: 0 }
     ]
     expect(
-      launchLine(view({ name: 'ann', kind: 'muse-home', limits: { windows, at: NOW_MS } }), NOW_MS)
+      launchLine(view({ name: 'ann', kind: 'codex-home', limits: { windows, at: NOW_MS } }), NOW_MS)
     ).toBe('koloft: → ann · 5h 10% · 7d 52%')
     const old = NOW_MS - STALE_MS - 3 * 60_000
     expect(launchLine(view({ name: 'ann', limits: { windows, at: old } }), NOW_MS)).toMatch(
@@ -344,7 +337,7 @@ describe('launchLine — the account line a Muse or Antigravity tab prints befor
     )
   })
 
-  it('flags an Antigravity quota read longer ago than STALE_MS, and keeps it when the last probe failed to refresh it, as a Codex or Muse limit is kept', () => {
+  it('flags an Antigravity quota read longer ago than STALE_MS, and keeps it when the last probe failed to refresh it, as a Codex limit is kept', () => {
     const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
     const agy = (p: Partial<AccountView>) => view({ name: 'g', kind: 'agy-home', quota, ...p })
     expect(launchLine(agy({ quotaAt: NOW_MS }), NOW_MS)).toBe('koloft: → g · Gemini Models 5h 3%')
@@ -452,8 +445,8 @@ describe('launchUsageProbe — what opening Koloft reads before any tab starts',
     )
   })
 
-  it('reads a Codex, Muse or Antigravity account with no Claude subscription, because reading their limits makes no model call', () => {
-    for (const kind of ['codex-home', 'muse-home', 'agy-home'] as const)
+  it('reads a Codex or Antigravity account with no Claude subscription, because reading their limits makes no model call', () => {
+    for (const kind of ['codex-home', 'agy-home'] as const)
       expect(launchUsageProbe([meta({ kind })])).toBe('signInFoldersOnly')
   })
 

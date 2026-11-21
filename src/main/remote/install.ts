@@ -2,18 +2,11 @@ import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
 import { ECHO_THE_MARK } from './ssh'
-import {
-  ENSURE_AGY_MINIMUM_FN,
-  ENSURE_CLAUDE_MINIMUM_FN,
-  ENSURE_MUSE_MINIMUM_FN
-} from '../cliMinimums'
+import { ENSURE_AGY_MINIMUM_FN, ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
 import { AGY_INSTALLER_URL } from '../toolInstall'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
-
-// MUSE§17
-const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
 
 export const REMOTE_GIT_DIR = '.koloft/git-accounts'
 
@@ -225,9 +218,7 @@ have bash || install_pkg bash || exit 4
 
 program="$1"
 ${ENSURE_CLAUDE_MINIMUM_FN}
-${ENSURE_MUSE_MINIMUM_FN}
 ${ENSURE_AGY_MINIMUM_FN}
-python_has_pty() { ${PYTHON3_HAS_PTY}; }
 official_install() {
   have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
   say "installing $1 (official installer$3)"
@@ -236,14 +227,6 @@ official_install() {
   have "$1" || { say "$1 did not install; see the output above"; exit 4; }
 }
 case "$program" in
-muse)
-  # PLATFORM§3
-  python_has_pty || { install_pkg python3; hash -r; }
-  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
-  MUSE_NO_MODIFY_PATH=1; export MUSE_NO_MODIFY_PATH
-  have muse || official_install muse ${MUSE_INSTALLER} ", about 330 MB, once"
-  ensure_muse_minimum muse || exit 4
-  ;;
 agy)
   # AGY§3
   have agy || official_install agy ${AGY_INSTALLER_URL}
@@ -255,7 +238,7 @@ agy)
   ;;
 esac
 
-${installNode('the statusline', 'this machine gets no statusline', '[ "$program" != muse ] && ', '[ "$program" = agy ]')}
+${installNode('the statusline', 'this machine gets no statusline', '', '[ "$program" = agy ]')}
 
 ${INSTALL_GH}
 

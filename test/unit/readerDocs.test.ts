@@ -219,7 +219,7 @@ describe('Assist picks the docs a session made for its reader', () => {
       where: { remote: 'devbox', cwd: '/home/koh/repo' }
     },
     {
-      shape: 'whose folder alone names its machine (Codex, Muse, Antigravity)',
+      shape: 'whose folder alone names its machine (Codex, Antigravity)',
       where: { cwd: 'ssh://devbox/home/koh/repo' }
     }
   ])(

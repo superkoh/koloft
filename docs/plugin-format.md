@@ -34,7 +34,7 @@ it is done.
 
 ## Words used on this page
 
-- **Session**: one run of a coding agent (Claude Code, Codex, Muse or Antigravity) that
+- **Session**: one run of a coding agent (Claude Code, Codex or Antigravity) that
   Koloft starts in a terminal tab.
 - **Owner**: the person using Koloft.
 - **Butler**: a long-running session that watches the other sessions for the owner.
@@ -286,7 +286,7 @@ what reads the field today.
 | `assistJobs` | list of `{ id, name, does, defaults }` | its Assist jobs ([Assist jobs](#assist-jobs)) | `ASSIST_JOBS` |
 | `skills` | list of strings | names of whole skills the plugin owns, such as `koloft-docs` (Koloft's skill for writing documents) | nothing yet; no manifest fills it |
 | `mcpServers` | list of `{ name, command, args }` | MCP servers the plugin adds to sessions; a place kept for later, which no step plans to fill yet | nothing; no manifest fills it |
-| `openings` | list of strings | the fixed words each message the plugin sends into a session starts with, through Sessions core's `tellAs` ([Starting](#starting)). A session never takes a message that starts with one for the owner's own words, and a Claude Code, Codex or Muse session's hook flags one Koloft did not send. An opening holds no name the owner can change, such as the butler's, and no `"`, `\` or line break, which the hooks would not find in the escaped text they read; it stays known while its plugin is off, for the messages already in transcripts | `PLUGIN_OPENINGS`; no manifest fills it yet |
+| `openings` | list of strings | the fixed words each message the plugin sends into a session starts with, through Sessions core's `tellAs` ([Starting](#starting)). A session never takes a message that starts with one for the owner's own words, and a Claude Code or Codex session's hook flags one Koloft did not send. An opening holds no name the owner can change, such as the butler's, and no `"`, `\` or line break, which the hooks would not find in the escaped text they read; it stays known while its plugin is off, for the messages already in transcripts | `PLUGIN_OPENINGS`; no manifest fills it yet |
 
 ## How a plugin plugs in
 
@@ -348,7 +348,7 @@ fills:
   reads it, so core never names a plugin.
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
-  `codex`, `muse` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
+  `codex` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
   builds a block that has its own text for every agent.
 - `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
   it yet, and nothing checks the key against a list of models.
@@ -689,7 +689,7 @@ An Assist job is a small AI task Koloft runs on its own. A plugin lists its jobs
   butler's own row.
 - `name`: the job's row title on its plugin's page in Settings ▸ Plugins.
 - `does`: the line under that title, saying what the job does.
-- `defaults`: for each agent (`claude`, `codex`, `muse`, `agy`), the model and thinking
+- `defaults`: for each agent (`claude`, `codex`, `agy`), the model and thinking
   (`{ model?, effort? }`) the job runs with while the owner has not picked one. An empty
   `{}` means that agent's own model and thinking.
 
@@ -706,7 +706,6 @@ export const ASSIST_JOBS = [
     defaults: {
       claude: { model: 'sonnet', effort: 'low' },
       codex: { model: 'gpt-6.1-sol', effort: 'low' },
-      muse: { effort: 'low' },
       agy: { model: 'gemini-3.8-flash', effort: 'low' }
     }
   }
