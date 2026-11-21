@@ -25,6 +25,8 @@ import { plural, relTime } from '../sessionRows'
 import { resumeSession } from '../resumeFlow'
 import { aDialogIsOpen } from '../dialogOpen'
 import { useInstalledBackends } from '../useInstalledBackends'
+import { fillsOfNotTurnedOff } from '../pluginUi'
+import { OWNER_REACH } from '../slots'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { SignInFailedDialog } from './settings/AccountsPane'
@@ -193,6 +195,7 @@ export function Welcome({
   const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
   const skipPermissions = useStore((s) => s.settings.skipPermissions)
   const methods = useStore((s) => s.settings.sessionMethods)
+  const phoneReach = useStore((s) => fillsOfNotTurnedOff(OWNER_REACH, s.settings)[0])
 
   const [step, setStep] = useState<Step>(1)
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)
@@ -659,24 +662,28 @@ export function Welcome({
               <div className="wl-cue c-p">
                 <b>⌘P</b> say it in plain words
               </div>
-              <div className="wl-phone">
-                <div className="wl-phone-head"># alfred</div>
-                <div className="wl-phone-msg">
-                  <span className="wl-phone-av">
-                    <IconAssist size={13} />
-                  </span>
-                  <div>
-                    <b>Alfred</b>
-                    <p>
-                      Hi, I’m Alfred. Connect Discord any time, and I’ll ask you here when a session
-                      needs you.
-                    </p>
+              {phoneReach && (
+                <>
+                  <div className="wl-phone">
+                    <div className="wl-phone-head"># alfred</div>
+                    <div className="wl-phone-msg">
+                      <span className="wl-phone-av">
+                        <IconAssist size={13} />
+                      </span>
+                      <div>
+                        <b>Alfred</b>
+                        <p>
+                          Hi, I’m Alfred. Connect {phoneReach} any time, and I’ll ask you here when
+                          a session needs you.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div className="wl-cue c-al">
-                <b>Alfred</b> on your phone, once you connect Discord
-              </div>
+                  <div className="wl-cue c-al">
+                    <b>Alfred</b> on your phone, once you connect {phoneReach}
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

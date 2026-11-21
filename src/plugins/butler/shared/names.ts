@@ -29,8 +29,8 @@ export function asPeerName(title: string): string {
 
 const OLD_BUTLER_PEER_NAMES = ['Global-Assist', 'Global-conductor']
 
-export const BUTLER_DOES =
-  'Your butler, whom you talk to from the top of the sidebar or from Discord.'
+export const butlerDoes = (ownerReach: readonly string[]): string =>
+  `Your butler, whom you talk to from the top of the sidebar${ownerReach.map((where) => ` or from ${where}`).join('')}.`
 
 export function peerNamesOf(name: string): string[] {
   return [asPeerName(name), ...OLD_BUTLER_PEER_NAMES]

@@ -55,7 +55,13 @@ import {
 import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
-import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
+import {
+  MARK_OUTPUT_START,
+  SignInOutput,
+  afterOutputStart,
+  outputStartCarry,
+  plainTerminalTail
+} from './signInOutput'
 import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
@@ -600,6 +606,7 @@ import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSe
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
+import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
@@ -2602,9 +2609,14 @@ const INSTALL_STALLED = `The Claude Code install did not finish: it printed noth
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
-const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
+// CC§7
+const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+(?=[\s'"`<>\x00-\x1f\x7f])/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
+
+function loginTimeoutMs(): number {
+  return cronTestMs('KOLOFT_LOGIN_TIMEOUT_MS', LOGIN_TIMEOUT_MS)
+}
 
 function sendLoginProgress(p: LoginProgress): void {
   sendToRenderer(CH.accounts.loginProgress, p)
@@ -2623,7 +2635,7 @@ function feedLoginWatcher(tabId: string, data: string): void {
       return
     }
     clearTimeout(w.giveUp)
-    w.giveUp = giveUpLoginAfter(tabId, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT)
+    w.giveUp = giveUpLoginAfter(tabId, loginTimeoutMs(), LOGIN_TIMED_OUT)
     w.installing = undefined
     w.buf = ''
     data = rest
@@ -2654,7 +2666,7 @@ function failLogin(tabId: string, why: string, terminalKept = true): void {
   const w = loginWatchers.get(tabId)
   if (!w || w.done) return
   endLoginWatch(tabId, w)
-  const tail = w.buf.split('\n').filter(Boolean).slice(-8).join('\n')
+  const tail = plainTerminalTail(w.buf)
   sendLoginProgress({
     phase: 'failed',
     name: w.name,
@@ -2712,7 +2724,7 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
           ),
           INSTALL_STALLED
         )
-      : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
+      : giveUpLoginAfter(handle.id, loginTimeoutMs(), LOGIN_TIMED_OUT),
     ...(installFirst && { installing: { carry: '' } })
   })
   loginPtys.add(handle.id)
@@ -6263,20 +6275,32 @@ function registerIpc(): void {
   ipcMain.handle(CH.app.version, () => app.getVersion())
   ipcMain.handle(CH.settings.set, (_e, patch) => commitSettings(sanitizeSettingsPatch(patch)))
 
-  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
-    if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
-    const mgr = workspaceMgr
+  const cancellableAssist = async <T>(
+    id: number,
+    ask: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> => {
     const run = new AbortController()
     assistRuns.set(id, run)
     try {
-      return await routeSession(
-        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
-        message,
-        run.signal
-      )
+      return await ask(run.signal)
     } finally {
       assistRuns.delete(id)
     }
+  }
+  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
+    if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
+    const mgr = workspaceMgr
+    return cancellableAssist(id, (signal) =>
+      routeSession(
+        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
+        message,
+        signal
+      )
+    )
+  })
+  ipcMain.handle(CH.assist.nameWorktree, async (_e, id: unknown, task: unknown) => {
+    if (typeof id !== 'number' || typeof task !== 'string') return null
+    return cancellableAssist(id, (signal) => worktreeNameForTask(task, assist, signal))
   })
   ipcMain.on(CH.assist.cancel, (_e, id: unknown) => {
     if (typeof id === 'number') assistRuns.get(id)?.abort()
