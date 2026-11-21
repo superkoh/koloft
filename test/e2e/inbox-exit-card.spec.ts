@@ -54,9 +54,11 @@ async function openInbox(page: Page): Promise<void> {
   await expect(page.locator('.inbox-page')).toBeVisible()
 }
 
-async function doneStatus(page: Page, title: string) {
+async function doneWith(page: Page, title: string, status: string) {
   await page.locator('.ibx-seg button[data-tab="closed"]').click()
-  return inboxCard(page, title).first().locator('.ibx-dstat')
+  return inboxCard(page, title).filter({
+    has: page.locator('.ibx-dstat', { hasText: status })
+  })
 }
 
 const fileText = (file: string): string =>
@@ -191,7 +193,7 @@ test.describe(() => {
           .poll(() => squeezed(kind.heard(env)), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
           .toContain(squeezed('Carry on where you left off'))
         await expect(wsRows(page, ws)).toHaveCount(1)
-        await expect(await doneStatus(page, 'stopped unexpectedly')).toContainText('Restarted')
+        await expect(await doneWith(page, 'stopped unexpectedly', 'Restarted')).toHaveCount(1)
 
         await expect.poll(() => kind.launches(env).length).toBe(2)
         killSession(kind.launches(env)[1].pid, env)
@@ -205,9 +207,9 @@ test.describe(() => {
           .poll(() => squeezed(kind.heard(env)), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
           .toContain(squeezed('Pick up the work of the session'))
         expect(squeezed(kind.heard(env))).toContain(squeezed('«finish the docs»'))
-        await expect(await doneStatus(page, 'stopped unexpectedly')).toContainText(
-          'Handed to a new session'
-        )
+        await expect(
+          await doneWith(page, 'stopped unexpectedly', 'Handed to a new session')
+        ).toHaveCount(1)
 
         await expect(wsRows(page, ws)).toHaveCount(2)
         const [started] = await aliveSessions(page)

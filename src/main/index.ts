@@ -742,7 +742,10 @@ const sessionBackends = new SessionBackends({
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, subject),
+  exited: (tabId, subject) => {
+    tabsEndedThisRun.add(tabId)
+    attention.onExited(tabId, subject)
+  },
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
     announceNow(QUESTION_ASKED, { tabId, ask })
@@ -960,8 +963,10 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
 function sidebarTitle(s: SessionInfo): string | undefined {
-  const placeholder = Object.values(PLACEHOLDER_TITLES).includes(s.title)
-  return s.title && !placeholder ? s.title : undefined
+  return shownTitle(s.title)
+}
+function shownTitle(title: string | undefined): string | undefined {
+  return title && !Object.values(PLACEHOLDER_TITLES).includes(title) ? title : undefined
 }
 
 const tabLifecycle = new TabLifecycle()
@@ -2253,29 +2258,36 @@ function liveSessionOf(ref: string): SessionInfo | undefined {
 
 function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   const s = sessionOfTab(tabId)
-  if (!s?.sessionId) return endedInboxSessionOfTab(tabId)
+  if (!s?.sessionId) return undefined
   const ws = sessionBackends.workspaceOfTab(tabId)
-  return {
-    sessionId: s.sessionId,
-    title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
-    backend: s.backendId,
-    workspace: ws ? scopeName(ws) : undefined,
-    machine: ws ? parseRemoteKey(ws)?.host : undefined
-  }
+  return askedSession(s.sessionId, s.title, s.backendId, ws, ws && parseRemoteKey(ws)?.host)
 }
 
-function endedInboxSessionOfTab(tabId: string): AskedSession | undefined {
-  const m = attention.list().find((x) => x.tabId === tabId && x.kind === 'exited')
-  const sessionId = m?.sessionId
-  if (!sessionId) return undefined
-  const backend = identityOf(sessionId).backendId
-  const ws = workspaceMgr?.workspaceOf(sessionId)
+const tabsEndedThisRun = new Set<string>()
+
+function inboxSessionOfEndedTab(tabId: string): AskedSession | undefined {
+  if (!tabsEndedThisRun.has(tabId)) return undefined
+  const ended = attention.list().find((m) => m.tabId === tabId && m.kind === 'exited')
+  if (!ended?.sessionId) return undefined
+  const { backendId, sourceId } = identityOf(ended.sessionId)
+  const ws = workspaceMgr?.workspaceOf(ended.sessionId)
+  const machine = (ws && parseRemoteKey(ws)?.host) ?? (sourceId === 'local' ? undefined : sourceId)
+  return askedSession(ended.sessionId, ended.title, backendId, ws, machine)
+}
+
+function askedSession(
+  sessionId: string,
+  title: string | undefined,
+  backend: BackendId,
+  ws: string | undefined,
+  machine: string | undefined
+): AskedSession {
   return {
     sessionId,
-    title: m.title ?? BACKEND_LABEL[backend],
+    title: shownTitle(title) ?? BACKEND_LABEL[backend],
     backend,
     workspace: ws ? scopeName(ws) : undefined,
-    machine: ws ? parseRemoteKey(ws)?.host : undefined
+    machine
   }
 }
 
@@ -2289,7 +2301,7 @@ async function inboxAskOf(tabId: string): Promise<KoloftAsk | undefined> {
 const koloftInbox = new KoloftInbox({
   inbox,
   marks: () => attention.list(),
-  sessionOfTab: inboxSessionOfTab,
+  sessionOfTab: (tabId) => inboxSessionOfTab(tabId) ?? inboxSessionOfEndedTab(tabId),
   liveTabOf: (ref) => {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }

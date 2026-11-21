@@ -30,6 +30,7 @@ import {
   reachedBySendMessage,
   SESSION_BACKENDS,
   backendIdOf,
+  identityOf,
   messagingOf,
   namedAtLaunch
 } from '@shared/sessionBackend'
@@ -1503,7 +1504,10 @@ export function sessionVerb(d: SessionVerbDeps): {
         placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === aboutRow)?.workspace)
     if (!workspace)
       return { ok: false, why: 'Koloft could not tell which workspace to start it in' }
-    const backend = backendIdOf(spec.backend) ?? about?.backendId ?? 'claude'
+    const backend =
+      backendIdOf(spec.backend) ??
+      about?.backendId ??
+      (aboutRow ? identityOf(aboutRow).backendId : 'claude')
     const held =
       spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
     let tabId: string | null = null
