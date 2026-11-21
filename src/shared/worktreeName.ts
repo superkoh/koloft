@@ -6,6 +6,12 @@ export function isValidWorktreeName(name: string): boolean {
   return true
 }
 
+export const NEW_WORKTREE_NAME_MAX_CHARS = 30
+
+export function isUsableNewWorktreeName(name: string): boolean {
+  return isValidWorktreeName(name) && name.toLowerCase() !== 'main'
+}
+
 import { fnv1a32 } from './fnv1a'
 
 const PORT_OFFSETS = 99

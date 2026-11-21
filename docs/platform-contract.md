@@ -1519,6 +1519,24 @@ inferred, not checked.
   objects; the same text in a `hidden` element, the placeholder sized by row count, cost
   no task over 50 ms. A `hidden` element's text is still in the DOM, so a TreeWalker (DOM
   ⌘F) finds it, but its ranges have no box and copy leaves it out.
+- **`backdrop-filter: blur(...)` collapses macOS CoreAnimation overlays to one
+  full-window surface and repaints the whole window on every hover or background tick.**
+  Measured 2026-11-21 (Electron 43.8.7, macOS 27.2.1 on a 160 Hz display, `contentTracing`
+  with `viz` and `disabled-by-default-viz.debug.overlay_planes` on a 1200×800 window with
+  an animating sidebar bar, a WebGL canvas and a `<webview>`): with no modal,
+  `ScheduleOverlays()` stayed at `num_overlays: 5` and `FinishPaintRenderPass` was `0`;
+  with `backdrop-filter: blur(6px)` on a `position: fixed; inset: 0` modal backdrop,
+  `num_overlays` dropped to `1` and `FinishPaintRenderPass` hit `180–193/s` at 160 FPS
+  (and `42/s` on 20 Hz modal button hover even with every background animation paused).
+  A 560×220 card with `backdrop-filter: blur(18px)` over an animating `.wl-blob` radial
+  gradient did the same (`num_overlays: 1`, `FinishPaintRenderPass: 161/s`; without
+  `backdrop-filter`, `num_overlays: 6`, `FinishPaintRenderPass: 0/s`).
+  Blurring the sibling root container with `filter: blur(6px)` while pausing CSS
+  animations under it kept `num_overlays: 6` (both with a WebGL canvas and with a
+  `<webview>`), dropped idle swaps to `0` and kept `FinishPaintRenderPass` at `0` during
+  modal hovers while looking the same. In macOS Screen Sharing (RFB over TCP 5900),
+  collapsing overlays plus full-window 120–160 Hz repaints made the remote pointer flicker
+  and vanish whenever a blurred modal was open.
 
 ## §25 React and zustand
 
@@ -2531,6 +2549,26 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   `{"type":"module"}` folder also renders on node 22.12.0 (Docker
   `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
   folder itself.
+- **Loading the bundle crashes with `ENOENT` (`uv_cwd`) if the process's cwd was
+  removed** (2.2.34, read and run 2026-11-21 on macOS arm64): `stack-utils`, eagerly
+  imported by `ink`'s `ErrorOverview.js`, calls `process.cwd()` at module load time.
+  When a session deletes its own working directory (such as removing its git worktree),
+  `[ -d . ]` and `cd .` still succeed on macOS while `pwd -P` fails (`getcwd` returns
+  `ENOENT`). Falling back with `[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null`
+  before starting the runtime (and `process.chdir('/')` on a failed `process.cwd()` in
+  `AGY_STATUSLINE_JS`) lets ccstatusline render cleanly with exit 0 even when
+  `input.cwd` no longer exists.
+- **`thinking-effort` reads `effort.level` from status JSON** (2.2.34, read and run
+  2026-11-21): if `effort` is absent, lacks a `level` key, or holds a string rejected
+  by `normalizeThinkingEffort` (`/^(?=.*[a-z0-9])[a-z0-9-]{2,20}$/i`), ccstatusline
+  parses `transcript_path` and then falls back to Claude Code's
+  `~/.claude/settings.json` `effortLevel`. Antigravity reports effort at `model.effort`
+  (AGY§11) — and on its first startup ticks before the model catalog loads, omits
+  `model.effort` while already carrying `(<Effort>)` at the end of `model.display_name`
+  (observed 2026-11-21 on agy 1.5.14). Translating a valid `model.effort` (or trailing
+  known effort suffix) to `effort: { level: effort || null }` shows Antigravity's
+  effort and keeps an effort-less or unrecognized model at `default` instead of
+  reading Claude Code's settings.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 

@@ -3,7 +3,7 @@ import { assistJobDefaults } from '@core/assistJobs'
 import type { PluginManifest } from '@core/plugin'
 import { PLUGINS } from '@plugins/list'
 import { plugin as butler } from '@plugins/butler/plugin'
-import { BUTLER_DOES } from '@plugins/butler/shared/names'
+import { butlerDoes } from '@plugins/butler/shared/names'
 import { assistEfforts, assistModels, assistRunsOn, withAssistPick } from '@shared/assistPicks'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
@@ -13,6 +13,7 @@ import { PLUGINS_PANE_NAME } from '@shared/settingsPanes'
 import type { AssistPick, AssistRowId, BackendId } from '@shared/types'
 import { IconChevronDown, IconChevronRight, IconChevronUp } from '../../icons'
 import { assistInputs } from '../../assistInputs'
+import { useOwnerReach } from '../../pluginUi'
 import { useStore } from '../../store'
 import { useAssistSetup, type AssistSetupState } from '../../useAssistSetup'
 import { ASSIST_COST_LINE } from '../AssistSetup'
@@ -239,6 +240,7 @@ const JOBS_BY_PLUGIN = PLUGINS.flatMap((plugin) =>
 export function AssistSection(): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
   const name = useStore((s) => s.settings.butler.name)
+  const ownerReach = useOwnerReach()
   const runsOn = useStore((s) => assistRunsOn(assistInputs(s)))
   const methods = useStore((s) => s.settings.sessionMethods)
   const update = useSettingsUpdate()
@@ -279,7 +281,7 @@ export function AssistSection(): JSX.Element {
         />
       ))}
       <div className="set-grp">Butler</div>
-      <JobOverviewRow row="butler" title={name} does={BUTLER_DOES} plugin={butler} />
+      <JobOverviewRow row="butler" title={name} does={butlerDoes(ownerReach)} plugin={butler} />
     </>
   )
 }

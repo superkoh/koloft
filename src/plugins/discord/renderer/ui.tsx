@@ -1,5 +1,5 @@
 import { fill, type PluginUi } from '@core/ui'
-import { PALETTE_ROUTE, PLUGIN_SET_UP, ROW_EXTRAS, ROW_SET_UP } from '@renderer/slots'
+import { OWNER_REACH, PALETTE_ROUTE, PLUGIN_SET_UP, ROW_EXTRAS, ROW_SET_UP } from '@renderer/slots'
 import { DISCORD_BIND, DISCORD_PAGE, plugin } from '../plugin'
 import { useStore } from '@renderer/store'
 import { setUpWith } from '../shared/channels'
@@ -21,6 +21,7 @@ export const ui: PluginUi = {
       useLabel: () => setUpWith(useStore((s) => s.settings.butler.name)),
       run: () => setUpDiscordWithButler()
     }),
-    fill(PALETTE_ROUTE, { kind: SET_UP_DISCORD_ROUTE, run: setUpDiscordWithButler })
+    fill(PALETTE_ROUTE, { kind: SET_UP_DISCORD_ROUTE, run: setUpDiscordWithButler }),
+    fill(OWNER_REACH, plugin.name)
   ]
 }

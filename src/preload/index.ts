@@ -164,6 +164,7 @@ const api: KoloftApi = {
   },
   assist: {
     route: (id, message) => ipcRenderer.invoke(CH.assist.route, id, message),
+    nameWorktree: (id, task) => ipcRenderer.invoke(CH.assist.nameWorktree, id, task),
     cancel: (id) => ipcRenderer.send(CH.assist.cancel, id)
   },
   settings: {

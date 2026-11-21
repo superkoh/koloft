@@ -1178,6 +1178,7 @@ export interface CoreApi {
   }
   assist: {
     route(id: number, message: string): Promise<SessionRoute | null>
+    nameWorktree(id: number, task: string): Promise<string | null>
     cancel(id: number): void
   }
   settings: {

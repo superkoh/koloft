@@ -910,12 +910,28 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(8, 8, 10, 0.55);
-  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
   animation: backdropIn 0.18s ease both;
+}
+/* PLATFORM§24 */
+body:has(> .modal-backdrop:not(.in-session)) > #root,
+body:has(> .modal-backdrop:not(.in-session)) > .wl,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside {
+  filter: blur(6px);
+}
+body:has(> .modal-backdrop:not(.in-session)) > #root *,
+body:has(> .modal-backdrop:not(.in-session)) > #root *::before,
+body:has(> .modal-backdrop:not(.in-session)) > #root *::after,
+body:has(> .modal-backdrop:not(.in-session)) > .wl *,
+body:has(> .modal-backdrop:not(.in-session)) > .wl *::before,
+body:has(> .modal-backdrop:not(.in-session)) > .wl *::after,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *::before,
+body:has(> .modal-backdrop:not(.in-session)) > .wl-aside *::after {
+  animation-play-state: paused !important;
 }
 .modal {
   width: 540px;
@@ -1114,6 +1130,15 @@ body {
 .term-wrap > .modal-backdrop.in-session {
   position: absolute;
   z-index: 6;
+}
+/* PLATFORM§24 */
+.term-wrap:has(> .modal-backdrop.in-session) > :not(.modal-backdrop) {
+  filter: blur(6px);
+}
+.term-wrap:has(> .modal-backdrop.in-session) > :not(.modal-backdrop) *,
+.term-wrap:has(> .modal-backdrop.in-session) > :not(.modal-backdrop) *::before,
+.term-wrap:has(> .modal-backdrop.in-session) > :not(.modal-backdrop) *::after {
+  animation-play-state: paused !important;
 }
 .modal.secret-modal {
   width: 480px;

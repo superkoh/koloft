@@ -457,7 +457,9 @@
         </div>
         <p>
           By default, your butler uses its agent's usual model and thinking. A change takes effect
-          the next time the butler starts.
+          the next time the butler starts. A butler set to Gemini 4 Carbon or Gemini 4 Neon starts
+          on another model when your Antigravity account does not have it, or when Koloft cannot
+          read which models the account has, and a note says so as it starts.
         </p>
         <p>How the small jobs run:</p>
         <ul class="dash">
@@ -472,6 +474,12 @@
           <li>
             if the account turns down the model in the table above, the job tries once more on Haiku
             (Claude) or GPT-6-Luna (Codex), or on the agent's own model, when there is time left
+          </li>
+          <li>
+            a job you set to Gemini 4 Carbon or Gemini 4 Neon runs on another model when your
+            Antigravity account does not have it, or when Koloft cannot read which models the
+            account has. A note that starts <code>Koloft Assist:</code> says so; the same note does
+            not show again while Koloft is open
           </li>
           <li>
             when no answer comes, the job goes on its own way: the session is named after the first
@@ -540,7 +548,9 @@
             <code>Instructions</code>. Click <code>Instructions</code> and write what your butler
             should always know or do, one rule a line, then <code>Save</code> (<kbd>⌘⏎</kbd>). Your
             butler and the helpers it starts follow it. Your butler uses it from its next fresh
-            conversation. <code>Start a fresh conversation</code> on the strip asks first;
+            conversation. On Claude Code, a butler you have closed and opened again since you saved
+            also takes it up the next time it compacts (shrinks its conversation to a summary).
+            <code>Start a fresh conversation</code> on the strip asks first;
             <code>Start fresh</code> ends this conversation and starts a new one that reads your
             instructions as they are now. A folder's sessions have
             <a href="../sessions/#instructions">instructions of their own</a>, and there are
