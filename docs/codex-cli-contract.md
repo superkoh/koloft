@@ -3781,6 +3781,50 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   the model wrote a Chinese note, ran `ls`, and the `PostToolUse` hook saw that note
   (it gave the plain reminder, not the quote of the English reply).
 
+### Hooks a repository declares
+
+2026-11-21, codex-cli 0.169.0 on macOS, measured: Node scripts drove `codex app-server`
+(`hooks/list`, `thread/start`, `turn/start`) in throwaway git repos and throwaway
+`CODEX_HOME`s, against a fake Responses API that wrote down each request; one run each.
+
+- **Both `<repo>/.codex/config.toml` (`[[hooks.<Event>]]`) and `<repo>/.codex/hooks.json`
+  are read**, listed as `source: "project"`; with both, both load and a warning asks for
+  one. They load only once the folder is trusted (`[projects."<realpath>"] trust_level =
+  "trusted"`); otherwise `hooks/list` is empty and a turn gets a `configWarning`.
+- **A linked worktree uses the main checkout's `.codex`, never its own**, from a sibling
+  folder or one inside the repo (`.claude/worktrees/<n>`): the key is
+  `<main checkout>/.codex/config.toml:<event>:<group>:<hook>`. With `.codex` only in the
+  worktree, nothing loads. Trust of either folder lists the main checkout's hooks.
+- **The hook runs in the session's folder** (stdin `cwd`, the worktree's own path in a
+  worktree): a relative `node scripts/x.mjs` ran the worktree's copy, failed from a
+  subfolder (`hook exited with code 1`, and the command ran anyway), and
+  `"$(git rev-parse --show-toplevel)"` worked from both.
+- **Trust is a `[hooks.state."<key>"] trusted_hash` table in the `CODEX_HOME`'s own
+  `config.toml` only** (one in the repo's `.codex/config.toml` is ignored). The hash
+  covers the hook line (command, matcher, timeout), not the script it runs: a changed
+  script stayed `trusted`, a changed command became `modified`. An untrusted project hook
+  does not run and nothing says so to the model; Koloft's `--remote` TUI shows nothing
+  either, while a TUI started bare stops on a "Hooks need review" screen.
+- **`PreToolUse` on `Bash`**: exit 2 with stderr stops the command and the model reads
+  "Command blocked by PreToolUse hook: <stderr>. Command: …"; a hook that waited 60 s
+  before that still stopped it (default timeout 600 s). `matcher = "Bash"` does not fire
+  for `apply_patch`; `matcher = "Edit|Write"` and `matcher = "apply_patch"` do.
+- **`PostToolUse` on `apply_patch`**: `tool_input.command` is the patch, its paths as the
+  model wrote them (relative to `cwd` or absolute, `*** Move to:` for a rename), and no
+  `file_path`; `hookSpecificOutput.additionalContext` reaches the model as a developer
+  message before the tool's output, while exit 2 replaces that output with the stderr.
+- **`SessionStart`** fires with the first turn (stdin `source: "startup"`, `cwd`, no
+  `turn_id`); its `additionalContext` is a developer message before the prompt, and a
+  process it starts detached outlives the hook.
+- **`project_doc_max_bytes` defaults to 32768 for the instruction files together**: from
+  a subfolder, the root `AGENTS.md` (23 KB) was read whole and the subfolder's only up to
+  about 9 KB, cut with no notice. `project_doc_max_bytes = 65536` in the repo's
+  `.codex/config.toml` (the folder trusted) let both, 53.5 KB together, through whole,
+  from the main checkout and from a linked worktree's subfolder.
+
+Koloft dependents: the repo's own `.codex/config.toml` and
+`scripts/trust-codex-hooks.mjs` (ADR-0052).
+
 ## 28. Two app-servers starting at once in a home no app-server has used
 
 **Checked on 2026-10-12 with standalone Codex CLI 0.162.0**, no model turn. A Node script

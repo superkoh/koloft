@@ -1,0 +1,39 @@
+{
+  "koloft-dev": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "[ -f ../scripts/agent-hook.sh ] && exec sh ../scripts/agent-hook.sh agy session-start; exit 0"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f ../scripts/agent-hook.sh ] && exec sh ../scripts/agent-hook.sh agy before-shell-command; exit 0",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file|write_to_file|replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f ../scripts/agent-hook.sh ] && exec sh ../scripts/agent-hook.sh agy after-file-edit; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "[ -f ../scripts/agent-hook.sh ] && exec sh ../scripts/agent-hook.sh agy before-model-call; exit 0"
+      }
+    ]
+  }
+}

@@ -1,0 +1,200 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawn, spawnSync } from 'node:child_process'
+
+// CODEX§11 CODEX§27 ADR-0052
+
+const KOLOFT_SHIM_MARK = 'KOLOFT_UTIL'
+const APP_SERVER_TIMEOUT_MS = 60_000
+
+function argValue(name) {
+  const i = process.argv.indexOf(name)
+  return i >= 0 ? process.argv[i + 1] : undefined
+}
+
+function fail(message) {
+  console.error(`trust-codex-hooks: ${message}`)
+  process.exit(1)
+}
+
+function mainCheckout() {
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    cwd: import.meta.dirname,
+    encoding: 'utf8'
+  }).stdout?.trim()
+  if (!common) fail('this script is not inside a git checkout')
+  return fs.realpathSync(path.dirname(common))
+}
+
+function isRealCodex(file) {
+  try {
+    if (!fs.statSync(file).isFile()) return false
+    const fd = fs.openSync(file, 'r')
+    const head = Buffer.alloc(4096)
+    const n = fs.readSync(fd, head, 0, head.length, 0)
+    fs.closeSync(fd)
+    return !head.subarray(0, n).toString('latin1').includes(KOLOFT_SHIM_MARK)
+  } catch {
+    return false
+  }
+}
+
+function findCodex() {
+  const given = argValue('--codex')
+  if (given) return given
+  const home = os.homedir()
+  const onPath = (process.env.PATH ?? '').split(':').map((dir) => path.join(dir, 'codex'))
+  const koloftInstalls = fs
+    .readdirSync(home)
+    .filter((name) => name.startsWith('.koloft'))
+    .map((name) => path.join(home, name, 'codex-cli', 'bin', 'codex'))
+  return (
+    [...onPath, ...koloftInstalls].find(isRealCodex) ?? fail('no codex found; pass --codex <path>')
+  )
+}
+
+function configFile() {
+  const remoteHome = path.join(os.homedir(), '.koloft', 'codex-home')
+  const file =
+    argValue('--config') ??
+    (process.env.CODEX_HOME
+      ? path.join(process.env.CODEX_HOME, 'config.toml')
+      : fs.existsSync(remoteHome)
+        ? path.join(remoteHome, 'config.toml')
+        : path.join(os.homedir(), '.codex', 'config.toml'))
+  return fs.existsSync(file) ? fs.realpathSync(file) : path.resolve(file)
+}
+
+const tableHeader = (kind, key) => `[${kind}.${JSON.stringify(key)}]`
+
+function tableBody(lines, header) {
+  const start = lines.findIndex((line) => line.trim() === header)
+  if (start < 0) return undefined
+  let end = start + 1
+  while (end < lines.length && !lines[end].trim().startsWith('[')) end++
+  return { start, end }
+}
+
+function withTable(text, header, line, keyOfLine) {
+  const lines = text.split('\n')
+  const at = tableBody(lines, header)
+  if (!at) {
+    const gap = text === '' ? '' : text.endsWith('\n') ? '\n' : '\n\n'
+    return `${text}${gap}${header}\n${line}\n`
+  }
+  const body = lines.slice(at.start + 1, at.end).filter((l) => !keyOfLine.test(l))
+  lines.splice(at.start, at.end - at.start, header, line, ...body)
+  return lines.join('\n')
+}
+
+function folderTrustLevel(text, repo) {
+  const lines = text.split('\n')
+  const at = tableBody(lines, tableHeader('projects', repo))
+  if (!at) return undefined
+  const level = lines
+    .slice(at.start + 1, at.end)
+    .map((l) => /^\s*trust_level\s*=\s*"([^"]*)"/.exec(l)?.[1])
+    .find(Boolean)
+  return level ?? ''
+}
+
+function writeAtomically(file, text) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const temp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(temp, text, { mode: 0o600 })
+  fs.renameSync(temp, file)
+}
+
+function listProjectHooks(codex, codexHome, repo) {
+  return new Promise((resolve) => {
+    const child = spawn(codex, ['app-server'], {
+      cwd: repo,
+      env: { ...process.env, CODEX_HOME: codexHome },
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      fail(`codex app-server gave no hook list in ${APP_SERVER_TIMEOUT_MS / 1000} s`)
+    }, APP_SERVER_TIMEOUT_MS)
+    let buffered = ''
+    child.stdout.on('data', (chunk) => {
+      buffered += chunk
+      let newline
+      while ((newline = buffered.indexOf('\n')) >= 0) {
+        const line = buffered.slice(0, newline)
+        buffered = buffered.slice(newline + 1)
+        const message = line.trim() ? JSON.parse(line) : {}
+        if (message.id === 1) {
+          child.stdin.write(`${JSON.stringify({ method: 'initialized' })}\n`)
+          child.stdin.write(
+            `${JSON.stringify({ id: 2, method: 'hooks/list', params: { cwds: [repo] } })}\n`
+          )
+        } else if (message.id === 2) {
+          clearTimeout(timer)
+          child.kill()
+          const hooks = (message.result?.data ?? []).flatMap((entry) => entry.hooks ?? [])
+          resolve(hooks.filter((hook) => hook.source === 'project'))
+        }
+      }
+    })
+    child.stdin.write(
+      `${JSON.stringify({
+        id: 1,
+        method: 'initialize',
+        params: {
+          clientInfo: { name: 'trust-codex-hooks', title: 'trust-codex-hooks', version: '1' },
+          capabilities: { experimentalApi: true }
+        }
+      })}\n`
+    )
+  })
+}
+
+const repo = mainCheckout()
+const codex = findCodex()
+const config = configFile()
+const before = fs.existsSync(config) ? fs.readFileSync(config, 'utf8') : ''
+const level = folderTrustLevel(before, repo)
+if (level !== undefined && level !== 'trusted')
+  fail(`${config} sets ${repo} to trust_level "${level}"; change it to "trusted" first`)
+
+let saved = before
+function save(text) {
+  if (text === saved) return
+  if (saved === before && before !== '')
+    fs.copyFileSync(config, `${config}.before-trust-codex-hooks`)
+  writeAtomically(config, text)
+  saved = text
+}
+
+if (level !== 'trusted')
+  save(
+    withTable(
+      before,
+      tableHeader('projects', repo),
+      'trust_level = "trusted"',
+      /^\s*trust_level\s*=/
+    )
+  )
+
+const hooks = await listProjectHooks(codex, path.dirname(config), repo)
+if (hooks.length === 0) fail(`codex lists no hooks from ${repo}/.codex`)
+save(
+  hooks.reduce(
+    (text, hook) =>
+      withTable(
+        text,
+        tableHeader('hooks.state', hook.key),
+        `trusted_hash = ${JSON.stringify(hook.currentHash)}`,
+        /^\s*trusted_hash\s*=/
+      ),
+    saved
+  )
+)
+
+const after = await listProjectHooks(codex, path.dirname(config), repo)
+const untrusted = after.filter((hook) => hook.trustStatus !== 'trusted')
+if (untrusted.length > 0)
+  fail(`still untrusted after writing ${config}: ${untrusted.map((h) => h.key).join(', ')}`)
+console.log(`Trusted ${after.length} hooks from ${repo}/.codex in ${config}.`)

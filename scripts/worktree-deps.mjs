@@ -1,6 +1,6 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { depsState, worktreeOf } from './worktree-deps-state.mjs'
 
 const SETUP_STEPS = [
   ['npm', ['ci']],
@@ -9,28 +9,36 @@ const SETUP_STEPS = [
   ['node', ['scripts/fetch-vendor.cjs']]
 ]
 
-const git = (cwd, ...args) =>
-  spawnSync('git', ['-C', cwd, 'rev-parse', '--path-format=absolute', ...args], {
-    encoding: 'utf8'
-  }).stdout.trim()
-
-const { cwd } = JSON.parse(fs.readFileSync(0, 'utf8'))
-const root = git(cwd, '--show-toplevel')
-const gitDir = git(cwd, '--git-dir')
-const isLinkedWorktree = root !== '' && gitDir !== git(cwd, '--git-common-dir')
-const nodeModules = path.join(root, 'node_modules')
-if (!isLinkedWorktree || fs.existsSync(nodeModules)) process.exit(0)
-
-const log = path.join(gitDir, 'worktree-deps.log')
-const out = fs.openSync(log, 'w')
-for (const [cmd, args] of SETUP_STEPS) {
-  const { status } = spawnSync(cmd, args, { cwd: root, stdio: ['ignore', out, out] })
-  if (status !== 0) {
-    fs.rmSync(nodeModules, { recursive: true, force: true })
-    console.error(
-      `Installing this worktree's node_modules failed at \`${cmd} ${args.join(' ')}\` (log: ${log}). ` +
-        'node_modules was removed, so Node resolves packages from the parent checkout until the next session start retries: fix it before building or testing here.'
-    )
-    process.exit(2)
-  }
+const cwd = process.argv.includes('--here')
+  ? process.cwd()
+  : JSON.parse(fs.readFileSync(0, 'utf8')).cwd
+const w = worktreeOf(cwd)
+if (!w.linked) process.exit(0)
+const state = depsState(w)
+if (state === 'installing' || (state === 'ready' && fs.existsSync(w.nodeModules))) process.exit(0)
+if (state === 'failed') {
+  fs.rmSync(w.lock, { force: true })
+  fs.rmSync(w.nodeModules, { recursive: true, force: true })
 }
+try {
+  fs.writeFileSync(w.lock, String(process.pid), { flag: 'wx' })
+} catch {
+  process.exit(0)
+}
+
+const out = fs.openSync(w.log, 'w')
+const failedStep = SETUP_STEPS.find(
+  ([cmd, args]) => spawnSync(cmd, args, { cwd: w.root, stdio: ['ignore', out, out] }).status !== 0
+)
+if (failedStep) {
+  fs.rmSync(w.nodeModules, { recursive: true, force: true })
+  const said =
+    `Installing this worktree's node_modules failed at \`${failedStep[0]} ${failedStep[1].join(' ')}\` (log: ${w.log}). ` +
+    'node_modules was removed, so Node resolves packages from the parent checkout and a push is stopped until the next session start or `node scripts/worktree-deps.mjs --here` installs it: fix it before building or testing here.'
+  fs.writeFileSync(w.failed, said)
+  fs.rmSync(w.lock, { force: true })
+  console.error(said)
+  process.exit(2)
+}
+fs.rmSync(w.failed, { force: true })
+fs.rmSync(w.lock, { force: true })

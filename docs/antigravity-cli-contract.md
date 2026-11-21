@@ -767,6 +767,39 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   continuations; the 11th block is ignored. `injectSteps` from a `Stop` hook is dropped
   (`unknown field "injectSteps"` in agy's log). Not run in the TUI.
 
+### A repository's own `.agents/hooks.json`
+
+2026-11-21, agy 1.5.14 on macOS, measured: `--gemini_dir` at a throwaway folder, an API-key
+login against a fake Gemini server that kept every request, `-p … --dangerously-skip-permissions`
+and the TUI in a pty, a throwaway git repo with a linked worktree.
+
+- **Each checkout runs its own file**: a linked worktree (a sibling, or one inside the
+  repo at `.claude/worktrees/<n>`) ran only its own `.agents/hooks.json`, never the main
+  checkout's; started in `repo/scripts`, the repo root's file ran.
+- **No separate trust for hooks**: with `trustedWorkspaces: []` the `-p` run ran them; in
+  the TUI nothing ran before the folder-trust question was answered (SessionStart waits
+  for the first prompt anyway). A worktree of a trusted repo asked that question again.
+- **The hook runs in `<checkout>/.agents`**, so `node ../scripts/x.mjs` runs that
+  checkout's copy. Its stdin's `cwd` and `workspacePaths` are where agy started — a
+  subfolder when started in one — and it carries `conversationId` and
+  `artifactDirectoryPath` (that conversation's own folder under `brain/`).
+- **`PreToolUse` on `run_command`** (`toolCall.args.CommandLine`): no output lets it run;
+  `{"decision":"deny","reason":"…"}` stops it and the model reads "tool call denied by
+  pre-tool hook: <reason>"; `{}` stops it with an empty reason; exit 1 or 2 stops it as a
+  failed hook; `{"decision":"allow"}` does not skip the ask. `"timeout"` is in seconds,
+  30 when absent: a hook past it is killed and the tool does not run; with `timeout: 120`
+  a 70 s hook let the command run.
+- **`PostToolUse` cannot reach the model**: `injectSteps`, `decision`, plain text and
+  exit 2 with stderr all left the request unchanged. A `PreInvocation` hook that prints
+  `{"injectSteps":[{"ephemeralMessage":"…"}]}` puts the text into the next request only
+  (not the ones after, nor a `-c` continuation), next to Koloft's own `PreInvocation`
+  text. `matcher: "write_file|edit_file"` fires on those two tools (`args.Path`) and not
+  on `run_command`.
+- **A process the `SessionStart` hook starts detached** lives on after the hook (3 ms)
+  and after agy exits.
+
+Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0052).
+
 ## §13 Tools
 
 - The model gets 13 tools: `view_file`, `run_command`, `manage_task`,

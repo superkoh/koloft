@@ -5,6 +5,14 @@ import os from 'os'
 import path from 'path'
 
 const script = path.resolve(__dirname, '../../scripts/push-checks.mjs')
+const depsStateScript = path.resolve(__dirname, '../../scripts/worktree-deps-state.mjs')
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 'test@example.com',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 'test@example.com'
+}
 
 const createdDirs: string[] = []
 afterEach(() => {
@@ -22,8 +30,23 @@ function repo({ nodeModules = true } = {}): string {
   execFileSync('git', ['init', '-q', root])
   fs.mkdirSync(path.join(root, 'scripts'))
   fs.copyFileSync(script, path.join(root, 'scripts', 'push-checks.mjs'))
+  fs.copyFileSync(depsStateScript, path.join(root, 'scripts', 'worktree-deps-state.mjs'))
   if (nodeModules) fs.mkdirSync(path.join(root, 'node_modules'))
   return root
+}
+
+function worktreeOf(main: string, { nodeModules = true } = {}): { wt: string; gitDir: string } {
+  fs.writeFileSync(path.join(main, '.gitignore'), 'node_modules\n')
+  execFileSync('git', ['-C', main, 'add', '-A'], { env: GIT_ENV })
+  execFileSync('git', ['-C', main, 'commit', '-q', '-m', 'fixture'], { env: GIT_ENV })
+  const wt = path.join(main, 'wt')
+  execFileSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', 'wt', wt], { env: GIT_ENV })
+  if (nodeModules) fs.mkdirSync(path.join(wt, 'node_modules'))
+  return { wt, gitDir: path.join(main, '.git', 'worktrees', 'wt') }
+}
+
+function deadPid(): number {
+  return spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' }).pid
 }
 
 type NpmResult = { exit: number; says?: string }
@@ -85,7 +108,7 @@ describe('push-checks PreToolUse hook', () => {
 
   it.each([
     'git status',
-    'grep -n "git push" CLAUDE.md',
+    'grep -n "git push" AGENTS.md',
     'git commit -m "then git push; done"',
     'gh pr view 12',
     'echo git push'
@@ -159,6 +182,63 @@ describe('push-checks PreToolUse hook', () => {
     const r = runHook(root, 'git push', bin)
     expect(r.status).toBe(0)
     expect(JSON.parse(r.stdout).systemMessage).toMatch(/format:check/)
+  })
+
+  it('stops a push while the worktree is still installing its node_modules', () => {
+    const { wt, gitDir } = worktreeOf(repo())
+    fs.writeFileSync(path.join(gitDir, 'worktree-deps.lock'), String(process.pid))
+    const { bin, calls } = fakeNpm()
+    const r = runHook(wt, 'git push', bin)
+    expect(r.status).toBe(2)
+    expect(r.stderr).toMatch(/still being installed/)
+    expect(callsIn(calls)).toEqual([])
+  })
+
+  it.each([
+    [
+      'a failed install',
+      (gitDir: string) =>
+        fs.writeFileSync(path.join(gitDir, 'worktree-deps.failed'), 'It failed at `npm ci`.')
+    ],
+    [
+      'an install whose process died',
+      (gitDir: string) =>
+        fs.writeFileSync(path.join(gitDir, 'worktree-deps.lock'), String(deadPid()))
+    ]
+  ])(
+    'stops a push after %s when the worktree has no node_modules, naming the command that reinstalls it',
+    (_, leave) => {
+      const { wt, gitDir } = worktreeOf(repo(), { nodeModules: false })
+      leave(gitDir)
+      const r = runHook(wt, 'git push', fakeNpm().bin)
+      expect(r.status).toBe(2)
+      expect(r.stderr).toContain('node scripts/worktree-deps.mjs --here')
+    }
+  )
+
+  it.each([
+    [
+      'a check whose tool is not installed yet',
+      { exit: 127, says: 'sh: prettier: command not found' }
+    ],
+    ['a half-installed node_modules', { exit: 1, says: "Error: Cannot find module 'prettier'" }]
+  ])('stops a push after a failed install on %s, which it lets through otherwise', (_, result) => {
+    const { wt, gitDir } = worktreeOf(repo())
+    fs.writeFileSync(path.join(gitDir, 'worktree-deps.failed'), 'It failed at `npm ci`.')
+    const r = runHook(wt, 'git push', fakeNpm({ 'format:check': result }).bin)
+    expect(r.status).toBe(2)
+    expect(r.stderr).toContain('node scripts/worktree-deps.mjs --here')
+    expect(fs.existsSync(path.join(gitDir, 'worktree-deps.failed'))).toBe(true)
+  })
+
+  it('lets a push through once all three checks pass after a failed install, and forgets the failure', () => {
+    const { wt, gitDir } = worktreeOf(repo())
+    fs.writeFileSync(path.join(gitDir, 'worktree-deps.failed'), 'It failed at `npm ci`.')
+    const { bin, calls } = fakeNpm()
+    const r = runHook(wt, 'git push', bin)
+    expect(r.status).toBe(0)
+    expect(callsIn(calls)).toEqual(ALL_THREE)
+    expect(fs.existsSync(path.join(gitDir, 'worktree-deps.failed'))).toBe(false)
   })
 
   it('runs the checks in the checkout the push runs in, even when the hook came from another one', () => {
