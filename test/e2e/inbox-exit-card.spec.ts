@@ -39,7 +39,7 @@ import {
 import type { BackendId } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
 
-const A_REMOTE_EXIT_REACHES_THE_INBOX_MS = 90_000
+const AN_EXIT_REACHES_THE_INBOX_MS = 90_000
 const A_RESUMED_SESSION_TAKES_A_MESSAGE_MS = 90_000
 const A_CARD_CASE_TAKES_MS = 300_000
 
@@ -186,9 +186,10 @@ test.describe(() => {
 
         await openInbox(page)
         const card = inboxCard(page, 'stopped unexpectedly')
-        await card
-          .locator('.ibx-btn', { hasText: 'Start it again' })
-          .click({ timeout: A_REMOTE_EXIT_REACHES_THE_INBOX_MS })
+        await expect(card).toContainText(kind.remote ? `on ${REMOTE_HOST}` : 'on this Mac', {
+          timeout: AN_EXIT_REACHES_THE_INBOX_MS
+        })
+        await card.locator('.ibx-btn', { hasText: 'Start it again' }).click()
         await expect
           .poll(() => squeezed(kind.heard(env)), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
           .toContain(squeezed('Carry on where you left off'))
@@ -201,7 +202,7 @@ test.describe(() => {
         const next = inboxCard(page, 'stopped unexpectedly')
         await next
           .locator('.ibx-input')
-          .fill('finish the docs', { timeout: A_REMOTE_EXIT_REACHES_THE_INBOX_MS })
+          .fill('finish the docs', { timeout: AN_EXIT_REACHES_THE_INBOX_MS })
         await next.locator('.ibx-btn', { hasText: 'Hand to a new session' }).click()
         await expect
           .poll(() => squeezed(kind.heard(env)), { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })

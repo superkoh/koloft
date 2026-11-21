@@ -56,7 +56,7 @@ import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
-import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
+import { hostOfKey, type SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
@@ -727,6 +727,7 @@ const readerDocs = new ReaderDocs({
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
   changed: () => pushToSessions.sessions(onSessionsChanged())
 })
+const sessionsEndedThisRun = new Set<string>()
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
@@ -743,7 +744,7 @@ const sessionBackends = new SessionBackends({
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => {
-    tabsEndedThisRun.add(tabId)
+    if (subject.sessionId) sessionsEndedThisRun.add(subject.sessionId)
     attention.onExited(tabId, subject)
   },
   asked: (tabId, ask) => {
@@ -2263,16 +2264,13 @@ function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   return askedSession(s.sessionId, s.title, s.backendId, ws, ws && parseRemoteKey(ws)?.host)
 }
 
-const tabsEndedThisRun = new Set<string>()
-
 function inboxSessionOfEndedTab(tabId: string): AskedSession | undefined {
-  if (!tabsEndedThisRun.has(tabId)) return undefined
   const ended = attention.list().find((m) => m.tabId === tabId && m.kind === 'exited')
-  if (!ended?.sessionId) return undefined
-  const { backendId, sourceId } = identityOf(ended.sessionId)
+  if (!ended?.sessionId || !sessionsEndedThisRun.has(ended.sessionId)) return undefined
   const ws = workspaceMgr?.workspaceOf(ended.sessionId)
-  const machine = (ws && parseRemoteKey(ws)?.host) ?? (sourceId === 'local' ? undefined : sourceId)
-  return askedSession(ended.sessionId, ended.title, backendId, ws, machine)
+  const machine = (ws && parseRemoteKey(ws)?.host) ?? hostOfKey(ended.sessionId)
+  const backend = identityOf(ended.sessionId).backendId
+  return askedSession(ended.sessionId, ended.title, backend, ws, machine)
 }
 
 function askedSession(
